@@ -1,0 +1,21 @@
+[package]
+name = "harness"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+clap.workspace = true
+harness-core = { path = "../harness-core" }
+harness-providers = { path = "../harness-providers" }
+harness-tools = { path = "../harness-tools" }
+harness-tui = { path = "../harness-tui" }
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+blake3 = "1"
+uuid = { version = "1", features = ["v5"] }
+
+[dev-dependencies]
+sha2 = "0.10"
+tempfile.workspace = true
