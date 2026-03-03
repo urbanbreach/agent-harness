@@ -82,3 +82,19 @@
 - `content_digest` follows existing digest12 convention (`blake3(content).to_hex().take(12)`), now centralized via shared `digest12` helper in `event.rs`.
 - Projection/type labeling paths updated (`harness-core::proj::event_type_name`, `harness-tui::ui::event_variant_name`) so replay summaries and TUI labels include `user_message_submitted` consistently.
 - Added coverage for JSONL serde roundtrip and redaction behavior (`sk-*` replaced with `[REDACTED_API_KEY]`) while retaining stable digest metadata.
+
+## 2026-03-03 Task 16 live proxy E2E notes
+
+- Added gated live CLIproxyAPI E2E test at `crates/harness-testkit/tests/live_proxy_e2e.rs`.
+- Test is `#[ignore]` by default; runs only when `HARNESS_LIVE_PROXY=1` is set.
+- Uses `HARNESS_LIVE_PROXY_CONFIG` override or falls back to `configs/harness.example.jsonc`.
+- Asserts config mentions `api_mode: "responses"` before running.
+- Executes `harness prompt --text "Say hello"` and validates event sequence:
+  - `provider_request_started` with captured `request_id`
+  - at least one `provider_stream_delta` matching that `request_id`
+  - `provider_request_finished` matching that `request_id`
+- Added pty-mcp evidence capture recipe documenting steps to produce:
+  - `.sisyphus/evidence/task-16-live-tui.png`
+  - `.sisyphus/evidence/task-16-live-tui-finished.png`
+  - `.sisyphus/evidence/task-16-live-log.txt`
+
