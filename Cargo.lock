@@ -801,6 +801,7 @@ dependencies = [
  "image",
  "insta",
  "portable-pty",
+ "regex",
  "serde_json",
  "tokio",
  "vt100",

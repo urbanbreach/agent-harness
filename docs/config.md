@@ -326,6 +326,51 @@ error: environment variable `OPENAI_API_KEY` not set
   --> harness.jsonc:8:20
 ```
 
+## CLIproxyAPI Quickstart
+
+Connect to a local CLIproxyAPI instance using the OpenAI Responses API:
+
+```jsonc
+{
+  "providers": {
+    "default": {
+      "type": "openai_compatible",
+      "base_url": "http://127.0.0.1:8317/v1",
+      "api_key": "${OPENAI_API_KEY}",
+      "api_mode": "responses",
+      "models": {
+        "gpt-5-codex": {
+          "display_name": "GPT-5 Codex",
+          "max_input_tokens": 128000,
+          "max_output_tokens": 16384
+        }
+      }
+    }
+  }
+}
+```
+
+Set your API key:
+
+```bash
+export OPENAI_API_KEY="your-api-key-here"
+```
+
+The default `base_url` for CLIproxyAPI is `http://127.0.0.1:8317/v1`. The `api_mode: "responses"` setting enables the OpenAI Responses API with streaming support.
+
+## License Hygiene
+
+This project draws behavioral inspiration from Oh My OpenCode and Oh My Pi:
+
+- **Architecture patterns**: Event sourcing, hashline edits, permission models
+- **User experience**: Terminal UI workflows, streaming output
+
+No code, prompts, or proprietary implementations were copied. All code is original and independently authored.
+
+**License notes**:
+- MIT-licensed repositories (like Oh My OpenCode) are fine for inspiration
+- Pi Agent Rust license is unclear; do not copy code from it
+
 ## Migration Notes
 
 Agent Harness does **not** auto-import OpenCode configuration. You must create a harness-specific config file. Key differences from OpenCode:

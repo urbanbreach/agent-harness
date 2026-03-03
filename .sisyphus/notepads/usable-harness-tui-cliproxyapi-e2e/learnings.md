@@ -95,3 +95,49 @@ Fixed compile error in `crates/harness-core/src/proj.rs`:
 - Diff tab content is currently represented by `diff artifact missing:` in this tree; visual snapshots should anchor to stable, non-path text to avoid hash drift from temp-path differences.
 - Interactive prompt submission in PTY requires focus handoff to prompt pane (`Tab`, `Tab`) before typing/submitting.
 - Added offline wiremock SSE fixture (`response.created`, two `response.output_text.delta`, `response.completed`) plus PTY checkpointing for streamed `Hello world` output.
+
+## 2026-03-03 Task 18: Documentation Refresh (Final)
+
+### Summary
+Final documentation pass to ensure README and config docs reflect the implemented TUI, prompt commands, and CLIproxyAPI integration.
+
+### Files Modified
+- `docs/config.md` - Added CLIproxyAPI quickstart section and License hygiene note
+- `README.md` - Verified existing content was correct (no changes needed)
+
+### Key Documentation Additions
+
+#### CLIproxyAPI Quickstart Section (docs/config.md)
+- Default base_url: `http://127.0.0.1:8317/v1`
+- Model example: `gpt-5-codex` (configurable)
+- Env var: `OPENAI_API_KEY`
+- Config example with `api_mode: "responses"`
+
+#### License Hygiene Note (docs/config.md)
+- MIT repos (Oh My OpenCode) fine for inspiration
+- Pi Agent Rust license unclear → do not copy code
+
+### Verification
+- `cargo run -p harness -- --help` completed successfully (exit 0)
+- Output saved to `.sisyphus/evidence/task-18-help.txt`
+- Build had only minor unused import warnings (no errors)
+
+### Documentation Coverage
+All config sections now documented:
+- `api_mode` (responses/chat_completions/auto)
+- `ui` section (default_profile, theme)
+- `logging` section (level, file, span_events)
+- `keybindings` section (quit, submit, cancel, etc.)
+
+## 2026-03-03 Task 17: Secret regression scan for artifacts
+
+- Added a reusable testkit helper at `crates/harness-testkit/src/secret_scanner.rs` that recursively scans directory trees and skips symlinks for deterministic/safe traversal.
+- Standardized forbidden patterns for regression checks:
+  - regex: `sk-[A-Za-z0-9]{10,}`
+  - substring: `Authorization: Bearer`
+  - substring: `Bearer sk-`
+- Added integration test `secretscan::secret_scan_does_not_find_api_keys_in_artifacts` to scan:
+  - PTY temp session dirs under `${TMPDIR}/harness-testkit/pty-e2e-*`
+  - `target/pty-visual-artifacts/`
+  - all `crates/**/snapshots/` directories
+- Kept failure output path/line/pattern only (no raw matched content) to avoid re-leaking secrets in CI logs.

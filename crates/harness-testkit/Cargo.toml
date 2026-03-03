@@ -5,6 +5,7 @@ license.workspace = true
 version.workspace = true
 
 [dependencies]
+regex = "1"
 
 [dev-dependencies]
 blake3 = "1"
