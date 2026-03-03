@@ -24,6 +24,7 @@ use crate::event::{
     PolicyViolationDetectedEvent, RunFinishedEvent, RunStartedEvent, StaleDetectedEvent,
     TaskCancelledEvent, TaskCompletedEvent, TaskResultLateEvent, TaskScheduleState,
     TaskScheduledEvent, ToolCallFinishedEvent, ToolCallStartedEvent, ToolCallStatus,
+    UserMessageSubmittedEvent,
 };
 use crate::perm::{
     permission_kind_for_capability, PermissionDecision, PermissionKind, PermissionPolicy,
@@ -138,6 +139,18 @@ pub enum Command {
         actor: EventActor,
         profile: String,
         parent_agent_id: Option<String>,
+        respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
+    },
+    SpawnAgentIdle {
+        actor: EventActor,
+        profile: String,
+        parent_agent_id: Option<String>,
+        respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
+    },
+    RequestAgentTurn {
+        actor: EventActor,
+        agent_id: String,
+        prompt: String,
         respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
     },
     RequestToolCall {
@@ -308,6 +321,50 @@ impl CoordinatorHandle {
                 actor,
                 profile: profile.into(),
                 parent_agent_id,
+                respond_to,
+            })
+            .await
+            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
+
+        response_rx
+            .await
+            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+    }
+
+    pub async fn spawn_agent_idle(
+        &self,
+        actor: EventActor,
+        profile: impl Into<String>,
+        parent_agent_id: Option<String>,
+    ) -> Result<String, CoordinatorError> {
+        let (respond_to, response_rx) = oneshot::channel();
+        self.tx
+            .send(Command::SpawnAgentIdle {
+                actor,
+                profile: profile.into(),
+                parent_agent_id,
+                respond_to,
+            })
+            .await
+            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
+
+        response_rx
+            .await
+            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+    }
+
+    pub async fn request_agent_turn(
+        &self,
+        actor: EventActor,
+        agent_id: impl Into<String>,
+        prompt: impl Into<String>,
+    ) -> Result<String, CoordinatorError> {
+        let (respond_to, response_rx) = oneshot::channel();
+        self.tx
+            .send(Command::RequestAgentTurn {
+                actor,
+                agent_id: agent_id.into(),
+                prompt: prompt.into(),
                 respond_to,
             })
             .await
@@ -521,6 +578,24 @@ impl Coordinator {
                 let result = self.spawn_agent_internal(actor, profile, parent_agent_id);
                 let _ = respond_to.send(result);
             }
+            Command::SpawnAgentIdle {
+                actor,
+                profile,
+                parent_agent_id,
+                respond_to,
+            } => {
+                let result = self.spawn_agent_idle_internal(actor, profile, parent_agent_id);
+                let _ = respond_to.send(result);
+            }
+            Command::RequestAgentTurn {
+                actor,
+                agent_id,
+                prompt,
+                respond_to,
+            } => {
+                let result = self.request_agent_turn_internal(actor, agent_id, prompt);
+                let _ = respond_to.send(result);
+            }
             Command::RequestToolCall {
                 actor,
                 category,
@@ -663,6 +738,7 @@ impl Coordinator {
             next_provider_request_id: 1,
             next_permission_id: 1,
             agents: BTreeSet::new(),
+            agent_profile_names: BTreeMap::new(),
             tasks: BTreeMap::new(),
             pending_permissions: BTreeMap::new(),
             cancelled_running_tasks: BTreeSet::new(),
@@ -735,6 +811,59 @@ impl Coordinator {
         profile: String,
         parent_agent_id: Option<String>,
     ) -> Result<String, CoordinatorError> {
+        let agent_id = self.spawn_agent_idle_internal(actor, profile.clone(), parent_agent_id)?;
+
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+
+        let profile_name = run_state
+            .agent_profile_names
+            .get(&agent_id)
+            .cloned()
+            .unwrap_or(profile);
+
+        let profile_cfg = self
+            .config
+            .agent_profiles
+            .get(&profile_name)
+            .cloned()
+            .unwrap_or_else(|| AgentProfile::fallback(profile_name));
+
+        let request_id = format!("req_{:06}", run_state.next_provider_request_id);
+        run_state.next_provider_request_id += 1;
+
+        let request = AgentRequest {
+            agent_id: agent_id.clone(),
+            prompt: if profile_cfg.system_prompt.is_empty() {
+                format!("execute one-shot turn for {}", profile_cfg.name)
+            } else {
+                profile_cfg.system_prompt.clone()
+            },
+            model_ref: profile_cfg.model_ref.clone(),
+        };
+
+        schedule_agent_turn(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            self.job_tx.clone(),
+            run_state,
+            self.config.provider.clone(),
+            profile_cfg,
+            request,
+            request_id,
+        )?;
+
+        Ok(agent_id)
+    }
+
+    fn spawn_agent_idle_internal(
+        &mut self,
+        actor: EventActor,
+        profile: String,
+        parent_agent_id: Option<String>,
+    ) -> Result<String, CoordinatorError> {
         let run_state = self
             .run_state
             .as_mut()
@@ -764,6 +893,9 @@ impl Coordinator {
         let agent_id = format!("agent_{:06}", run_state.next_agent_id);
         run_state.next_agent_id += 1;
         run_state.agents.insert(agent_id.clone());
+        run_state
+            .agent_profile_names
+            .insert(agent_id.clone(), profile.clone());
 
         append_payload_event(
             self.clock.as_ref(),
@@ -773,28 +905,94 @@ impl Coordinator {
             Some(format!("agent:{agent_id}")),
             EventV1::AgentSpawned(AgentSpawnedEvent {
                 agent_id: agent_id.clone(),
-                profile: profile.clone(),
+                profile,
                 parent_agent_id,
+            }),
+        )?;
+
+        Ok(agent_id)
+    }
+
+    fn request_agent_turn_internal(
+        &mut self,
+        actor: EventActor,
+        agent_id: String,
+        prompt: String,
+    ) -> Result<String, CoordinatorError> {
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+
+        if !matches!(actor.kind, ActorKind::User | ActorKind::Supervisor) {
+            append_payload_event(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                run_state,
+                actor.clone(),
+                Some(format!("run:{}", run_state.info.run_id)),
+                EventV1::PolicyViolationDetected(PolicyViolationDetectedEvent {
+                    policy: "request_agent_turn_requires_user_or_supervisor".to_string(),
+                    detail: format!(
+                        "only user or supervisor may request agent turns; got actor kind {:?}",
+                        actor.kind
+                    ),
+                }),
+            )?;
+
+            return Err(CoordinatorError::PolicyViolation(
+                "only user or supervisor may request agent turns".to_string(),
+            ));
+        }
+
+        let Some(profile_name) = run_state.agent_profile_names.get(&agent_id).cloned() else {
+            append_payload_event(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                run_state,
+                actor,
+                Some(format!("agent:{agent_id}")),
+                EventV1::PolicyViolationDetected(PolicyViolationDetectedEvent {
+                    policy: "request_agent_turn_requires_known_agent".to_string(),
+                    detail: format!("agent `{agent_id}` is not known"),
+                }),
+            )?;
+
+            return Err(CoordinatorError::PolicyViolation(
+                "agent is not known".to_string(),
+            ));
+        };
+
+        let provider_request_id = run_state.next_provider_request_id;
+        let request_id = format!("req_{provider_request_id:06}");
+        let message_id = format!("msg_{provider_request_id:06}");
+        run_state.next_provider_request_id += 1;
+
+        append_payload_event_with_correlation(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor,
+            Some(format!("agent:{agent_id}")),
+            Some(request_id.clone()),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                message_id,
+                agent_id: agent_id.clone(),
+                content: prompt.clone(),
+                content_digest: digest12(prompt.as_bytes()),
             }),
         )?;
 
         let profile_cfg = self
             .config
             .agent_profiles
-            .get(&profile)
+            .get(&profile_name)
             .cloned()
-            .unwrap_or_else(|| AgentProfile::fallback(profile.clone()));
-
-        let request_id = format!("req_{:06}", run_state.next_provider_request_id);
-        run_state.next_provider_request_id += 1;
+            .unwrap_or_else(|| AgentProfile::fallback(profile_name));
 
         let request = AgentRequest {
             agent_id: agent_id.clone(),
-            prompt: if profile_cfg.system_prompt.is_empty() {
-                format!("execute one-shot turn for {}", profile_cfg.name)
-            } else {
-                profile_cfg.system_prompt.clone()
-            },
+            prompt,
             model_ref: profile_cfg.model_ref.clone(),
         };
 
@@ -806,10 +1004,10 @@ impl Coordinator {
             self.config.provider.clone(),
             profile_cfg,
             request,
-            request_id,
+            request_id.clone(),
         )?;
 
-        Ok(agent_id)
+        Ok(request_id)
     }
 
     fn request_tool_call_internal(
@@ -1529,6 +1727,7 @@ struct RunState {
     next_provider_request_id: u64,
     next_permission_id: u64,
     agents: BTreeSet<String>,
+    agent_profile_names: BTreeMap<String, String>,
     tasks: BTreeMap<String, TaskState>,
     pending_permissions: BTreeMap<String, PendingPermissionState>,
     cancelled_running_tasks: BTreeSet<String>,

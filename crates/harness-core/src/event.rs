@@ -101,6 +101,7 @@ pub enum EventV1 {
     EditRejected(EditRejectedEvent),
     ArtifactWritten(ArtifactWrittenEvent),
     PolicyViolationDetected(PolicyViolationDetectedEvent),
+    UserMessageSubmitted(UserMessageSubmittedEvent),
     UiIntentReceived(UiIntentReceivedEvent),
 }
 
@@ -296,6 +297,14 @@ pub struct PolicyViolationDetectedEvent {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UserMessageSubmittedEvent {
+    pub message_id: String,
+    pub agent_id: String,
+    pub content: String,
+    pub content_digest: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiIntentReceivedEvent {
     pub intent: String,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -438,8 +447,11 @@ fn truncate_summary(summary: &str, max_chars: usize) -> String {
 fn value_digest(value: &Value) -> String {
     let canonical = canonicalize_json(value);
     let canonical_bytes = serde_json::to_vec(&canonical).unwrap_or_else(|_| b"null".to_vec());
-    let digest = blake3::hash(&canonical_bytes);
-    digest.to_hex().chars().take(12).collect()
+    digest12(&canonical_bytes)
+}
+
+fn digest12(bytes: &[u8]) -> String {
+    blake3::hash(bytes).to_hex().chars().take(12).collect()
 }
 
 fn canonicalize_json(value: &Value) -> Value {
@@ -459,8 +471,8 @@ fn canonicalize_json(value: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::{
-        ActorKind, EventActor, EventBuilder, EventContext, EventV1, PermissionDecision,
-        ToolCallRequestedEvent,
+        digest12, ActorKind, EventActor, EventBuilder, EventContext, EventV1, PermissionDecision,
+        ToolCallRequestedEvent, UserMessageSubmittedEvent,
     };
     use crate::clock::FakeClock;
     use crate::redact::DefaultRedactor;
@@ -554,5 +566,73 @@ mod tests {
         assert!(args_summary.contains("Bearer [REDACTED]"));
         assert!(args_summary.contains("[REDACTED_API_KEY]"));
         assert_eq!(args_digest.len(), 12);
+    }
+
+    #[test]
+    fn user_message_submitted_jsonl_roundtrip_is_stable() {
+        let payload = EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            message_id: "msg_001".to_string(),
+            agent_id: "agent-supervisor".to_string(),
+            content: "hello from user".to_string(),
+            content_digest: digest12("hello from user".as_bytes()),
+        });
+
+        let envelope = serde_json::json!({
+            "schema_version": 1,
+            "event_id": "evt-00000000000000000001",
+            "seq": 1,
+            "run_id": "run_123",
+            "mono_ms": 42,
+            "actor": {
+                "kind": "user",
+                "agent_id": "agent-supervisor",
+            },
+            "stream_key": "run:run_123",
+            "payload": payload,
+        });
+
+        let line = serde_json::to_string(&envelope).expect("serialize jsonl line");
+        let decoded: super::EventEnvelopeV1 =
+            serde_json::from_str(&line).expect("deserialize jsonl line");
+
+        let EventV1::UserMessageSubmitted(data) = decoded.payload else {
+            panic!("expected user message submitted payload")
+        };
+
+        assert_eq!(data.message_id, "msg_001");
+        assert_eq!(data.agent_id, "agent-supervisor");
+        assert_eq!(data.content, "hello from user");
+        assert_eq!(data.content_digest.len(), 12);
+    }
+
+    #[test]
+    fn user_message_submitted_redacts_secret_content() {
+        let clock = FakeClock::new();
+        let redactor = DefaultRedactor::default();
+        let builder = EventBuilder::new(&clock, &redactor, "run_123");
+
+        let raw_content = "token=sk-ABCDE12345ABCDE";
+        let envelope = builder
+            .build(
+                EventContext::new(
+                    11,
+                    EventActor::new(ActorKind::User, Some("agent-supervisor".to_string())),
+                ),
+                EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                    message_id: "msg_011".to_string(),
+                    agent_id: "agent-supervisor".to_string(),
+                    content: raw_content.to_string(),
+                    content_digest: digest12(raw_content.as_bytes()),
+                }),
+            )
+            .expect("build user message submitted envelope");
+
+        let EventV1::UserMessageSubmitted(data) = envelope.payload else {
+            panic!("expected user message submitted payload")
+        };
+
+        assert!(!data.content.contains("sk-ABCDE12345ABCDE"));
+        assert!(data.content.contains("[REDACTED_API_KEY]"));
+        assert_eq!(data.content_digest, digest12(raw_content.as_bytes()));
     }
 }

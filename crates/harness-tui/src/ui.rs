@@ -126,6 +126,7 @@ pub fn event_variant_name(event: &EventV1) -> &'static str {
         EventV1::EditRejected(_) => "EditRejected",
         EventV1::ArtifactWritten(_) => "ArtifactWritten",
         EventV1::PolicyViolationDetected(_) => "PolicyViolationDetected",
+        EventV1::UserMessageSubmitted(_) => "UserMessageSubmitted",
         EventV1::UiIntentReceived(_) => "UiIntentReceived",
     }
 }

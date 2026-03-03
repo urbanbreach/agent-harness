@@ -66,3 +66,19 @@
 - Single-provider MVP is enforced in bootstrap: `providers.default` must exist and every category `model_ref` must parse to provider_id `default`.
 - Added `crates/harness/src/logging.rs` with file-backed tracing init (`cfg.logging.file` override or `${artifacts_dir}/harness.log`) and level parsing from `cfg.logging.level`.
 - `tui` now has a no-flag interactive path that uses `build_interactive_coordinator_config` (config provider path), while `--scenario` mode still uses `golden_path_provider()` and `golden_path_profiles()` unchanged.
+
+## 2026-03-03 Coordinator control-plane turn request notes
+
+- Added coordinator commands/handle methods for prompt-driven control: `spawn_agent_idle(...)` and `request_agent_turn(...)`.
+- `spawn_agent_idle` now records `AgentSpawned` without auto-scheduling provider work; existing `spawn_agent` behavior remains auto-scheduled by reusing idle spawn plus scheduling.
+- `RunState` now tracks `agent_profile_names: BTreeMap<agent_id, profile_name>` so later turn requests can resolve model/profile deterministically.
+- `request_agent_turn` allocates `req_{:06}`, appends `UserMessageSubmitted` with `correlation_id=request_id` + `stream_key=agent:{agent_id}`, then schedules with the resolved profile model.
+- Authorization for requested turns is explicit: `User|Supervisor` allowed; `Worker` emits `PolicyViolationDetected` and returns `PolicyViolation`.
+- Verification in worktree: `cargo test -p harness-core coord` passed with new idle-spawn/request-turn coverage.
+
+## 2026-03-03 Persisted user prompt event notes
+
+- Added `EventV1::UserMessageSubmitted(UserMessageSubmittedEvent)` to persist replayable user transcript input with both redacted `content` and deterministic `content_digest`.
+- `content_digest` follows existing digest12 convention (`blake3(content).to_hex().take(12)`), now centralized via shared `digest12` helper in `event.rs`.
+- Projection/type labeling paths updated (`harness-core::proj::event_type_name`, `harness-tui::ui::event_variant_name`) so replay summaries and TUI labels include `user_message_submitted` consistently.
+- Added coverage for JSONL serde roundtrip and redaction behavior (`sk-*` replaced with `[REDACTED_API_KEY]`) while retaining stable digest metadata.

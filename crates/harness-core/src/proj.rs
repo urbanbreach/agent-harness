@@ -173,6 +173,7 @@ fn event_type_name(event: &EventV1) -> String {
         EventV1::EditRejected(_) => "edit_rejected",
         EventV1::ArtifactWritten(_) => "artifact_written",
         EventV1::PolicyViolationDetected(_) => "policy_violation_detected",
+        EventV1::UserMessageSubmitted(_) => "user_message_submitted",
         EventV1::UiIntentReceived(_) => "ui_intent_received",
     }
     .to_string()
