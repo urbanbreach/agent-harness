@@ -1,0 +1,25 @@
+[package]
+name = "harness-core"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+humantime = "2.1"
+serde.workspace = true
+serde_json.workspace = true
+json5.workspace = true
+schemars.workspace = true
+thiserror.workspace = true
+async-trait = "0.1"
+regex = "1"
+blake3 = "1"
+tokio.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
+harness-providers = { path = "../harness-providers" }
+
+[dev-dependencies]
+tempfile.workspace = true
+insta = { version = "1.42", features = ["json"] }
+proptest = "1"

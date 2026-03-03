@@ -1,0 +1,11 @@
+target/
+sessions/
+artifacts/
+.agent-harness/
+*.snap.new
+*.pending-snap
+docs/
+configs/
+
+# Local scratch / research material
+#inspiration/
