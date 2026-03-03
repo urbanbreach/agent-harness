@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use clap::{ArgGroup, Args};
 use crossbeam_channel::{self as crossbeam_mpsc, TrySendError};
 use harness_core::clock::{Clock, FakeClock, RealClock};
-use harness_core::config::{load_config_from_file, resolve_config_path, ShellAllowlist};
+use harness_core::config::{resolve_config_path, HarnessConfig, ShellAllowlist};
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle,
 };
@@ -30,6 +30,11 @@ use crate::scenarios::{
     golden_path_provider, supervisor_actor, worker_actor, ScenarioName,
 };
 
+#[path = "bootstrap.rs"]
+mod bootstrap;
+#[path = "logging.rs"]
+mod logging;
+
 const DEFAULT_SESSION_DIR: &str = ".agent-harness/sessions";
 const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
 const LIVE_UPDATE_CHANNEL_CAPACITY: usize = 2048;
@@ -41,7 +46,7 @@ const OVERLOAD_STATUS_INTERVAL: Duration = Duration::from_secs(1);
 #[derive(Debug, Args, Clone)]
 #[command(group(
     ArgGroup::new("mode")
-        .required(true)
+        .required(false)
         .args(["replay", "scenario"]),
 ))]
 pub struct TuiCommand {
@@ -70,6 +75,14 @@ struct LiveSettings {
     config_digest: String,
 }
 
+#[derive(Debug, Clone)]
+struct InteractiveSettings {
+    config: HarnessConfig,
+    deterministic: bool,
+    seed: u64,
+    config_digest: String,
+}
+
 struct LiveBootstrap {
     store: Arc<dyn EventStore>,
     run_dir: PathBuf,
@@ -85,8 +98,32 @@ pub fn execute(
     }
 
     let Some(scenario) = cmd.scenario else {
-        eprintln!("tui requires either --replay <run_dir> or --scenario <name>");
-        return ExitCode::from(2);
+        let settings = match resolve_interactive_settings(&cmd, config_path, global_session_dir) {
+            Ok(settings) => settings,
+            Err(err) => {
+                eprintln!("tui setup failed: {err}");
+                return ExitCode::from(2);
+            }
+        };
+
+        let runtime = match tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(runtime) => runtime,
+            Err(err) => {
+                eprintln!("failed to build async runtime: {err}");
+                return ExitCode::from(1);
+            }
+        };
+
+        return match runtime.block_on(run_interactive_mode(&cmd, &settings)) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("tui failed: {err}");
+                ExitCode::from(1)
+            }
+        };
     };
 
     let settings = match resolve_live_settings(&cmd, config_path, global_session_dir) {
@@ -115,6 +152,35 @@ pub fn execute(
             ExitCode::from(1)
         }
     }
+}
+
+fn resolve_interactive_settings(
+    cmd: &TuiCommand,
+    config_path: Option<PathBuf>,
+    global_session_dir: Option<PathBuf>,
+) -> Result<InteractiveSettings, String> {
+    let explicit_config = resolve_config_path(config_path.as_deref()).ok_or_else(|| {
+        "interactive mode requires a config file; pass --config <path> or create harness.jsonc"
+            .to_string()
+    })?;
+
+    let mut config = bootstrap::load_harness_config(&explicit_config)?;
+    config.apply_session_dir_override(cmd.session_dir.clone().or(global_session_dir));
+
+    let config_bytes = fs::read(&explicit_config)
+        .map_err(|err| format!("failed to read config file {}: {err}", explicit_config.display()))?;
+    let config_digest = blake3::hash(&config_bytes).to_hex().to_string();
+
+    let deterministic = cmd.deterministic
+        || config.deterministic.enabled
+        || matches!(std::env::var("HARNESS_DETERMINISTIC").as_deref(), Ok("1"));
+
+    Ok(InteractiveSettings {
+        deterministic,
+        seed: config.deterministic.seed,
+        config,
+        config_digest,
+    })
 }
 
 fn execute_replay_mode(run_dir: &Path, exit_on_finish: bool) -> ExitCode {
@@ -158,8 +224,7 @@ fn resolve_live_settings(
     let mut config_digest = "none".to_string();
 
     if let Some(path) = explicit_config {
-        let config =
-            load_config_from_file(&path).map_err(|err| format!("{} ({})", err, path.display()))?;
+        let config = bootstrap::load_harness_config(&path)?;
         let config_bytes = fs::read(&path)
             .map_err(|err| format!("failed to read config file {}: {err}", path.display()))?;
         config_digest = blake3::hash(&config_bytes).to_hex().to_string();
@@ -185,6 +250,105 @@ fn resolve_live_settings(
         seed: config_seed,
         config_digest,
     })
+}
+
+async fn run_interactive_mode(cmd: &TuiCommand, settings: &InteractiveSettings) -> Result<(), String> {
+    let mut coordinator_config = bootstrap::build_interactive_coordinator_config(&settings.config)?;
+    coordinator_config.deterministic_store = settings.deterministic;
+    if settings.deterministic {
+        coordinator_config.run_id_override = Some(format!("interactive_{:016x}", settings.seed));
+    }
+    coordinator_config.config_digest = settings.config_digest.clone();
+    coordinator_config.harness_version = env!("CARGO_PKG_VERSION").to_string();
+
+    fs::create_dir_all(&coordinator_config.session_dir)
+        .map_err(|err| format!("failed to create session dir: {err}"))?;
+
+    let clock: Arc<dyn Clock + Send + Sync> = if settings.deterministic {
+        Arc::new(FakeClock::new())
+    } else {
+        Arc::new(RealClock::new())
+    };
+
+    let coordinator = spawn_coordinator(
+        coordinator_config,
+        clock,
+        Arc::new(DefaultRedactor::default()),
+    );
+
+    let workspace = std::env::current_dir()
+        .map_err(|err| format!("failed to resolve current working directory: {err}"))?;
+    let run = coordinator
+        .start_run("interactive", &workspace)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    logging::init_logging(&settings.config, &run.artifacts_dir)?;
+
+    let profile_name = bootstrap::interactive_profile_name(&settings.config);
+    coordinator
+        .spawn_agent(supervisor_actor(), profile_name, None)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    let store = coordinator
+        .event_store()
+        .await
+        .map_err(|err| err.to_string())?;
+
+    let (live_update_tx, live_update_rx) =
+        crossbeam_mpsc::bounded::<LiveUpdate>(LIVE_UPDATE_CHANNEL_CAPACITY);
+    let (intent_tx, intent_rx) = mpsc::unbounded_channel::<PermissionIntent>();
+
+    let event_forwarder_task =
+        tokio::spawn(async move { forward_events_to_tui(store, live_update_tx).await });
+
+    let intent_coordinator = coordinator.clone();
+    let ui_intent_task =
+        tokio::spawn(async move { handle_ui_intents(intent_coordinator, intent_rx).await });
+
+    let ui_intent_sender = {
+        let intent_tx = intent_tx.clone();
+        Arc::new(move |intent: PermissionIntent| {
+            let _ = intent_tx.send(intent);
+        })
+    };
+
+    let exit_on_finish = cmd.exit_on_finish;
+    let run_dir = run.run_dir;
+
+    let tui_result = tokio::task::spawn_blocking(move || {
+        run_tui_with_options(TuiOptions {
+            mode: TuiMode::Live {
+                run_dir,
+                update_rx: live_update_rx,
+            },
+            exit_on_finish,
+            on_permission_intent: Some(ui_intent_sender),
+        })
+    })
+    .await
+    .map_err(|err| format!("TUI task failed: {err}"))?;
+
+    if let Err(err) = tui_result {
+        event_forwarder_task.abort();
+        ui_intent_task.abort();
+        return Err(format!("TUI error: {err}"));
+    }
+
+    drop(intent_tx);
+
+    let stop_result = coordinator.stop_run().await;
+    event_forwarder_task.abort();
+    ui_intent_task.abort();
+
+    if let Err(err) = stop_result {
+        if !matches!(err, CoordinatorError::RunNotStarted) {
+            return Err(err.to_string());
+        }
+    }
+
+    Ok(())
 }
 
 async fn run_live_mode(

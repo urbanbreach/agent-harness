@@ -58,3 +58,11 @@
 - `LiveUpdateForwarder` keeps UI-path updates non-blocking by using `try_send` against a bounded queue and dropping deltas first under sustained pressure.
 - Delta coalescing behavior is request-scoped (`request_id`) with dual flush thresholds (16ms window, 1024 chars), which cuts render churn while preserving event-log fidelity.
 - Verification pass in worktree: `cargo test -p harness-tui` and `cargo build --workspace` both succeeded after the backpressure/coalescing path update.
+
+## 2026-03-03 Config bootstrap + interactive coordinator wiring notes
+
+- Added `crates/harness/src/bootstrap.rs` to centralize config loading and interactive coordinator construction from `HarnessConfig`.
+- Interactive coordinator mapping now derives runtime fields from config: `session_dir`, permission policy from `PermissionPolicy::from_config`, `coordinator_registry(shell_allowlist)`, task/model concurrency, stale timeout, and category-based `AgentProfile` generation.
+- Single-provider MVP is enforced in bootstrap: `providers.default` must exist and every category `model_ref` must parse to provider_id `default`.
+- Added `crates/harness/src/logging.rs` with file-backed tracing init (`cfg.logging.file` override or `${artifacts_dir}/harness.log`) and level parsing from `cfg.logging.level`.
+- `tui` now has a no-flag interactive path that uses `build_interactive_coordinator_config` (config provider path), while `--scenario` mode still uses `golden_path_provider()` and `golden_path_profiles()` unchanged.
