@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::mpsc as std_mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -13,8 +14,12 @@ use harness_core::coord::{
 use harness_core::event::{EventEnvelopeV1, EventV1, ToolCallStatus};
 use harness_core::perm::PermissionDecision;
 use harness_core::redact::DefaultRedactor;
-use harness_core::store::EventStore;
+use harness_core::store::{EventStore, EventStoreError};
 use harness_tools::coordinator_registry;
+use harness_tui::{
+    load_events_from_run_dir, run_tui_with_options, LiveUpdate, PermissionIntent, TuiMode,
+    TuiOptions,
+};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
@@ -59,7 +64,10 @@ struct LiveSettings {
     config_digest: String,
 }
 
-type ResolvePermissionIntent = (String, PermissionDecision);
+struct LiveBootstrap {
+    store: Arc<dyn EventStore>,
+    run_dir: PathBuf,
+}
 
 pub fn execute(
     cmd: TuiCommand,
@@ -116,7 +124,14 @@ fn execute_replay_mode(run_dir: &Path, exit_on_finish: bool) -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    if let Err(err) = harness_tui::run_tui() {
+    if let Err(err) = run_tui_with_options(TuiOptions {
+        mode: TuiMode::Replay {
+            run_dir: run_dir.to_path_buf(),
+            events,
+        },
+        exit_on_finish,
+        on_permission_intent: None,
+    }) {
         eprintln!("TUI error: {err}");
         return ExitCode::from(1);
     }
@@ -215,61 +230,73 @@ async fn run_live_mode(
         Arc::new(DefaultRedactor::default()),
     );
 
-    let (store_ready_tx, store_ready_rx) = oneshot::channel::<Arc<dyn EventStore>>();
-    let (tui_event_tx, mut tui_event_rx) = mpsc::unbounded_channel::<EventEnvelopeV1>();
-    let (intent_tx, intent_rx) = mpsc::unbounded_channel::<ResolvePermissionIntent>();
+    let (bootstrap_tx, bootstrap_rx) = oneshot::channel::<LiveBootstrap>();
+    let (live_update_tx, live_update_rx) = std_mpsc::channel::<LiveUpdate>();
+    let (intent_tx, intent_rx) = mpsc::unbounded_channel::<PermissionIntent>();
 
     let scenario_coordinator = coordinator.clone();
     let scenario_task = tokio::spawn(async move {
-        run_scenario_runner(
-            scenario_coordinator,
-            scenario,
-            workspace,
-            store_ready_tx,
-        )
-        .await
+        run_scenario_runner(scenario_coordinator, scenario, workspace, bootstrap_tx).await
     });
 
-    let event_forwarder_task = tokio::spawn(async move {
-        forward_events_to_tui(store_ready_rx, tui_event_tx).await
-    });
+    let bootstrap = bootstrap_rx
+        .await
+        .map_err(|_| "scenario runner exited before live TUI bootstrap was ready".to_string())?;
+
+    let LiveBootstrap { store, run_dir } = bootstrap;
+
+    let event_forwarder_task =
+        tokio::spawn(async move { forward_events_to_tui(store, live_update_tx).await });
 
     let intent_coordinator = coordinator.clone();
     let ui_intent_task =
         tokio::spawn(async move { handle_ui_intents(intent_coordinator, intent_rx).await });
 
-    if cmd.exit_on_finish {
-        let terminal_wait = wait_for_run_terminal_event(&mut tui_event_rx);
-        let scenario_wait = await_task("scenario runner", scenario_task);
-        tokio::try_join!(terminal_wait, scenario_wait)?;
-        await_task("event forwarder", event_forwarder_task).await?;
-        drop(intent_tx);
-        await_task("ui intent handler", ui_intent_task).await?;
-        return Ok(());
-    }
+    let ui_intent_sender = {
+        let intent_tx = intent_tx.clone();
+        Arc::new(move |intent: PermissionIntent| {
+            let _ = intent_tx.send(intent);
+        })
+    };
 
-    let event_drain_task = tokio::spawn(async move {
-        while tui_event_rx.recv().await.is_some() {}
-    });
+    let exit_on_finish = cmd.exit_on_finish;
 
-    let tui_result = tokio::task::spawn_blocking(harness_tui::run_tui)
-        .await
-        .map_err(|err| format!("TUI task failed: {err}"))?;
-
-    let stop_result = coordinator.stop_run().await;
-
-    scenario_task.abort();
-    event_forwarder_task.abort();
-    ui_intent_task.abort();
-    event_drain_task.abort();
+    let tui_result = tokio::task::spawn_blocking(move || {
+        run_tui_with_options(TuiOptions {
+            mode: TuiMode::Live {
+                run_dir,
+                update_rx: live_update_rx,
+            },
+            exit_on_finish,
+            on_permission_intent: Some(ui_intent_sender),
+        })
+    })
+    .await
+    .map_err(|err| format!("TUI task failed: {err}"))?;
 
     if let Err(err) = tui_result {
+        scenario_task.abort();
+        event_forwarder_task.abort();
+        ui_intent_task.abort();
         return Err(format!("TUI error: {err}"));
     }
 
-    if let Err(err) = stop_result {
-        if !matches!(err, CoordinatorError::RunNotStarted) {
-            return Err(err.to_string());
+    drop(intent_tx);
+
+    if cmd.exit_on_finish {
+        await_task("scenario runner", scenario_task).await?;
+        await_task("event forwarder", event_forwarder_task).await?;
+        await_task("ui intent handler", ui_intent_task).await?;
+    } else {
+        let stop_result = coordinator.stop_run().await;
+        scenario_task.abort();
+        event_forwarder_task.abort();
+        ui_intent_task.abort();
+
+        if let Err(err) = stop_result {
+            if !matches!(err, CoordinatorError::RunNotStarted) {
+                return Err(err.to_string());
+            }
         }
     }
 
@@ -280,7 +307,7 @@ async fn run_scenario_runner(
     coordinator: CoordinatorHandle,
     scenario: ScenarioName,
     workspace: PathBuf,
-    store_ready_tx: oneshot::Sender<Arc<dyn EventStore>>,
+    bootstrap_tx: oneshot::Sender<LiveBootstrap>,
 ) -> Result<(), String> {
     let run = coordinator
         .start_run(scenario.as_str(), &workspace)
@@ -291,7 +318,10 @@ async fn run_scenario_runner(
         .event_store()
         .await
         .map_err(|err| err.to_string())?;
-    let _ = store_ready_tx.send(store);
+    let _ = bootstrap_tx.send(LiveBootstrap {
+        store,
+        run_dir: run.run_dir.clone(),
+    });
 
     coordinator
         .spawn_agent(supervisor_actor(), "planner", None)
@@ -346,24 +376,73 @@ async fn run_scenario_runner(
 }
 
 async fn forward_events_to_tui(
-    store_ready_rx: oneshot::Receiver<Arc<dyn EventStore>>,
-    tui_event_tx: mpsc::UnboundedSender<EventEnvelopeV1>,
+    store: Arc<dyn EventStore>,
+    live_update_tx: std_mpsc::Sender<LiveUpdate>,
 ) -> Result<(), String> {
-    let store = store_ready_rx
-        .await
-        .map_err(|_| "scenario runner exited before event store was ready".to_string())?;
-    let mut stream = store.subscribe(1).map_err(|err| err.to_string())?;
+    let mut from_seq = 1_u64;
+    let mut last_seq_seen = 0_u64;
 
-    while let Some(next) = std::future::poll_fn(|cx| stream.as_mut().poll_next(cx)).await {
-        let event = next.map_err(|err| err.to_string())?;
-        let is_terminal = matches!(&event.payload, EventV1::RunFinished(_) | EventV1::RunFailed(_));
+    loop {
+        let mut stream = store.subscribe(from_seq).map_err(|err| err.to_string())?;
+        let mut should_resubscribe = false;
 
-        if tui_event_tx.send(event).is_err() {
-            break;
+        while let Some(next) = std::future::poll_fn(|cx| stream.as_mut().poll_next(cx)).await {
+            match next {
+                Ok(event) => {
+                    if event.seq <= last_seq_seen {
+                        continue;
+                    }
+
+                    last_seq_seen = event.seq;
+                    from_seq = last_seq_seen.saturating_add(1);
+                    if live_update_tx
+                        .send(LiveUpdate::Event(Box::new(event)))
+                        .is_err()
+                    {
+                        return Ok(());
+                    }
+                }
+                Err(EventStoreError::SubscriberLagged(skipped)) => {
+                    let _ = live_update_tx.send(LiveUpdate::Status(format!(
+                        "live stream lagged by {skipped}; replaying from seq {}",
+                        last_seq_seen.saturating_add(1)
+                    )));
+
+                    let mut replay = store
+                        .replay(last_seq_seen.saturating_add(1))
+                        .map_err(|err| err.to_string())?;
+                    while let Some(replayed) =
+                        std::future::poll_fn(|cx| replay.as_mut().poll_next(cx)).await
+                    {
+                        let replayed_event = replayed.map_err(|err| err.to_string())?;
+                        if replayed_event.seq <= last_seq_seen {
+                            continue;
+                        }
+
+                        last_seq_seen = replayed_event.seq;
+                        from_seq = last_seq_seen.saturating_add(1);
+                        if live_update_tx
+                            .send(LiveUpdate::Event(Box::new(replayed_event)))
+                            .is_err()
+                        {
+                            return Ok(());
+                        }
+                    }
+
+                    should_resubscribe = true;
+                    break;
+                }
+                Err(err) => {
+                    return Err(format!("live stream error: {err}"));
+                }
+            }
         }
-        if is_terminal {
-            break;
+
+        if should_resubscribe {
+            continue;
         }
+
+        break;
     }
 
     Ok(())
@@ -371,27 +450,15 @@ async fn forward_events_to_tui(
 
 async fn handle_ui_intents(
     coordinator: CoordinatorHandle,
-    mut intent_rx: mpsc::UnboundedReceiver<ResolvePermissionIntent>,
+    mut intent_rx: mpsc::UnboundedReceiver<PermissionIntent>,
 ) -> Result<(), String> {
-    while let Some((permission_id, decision)) = intent_rx.recv().await {
+    while let Some(intent) = intent_rx.recv().await {
         coordinator
-            .resolve_permission(permission_id, decision)
+            .resolve_permission(intent.permission_id, intent.decision)
             .await
             .map_err(|err| err.to_string())?;
     }
     Ok(())
-}
-
-async fn wait_for_run_terminal_event(
-    tui_event_rx: &mut mpsc::UnboundedReceiver<EventEnvelopeV1>,
-) -> Result<(), String> {
-    while let Some(event) = tui_event_rx.recv().await {
-        if matches!(&event.payload, EventV1::RunFinished(_) | EventV1::RunFailed(_)) {
-            return Ok(());
-        }
-    }
-
-    Err("live event channel closed before run reached terminal state".to_string())
 }
 
 async fn await_task(name: &str, handle: JoinHandle<Result<(), String>>) -> Result<(), String> {
@@ -401,14 +468,13 @@ async fn await_task(name: &str, handle: JoinHandle<Result<(), String>>) -> Resul
     }
 }
 
-fn load_events_from_run_dir(run_dir: &Path) -> Result<Vec<EventEnvelopeV1>, String> {
-    load_events(&run_dir.join("events.jsonl"))
-}
-
 fn has_terminal_event(events: &[EventEnvelopeV1]) -> bool {
-    events
-        .iter()
-        .any(|event| matches!(&event.payload, EventV1::RunFinished(_) | EventV1::RunFailed(_)))
+    events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::RunFinished(_) | EventV1::RunFailed(_)
+        )
+    })
 }
 
 async fn wait_for_permission_id(
@@ -420,7 +486,9 @@ async fn wait_for_permission_id(
     loop {
         let events = load_events(events_path)?;
         if let Some(permission_id) = events.into_iter().find_map(|event| match event.payload {
-            EventV1::PermissionRequested(data) if data.tool_call_id.as_deref() == Some(tool_call_id) => {
+            EventV1::PermissionRequested(data)
+                if data.tool_call_id.as_deref() == Some(tool_call_id) =>
+            {
                 Some(data.permission_id)
             }
             _ => None,
@@ -448,7 +516,9 @@ async fn wait_for_tool_finished(
         let events = load_events(events_path)?;
 
         if let Some(status) = events.iter().find_map(|event| match &event.payload {
-            EventV1::ToolCallFinished(data) if data.tool_call_id == tool_call_id => Some(data.status),
+            EventV1::ToolCallFinished(data) if data.tool_call_id == tool_call_id => {
+                Some(data.status)
+            }
             _ => None,
         }) {
             return Ok(status);
@@ -493,7 +563,10 @@ fn load_events(path: &Path) -> Result<Vec<EventEnvelopeV1>, String> {
 }
 
 fn deterministic_run_id(seed: u64, scenario: ScenarioName) -> String {
-    let namespace = Uuid::new_v5(&Uuid::NAMESPACE_OID, format!("harness-seed:{seed}").as_bytes());
+    let namespace = Uuid::new_v5(
+        &Uuid::NAMESPACE_OID,
+        format!("harness-seed:{seed}").as_bytes(),
+    );
     let run_uuid = Uuid::new_v5(&namespace, scenario.as_str().as_bytes());
     format!("run_{}", run_uuid.simple())
 }

@@ -1,0 +1,9 @@
+   Compiling harness v0.1.0 (/home/ubere/code/accela/agent-harness/crates/harness)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.59s
+     Running unittests src/main.rs (target/debug/deps/harness-a32fb9b9c39196c2)
+
+running 1 test
+test run::tests::deterministic_golden_path_twice_produces_identical_sha256_digest ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.21s
+

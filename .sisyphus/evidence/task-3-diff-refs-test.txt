@@ -1,0 +1,16 @@
+   Compiling tokio-rustls v0.26.4
+   Compiling hyper-rustls v0.27.7
+   Compiling reqwest v0.12.28
+   Compiling harness-providers v0.1.0 (/home/ubere/code/accela/agent-harness/crates/harness-providers)
+   Compiling harness-core v0.1.0 (/home/ubere/code/accela/agent-harness/crates/harness-core)
+   Compiling harness-tools v0.1.0 (/home/ubere/code/accela/agent-harness/crates/harness-tools)
+   Compiling harness-tui v0.1.0 (/home/ubere/code/accela/agent-harness/crates/harness-tui)
+   Compiling harness v0.1.0 (/home/ubere/code/accela/agent-harness/crates/harness)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.49s
+     Running unittests src/main.rs (target/debug/deps/harness-a32fb9b9c39196c2)
+
+running 1 test
+test run::tests::edit_applied_diff_refs_match_artifact_written ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.09s
+

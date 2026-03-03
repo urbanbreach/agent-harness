@@ -1,0 +1,17 @@
+[package]
+name = "harness-tools"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+harness-core = { path = "../harness-core" }
+serde.workspace = true
+serde_json.workspace = true
+async-trait = "0.1"
+tempfile.workspace = true
+similar = "2.7.0"
+
+[dev-dependencies]
+tokio.workspace = true
+blake3 = "1"

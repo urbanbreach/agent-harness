@@ -1,0 +1,16 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running unittests src/lib.rs (target/debug/deps/harness_core-bc0e2b29373b3de3)
+
+running 3 tests
+test clock::tests::deterministic_mode_enabled_by_config ... ok
+test clock::tests::deterministic_mode_uses_fake_clock_and_no_system_time ... ok
+test clock::tests::fake_clock_starts_at_zero_and_advances_deterministically ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 40 filtered out; finished in 0.00s
+
+     Running tests/coord.rs (target/debug/deps/coord-6d7d3480d7868f56)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+

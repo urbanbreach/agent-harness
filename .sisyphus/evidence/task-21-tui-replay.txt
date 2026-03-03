@@ -1,0 +1,9 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running unittests src/lib.rs (target/debug/deps/harness_tui-11a4c66f48b8a00b)
+
+running 2 tests
+test tests::replay_mode_r_key_marks_reload_requested ... ok
+test tests::replay_mode_snapshot_renders_two_pane_layout ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.01s
+

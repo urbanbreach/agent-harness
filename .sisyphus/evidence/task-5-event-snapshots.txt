@@ -1,0 +1,11 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running unittests src/lib.rs (target/debug/deps/harness_core-aeeeedc87ef216f9)
+
+running 4 tests
+test event::tests::tool_call_requested_uses_redacted_summary_and_digest ... ok
+test redact::tests::redacts_structured_values_for_event_payloads ... ok
+test event::tests::run_started_snapshot_is_stable_in_deterministic_mode ... ok
+test event::tests::permission_requested_snapshot_is_stable_in_deterministic_mode ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.01s
+

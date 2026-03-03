@@ -1,0 +1,23 @@
+---
+source: crates/harness-core/src/event.rs
+expression: envelope
+---
+{
+  "schema_version": 1,
+  "event_id": "evt-00000000000000000001",
+  "seq": 1,
+  "run_id": "run_123",
+  "mono_ms": 42,
+  "actor": {
+    "kind": "supervisor",
+    "agent_id": "agent-supervisor"
+  },
+  "stream_key": "run:run_123",
+  "payload": {
+    "event_type": "run_started",
+    "data": {
+      "run_name": "golden_path",
+      "workspace_root": "/workspace/project"
+    }
+  }
+}

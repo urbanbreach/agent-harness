@@ -1,0 +1,10 @@
+   Compiling hyper-rustls v0.27.7
+   Compiling reqwest v0.12.28
+   Compiling harness-providers v0.1.0 (/home/ubere/code/accela/agent-harness/crates/harness-providers)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.53s
+     Running unittests src/lib.rs (target/debug/deps/harness_providers-52e6025373721604)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+

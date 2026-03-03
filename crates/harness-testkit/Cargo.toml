@@ -7,6 +7,10 @@ version.workspace = true
 [dependencies]
 
 [dev-dependencies]
+blake3 = "1"
+font8x8 = "0.3"
+fontdue = "0.9"
+image = { version = "0.25", default-features = false, features = ["png"] }
 insta = { version = "1.42", features = ["json"] }
 portable-pty = "0.8"
 serde_json.workspace = true

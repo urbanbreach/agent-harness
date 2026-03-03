@@ -1,0 +1,23 @@
+RUN_DIR=.agent-harness/sessions/run_212128dfbe7a59f3975f8f70b1c3407d
+
+$ cargo run -p harness -- replay --session "$RUN_DIR"
+run_id: run_212128dfbe7a59f3975f8f70b1c3407d
+run_name: golden_path
+status: Finished
+total_events: 23
+counts:
+  agent_spawned: 2
+  edit_applied: 1
+  edit_proposed: 1
+  permission_requested: 1
+  permission_resolved: 1
+  provider_request_finished: 2
+  provider_request_started: 2
+  provider_stream_delta: 2
+  run_finished: 1
+  run_started: 1
+  task_completed: 3
+  task_scheduled: 3
+  tool_call_finished: 1
+  tool_call_requested: 1
+  tool_call_started: 1

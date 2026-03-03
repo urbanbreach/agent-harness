@@ -1354,6 +1354,7 @@ impl Coordinator {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn agent_provider_request_started_internal(
         &mut self,
         task_id: String,
@@ -1584,6 +1585,7 @@ struct PendingPermissionState {
     actor: EventActor,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn start_tool_call_execution<C, R>(
     clock: &C,
     redactor: &R,
@@ -1748,6 +1750,7 @@ where
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn schedule_agent_turn<C, R>(
     clock: &C,
     redactor: &R,
@@ -2038,6 +2041,7 @@ where
     append_built_event(run_state, envelope)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn append_permission_requested_event<C, R>(
     clock: &C,
     redactor: &R,
@@ -2154,6 +2158,7 @@ where
     append_built_event(run_state, envelope)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn append_edit_applied_event<C, R>(
     clock: &C,
     redactor: &R,

@@ -1,0 +1,26 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running unittests src/lib.rs (target/debug/deps/harness_core-d6110bacb9f3bff7)
+
+running 6 tests
+test clock::tests::deterministic_mode_enabled_by_config ... ok
+test clock::tests::deterministic_mode_uses_fake_clock_and_no_system_time ... ok
+test clock::tests::fake_clock_starts_at_zero_and_advances_deterministically ... ok
+test config::tests::example_config_parses ... FAILED
+test config::tests::missing_required_sections_are_deterministic ... ok
+test config::tests::env_var_substitution_works ... ok
+
+failures:
+
+---- config::tests::example_config_parses stdout ----
+
+thread 'config::tests::example_config_parses' (26604) panicked at crates/harness-core/src/config.rs:289:49:
+example config must parse: MissingRequiredSections("backgroundTask, categories, permissions, providers")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    config::tests::example_config_parses
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p harness-core --lib`
