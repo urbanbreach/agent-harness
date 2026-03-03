@@ -37,16 +37,69 @@ pub fn render_app(frame: &mut Frame, app: &AppState) {
         (root[0], root[1])
     };
 
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(0),
+            Constraint::Length(0),
+            Constraint::Length(3),
+        ])
+        .split(content_area);
+
+    let tabs_area = chunks[0];
+    let tab_content_area = chunks[1];
+    let prompt_area = chunks[3];
+
     render_tabs(frame, app, tabs_area);
 
     match app.active_tab {
-        Tab::Events => render_events_tab(frame, app, content_area),
-        Tab::Output => render_output_tab(frame, app, content_area),
-        Tab::Diff => render_diff_tab(frame, app, content_area),
-        Tab::Help => render_help_tab(frame, app, content_area),
+        Tab::Events => render_events_tab(frame, app, tab_content_area),
+        Tab::Output => render_output_tab(frame, app, tab_content_area),
+        Tab::Diff => render_diff_tab(frame, app, tab_content_area),
+        Tab::Help => render_help_tab(frame, app, tab_content_area),
     }
 
+    render_prompt_area(frame, app, prompt_area);
+
     render_permission_modal(frame, app);
+}
+
+fn render_prompt_area(frame: &mut Frame, app: &AppState, area: Rect) {
+    let is_focused = app.focus == Focus::Prompt;
+    let title = if is_focused {
+        " Prompt (active) "
+    } else {
+        " Prompt (Tab to focus) "
+    };
+    let border_style = if is_focused {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .border_style(border_style);
+
+    let text = if app.prompt_buffer.is_empty() {
+        Line::from(vec![Span::styled(
+            "Enter message...",
+            Style::default().add_modifier(Modifier::DIM),
+        )])
+    } else {
+        Line::from(app.prompt_buffer.as_str())
+    };
+
+    let paragraph = Paragraph::new(text).block(block);
+    frame.render_widget(paragraph, area);
+
+    if is_focused {
+        frame.set_cursor(area.x + 1 + app.prompt_cursor as u16, area.y + 1);
+    }
 }
 
 fn header_text(app: &AppState) -> Option<String> {

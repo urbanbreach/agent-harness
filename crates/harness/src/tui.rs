@@ -25,15 +25,11 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
+use crate::{bootstrap, logging};
 use crate::scenarios::{
     create_workspace, default_permission_policy, golden_path_patch, golden_path_profiles,
     golden_path_provider, supervisor_actor, worker_actor, ScenarioName,
 };
-
-#[path = "bootstrap.rs"]
-mod bootstrap;
-#[path = "logging.rs"]
-mod logging;
 
 const DEFAULT_SESSION_DIR: &str = ".agent-harness/sessions";
 const WAIT_TIMEOUT: Duration = Duration::from_secs(10);

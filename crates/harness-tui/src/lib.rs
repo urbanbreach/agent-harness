@@ -13,7 +13,7 @@ use harness_core::event::EventEnvelopeV1;
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 use app::AppState;
-pub use app::PermissionIntent;
+pub use app::UiIntent;
 use event::poll;
 
 pub enum LiveUpdate {
@@ -35,20 +35,20 @@ pub enum TuiMode {
 pub struct TuiOptions {
     pub mode: TuiMode,
     pub exit_on_finish: bool,
-    pub on_permission_intent: Option<Arc<dyn Fn(PermissionIntent) + Send + Sync>>,
+    pub on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
 }
 
 pub fn run_tui_with_options(options: TuiOptions) -> Result<()> {
     let TuiOptions {
         mode,
         exit_on_finish,
-        on_permission_intent,
+        on_ui_intent,
     } = options;
 
     let (mut app, live_updates) = match mode {
         TuiMode::Replay { run_dir, events } => (AppState::new_replay(run_dir, events), None),
         TuiMode::Live { run_dir, update_rx } => (
-            AppState::new_live(Some(run_dir), exit_on_finish, on_permission_intent),
+            AppState::new_live(Some(run_dir), exit_on_finish, on_ui_intent),
             Some(update_rx),
         ),
     };
@@ -115,7 +115,7 @@ pub fn run_tui() -> Result<()> {
             update_rx: rx,
         },
         exit_on_finish: false,
-        on_permission_intent: None,
+        on_ui_intent: None,
     })
 }
 
@@ -255,10 +255,10 @@ mod tests {
 
     #[test]
     fn permission_modal_a_emits_resolve_intent_and_closes_on_resolved() {
-        let intents = Arc::new(Mutex::new(Vec::<PermissionIntent>::new()));
+        let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
         let intent_sink = {
             let intents = Arc::clone(&intents);
-            Arc::new(move |intent: PermissionIntent| {
+            Arc::new(move |intent: UiIntent| {
                 intents.lock().expect("lock intents").push(intent);
             })
         };
@@ -270,8 +270,16 @@ mod tests {
 
         let intents = intents.lock().expect("lock intents");
         assert_eq!(intents.len(), 1);
-        assert_eq!(intents[0].permission_id, "perm_1");
-        assert_eq!(intents[0].decision, PermissionDecision::Allow);
+        if let UiIntent::ResolvePermission {
+            permission_id,
+            decision,
+        } = &intents[0]
+        {
+            assert_eq!(permission_id, "perm_1");
+            assert_eq!(*decision, PermissionDecision::Allow);
+        } else {
+            panic!("Expected ResolvePermission intent");
+        }
         drop(intents);
 
         assert!(app.active_permission().is_some());
@@ -282,6 +290,39 @@ mod tests {
             PermissionDecision::Allow,
         ));
         assert!(app.active_permission().is_none());
+    }
+
+    #[test]
+    fn prompt_focus_enter_emits_submit_intent() {
+        let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+        let intent_sink = {
+            let intents = Arc::clone(&intents);
+            Arc::new(move |intent: UiIntent| {
+                intents.lock().expect("lock intents").push(intent);
+            })
+        };
+
+        let mut app = AppState::new_live(None, false, Some(intent_sink));
+        app.focus = app::Focus::Prompt;
+
+        for c in "hello".chars() {
+            app.handle_key(key(KeyCode::Char(c)));
+        }
+
+        app.handle_key(key(KeyCode::Enter));
+
+        let intents = intents.lock().expect("lock intents");
+        assert_eq!(intents.len(), 1);
+        if let UiIntent::SubmitPrompt { text } = &intents[0] {
+            assert_eq!(text, "hello");
+        } else {
+            panic!("Expected SubmitPrompt intent");
+        }
+        drop(intents);
+
+        assert_eq!(app.prompt_buffer, "");
+        assert_eq!(app.prompt_history.len(), 1);
+        assert_eq!(app.prompt_history[0], "hello");
     }
 
     #[test]

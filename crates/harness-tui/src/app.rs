@@ -20,12 +20,25 @@ pub enum Focus {
     #[default]
     List,
     Details,
+    Prompt,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PermissionIntent {
     pub permission_id: String,
     pub decision: PermissionDecision,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UiIntent {
+    ResolvePermission {
+        permission_id: String,
+        decision: PermissionDecision,
+    },
+    SubmitPrompt {
+        text: String,
+    },
+    QuitRequested,
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +66,11 @@ pub struct AppState {
     reload_requested: bool,
     run_terminal_seen: bool,
     on_permission_intent: Option<Arc<dyn Fn(PermissionIntent) + Send + Sync>>,
+    pub prompt_buffer: String,
+    pub prompt_cursor: usize,
+    pub prompt_history: Vec<String>,
+    pub prompt_history_index: Option<usize>,
+    pub on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
 }
 
 impl Default for AppState {
@@ -76,6 +94,11 @@ impl Default for AppState {
             reload_requested: false,
             run_terminal_seen: false,
             on_permission_intent: None,
+            prompt_buffer: String::new(),
+            prompt_cursor: 0,
+            prompt_history: Vec::new(),
+            prompt_history_index: None,
+            on_ui_intent: None,
         }
     }
 }
@@ -88,12 +111,12 @@ impl AppState {
     pub fn new_live(
         session_path: Option<PathBuf>,
         auto_exit_on_finish: bool,
-        on_permission_intent: Option<Arc<dyn Fn(PermissionIntent) + Send + Sync>>,
+        on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
     ) -> Self {
         let mut state = Self::new();
         state.session_path = session_path;
         state.auto_exit_on_finish = auto_exit_on_finish;
-        state.on_permission_intent = on_permission_intent;
+        state.on_ui_intent = on_ui_intent;
         state
     }
 
@@ -184,7 +207,8 @@ impl AppState {
             KeyCode::Tab => {
                 self.focus = match self.focus {
                     Focus::List => Focus::Details,
-                    Focus::Details => Focus::List,
+                    Focus::Details => Focus::Prompt,
+                    Focus::Prompt => Focus::List,
                 };
             }
             KeyCode::Char('1') => self.active_tab = Tab::Events,
