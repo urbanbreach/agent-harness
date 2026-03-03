@@ -175,10 +175,7 @@ fn resolve_live_settings(
     let deterministic = cmd.deterministic
         || config_deterministic
         || matches!(std::env::var("HARNESS_DETERMINISTIC").as_deref(), Ok("1"));
-    let default_profile = cmd
-        .profile
-        .clone()
-        .unwrap_or(config_default_profile);
+    let default_profile = cmd.profile.clone().unwrap_or(config_default_profile);
 
     Ok(LiveSettings {
         session_dir,
@@ -260,13 +257,7 @@ async fn run_interactive_mode(cmd: &TuiCommand, settings: &LiveSettings) -> Resu
 
     let intent_coordinator = coordinator.clone();
     let ui_intent_task = tokio::spawn(async move {
-        handle_ui_intents(
-            intent_coordinator,
-            intent_rx,
-            user_actor(),
-            Some(agent_id),
-        )
-        .await
+        handle_ui_intents(intent_coordinator, intent_rx, user_actor(), Some(agent_id)).await
     });
 
     let ui_intent_sender = {
@@ -631,7 +622,10 @@ fn read_default_profile_from_config_bytes(config_bytes: &[u8]) -> Option<String>
     parsed
         .get("ui")
         .and_then(|ui| ui.as_object())
-        .and_then(|ui| ui.get("default_profile").or_else(|| ui.get("defaultProfile")))
+        .and_then(|ui| {
+            ui.get("default_profile")
+                .or_else(|| ui.get("defaultProfile"))
+        })
         .and_then(serde_json::Value::as_str)
         .map(ToOwned::to_owned)
 }

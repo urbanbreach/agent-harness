@@ -275,10 +275,8 @@ impl AppState {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
-        if self.palette_visible {
-            if self.handle_palette_key(&key) {
-                return;
-            }
+        if self.palette_visible && self.handle_palette_key(&key) {
+            return;
         }
 
         if self.focus == Focus::Prompt
@@ -587,7 +585,7 @@ impl AppState {
         }
     }
 
-    fn handle_prompt_key(&mut self, key_code: KeyCode) -> bool {
+    fn _handle_prompt_key(&mut self, key_code: KeyCode) -> bool {
         match key_code {
             KeyCode::Enter => {
                 self.submit_prompt();
@@ -711,7 +709,7 @@ impl AppState {
         }
     }
 
-    fn handle_modal_key(&mut self, key_code: KeyCode) -> bool {
+    fn _handle_modal_key(&mut self, key_code: KeyCode) -> bool {
         let Some((permission_id, _)) = self.active_permission() else {
             return false;
         };

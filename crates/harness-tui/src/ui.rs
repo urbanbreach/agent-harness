@@ -7,7 +7,6 @@
 //! - Help tab: Keyboard shortcuts
 
 use ratatui::{
-    backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span, Text},
@@ -15,7 +14,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{ActivityEntry, ActivityStatus, AppState, Focus, Tab, UiIntent};
+use crate::app::{ActivityStatus, AppState, Focus, Tab};
 use crate::theme::Theme;
 
 /// Main render entry point
@@ -519,11 +518,7 @@ fn render_event_details(frame: &mut Frame, app: &AppState, area: Rect, theme: &T
         Style::default().fg(theme.border)
     };
 
-    let title = if is_focused {
-        "Event details (Tab to focus)"
-    } else {
-        "Event details (Tab to focus)"
-    };
+    let title = "Event details (Tab to focus)";
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -690,7 +685,7 @@ fn render_footer(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
 }
 
 /// Render the permission modal
-fn render_permission_modal(frame: &mut Frame, permission_id: &str, summary: &str, theme: &Theme) {
+fn render_permission_modal(frame: &mut Frame, _permission_id: &str, summary: &str, theme: &Theme) {
     let area = frame.area();
     let popup_width = 50.min(area.width.saturating_sub(4));
     let popup_height = 7.min(area.height.saturating_sub(4));

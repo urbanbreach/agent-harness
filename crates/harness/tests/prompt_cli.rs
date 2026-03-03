@@ -13,7 +13,10 @@ async fn prompt_cli_calls_responses_endpoint() {
         .respond_with(
             ResponseTemplate::new(200)
                 .insert_header("content-type", "text/event-stream")
-                .set_body_raw(deterministic_responses_sse_transcript(), "text/event-stream"),
+                .set_body_raw(
+                    deterministic_responses_sse_transcript(),
+                    "text/event-stream",
+                ),
         )
         .mount(&server)
         .await;

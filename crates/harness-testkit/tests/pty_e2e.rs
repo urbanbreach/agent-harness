@@ -141,9 +141,13 @@ async fn pty_e2e_tui_golden_path() {
     );
 
     send_key(writer.as_mut(), b'3').expect("switch to diff tab");
-    let diff_checkpoint =
-        wait_for_screen_contains(&mut parser, &output_rx, "diff artifact missing:", MARKER_TIMEOUT)
-        .expect("wait for diff contents marker");
+    let diff_checkpoint = wait_for_screen_contains(
+        &mut parser,
+        &output_rx,
+        "diff artifact missing:",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for diff contents marker");
     let diff_visual = capture_visual_checkpoint(
         "diff_tab",
         &parser,
@@ -249,8 +253,9 @@ async fn pty_e2e_tui_interactive_prompt_streams_response() {
     writer.flush().expect("flush prompt text");
     send_key(writer.as_mut(), b'\r').expect("submit prompt");
 
-    let prompt_checkpoint = wait_for_screen_contains(&mut parser, &output_rx, "Hello world", MARKER_TIMEOUT)
-        .expect("wait for streamed response text marker");
+    let prompt_checkpoint =
+        wait_for_screen_contains(&mut parser, &output_rx, "Hello world", MARKER_TIMEOUT)
+            .expect("wait for streamed response text marker");
     let prompt_visual = capture_visual_checkpoint(
         "interactive_prompt_stream",
         &parser,
