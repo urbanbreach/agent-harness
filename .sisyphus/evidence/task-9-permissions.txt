@@ -1,0 +1,18 @@
+Command: cargo test -p harness-core perm -- --nocapture
+
+Result:
+- 6 permission-related tests executed and passed
+- Includes:
+  - perm_allow_path_proceeds
+  - perm_ask_path_blocks_until_resolved
+  - perm_timeout_path_denies_deterministically
+
+Key output:
+test perm::tests::evaluate_uses_category_override_when_present ... ok
+test perm::tests::evaluate_uses_global_defaults ... ok
+test event::tests::permission_requested_snapshot_is_stable_in_deterministic_mode ... ok
+test coord::tests::perm_allow_path_proceeds ... ok
+test coord::tests::perm_timeout_path_denies_deterministically ... ok
+test coord::tests::perm_ask_path_blocks_until_resolved ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 22 filtered out

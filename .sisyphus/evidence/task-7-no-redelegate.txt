@@ -1,0 +1,18 @@
+Command: cargo test -p harness-core
+Date: 2026-03-02
+
+Result: PASS
+
+Relevant assertions covered by integration tests:
+- coord_worker_spawn_attempt_records_policy_violation_and_returns_error
+  - verifies worker SpawnAgent returns error
+  - verifies PolicyViolationDetected event is persisted
+- coord_start_run_appends_run_started
+  - verifies run_dir, artifacts_dir, and events.jsonl exist after StartRun
+
+Output excerpt:
+running 4 tests
+test coord_stop_run_appends_run_finished ... ok
+test coord_start_run_appends_run_started ... ok
+test coord_spawn_agent_appends_agent_spawned ... ok
+test coord_worker_spawn_attempt_records_policy_violation_and_returns_error ... ok

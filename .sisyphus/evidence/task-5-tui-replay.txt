@@ -1,0 +1,15 @@
+   Compiling tokio-rustls v0.26.4
+   Compiling hyper-rustls v0.27.7
+   Compiling reqwest v0.12.28
+   Compiling harness-providers v0.1.0 (/home/ubere/code/accela/agent-harness/crates/harness-providers)
+   Compiling harness-core v0.1.0 (/home/ubere/code/accela/agent-harness/crates/harness-core)
+   Compiling harness-tui v0.1.0 (/home/ubere/code/accela/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.46s
+     Running unittests src/lib.rs (target/debug/deps/harness_tui-11a4c66f48b8a00b)
+
+running 2 tests
+test tests::replay_mode_r_key_marks_reload_requested ... ok
+test tests::replay_mode_snapshot_renders_two_pane_layout ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.01s
+

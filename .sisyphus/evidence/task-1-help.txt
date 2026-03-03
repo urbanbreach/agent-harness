@@ -1,0 +1,20 @@
+   Compiling syn v2.0.117
+   Compiling clap_derive v4.5.55
+   Compiling clap v4.5.60
+   Compiling harness v0.1.0 (/home/ubere/code/accela/agent-harness/crates/harness)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.62s
+     Running `target/debug/harness --help`
+Agent harness CLI
+
+Usage: harness <COMMAND>
+
+Commands:
+  tui     
+  run     
+  replay  
+  schema  
+  config  
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help

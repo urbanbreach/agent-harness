@@ -1,0 +1,87 @@
+stages:
+  - test
+  - secret-detection
+
+include:
+  - template: Security/SAST.gitlab-ci.yml
+  - template: Security/Secret-Detection.gitlab-ci.yml
+
+variables:
+  SECRET_DETECTION_ENABLED: "true"
+  INSTA_UPDATE: "no"
+  RUST_TEST_THREADS: "1"
+  TZ: "UTC"
+  LANG: "C.UTF-8"
+  LC_ALL: "C.UTF-8"
+  TERM: "xterm-256color"
+  HARNESS_DETERMINISTIC: "1"
+  HARNESS_DISABLE_ANIMATIONS: "1"
+
+.rust_cache: &rust_cache
+  key: "${CI_PROJECT_NAME}-${CI_COMMIT_REF_SLUG}"
+  paths:
+    - .cargo/registry/
+    - .cargo/git/
+
+.test_artifacts_on_failure: &test_artifacts_on_failure
+  when: on_failure
+  expire_in: 1 week
+  paths:
+    - target/
+    - .agent-harness/
+    - crates/**/snapshots/
+
+sast:
+  stage: test
+
+secret_detection:
+  stage: secret-detection
+
+rust:fmt:
+  stage: test
+  image: rust:latest
+  cache: *rust_cache
+  before_script:
+    - rustup component add rustfmt
+  script:
+    - cargo fmt --check
+
+rust:clippy:
+  stage: test
+  image: rust:latest
+  cache: *rust_cache
+  before_script:
+    - rustup component add clippy
+  script:
+    - cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+rust:build_harness:
+  stage: test
+  image: rust:latest
+  cache: *rust_cache
+  script:
+    - cargo build -p harness --locked
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths:
+      - target/debug/harness
+
+rust:test:
+  stage: test
+  image: rust:latest
+  cache: *rust_cache
+  script:
+    - cargo test --workspace --all-features -- --test-threads=1
+  artifacts: *test_artifacts_on_failure
+
+rust:pty_e2e:
+  stage: test
+  image: rust:latest
+  cache: *rust_cache
+  needs:
+    - job: rust:build_harness
+      artifacts: true
+  script:
+    - for i in 1 2 3 4 5; do echo "PTY E2E run $i/5"; cargo test -p harness-testkit pty_e2e -- --test-threads=1 || exit 1; done
+  artifacts: *test_artifacts_on_failure

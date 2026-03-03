@@ -1,0 +1,14 @@
+Task 10 evidence - tool framework + capability-gated registries
+
+Changes validated:
+- Added harness-core tool framework (ToolId, ToolCapability, ToolCall, ToolResult, Tool trait, ToolRegistry)
+- Added coordinator capability checks + permission preflight derived from ToolCapability
+- Added ToolCallRequested/Started/Finished event correlation_id wiring
+- Added policy violation emission on tool capability violations
+- Added harness-tools built-ins: fs.read and shell.run with allowlist enforcement
+
+Verification commands:
+- cargo test --workspace --all-features
+
+Result:
+- PASS (workspace tests all passing)

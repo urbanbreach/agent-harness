@@ -1,0 +1,13 @@
+   Compiling harness v0.1.0 (/home/ubere/code/accela/agent-harness/crates/harness)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.62s
+     Running `target/debug/harness tui --help`
+Usage: harness tui [OPTIONS] <--replay <REPLAY>|--scenario <SCENARIO>>
+
+Options:
+      --config <CONFIG>            
+      --replay <REPLAY>            
+      --scenario <SCENARIO>        [possible values: golden_path, golden_path_interactive]
+      --deterministic              
+      --session-dir <SESSION_DIR>  
+      --exit-on-finish             
+  -h, --help                       Print help

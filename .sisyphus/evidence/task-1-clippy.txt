@@ -1,0 +1,12 @@
+   Compiling ring v0.17.14
+   Compiling rustls v0.23.37
+    Checking rustls-webpki v0.103.9
+    Checking tokio-rustls v0.26.4
+    Checking hyper-rustls v0.27.7
+    Checking reqwest v0.12.28
+    Checking harness-providers v0.1.0 (/home/ubere/code/accela/agent-harness/crates/harness-providers)
+    Checking harness-core v0.1.0 (/home/ubere/code/accela/agent-harness/crates/harness-core)
+    Checking harness-tools v0.1.0 (/home/ubere/code/accela/agent-harness/crates/harness-tools)
+    Checking harness-tui v0.1.0 (/home/ubere/code/accela/agent-harness/crates/harness-tui)
+    Checking harness v0.1.0 (/home/ubere/code/accela/agent-harness/crates/harness)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.22s

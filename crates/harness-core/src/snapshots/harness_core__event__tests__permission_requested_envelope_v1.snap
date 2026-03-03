@@ -1,0 +1,29 @@
+---
+source: crates/harness-core/src/event.rs
+expression: envelope
+---
+{
+  "schema_version": 1,
+  "event_id": "evt-00000000000000000002",
+  "seq": 2,
+  "run_id": "run_123",
+  "mono_ms": 128,
+  "actor": {
+    "kind": "system",
+    "agent_id": "coordinator"
+  },
+  "correlation_id": "toolcall_001",
+  "stream_key": "permission:perm_001",
+  "payload": {
+    "event_type": "permission_requested",
+    "data": {
+      "permission_id": "perm_001",
+      "kind": "edit",
+      "tool_call_id": "toolcall_001",
+      "summary": "Apply patch to file with Bearer [REDACTED]",
+      "request_digest": "req_90ac2e1e",
+      "timeout_ms": 30000,
+      "default_decision": "deny"
+    }
+  }
+}

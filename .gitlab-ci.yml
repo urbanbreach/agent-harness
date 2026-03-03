@@ -31,6 +31,13 @@ variables:
     - .agent-harness/
     - crates/**/snapshots/
 
+.pty_visual_artifacts_always: &pty_visual_artifacts_always
+  when: always
+  expire_in: 1 week
+  paths:
+    - target/pty-visual-artifacts/
+    - crates/harness-testkit/tests/snapshots/
+
 sast:
   stage: test
 
@@ -83,5 +90,6 @@ rust:pty_e2e:
     - job: rust:build_harness
       artifacts: true
   script:
+    - export HARNESS_VISUAL_ARTIFACT_DIR=target/pty-visual-artifacts
     - for i in 1 2 3 4 5; do echo "PTY E2E run $i/5"; cargo test -p harness-testkit pty_e2e -- --test-threads=1 || exit 1; done
-  artifacts: *test_artifacts_on_failure
+  artifacts: *pty_visual_artifacts_always

@@ -1,28 +1,10 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-expression: permission_checkpoint
+expression: "checkpoint_visual_snapshot(&permission_checkpoint, &[\"PermissionRequested\"],\n&permission_visual)"
 ---
-┌Tabs──────────────────────────────────────────────────────────────────────────┐
-│ Events │ Output │ Diff │ Help                                                │
-└──────────────────────────────────────────────────────────────────────────────┘
-┌Events (j/k to navigate)──────────────────────────────────────────────────────┐
-│No events yet.                                                                │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-└──────────────────────────────────────────────────────────────────────────────┘
+PermissionRequested: true
+focus_marker: PermissionRequested
+focus_pixels_blake3: 3b1711c0b8f093690169a849513a11de2b3341fccac8d5871a0aa78011e5ce47
+focus_region_cells: row=11, col=13, height=1, width=20
+image: pty_permission_requested.png
+size_px: 2560x1440
