@@ -9,16 +9,12 @@ mod replay;
 mod run;
 mod scenarios;
 mod sessions;
-mod bootstrap;
-mod logging;
-mod prompt;
 mod tui;
 
 use crate::tui::TuiCommand;
 use replay::ReplayCommand;
 use run::RunCommand;
 use sessions::SessionsCommand;
-use prompt::PromptCommand;
 
 #[derive(Debug, Parser)]
 #[command(name = "harness")]
@@ -37,7 +33,6 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Commands {
     Tui(TuiCommand),
-    Prompt(PromptCommand),
     Run(RunCommand),
     Replay(ReplayCommand),
     Sessions {
@@ -61,7 +56,6 @@ fn main() -> ExitCode {
 
     match cli.command {
         Commands::Tui(command) => crate::tui::execute(command, cli.config, cli.session_dir),
-        Commands::Prompt(command) => prompt::execute(command, cli.config, cli.session_dir),
         Commands::Run(command) => run::execute(command, cli.config, cli.session_dir),
         Commands::Replay(command) => replay::execute(command),
         Commands::Sessions { command } => sessions::execute(command, cli.session_dir),

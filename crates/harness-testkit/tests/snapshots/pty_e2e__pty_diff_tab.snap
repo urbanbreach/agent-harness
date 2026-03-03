@@ -1,6 +1,5 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-assertion_line: 151
 expression: "checkpoint_visual_snapshot(&diff_checkpoint,\n&[\"@@ -1,3 +1,3 @@\", \"-beta\", \"+BETA\", \"RunFinished\"], &diff_visual)"
 ---
 @@ -1,3 +1,3 @@: true
@@ -8,7 +7,7 @@ expression: "checkpoint_visual_snapshot(&diff_checkpoint,\n&[\"@@ -1,3 +1,3 @@\"
 +BETA: true
 RunFinished: true
 focus_marker: @@ -1,3 +1,3 @@
-focus_pixels_blake3: 04a8cfb89a69f5115b558d2f9a83901dbe5584742821bbc3d122543633a19c8d
-focus_region_cells: row=5, col=33, height=10, width=47
+focus_pixels_blake3: 3d4556bad1f601a1f5fa76f128039fb6df70cdcdb35dd697cad273749c8dac01
+focus_region_cells: row=2, col=33, height=10, width=47
 image: pty_diff_tab.png
 size_px: 2560x1440

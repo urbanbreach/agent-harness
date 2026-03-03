@@ -1,14 +1,20 @@
 pub mod app;
 pub mod event;
+pub mod keybindings;
+pub mod theme;
 pub mod ui;
+
+pub use keybindings::{Action, KeyMap};
+
+pub use theme::Theme;
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use crossbeam_channel::{self as crossbeam_mpsc, Receiver, TryRecvError};
 use harness_core::event::EventEnvelopeV1;
 use ratatui::{backend::CrosstermBackend, Terminal};
 
@@ -36,6 +42,7 @@ pub struct TuiOptions {
     pub mode: TuiMode,
     pub exit_on_finish: bool,
     pub on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
+    pub keybindings: Option<std::collections::BTreeMap<String, String>>,
 }
 
 pub fn run_tui_with_options(options: TuiOptions) -> Result<()> {
@@ -43,14 +50,24 @@ pub fn run_tui_with_options(options: TuiOptions) -> Result<()> {
         mode,
         exit_on_finish,
         on_ui_intent,
+        keybindings,
     } = options;
 
     let (mut app, live_updates) = match mode {
-        TuiMode::Replay { run_dir, events } => (AppState::new_replay(run_dir, events), None),
-        TuiMode::Live { run_dir, update_rx } => (
-            AppState::new_live(Some(run_dir), exit_on_finish, on_ui_intent),
-            Some(update_rx),
-        ),
+        TuiMode::Replay { run_dir, events } => {
+            let mut app = AppState::new_replay(run_dir, events);
+            if let Some(bindings) = keybindings {
+                app.apply_keybindings(bindings);
+            }
+            (app, None)
+        }
+        TuiMode::Live { run_dir, update_rx } => {
+            let mut app = AppState::new_live(Some(run_dir), exit_on_finish, on_ui_intent);
+            if let Some(bindings) = keybindings {
+                app.apply_keybindings(bindings);
+            }
+            (app, Some(update_rx))
+        }
     };
 
     crossterm::terminal::enable_raw_mode()?;
@@ -108,7 +125,7 @@ pub fn run_tui_with_options(options: TuiOptions) -> Result<()> {
 }
 
 pub fn run_tui() -> Result<()> {
-    let (_tx, rx) = crossbeam_mpsc::unbounded();
+    let (_tx, rx) = mpsc::channel();
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
             run_dir: PathBuf::from("."),
@@ -116,6 +133,7 @@ pub fn run_tui() -> Result<()> {
         },
         exit_on_finish: false,
         on_ui_intent: None,
+        keybindings: None,
     })
 }
 
@@ -158,8 +176,8 @@ mod tests {
     use harness_core::event::{
         ActorKind, EditAppliedEvent, EventActor, EventEnvelopeV1, EventV1,
         PermissionRequestedEvent, PermissionResolvedEvent, ProviderRequestFinishedEvent,
-        ProviderRequestStartedEvent, ProviderStreamDeltaEvent, RunFinishedEvent, RunStartedEvent,
-        SCHEMA_VERSION,
+        ProviderRequestStartedEvent, ProviderStreamDeltaEvent, RunFailedEvent, RunFinishedEvent,
+        RunStartedEvent, UserMessageSubmittedEvent, SCHEMA_VERSION,
     };
     use harness_core::perm::PermissionDecision;
     use ratatui::{backend::TestBackend, Terminal};
@@ -201,7 +219,7 @@ mod tests {
         for event in sample_live_events() {
             app.ingest_event(event);
         }
-        app.active_tab = app::Tab::Output;
+        app.active_tab = app::Tab::Run;
 
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).expect("create terminal");
@@ -216,12 +234,12 @@ mod tests {
     }
 
     #[test]
-    fn live_mode_groups_tool_calls_under_single_label() {
+    fn live_mode_renders_activity_and_transcript() {
         let mut app = AppState::new_live(None, false, None);
         for event in sample_live_events() {
             app.ingest_event(event);
         }
-        app.active_tab = app::Tab::Output;
+        app.active_tab = app::Tab::Run;
 
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).expect("create terminal");
@@ -231,8 +249,13 @@ mod tests {
 
         let debug = format!("{:?}", terminal.backend().buffer());
         assert!(
-            debug.contains("tool:tool_call_1"),
-            "tool call correlation group must be rendered once"
+            debug.contains("req_1"),
+            "activity entry must show request_id"
+        );
+        assert!(debug.contains("model-1"), "activity entry must show model");
+        assert!(
+            debug.contains("hello world"),
+            "transcript must show streaming content"
         );
     }
 
@@ -270,16 +293,13 @@ mod tests {
 
         let intents = intents.lock().expect("lock intents");
         assert_eq!(intents.len(), 1);
-        if let UiIntent::ResolvePermission {
-            permission_id,
-            decision,
-        } = &intents[0]
-        {
-            assert_eq!(permission_id, "perm_1");
-            assert_eq!(*decision, PermissionDecision::Allow);
-        } else {
-            panic!("Expected ResolvePermission intent");
-        }
+        assert_eq!(
+            intents[0],
+            UiIntent::ResolvePermission {
+                permission_id: "perm_1".to_string(),
+                decision: PermissionDecision::Allow,
+            }
+        );
         drop(intents);
 
         assert!(app.active_permission().is_some());
@@ -290,39 +310,6 @@ mod tests {
             PermissionDecision::Allow,
         ));
         assert!(app.active_permission().is_none());
-    }
-
-    #[test]
-    fn prompt_focus_enter_emits_submit_intent() {
-        let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
-        let intent_sink = {
-            let intents = Arc::clone(&intents);
-            Arc::new(move |intent: UiIntent| {
-                intents.lock().expect("lock intents").push(intent);
-            })
-        };
-
-        let mut app = AppState::new_live(None, false, Some(intent_sink));
-        app.focus = app::Focus::Prompt;
-
-        for c in "hello".chars() {
-            app.handle_key(key(KeyCode::Char(c)));
-        }
-
-        app.handle_key(key(KeyCode::Enter));
-
-        let intents = intents.lock().expect("lock intents");
-        assert_eq!(intents.len(), 1);
-        if let UiIntent::SubmitPrompt { text } = &intents[0] {
-            assert_eq!(text, "hello");
-        } else {
-            panic!("Expected SubmitPrompt intent");
-        }
-        drop(intents);
-
-        assert_eq!(app.prompt_buffer, "");
-        assert_eq!(app.prompt_history.len(), 1);
-        assert_eq!(app.prompt_history[0], "hello");
     }
 
     #[test]
@@ -363,6 +350,274 @@ mod tests {
             "diff_tab_snapshot_handles_missing_artifact",
             terminal.backend().buffer(),
         );
+    }
+
+    #[test]
+    fn prompt_focus_enter_emits_submit_intent() {
+        let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+        let intent_sink = {
+            let intents = Arc::clone(&intents);
+            Arc::new(move |intent: UiIntent| {
+                intents.lock().expect("lock intents").push(intent);
+            })
+        };
+
+        let mut app = AppState::new_live(None, false, Some(intent_sink));
+        app.focus = app::Focus::Prompt;
+
+        for c in "hello".chars() {
+            app.handle_key(key(KeyCode::Char(c)));
+        }
+
+        app.handle_key(key(KeyCode::Enter));
+
+        let intents = intents.lock().expect("lock intents");
+        assert_eq!(intents.len(), 1);
+        assert_eq!(
+            intents[0],
+            UiIntent::SubmitPrompt {
+                text: "hello".to_string()
+            }
+        );
+        drop(intents);
+
+        assert_eq!(app.prompt_buffer, "");
+        assert_eq!(app.prompt_history.len(), 1);
+        assert_eq!(app.prompt_history[0], "hello");
+    }
+
+    #[test]
+    fn activity_groups_by_request_id() {
+        let mut app = AppState::new_live(None, false, None);
+
+        app.ingest_event(envelope(
+            1,
+            Some("req_001"),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_001".to_string(),
+                text: "Hello AI".to_string(),
+            }),
+        ));
+
+        app.ingest_event(envelope(
+            2,
+            Some("req_001"),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_001".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "Hello AI".to_string(),
+                request_digest: "digest-1".to_string(),
+            }),
+        ));
+
+        assert_eq!(app.activities.len(), 1);
+        let activity = app.activities.front().unwrap();
+        assert_eq!(activity.request_id, "req_001");
+        assert_eq!(activity.provider_id, "openai");
+        assert_eq!(activity.model_id, "gpt-5-codex");
+        assert!(activity.user_message.is_some());
+        assert_eq!(activity.user_message.as_ref().unwrap().text, "Hello AI");
+    }
+
+    #[test]
+    fn transcript_accumulates_stream_deltas() {
+        let mut app = AppState::new_live(None, false, None);
+
+        app.ingest_event(envelope(
+            1,
+            Some("req_001"),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_001".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "test".to_string(),
+                request_digest: "digest-1".to_string(),
+            }),
+        ));
+
+        app.ingest_event(envelope(
+            2,
+            Some("req_001"),
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: "req_001".to_string(),
+                delta: "Hello ".to_string(),
+            }),
+        ));
+
+        app.ingest_event(envelope(
+            3,
+            Some("req_001"),
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: "req_001".to_string(),
+                delta: "world!".to_string(),
+            }),
+        ));
+
+        let activity = app.activities.front().unwrap();
+        assert_eq!(activity.transcript_text, "Hello world!");
+    }
+
+    #[test]
+    fn activity_status_done_on_request_finished() {
+        let mut app = AppState::new_live(None, false, None);
+
+        app.ingest_event(envelope(
+            1,
+            Some("req_001"),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_001".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "test".to_string(),
+                request_digest: "digest-1".to_string(),
+            }),
+        ));
+
+        assert_eq!(
+            app.activities.front().unwrap().status,
+            crate::app::ActivityStatus::Streaming
+        );
+
+        app.ingest_event(envelope(
+            2,
+            Some("req_001"),
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: "req_001".to_string(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some("digest-out".to_string()),
+            }),
+        ));
+
+        assert_eq!(
+            app.activities.front().unwrap().status,
+            crate::app::ActivityStatus::Done
+        );
+    }
+
+    #[test]
+    fn activity_status_error_on_run_failed() {
+        let mut app = AppState::new_live(None, false, None);
+
+        app.ingest_event(envelope(
+            1,
+            Some("req_001"),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_001".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "test".to_string(),
+                request_digest: "digest-1".to_string(),
+            }),
+        ));
+
+        app.ingest_event(envelope(
+            2,
+            None,
+            EventV1::RunFailed(RunFailedEvent {
+                error: "API rate limit exceeded".to_string(),
+            }),
+        ));
+
+        let activity = app.activities.front().unwrap();
+        assert_eq!(activity.status, crate::app::ActivityStatus::Error);
+        assert_eq!(
+            activity.error_message.as_ref().unwrap(),
+            "API rate limit exceeded"
+        );
+    }
+
+    #[test]
+    fn memory_cap_enforces_max_events() {
+        let mut app = AppState::new_live(None, false, None);
+        app.memory_caps.max_events = 5;
+
+        for i in 1..=10 {
+            app.ingest_event(envelope(
+                i,
+                None,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: format!("run-{}", i),
+                    workspace_root: "/tmp".to_string(),
+                }),
+            ));
+        }
+
+        assert_eq!(app.events.len(), 5);
+        assert_eq!(app.events_trimmed_count, 5);
+    }
+
+    #[test]
+    fn memory_cap_enforces_max_transcript_chars() {
+        let mut app = AppState::new_live(None, false, None);
+        app.memory_caps.max_transcript_chars = 20;
+
+        app.ingest_event(envelope(
+            1,
+            Some("req_001"),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_001".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "test".to_string(),
+                request_digest: "digest-1".to_string(),
+            }),
+        ));
+
+        // Add 30 characters in deltas
+        for i in 0..3 {
+            app.ingest_event(envelope(
+                2 + i,
+                Some("req_001"),
+                EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                    request_id: "req_001".to_string(),
+                    delta: "0123456789".to_string(),
+                }),
+            ));
+        }
+
+        assert!(app.transcript_trimmed_count > 0);
+    }
+
+    #[test]
+    fn run_workspace_renders_activity_with_compact_format() {
+        let mut app = AppState::new_live(None, false, None);
+
+        app.ingest_event(envelope(
+            1,
+            Some("req_000123"),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_000123".to_string(),
+                text: "Hello".to_string(),
+            }),
+        ));
+
+        app.ingest_event(envelope(
+            2,
+            Some("req_000123"),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_000123".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "Hello".to_string(),
+                request_digest: "digest-1".to_string(),
+            }),
+        ));
+
+        app.active_tab = app::Tab::Run;
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("create terminal");
+        terminal
+            .draw(|frame| ui::render_app(frame, &app))
+            .expect("draw run workspace frame");
+
+        let debug = format!("{:?}", terminal.backend().buffer());
+        assert!(
+            debug.contains("req_000123"),
+            "activity must show request_id"
+        );
+        assert!(debug.contains("gpt-5-codex"), "activity must show model_id");
     }
 
     fn key(code: KeyCode) -> KeyEvent {

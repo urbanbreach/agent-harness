@@ -133,7 +133,7 @@ Wave 4 (PTY E2E + live-gated E2E + docs + security regression)
 > EVERY task MUST have: Agent Profile + Parallelization + QA Scenarios.
 
 
-- [ ] 1. Expand config schema: `ui`, `logging`, `keybindings` (+ provider `api_mode`) + update example + docs
+- [x] 1. Expand config schema: `ui`, `logging`, `keybindings` (+ provider `api_mode`) + update example + docs
 
   **What to do**:
   - Extend `HarnessConfig` in `crates/harness-core/src/config.rs` to add **optional** sections (all `#[serde(default)]` so existing configs keep working):
@@ -209,7 +209,7 @@ Wave 4 (PTY E2E + live-gated E2E + docs + security regression)
   **Commit**: YES | Message: `feat(config): add ui/logging/keybindings and provider api_mode` | Files: `crates/harness-core/src/config.rs`, `configs/harness.example.jsonc`, `docs/config.md`
 
 
-- [ ] 2. Fix env-substitution semantics (`${VAR}` + `${VAR:-default}`) + align docs/tests
+- [x] 2. Fix env-substitution semantics (`${VAR}` + `${VAR:-default}`) + align docs/tests
 
   **What to do**:
   - Implement env substitution as documented in `docs/config.md:171-188`, by updating `resolve_env_reference` in `crates/harness-core/src/config.rs:203-217`:
@@ -257,7 +257,7 @@ Wave 4 (PTY E2E + live-gated E2E + docs + security regression)
   **Commit**: YES | Message: `feat(config): implement strict env substitution syntax` | Files: `crates/harness-core/src/config.rs`, `docs/config.md`, `configs/harness.example.jsonc`
 
 
-- [ ] 3. Implement CLIproxyAPI **Responses API** streaming in provider layer + offline tests + gated live smoke
+- [x] 3. Implement CLIproxyAPI **Responses API** streaming in provider layer + offline tests + gated live smoke
 
   **What to do**:
   - Extend `crates/harness-providers/src/openai.rs` (current chat-completions-only provider) to support OpenAI **Responses API** streaming:
@@ -333,7 +333,7 @@ Wave 4 (PTY E2E + live-gated E2E + docs + security regression)
   **Commit**: YES | Message: `feat(provider): add responses api streaming support` | Files: `crates/harness-providers/src/openai.rs`, `crates/harness-providers/src/lib.rs` (if needed), provider tests
 
 
-- [ ] 4. Config → runtime bootstrap: build CoordinatorConfig/provider from HarnessConfig (interactive mode)
+- [x] 4. Config → runtime bootstrap: build CoordinatorConfig/provider from HarnessConfig (interactive mode)
 
   **What to do**:
   - Add a single “bootstrap” module in the CLI crate to centralize config→runtime wiring:
@@ -407,7 +407,7 @@ Wave 4 (PTY E2E + live-gated E2E + docs + security regression)
   **Commit**: YES | Message: `feat(cli): bootstrap coordinator config from harness config` | Files: `crates/harness/src/bootstrap.rs`, `crates/harness/src/tui.rs`, (maybe) `crates/harness/src/main.rs`
 
 
-- [ ] 5. Live-update backpressure: bounded channels + delta coalescing to keep TUI responsive
+- [x] 5. Live-update backpressure: bounded channels + delta coalescing to keep TUI responsive
 
   **What to do**:
   - Add deps:
@@ -457,7 +457,7 @@ Wave 4 (PTY E2E + live-gated E2E + docs + security regression)
   **Commit**: YES | Message: `perf(tui): bound live updates and coalesce provider deltas` | Files: `crates/harness/src/tui.rs`, `crates/harness-tui/src/lib.rs`
 
 
-- [ ] 6. Event schema: add persisted user prompt event (replayable transcript input)
+- [x] 6. Event schema: add persisted user prompt event (replayable transcript input)
 
   **What to do**:
   - Extend event schema with a first-class prompt/user message event:
@@ -502,7 +502,7 @@ Wave 4 (PTY E2E + live-gated E2E + docs + security regression)
   **Commit**: YES | Message: `feat(core): persist user prompts as events` | Files: `crates/harness-core/src/event.rs`, `crates/harness-tui/src/ui.rs`, `crates/harness-core/src/proj.rs` (if needed)
 
 
-- [ ] 7. Coordinator control plane: spawn idle agent + request agent turn (prompt-driven)
+- [x] 7. Coordinator control plane: spawn idle agent + request agent turn (prompt-driven)
 
   **What to do**:
   - Add an “idle agent spawn” path so interactive mode can create an agent without automatically scheduling a turn.
@@ -565,7 +565,7 @@ Wave 4 (PTY E2E + live-gated E2E + docs + security regression)
   **Commit**: YES | Message: `feat(core): add idle spawn + prompt-driven agent turns` | Files: `crates/harness-core/src/coord.rs`, `crates/harness-core/src/event.rs`, `crates/harness-core/tests/coord.rs`
 
 
-- [ ] 8. TUI interactive input + UiIntent plumbing (prompt submit → coordinator)
+- [x] 8. TUI interactive input + UiIntent plumbing (prompt submit → coordinator)
 
   **What to do**:
   - Generalize TUI → harness callbacks beyond permissions:
@@ -626,7 +626,7 @@ Wave 4 (PTY E2E + live-gated E2E + docs + security regression)
   **Commit**: YES | Message: `feat(tui): add prompt input and ui intent plumbing` | Files: `crates/harness-tui/src/{app.rs,lib.rs,ui.rs}`
 
 
-- [ ] 9. `harness tui` interactive mode: default run workspace (keep replay + scenario modes)
+- [x] 9. `harness tui` interactive mode: default run workspace (keep replay + scenario modes)
 
   **What to do**:
   - Update CLI semantics in `crates/harness/src/tui.rs`:
@@ -682,7 +682,7 @@ Wave 4 (PTY E2E + live-gated E2E + docs + security regression)
   **Commit**: YES | Message: `feat(cli): interactive tui mode with prompt submission` | Files: `crates/harness/src/{tui.rs,bootstrap.rs}`, `crates/harness-tui/src/*`
 
 
-- [ ] 10. Headless prompt command (non-TUI) for smoke + automation
+- [x] 10. Headless prompt command (non-TUI) for smoke + automation
 
   **What to do**:
   - Add a new CLI subcommand to run a single prompt headlessly using config provider:

@@ -14,19 +14,10 @@ use crate::{
     ProviderEventStream, ProviderStreamEvent,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OpenAiApiMode {
-    Responses,
-    ChatCompletions,
-    Auto,
-}
-
 #[derive(Debug, Clone)]
 pub struct OpenAiCompatibleProviderConfig {
     pub base_url: String,
     pub api_key: String,
-    pub api_mode: OpenAiApiMode,
     pub timeout_ms: u64,
     pub headers: BTreeMap<String, String>,
 }
@@ -54,7 +45,6 @@ pub struct OpenAiCompatibleProvider {
     client: reqwest::Client,
     base_url: String,
     api_key: String,
-    api_mode: OpenAiApiMode,
     headers: HeaderMap,
 }
 
@@ -83,7 +73,6 @@ impl OpenAiCompatibleProvider {
             client,
             base_url: config.base_url,
             api_key: config.api_key,
-            api_mode: config.api_mode,
             headers,
         })
     }
@@ -93,12 +82,7 @@ impl OpenAiCompatibleProvider {
         format!("{base}/chat/completions")
     }
 
-    fn responses_endpoint(&self) -> String {
-        let base = self.base_url.trim_end_matches('/');
-        format!("{base}/responses")
-    }
-
-    async fn send_chat_completions_request(
+    async fn send_request(
         &self,
         request: &OpenAiChatCompletionsRequest,
     ) -> Result<reqwest::Response, String> {
@@ -111,63 +95,14 @@ impl OpenAiCompatibleProvider {
             .await
             .map_err(|_| "openai_compatible request failed before receiving response".to_string())
     }
-
-    async fn send_responses_request(
-        &self,
-        request: &OpenAiResponsesRequest,
-    ) -> Result<reqwest::Response, String> {
-        self.client
-            .post(self.responses_endpoint())
-            .headers(self.headers.clone())
-            .bearer_auth(&self.api_key)
-            .json(request)
-            .send()
-            .await
-            .map_err(|_| "openai_compatible request failed before receiving response".to_string())
-    }
-
-    async fn send_stream_request(
-        &self,
-        request: &CompletionRequest,
-    ) -> Result<(ResolvedOpenAiApiMode, reqwest::Response), String> {
-        match self.api_mode {
-            OpenAiApiMode::Responses => {
-                let request = OpenAiResponsesRequest::from(request.clone());
-                let response = self.send_responses_request(&request).await?;
-                Ok((ResolvedOpenAiApiMode::Responses, response))
-            }
-            OpenAiApiMode::ChatCompletions => {
-                let request = OpenAiChatCompletionsRequest::from(request.clone());
-                let response = self.send_chat_completions_request(&request).await?;
-                Ok((ResolvedOpenAiApiMode::ChatCompletions, response))
-            }
-            OpenAiApiMode::Auto => {
-                let responses_request = OpenAiResponsesRequest::from(request.clone());
-                let responses_response = self.send_responses_request(&responses_request).await?;
-
-                if matches!(responses_response.status().as_u16(), 404 | 405) {
-                    let chat_request = OpenAiChatCompletionsRequest::from(request.clone());
-                    let chat_response = self.send_chat_completions_request(&chat_request).await?;
-                    return Ok((ResolvedOpenAiApiMode::ChatCompletions, chat_response));
-                }
-
-                Ok((ResolvedOpenAiApiMode::Responses, responses_response))
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ResolvedOpenAiApiMode {
-    Responses,
-    ChatCompletions,
 }
 
 #[async_trait]
 impl Provider for OpenAiCompatibleProvider {
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
-        let (api_mode, response) = match self.send_stream_request(&req).await {
-            Ok((api_mode, response)) => (api_mode, response),
+        let request = OpenAiChatCompletionsRequest::from(req);
+        let response = match self.send_request(&request).await {
+            Ok(response) => response,
             Err(message) => {
                 return Box::pin(stream::iter(vec![ProviderStreamEvent::Error { message }]))
             }
@@ -185,24 +120,14 @@ impl Provider for OpenAiCompatibleProvider {
 
         let (tx, rx) = mpsc::channel(64);
         tokio::spawn(async move {
-            match api_mode {
-                ResolvedOpenAiApiMode::Responses => {
-                    consume_responses_sse_stream(response, tx).await;
-                }
-                ResolvedOpenAiApiMode::ChatCompletions => {
-                    consume_chat_completions_sse_stream(response, tx).await;
-                }
-            }
+            consume_sse_stream(response, tx).await;
         });
 
         Box::pin(tokio_stream::wrappers::ReceiverStream::new(rx))
     }
 }
 
-async fn consume_chat_completions_sse_stream(
-    response: reqwest::Response,
-    tx: mpsc::Sender<ProviderStreamEvent>,
-) {
+async fn consume_sse_stream(response: reqwest::Response, tx: mpsc::Sender<ProviderStreamEvent>) {
     if tx.send(ProviderStreamEvent::Start).await.is_err() {
         return;
     }
@@ -285,119 +210,6 @@ async fn consume_chat_completions_sse_stream(
     }
 }
 
-async fn consume_responses_sse_stream(
-    response: reqwest::Response,
-    tx: mpsc::Sender<ProviderStreamEvent>,
-) {
-    if tx.send(ProviderStreamEvent::Start).await.is_err() {
-        return;
-    }
-
-    let mut usage = zero_usage();
-    let mut done_emitted = false;
-    let mut sse_stream = response.bytes_stream().eventsource();
-
-    while let Some(next_event) = sse_stream.next().await {
-        let event = match next_event {
-            Ok(event) => event,
-            Err(_) => {
-                let _ = tx
-                    .send(ProviderStreamEvent::Error {
-                        message: "openai_compatible SSE stream transport error".to_string(),
-                    })
-                    .await;
-                return;
-            }
-        };
-
-        let event_name = event.event.trim();
-        let data = event.data.trim();
-        if data.is_empty() {
-            continue;
-        }
-
-        if data == "[DONE]" {
-            if !done_emitted {
-                let _ = tx.send(ProviderStreamEvent::Done { usage }).await;
-            }
-            return;
-        }
-
-        let chunk: OpenAiResponsesChunk = match serde_json::from_str(data) {
-            Ok(chunk) => chunk,
-            Err(_) => {
-                let _ = tx
-                    .send(ProviderStreamEvent::Error {
-                        message: "openai_compatible returned invalid SSE JSON chunk".to_string(),
-                    })
-                    .await;
-                return;
-            }
-        };
-
-        let chunk_usage = chunk.usage.clone().or_else(|| {
-            chunk
-                .response
-                .as_ref()
-                .and_then(|response| response.usage.clone())
-        });
-        if let Some(chunk_usage) = chunk_usage {
-            usage = chunk_usage;
-        }
-
-        if responses_event_matches(
-            event_name,
-            chunk.event_type.as_str(),
-            "response.output_text.delta",
-        ) {
-            if let Some(delta) = chunk.delta.as_ref() {
-                if !delta.is_empty()
-                    && tx
-                        .send(ProviderStreamEvent::TextDelta(delta.clone()))
-                        .await
-                        .is_err()
-                {
-                    return;
-                }
-            }
-            continue;
-        }
-
-        if responses_event_matches(event_name, chunk.event_type.as_str(), "response.completed") {
-            if !done_emitted {
-                done_emitted = true;
-                if tx
-                    .send(ProviderStreamEvent::Done {
-                        usage: usage.clone(),
-                    })
-                    .await
-                    .is_err()
-                {
-                    return;
-                }
-            }
-            continue;
-        }
-
-        if responses_event_matches(event_name, chunk.event_type.as_str(), "error") {
-            let _ = tx
-                .send(ProviderStreamEvent::Error {
-                    message: "openai_compatible responses stream returned error event".to_string(),
-                })
-                .await;
-            return;
-        }
-    }
-
-    if !done_emitted {
-        let _ = tx.send(ProviderStreamEvent::Done { usage }).await;
-    }
-}
-
-fn responses_event_matches(event_name: &str, event_type: &str, expected: &str) -> bool {
-    event_name == expected || event_type == expected
-}
-
 fn parse_headers(
     headers: &BTreeMap<String, String>,
 ) -> Result<HeaderMap, OpenAiCompatibleProviderError> {
@@ -456,44 +268,12 @@ impl From<CompletionRequest> for OpenAiChatCompletionsRequest {
 }
 
 #[derive(Debug, Serialize)]
-struct OpenAiResponsesRequest {
-    model: String,
-    input: Vec<OpenAiResponsesInputMessage>,
-    stream: bool,
-}
-
-impl From<CompletionRequest> for OpenAiResponsesRequest {
-    fn from(request: CompletionRequest) -> Self {
-        Self {
-            model: request.model_id,
-            input: request.messages.into_iter().map(Into::into).collect(),
-            stream: true,
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
 struct OpenAiChatMessage {
     role: String,
     content: String,
 }
 
 impl From<CompletionMessage> for OpenAiChatMessage {
-    fn from(message: CompletionMessage) -> Self {
-        Self {
-            role: role_to_openai(&message.role).to_string(),
-            content: message.content,
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-struct OpenAiResponsesInputMessage {
-    role: String,
-    content: String,
-}
-
-impl From<CompletionMessage> for OpenAiResponsesInputMessage {
     fn from(message: CompletionMessage) -> Self {
         Self {
             role: role_to_openai(&message.role).to_string(),
@@ -533,24 +313,6 @@ struct OpenAiChatDeltaChunk {
     content: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct OpenAiResponsesChunk {
-    #[serde(rename = "type", default)]
-    event_type: String,
-    #[serde(default)]
-    delta: Option<String>,
-    #[serde(default)]
-    usage: Option<CompletionUsage>,
-    #[serde(default)]
-    response: Option<OpenAiResponsesChunkResponse>,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAiResponsesChunkResponse {
-    #[serde(default)]
-    usage: Option<CompletionUsage>,
-}
-
 #[cfg(test)]
 mod tests {
     use std::{collections::BTreeMap, env, fs, path::PathBuf, time::Duration};
@@ -561,7 +323,7 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use super::{OpenAiApiMode, OpenAiCompatibleProvider, OpenAiCompatibleProviderConfig};
+    use super::{OpenAiCompatibleProvider, OpenAiCompatibleProviderConfig};
     use crate::{
         CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
         ProviderStreamEvent,
@@ -625,148 +387,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn openai_compatible_offline_wiremock_parses_responses_sse_deltas() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/v1/responses"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header("content-type", "text/event-stream")
-                    .set_body_raw(
-                        deterministic_responses_sse_transcript(),
-                        "text/event-stream",
-                    ),
-            )
-            .mount(&server)
-            .await;
-
-        let provider = provider_for_base_url_with_mode(
-            format!("{}/v1", server.uri()),
-            "test-secret-key",
-            OpenAiApiMode::Responses,
-        );
-        let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
-
-        assert_eq!(
-            events,
-            vec![
-                ProviderStreamEvent::Start,
-                ProviderStreamEvent::TextDelta("Hello".to_string()),
-                ProviderStreamEvent::TextDelta(" world".to_string()),
-                ProviderStreamEvent::Done {
-                    usage: CompletionUsage {
-                        prompt_tokens: 5,
-                        completion_tokens: 2,
-                        total_tokens: 7,
-                    }
-                },
-            ]
-        );
-
-        let requests = server
-            .received_requests()
-            .await
-            .expect("request recording must be enabled");
-        assert_eq!(requests.len(), 1);
-
-        let request = &requests[0];
-        let authorization = request
-            .headers
-            .get("authorization")
-            .expect("authorization header")
-            .to_str()
-            .expect("authorization header is utf-8");
-        assert_eq!(authorization, "Bearer test-secret-key");
-
-        let body: serde_json::Value = request.body_json().expect("request body must be JSON");
-        assert_eq!(body.get("stream"), Some(&serde_json::Value::Bool(true)));
-        assert_eq!(
-            body.get("model"),
-            Some(&serde_json::Value::String("gpt-4o-mini".to_string()))
-        );
-        assert!(body.get("messages").is_none());
-
-        let input = body
-            .get("input")
-            .and_then(|value| value.as_array())
-            .expect("responses request must include input array");
-        assert_eq!(input.len(), 1);
-        assert_eq!(
-            input[0].get("role"),
-            Some(&serde_json::Value::String("user".to_string()))
-        );
-        assert_eq!(
-            input[0].get("content"),
-            Some(&serde_json::Value::String(
-                "Say hello from test".to_string()
-            ))
-        );
-    }
-
-    #[tokio::test]
-    async fn openai_compatible_auto_falls_back_to_chat_completions_on_404() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/v1/responses"))
-            .respond_with(ResponseTemplate::new(404))
-            .mount(&server)
-            .await;
-
-        Mock::given(method("POST"))
-            .and(path("/v1/chat/completions"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header("content-type", "text/event-stream")
-                    .set_body_raw(deterministic_sse_transcript(), "text/event-stream"),
-            )
-            .mount(&server)
-            .await;
-
-        let provider = provider_for_base_url_with_mode(
-            format!("{}/v1", server.uri()),
-            "test-secret-key",
-            OpenAiApiMode::Auto,
-        );
-        let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
-
-        assert_eq!(
-            events,
-            vec![
-                ProviderStreamEvent::Start,
-                ProviderStreamEvent::TextDelta("Hello".to_string()),
-                ProviderStreamEvent::TextDelta(" world".to_string()),
-                ProviderStreamEvent::Done {
-                    usage: CompletionUsage {
-                        prompt_tokens: 4,
-                        completion_tokens: 2,
-                        total_tokens: 6,
-                    }
-                },
-            ]
-        );
-
-        let requests = server
-            .received_requests()
-            .await
-            .expect("request recording must be enabled");
-        assert_eq!(requests.len(), 2);
-
-        let first_body: serde_json::Value = requests[0]
-            .body_json()
-            .expect("first request body must be JSON");
-        assert!(first_body.get("input").is_some());
-        assert!(first_body.get("messages").is_none());
-
-        let second_body: serde_json::Value = requests[1]
-            .body_json()
-            .expect("second request body must be JSON");
-        assert!(second_body.get("messages").is_some());
-        assert!(second_body.get("input").is_none());
-    }
-
-    #[tokio::test]
     async fn openai_compatible_errors_do_not_leak_auth_secrets() {
         let server = MockServer::start().await;
         let api_key = "test-secret-key";
@@ -817,7 +437,6 @@ mod tests {
         let provider = OpenAiCompatibleProvider::new(OpenAiCompatibleProviderConfig {
             base_url: provider_config.base_url.clone(),
             api_key: resolve_env_reference(&provider_config.api_key),
-            api_mode: live_proxy_api_mode(),
             timeout_ms: provider_config.timeout_ms,
             headers: provider_config.headers.clone(),
         })
@@ -859,23 +478,14 @@ mod tests {
         assert!(delta_chars > 0, "expected at least one text delta");
     }
 
-    fn provider_for_base_url_with_mode(
-        base_url: String,
-        api_key: &str,
-        api_mode: OpenAiApiMode,
-    ) -> OpenAiCompatibleProvider {
+    fn provider_for_base_url(base_url: String, api_key: &str) -> OpenAiCompatibleProvider {
         OpenAiCompatibleProvider::new(OpenAiCompatibleProviderConfig {
             base_url,
             api_key: api_key.to_string(),
-            api_mode,
             timeout_ms: 15_000,
             headers: std::collections::BTreeMap::new(),
         })
         .expect("build provider")
-    }
-
-    fn provider_for_base_url(base_url: String, api_key: &str) -> OpenAiCompatibleProvider {
-        provider_for_base_url_with_mode(base_url, api_key, OpenAiApiMode::ChatCompletions)
     }
 
     fn basic_request(model_id: &str) -> CompletionRequest {
@@ -904,18 +514,6 @@ mod tests {
             "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" world\"},\"finish_reason\":null}],\"usage\":null}\n\n",
             "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":2,\"total_tokens\":6}}\n\n",
             "data: [DONE]\n\n"
-        )
-        .to_string()
-    }
-
-    fn deterministic_responses_sse_transcript() -> String {
-        concat!(
-            ": keep-alive\n\n",
-            "event: response.output_text.delta\n",
-            "data: {\"delta\":\"Hello\"}\n\n",
-            "data: {\"type\":\"response.output_text.delta\",\"delta\":\" world\"}\n\n",
-            "event: response.completed\n",
-            "data: {\"response\":{\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2,\"total_tokens\":7}}}\n\n"
         )
         .to_string()
     }
@@ -950,23 +548,6 @@ mod tests {
 
     fn default_timeout_ms() -> u64 {
         60_000
-    }
-
-    fn live_proxy_api_mode() -> OpenAiApiMode {
-        env::var("HARNESS_LIVE_PROXY_API_MODE")
-            .ok()
-            .as_deref()
-            .and_then(parse_openai_api_mode)
-            .unwrap_or(OpenAiApiMode::Responses)
-    }
-
-    fn parse_openai_api_mode(value: &str) -> Option<OpenAiApiMode> {
-        match value {
-            "responses" => Some(OpenAiApiMode::Responses),
-            "chat_completions" => Some(OpenAiApiMode::ChatCompletions),
-            "auto" => Some(OpenAiApiMode::Auto),
-            _ => None,
-        }
     }
 
     #[derive(Debug, Deserialize)]

@@ -1,14 +1,13 @@
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::mpsc as std_mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use clap::{ArgGroup, Args};
-use crossbeam_channel::{self as crossbeam_mpsc, TrySendError};
 use harness_core::clock::{Clock, FakeClock, RealClock};
-use harness_core::config::{resolve_config_path, HarnessConfig, ShellAllowlist};
+use harness_core::config::{load_config_from_file, resolve_config_path, ShellAllowlist};
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle,
 };
@@ -18,14 +17,13 @@ use harness_core::redact::DefaultRedactor;
 use harness_core::store::{EventStore, EventStoreError};
 use harness_tools::coordinator_registry;
 use harness_tui::{
-    load_events_from_run_dir, run_tui_with_options, LiveUpdate, UiIntent, TuiMode,
+    load_events_from_run_dir, run_tui_with_options, LiveUpdate, PermissionIntent, TuiMode,
     TuiOptions,
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
-use crate::{bootstrap, logging};
 use crate::scenarios::{
     create_workspace, default_permission_policy, golden_path_patch, golden_path_profiles,
     golden_path_provider, supervisor_actor, worker_actor, ScenarioName,
@@ -33,16 +31,11 @@ use crate::scenarios::{
 
 const DEFAULT_SESSION_DIR: &str = ".agent-harness/sessions";
 const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
-const LIVE_UPDATE_CHANNEL_CAPACITY: usize = 2048;
-const LIVE_UPDATE_NON_DELTA_HEADROOM: usize = 64;
-const DELTA_COALESCE_WINDOW: Duration = Duration::from_millis(16);
-const DELTA_COALESCE_MAX_CHARS: usize = 1024;
-const OVERLOAD_STATUS_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Args, Clone)]
 #[command(group(
     ArgGroup::new("mode")
-        .required(false)
+        .required(true)
         .args(["replay", "scenario"]),
 ))]
 pub struct TuiCommand {
@@ -71,14 +64,6 @@ struct LiveSettings {
     config_digest: String,
 }
 
-#[derive(Debug, Clone)]
-struct InteractiveSettings {
-    config: HarnessConfig,
-    deterministic: bool,
-    seed: u64,
-    config_digest: String,
-}
-
 struct LiveBootstrap {
     store: Arc<dyn EventStore>,
     run_dir: PathBuf,
@@ -94,32 +79,8 @@ pub fn execute(
     }
 
     let Some(scenario) = cmd.scenario else {
-        let settings = match resolve_interactive_settings(&cmd, config_path, global_session_dir) {
-            Ok(settings) => settings,
-            Err(err) => {
-                eprintln!("tui setup failed: {err}");
-                return ExitCode::from(2);
-            }
-        };
-
-        let runtime = match tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-        {
-            Ok(runtime) => runtime,
-            Err(err) => {
-                eprintln!("failed to build async runtime: {err}");
-                return ExitCode::from(1);
-            }
-        };
-
-        return match runtime.block_on(run_interactive_mode(&cmd, &settings)) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(err) => {
-                eprintln!("tui failed: {err}");
-                ExitCode::from(1)
-            }
-        };
+        eprintln!("tui requires either --replay <run_dir> or --scenario <name>");
+        return ExitCode::from(2);
     };
 
     let settings = match resolve_live_settings(&cmd, config_path, global_session_dir) {
@@ -150,35 +111,6 @@ pub fn execute(
     }
 }
 
-fn resolve_interactive_settings(
-    cmd: &TuiCommand,
-    config_path: Option<PathBuf>,
-    global_session_dir: Option<PathBuf>,
-) -> Result<InteractiveSettings, String> {
-    let explicit_config = resolve_config_path(config_path.as_deref()).ok_or_else(|| {
-        "interactive mode requires a config file; pass --config <path> or create harness.jsonc"
-            .to_string()
-    })?;
-
-    let mut config = bootstrap::load_harness_config(&explicit_config)?;
-    config.apply_session_dir_override(cmd.session_dir.clone().or(global_session_dir));
-
-    let config_bytes = fs::read(&explicit_config)
-        .map_err(|err| format!("failed to read config file {}: {err}", explicit_config.display()))?;
-    let config_digest = blake3::hash(&config_bytes).to_hex().to_string();
-
-    let deterministic = cmd.deterministic
-        || config.deterministic.enabled
-        || matches!(std::env::var("HARNESS_DETERMINISTIC").as_deref(), Ok("1"));
-
-    Ok(InteractiveSettings {
-        deterministic,
-        seed: config.deterministic.seed,
-        config,
-        config_digest,
-    })
-}
-
 fn execute_replay_mode(run_dir: &Path, exit_on_finish: bool) -> ExitCode {
     let events = match load_events_from_run_dir(run_dir) {
         Ok(events) => events,
@@ -198,7 +130,7 @@ fn execute_replay_mode(run_dir: &Path, exit_on_finish: bool) -> ExitCode {
             events,
         },
         exit_on_finish,
-        on_ui_intent: None,
+        on_permission_intent: None,
     }) {
         eprintln!("TUI error: {err}");
         return ExitCode::from(1);
@@ -220,7 +152,8 @@ fn resolve_live_settings(
     let mut config_digest = "none".to_string();
 
     if let Some(path) = explicit_config {
-        let config = bootstrap::load_harness_config(&path)?;
+        let config =
+            load_config_from_file(&path).map_err(|err| format!("{} ({})", err, path.display()))?;
         let config_bytes = fs::read(&path)
             .map_err(|err| format!("failed to read config file {}: {err}", path.display()))?;
         config_digest = blake3::hash(&config_bytes).to_hex().to_string();
@@ -246,105 +179,6 @@ fn resolve_live_settings(
         seed: config_seed,
         config_digest,
     })
-}
-
-async fn run_interactive_mode(cmd: &TuiCommand, settings: &InteractiveSettings) -> Result<(), String> {
-    let mut coordinator_config = bootstrap::build_interactive_coordinator_config(&settings.config)?;
-    coordinator_config.deterministic_store = settings.deterministic;
-    if settings.deterministic {
-        coordinator_config.run_id_override = Some(format!("interactive_{:016x}", settings.seed));
-    }
-    coordinator_config.config_digest = settings.config_digest.clone();
-    coordinator_config.harness_version = env!("CARGO_PKG_VERSION").to_string();
-
-    fs::create_dir_all(&coordinator_config.session_dir)
-        .map_err(|err| format!("failed to create session dir: {err}"))?;
-
-    let clock: Arc<dyn Clock + Send + Sync> = if settings.deterministic {
-        Arc::new(FakeClock::new())
-    } else {
-        Arc::new(RealClock::new())
-    };
-
-    let coordinator = spawn_coordinator(
-        coordinator_config,
-        clock,
-        Arc::new(DefaultRedactor::default()),
-    );
-
-    let workspace = std::env::current_dir()
-        .map_err(|err| format!("failed to resolve current working directory: {err}"))?;
-    let run = coordinator
-        .start_run("interactive", &workspace)
-        .await
-        .map_err(|err| err.to_string())?;
-
-    logging::init_logging(&settings.config, &run.artifacts_dir)?;
-
-    let profile_name = bootstrap::interactive_profile_name(&settings.config);
-    coordinator
-        .spawn_agent(supervisor_actor(), profile_name, None)
-        .await
-        .map_err(|err| err.to_string())?;
-
-    let store = coordinator
-        .event_store()
-        .await
-        .map_err(|err| err.to_string())?;
-
-    let (live_update_tx, live_update_rx) =
-        crossbeam_mpsc::bounded::<LiveUpdate>(LIVE_UPDATE_CHANNEL_CAPACITY);
-    let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
-
-    let event_forwarder_task =
-        tokio::spawn(async move { forward_events_to_tui(store, live_update_tx).await });
-
-    let intent_coordinator = coordinator.clone();
-    let ui_intent_task =
-        tokio::spawn(async move { handle_ui_intents(intent_coordinator, intent_rx).await });
-
-    let ui_intent_sender = {
-        let intent_tx = intent_tx.clone();
-        Arc::new(move |intent: UiIntent| {
-            let _ = intent_tx.send(intent);
-        })
-    };
-
-    let exit_on_finish = cmd.exit_on_finish;
-    let run_dir = run.run_dir;
-
-    let tui_result = tokio::task::spawn_blocking(move || {
-        run_tui_with_options(TuiOptions {
-            mode: TuiMode::Live {
-                run_dir,
-                update_rx: live_update_rx,
-            },
-            exit_on_finish,
-            on_ui_intent: Some(ui_intent_sender),
-        })
-    })
-    .await
-    .map_err(|err| format!("TUI task failed: {err}"))?;
-
-    if let Err(err) = tui_result {
-        event_forwarder_task.abort();
-        ui_intent_task.abort();
-        return Err(format!("TUI error: {err}"));
-    }
-
-    drop(intent_tx);
-
-    let stop_result = coordinator.stop_run().await;
-    event_forwarder_task.abort();
-    ui_intent_task.abort();
-
-    if let Err(err) = stop_result {
-        if !matches!(err, CoordinatorError::RunNotStarted) {
-            return Err(err.to_string());
-        }
-    }
-
-    Ok(())
 }
 
 async fn run_live_mode(
@@ -397,9 +231,8 @@ async fn run_live_mode(
     );
 
     let (bootstrap_tx, bootstrap_rx) = oneshot::channel::<LiveBootstrap>();
-    let (live_update_tx, live_update_rx) =
-        crossbeam_mpsc::bounded::<LiveUpdate>(LIVE_UPDATE_CHANNEL_CAPACITY);
-    let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
+    let (live_update_tx, live_update_rx) = std_mpsc::channel::<LiveUpdate>();
+    let (intent_tx, intent_rx) = mpsc::unbounded_channel::<PermissionIntent>();
 
     let scenario_coordinator = coordinator.clone();
     let scenario_task = tokio::spawn(async move {
@@ -421,7 +254,7 @@ async fn run_live_mode(
 
     let ui_intent_sender = {
         let intent_tx = intent_tx.clone();
-        Arc::new(move |intent: UiIntent| {
+        Arc::new(move |intent: PermissionIntent| {
             let _ = intent_tx.send(intent);
         })
     };
@@ -435,7 +268,7 @@ async fn run_live_mode(
                 update_rx: live_update_rx,
             },
             exit_on_finish,
-            on_ui_intent: Some(ui_intent_sender),
+            on_permission_intent: Some(ui_intent_sender),
         })
     })
     .await
@@ -544,9 +377,8 @@ async fn run_scenario_runner(
 
 async fn forward_events_to_tui(
     store: Arc<dyn EventStore>,
-    live_update_tx: crossbeam_mpsc::Sender<LiveUpdate>,
+    live_update_tx: std_mpsc::Sender<LiveUpdate>,
 ) -> Result<(), String> {
-    let mut forwarder = LiveUpdateForwarder::new(live_update_tx);
     let mut from_seq = 1_u64;
     let mut last_seq_seen = 0_u64;
 
@@ -554,34 +386,7 @@ async fn forward_events_to_tui(
         let mut stream = store.subscribe(from_seq).map_err(|err| err.to_string())?;
         let mut should_resubscribe = false;
 
-        loop {
-            let next = if let Some(deadline) = forwarder.next_delta_deadline() {
-                let now = Instant::now();
-                if now >= deadline {
-                    if !forwarder.flush_expired_deltas(now) {
-                        return Ok(());
-                    }
-                    continue;
-                }
-
-                let wait_for_deadline = deadline.saturating_duration_since(now);
-                tokio::select! {
-                    next = std::future::poll_fn(|cx| stream.as_mut().poll_next(cx)) => next,
-                    _ = tokio::time::sleep(wait_for_deadline) => {
-                        if !forwarder.flush_expired_deltas(Instant::now()) {
-                            return Ok(());
-                        }
-                        continue;
-                    }
-                }
-            } else {
-                std::future::poll_fn(|cx| stream.as_mut().poll_next(cx)).await
-            };
-
-            let Some(next) = next else {
-                break;
-            };
-
+        while let Some(next) = std::future::poll_fn(|cx| stream.as_mut().poll_next(cx)).await {
             match next {
                 Ok(event) => {
                     if event.seq <= last_seq_seen {
@@ -590,21 +395,18 @@ async fn forward_events_to_tui(
 
                     last_seq_seen = event.seq;
                     from_seq = last_seq_seen.saturating_add(1);
-                    if !forwarder.forward_event(event) {
+                    if live_update_tx
+                        .send(LiveUpdate::Event(Box::new(event)))
+                        .is_err()
+                    {
                         return Ok(());
                     }
                 }
                 Err(EventStoreError::SubscriberLagged(skipped)) => {
-                    if !forwarder.flush_all_pending_deltas() {
-                        return Ok(());
-                    }
-
-                    if !forwarder.send_status(format!(
+                    let _ = live_update_tx.send(LiveUpdate::Status(format!(
                         "live stream lagged by {skipped}; replaying from seq {}",
                         last_seq_seen.saturating_add(1)
-                    )) {
-                        return Ok(());
-                    }
+                    )));
 
                     let mut replay = store
                         .replay(last_seq_seen.saturating_add(1))
@@ -619,13 +421,12 @@ async fn forward_events_to_tui(
 
                         last_seq_seen = replayed_event.seq;
                         from_seq = last_seq_seen.saturating_add(1);
-                        if !forwarder.forward_event(replayed_event) {
+                        if live_update_tx
+                            .send(LiveUpdate::Event(Box::new(replayed_event)))
+                            .is_err()
+                        {
                             return Ok(());
                         }
-                    }
-
-                    if !forwarder.flush_all_pending_deltas() {
-                        return Ok(());
                     }
 
                     should_resubscribe = true;
@@ -635,10 +436,6 @@ async fn forward_events_to_tui(
                     return Err(format!("live stream error: {err}"));
                 }
             }
-        }
-
-        if !forwarder.flush_all_pending_deltas() {
-            return Ok(());
         }
 
         if should_resubscribe {
@@ -651,264 +448,15 @@ async fn forward_events_to_tui(
     Ok(())
 }
 
-struct LiveUpdateForwarder {
-    live_update_tx: crossbeam_mpsc::Sender<LiveUpdate>,
-    pending_deltas: HashMap<String, PendingDeltaUpdate>,
-    overload: OverloadTracker,
-}
-
-impl LiveUpdateForwarder {
-    fn new(live_update_tx: crossbeam_mpsc::Sender<LiveUpdate>) -> Self {
-        Self {
-            live_update_tx,
-            pending_deltas: HashMap::new(),
-            overload: OverloadTracker::default(),
-        }
-    }
-
-    fn forward_event(&mut self, event: EventEnvelopeV1) -> bool {
-        let maybe_delta = match &event.payload {
-            EventV1::ProviderStreamDelta(data) => {
-                Some((data.request_id.clone(), data.delta.clone()))
-            }
-            _ => None,
-        };
-
-        if let Some((request_id, delta)) = maybe_delta {
-            return self.buffer_delta_event(event, request_id, delta);
-        }
-
-        if !self.flush_all_pending_deltas() {
-            return false;
-        }
-
-        self.try_send_update(LiveUpdate::Event(Box::new(event)))
-    }
-
-    fn send_status(&mut self, status: String) -> bool {
-        self.try_send_update(LiveUpdate::Status(status))
-    }
-
-    fn next_delta_deadline(&self) -> Option<Instant> {
-        self.pending_deltas
-            .values()
-            .map(|pending| pending.first_seen_at + DELTA_COALESCE_WINDOW)
-            .min()
-    }
-
-    fn flush_expired_deltas(&mut self, now: Instant) -> bool {
-        let mut request_ids = self
-            .pending_deltas
-            .iter()
-            .filter_map(|(request_id, pending)| {
-                (now.saturating_duration_since(pending.first_seen_at) >= DELTA_COALESCE_WINDOW)
-                    .then_some(request_id.clone())
-            })
-            .collect::<Vec<_>>();
-
-        request_ids.sort_by_key(|request_id| {
-            self.pending_deltas
-                .get(request_id)
-                .map(|pending| pending.first_seq)
-                .unwrap_or(u64::MAX)
-        });
-
-        for request_id in request_ids {
-            if !self.flush_pending_delta(&request_id) {
-                return false;
-            }
-        }
-
-        true
-    }
-
-    fn flush_all_pending_deltas(&mut self) -> bool {
-        if self.pending_deltas.is_empty() {
-            return true;
-        }
-
-        let mut pending = self
-            .pending_deltas
-            .drain()
-            .map(|(_, pending)| pending)
-            .collect::<Vec<_>>();
-        pending.sort_by_key(|pending| pending.first_seq);
-
-        for pending_delta in pending {
-            if !self.try_send_update(LiveUpdate::Event(Box::new(
-                pending_delta.into_coalesced_event(),
-            ))) {
-                return false;
-            }
-        }
-
-        true
-    }
-
-    fn buffer_delta_event(
-        &mut self,
-        event: EventEnvelopeV1,
-        request_id: String,
-        delta: String,
-    ) -> bool {
-        let delta_char_len = delta.chars().count();
-
-        if let Some(pending) = self.pending_deltas.get_mut(&request_id) {
-            pending.append(event, &delta, delta_char_len);
-        } else {
-            self.pending_deltas.insert(
-                request_id.clone(),
-                PendingDeltaUpdate::new(event, delta, delta_char_len),
-            );
-        }
-
-        let should_flush = self
-            .pending_deltas
-            .get(&request_id)
-            .is_some_and(|pending| pending.merged_char_len >= DELTA_COALESCE_MAX_CHARS);
-
-        if should_flush {
-            return self.flush_pending_delta(&request_id);
-        }
-
-        true
-    }
-
-    fn flush_pending_delta(&mut self, request_id: &str) -> bool {
-        let Some(pending_delta) = self.pending_deltas.remove(request_id) else {
-            return true;
-        };
-
-        self.try_send_update(LiveUpdate::Event(Box::new(
-            pending_delta.into_coalesced_event(),
-        )))
-    }
-
-    fn try_send_update(&mut self, update: LiveUpdate) -> bool {
-        if is_provider_stream_delta_update(&update)
-            && self.live_update_tx.len()
-                >= LIVE_UPDATE_CHANNEL_CAPACITY.saturating_sub(LIVE_UPDATE_NON_DELTA_HEADROOM)
-        {
-            self.overload.record_dropped_delta();
-            return self.maybe_send_overload_status();
-        }
-
-        match self.live_update_tx.try_send(update) {
-            Ok(()) => self.maybe_send_overload_status(),
-            Err(TrySendError::Full(update)) => {
-                if is_provider_stream_delta_update(&update) {
-                    self.overload.record_dropped_delta();
-                }
-                self.maybe_send_overload_status()
-            }
-            Err(TrySendError::Disconnected(_)) => false,
-        }
-    }
-
-    fn maybe_send_overload_status(&mut self) -> bool {
-        if self.overload.dropped_deltas_since_banner == 0 {
-            return true;
-        }
-
-        let now = Instant::now();
-        if self
-            .overload
-            .last_banner_at
-            .is_some_and(|last| now.duration_since(last) < OVERLOAD_STATUS_INTERVAL)
-        {
-            return true;
-        }
-
-        self.overload.last_banner_at = Some(now);
-        let status = LiveUpdate::Status(format!(
-            "UI overloaded: dropped {} deltas",
-            self.overload.dropped_deltas_since_banner
-        ));
-
-        match self.live_update_tx.try_send(status) {
-            Ok(()) => {
-                self.overload.dropped_deltas_since_banner = 0;
-                true
-            }
-            Err(TrySendError::Full(_)) => true,
-            Err(TrySendError::Disconnected(_)) => false,
-        }
-    }
-}
-
-#[derive(Default)]
-struct OverloadTracker {
-    dropped_deltas_since_banner: usize,
-    last_banner_at: Option<Instant>,
-}
-
-impl OverloadTracker {
-    fn record_dropped_delta(&mut self) {
-        self.dropped_deltas_since_banner = self.dropped_deltas_since_banner.saturating_add(1);
-    }
-}
-
-struct PendingDeltaUpdate {
-    first_seen_at: Instant,
-    first_seq: u64,
-    last_event: EventEnvelopeV1,
-    merged_delta: String,
-    merged_char_len: usize,
-}
-
-impl PendingDeltaUpdate {
-    fn new(event: EventEnvelopeV1, delta: String, delta_char_len: usize) -> Self {
-        Self {
-            first_seen_at: Instant::now(),
-            first_seq: event.seq,
-            last_event: event,
-            merged_delta: delta,
-            merged_char_len: delta_char_len,
-        }
-    }
-
-    fn append(&mut self, event: EventEnvelopeV1, delta: &str, delta_char_len: usize) {
-        self.last_event = event;
-        self.merged_delta.push_str(delta);
-        self.merged_char_len = self.merged_char_len.saturating_add(delta_char_len);
-    }
-
-    fn into_coalesced_event(self) -> EventEnvelopeV1 {
-        let mut event = self.last_event;
-        if let EventV1::ProviderStreamDelta(data) = &mut event.payload {
-            data.delta = self.merged_delta;
-        }
-        event
-    }
-}
-
-fn is_provider_stream_delta_update(update: &LiveUpdate) -> bool {
-    matches!(
-        update,
-        LiveUpdate::Event(event)
-            if matches!(&event.payload, EventV1::ProviderStreamDelta(_))
-    )
-}
-
 async fn handle_ui_intents(
     coordinator: CoordinatorHandle,
-    mut intent_rx: mpsc::UnboundedReceiver<UiIntent>,
+    mut intent_rx: mpsc::UnboundedReceiver<PermissionIntent>,
 ) -> Result<(), String> {
     while let Some(intent) = intent_rx.recv().await {
-        match intent {
-            UiIntent::ResolvePermission { permission_id, decision } => {
-                coordinator
-                    .resolve_permission(permission_id, decision)
-                    .await
-                    .map_err(|err: CoordinatorError| err.to_string())?;
-            }
-            UiIntent::SubmitPrompt { .. } => {
-                // Handled by the caller
-            }
-            UiIntent::QuitRequested => {
-                // Handled by the caller
-            }
-        }
+        coordinator
+            .resolve_permission(intent.permission_id, intent.decision)
+            .await
+            .map_err(|err| err.to_string())?;
     }
     Ok(())
 }
