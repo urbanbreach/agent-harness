@@ -1,0 +1,30 @@
+
+running 20 tests
+test tests::activity_groups_by_request_id ... ok
+test tests::activity_status_done_on_request_finished ... ok
+test tests::activity_status_error_on_run_failed ... ok
+test tests::memory_cap_enforces_max_events ... ok
+test tests::memory_cap_enforces_max_transcript_chars ... ok
+test tests::permission_modal_a_emits_resolve_intent_and_closes_on_resolved ... ok
+test tests::prompt_focus_enter_emits_submit_intent ... ok
+test tests::replay_mode_r_key_marks_reload_requested ... ok
+test tests::transcript_accumulates_stream_deltas ... ok
+test theme::tests::default_theme_is_opencode_dark ... ok
+test theme::tests::mono_theme_has_valid_colors ... ok
+test theme::tests::opencode_dark_theme_has_valid_colors ... ok
+test ui::tests::theme_provides_default_colors ... ok
+test tests::live_mode_renders_activity_and_transcript ... ok
+test tests::run_workspace_renders_activity_with_compact_format ... ok
+test tests::diff_tab_snapshot_handles_missing_artifact ... ok
+test tests::diff_tab_snapshot_renders_artifact_contents ... ok
+test tests::live_mode_snapshot_renders_grouped_streams ... ok
+test tests::permission_modal_snapshot_renders_request ... ok
+test tests::replay_mode_snapshot_renders_two_pane_layout ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

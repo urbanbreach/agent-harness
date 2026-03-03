@@ -50,20 +50,26 @@ Only `openai_compatible` type is supported:
   "providers": {
     "default": {
       "type": "openai_compatible",
-      
+
       // CLIProxy-style base URL (no trailing slash)
       "base_url": "http://127.0.0.1:8317/v1",
-      
+
       // Literal key or ${ENV_VAR} reference
       "api_key": "${OPENAI_API_KEY}",
-      
+
+      // API mode: "responses" | "chat_completions" | "auto"
+      // "responses" uses /v1/responses (OpenAI Responses API)
+      // "chat_completions" uses /v1/chat/completions (standard)
+      // "auto" tries responses first, falls back on 404/405
+      "api_mode": "responses",
+
       "timeout_ms": 60000,
-      
+
       // Additional headers for all requests
       "headers": {
         "X-Client": "harness"
       },
-      
+
       // Model definitions
       "models": {
         "gpt-4o-mini": {
@@ -164,6 +170,64 @@ For testing and reproducible runs:
 }
 ```
 
+### UI Settings
+
+Configure the TUI appearance and behavior:
+
+```jsonc
+{
+  "ui": {
+    // Default profile for interactive TUI mode
+    "default_profile": "worker",
+
+    // Theme selection (values depend on theme system)
+    "theme": "opencode_dark"
+  }
+}
+```
+
+### Logging Settings
+
+Control log output levels and destinations:
+
+```jsonc
+{
+  "logging": {
+    // Log level: "trace", "debug", "info", "warn", "error"
+    "level": "info",
+
+    // Optional log file path (defaults to stderr if not set)
+    "file": ".agent-harness/harness.log",
+
+    // Enable span events for async tracing
+    "span_events": false
+  }
+}
+```
+
+### Keybindings
+
+Customize keyboard shortcuts (optional):
+
+```jsonc
+{
+  "ui": {
+    "keybindings": {
+      "quit": "q",
+      "submit": "enter",
+      "cancel": "esc",
+      "next_tab": "tab",
+      "prev_tab": "shift+tab",
+      "focus_list": "1",
+      "focus_details": "2",
+      "focus_prompt": "3",
+      "scroll_up": "k",
+      "scroll_down": "j"
+    }
+  }
+}
+```
+
 ## Complete Example
 
 See [configs/harness.example.jsonc](../configs/harness.example.jsonc) for a fully annotated example.
@@ -214,6 +278,8 @@ Root configuration object:
 | permissions | PermissionsConfig | Yes | Global permission defaults |
 | paths | PathsConfig | No | Path overrides |
 | deterministic | DeterministicConfig | No | Determinism settings |
+| ui | UiConfig | No | TUI settings |
+| logging | LoggingConfig | No | Logging settings |
 
 ### PermissionLevel
 
@@ -229,9 +295,17 @@ Enum values:
 | type | String | Yes | Only "openai_compatible" supported |
 | base_url | String | Yes | API endpoint URL |
 | api_key | String | Yes | API key or ${ENV_VAR} |
+| api_mode | String | No | API mode: "responses", "chat_completions", or "auto" |
 | timeout_ms | u64 | Yes | Request timeout |
 | headers | Map<String, String> | No | Extra HTTP headers |
 | models | Map<String, ModelConfig> | Yes | Model definitions |
+
+### ApiMode
+
+Enum values for `api_mode`:
+- `"responses"` - Use `/v1/responses` endpoint (OpenAI Responses API with streaming)
+- `"chat_completions"` - Use `/v1/chat/completions` (standard chat completions API)
+- `"auto"` - Try responses first, automatically fall back to chat completions on 404/405 errors
 
 ## Validation Errors
 

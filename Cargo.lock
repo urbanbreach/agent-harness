@@ -743,6 +743,7 @@ dependencies = [
  "harness-providers",
  "harness-tools",
  "harness-tui",
+ "json5",
  "serde",
  "serde_json",
  "sha2",
@@ -803,6 +804,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "vt100",
+ "wiremock",
 ]
 
 [[package]]

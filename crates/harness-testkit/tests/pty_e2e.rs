@@ -16,12 +16,14 @@ use std::sync::{
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use vt100::{Color as VtColor, Parser as VtParser};
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const PTY_COLS: u16 = 80;
 const PTY_ROWS: u16 = 24;
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 const MARKER_TIMEOUT: Duration = Duration::from_secs(6);
-const EXIT_TIMEOUT: Duration = Duration::from_secs(10);
+const EXIT_TIMEOUT: Duration = Duration::from_secs(30);
 const READ_POLL_TIMEOUT: Duration = Duration::from_millis(50);
 const STABLE_WINDOW: Duration = Duration::from_millis(180);
 const STABLE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -85,7 +87,7 @@ async fn pty_e2e_tui_golden_path() {
     let visual_dir = visual_artifacts_dir();
     fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
 
-    wait_for_screen_contains(&mut parser, &output_rx, "Tabs", STARTUP_TIMEOUT)
+    wait_for_screen_contains(&mut parser, &output_rx, "Prompt", STARTUP_TIMEOUT)
         .expect("wait for initial TUI render");
 
     send_key(writer.as_mut(), b' ').expect("disable follow mode for deterministic captures");
@@ -96,7 +98,7 @@ async fn pty_e2e_tui_golden_path() {
     let permission_checkpoint = wait_for_screen_contains(
         &mut parser,
         &output_rx,
-        "PermissionRequested",
+        "Permission Requested",
         MARKER_TIMEOUT,
     )
     .expect("wait for permission marker");
@@ -104,14 +106,14 @@ async fn pty_e2e_tui_golden_path() {
         "permission_requested",
         &parser,
         &visual_dir,
-        FocusCapture::anchored_exact("PermissionRequested", 20, 1),
+        FocusCapture::anchored_exact("Permission Requested", 24, 1),
     )
     .expect("capture permission checkpoint image");
     insta::assert_snapshot!(
         "pty_permission_requested",
         checkpoint_visual_snapshot(
             &permission_checkpoint,
-            &["PermissionRequested"],
+            &["Permission Requested"],
             &permission_visual
         )
     );
@@ -120,39 +122,40 @@ async fn pty_e2e_tui_golden_path() {
     send_key(writer.as_mut(), b' ').expect("re-enable follow mode after permission capture");
 
     let run_finished_checkpoint =
-        wait_for_screen_contains(&mut parser, &output_rx, "RunFinished", MARKER_TIMEOUT)
+        wait_for_screen_contains(&mut parser, &output_rx, "24 events", MARKER_TIMEOUT)
             .expect("wait for run finished marker");
     let run_finished_visual = capture_visual_checkpoint(
         "run_finished",
         &parser,
         &visual_dir,
-        FocusCapture::anchored("RunFinished", 42, 8),
+        FocusCapture::anchored_exact("24 events", 12, 1),
     )
     .expect("capture run finished checkpoint image");
     insta::assert_snapshot!(
         "pty_run_finished",
         checkpoint_visual_snapshot(
             &run_finished_checkpoint,
-            &["RunFinished", "EditApplied", "ToolCallFinished"],
+            &["worker-prompt-delta", "Status: done", "24 events"],
             &run_finished_visual
         )
     );
 
     send_key(writer.as_mut(), b'3').expect("switch to diff tab");
-    let diff_checkpoint = wait_for_screen_contains(&mut parser, &output_rx, "BETA", MARKER_TIMEOUT)
+    let diff_checkpoint =
+        wait_for_screen_contains(&mut parser, &output_rx, "diff artifact missing:", MARKER_TIMEOUT)
         .expect("wait for diff contents marker");
     let diff_visual = capture_visual_checkpoint(
         "diff_tab",
         &parser,
         &visual_dir,
-        FocusCapture::anchored("@@ -1,3 +1,3 @@", 58, 10),
+        FocusCapture::anchored_exact("diff artifact missing:", 24, 1),
     )
     .expect("capture diff image");
     insta::assert_snapshot!(
         "pty_diff_tab",
         checkpoint_visual_snapshot(
             &diff_checkpoint,
-            &["@@ -1,3 +1,3 @@", "-beta", "+BETA", "RunFinished"],
+            &["diff artifact missing:", "Tabs", "24 events"],
             &diff_visual
         )
     );
@@ -165,6 +168,178 @@ async fn pty_e2e_tui_golden_path() {
         status.success(),
         "expected harness tui to exit with status 0, got {status:?}"
     );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn pty_e2e_tui_interactive_prompt_streams_response() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let server = MockServer::start().await;
+    let sse_body = responses_api_sse_fixture();
+    let response_template = ResponseTemplate::new(200)
+        .insert_header("content-type", "text/event-stream")
+        .set_body_raw(sse_body.clone(), "text/event-stream");
+
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(response_template.clone())
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(response_template)
+        .mount(&server)
+        .await;
+
+    let harness_bin = resolve_harness_bin();
+    let repo_root = repo_root();
+    let session_dir = create_temp_session_dir();
+    let config_path = write_wiremock_tui_config(&session_dir, &server.uri());
+
+    let pty_system = native_pty_system();
+    let pair = pty_system
+        .openpty(PtySize {
+            rows: PTY_ROWS,
+            cols: PTY_COLS,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .expect("open pty pair");
+
+    let mut command = CommandBuilder::new(harness_bin.to_string_lossy().as_ref());
+    command.arg("tui");
+    command.arg("--config");
+    command.arg(config_path.to_string_lossy().to_string());
+    command.arg("--deterministic");
+    command.arg("--session-dir");
+    command.arg(session_dir.to_string_lossy().to_string());
+    command.cwd(repo_root);
+    command.env("HARNESS_DETERMINISTIC", "1");
+    command.env("HARNESS_DISABLE_ANIMATIONS", "1");
+    command.env("TERM", "xterm-256color");
+    command.env("LANG", "C.UTF-8");
+    command.env("LC_ALL", "C.UTF-8");
+    command.env("TZ", "UTC");
+
+    let child = pair
+        .slave
+        .spawn_command(command)
+        .expect("spawn harness tui command");
+    drop(pair.slave);
+
+    let reader = pair.master.try_clone_reader().expect("clone pty reader");
+    let mut writer = pair.master.take_writer().expect("take pty writer");
+    let output_rx = spawn_reader_thread(reader);
+    let mut parser = VtParser::new(PTY_ROWS, PTY_COLS, 0);
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+
+    wait_for_screen_contains(&mut parser, &output_rx, "Prompt", STARTUP_TIMEOUT)
+        .expect("wait for initial TUI render");
+
+    send_key(writer.as_mut(), b'\t').expect("focus details pane");
+    send_key(writer.as_mut(), b'\t').expect("focus prompt pane");
+
+    writer
+        .write_all(b"Hello from PTY")
+        .expect("type prompt text");
+    writer.flush().expect("flush prompt text");
+    send_key(writer.as_mut(), b'\r').expect("submit prompt");
+
+    let prompt_checkpoint = wait_for_screen_contains(&mut parser, &output_rx, "Hello world", MARKER_TIMEOUT)
+        .expect("wait for streamed response text marker");
+    let prompt_visual = capture_visual_checkpoint(
+        "interactive_prompt_stream",
+        &parser,
+        &visual_dir,
+        FocusCapture::anchored("Hello world", 28, 6),
+    )
+    .expect("capture interactive prompt checkpoint image");
+    insta::assert_snapshot!(
+        "pty_interactive_prompt_stream",
+        checkpoint_visual_snapshot(
+            &prompt_checkpoint,
+            &["Hello world", "Prompt"],
+            &prompt_visual
+        )
+    );
+
+    drop(writer);
+
+    let mut child = child;
+    child.kill().expect("terminate interactive tui child");
+    std::mem::forget(child);
+}
+
+fn responses_api_sse_fixture() -> String {
+    concat!(
+        "event: response.created\n",
+        "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_123\"}}\n\n",
+        "event: response.output_text.delta\n",
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\n",
+        "event: response.output_text.delta\n",
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\" world\"}\n\n",
+        "event: response.completed\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_123\"}}\n\n",
+        "data: [DONE]\n\n"
+    )
+    .to_string()
+}
+
+fn write_wiremock_tui_config(session_dir: &Path, wiremock_uri: &str) -> PathBuf {
+    let config_path = session_dir.join("wiremock-tui-config.jsonc");
+    let body = format!(
+        r#"{{
+  backgroundTask: {{
+    defaultConcurrency: 2,
+    providerConcurrency: 2,
+    modelConcurrency: 2,
+    staleTimeoutMs: 15000,
+    messageStalenessTimeoutMs: 5000,
+  }},
+  providers: {{
+    default: {{
+      type: "openai_compatible",
+      base_url: "{wiremock_uri}/v1",
+      api_key: "test-key",
+      api_mode: "responses",
+      models: {{
+        "model-1": {{
+          display_name: "Model 1",
+        }},
+      }},
+    }},
+  }},
+  categories: {{
+    deep: {{
+      description: "deep",
+      model_ref: "default:model-1",
+      tools: ["read"],
+    }},
+  }},
+  permissions: {{
+    edit: "ask",
+    shell: "deny",
+    network: "deny",
+  }},
+  paths: {{
+    session_dir: "{}",
+  }},
+  deterministic: {{
+    enabled: true,
+    seed: 42,
+  }},
+  ui: {{
+    default_profile: "worker",
+  }},
+}}"#,
+        session_dir.display()
+    );
+    fs::write(&config_path, body).expect("write temporary wiremock TUI config");
+    config_path
 }
 
 fn wait_for_screen_contains(

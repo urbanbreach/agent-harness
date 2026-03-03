@@ -2,7 +2,11 @@
   "active_plan": "/home/ubere/code/accela/agent-harness/.sisyphus/plans/usable-harness-tui-cliproxyapi-e2e.md",
   "started_at": "2026-03-03T01:20:22.635Z",
   "session_ids": [
-    "ses_34eb7d5baffekz2o1uUpgMNJc6"
+    "ses_34eb7d5baffekz2o1uUpgMNJc6",
+    "ses_34e7c99f0ffeSBFsKVSLnmMwhX",
+    "ses_34e5b0c37ffeXq9s4QfVMrztWt",
+    "ses_34e58c472ffecTHTPl5oYmEtbo",
+    "ses_34e356211ffeizNDBB1j2pgdNt"
   ],
   "plan_name": "usable-harness-tui-cliproxyapi-e2e",
   "agent": "atlas",

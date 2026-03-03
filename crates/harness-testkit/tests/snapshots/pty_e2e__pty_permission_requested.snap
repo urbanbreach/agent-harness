@@ -1,10 +1,10 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-expression: "checkpoint_visual_snapshot(&permission_checkpoint, &[\"PermissionRequested\"],\n&permission_visual)"
+expression: "checkpoint_visual_snapshot(&permission_checkpoint, &[\"Permission Requested\"],\n&permission_visual)"
 ---
-PermissionRequested: true
-focus_marker: PermissionRequested
-focus_pixels_blake3: 3b1711c0b8f093690169a849513a11de2b3341fccac8d5871a0aa78011e5ce47
-focus_region_cells: row=11, col=13, height=1, width=20
+Permission Requested: true
+focus_marker: Permission Requested
+focus_pixels_blake3: 262f08e63b106fd5e39ae5d96323e574e24011116152ddaad429523e1da95d03
+focus_region_cells: row=8, col=16, height=1, width=24
 image: pty_permission_requested.png
 size_px: 2560x1440

@@ -16,3 +16,4 @@ portable-pty = "0.8"
 serde_json.workspace = true
 tokio.workspace = true
 vt100 = "0.15"
+wiremock = "0.6"

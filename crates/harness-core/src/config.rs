@@ -39,6 +39,44 @@ pub struct HarnessConfig {
     pub paths: PathsConfig,
     #[serde(default)]
     pub deterministic: DeterministicConfig,
+    #[serde(default)]
+    pub ui: UiConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct UiConfig {
+    #[serde(default)]
+    pub keybindings: BTreeMap<String, String>,
+    #[serde(
+        rename = "maxEventsInMemory",
+        alias = "max_events_in_memory",
+        default = "default_max_events_in_memory"
+    )]
+    pub max_events_in_memory: usize,
+    #[serde(
+        rename = "maxTranscriptCharsInMemory",
+        alias = "max_transcript_chars_in_memory",
+        default = "default_max_transcript_chars_in_memory"
+    )]
+    pub max_transcript_chars_in_memory: usize,
+}
+
+impl Default for UiConfig {
+    fn default() -> Self {
+        Self {
+            keybindings: BTreeMap::new(),
+            max_events_in_memory: default_max_events_in_memory(),
+            max_transcript_chars_in_memory: default_max_transcript_chars_in_memory(),
+        }
+    }
+}
+
+fn default_max_events_in_memory() -> usize {
+    25_000
+}
+
+fn default_max_transcript_chars_in_memory() -> usize {
+    200_000
 }
 
 impl HarnessConfig {

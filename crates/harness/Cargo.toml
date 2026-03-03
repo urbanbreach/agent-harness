@@ -12,6 +12,7 @@ harness-tools = { path = "../harness-tools" }
 harness-tui = { path = "../harness-tui" }
 serde.workspace = true
 serde_json.workspace = true
+json5.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 blake3 = "1"
 uuid = { version = "1", features = ["v5"] }
