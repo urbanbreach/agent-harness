@@ -4,11 +4,11 @@ pub mod ui;
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use crossbeam_channel::{self as crossbeam_mpsc, Receiver, TryRecvError};
 use harness_core::event::EventEnvelopeV1;
 use ratatui::{backend::CrosstermBackend, Terminal};
 
@@ -108,7 +108,7 @@ pub fn run_tui_with_options(options: TuiOptions) -> Result<()> {
 }
 
 pub fn run_tui() -> Result<()> {
-    let (_tx, rx) = mpsc::channel();
+    let (_tx, rx) = crossbeam_mpsc::unbounded();
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
             run_dir: PathBuf::from("."),

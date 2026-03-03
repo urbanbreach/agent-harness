@@ -56,7 +56,10 @@ Only `openai_compatible` type is supported:
       
       // Literal key or ${ENV_VAR} reference
       "api_key": "${OPENAI_API_KEY}",
-      
+
+      // Request format mode: responses | chat_completions | auto
+      "api_mode": "chat_completions",
+       
       "timeout_ms": 60000,
       
       // Additional headers for all requests
@@ -164,6 +167,65 @@ For testing and reproducible runs:
 }
 ```
 
+### UI
+
+Optional TUI defaults:
+
+```jsonc
+{
+  "ui": {
+    "theme": "opencode_dark", // mono | opencode_dark | default
+    "layout": {
+      "activity_width_pct": 32,
+      "inspector_width_pct": 38,
+      "input_height_rows": 6
+    },
+    "default_profile": "deep",
+    "max_events_in_memory": 2000,
+    "max_transcript_chars_in_memory": 2000000,
+    "disable_animations": false
+  }
+}
+```
+
+### Logging
+
+Optional logging settings:
+
+```jsonc
+{
+  "logging": {
+    "level": "info",
+    "file": ".agent-harness/harness.log",
+    "redact": true
+  }
+}
+```
+
+### Keybindings
+
+Optional fixed-action key overrides:
+
+```jsonc
+{
+  "keybindings": {
+    "quit": "q",
+    "focus_next": "tab",
+    "focus_prev": "shift+tab",
+    "palette": "ctrl+p",
+    "help": "?",
+    "toggle_follow": "f",
+    "submit_prompt": "enter",
+    "clear_prompt": "ctrl+u",
+    "scroll_up": "k",
+    "scroll_down": "j",
+    "tab_run": "1",
+    "tab_events": "2",
+    "tab_diff": "3"
+  }
+}
+```
+
 ## Complete Example
 
 See [configs/harness.example.jsonc](../configs/harness.example.jsonc) for a fully annotated example.
@@ -214,6 +276,9 @@ Root configuration object:
 | permissions | PermissionsConfig | Yes | Global permission defaults |
 | paths | PathsConfig | No | Path overrides |
 | deterministic | DeterministicConfig | No | Determinism settings |
+| ui | UiConfig | No | TUI theme/layout/runtime defaults |
+| logging | LoggingConfig | No | Logging level, file, and redaction |
+| keybindings | Map<String, String> | No | Fixed action key overrides |
 
 ### PermissionLevel
 
@@ -229,6 +294,7 @@ Enum values:
 | type | String | Yes | Only "openai_compatible" supported |
 | base_url | String | Yes | API endpoint URL |
 | api_key | String | Yes | API key or ${ENV_VAR} |
+| api_mode | String | No | responses \| chat_completions \| auto (default: chat_completions) |
 | timeout_ms | u64 | Yes | Request timeout |
 | headers | Map<String, String> | No | Extra HTTP headers |
 | models | Map<String, ModelConfig> | Yes | Model definitions |

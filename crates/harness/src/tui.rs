@@ -1,11 +1,12 @@
 use std::fs;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::mpsc as std_mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use clap::{ArgGroup, Args};
+use crossbeam_channel::{self as crossbeam_mpsc, TrySendError};
 use harness_core::clock::{Clock, FakeClock, RealClock};
 use harness_core::config::{load_config_from_file, resolve_config_path, ShellAllowlist};
 use harness_core::coord::{
@@ -31,6 +32,11 @@ use crate::scenarios::{
 
 const DEFAULT_SESSION_DIR: &str = ".agent-harness/sessions";
 const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
+const LIVE_UPDATE_CHANNEL_CAPACITY: usize = 2048;
+const LIVE_UPDATE_NON_DELTA_HEADROOM: usize = 64;
+const DELTA_COALESCE_WINDOW: Duration = Duration::from_millis(16);
+const DELTA_COALESCE_MAX_CHARS: usize = 1024;
+const OVERLOAD_STATUS_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Args, Clone)]
 #[command(group(
@@ -231,7 +237,8 @@ async fn run_live_mode(
     );
 
     let (bootstrap_tx, bootstrap_rx) = oneshot::channel::<LiveBootstrap>();
-    let (live_update_tx, live_update_rx) = std_mpsc::channel::<LiveUpdate>();
+    let (live_update_tx, live_update_rx) =
+        crossbeam_mpsc::bounded::<LiveUpdate>(LIVE_UPDATE_CHANNEL_CAPACITY);
     let (intent_tx, intent_rx) = mpsc::unbounded_channel::<PermissionIntent>();
 
     let scenario_coordinator = coordinator.clone();
@@ -377,8 +384,9 @@ async fn run_scenario_runner(
 
 async fn forward_events_to_tui(
     store: Arc<dyn EventStore>,
-    live_update_tx: std_mpsc::Sender<LiveUpdate>,
+    live_update_tx: crossbeam_mpsc::Sender<LiveUpdate>,
 ) -> Result<(), String> {
+    let mut forwarder = LiveUpdateForwarder::new(live_update_tx);
     let mut from_seq = 1_u64;
     let mut last_seq_seen = 0_u64;
 
@@ -386,7 +394,34 @@ async fn forward_events_to_tui(
         let mut stream = store.subscribe(from_seq).map_err(|err| err.to_string())?;
         let mut should_resubscribe = false;
 
-        while let Some(next) = std::future::poll_fn(|cx| stream.as_mut().poll_next(cx)).await {
+        loop {
+            let next = if let Some(deadline) = forwarder.next_delta_deadline() {
+                let now = Instant::now();
+                if now >= deadline {
+                    if !forwarder.flush_expired_deltas(now) {
+                        return Ok(());
+                    }
+                    continue;
+                }
+
+                let wait_for_deadline = deadline.saturating_duration_since(now);
+                tokio::select! {
+                    next = std::future::poll_fn(|cx| stream.as_mut().poll_next(cx)) => next,
+                    _ = tokio::time::sleep(wait_for_deadline) => {
+                        if !forwarder.flush_expired_deltas(Instant::now()) {
+                            return Ok(());
+                        }
+                        continue;
+                    }
+                }
+            } else {
+                std::future::poll_fn(|cx| stream.as_mut().poll_next(cx)).await
+            };
+
+            let Some(next) = next else {
+                break;
+            };
+
             match next {
                 Ok(event) => {
                     if event.seq <= last_seq_seen {
@@ -395,18 +430,21 @@ async fn forward_events_to_tui(
 
                     last_seq_seen = event.seq;
                     from_seq = last_seq_seen.saturating_add(1);
-                    if live_update_tx
-                        .send(LiveUpdate::Event(Box::new(event)))
-                        .is_err()
-                    {
+                    if !forwarder.forward_event(event) {
                         return Ok(());
                     }
                 }
                 Err(EventStoreError::SubscriberLagged(skipped)) => {
-                    let _ = live_update_tx.send(LiveUpdate::Status(format!(
+                    if !forwarder.flush_all_pending_deltas() {
+                        return Ok(());
+                    }
+
+                    if !forwarder.send_status(format!(
                         "live stream lagged by {skipped}; replaying from seq {}",
                         last_seq_seen.saturating_add(1)
-                    )));
+                    )) {
+                        return Ok(());
+                    }
 
                     let mut replay = store
                         .replay(last_seq_seen.saturating_add(1))
@@ -421,12 +459,13 @@ async fn forward_events_to_tui(
 
                         last_seq_seen = replayed_event.seq;
                         from_seq = last_seq_seen.saturating_add(1);
-                        if live_update_tx
-                            .send(LiveUpdate::Event(Box::new(replayed_event)))
-                            .is_err()
-                        {
+                        if !forwarder.forward_event(replayed_event) {
                             return Ok(());
                         }
+                    }
+
+                    if !forwarder.flush_all_pending_deltas() {
+                        return Ok(());
                     }
 
                     should_resubscribe = true;
@@ -438,6 +477,10 @@ async fn forward_events_to_tui(
             }
         }
 
+        if !forwarder.flush_all_pending_deltas() {
+            return Ok(());
+        }
+
         if should_resubscribe {
             continue;
         }
@@ -446,6 +489,238 @@ async fn forward_events_to_tui(
     }
 
     Ok(())
+}
+
+struct LiveUpdateForwarder {
+    live_update_tx: crossbeam_mpsc::Sender<LiveUpdate>,
+    pending_deltas: HashMap<String, PendingDeltaUpdate>,
+    overload: OverloadTracker,
+}
+
+impl LiveUpdateForwarder {
+    fn new(live_update_tx: crossbeam_mpsc::Sender<LiveUpdate>) -> Self {
+        Self {
+            live_update_tx,
+            pending_deltas: HashMap::new(),
+            overload: OverloadTracker::default(),
+        }
+    }
+
+    fn forward_event(&mut self, event: EventEnvelopeV1) -> bool {
+        let maybe_delta = match &event.payload {
+            EventV1::ProviderStreamDelta(data) => Some((data.request_id.clone(), data.delta.clone())),
+            _ => None,
+        };
+
+        if let Some((request_id, delta)) = maybe_delta {
+            return self.buffer_delta_event(event, request_id, delta);
+        }
+
+        if !self.flush_all_pending_deltas() {
+            return false;
+        }
+
+        self.try_send_update(LiveUpdate::Event(Box::new(event)))
+    }
+
+    fn send_status(&mut self, status: String) -> bool {
+        self.try_send_update(LiveUpdate::Status(status))
+    }
+
+    fn next_delta_deadline(&self) -> Option<Instant> {
+        self.pending_deltas
+            .values()
+            .map(|pending| pending.first_seen_at + DELTA_COALESCE_WINDOW)
+            .min()
+    }
+
+    fn flush_expired_deltas(&mut self, now: Instant) -> bool {
+        let mut request_ids = self
+            .pending_deltas
+            .iter()
+            .filter_map(|(request_id, pending)| {
+                (now.saturating_duration_since(pending.first_seen_at) >= DELTA_COALESCE_WINDOW)
+                    .then_some(request_id.clone())
+            })
+            .collect::<Vec<_>>();
+
+        request_ids.sort_by_key(|request_id| {
+            self.pending_deltas
+                .get(request_id)
+                .map(|pending| pending.first_seq)
+                .unwrap_or(u64::MAX)
+        });
+
+        for request_id in request_ids {
+            if !self.flush_pending_delta(&request_id) {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn flush_all_pending_deltas(&mut self) -> bool {
+        if self.pending_deltas.is_empty() {
+            return true;
+        }
+
+        let mut pending = self
+            .pending_deltas
+            .drain()
+            .map(|(_, pending)| pending)
+            .collect::<Vec<_>>();
+        pending.sort_by_key(|pending| pending.first_seq);
+
+        for pending_delta in pending {
+            if !self.try_send_update(LiveUpdate::Event(Box::new(
+                pending_delta.into_coalesced_event(),
+            ))) {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn buffer_delta_event(&mut self, event: EventEnvelopeV1, request_id: String, delta: String) -> bool {
+        let delta_char_len = delta.chars().count();
+
+        if let Some(pending) = self.pending_deltas.get_mut(&request_id) {
+            pending.append(event, &delta, delta_char_len);
+        } else {
+            self.pending_deltas.insert(
+                request_id.clone(),
+                PendingDeltaUpdate::new(event, delta, delta_char_len),
+            );
+        }
+
+        let should_flush = self
+            .pending_deltas
+            .get(&request_id)
+            .is_some_and(|pending| pending.merged_char_len >= DELTA_COALESCE_MAX_CHARS);
+
+        if should_flush {
+            return self.flush_pending_delta(&request_id);
+        }
+
+        true
+    }
+
+    fn flush_pending_delta(&mut self, request_id: &str) -> bool {
+        let Some(pending_delta) = self.pending_deltas.remove(request_id) else {
+            return true;
+        };
+
+        self.try_send_update(LiveUpdate::Event(Box::new(
+            pending_delta.into_coalesced_event(),
+        )))
+    }
+
+    fn try_send_update(&mut self, update: LiveUpdate) -> bool {
+        if is_provider_stream_delta_update(&update)
+            && self.live_update_tx.len()
+                >= LIVE_UPDATE_CHANNEL_CAPACITY.saturating_sub(LIVE_UPDATE_NON_DELTA_HEADROOM)
+        {
+            self.overload.record_dropped_delta();
+            return self.maybe_send_overload_status();
+        }
+
+        match self.live_update_tx.try_send(update) {
+            Ok(()) => self.maybe_send_overload_status(),
+            Err(TrySendError::Full(update)) => {
+                if is_provider_stream_delta_update(&update) {
+                    self.overload.record_dropped_delta();
+                }
+                self.maybe_send_overload_status()
+            }
+            Err(TrySendError::Disconnected(_)) => false,
+        }
+    }
+
+    fn maybe_send_overload_status(&mut self) -> bool {
+        if self.overload.dropped_deltas_since_banner == 0 {
+            return true;
+        }
+
+        let now = Instant::now();
+        if self
+            .overload
+            .last_banner_at
+            .is_some_and(|last| now.duration_since(last) < OVERLOAD_STATUS_INTERVAL)
+        {
+            return true;
+        }
+
+        self.overload.last_banner_at = Some(now);
+        let status = LiveUpdate::Status(format!(
+            "UI overloaded: dropped {} deltas",
+            self.overload.dropped_deltas_since_banner
+        ));
+
+        match self.live_update_tx.try_send(status) {
+            Ok(()) => {
+                self.overload.dropped_deltas_since_banner = 0;
+                true
+            }
+            Err(TrySendError::Full(_)) => true,
+            Err(TrySendError::Disconnected(_)) => false,
+        }
+    }
+}
+
+#[derive(Default)]
+struct OverloadTracker {
+    dropped_deltas_since_banner: usize,
+    last_banner_at: Option<Instant>,
+}
+
+impl OverloadTracker {
+    fn record_dropped_delta(&mut self) {
+        self.dropped_deltas_since_banner = self.dropped_deltas_since_banner.saturating_add(1);
+    }
+}
+
+struct PendingDeltaUpdate {
+    first_seen_at: Instant,
+    first_seq: u64,
+    last_event: EventEnvelopeV1,
+    merged_delta: String,
+    merged_char_len: usize,
+}
+
+impl PendingDeltaUpdate {
+    fn new(event: EventEnvelopeV1, delta: String, delta_char_len: usize) -> Self {
+        Self {
+            first_seen_at: Instant::now(),
+            first_seq: event.seq,
+            last_event: event,
+            merged_delta: delta,
+            merged_char_len: delta_char_len,
+        }
+    }
+
+    fn append(&mut self, event: EventEnvelopeV1, delta: &str, delta_char_len: usize) {
+        self.last_event = event;
+        self.merged_delta.push_str(delta);
+        self.merged_char_len = self.merged_char_len.saturating_add(delta_char_len);
+    }
+
+    fn into_coalesced_event(self) -> EventEnvelopeV1 {
+        let mut event = self.last_event;
+        if let EventV1::ProviderStreamDelta(data) = &mut event.payload {
+            data.delta = self.merged_delta;
+        }
+        event
+    }
+}
+
+fn is_provider_stream_delta_update(update: &LiveUpdate) -> bool {
+    matches!(
+        update,
+        LiveUpdate::Event(event)
+            if matches!(&event.payload, EventV1::ProviderStreamDelta(_))
+    )
 }
 
 async fn handle_ui_intents(

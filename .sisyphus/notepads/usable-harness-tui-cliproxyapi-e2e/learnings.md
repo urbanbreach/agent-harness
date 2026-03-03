@@ -32,3 +32,14 @@
 - TUI: crates/harness-tui/src/
 - CLI: crates/harness/src/
 
+## 2026-03-03 Schema Expansion Notes
+
+- `HarnessConfig` now supports optional `ui`, `logging`, and `keybindings` sections behind `#[serde(default)]` for backward compatibility.
+- `openai_compatible` provider config now includes `api_mode` enum (`responses`, `chat_completions`, `auto`) with default `chat_completions`.
+- `keybindings` remains a simple `BTreeMap<String, String>` with fixed default action keys (quit/focus/palette/help/follow/submit/clear/scroll/tab actions).
+
+## 2026-03-03 Live update backpressure notes
+
+- Live TUI transport now uses `crossbeam_channel::bounded(2048)` to cap UI backlog and avoid blocking async event forwarding.
+- Display-path `ProviderStreamDelta` events are coalesced per `request_id` for up to 16ms or 1024 characters before enqueue, reducing high-frequency token churn without touching persisted JSONL events.
+- When the queue is saturated, delta updates are dropped first and an overload banner (`UI overloaded: dropped N deltas`) is rate-limited to once per second.

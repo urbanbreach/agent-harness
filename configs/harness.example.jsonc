@@ -19,6 +19,10 @@
       // Literal or ${ENV_VAR} reference
       api_key: "${OPENAI_API_KEY}",
 
+      // API mode for OpenAI-compatible providers:
+      // responses | chat_completions | auto
+      api_mode: "chat_completions",
+
       timeout_ms: 60000,
 
       headers: {
@@ -75,5 +79,43 @@
   deterministic: {
     enabled: false,
     seed: 42,
+  },
+
+  // Optional UI defaults for TUI behavior and layout
+  ui: {
+    theme: "opencode_dark", // mono | opencode_dark | default
+    layout: {
+      activity_width_pct: 32,
+      inspector_width_pct: 38,
+      input_height_rows: 6,
+    },
+    default_profile: "deep",
+    max_events_in_memory: 2000,
+    max_transcript_chars_in_memory: 2000000,
+    disable_animations: false,
+  },
+
+  // Optional logging behavior
+  logging: {
+    level: "info",
+    file: ".agent-harness/harness.log",
+    redact: true,
+  },
+
+  // Optional key overrides for fixed actions
+  keybindings: {
+    quit: "q",
+    focus_next: "tab",
+    focus_prev: "shift+tab",
+    palette: "ctrl+p",
+    help: "?",
+    toggle_follow: "f",
+    submit_prompt: "enter",
+    clear_prompt: "ctrl+u",
+    scroll_up: "k",
+    scroll_down: "j",
+    tab_run: "1",
+    tab_events: "2",
+    tab_diff: "3",
   },
 }

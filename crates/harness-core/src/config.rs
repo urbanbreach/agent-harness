@@ -39,6 +39,12 @@ pub struct HarnessConfig {
     pub paths: PathsConfig,
     #[serde(default)]
     pub deterministic: DeterministicConfig,
+    #[serde(default)]
+    pub ui: UiConfig,
+    #[serde(default)]
+    pub logging: LoggingConfig,
+    #[serde(default = "default_keybindings")]
+    pub keybindings: KeybindingsConfig,
 }
 
 impl HarnessConfig {
@@ -92,11 +98,106 @@ pub struct OpenAiCompatibleProviderConfig {
     pub api_key: String,
     #[serde(default = "default_provider_timeout_ms", alias = "timeoutMs")]
     pub timeout_ms: u64,
+    #[serde(default = "default_openai_api_mode", alias = "apiMode")]
+    pub api_mode: OpenAiApiMode,
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
     #[serde(default)]
     pub models: BTreeMap<String, ModelConfig>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenAiApiMode {
+    Responses,
+    ChatCompletions,
+    Auto,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct UiConfig {
+    #[serde(default)]
+    pub theme: UiTheme,
+    #[serde(default)]
+    pub layout: UiLayoutConfig,
+    #[serde(default)]
+    pub default_profile: Option<String>,
+    #[serde(default = "default_max_events_in_memory")]
+    pub max_events_in_memory: usize,
+    #[serde(default = "default_max_transcript_chars_in_memory")]
+    pub max_transcript_chars_in_memory: usize,
+    #[serde(default)]
+    pub disable_animations: bool,
+}
+
+impl Default for UiConfig {
+    fn default() -> Self {
+        Self {
+            theme: UiTheme::default(),
+            layout: UiLayoutConfig::default(),
+            default_profile: None,
+            max_events_in_memory: default_max_events_in_memory(),
+            max_transcript_chars_in_memory: default_max_transcript_chars_in_memory(),
+            disable_animations: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum UiTheme {
+    Mono,
+    OpencodeDark,
+    Default,
+}
+
+impl Default for UiTheme {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct UiLayoutConfig {
+    #[serde(default = "default_activity_width_pct")]
+    pub activity_width_pct: u16,
+    #[serde(default = "default_inspector_width_pct")]
+    pub inspector_width_pct: u16,
+    #[serde(default = "default_input_height_rows")]
+    pub input_height_rows: u16,
+}
+
+impl Default for UiLayoutConfig {
+    fn default() -> Self {
+        Self {
+            activity_width_pct: default_activity_width_pct(),
+            inspector_width_pct: default_inspector_width_pct(),
+            input_height_rows: default_input_height_rows(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct LoggingConfig {
+    #[serde(default = "default_logging_level")]
+    pub level: String,
+    #[serde(default)]
+    pub file: Option<PathBuf>,
+    #[serde(default)]
+    pub redact: bool,
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            level: default_logging_level(),
+            file: None,
+            redact: true,
+        }
+    }
+}
+
+pub type KeybindingsConfig = BTreeMap<String, String>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ModelConfig {
@@ -198,6 +299,55 @@ fn default_session_dir() -> PathBuf {
 
 fn default_provider_timeout_ms() -> u64 {
     60_000
+}
+
+fn default_openai_api_mode() -> OpenAiApiMode {
+    OpenAiApiMode::ChatCompletions
+}
+
+fn default_activity_width_pct() -> u16 {
+    32
+}
+
+fn default_inspector_width_pct() -> u16 {
+    38
+}
+
+fn default_input_height_rows() -> u16 {
+    6
+}
+
+fn default_max_events_in_memory() -> usize {
+    2_000
+}
+
+fn default_max_transcript_chars_in_memory() -> usize {
+    2_000_000
+}
+
+fn default_logging_level() -> String {
+    "info".to_string()
+}
+
+fn default_keybindings() -> KeybindingsConfig {
+    [
+        ("quit", "q"),
+        ("focus_next", "tab"),
+        ("focus_prev", "shift+tab"),
+        ("palette", "ctrl+p"),
+        ("help", "?"),
+        ("toggle_follow", "f"),
+        ("submit_prompt", "enter"),
+        ("clear_prompt", "ctrl+u"),
+        ("scroll_up", "k"),
+        ("scroll_down", "j"),
+        ("tab_run", "1"),
+        ("tab_events", "2"),
+        ("tab_diff", "3"),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_string(), v.to_string()))
+    .collect()
 }
 
 fn resolve_env_reference(value: &str) -> Result<String, ConfigError> {

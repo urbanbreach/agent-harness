@@ -8,6 +8,7 @@ version.workspace = true
 anyhow = "1.0"
 ratatui.workspace = true
 crossterm = { workspace = true, features = ["event-stream"] }
+crossbeam-channel = "0.5"
 harness-core = { path = "../harness-core" }
 futures = "0.3.32"
 futures-util = "0.3.32"
