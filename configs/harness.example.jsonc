@@ -1,0 +1,79 @@
+{
+  // Background task scheduler defaults
+  backgroundTask: {
+    defaultConcurrency: 4,
+    providerConcurrency: 4,
+    modelConcurrency: 2,
+    staleTimeoutMs: 30000,
+    messageStalenessTimeoutMs: 10000,
+  },
+
+  // Provider map (only openai_compatible is supported in Wave 1)
+  providers: {
+    default: {
+      type: "openai_compatible",
+
+      // CLIProxy-style endpoint
+      base_url: "http://127.0.0.1:8317/v1",
+
+      // Literal or ${ENV_VAR} reference
+      api_key: "${OPENAI_API_KEY}",
+
+      timeout_ms: 60000,
+
+      headers: {
+        "X-Client": "harness",
+      },
+
+      models: {
+        "gpt-4o-mini": {
+          display_name: "GPT-4o mini",
+          max_input_tokens: 128000,
+          max_output_tokens: 16384,
+          variants: {
+            deterministic: {
+              display_name: "Deterministic",
+              max_output_tokens: 4096,
+            },
+          },
+        },
+      },
+    },
+  },
+
+  // Category map used by orchestration profiles
+  categories: {
+    deep: {
+      description: "Default deep execution profile",
+      model_ref: "default:gpt-4o-mini",
+      variant: "deterministic",
+      temperature: 0.1,
+      permissions: {
+        edit: "ask",
+        shell: "ask",
+        network: "deny",
+      },
+      tools: ["read", "edit.hashline_apply", "shell.run"],
+    },
+  },
+
+  permissions: {
+    edit: "ask",
+    shell: "ask",
+    network: "deny",
+    shell_allowlist: {
+      executables: ["git", "cargo", "ls"],
+      cwd_roots: [".", "./crates"],
+    },
+  },
+
+  // Optional; defaults to .agent-harness/sessions when omitted
+  paths: {
+    session_dir: ".agent-harness/sessions",
+  },
+
+  deterministic: {
+    enabled: false,
+    seed: 42,
+  },
+}
