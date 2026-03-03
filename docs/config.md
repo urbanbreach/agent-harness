@@ -54,8 +54,8 @@ Only `openai_compatible` type is supported:
       // CLIProxy-style base URL (no trailing slash)
       "base_url": "http://127.0.0.1:8317/v1",
       
-      // Literal key or ${ENV_VAR} reference
-      "api_key": "${OPENAI_API_KEY}",
+      // Literal key, required ${ENV_VAR}, or optional ${ENV_VAR:-default}
+      "api_key": "${OPENAI_API_KEY:-DUMMY}",
 
       // Request format mode: responses | chat_completions | auto
       "api_mode": "chat_completions",
@@ -232,21 +232,25 @@ See [configs/harness.example.jsonc](../configs/harness.example.jsonc) for a full
 
 ## Environment Variable Substitution
 
-String values can reference environment variables:
+`providers.<name>.api_key` supports environment variable substitution:
 
 ```jsonc
 {
   "providers": {
-    "default": {
+    "required": {
       "api_key": "${OPENAI_API_KEY}",
-      "base_url": "${HARNESS_BASE_URL:-http://localhost:8317/v1}"
+    },
+    "optional": {
+      // Uses fallback when OPENAI_API_KEY is not set
+      "api_key": "${OPENAI_API_KEY:-DUMMY}"
     }
   }
 }
 ```
 
-- `${VAR}` - Required, fails if not set
-- `${VAR:-default}` - Optional, uses default if not set
+- `${VAR}` - Required. If `VAR` is unset, config loading fails with `MissingEnvironmentVariable(VAR)`.
+- `${VAR:-default}` - Optional. If `VAR` is unset, `default` is used.
+- Any other string value is left unchanged.
 
 ## CLI Overrides
 
@@ -293,7 +297,7 @@ Enum values:
 |----------|------|----------|-------------|
 | type | String | Yes | Only "openai_compatible" supported |
 | base_url | String | Yes | API endpoint URL |
-| api_key | String | Yes | API key or ${ENV_VAR} |
+| api_key | String | Yes | API key literal, `${ENV_VAR}`, or `${ENV_VAR:-default}` |
 | api_mode | String | No | responses \| chat_completions \| auto (default: chat_completions) |
 | timeout_ms | u64 | Yes | Request timeout |
 | headers | Map<String, String> | No | Extra HTTP headers |

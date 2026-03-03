@@ -43,3 +43,18 @@
 - Live TUI transport now uses `crossbeam_channel::bounded(2048)` to cap UI backlog and avoid blocking async event forwarding.
 - Display-path `ProviderStreamDelta` events are coalesced per `request_id` for up to 16ms or 1024 characters before enqueue, reducing high-frequency token churn without touching persisted JSONL events.
 - When the queue is saturated, delta updates are dropped first and an overload banner (`UI overloaded: dropped N deltas`) is rate-limited to once per second.
+
+## 2026-03-03 OpenAI-compatible Responses streaming notes
+
+- `OpenAiCompatibleProviderConfig` in `harness-providers` now carries `api_mode` with `responses | chat_completions | auto`; provider stores mode and resolves request path per call.
+- Added dual endpoint builders for `{base}/chat/completions` and `{base}/responses` so CLIproxy-style `/v1` base URLs fan out correctly.
+- Responses-mode request translation uses `model`, `input: [{role, content}]`, and `stream: true` (no chat `messages` payload in this mode).
+- Responses SSE parser now accepts either SSE event-name or JSON `type` discriminator (`response.output_text.delta`, `response.completed`, `error`) and ignores keep-alive empty/comment frames.
+- `api_mode=auto` now probes `/responses` first and falls back to chat completions only on 404/405, preserving existing chat behavior for compatible proxies.
+- Offline wiremock coverage now includes deterministic Responses transcript parsing and auto-fallback path validation; live smoke defaults to Responses mode unless `HARNESS_LIVE_PROXY_API_MODE` overrides.
+
+## 2026-03-03 Live update backpressure verification
+
+- `LiveUpdateForwarder` keeps UI-path updates non-blocking by using `try_send` against a bounded queue and dropping deltas first under sustained pressure.
+- Delta coalescing behavior is request-scoped (`request_id`) with dual flush thresholds (16ms window, 1024 chars), which cuts render churn while preserving event-log fidelity.
+- Verification pass in worktree: `cargo test -p harness-tui` and `cargo build --workspace` both succeeded after the backpressure/coalescing path update.

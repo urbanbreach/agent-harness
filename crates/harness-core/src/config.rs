@@ -351,19 +351,29 @@ fn default_keybindings() -> KeybindingsConfig {
 }
 
 fn resolve_env_reference(value: &str) -> Result<String, ConfigError> {
-    if !(value.starts_with("${") && value.ends_with('}')) {
+    let Some(reference) = value
+        .strip_prefix("${")
+        .and_then(|inner| inner.strip_suffix('}'))
+    else {
+        return Ok(value.to_string());
+    };
+
+    if reference.is_empty() {
         return Ok(value.to_string());
     }
 
-    let key = &value[2..value.len() - 1];
-    if key.is_empty() {
-        return Ok(value.to_string());
+    if let Some((key, fallback)) = reference.split_once(":-") {
+        if key.is_empty() {
+            return Ok(value.to_string());
+        }
+
+        return match env::var(key) {
+            Ok(resolved) => Ok(resolved),
+            Err(_) => Ok(fallback.to_string()),
+        };
     }
 
-    match env::var(key) {
-        Ok(resolved) => Ok(resolved),
-        Err(_) => Ok(value.to_string()),
-    }
+    env::var(reference).map_err(|_| ConfigError::MissingEnvironmentVariable(reference.to_string()))
 }
 
 pub fn load_config_from_file(path: &Path) -> Result<HarnessConfig, ConfigError> {
@@ -427,6 +437,58 @@ pub fn resolve_config_path(explicit_path: Option<&Path>) -> Option<PathBuf> {
 mod tests {
     use super::*;
 
+    fn config_with_api_key(api_key: &str) -> String {
+        format!(
+            r#"
+        {{
+          backgroundTask: {{
+            defaultConcurrency: 2,
+            providerConcurrency: 2,
+            modelConcurrency: 2,
+            staleTimeoutMs: 15000,
+            messageStalenessTimeoutMs: 5000,
+          }},
+          providers: {{
+            default: {{
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "{api_key}",
+              timeout_ms: 60000,
+              models: {{
+                "gpt-4o-mini": {{
+                  display_name: "GPT-4o mini",
+                }},
+              }},
+            }},
+          }},
+          categories: {{
+            deep: {{
+              description: "Deep work",
+              model_ref: "default:gpt-4o-mini",
+              tools: ["read"],
+            }},
+          }},
+          permissions: {{
+            edit: "ask",
+            shell: "ask",
+            network: "deny",
+          }},
+        }}
+        "#
+        )
+    }
+
+    fn missing_env_var(prefix: &str) -> String {
+        for attempt in 0..64 {
+            let key = format!("{prefix}_{attempt}_{}", std::process::id());
+            if env::var(&key).is_err() {
+                return key;
+            }
+        }
+
+        panic!("unable to find missing environment variable key for tests");
+    }
+
     #[test]
     fn example_config_parses() {
         let text = include_str!("../../../configs/harness.example.jsonc");
@@ -450,46 +512,35 @@ mod tests {
     }
 
     #[test]
-    fn env_var_substitution_works() {
-        let expected = env::var("PATH").expect("PATH must exist in test environment");
-        let cfg = r#"
-        {
-          backgroundTask: {
-            defaultConcurrency: 2,
-            providerConcurrency: 2,
-            modelConcurrency: 2,
-            staleTimeoutMs: 15000,
-            messageStalenessTimeoutMs: 5000,
-          },
-          providers: {
-            default: {
-              type: "openai_compatible",
-              base_url: "http://127.0.0.1:8317/v1",
-              api_key: "${PATH}",
-              timeout_ms: 60000,
-              models: {
-                "gpt-4o-mini": {
-                  display_name: "GPT-4o mini",
-                },
-              },
-            },
-          },
-          categories: {
-            deep: {
-              description: "Deep work",
-              model_ref: "default:gpt-4o-mini",
-              tools: ["read"],
-            },
-          },
-          permissions: {
-            edit: "ask",
-            shell: "ask",
-            network: "deny",
-          },
-        }
-        "#;
+    fn env_var_substitution_fails_when_required_var_is_missing() {
+        let missing_var = missing_env_var("HARNESS_TEST_REQUIRED_VAR");
+        let cfg = config_with_api_key(&format!("${{{missing_var}}}"));
 
-        let parsed = load_config_from_str(cfg).expect("config with env reference must parse");
+        let err =
+            load_config_from_str(&cfg).expect_err("config with missing required env var must fail");
+        assert!(matches!(
+            err,
+            ConfigError::MissingEnvironmentVariable(ref key) if key == &missing_var
+        ));
+    }
+
+    #[test]
+    fn env_var_substitution_uses_fallback_when_var_is_missing() {
+        let missing_var = missing_env_var("HARNESS_TEST_OPTIONAL_VAR");
+        let cfg = config_with_api_key(&format!("${{{missing_var}:-fallback}}"));
+
+        let parsed =
+            load_config_from_str(&cfg).expect("config with fallback env reference must parse");
+        let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
+        assert_eq!(provider.api_key, "fallback");
+    }
+
+    #[test]
+    fn env_var_substitution_resolves_set_var() {
+        let expected = env::var("PATH").expect("PATH must exist in test environment");
+        let cfg = config_with_api_key("${PATH}");
+
+        let parsed = load_config_from_str(&cfg).expect("config with set env reference must parse");
         let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
         assert_eq!(provider.api_key, expected);
     }

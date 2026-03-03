@@ -16,8 +16,9 @@
       // CLIProxy-style endpoint
       base_url: "http://127.0.0.1:8317/v1",
 
-      // Literal or ${ENV_VAR} reference
-      api_key: "${OPENAI_API_KEY}",
+      // Literal key, required ${VAR}, or optional ${VAR:-default}
+      // Use fallback here so `config validate` works without local secrets.
+      api_key: "${OPENAI_API_KEY:-DUMMY}",
 
       // API mode for OpenAI-compatible providers:
       // responses | chat_completions | auto

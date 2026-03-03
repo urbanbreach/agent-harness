@@ -1,5 +1,5 @@
-use std::fs;
 use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -508,7 +508,9 @@ impl LiveUpdateForwarder {
 
     fn forward_event(&mut self, event: EventEnvelopeV1) -> bool {
         let maybe_delta = match &event.payload {
-            EventV1::ProviderStreamDelta(data) => Some((data.request_id.clone(), data.delta.clone())),
+            EventV1::ProviderStreamDelta(data) => {
+                Some((data.request_id.clone(), data.delta.clone()))
+            }
             _ => None,
         };
 
@@ -583,7 +585,12 @@ impl LiveUpdateForwarder {
         true
     }
 
-    fn buffer_delta_event(&mut self, event: EventEnvelopeV1, request_id: String, delta: String) -> bool {
+    fn buffer_delta_event(
+        &mut self,
+        event: EventEnvelopeV1,
+        request_id: String,
+        delta: String,
+    ) -> bool {
         let delta_char_len = delta.chars().count();
 
         if let Some(pending) = self.pending_deltas.get_mut(&request_id) {
