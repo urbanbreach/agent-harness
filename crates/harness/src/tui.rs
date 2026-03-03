@@ -18,7 +18,7 @@ use harness_core::redact::DefaultRedactor;
 use harness_core::store::{EventStore, EventStoreError};
 use harness_tools::coordinator_registry;
 use harness_tui::{
-    load_events_from_run_dir, run_tui_with_options, LiveUpdate, PermissionIntent, TuiMode,
+    load_events_from_run_dir, run_tui_with_options, LiveUpdate, UiIntent, TuiMode,
     TuiOptions,
 };
 use tokio::sync::{mpsc, oneshot};
@@ -198,7 +198,7 @@ fn execute_replay_mode(run_dir: &Path, exit_on_finish: bool) -> ExitCode {
             events,
         },
         exit_on_finish,
-        on_permission_intent: None,
+        on_ui_intent: None,
     }) {
         eprintln!("TUI error: {err}");
         return ExitCode::from(1);
@@ -294,7 +294,7 @@ async fn run_interactive_mode(cmd: &TuiCommand, settings: &InteractiveSettings) 
 
     let (live_update_tx, live_update_rx) =
         crossbeam_mpsc::bounded::<LiveUpdate>(LIVE_UPDATE_CHANNEL_CAPACITY);
-    let (intent_tx, intent_rx) = mpsc::unbounded_channel::<PermissionIntent>();
+    let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
 
     let event_forwarder_task =
         tokio::spawn(async move { forward_events_to_tui(store, live_update_tx).await });
@@ -305,7 +305,7 @@ async fn run_interactive_mode(cmd: &TuiCommand, settings: &InteractiveSettings) 
 
     let ui_intent_sender = {
         let intent_tx = intent_tx.clone();
-        Arc::new(move |intent: PermissionIntent| {
+        Arc::new(move |intent: UiIntent| {
             let _ = intent_tx.send(intent);
         })
     };
@@ -320,7 +320,7 @@ async fn run_interactive_mode(cmd: &TuiCommand, settings: &InteractiveSettings) 
                 update_rx: live_update_rx,
             },
             exit_on_finish,
-            on_permission_intent: Some(ui_intent_sender),
+            on_ui_intent: Some(ui_intent_sender),
         })
     })
     .await
@@ -399,7 +399,7 @@ async fn run_live_mode(
     let (bootstrap_tx, bootstrap_rx) = oneshot::channel::<LiveBootstrap>();
     let (live_update_tx, live_update_rx) =
         crossbeam_mpsc::bounded::<LiveUpdate>(LIVE_UPDATE_CHANNEL_CAPACITY);
-    let (intent_tx, intent_rx) = mpsc::unbounded_channel::<PermissionIntent>();
+    let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
 
     let scenario_coordinator = coordinator.clone();
     let scenario_task = tokio::spawn(async move {
@@ -421,7 +421,7 @@ async fn run_live_mode(
 
     let ui_intent_sender = {
         let intent_tx = intent_tx.clone();
-        Arc::new(move |intent: PermissionIntent| {
+        Arc::new(move |intent: UiIntent| {
             let _ = intent_tx.send(intent);
         })
     };
@@ -435,7 +435,7 @@ async fn run_live_mode(
                 update_rx: live_update_rx,
             },
             exit_on_finish,
-            on_permission_intent: Some(ui_intent_sender),
+            on_ui_intent: Some(ui_intent_sender),
         })
     })
     .await
@@ -892,13 +892,23 @@ fn is_provider_stream_delta_update(update: &LiveUpdate) -> bool {
 
 async fn handle_ui_intents(
     coordinator: CoordinatorHandle,
-    mut intent_rx: mpsc::UnboundedReceiver<PermissionIntent>,
+    mut intent_rx: mpsc::UnboundedReceiver<UiIntent>,
 ) -> Result<(), String> {
     while let Some(intent) = intent_rx.recv().await {
-        coordinator
-            .resolve_permission(intent.permission_id, intent.decision)
-            .await
-            .map_err(|err| err.to_string())?;
+        match intent {
+            UiIntent::ResolvePermission { permission_id, decision } => {
+                coordinator
+                    .resolve_permission(permission_id, decision)
+                    .await
+                    .map_err(|err: CoordinatorError| err.to_string())?;
+            }
+            UiIntent::SubmitPrompt { .. } => {
+                // Handled by the caller
+            }
+            UiIntent::QuitRequested => {
+                // Handled by the caller
+            }
+        }
     }
     Ok(())
 }

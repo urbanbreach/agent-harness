@@ -214,7 +214,9 @@ impl AppState {
             KeyCode::Char('1') => self.active_tab = Tab::Events,
             KeyCode::Char('2') => self.active_tab = Tab::Output,
             KeyCode::Char('3') => self.active_tab = Tab::Diff,
-            KeyCode::Char('h') if self.active_tab != Tab::Help => self.active_tab = Tab::Help,
+            KeyCode::Char('h') if self.active_tab != Tab::Help && self.focus != Focus::Prompt => {
+                self.active_tab = Tab::Help
+            }
             KeyCode::Char(' ') => self.follow_mode = !self.follow_mode,
             KeyCode::Char('r') if self.replay_mode => self.reload_requested = true,
             KeyCode::Char('j') | KeyCode::Down => {
@@ -229,6 +231,36 @@ impl AppState {
                     self.previous_event();
                 } else {
                     self.details_scroll = self.details_scroll.saturating_sub(1);
+                }
+            }
+            KeyCode::Enter => {
+                if self.focus == Focus::Prompt && !self.prompt_buffer.is_empty() {
+                    let text = self.prompt_buffer.clone();
+                    self.prompt_buffer.clear();
+                    self.prompt_cursor = 0;
+                    self.prompt_history.push(text.clone());
+                    self.prompt_history_index = None;
+                    if let Some(handler) = &self.on_ui_intent {
+                        handler(UiIntent::SubmitPrompt { text });
+                    }
+                }
+            }
+            KeyCode::Char(c) => {
+                if self.focus == Focus::Prompt {
+                    self.prompt_buffer.insert(self.prompt_cursor, c);
+                    self.prompt_cursor += 1;
+                }
+            }
+            KeyCode::Backspace => {
+                if self.focus == Focus::Prompt && self.prompt_cursor > 0 {
+                    self.prompt_cursor -= 1;
+                    self.prompt_buffer.remove(self.prompt_cursor);
+                }
+            }
+            KeyCode::Esc => {
+                if self.focus == Focus::Prompt {
+                    self.prompt_buffer.clear();
+                    self.prompt_cursor = 0;
                 }
             }
             _ => {}
@@ -281,8 +313,8 @@ impl AppState {
             return;
         }
 
-        if let Some(handler) = &self.on_permission_intent {
-            handler(PermissionIntent {
+        if let Some(handler) = &self.on_ui_intent {
+            handler(UiIntent::ResolvePermission {
                 permission_id: permission_id.clone(),
                 decision,
             });
