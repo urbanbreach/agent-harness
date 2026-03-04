@@ -78,7 +78,8 @@ impl MockProvider {
                     source,
                 })?;
 
-            let digest = request_digest(&fixture.request);
+            let request = fixture.request.into_completion_request();
+            let digest = request_digest(&request);
             scripted_events.insert(digest, fixture.events.into_iter().map(Into::into).collect());
         }
 
@@ -135,17 +136,58 @@ fn display_path(path: &Path) -> String {
 
 #[derive(Debug, Deserialize)]
 struct MockProviderFixture {
-    request: CompletionRequest,
+    request: FixtureCompletionRequest,
     events: Vec<FixtureStreamEvent>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FixtureCompletionRequest {
+    model_id: String,
+    #[serde(default, alias = "input")]
+    messages: Vec<crate::CompletionMessage>,
+    #[serde(default)]
+    temperature: Option<f32>,
+    #[serde(default)]
+    max_tokens: Option<u32>,
+    #[serde(default)]
+    stream: bool,
+    #[serde(default)]
+    tools: Vec<Value>,
+}
+
+impl FixtureCompletionRequest {
+    fn into_completion_request(self) -> CompletionRequest {
+        let _ = self.tools;
+        CompletionRequest {
+            model_id: self.model_id,
+            messages: self.messages,
+            temperature: self.temperature,
+            max_tokens: self.max_tokens,
+            stream: self.stream,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum FixtureStreamEvent {
     Start,
-    TextDelta { text: String },
-    Done { usage: CompletionUsage },
-    Error { message: String },
+    TextDelta {
+        text: String,
+    },
+    Done {
+        usage: CompletionUsage,
+        #[serde(default)]
+        finish_reason: Option<String>,
+    },
+    ToolCall {
+        call_id: String,
+        name: String,
+        arguments_json: String,
+    },
+    Error {
+        message: String,
+    },
 }
 
 impl From<FixtureStreamEvent> for ProviderStreamEvent {
@@ -153,7 +195,18 @@ impl From<FixtureStreamEvent> for ProviderStreamEvent {
         match value {
             FixtureStreamEvent::Start => Self::Start,
             FixtureStreamEvent::TextDelta { text } => Self::TextDelta(text),
-            FixtureStreamEvent::Done { usage } => Self::Done { usage },
+            FixtureStreamEvent::Done {
+                usage,
+                finish_reason,
+            } => {
+                let _ = finish_reason;
+                Self::Done { usage }
+            }
+            FixtureStreamEvent::ToolCall {
+                call_id,
+                name,
+                arguments_json,
+            } => Self::TextDelta(format!("[tool_call:{name}:{call_id}:{arguments_json}]")),
             FixtureStreamEvent::Error { message } => Self::Error { message },
         }
     }
