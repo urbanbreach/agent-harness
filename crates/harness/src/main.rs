@@ -5,6 +5,9 @@ use harness_core::config::{
     harness_schema_pretty_json, load_config_from_file, resolve_config_path,
 };
 
+mod bootstrap;
+mod logging;
+mod prompt;
 mod replay;
 mod run;
 mod scenarios;
@@ -12,6 +15,7 @@ mod sessions;
 mod tui;
 
 use crate::tui::TuiCommand;
+use prompt::PromptCommand;
 use replay::ReplayCommand;
 use run::RunCommand;
 use sessions::SessionsCommand;
@@ -34,6 +38,7 @@ struct Cli {
 enum Commands {
     Tui(TuiCommand),
     Run(RunCommand),
+    Prompt(PromptCommand),
     Replay(ReplayCommand),
     Sessions {
         #[command(subcommand)]
@@ -57,6 +62,7 @@ fn main() -> ExitCode {
     match cli.command {
         Commands::Tui(command) => crate::tui::execute(command, cli.config, cli.session_dir),
         Commands::Run(command) => run::execute(command, cli.config, cli.session_dir),
+        Commands::Prompt(command) => prompt::execute(command, cli.config, cli.session_dir),
         Commands::Replay(command) => replay::execute(command),
         Commands::Sessions { command } => sessions::execute(command, cli.session_dir),
         Commands::Schema => match harness_schema_pretty_json() {
