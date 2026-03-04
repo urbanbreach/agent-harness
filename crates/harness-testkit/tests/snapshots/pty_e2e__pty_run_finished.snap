@@ -1,12 +1,12 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-expression: "checkpoint_visual_snapshot(&run_finished_checkpoint,\n&[\"RunFinished\", \"EditApplied\", \"ToolCallFinished\"], &run_finished_visual)"
+expression: "checkpoint_visual_snapshot(&run_finished_checkpoint,\n&[\"worker-prompt-delta\", \"Status: done\", \"24 events\"], &run_finished_visual)"
 ---
-RunFinished: true
-EditApplied: true
-ToolCallFinished: true
-focus_marker: RunFinished
-focus_pixels_blake3: 082b1edb02f7ead40269b5b47e53c19b9c7151cfc9afc404bd90c6fce54fe388
-focus_region_cells: row=20, col=6, height=4, width=42
+worker-prompt-delta: true
+Status: done: true
+24 events: true
+focus_marker: 24 events
+focus_pixels_blake3: 51c9dd386c0da3a8f897c5eb0cfbdb8ac9e8a952e8faf8fd949afdd0a4575d8f
+focus_region_cells: row=23, col=38, height=1, width=12
 image: pty_run_finished.png
 size_px: 2560x1440
