@@ -50,20 +50,27 @@ Only `openai_compatible` type is supported:
   "providers": {
     "default": {
       "type": "openai_compatible",
-      
+
       // CLIProxy-style base URL (no trailing slash)
       "base_url": "http://127.0.0.1:8317/v1",
-      
+
       // Literal key or ${ENV_VAR} reference
-      "api_key": "${OPENAI_API_KEY}",
-      
+      // CLIProxy subscription setups commonly use placeholder token fallback.
+      "api_key": "${OPENAI_API_KEY:-sk-zerolimit}",
+
+      // API mode: "responses" | "chat_completions" | "auto"
+      // "responses" uses /v1/responses (OpenAI Responses API)
+      // "chat_completions" uses /v1/chat/completions (standard)
+      // "auto" tries responses first, falls back on 404/405
+      "api_mode": "responses",
+
       "timeout_ms": 60000,
-      
+
       // Additional headers for all requests
       "headers": {
         "X-Client": "harness"
       },
-      
+
       // Model definitions
       "models": {
         "gpt-4o-mini": {
@@ -164,6 +171,64 @@ For testing and reproducible runs:
 }
 ```
 
+### UI Settings
+
+Configure the TUI appearance and behavior:
+
+```jsonc
+{
+  "ui": {
+    // Default profile for interactive TUI mode
+    "default_profile": "worker",
+
+    // Theme selection (values depend on theme system)
+    "theme": "opencode_dark"
+  }
+}
+```
+
+### Logging Settings
+
+Control log output levels and destinations:
+
+```jsonc
+{
+  "logging": {
+    // Log level: "trace", "debug", "info", "warn", "error"
+    "level": "info",
+
+    // Optional log file path (defaults to stderr if not set)
+    "file": ".agent-harness/harness.log",
+
+    // Enable span events for async tracing
+    "span_events": false
+  }
+}
+```
+
+### Keybindings
+
+Customize keyboard shortcuts (optional):
+
+```jsonc
+{
+  "ui": {
+    "keybindings": {
+      "quit": "q",
+      "submit": "enter",
+      "cancel": "esc",
+      "next_tab": "tab",
+      "prev_tab": "shift+tab",
+      "focus_list": "1",
+      "focus_details": "2",
+      "focus_prompt": "3",
+      "scroll_up": "k",
+      "scroll_down": "j"
+    }
+  }
+}
+```
+
 ## Complete Example
 
 See [configs/harness.example.jsonc](../configs/harness.example.jsonc) for a fully annotated example.
@@ -176,7 +241,7 @@ String values can reference environment variables:
 {
   "providers": {
     "default": {
-      "api_key": "${OPENAI_API_KEY}",
+      "api_key": "${REQUIRED_API_KEY}",
       "base_url": "${HARNESS_BASE_URL:-http://localhost:8317/v1}"
     }
   }
@@ -185,6 +250,8 @@ String values can reference environment variables:
 
 - `${VAR}` - Required, fails if not set
 - `${VAR:-default}` - Optional, uses default if not set
+
+When `base_url` targets local CLIProxy loopback (`127.0.0.1:8317` or `localhost:8317`) and `api_key` is `${OPENAI_API_KEY}` with no env value, Agent Harness automatically falls back to `sk-zerolimit` for subscription-backed local proxy setups.
 
 ## CLI Overrides
 
@@ -214,6 +281,8 @@ Root configuration object:
 | permissions | PermissionsConfig | Yes | Global permission defaults |
 | paths | PathsConfig | No | Path overrides |
 | deterministic | DeterministicConfig | No | Determinism settings |
+| ui | UiConfig | No | TUI settings |
+| logging | LoggingConfig | No | Logging settings |
 
 ### PermissionLevel
 
@@ -228,10 +297,18 @@ Enum values:
 |----------|------|----------|-------------|
 | type | String | Yes | Only "openai_compatible" supported |
 | base_url | String | Yes | API endpoint URL |
-| api_key | String | Yes | API key or ${ENV_VAR} |
+| api_key | String | Yes | API key or ${ENV_VAR} (for local CLIProxy: use `${OPENAI_API_KEY:-sk-zerolimit}`) |
+| api_mode | String | No | API mode: "responses", "chat_completions", or "auto" |
 | timeout_ms | u64 | Yes | Request timeout |
 | headers | Map<String, String> | No | Extra HTTP headers |
 | models | Map<String, ModelConfig> | Yes | Model definitions |
+
+### ApiMode
+
+Enum values for `api_mode`:
+- `"responses"` - Use `/v1/responses` endpoint (OpenAI Responses API with streaming)
+- `"chat_completions"` - Use `/v1/chat/completions` (standard chat completions API)
+- `"auto"` - Try responses first, automatically fall back to chat completions on 404/405 errors
 
 ## Validation Errors
 
@@ -248,9 +325,54 @@ error: unknown variant `openai`, expected `openai_compatible`
 ```
 
 ```
-error: environment variable `OPENAI_API_KEY` not set
+error: environment variable `HARNESS_CONFIG_TEST_API_KEY_REQUIRED` not set
   --> harness.jsonc:8:20
 ```
+
+## CLIproxyAPI Quickstart
+
+Connect to a local CLIproxyAPI instance using the OpenAI Responses API:
+
+```jsonc
+{
+  "providers": {
+    "default": {
+      "type": "openai_compatible",
+      "base_url": "http://127.0.0.1:8317/v1",
+      "api_key": "${OPENAI_API_KEY:-sk-zerolimit}",
+      "api_mode": "responses",
+      "models": {
+        "gpt-5.3-codex": {
+          "display_name": "GPT-5.3 Codex",
+          "max_input_tokens": 128000,
+          "max_output_tokens": 16384
+        }
+      }
+    }
+  }
+}
+```
+
+Set your API key (optional for local subscription-backed CLIProxy setups that accept `sk-zerolimit`):
+
+```bash
+export OPENAI_API_KEY="your-api-key-here"
+```
+
+The default `base_url` for CLIproxyAPI is `http://127.0.0.1:8317/v1`. The `api_mode: "responses"` setting enables the OpenAI Responses API with streaming support.
+
+## License Hygiene
+
+This project draws behavioral inspiration from Oh My OpenCode and Oh My Pi:
+
+- **Architecture patterns**: Event sourcing, hashline edits, permission models
+- **User experience**: Terminal UI workflows, streaming output
+
+No code, prompts, or proprietary implementations were copied. All code is original and independently authored.
+
+**License notes**:
+- MIT-licensed repositories (like Oh My OpenCode) are fine for inspiration
+- Pi Agent Rust license is unclear; do not copy code from it
 
 ## Migration Notes
 

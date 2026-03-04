@@ -30,10 +30,13 @@ cargo build --release
 cargo run -p harness -- run --scenario golden_path --deterministic
 ```
 
-### Launch the TUI
+### Launch the Interactive TUI
 
 ```bash
-# Interactive mode with permission prompts
+# Interactive TUI with prompt input, streaming transcript, and activity inspector
+cargo run -p harness -- tui
+
+# TUI with a specific scenario
 cargo run -p harness -- tui --scenario golden_path_interactive
 
 # Replay a previous session
@@ -41,6 +44,19 @@ cargo run -p harness -- replay --session .agent-harness/sessions/<run_id>
 
 # List all sessions
 cargo run -p harness -- sessions list
+```
+
+### Headless Prompt (Non-TUI)
+
+```bash
+# Single prompt, headless execution (no TUI)
+cargo run -p harness -- prompt --text "Explain the code in src/main.rs"
+
+# With custom config
+cargo run -p harness -- prompt --text "Hello" --config my-config.jsonc
+
+# Output to file
+cargo run -p harness -- prompt --text "Hello" --out response.jsonl
 ```
 
 ### Validate Configuration
@@ -69,13 +85,48 @@ Example with CLIProxy-style base URL:
     "default": {
       "type": "openai_compatible",
       "base_url": "http://127.0.0.1:8317/v1",
-      "api_key": "${OPENAI_API_KEY}"
+      "api_key": "${OPENAI_API_KEY:-sk-zerolimit}"
     }
   }
 }
 ```
 
 See [docs/config.md](docs/config.md) for full documentation and [configs/harness.example.jsonc](configs/harness.example.jsonc) for a complete example.
+
+## CLIproxyAPI Quickstart
+
+Connect to a local CLIproxyAPI instance using the OpenAI Responses API:
+
+```jsonc
+{
+  "providers": {
+    "default": {
+      "type": "openai_compatible",
+      "base_url": "http://127.0.0.1:8317/v1",
+      "api_key": "${OPENAI_API_KEY:-sk-zerolimit}",
+      "api_mode": "responses",
+      "models": {
+        "gpt-5.3-codex": {
+          "display_name": "GPT-5.3 Codex",
+          "max_input_tokens": 128000,
+          "max_output_tokens": 16384
+        }
+      }
+    }
+  }
+}
+```
+
+Set your API key (optional when your local CLIProxy uses subscription auth and accepts a placeholder token like `sk-zerolimit`):
+
+```bash
+export OPENAI_API_KEY="your-api-key-here"
+```
+
+The `api_mode` setting controls which API endpoint to use:
+- `"responses"` - Use `/v1/responses` (OpenAI Responses API with streaming)
+- `"chat_completions"` - Use `/v1/chat/completions` (standard chat completions)
+- `"auto"` - Try responses first, fall back to chat completions on 404/405
 
 ## Testing
 
@@ -144,6 +195,10 @@ This project draws behavioral inspiration from Oh My OpenCode and Oh My Pi:
 - **User experience**: Terminal UI workflows, streaming output
 
 No code, prompts, or proprietary implementations were copied. All code is original and independently authored.
+
+**License notes**:
+- MIT-licensed repositories (like Oh My OpenCode) are fine for inspiration
+- Pi Agent Rust license is unclear; do not copy code from it
 
 ## License
 

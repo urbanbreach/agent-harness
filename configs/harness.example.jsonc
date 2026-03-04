@@ -16,8 +16,12 @@
       // CLIProxy-style endpoint
       base_url: "http://127.0.0.1:8317/v1",
 
-      // Literal or ${ENV_VAR} reference
-      api_key: "${OPENAI_API_KEY}",
+      // CLIProxy subscriptions typically use a placeholder key (for example sk-zerolimit)
+      // Literal or ${ENV_VAR} / ${ENV_VAR:-default} reference
+      api_key: "${OPENAI_API_KEY:-sk-zerolimit}",
+
+      // responses | chat_completions | auto
+      api_mode: "responses",
 
       timeout_ms: 60000,
 
@@ -26,8 +30,8 @@
       },
 
       models: {
-        "gpt-4o-mini": {
-          display_name: "GPT-4o mini",
+        "gpt-5.3-codex": {
+          display_name: "GPT-5.3 Codex",
           max_input_tokens: 128000,
           max_output_tokens: 16384,
           variants: {
@@ -45,7 +49,7 @@
   categories: {
     deep: {
       description: "Default deep execution profile",
-      model_ref: "default:gpt-4o-mini",
+      model_ref: "default:gpt-5.3-codex",
       variant: "deterministic",
       temperature: 0.1,
       permissions: {
@@ -53,7 +57,7 @@
         shell: "ask",
         network: "deny",
       },
-      tools: ["read", "edit.hashline_apply", "shell.run"],
+      tools: ["fs.read", "edit.hashline_apply", "shell.run"],
     },
   },
 
@@ -75,5 +79,20 @@
   deterministic: {
     enabled: false,
     seed: 42,
+  },
+
+  ui: {
+    default_profile: "deep",
+    keybindings: {
+      submit_prompt: "enter",
+      palette: "ctrl+p",
+      help: "?",
+    },
+    max_events_in_memory: 25000,
+    max_transcript_chars_in_memory: 200000,
+  },
+
+  logging: {
+    level: "info",
   },
 }
