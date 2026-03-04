@@ -125,6 +125,7 @@ fn apply_run_summary_event(summary: &mut RunSummary, event: &EventEnvelopeV1) {
         EventV1::PermissionResolved(payload) => {
             summary.pending_permissions.remove(&payload.permission_id);
         }
+        EventV1::UserMessageSubmitted(_) => {}
         _ => {}
     }
 }
@@ -174,6 +175,7 @@ fn event_type_name(event: &EventV1) -> String {
         EventV1::ArtifactWritten(_) => "artifact_written",
         EventV1::PolicyViolationDetected(_) => "policy_violation_detected",
         EventV1::UiIntentReceived(_) => "ui_intent_received",
+        EventV1::UserMessageSubmitted(_) => "user_message_submitted",
     }
     .to_string()
 }

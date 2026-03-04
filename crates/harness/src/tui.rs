@@ -5,20 +5,19 @@ use std::sync::mpsc as std_mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use clap::{ArgGroup, Args};
+use clap::Args;
 use harness_core::clock::{Clock, FakeClock, RealClock};
 use harness_core::config::{load_config_from_file, resolve_config_path, ShellAllowlist};
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle,
 };
-use harness_core::event::{EventEnvelopeV1, EventV1, ToolCallStatus};
+use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1, ToolCallStatus};
 use harness_core::perm::PermissionDecision;
 use harness_core::redact::DefaultRedactor;
 use harness_core::store::{EventStore, EventStoreError};
 use harness_tools::coordinator_registry;
 use harness_tui::{
-    load_events_from_run_dir, run_tui_with_options, LiveUpdate, PermissionIntent, TuiMode,
-    TuiOptions,
+    load_events_from_run_dir, run_tui_with_options, LiveUpdate, TuiMode, TuiOptions, UiIntent,
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -30,14 +29,10 @@ use crate::scenarios::{
 };
 
 const DEFAULT_SESSION_DIR: &str = ".agent-harness/sessions";
+const DEFAULT_INTERACTIVE_PROFILE: &str = "worker";
 const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Args, Clone)]
-#[command(group(
-    ArgGroup::new("mode")
-        .required(true)
-        .args(["replay", "scenario"]),
-))]
 pub struct TuiCommand {
     #[arg(long, conflicts_with = "scenario")]
     pub replay: Option<PathBuf>,
@@ -53,6 +48,9 @@ pub struct TuiCommand {
 
     #[arg(long, default_value_t = false)]
     pub exit_on_finish: bool,
+
+    #[arg(long)]
+    pub profile: Option<String>,
 }
 
 #[derive(Debug)]
@@ -62,6 +60,7 @@ struct LiveSettings {
     deterministic: bool,
     seed: u64,
     config_digest: String,
+    default_profile: String,
 }
 
 struct LiveBootstrap {
@@ -77,11 +76,6 @@ pub fn execute(
     if let Some(run_dir) = &cmd.replay {
         return execute_replay_mode(run_dir, cmd.exit_on_finish);
     }
-
-    let Some(scenario) = cmd.scenario else {
-        eprintln!("tui requires either --replay <run_dir> or --scenario <name>");
-        return ExitCode::from(2);
-    };
 
     let settings = match resolve_live_settings(&cmd, config_path, global_session_dir) {
         Ok(settings) => settings,
@@ -102,7 +96,13 @@ pub fn execute(
         }
     };
 
-    match runtime.block_on(run_live_mode(&cmd, &settings, scenario)) {
+    let run_result = if let Some(scenario) = cmd.scenario {
+        runtime.block_on(run_live_mode(&cmd, &settings, scenario))
+    } else {
+        runtime.block_on(run_interactive_mode(&cmd, &settings))
+    };
+
+    match run_result {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("tui failed: {err}");
@@ -130,7 +130,8 @@ fn execute_replay_mode(run_dir: &Path, exit_on_finish: bool) -> ExitCode {
             events,
         },
         exit_on_finish,
-        on_permission_intent: None,
+        on_ui_intent: None,
+        keybindings: None,
     }) {
         eprintln!("TUI error: {err}");
         return ExitCode::from(1);
@@ -150,6 +151,7 @@ fn resolve_live_settings(
     let mut config_deterministic = false;
     let mut config_seed = 0;
     let mut config_digest = "none".to_string();
+    let mut config_default_profile = DEFAULT_INTERACTIVE_PROFILE.to_string();
 
     if let Some(path) = explicit_config {
         let config =
@@ -157,6 +159,8 @@ fn resolve_live_settings(
         let config_bytes = fs::read(&path)
             .map_err(|err| format!("failed to read config file {}: {err}", path.display()))?;
         config_digest = blake3::hash(&config_bytes).to_hex().to_string();
+        config_default_profile = read_default_profile_from_config_bytes(&config_bytes)
+            .unwrap_or_else(|| DEFAULT_INTERACTIVE_PROFILE.to_string());
         shell_allowlist = config.permissions.shell_allowlist;
         config_session_dir = config.paths.session_dir;
         config_deterministic = config.deterministic.enabled;
@@ -171,6 +175,7 @@ fn resolve_live_settings(
     let deterministic = cmd.deterministic
         || config_deterministic
         || matches!(std::env::var("HARNESS_DETERMINISTIC").as_deref(), Ok("1"));
+    let default_profile = cmd.profile.clone().unwrap_or(config_default_profile);
 
     Ok(LiveSettings {
         session_dir,
@@ -178,7 +183,125 @@ fn resolve_live_settings(
         deterministic,
         seed: config_seed,
         config_digest,
+        default_profile,
     })
+}
+
+async fn run_interactive_mode(cmd: &TuiCommand, settings: &LiveSettings) -> Result<(), String> {
+    fs::create_dir_all(&settings.session_dir)
+        .map_err(|err| format!("failed to create session dir: {err}"))?;
+
+    let run_id_override = if settings.deterministic {
+        deterministic_run_id(settings.seed, ScenarioName::GoldenPathInteractive)
+    } else {
+        unique_interactive_run_id()
+    };
+
+    if settings.deterministic {
+        let run_id = &run_id_override;
+        let stale_run_dir = settings.session_dir.join(run_id);
+        if stale_run_dir.exists() {
+            fs::remove_dir_all(&stale_run_dir)
+                .map_err(|err| format!("failed to reset deterministic run dir: {err}"))?;
+        }
+    }
+
+    let workspace = create_workspace(
+        &settings.session_dir,
+        ScenarioName::GoldenPathInteractive,
+        Some(run_id_override.as_str()),
+    )?;
+
+    let clock: Arc<dyn Clock + Send + Sync> = if settings.deterministic {
+        Arc::new(FakeClock::new())
+    } else {
+        Arc::new(RealClock::new())
+    };
+
+    let mut coordinator_config = CoordinatorConfig::new(settings.session_dir.clone());
+    coordinator_config.deterministic_store = settings.deterministic;
+    coordinator_config.permission_policy = default_permission_policy();
+    coordinator_config.tool_registry =
+        Arc::new(coordinator_registry(settings.shell_allowlist.clone()));
+    coordinator_config.provider = Arc::new(golden_path_provider());
+    coordinator_config.agent_profiles = golden_path_profiles();
+    coordinator_config.run_id_override = Some(run_id_override);
+    coordinator_config.config_digest = settings.config_digest.clone();
+    coordinator_config.harness_version = env!("CARGO_PKG_VERSION").to_string();
+
+    let coordinator = spawn_coordinator(
+        coordinator_config,
+        clock,
+        Arc::new(DefaultRedactor::default()),
+    );
+
+    let run = coordinator
+        .start_run("interactive", &workspace)
+        .await
+        .map_err(|err| err.to_string())?;
+    let store = coordinator
+        .event_store()
+        .await
+        .map_err(|err| err.to_string())?;
+
+    let agent_id = coordinator
+        .spawn_agent(supervisor_actor(), settings.default_profile.clone(), None)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    let (live_update_tx, live_update_rx) = std_mpsc::channel::<LiveUpdate>();
+    let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
+
+    let event_forwarder_task =
+        tokio::spawn(async move { forward_events_to_tui(store, live_update_tx).await });
+
+    let intent_coordinator = coordinator.clone();
+    let ui_intent_task = tokio::spawn(async move {
+        handle_ui_intents(intent_coordinator, intent_rx, user_actor(), Some(agent_id)).await
+    });
+
+    let ui_intent_sender = {
+        let intent_tx = intent_tx.clone();
+        Arc::new(move |intent: UiIntent| {
+            let _ = intent_tx.send(intent);
+        })
+    };
+
+    let exit_on_finish = cmd.exit_on_finish;
+
+    let tui_result = tokio::task::spawn_blocking(move || {
+        run_tui_with_options(TuiOptions {
+            mode: TuiMode::Live {
+                run_dir: run.run_dir,
+                update_rx: live_update_rx,
+            },
+            exit_on_finish,
+            on_ui_intent: Some(ui_intent_sender),
+            keybindings: None,
+        })
+    })
+    .await
+    .map_err(|err| format!("TUI task failed: {err}"))?;
+
+    if let Err(err) = tui_result {
+        event_forwarder_task.abort();
+        ui_intent_task.abort();
+        return Err(format!("TUI error: {err}"));
+    }
+
+    drop(intent_tx);
+
+    let stop_result = coordinator.stop_run().await;
+    event_forwarder_task.abort();
+    ui_intent_task.abort();
+
+    if let Err(err) = stop_result {
+        if !matches!(err, CoordinatorError::RunNotStarted) {
+            return Err(err.to_string());
+        }
+    }
+
+    Ok(())
 }
 
 async fn run_live_mode(
@@ -232,7 +355,7 @@ async fn run_live_mode(
 
     let (bootstrap_tx, bootstrap_rx) = oneshot::channel::<LiveBootstrap>();
     let (live_update_tx, live_update_rx) = std_mpsc::channel::<LiveUpdate>();
-    let (intent_tx, intent_rx) = mpsc::unbounded_channel::<PermissionIntent>();
+    let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
 
     let scenario_coordinator = coordinator.clone();
     let scenario_task = tokio::spawn(async move {
@@ -249,12 +372,13 @@ async fn run_live_mode(
         tokio::spawn(async move { forward_events_to_tui(store, live_update_tx).await });
 
     let intent_coordinator = coordinator.clone();
-    let ui_intent_task =
-        tokio::spawn(async move { handle_ui_intents(intent_coordinator, intent_rx).await });
+    let ui_intent_task = tokio::spawn(async move {
+        handle_ui_intents(intent_coordinator, intent_rx, user_actor(), None).await
+    });
 
     let ui_intent_sender = {
         let intent_tx = intent_tx.clone();
-        Arc::new(move |intent: PermissionIntent| {
+        Arc::new(move |intent: UiIntent| {
             let _ = intent_tx.send(intent);
         })
     };
@@ -268,7 +392,8 @@ async fn run_live_mode(
                 update_rx: live_update_rx,
             },
             exit_on_finish,
-            on_permission_intent: Some(ui_intent_sender),
+            on_ui_intent: Some(ui_intent_sender),
+            keybindings: None,
         })
     })
     .await
@@ -450,15 +575,59 @@ async fn forward_events_to_tui(
 
 async fn handle_ui_intents(
     coordinator: CoordinatorHandle,
-    mut intent_rx: mpsc::UnboundedReceiver<PermissionIntent>,
+    mut intent_rx: mpsc::UnboundedReceiver<UiIntent>,
+    user_actor: EventActor,
+    agent_id: Option<String>,
 ) -> Result<(), String> {
     while let Some(intent) = intent_rx.recv().await {
-        coordinator
-            .resolve_permission(intent.permission_id, intent.decision)
-            .await
-            .map_err(|err| err.to_string())?;
+        match intent {
+            UiIntent::ResolvePermission {
+                permission_id,
+                decision,
+            } => {
+                coordinator
+                    .resolve_permission(permission_id, decision)
+                    .await
+                    .map_err(|err| err.to_string())?;
+            }
+            UiIntent::SubmitPrompt { text } => {
+                if let Some(agent_id) = agent_id.clone() {
+                    coordinator
+                        .request_agent_turn(user_actor.clone(), agent_id, text)
+                        .await
+                        .map_err(|err| err.to_string())?;
+                }
+            }
+            UiIntent::QuitRequested => {
+                let stop_result = coordinator.stop_run().await;
+                if let Err(err) = stop_result {
+                    if !matches!(err, CoordinatorError::RunNotStarted) {
+                        return Err(err.to_string());
+                    }
+                }
+                break;
+            }
+        }
     }
     Ok(())
+}
+
+fn user_actor() -> EventActor {
+    EventActor::new(ActorKind::User, Some("interactive-user".to_string()))
+}
+
+fn read_default_profile_from_config_bytes(config_bytes: &[u8]) -> Option<String> {
+    let raw = std::str::from_utf8(config_bytes).ok()?;
+    let parsed: serde_json::Value = json5::from_str(raw).ok()?;
+    parsed
+        .get("ui")
+        .and_then(|ui| ui.as_object())
+        .and_then(|ui| {
+            ui.get("default_profile")
+                .or_else(|| ui.get("defaultProfile"))
+        })
+        .and_then(serde_json::Value::as_str)
+        .map(ToOwned::to_owned)
 }
 
 async fn await_task(name: &str, handle: JoinHandle<Result<(), String>>) -> Result<(), String> {
@@ -569,4 +738,16 @@ fn deterministic_run_id(seed: u64, scenario: ScenarioName) -> String {
     );
     let run_uuid = Uuid::new_v5(&namespace, scenario.as_str().as_bytes());
     format!("run_{}", run_uuid.simple())
+}
+
+fn unique_interactive_run_id() -> String {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let namespace = Uuid::new_v5(
+        &Uuid::NAMESPACE_OID,
+        format!("interactive:{}:{}", std::process::id(), stamp).as_bytes(),
+    );
+    format!("run_{}", namespace.simple())
 }
