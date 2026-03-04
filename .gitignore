@@ -1,11 +1,9 @@
 target/
 sessions/
 artifacts/
-
-# Local orchestration state and generated evidence
-.sisyphus/boulder.json
-.sisyphus/evidence/
-.sisyphus/notepads/
+.agent-harness/
+*.snap.new
+*.pending-snap
 
 # Local scratch / research material
-inspiration/
+#inspiration/
