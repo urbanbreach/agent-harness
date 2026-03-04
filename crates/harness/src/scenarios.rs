@@ -131,6 +131,39 @@ pub fn golden_path_provider() -> MockProvider {
         );
     }
 
+    let interactive_request = CompletionRequest {
+        model_id: "model-1".to_string(),
+        messages: vec![
+            CompletionMessage {
+                role: MessageRole::System,
+                content: "worker-prompt".to_string(),
+            },
+            CompletionMessage {
+                role: MessageRole::User,
+                content: "Hello from PTY".to_string(),
+            },
+        ],
+        temperature: Some(0.0),
+        max_tokens: None,
+        stream: true,
+    };
+
+    scripted_events.insert(
+        request_digest(&interactive_request),
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("Hello".to_string()),
+            ProviderStreamEvent::TextDelta(" world".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 4,
+                    completion_tokens: 2,
+                    total_tokens: 6,
+                },
+            },
+        ],
+    );
+
     MockProvider::new(scripted_events)
 }
 

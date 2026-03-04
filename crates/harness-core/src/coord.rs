@@ -140,6 +140,18 @@ pub enum Command {
         parent_agent_id: Option<String>,
         respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
     },
+    SpawnAgentIdle {
+        actor: EventActor,
+        profile: String,
+        parent_agent_id: Option<String>,
+        respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
+    },
+    RequestAgentTurn {
+        actor: EventActor,
+        agent_id: String,
+        prompt: String,
+        respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
+    },
     RequestToolCall {
         actor: EventActor,
         category: Option<String>,
@@ -240,6 +252,8 @@ pub enum CoordinatorError {
     UnknownPermission(String),
     #[error("unknown task: {0}")]
     UnknownTask(String),
+    #[error("unknown agent: {0}")]
+    UnknownAgent(String),
     #[error("permission denied for tool call: {0}")]
     PermissionDenied(String),
 }
@@ -318,6 +332,28 @@ impl CoordinatorHandle {
             .map_err(|_| CoordinatorError::ResponseChannelClosed)?
     }
 
+    pub async fn spawn_agent_idle(
+        &self,
+        actor: EventActor,
+        profile: impl Into<String>,
+        parent_agent_id: Option<String>,
+    ) -> Result<String, CoordinatorError> {
+        let (respond_to, response_rx) = oneshot::channel();
+        self.tx
+            .send(Command::SpawnAgentIdle {
+                actor,
+                profile: profile.into(),
+                parent_agent_id,
+                respond_to,
+            })
+            .await
+            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
+
+        response_rx
+            .await
+            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+    }
+
     pub async fn request_tool_call(
         &self,
         actor: EventActor,
@@ -332,6 +368,28 @@ impl CoordinatorHandle {
                 category,
                 tool_id: tool_id.into(),
                 args_json,
+                respond_to,
+            })
+            .await
+            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
+
+        response_rx
+            .await
+            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+    }
+
+    pub async fn request_agent_turn(
+        &self,
+        actor: EventActor,
+        agent_id: impl Into<String>,
+        prompt: impl Into<String>,
+    ) -> Result<String, CoordinatorError> {
+        let (respond_to, response_rx) = oneshot::channel();
+        self.tx
+            .send(Command::RequestAgentTurn {
+                actor,
+                agent_id: agent_id.into(),
+                prompt: prompt.into(),
                 respond_to,
             })
             .await
@@ -518,7 +576,25 @@ impl Coordinator {
                 parent_agent_id,
                 respond_to,
             } => {
-                let result = self.spawn_agent_internal(actor, profile, parent_agent_id);
+                let result = self.spawn_agent_internal(actor, profile, parent_agent_id, true);
+                let _ = respond_to.send(result);
+            }
+            Command::SpawnAgentIdle {
+                actor,
+                profile,
+                parent_agent_id,
+                respond_to,
+            } => {
+                let result = self.spawn_agent_internal(actor, profile, parent_agent_id, false);
+                let _ = respond_to.send(result);
+            }
+            Command::RequestAgentTurn {
+                actor,
+                agent_id,
+                prompt,
+                respond_to,
+            } => {
+                let result = self.request_agent_turn_internal(actor, agent_id, prompt);
                 let _ = respond_to.send(result);
             }
             Command::RequestToolCall {
@@ -662,7 +738,7 @@ impl Coordinator {
             next_task_id: 1,
             next_provider_request_id: 1,
             next_permission_id: 1,
-            agents: BTreeSet::new(),
+            agents: BTreeMap::new(),
             tasks: BTreeMap::new(),
             pending_permissions: BTreeMap::new(),
             cancelled_running_tasks: BTreeSet::new(),
@@ -734,6 +810,7 @@ impl Coordinator {
         actor: EventActor,
         profile: String,
         parent_agent_id: Option<String>,
+        auto_start_turn: bool,
     ) -> Result<String, CoordinatorError> {
         let run_state = self
             .run_state
@@ -763,7 +840,6 @@ impl Coordinator {
 
         let agent_id = format!("agent_{:06}", run_state.next_agent_id);
         run_state.next_agent_id += 1;
-        run_state.agents.insert(agent_id.clone());
 
         append_payload_event(
             self.clock.as_ref(),
@@ -784,18 +860,80 @@ impl Coordinator {
             .get(&profile)
             .cloned()
             .unwrap_or_else(|| AgentProfile::fallback(profile.clone()));
+        run_state
+            .agents
+            .insert(agent_id.clone(), profile_cfg.clone());
+
+        if auto_start_turn {
+            let request_id = format!("req_{:06}", run_state.next_provider_request_id);
+            run_state.next_provider_request_id += 1;
+
+            let request = AgentRequest {
+                agent_id: agent_id.clone(),
+                prompt: if profile_cfg.system_prompt.is_empty() {
+                    format!("execute one-shot turn for {}", profile_cfg.name)
+                } else {
+                    profile_cfg.system_prompt.clone()
+                },
+                model_ref: profile_cfg.model_ref.clone(),
+            };
+
+            schedule_agent_turn(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                self.job_tx.clone(),
+                run_state,
+                self.config.provider.clone(),
+                profile_cfg,
+                request,
+                request_id,
+            )?;
+        }
+
+        Ok(agent_id)
+    }
+
+    fn request_agent_turn_internal(
+        &mut self,
+        actor: EventActor,
+        agent_id: String,
+        prompt: String,
+    ) -> Result<String, CoordinatorError> {
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+
+        if !matches!(actor.kind, ActorKind::Supervisor | ActorKind::User) {
+            append_payload_event(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                run_state,
+                actor,
+                Some(format!("agent:{agent_id}")),
+                EventV1::PolicyViolationDetected(PolicyViolationDetectedEvent {
+                    policy: "request_agent_turn_requires_user_or_supervisor".to_string(),
+                    detail: "only user/supervisor may request agent turns".to_string(),
+                }),
+            )?;
+            return Err(CoordinatorError::PolicyViolation(
+                "only user/supervisor may request agent turns".to_string(),
+            ));
+        }
+
+        let profile = run_state
+            .agents
+            .get(&agent_id)
+            .cloned()
+            .ok_or_else(|| CoordinatorError::UnknownAgent(agent_id.clone()))?;
 
         let request_id = format!("req_{:06}", run_state.next_provider_request_id);
         run_state.next_provider_request_id += 1;
 
         let request = AgentRequest {
-            agent_id: agent_id.clone(),
-            prompt: if profile_cfg.system_prompt.is_empty() {
-                format!("execute one-shot turn for {}", profile_cfg.name)
-            } else {
-                profile_cfg.system_prompt.clone()
-            },
-            model_ref: profile_cfg.model_ref.clone(),
+            agent_id,
+            prompt,
+            model_ref: profile.model_ref.clone(),
         };
 
         schedule_agent_turn(
@@ -804,12 +942,12 @@ impl Coordinator {
             self.job_tx.clone(),
             run_state,
             self.config.provider.clone(),
-            profile_cfg,
+            profile,
             request,
-            request_id,
+            request_id.clone(),
         )?;
 
-        Ok(agent_id)
+        Ok(request_id)
     }
 
     fn request_tool_call_internal(
@@ -1528,7 +1666,7 @@ struct RunState {
     next_task_id: u64,
     next_provider_request_id: u64,
     next_permission_id: u64,
-    agents: BTreeSet<String>,
+    agents: BTreeMap<String, AgentProfile>,
     tasks: BTreeMap<String, TaskState>,
     pending_permissions: BTreeMap<String, PendingPermissionState>,
     cancelled_running_tasks: BTreeSet<String>,
