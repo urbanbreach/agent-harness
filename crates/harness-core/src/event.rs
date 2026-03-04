@@ -88,6 +88,7 @@ pub enum EventV1 {
     TaskCompleted(TaskCompletedEvent),
     TaskResultLate(TaskResultLateEvent),
     StaleDetected(StaleDetectedEvent),
+    UserMessageSubmitted(UserMessageSubmittedEvent),
     ProviderRequestStarted(ProviderRequestStartedEvent),
     ProviderStreamDelta(ProviderStreamDeltaEvent),
     ProviderRequestFinished(ProviderRequestFinishedEvent),
@@ -172,6 +173,12 @@ pub struct TaskResultLateEvent {
 pub struct StaleDetectedEvent {
     pub task_id: String,
     pub stale_for_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UserMessageSubmittedEvent {
+    pub request_id: String,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
