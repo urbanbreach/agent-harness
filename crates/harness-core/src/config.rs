@@ -8,6 +8,8 @@ use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+const CLIPROXY_LOOPBACK_DEFAULT_API_KEY: &str = "sk-zerolimit";
+
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("failed to read config file {path}: {source}")]
@@ -39,6 +41,70 @@ pub struct HarnessConfig {
     pub paths: PathsConfig,
     #[serde(default)]
     pub deterministic: DeterministicConfig,
+    #[serde(default)]
+    pub ui: UiConfig,
+    #[serde(default)]
+    pub logging: LoggingConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct UiConfig {
+    #[serde(default, alias = "defaultProfile")]
+    pub default_profile: Option<String>,
+    #[serde(default)]
+    pub keybindings: BTreeMap<String, String>,
+    #[serde(
+        rename = "maxEventsInMemory",
+        alias = "max_events_in_memory",
+        default = "default_max_events_in_memory"
+    )]
+    pub max_events_in_memory: usize,
+    #[serde(
+        rename = "maxTranscriptCharsInMemory",
+        alias = "max_transcript_chars_in_memory",
+        default = "default_max_transcript_chars_in_memory"
+    )]
+    pub max_transcript_chars_in_memory: usize,
+}
+
+impl Default for UiConfig {
+    fn default() -> Self {
+        Self {
+            default_profile: None,
+            keybindings: BTreeMap::new(),
+            max_events_in_memory: default_max_events_in_memory(),
+            max_transcript_chars_in_memory: default_max_transcript_chars_in_memory(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct LoggingConfig {
+    #[serde(default = "default_logging_level")]
+    pub level: String,
+    #[serde(default)]
+    pub file: Option<PathBuf>,
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            level: default_logging_level(),
+            file: None,
+        }
+    }
+}
+
+fn default_logging_level() -> String {
+    "info".to_string()
+}
+
+fn default_max_events_in_memory() -> usize {
+    25_000
+}
+
+fn default_max_transcript_chars_in_memory() -> usize {
+    200_000
 }
 
 impl HarnessConfig {
@@ -52,7 +118,8 @@ impl HarnessConfig {
         for provider in self.providers.values_mut() {
             match provider {
                 ProviderConfig::OpenAiCompatible(config) => {
-                    config.api_key = resolve_env_reference(&config.api_key)?;
+                    config.api_key =
+                        resolve_openai_compatible_api_key(&config.api_key, &config.base_url)?;
                 }
             }
         }
@@ -92,10 +159,21 @@ pub struct OpenAiCompatibleProviderConfig {
     pub api_key: String,
     #[serde(default = "default_provider_timeout_ms", alias = "timeoutMs")]
     pub timeout_ms: u64,
+    #[serde(default, alias = "apiMode")]
+    pub api_mode: OpenAiApiMode,
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
     #[serde(default)]
     pub models: BTreeMap<String, ModelConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenAiApiMode {
+    Responses,
+    ChatCompletions,
+    #[default]
+    Auto,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -200,19 +278,54 @@ fn default_provider_timeout_ms() -> u64 {
     60_000
 }
 
+fn is_loopback_cliproxy_base_url(base_url: &str) -> bool {
+    let lowered = base_url.trim().to_ascii_lowercase();
+    lowered.contains("127.0.0.1:8317")
+        || lowered.contains("localhost:8317")
+        || lowered.contains("[::1]:8317")
+}
+
+fn resolve_openai_compatible_api_key(api_key: &str, base_url: &str) -> Result<String, ConfigError> {
+    apply_cliproxy_loopback_openai_fallback(resolve_env_reference(api_key), base_url)
+}
+
+fn apply_cliproxy_loopback_openai_fallback(
+    resolved_api_key: Result<String, ConfigError>,
+    base_url: &str,
+) -> Result<String, ConfigError> {
+    match resolved_api_key {
+        Ok(api_key) => Ok(api_key),
+        Err(ConfigError::MissingEnvironmentVariable(missing_env))
+            if missing_env == "OPENAI_API_KEY" && is_loopback_cliproxy_base_url(base_url) =>
+        {
+            Ok(CLIPROXY_LOOPBACK_DEFAULT_API_KEY.to_string())
+        }
+        Err(err) => Err(err),
+    }
+}
+
 fn resolve_env_reference(value: &str) -> Result<String, ConfigError> {
     if !(value.starts_with("${") && value.ends_with('}')) {
         return Ok(value.to_string());
     }
 
-    let key = &value[2..value.len() - 1];
-    if key.is_empty() {
+    let reference = &value[2..value.len() - 1];
+    if reference.is_empty() {
         return Ok(value.to_string());
     }
 
-    match env::var(key) {
+    if let Some((key, fallback)) = reference.split_once(":-") {
+        if key.is_empty() {
+            return Ok(value.to_string());
+        }
+        return Ok(env::var(key).unwrap_or_else(|_| fallback.to_string()));
+    }
+
+    match env::var(reference) {
         Ok(resolved) => Ok(resolved),
-        Err(_) => Ok(value.to_string()),
+        Err(_) => Err(ConfigError::MissingEnvironmentVariable(
+            reference.to_string(),
+        )),
     }
 }
 
@@ -316,6 +429,7 @@ mod tests {
               type: "openai_compatible",
               base_url: "http://127.0.0.1:8317/v1",
               api_key: "${PATH}",
+              api_mode: "auto",
               timeout_ms: 60000,
               models: {
                 "gpt-4o-mini": {
@@ -328,7 +442,7 @@ mod tests {
             deep: {
               description: "Deep work",
               model_ref: "default:gpt-4o-mini",
-              tools: ["read"],
+              tools: ["fs.read"],
             },
           },
           permissions: {
@@ -342,5 +456,127 @@ mod tests {
         let parsed = load_config_from_str(cfg).expect("config with env reference must parse");
         let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
         assert_eq!(provider.api_key, expected);
+    }
+
+    #[test]
+    fn env_var_default_fallback_works() {
+        let cfg = r#"
+        {
+          backgroundTask: {
+            defaultConcurrency: 2,
+            providerConcurrency: 2,
+            modelConcurrency: 2,
+            staleTimeoutMs: 15000,
+            messageStalenessTimeoutMs: 5000,
+          },
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "${HARNESS_CONFIG_TEST_API_KEY_FALLBACK:-fallback-key}",
+              api_mode: "responses",
+              timeout_ms: 60000,
+              models: {
+                "gpt-4o-mini": {
+                  display_name: "GPT-4o mini",
+                },
+              },
+            },
+          },
+          categories: {
+            deep: {
+              description: "Deep work",
+              model_ref: "default:gpt-4o-mini",
+              tools: ["fs.read"],
+            },
+          },
+          permissions: {
+            edit: "ask",
+            shell: "ask",
+            network: "deny",
+          },
+        }
+        "#;
+
+        let parsed =
+            load_config_from_str(cfg).expect("config with fallback env reference must parse");
+        let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
+        assert_eq!(provider.api_key, "fallback-key");
+    }
+
+    #[test]
+    fn missing_required_env_var_is_an_error() {
+        let cfg = r#"
+        {
+          backgroundTask: {
+            defaultConcurrency: 2,
+            providerConcurrency: 2,
+            modelConcurrency: 2,
+            staleTimeoutMs: 15000,
+            messageStalenessTimeoutMs: 5000,
+          },
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "${HARNESS_CONFIG_TEST_API_KEY_REQUIRED}",
+              timeout_ms: 60000,
+              models: {
+                "gpt-4o-mini": {
+                  display_name: "GPT-4o mini",
+                },
+              },
+            },
+          },
+          categories: {
+            deep: {
+              description: "Deep work",
+              model_ref: "default:gpt-4o-mini",
+              tools: ["fs.read"],
+            },
+          },
+          permissions: {
+            edit: "ask",
+            shell: "ask",
+            network: "deny",
+          },
+        }
+        "#;
+
+        let err = load_config_from_str(cfg).expect_err("missing required env variable should fail");
+        assert_eq!(
+            err.to_string(),
+            "environment variable `HARNESS_CONFIG_TEST_API_KEY_REQUIRED` referenced in config is not set"
+        );
+    }
+
+    #[test]
+    fn missing_openai_api_key_uses_cliproxy_loopback_fallback() {
+        let resolved = apply_cliproxy_loopback_openai_fallback(
+            Err(ConfigError::MissingEnvironmentVariable(
+                "OPENAI_API_KEY".to_string(),
+            )),
+            "http://127.0.0.1:8317/v1",
+        )
+        .expect("local CLIProxy should use the default subscription placeholder key");
+
+        assert_eq!(resolved, CLIPROXY_LOOPBACK_DEFAULT_API_KEY);
+    }
+
+    #[test]
+    fn missing_openai_api_key_still_errors_for_non_cliproxy_base_url() {
+        let err = apply_cliproxy_loopback_openai_fallback(
+            Err(ConfigError::MissingEnvironmentVariable(
+                "OPENAI_API_KEY".to_string(),
+            )),
+            "https://api.openai.com/v1",
+        )
+        .expect_err(
+            "non-local endpoints should still require OPENAI_API_KEY when no fallback is set",
+        );
+        assert_eq!(
+            err.to_string(),
+            "environment variable `OPENAI_API_KEY` referenced in config is not set"
+        );
     }
 }
