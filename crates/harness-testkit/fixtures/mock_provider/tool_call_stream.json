@@ -1,0 +1,47 @@
+{
+  "request": {
+    "model_id": "model-mock-tools",
+    "input": [
+      {
+        "role": "system",
+        "content": "Use tools deterministically."
+      },
+      {
+        "role": "user",
+        "content": "Read README via tool."
+      }
+    ],
+    "tools": [],
+    "temperature": 0.0,
+    "max_tokens": 32,
+    "stream": true
+  },
+  "events": [
+    {
+      "type": "start"
+    },
+    {
+      "type": "text_delta",
+      "text": "Calling tool"
+    },
+    {
+      "type": "tool_call",
+      "call_id": "call_mock_1",
+      "name": "fs_read",
+      "arguments_json": "{\"path\":\"README.md\"}"
+    },
+    {
+      "type": "text_delta",
+      "text": "Tool call emitted"
+    },
+    {
+      "type": "done",
+      "usage": {
+        "prompt_tokens": 10,
+        "completion_tokens": 5,
+        "total_tokens": 15
+      },
+      "finish_reason": "tool_calls"
+    }
+  ]
+}
