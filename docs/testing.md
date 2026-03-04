@@ -207,8 +207,21 @@ cargo test --workspace --all-features
 # Offline only (no live proxy tests)
 cargo test --workspace
 
-# Live proxy tests (requires HARNESS_LIVE_PROXY=1)
-HARNESS_LIVE_PROXY=1 cargo test -- --ignored
+# Live proxy tests (explicitly gated)
+# HARNESS_LIVE_PROXY_CONFIG defaults to configs/harness.example.jsonc
+# HARNESS_LIVE_PROXY_PROVIDER defaults to "default"
+# OPENAI_API_KEY is optional for local CLIProxy when placeholder key fallback is used
+# HARNESS_LIVE_PROXY_MODEL can force a specific real provider model
+# HARNESS_LIVE_PROXY_PROMPT customizes the smoke prompt text
+# HARNESS_LIVE_PROXY_WAIT_TIMEOUT_MS controls prompt wait timeout (default 120000 in live smoke)
+HARNESS_LIVE_PROXY=1 \
+HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
+HARNESS_LIVE_PROXY_PROVIDER=default \
+HARNESS_LIVE_PROXY_MODEL=gpt-5.3-codex \
+cargo test -p harness-testkit live_proxy_e2e -- --ignored
+
+# Provider-layer live smoke (optional, same env gate)
+HARNESS_LIVE_PROXY=1 cargo test -p harness-providers openai -- --ignored
 ```
 
 ## CI Testing
