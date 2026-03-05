@@ -459,6 +459,97 @@ mod tests {
     }
 
     #[test]
+    fn ui_default_profile_parses() {
+        let cfg = r#"
+        {
+          backgroundTask: {
+            defaultConcurrency: 2,
+            providerConcurrency: 2,
+            modelConcurrency: 2,
+            staleTimeoutMs: 15000,
+            messageStalenessTimeoutMs: 5000,
+          },
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              api_mode: "responses",
+              timeout_ms: 60000,
+              models: {
+                "gpt-4o-mini": {
+                  display_name: "GPT-4o mini",
+                },
+              },
+            },
+          },
+          categories: {
+            deep: {
+              description: "Deep work",
+              model_ref: "default:gpt-4o-mini",
+              tools: ["fs.read"],
+            },
+          },
+          permissions: {
+            edit: "ask",
+            shell: "ask",
+            network: "deny",
+          },
+          ui: {
+            defaultProfile: "deep",
+          },
+        }
+        "#;
+
+        let parsed = load_config_from_str(cfg).expect("config with ui.defaultProfile must parse");
+        assert_eq!(parsed.ui.default_profile, Some("deep".to_string()));
+    }
+
+    #[test]
+    fn ui_default_profile_defaults_to_none() {
+        let cfg = r#"
+        {
+          backgroundTask: {
+            defaultConcurrency: 2,
+            providerConcurrency: 2,
+            modelConcurrency: 2,
+            staleTimeoutMs: 15000,
+            messageStalenessTimeoutMs: 5000,
+          },
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              api_mode: "responses",
+              timeout_ms: 60000,
+              models: {
+                "gpt-4o-mini": {
+                  display_name: "GPT-4o mini",
+                },
+              },
+            },
+          },
+          categories: {
+            deep: {
+              description: "Deep work",
+              model_ref: "default:gpt-4o-mini",
+              tools: ["fs.read"],
+            },
+          },
+          permissions: {
+            edit: "ask",
+            shell: "ask",
+            network: "deny",
+          },
+        }
+        "#;
+
+        let parsed = load_config_from_str(cfg).expect("config without ui section must parse");
+        assert_eq!(parsed.ui.default_profile, None);
+    }
+
+    #[test]
     fn env_var_default_fallback_works() {
         let cfg = r#"
         {

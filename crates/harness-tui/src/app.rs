@@ -4,11 +4,48 @@ use std::sync::Arc;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::event::{
-    EventEnvelopeV1, EventV1, ProviderRequestStartedEvent, UserMessageSubmittedEvent,
+    EventEnvelopeV1, EventV1, ProviderRequestStartedEvent, ToolCallStatus,
+    UserMessageSubmittedEvent,
 };
 use harness_core::perm::PermissionDecision;
 
 use crate::keybindings::{Action, KeyMap};
+
+/// Truncation limit for tool output display in the TUI (chars)
+const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolCallDisplayStatus {
+    PendingPermission,
+    Queued,
+    Running,
+    Succeeded,
+    Failed,
+}
+
+impl std::fmt::Display for ToolCallDisplayStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ToolCallDisplayStatus::PendingPermission => write!(f, "pending permission"),
+            ToolCallDisplayStatus::Queued => write!(f, "queued"),
+            ToolCallDisplayStatus::Running => write!(f, "running"),
+            ToolCallDisplayStatus::Succeeded => write!(f, "succeeded"),
+            ToolCallDisplayStatus::Failed => write!(f, "failed"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ToolCallEntry {
+    pub tool_call_id: String,
+    pub tool_id: String,
+    pub args_summary: String,
+    pub status: ToolCallDisplayStatus,
+    pub output_summary: Option<String>,
+    pub truncated_output: Option<String>,
+    pub first_seq: u64,
+    pub last_seq: u64,
+}
 
 pub struct ActivityEntry {
     pub request_id: String,
@@ -19,6 +56,7 @@ pub struct ActivityEntry {
     pub request_data: Option<ProviderRequestStartedEvent>,
     pub transcript_text: String,
     pub error_message: Option<String>,
+    pub tool_calls: Vec<ToolCallEntry>,
     pub first_seq: u64,
     pub last_seq: u64,
 }
@@ -256,6 +294,19 @@ impl AppState {
             .filter(|(permission_id, _)| !self.dismissed_permissions.contains(*permission_id))
             .min_by_key(|(_, pending)| pending.seq)
             .map(|(permission_id, pending)| (permission_id.clone(), pending.summary.clone()))
+    }
+
+    fn find_tool_call_mut(&mut self, tool_call_id: &str) -> Option<&mut ToolCallEntry> {
+        for activity in &mut self.activities {
+            if let Some(tool_call) = activity
+                .tool_calls
+                .iter_mut()
+                .find(|tc| tc.tool_call_id == tool_call_id)
+            {
+                return Some(tool_call);
+            }
+        }
+        None
     }
 
     pub fn permission_submission_pending(&self, permission_id: &str) -> bool {
@@ -804,6 +855,7 @@ impl AppState {
                         request_data: None,
                         transcript_text: String::new(),
                         error_message: None,
+                        tool_calls: Vec::new(),
                         first_seq: event.seq,
                         last_seq: event.seq,
                     };
@@ -830,6 +882,7 @@ impl AppState {
                         request_data: Some(data.clone()),
                         transcript_text: String::new(),
                         error_message: None,
+                        tool_calls: Vec::new(),
                         first_seq: event.seq,
                         last_seq: event.seq,
                     };
@@ -853,6 +906,72 @@ impl AppState {
                         entry.last_seq = event.seq;
                         break;
                     }
+                }
+            }
+            EventV1::TaskScheduled(data) => {
+                if data.state == harness_core::event::TaskScheduleState::Queued {
+                    if let Some(tool_entry) = self.find_tool_call_mut(&data.task_id) {
+                        tool_entry.status = ToolCallDisplayStatus::Queued;
+                        tool_entry.last_seq = event.seq;
+                    }
+                }
+            }
+            EventV1::ToolCallRequested(data) => {
+                let target_corr_id = event.correlation_id.clone();
+                let use_back = self.activities.back().map_or(true, |e| {
+                    target_corr_id.is_none() || e.request_id.is_empty()
+                });
+
+                let entry = if use_back {
+                    self.activities.back_mut()
+                } else if let Some(corr) = &target_corr_id {
+                    self.activities.iter_mut().find(|e| &e.request_id == corr)
+                } else {
+                    None
+                };
+
+                if let Some(entry) = entry {
+                    let tool_entry = ToolCallEntry {
+                        tool_call_id: data.tool_call_id.clone(),
+                        tool_id: data.tool_id.clone(),
+                        args_summary: data.args_summary.clone(),
+                        status: ToolCallDisplayStatus::PendingPermission,
+                        output_summary: None,
+                        truncated_output: None,
+                        first_seq: event.seq,
+                        last_seq: event.seq,
+                    };
+                    entry.tool_calls.push(tool_entry);
+                    entry.last_seq = event.seq;
+                }
+            }
+            EventV1::ToolCallStarted(data) => {
+                if let Some(tool_entry) = self.find_tool_call_mut(&data.tool_call_id) {
+                    tool_entry.status = ToolCallDisplayStatus::Running;
+                    tool_entry.last_seq = event.seq;
+                }
+            }
+            EventV1::ToolCallFinished(data) => {
+                if let Some(tool_entry) = self.find_tool_call_mut(&data.tool_call_id) {
+                    tool_entry.status = match data.status {
+                        ToolCallStatus::Succeeded => ToolCallDisplayStatus::Succeeded,
+                        ToolCallStatus::Failed => ToolCallDisplayStatus::Failed,
+                    };
+                    tool_entry.output_summary = data.output_summary.clone();
+                    if let Some(summary) = &data.output_summary {
+                        let display_text =
+                            if summary.chars().count() > TOOL_OUTPUT_DISPLAY_MAX_CHARS {
+                                let truncated: String = summary
+                                    .chars()
+                                    .take(TOOL_OUTPUT_DISPLAY_MAX_CHARS)
+                                    .collect();
+                                format!("{}…", truncated)
+                            } else {
+                                summary.clone()
+                            };
+                        tool_entry.truncated_output = Some(display_text);
+                    }
+                    tool_entry.last_seq = event.seq;
                 }
             }
             _ => {}

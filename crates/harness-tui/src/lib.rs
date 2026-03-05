@@ -177,7 +177,9 @@ mod tests {
         ActorKind, EditAppliedEvent, EventActor, EventEnvelopeV1, EventV1,
         PermissionRequestedEvent, PermissionResolvedEvent, ProviderRequestFinishedEvent,
         ProviderRequestStartedEvent, ProviderStreamDeltaEvent, RunFailedEvent, RunFinishedEvent,
-        RunStartedEvent, UserMessageSubmittedEvent, SCHEMA_VERSION,
+        RunStartedEvent, TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent,
+        ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent,
+        SCHEMA_VERSION,
     };
     use harness_core::perm::PermissionDecision;
     use ratatui::{backend::TestBackend, Terminal};
@@ -618,6 +620,285 @@ mod tests {
             "activity must show request_id"
         );
         assert!(debug.contains("gpt-5-codex"), "activity must show model_id");
+    }
+
+    #[test]
+    fn tool_call_requested_renders_pending_status() {
+        let mut app = AppState::new_live(None, false, None);
+
+        app.ingest_event(envelope(
+            1,
+            Some("req_001"),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_001".to_string(),
+                text: "Hello".to_string(),
+            }),
+        ));
+
+        app.ingest_event(envelope(
+            2,
+            Some("req_001"),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_001".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "Hello".to_string(),
+                request_digest: "digest-1".to_string(),
+            }),
+        ));
+
+        app.ingest_event(envelope(
+            3,
+            Some("req_001"),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_001".to_string(),
+                tool_id: "fs.read".to_string(),
+                args_summary: r#"{"path":"test.txt"}"#.to_string(),
+                args_digest: "digest-args".to_string(),
+            }),
+        ));
+
+        app.active_tab = app::Tab::Run;
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("create terminal");
+        terminal
+            .draw(|frame| ui::render_app(frame, &app))
+            .expect("draw tool call frame");
+
+        let debug = format!("{:?}", terminal.backend().buffer());
+        assert!(debug.contains("fs.read"), "transcript must show tool_id");
+        assert!(
+            debug.contains("pending permission"),
+            "transcript must show pending permission status"
+        );
+    }
+
+    #[test]
+    fn tool_call_started_renders_running_status() {
+        let mut app = AppState::new_live(None, false, None);
+
+        app.ingest_event(envelope(
+            1,
+            Some("req_001"),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_001".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "Hello".to_string(),
+                request_digest: "digest-1".to_string(),
+            }),
+        ));
+
+        app.ingest_event(envelope(
+            2,
+            Some("req_001"),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_001".to_string(),
+                tool_id: "fs.read".to_string(),
+                args_summary: r#"{"path":"test.txt"}"#.to_string(),
+                args_digest: "digest-args".to_string(),
+            }),
+        ));
+
+        app.ingest_event(envelope(
+            3,
+            Some("req_001"),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tc_001".to_string(),
+            }),
+        ));
+
+        app.active_tab = app::Tab::Run;
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("create terminal");
+        terminal
+            .draw(|frame| ui::render_app(frame, &app))
+            .expect("draw tool call frame");
+
+        let debug = format!("{:?}", terminal.backend().buffer());
+        assert!(debug.contains("fs.read"), "transcript must show tool_id");
+        assert!(
+            debug.contains("running"),
+            "transcript must show running status"
+        );
+    }
+
+    #[test]
+    fn tool_call_finished_renders_truncated_output() {
+        let mut app = AppState::new_live(None, false, None);
+
+        app.ingest_event(envelope(
+            1,
+            Some("req_001"),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_001".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "Hello".to_string(),
+                request_digest: "digest-1".to_string(),
+            }),
+        ));
+
+        app.ingest_event(envelope(
+            2,
+            Some("req_001"),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_001".to_string(),
+                tool_id: "fs.read".to_string(),
+                args_summary: r#"{"path":"test.txt"}"#.to_string(),
+                args_digest: "digest-args".to_string(),
+            }),
+        ));
+
+        app.ingest_event(envelope(
+            3,
+            Some("req_001"),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tc_001".to_string(),
+            }),
+        ));
+
+        let long_output = "x".repeat(150);
+        app.ingest_event(envelope(
+            4,
+            Some("req_001"),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_001".to_string(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some(long_output.clone()),
+                output_digest: Some("digest-output".to_string()),
+            }),
+        ));
+
+        app.active_tab = app::Tab::Run;
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("create terminal");
+        terminal
+            .draw(|frame| ui::render_app(frame, &app))
+            .expect("draw tool call frame");
+
+        let debug = format!("{:?}", terminal.backend().buffer());
+        assert!(debug.contains("fs.read"), "transcript must show tool_id");
+        assert!(
+            debug.contains("succeeded"),
+            "transcript must show succeeded status"
+        );
+        assert!(debug.contains("└"), "transcript must show output indicator");
+    }
+
+    #[test]
+    fn tool_call_failed_renders_error() {
+        let mut app = AppState::new_live(None, false, None);
+
+        app.ingest_event(envelope(
+            1,
+            Some("req_001"),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_001".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "Hello".to_string(),
+                request_digest: "digest-1".to_string(),
+            }),
+        ));
+
+        app.ingest_event(envelope(
+            2,
+            Some("req_001"),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_001".to_string(),
+                tool_id: "shell.run".to_string(),
+                args_summary: r#"{"cmd":"false"}"#.to_string(),
+                args_digest: "digest-args".to_string(),
+            }),
+        ));
+
+        app.ingest_event(envelope(
+            3,
+            Some("req_001"),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tc_001".to_string(),
+            }),
+        ));
+
+        app.ingest_event(envelope(
+            4,
+            Some("req_001"),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_001".to_string(),
+                status: ToolCallStatus::Failed,
+                output_summary: Some("exit code: 1".to_string()),
+                output_digest: None,
+            }),
+        ));
+
+        app.active_tab = app::Tab::Run;
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("create terminal");
+        terminal
+            .draw(|frame| ui::render_app(frame, &app))
+            .expect("draw tool call frame");
+
+        let debug = format!("{:?}", terminal.backend().buffer());
+        assert!(debug.contains("shell.run"), "transcript must show tool_id");
+        assert!(
+            debug.contains("failed"),
+            "transcript must show failed status"
+        );
+        assert!(
+            debug.contains("exit code: 1"),
+            "transcript must show error message"
+        );
+    }
+
+    #[test]
+    fn task_scheduled_queued_updates_tool_status() {
+        let mut app = AppState::new_live(None, false, None);
+
+        app.ingest_event(envelope(
+            1,
+            Some("req_001"),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_001".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "Hello".to_string(),
+                request_digest: "digest-1".to_string(),
+            }),
+        ));
+
+        app.ingest_event(envelope(
+            2,
+            Some("req_001"),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_001".to_string(),
+                tool_id: "fs.read".to_string(),
+                args_summary: r#"{"path":"test.txt"}"#.to_string(),
+                args_digest: "digest-args".to_string(),
+            }),
+        ));
+
+        app.ingest_event(envelope(
+            3,
+            Some("req_001"),
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: "tc_001".to_string(),
+                state: TaskScheduleState::Queued,
+                queue_key: Some("tool:fs.read".to_string()),
+            }),
+        ));
+
+        let activity = app.activities.front().unwrap();
+        let tool_call = activity.tool_calls.first().unwrap();
+        assert_eq!(
+            tool_call.status,
+            crate::app::ToolCallDisplayStatus::Queued,
+            "tool call should be queued after TaskScheduled(Queued)"
+        );
     }
 
     fn key(code: KeyCode) -> KeyEvent {

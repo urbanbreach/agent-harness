@@ -303,14 +303,20 @@ fn test_mock_provider() -> MockProvider {
                 CompletionMessage {
                     role: MessageRole::System,
                     content: prompt.to_string(),
+                    name: None,
+                    tool_call_id: None,
                 },
                 CompletionMessage {
                     role: MessageRole::User,
                     content: prompt.to_string(),
+                    name: None,
+                    tool_call_id: None,
                 },
             ],
             temperature: Some(0.0),
             max_tokens: None,
+            tools: None,
+            tool_choice: None,
             stream: true,
         };
 
