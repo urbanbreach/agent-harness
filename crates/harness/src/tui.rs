@@ -159,7 +159,10 @@ fn resolve_live_settings(
         let config_bytes = fs::read(&path)
             .map_err(|err| format!("failed to read config file {}: {err}", path.display()))?;
         config_digest = blake3::hash(&config_bytes).to_hex().to_string();
-        config_default_profile = read_default_profile_from_config_bytes(&config_bytes)
+        config_default_profile = config
+            .ui
+            .default_profile
+            .clone()
             .unwrap_or_else(|| DEFAULT_INTERACTIVE_PROFILE.to_string());
         shell_allowlist = config.permissions.shell_allowlist;
         config_session_dir = config.paths.session_dir;
@@ -614,20 +617,6 @@ async fn handle_ui_intents(
 
 fn user_actor() -> EventActor {
     EventActor::new(ActorKind::User, Some("interactive-user".to_string()))
-}
-
-fn read_default_profile_from_config_bytes(config_bytes: &[u8]) -> Option<String> {
-    let raw = std::str::from_utf8(config_bytes).ok()?;
-    let parsed: serde_json::Value = json5::from_str(raw).ok()?;
-    parsed
-        .get("ui")
-        .and_then(|ui| ui.as_object())
-        .and_then(|ui| {
-            ui.get("default_profile")
-                .or_else(|| ui.get("defaultProfile"))
-        })
-        .and_then(serde_json::Value::as_str)
-        .map(ToOwned::to_owned)
 }
 
 async fn await_task(name: &str, handle: JoinHandle<Result<(), String>>) -> Result<(), String> {

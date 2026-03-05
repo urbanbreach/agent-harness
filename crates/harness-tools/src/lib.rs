@@ -6,15 +6,33 @@ use async_trait::async_trait;
 use harness_core::config::ShellAllowlist;
 use harness_core::event::ActorKind;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
+use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
 mod hashline_apply;
 use hashline_apply::HashlineApplyTool;
 
+mod hashline_scan;
+use hashline_scan::HashlineScanTool;
+
+mod fs_glob;
+use fs_glob::FsGlobTool;
+
+mod fs_ls;
+use fs_ls::FsLsTool;
+
+mod fs_grep;
+use fs_grep::FsGrepTool;
+
 pub fn coordinator_registry(shell_allowlist: ShellAllowlist) -> ToolRegistry {
     let mut registry = ToolRegistry::new();
     registry.register(Arc::new(FsReadTool));
+    registry.register(Arc::new(FsGlobTool));
+    registry.register(Arc::new(FsLsTool));
+    registry.register(Arc::new(FsGrepTool));
+    registry.register(Arc::new(AgentSpawnTool));
+    registry.register(Arc::new(HashlineScanTool));
     registry.register(Arc::new(HashlineApplyTool));
     registry.register(Arc::new(ShellRunTool::new(shell_allowlist)));
     registry
@@ -24,24 +42,124 @@ pub fn worker_registry(shell_allowlist: ShellAllowlist) -> ToolRegistry {
     let coordinator = coordinator_registry(shell_allowlist);
     let mut worker = ToolRegistry::new();
     for tool in coordinator.filter_for_actor(ActorKind::Worker) {
-        if tool.capability() != ToolCapability::SpawnAgent {
-            worker.register(tool);
-        }
+        worker.register(tool);
     }
     worker
 }
 
+struct AgentSpawnTool;
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct AgentSpawnArgs {
+    profile_name: String,
+    #[serde(default)]
+    system_prompt: Option<String>,
+    task: String,
+}
+
+#[async_trait]
+impl Tool for AgentSpawnTool {
+    fn id(&self) -> &str {
+        "agent.spawn"
+    }
+
+    fn description(&self) -> &str {
+        "Spawns a child agent with an optional system prompt override and delegated task."
+    }
+
+    fn parameters_json_schema(&self) -> serde_json::Value {
+        json_schema_for::<AgentSpawnArgs>()
+    }
+
+    fn capability(&self) -> ToolCapability {
+        ToolCapability::SpawnAgent
+    }
+
+    async fn call(
+        &self,
+        _ctx: ToolContext,
+        args_json: serde_json::Value,
+    ) -> Result<ToolResult, ToolError> {
+        let args: AgentSpawnArgs = serde_json::from_value(args_json)
+            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+
+        if args.profile_name.trim().is_empty() {
+            return Err(ToolError::InvalidArguments(
+                "profile_name must not be empty".to_string(),
+            ));
+        }
+
+        if args.task.trim().is_empty() {
+            return Err(ToolError::InvalidArguments(
+                "task must not be empty".to_string(),
+            ));
+        }
+
+        let _ = args.system_prompt.as_deref();
+
+        Err(ToolError::Execution(
+            "agent.spawn is handled internally by the coordinator".to_string(),
+        ))
+    }
+}
+
 struct FsReadTool;
 
-#[derive(Deserialize)]
+const FS_READ_DEFAULT_OFFSET: u32 = 1;
+const FS_READ_DEFAULT_LIMIT: u32 = 2000;
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct FsReadArgs {
     path: String,
+    #[serde(default = "default_fs_read_offset")]
+    offset: u32,
+    #[serde(default = "default_fs_read_limit")]
+    limit: u32,
+    #[serde(default = "default_fs_read_line_numbers")]
+    line_numbers: bool,
+}
+
+fn default_fs_read_offset() -> u32 {
+    FS_READ_DEFAULT_OFFSET
+}
+
+fn default_fs_read_limit() -> u32 {
+    FS_READ_DEFAULT_LIMIT
+}
+
+fn default_fs_read_line_numbers() -> bool {
+    true
+}
+
+fn format_fs_read_lines(lines: &[&str], start_line_index: usize, line_numbers: bool) -> String {
+    lines
+        .iter()
+        .enumerate()
+        .map(|(index, line)| {
+            if line_numbers {
+                format!("{}: {}", start_line_index + index + 1, line)
+            } else {
+                (*line).to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[async_trait]
 impl Tool for FsReadTool {
     fn id(&self) -> &str {
         "fs.read"
+    }
+
+    fn description(&self) -> &str {
+        "Reads UTF-8 text from a workspace file with optional offset/limit and line numbers."
+    }
+
+    fn parameters_json_schema(&self) -> serde_json::Value {
+        json_schema_for::<FsReadArgs>()
     }
 
     fn capability(&self) -> ToolCapability {
@@ -63,18 +181,84 @@ impl Tool for FsReadTool {
             ));
         }
 
+        if args.offset == 0 {
+            return Err(ToolError::InvalidArguments(
+                "offset must be >= 1".to_string(),
+            ));
+        }
+
+        if args.limit == 0 {
+            return Err(ToolError::InvalidArguments("limit must be >= 1".to_string()));
+        }
+
         let resolved = ctx.resolve_workspace_path(path)?;
-        let text = std::fs::read_to_string(&resolved)
+        let bytes = std::fs::read(&resolved)
             .map_err(|err| ToolError::Execution(format!("failed to read file: {err}")))?;
+        let text = String::from_utf8(bytes)
+            .map_err(|_| ToolError::Execution("binary file not supported".to_string()))?;
+
+        let lines: Vec<&str> = text.lines().collect();
+        let total_lines = lines.len();
+        let start_line_index = (args.offset - 1) as usize;
+
+        let available_lines: &[&str] = if start_line_index < total_lines {
+            &lines[start_line_index..]
+        } else {
+            &[]
+        };
+
+        let line_limit = args.limit as usize;
+        let shown_count = available_lines.len().min(line_limit);
+        let truncated = available_lines.len() > line_limit;
+        let shown_lines = &available_lines[..shown_count];
+
+        let mut display_text = format_fs_read_lines(shown_lines, start_line_index, args.line_numbers);
+        let mut artifacts = Vec::new();
+
+        if truncated {
+            let full_output = format_fs_read_lines(available_lines, start_line_index, args.line_numbers);
+            let artifact = ctx
+                .artifact_store()
+                .map_err(|err| {
+                    ToolError::Execution(format!("failed to access artifact store: {err}"))
+                })?
+                .write_text(
+                    &format!("toolcalls/{}/fs.read.redacted.txt", ctx.tool_call_id),
+                    &full_output,
+                )
+                .map_err(|err| {
+                    ToolError::Execution(format!("failed to write fs.read artifact: {err}"))
+                })?;
+
+            let marker = format!(
+                "... [truncated: showing {} of {} lines from line {}; full output: {}]",
+                shown_count,
+                available_lines.len(),
+                start_line_index + 1,
+                artifact.path
+            );
+
+            if display_text.is_empty() {
+                display_text = marker;
+            } else {
+                display_text.push('\n');
+                display_text.push_str(&marker);
+            }
+
+            artifacts.push(artifact);
+        }
 
         Ok(ToolResult {
-            display_text: text.clone(),
+            display_text,
             structured_json: Some(json!({
                 "path": args.path,
                 "resolved_path": resolved.display().to_string(),
-                "bytes": text.len(),
+                "offset": args.offset,
+                "limit": args.limit,
+                "total_lines": total_lines,
+                "truncated": truncated,
             })),
-            artifacts: Vec::new(),
+            artifacts,
         })
     }
 }
@@ -126,7 +310,7 @@ impl ShellRunTool {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 struct ShellRunArgs {
     cmd: String,
     #[serde(default)]
@@ -139,6 +323,14 @@ struct ShellRunArgs {
 impl Tool for ShellRunTool {
     fn id(&self) -> &str {
         "shell.run"
+    }
+
+    fn description(&self) -> &str {
+        "Runs an allowlisted shell command inside the workspace and returns stdout/stderr."
+    }
+
+    fn parameters_json_schema(&self) -> serde_json::Value {
+        json_schema_for::<ShellRunArgs>()
     }
 
     fn capability(&self) -> ToolCapability {
@@ -179,5 +371,173 @@ impl Tool for ShellRunTool {
             })),
             artifacts: Vec::new(),
         })
+    }
+}
+
+fn json_schema_for<T: JsonSchema>() -> serde_json::Value {
+    match serde_json::to_value(schemars::schema_for!(T).schema) {
+        Ok(schema) => schema,
+        Err(_) => json!({"type": "object"}),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{coordinator_registry, FsReadTool};
+    use harness_core::config::ShellAllowlist;
+    use harness_core::event::{ActorKind, EventActor};
+    use harness_core::tool::{Tool, ToolContext, ToolError};
+    use serde_json::json;
+    use std::collections::BTreeSet;
+    use std::path::Path;
+
+    fn fs_read_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
+        ToolContext {
+            run_id: "run-fs-read-tests".to_string(),
+            workspace_root: workspace_root.to_path_buf(),
+            artifacts_dir: workspace_root.join(".artifacts"),
+            actor: EventActor::new(ActorKind::Supervisor, None),
+            tool_call_id: tool_call_id.to_string(),
+        }
+    }
+
+    #[test]
+    fn tool_parameter_schemas_are_json_objects() {
+        let registry = coordinator_registry(ShellAllowlist::default());
+
+        for tool_id in [
+            "agent.spawn",
+            "fs.read",
+            "fs.glob",
+            "fs.ls",
+            "fs.grep",
+            "shell.run",
+            "edit.hashline_apply",
+            "edit.hashline_scan",
+        ] {
+            let tool = registry
+                .get(tool_id)
+                .unwrap_or_else(|| panic!("missing tool {tool_id}"));
+            assert!(
+                tool.parameters_json_schema().is_object(),
+                "schema for {tool_id} must be an object"
+            );
+        }
+    }
+
+    #[test]
+    fn coordinator_registry_function_names_are_unique_and_deterministic() {
+        let registry = coordinator_registry(ShellAllowlist::default());
+        let mapping_a = registry.function_name_mapping();
+        let mapping_b = registry.function_name_mapping();
+
+        assert_eq!(mapping_a, mapping_b);
+
+        let function_names = mapping_a
+            .function_to_tool_id()
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        assert_eq!(function_names.len(), mapping_a.function_to_tool_id().len());
+
+        for (function_name, tool_id) in mapping_a.function_to_tool_id() {
+            assert_eq!(
+                mapping_a.tool_id_for_function_name(function_name),
+                Some(tool_id.as_str())
+            );
+            assert_eq!(
+                mapping_a.function_name_for_tool_id(tool_id),
+                Some(function_name.as_str())
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn fs_read_supports_offset_and_limit_with_line_numbers() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("fixture.txt");
+        std::fs::write(&source, "line one\nline two\nline three\n").expect("write fixture");
+
+        let tool = FsReadTool;
+        let result = tool
+            .call(
+                fs_read_context(temp.path(), "toolcall-offset-limit"),
+                json!({
+                    "path": "fixture.txt",
+                    "offset": 2,
+                    "limit": 2
+                }),
+            )
+            .await
+            .expect("fs.read should succeed");
+
+        assert_eq!(result.display_text, "2: line two\n3: line three");
+        assert!(result.artifacts.is_empty());
+
+        let metadata = result.structured_json.expect("structured json");
+        assert_eq!(metadata["offset"], json!(2));
+        assert_eq!(metadata["limit"], json!(2));
+        assert_eq!(metadata["total_lines"], json!(3));
+        assert_eq!(metadata["truncated"], json!(false));
+    }
+
+    #[tokio::test]
+    async fn fs_read_adds_truncation_marker_and_spills_full_output_artifact() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("fixture.txt");
+        std::fs::write(&source, "alpha\nbeta\ngamma\ndelta\n").expect("write fixture");
+
+        let context = fs_read_context(temp.path(), "toolcall-truncated");
+        let tool = FsReadTool;
+        let result = tool
+            .call(
+                context.clone(),
+                json!({
+                    "path": "fixture.txt",
+                    "limit": 2
+                }),
+            )
+            .await
+            .expect("fs.read should succeed");
+
+        assert!(result.display_text.contains("1: alpha\n2: beta"));
+        assert!(result.display_text.contains("[truncated:"));
+        assert_eq!(result.artifacts.len(), 1);
+
+        let metadata = result.structured_json.expect("structured json");
+        assert_eq!(metadata["truncated"], json!(true));
+        assert_eq!(metadata["total_lines"], json!(4));
+
+        let artifact_path = &result.artifacts[0].path;
+        let relative = artifact_path
+            .strip_prefix("artifacts/")
+            .expect("artifact path prefix");
+        let spilled = std::fs::read_to_string(context.artifacts_dir.join(relative))
+            .expect("read spilled artifact");
+        assert!(spilled.contains("1: alpha"));
+        assert!(spilled.contains("4: delta"));
+    }
+
+    #[tokio::test]
+    async fn fs_read_rejects_binary_files() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("fixture.bin");
+        std::fs::write(&source, [0xff_u8, 0xfe, 0x00]).expect("write binary fixture");
+
+        let tool = FsReadTool;
+        let error = tool
+            .call(
+                fs_read_context(temp.path(), "toolcall-binary"),
+                json!({
+                    "path": "fixture.bin"
+                }),
+            )
+            .await
+            .expect_err("fs.read should fail for binary");
+
+        match error {
+            ToolError::Execution(message) => assert_eq!(message, "binary file not supported"),
+            other => panic!("unexpected error variant: {other}"),
+        }
     }
 }
