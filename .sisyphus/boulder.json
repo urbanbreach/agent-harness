@@ -1,10 +1,10 @@
 {
-  "active_plan": "/home/ubere/code/accela/agent-harness/.sisyphus/plans/usable-harness-tui-cliproxyapi-e2e.md",
-  "started_at": "2026-03-03T01:20:22.635Z",
+  "active_plan": "/home/ubere/code/accela/agent-harness/.sisyphus/plans/agent-harness-maturity-milestone-1.md",
+  "started_at": "2026-03-04T22:47:53.038Z",
   "session_ids": [
-    "ses_34eb7d5baffekz2o1uUpgMNJc6"
+    "ses_344f6ba55fferaobjf2NjSk9oU"
   ],
-  "plan_name": "usable-harness-tui-cliproxyapi-e2e",
-  "agent": "atlas",
-  "worktree_path": "/home/ubere/code/accela/agent-harness-worktree"
+  "plan_name": "agent-harness-maturity-milestone-1",
+  "worktree_path": "/home/ubere/code/accela/agent-harness-worktree",
+  "agent": "atlas"
 }

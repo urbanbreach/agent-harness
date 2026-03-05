@@ -106,16 +106,35 @@ mod tests {
     struct SecretScan;
 
     impl SecretScan {
+        fn should_scan_file(path: &Path) -> bool {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                return false;
+            };
+
+            if path
+                .components()
+                .filter_map(|component| component.as_os_str().to_str())
+                .any(|component| component == "snapshots")
+            {
+                return true;
+            }
+
+            if name.contains("snapshot") {
+                return true;
+            }
+
+            matches!(
+                path.extension().and_then(|ext| ext.to_str()),
+                Some("json" | "jsonl" | "txt" | "snap")
+            )
+        }
+
         fn assert_no_sk_in_file(path: &Path) {
             if !path.is_file() {
                 return;
             }
 
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-                return;
-            };
-
-            if !(name.ends_with(".jsonl") || name.contains("snapshot")) {
+            if !Self::should_scan_file(path) {
                 return;
             }
 
@@ -160,6 +179,85 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let file = dir.path().join("events.jsonl");
         fs::write(&file, "{\"line\":\"[REDACTED_API_KEY]\"}").expect("write fixture");
+
+        SecretScan::assert_no_sk_in_dir(dir.path());
+    }
+
+    #[test]
+    fn secret_scan_helper_fails_when_artifact_contains_sk_prefix() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir
+            .path()
+            .join("artifacts")
+            .join("toolcalls")
+            .join("call_1")
+            .join("result.redacted.json");
+        fs::create_dir_all(file.parent().expect("artifact parent")).expect("create artifact dir");
+        fs::write(&file, "{\"display_text\":\"sk-should-not-be-here\"}").expect("write fixture");
+
+        let panic = std::panic::catch_unwind(|| SecretScan::assert_no_sk_in_dir(dir.path()));
+        assert!(
+            panic.is_err(),
+            "secret scan should fail for sk- leakage in artifacts"
+        );
+    }
+
+    #[test]
+    fn secret_scan_helper_allows_redacted_artifact_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let result = dir
+            .path()
+            .join("artifacts")
+            .join("toolcalls")
+            .join("call_1")
+            .join("result.redacted.json");
+        let display = dir
+            .path()
+            .join("artifacts")
+            .join("toolcalls")
+            .join("call_1")
+            .join("display.redacted.txt");
+        fs::create_dir_all(result.parent().expect("artifact parent")).expect("create artifact dir");
+
+        fs::write(&result, "{\"display_text\":\"[REDACTED_API_KEY]\"}")
+            .expect("write redacted json");
+        fs::write(&display, "token=[REDACTED_API_KEY]").expect("write redacted text");
+
+        SecretScan::assert_no_sk_in_dir(dir.path());
+    }
+
+    #[test]
+    fn secret_scan_helper_fails_when_snap_file_contains_sk_prefix() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir
+            .path()
+            .join("crates")
+            .join("harness-tui")
+            .join("tests")
+            .join("snapshots")
+            .join("pty_after_tool_call.snap");
+        fs::create_dir_all(file.parent().expect("snapshot parent")).expect("create snapshot dir");
+        fs::write(&file, "tool output: sk-should-not-be-here").expect("write fixture");
+
+        let panic = std::panic::catch_unwind(|| SecretScan::assert_no_sk_in_dir(dir.path()));
+        assert!(
+            panic.is_err(),
+            "secret scan should fail for sk- leakage in .snap files"
+        );
+    }
+
+    #[test]
+    fn secret_scan_helper_allows_redacted_snap_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir
+            .path()
+            .join("crates")
+            .join("harness-tui")
+            .join("tests")
+            .join("snapshots")
+            .join("pty_after_tool_call.snap");
+        fs::create_dir_all(file.parent().expect("snapshot parent")).expect("create snapshot dir");
+        fs::write(&file, "tool output: [REDACTED_API_KEY]").expect("write fixture");
 
         SecretScan::assert_no_sk_in_dir(dir.path());
     }
