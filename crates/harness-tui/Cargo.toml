@@ -16,3 +16,5 @@ serde_json.workspace = true
 [dev-dependencies]
 insta = { version = "1.39", features = ["json"] }
 tempfile.workspace = true
+portable-pty = "0.8"
+vt100 = "0.15"

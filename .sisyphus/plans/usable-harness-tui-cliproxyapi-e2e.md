@@ -1139,10 +1139,19 @@ Wave 4 (PTY E2E + live-gated E2E + docs + security regression)
   **Commit**: YES | Message: `docs: interactive tui + cliproxy responses quickstart` | Files: `README.md`, `docs/config.md`
 
 ## Final Verification Wave (4 parallel agents, ALL must APPROVE)
-- [ ] F1. Plan Compliance Audit — oracle
-- [ ] F2. Code Quality Review — unspecified-high
-- [ ] F3. Real Agent-Driven QA (pty-mcp + PTY E2E artifacts) — unspecified-high
-- [ ] F4. Scope Fidelity Check — deep
+- [ ] F1. Plan Compliance Audit — oracle *(executed 2026-03-04; verdict: FAIL; see `.sisyphus/evidence/f1-plan-compliance-audit-2026-03-04.md`)*
+- [ ] F2. Code Quality Review — unspecified-high *(executed 2026-03-04; verdict: FAIL; see `.sisyphus/evidence/f2-code-quality-review-2026-03-04.md`)*
+- [ ] F3. Real Agent-Driven QA (pty-mcp + PTY E2E artifacts) — unspecified-high *(executed 2026-03-04; verdict: PASS with caveats; see `.sisyphus/evidence/f3-agent-driven-qa-review-2026-03-04.md`)*
+- [ ] F4. Scope Fidelity Check — deep *(executed 2026-03-04; verdict: FAIL; see `.sisyphus/evidence/f4-scope-fidelity-check-2026-03-04.md`)*
+
+### Final Verification Execution Notes (2026-03-04)
+
+- Overall F-wave result: **NOT APPROVED**.
+- Primary blocker themes:
+  - implementation/evidence provenance mismatch across repo root vs orchestration worktree,
+  - incomplete DoD satisfaction in the currently checked tree(s),
+  - unresolved code-quality blockers in coordinator/task lifecycle paths.
+- Consolidated audit: `.sisyphus/evidence/f-wave-2026-03-04-audit.md`.
 
 ## Commit Strategy
 - Atomic commits per TODO (or paired TODOs when tightly coupled), using:

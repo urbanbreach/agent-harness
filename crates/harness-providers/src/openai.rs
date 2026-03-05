@@ -11,7 +11,7 @@ use tokio_stream::{self as stream, StreamExt};
 
 use crate::{
     CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
-    ProviderEventStream, ProviderStreamEvent,
+    ProviderEventStream, ProviderStreamEvent, ToolChoice, ToolDef,
 };
 
 #[derive(Debug, Clone)]
@@ -221,6 +221,7 @@ async fn consume_chat_sse_stream(
 
     let mut usage = zero_usage();
     let mut done_emitted = false;
+    let mut tool_call_state = ChatToolCallState::default();
     let mut sse_stream = response.bytes_stream().eventsource();
 
     while let Some(next_event) = sse_stream.next().await {
@@ -237,10 +238,11 @@ async fn consume_chat_sse_stream(
         };
 
         let data = event.data.trim();
-        if data.is_empty() {
-            continue;
-        }
         if data == "[DONE]" {
+            if !emit_tool_call_completions(&tx, &mut tool_call_state).await {
+                return;
+            }
+
             if !done_emitted {
                 let _ = tx.send(ProviderStreamEvent::Done { usage }).await;
             }
@@ -249,13 +251,10 @@ async fn consume_chat_sse_stream(
 
         let chunk: OpenAiChatCompletionsChunk = match serde_json::from_str(data) {
             Ok(chunk) => chunk,
-            Err(err) => {
+            Err(_) => {
                 let _ = tx
                     .send(ProviderStreamEvent::Error {
-                        message: format!(
-                            "openai_compatible returned invalid SSE JSON chunk: {err}; sample={}",
-                            summarize_sse_data(data)
-                        ),
+                        message: "openai_compatible returned invalid SSE JSON chunk".to_string(),
                     })
                     .await;
                 return;
@@ -279,12 +278,26 @@ async fn consume_chat_sse_stream(
                 }
             }
 
+            if !consume_tool_call_deltas(&tx, &choice.delta.tool_calls, &mut tool_call_state).await {
+                return;
+            }
+
+            if matches!(choice.finish_reason.as_deref(), Some("tool_calls"))
+                && !emit_tool_call_completions(&tx, &mut tool_call_state).await
+            {
+                return;
+            }
+
             if choice.finish_reason.is_some() {
                 finish_seen = true;
             }
         }
 
         if finish_seen && !done_emitted {
+            if !emit_tool_call_completions(&tx, &mut tool_call_state).await {
+                return;
+            }
+
             done_emitted = true;
             if tx
                 .send(ProviderStreamEvent::Done {
@@ -298,9 +311,145 @@ async fn consume_chat_sse_stream(
         }
     }
 
+    if !emit_tool_call_completions(&tx, &mut tool_call_state).await {
+        return;
+    }
+
     if !done_emitted {
         let _ = tx.send(ProviderStreamEvent::Done { usage }).await;
     }
+}
+
+#[derive(Debug, Default)]
+struct ChatToolCallState {
+    accumulators: BTreeMap<String, ToolCallAccumulator>,
+    call_ids_by_index: BTreeMap<usize, String>,
+}
+
+#[derive(Debug, Default)]
+struct ToolCallAccumulator {
+    function_name: Option<String>,
+    arguments_json: String,
+}
+
+async fn consume_tool_call_deltas(
+    tx: &mpsc::Sender<ProviderStreamEvent>,
+    tool_calls: &[OpenAiChatToolCallDeltaChunk],
+    state: &mut ChatToolCallState,
+) -> bool {
+    for tool_call in tool_calls {
+        let Some(tool_call_id) = resolve_tool_call_id(tool_call, state) else {
+            let _ = tx
+                .send(ProviderStreamEvent::Error {
+                    message:
+                        "openai_compatible stream omitted tool_call_id for chat tool call delta"
+                            .to_string(),
+                })
+                .await;
+            return false;
+        };
+
+        let accumulator = state.accumulators.entry(tool_call_id.clone()).or_default();
+
+        let mut function_name_delta = None;
+        let mut arguments_delta = String::new();
+        if let Some(function) = &tool_call.function {
+            if let Some(name) = function.name.clone().filter(|name| !name.is_empty()) {
+                accumulator.function_name = Some(name.clone());
+                function_name_delta = Some(name);
+            }
+
+            if let Some(arguments) = function.arguments.as_ref().filter(|value| !value.is_empty()) {
+                accumulator.arguments_json.push_str(arguments);
+                arguments_delta = arguments.clone();
+            }
+        }
+
+        if (function_name_delta.is_some() || !arguments_delta.is_empty())
+            && tx
+                .send(ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id,
+                    function_name: function_name_delta,
+                    arguments_delta,
+                })
+                .await
+                .is_err()
+        {
+            return false;
+        }
+    }
+
+    true
+}
+
+fn resolve_tool_call_id(
+    tool_call: &OpenAiChatToolCallDeltaChunk,
+    state: &mut ChatToolCallState,
+) -> Option<String> {
+    if let Some(tool_call_id) = tool_call.id.as_ref().filter(|id| !id.is_empty()) {
+        let tool_call_id = tool_call_id.clone();
+        state
+            .call_ids_by_index
+            .insert(tool_call.index, tool_call_id.clone());
+        return Some(tool_call_id);
+    }
+
+    state.call_ids_by_index.get(&tool_call.index).cloned()
+}
+
+async fn emit_tool_call_completions(
+    tx: &mpsc::Sender<ProviderStreamEvent>,
+    state: &mut ChatToolCallState,
+) -> bool {
+    if state.accumulators.is_empty() {
+        return true;
+    }
+
+    let pending = std::mem::take(&mut state.accumulators);
+    state.call_ids_by_index.clear();
+
+    for (tool_call_id, accumulator) in pending {
+        let Some(function_name) = accumulator
+            .function_name
+            .as_ref()
+            .filter(|name| !name.is_empty())
+            .cloned()
+        else {
+            let _ = tx
+                .send(ProviderStreamEvent::Error {
+                    message: format!(
+                        "openai_compatible chat tool call `{tool_call_id}` missing function name"
+                    ),
+                })
+                .await;
+            return false;
+        };
+
+        if serde_json::from_str::<serde_json::Value>(&accumulator.arguments_json).is_err() {
+            let _ = tx
+                .send(ProviderStreamEvent::Error {
+                    message: format!(
+                        "openai_compatible chat tool call `{tool_call_id}` produced invalid arguments JSON"
+                    ),
+                })
+                .await;
+            return false;
+        }
+
+        if tx
+            .send(ProviderStreamEvent::ToolCallComplete {
+                tool_call_id,
+                function_name,
+                arguments_json: accumulator.arguments_json,
+            })
+            .await
+            .is_err()
+        {
+            return false;
+        }
+    }
+
+    true
 }
 
 async fn consume_responses_sse_stream(
@@ -314,6 +463,7 @@ async fn consume_responses_sse_stream(
     let mut usage = zero_usage();
     let mut done_emitted = false;
     let mut sse_stream = response.bytes_stream().eventsource();
+    let mut tool_calls = BTreeMap::<String, ResponsesToolCallAccumulator>::new();
 
     while let Some(next_event) = sse_stream.next().await {
         let event = match next_event {
@@ -367,13 +517,36 @@ async fn consume_responses_sse_stream(
                     }
                 }
             }
-            "response.completed" => {
+            "response.output_item.added" => {
+                if !handle_responses_tool_item_added(&tx, &mut tool_calls, parsed).await {
+                    return;
+                }
+            }
+            "response.function_call_arguments.delta" => {
+                if !handle_responses_arguments_delta(&tx, &mut tool_calls, parsed).await {
+                    return;
+                }
+            }
+            "response.output_item.done" => {
+                if !handle_responses_tool_item_done(&tx, &mut tool_calls, parsed).await {
+                    return;
+                }
+            }
+            "response.completed" | "response.done" | "response.incomplete" => {
                 if let Some(response) = parsed.response {
                     if let Some(completion_usage) = response
                         .usage
                         .map(OpenAiResponsesUsage::into_completion_usage)
                     {
                         usage = completion_usage;
+                    }
+                }
+
+                let pending_tool_calls = std::mem::take(&mut tool_calls);
+                for (state_key, state) in pending_tool_calls {
+                    if let Err(message) = emit_responses_tool_call_complete(&tx, &state_key, state).await {
+                        let _ = tx.send(ProviderStreamEvent::Error { message }).await;
+                        return;
                     }
                 }
 
@@ -405,6 +578,206 @@ async fn consume_responses_sse_stream(
 
     if !done_emitted {
         let _ = tx.send(ProviderStreamEvent::Done { usage }).await;
+    }
+}
+
+async fn handle_responses_tool_item_added(
+    tx: &mpsc::Sender<ProviderStreamEvent>,
+    tool_calls: &mut BTreeMap<String, ResponsesToolCallAccumulator>,
+    event: OpenAiResponsesEvent,
+) -> bool {
+    let Some(item) = event.item else {
+        return true;
+    };
+
+    if item.item_type != "function_call" {
+        return true;
+    }
+
+    let Some(key) = item.id.clone().or_else(|| item.call_id.clone()) else {
+        let _ = tx
+            .send(ProviderStreamEvent::Error {
+                message: "openai_compatible responses tool call is missing both item id and call id"
+                    .to_string(),
+            })
+            .await;
+        return false;
+    };
+
+    let state = tool_calls.entry(key.clone()).or_default();
+    if let Some(call_id) = item.call_id {
+        state.tool_call_id = Some(call_id);
+    }
+    if let Some(function_name) = item.name {
+        state.function_name = Some(function_name);
+    }
+
+    if let Some(arguments_delta) = item.arguments.filter(|value| !value.is_empty()) {
+        state.arguments_json.push_str(&arguments_delta);
+        let tool_call_id = state
+            .tool_call_id
+            .clone()
+            .unwrap_or_else(|| key.clone());
+
+        if tx
+            .send(ProviderStreamEvent::ToolCallDelta {
+                tool_call_id,
+                function_name: state.function_name.clone(),
+                arguments_delta,
+            })
+            .await
+            .is_err()
+        {
+            return false;
+        }
+    }
+
+    true
+}
+
+async fn handle_responses_arguments_delta(
+    tx: &mpsc::Sender<ProviderStreamEvent>,
+    tool_calls: &mut BTreeMap<String, ResponsesToolCallAccumulator>,
+    event: OpenAiResponsesEvent,
+) -> bool {
+    let Some(item_id) = event.item_id else {
+        let _ = tx
+            .send(ProviderStreamEvent::Error {
+                message:
+                    "openai_compatible responses function_call_arguments.delta missing item_id"
+                        .to_string(),
+            })
+            .await;
+        return false;
+    };
+
+    let Some(arguments_delta) = event.delta.filter(|value| !value.is_empty()) else {
+        return true;
+    };
+
+    let state_key = find_responses_tool_call_key(tool_calls, &item_id)
+        .unwrap_or_else(|| item_id.clone());
+    let state = tool_calls.entry(state_key.clone()).or_default();
+    state.arguments_json.push_str(&arguments_delta);
+
+    let tool_call_id = state
+        .tool_call_id
+        .clone()
+        .unwrap_or_else(|| state_key.clone());
+
+    tx.send(ProviderStreamEvent::ToolCallDelta {
+        tool_call_id,
+        function_name: None,
+        arguments_delta,
+    })
+    .await
+    .is_ok()
+}
+
+async fn handle_responses_tool_item_done(
+    tx: &mpsc::Sender<ProviderStreamEvent>,
+    tool_calls: &mut BTreeMap<String, ResponsesToolCallAccumulator>,
+    event: OpenAiResponsesEvent,
+) -> bool {
+    let Some(item) = event.item else {
+        return true;
+    };
+
+    if item.item_type != "function_call" {
+        return true;
+    }
+
+    let Some(key) = item
+        .id
+        .clone()
+        .or_else(|| item.call_id.clone())
+        .or(event.item_id)
+    else {
+        let _ = tx
+            .send(ProviderStreamEvent::Error {
+                message: "openai_compatible responses tool completion missing both item id and call id"
+                    .to_string(),
+            })
+            .await;
+        return false;
+    };
+
+    let state_key = find_responses_tool_call_key(tool_calls, &key).unwrap_or(key);
+    let state = tool_calls.entry(state_key.clone()).or_default();
+
+    if let Some(call_id) = item.call_id {
+        state.tool_call_id = Some(call_id);
+    }
+    if let Some(function_name) = item.name {
+        state.function_name = Some(function_name);
+    }
+    if let Some(arguments_json) = item.arguments.filter(|value| !value.is_empty()) {
+        state.arguments_json = arguments_json;
+    }
+
+    let Some(completed_state) = tool_calls.remove(&state_key) else {
+        return true;
+    };
+
+    if let Err(message) = emit_responses_tool_call_complete(tx, &state_key, completed_state).await {
+        let _ = tx.send(ProviderStreamEvent::Error { message }).await;
+        return false;
+    }
+
+    true
+}
+
+fn find_responses_tool_call_key(
+    tool_calls: &BTreeMap<String, ResponsesToolCallAccumulator>,
+    item_or_call_id: &str,
+) -> Option<String> {
+    if tool_calls.contains_key(item_or_call_id) {
+        return Some(item_or_call_id.to_string());
+    }
+
+    tool_calls.iter().find_map(|(key, state)| {
+        (state.tool_call_id.as_deref() == Some(item_or_call_id)).then(|| key.clone())
+    })
+}
+
+async fn emit_responses_tool_call_complete(
+    tx: &mpsc::Sender<ProviderStreamEvent>,
+    state_key: &str,
+    state: ResponsesToolCallAccumulator,
+) -> Result<(), String> {
+    let tool_call_id = state
+        .tool_call_id
+        .unwrap_or_else(|| state_key.to_string());
+
+    let Some(function_name) = state.function_name.filter(|value| !value.is_empty()) else {
+        return Err(format!(
+            "openai_compatible responses tool call `{tool_call_id}` missing function name"
+        ));
+    };
+
+    let arguments_json = normalize_responses_arguments_json(state.arguments_json);
+    serde_json::from_str::<serde_json::Value>(&arguments_json).map_err(|err| {
+        format!(
+            "openai_compatible responses tool call `{tool_call_id}` has malformed arguments JSON: {err}"
+        )
+    })?;
+
+    tx.send(ProviderStreamEvent::ToolCallComplete {
+        tool_call_id,
+        function_name,
+        arguments_json,
+    })
+    .await
+    .map_err(|_| {
+        "openai_compatible stream receiver closed while sending tool completion".to_string()
+    })
+}
+
+fn normalize_responses_arguments_json(arguments_json: String) -> String {
+    if arguments_json.trim().is_empty() {
+        "{}".to_string()
+    } else {
+        arguments_json
     }
 }
 
@@ -463,19 +836,84 @@ struct OpenAiChatCompletionsRequest {
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<OpenAiChatTool>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_choice: Option<ToolChoice>,
     stream: bool,
 }
 
 impl From<CompletionRequest> for OpenAiChatCompletionsRequest {
     fn from(request: CompletionRequest) -> Self {
+        let CompletionRequest {
+            model_id,
+            messages,
+            temperature,
+            max_tokens,
+            tools,
+            tool_choice,
+            stream,
+        } = request;
+
         Self {
-            model: request.model_id,
-            messages: request.messages.into_iter().map(Into::into).collect(),
-            temperature: request.temperature,
-            max_tokens: request.max_tokens,
-            stream: true,
+            model: model_id,
+            messages: messages.into_iter().map(Into::into).collect(),
+            temperature,
+            max_tokens,
+            tools: tools.map(|tools| tools.into_iter().map(Into::into).collect()),
+            tool_choice,
+            stream,
         }
     }
+}
+
+#[derive(Debug, Serialize)]
+struct OpenAiChatMessage {
+    role: String,
+    content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_call_id: Option<String>,
+}
+
+impl From<CompletionMessage> for OpenAiChatMessage {
+    fn from(message: CompletionMessage) -> Self {
+        Self {
+            role: role_to_openai(&message.role).to_string(),
+            content: message.content,
+            name: message.name,
+            tool_call_id: message.tool_call_id,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct OpenAiChatTool {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    function: OpenAiChatToolFunction,
+}
+
+impl From<ToolDef> for OpenAiChatTool {
+    fn from(tool: ToolDef) -> Self {
+        Self {
+            kind: "function",
+            function: OpenAiChatToolFunction {
+                name: tool.function_name,
+                description: tool.description,
+                parameters: tool.parameters,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct OpenAiChatToolFunction {
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    parameters: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -486,17 +924,33 @@ struct OpenAiResponsesRequest {
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_output_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<OpenAiResponsesTool>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_choice: Option<ToolChoice>,
     stream: bool,
 }
 
 impl From<CompletionRequest> for OpenAiResponsesRequest {
     fn from(request: CompletionRequest) -> Self {
+        let CompletionRequest {
+            model_id,
+            messages,
+            temperature,
+            max_tokens,
+            tools,
+            tool_choice,
+            stream,
+        } = request;
+
         Self {
-            model: request.model_id,
-            input: request.messages.into_iter().map(Into::into).collect(),
-            temperature: request.temperature,
-            max_output_tokens: request.max_tokens,
-            stream: true,
+            model: model_id,
+            input: messages.into_iter().map(Into::into).collect(),
+            temperature,
+            max_output_tokens: max_tokens,
+            tools: tools.map(|tools| tools.into_iter().map(Into::into).collect()),
+            tool_choice,
+            stream,
         }
     }
 }
@@ -527,49 +981,24 @@ struct OpenAiResponsesContentItem {
 }
 
 #[derive(Debug, Serialize)]
-struct OpenAiChatMessage {
-    role: String,
-    content: String,
+struct OpenAiResponsesTool {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    parameters: serde_json::Value,
 }
 
-impl From<CompletionMessage> for OpenAiChatMessage {
-    fn from(message: CompletionMessage) -> Self {
+impl From<ToolDef> for OpenAiResponsesTool {
+    fn from(tool: ToolDef) -> Self {
         Self {
-            role: role_to_openai(&message.role).to_string(),
-            content: message.content,
+            kind: "function",
+            name: tool.function_name,
+            description: tool.description.filter(|value| !value.trim().is_empty()),
+            parameters: tool.parameters,
         }
     }
-}
-
-fn role_to_openai(role: &MessageRole) -> &'static str {
-    match role {
-        MessageRole::System => "system",
-        MessageRole::User => "user",
-        MessageRole::Assistant => "assistant",
-        MessageRole::Tool => "tool",
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAiChatCompletionsChunk {
-    #[serde(default)]
-    choices: Vec<OpenAiChatChoiceChunk>,
-    #[serde(default)]
-    usage: Option<CompletionUsage>,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAiChatChoiceChunk {
-    #[serde(default)]
-    delta: OpenAiChatDeltaChunk,
-    #[serde(default)]
-    finish_reason: Option<String>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct OpenAiChatDeltaChunk {
-    #[serde(default)]
-    content: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -579,7 +1008,25 @@ struct OpenAiResponsesEvent {
     #[serde(default)]
     delta: Option<String>,
     #[serde(default)]
+    item_id: Option<String>,
+    #[serde(default)]
+    item: Option<OpenAiResponsesOutputItem>,
+    #[serde(default)]
     response: Option<OpenAiResponsesResponsePayload>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiResponsesOutputItem {
+    #[serde(rename = "type")]
+    item_type: String,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    call_id: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    arguments: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -618,26 +1065,79 @@ impl OpenAiResponsesUsage {
     }
 }
 
+#[derive(Debug, Default)]
+struct ResponsesToolCallAccumulator {
+    tool_call_id: Option<String>,
+    function_name: Option<String>,
+    arguments_json: String,
+}
+
+fn role_to_openai(role: &MessageRole) -> &'static str {
+    match role {
+        MessageRole::System => "system",
+        MessageRole::User => "user",
+        MessageRole::Assistant => "assistant",
+        MessageRole::Tool => "tool",
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiChatCompletionsChunk {
+    #[serde(default)]
+    choices: Vec<OpenAiChatChoiceChunk>,
+    #[serde(default)]
+    usage: Option<CompletionUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiChatChoiceChunk {
+    #[serde(default)]
+    delta: OpenAiChatDeltaChunk,
+    #[serde(default)]
+    finish_reason: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct OpenAiChatDeltaChunk {
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    tool_calls: Vec<OpenAiChatToolCallDeltaChunk>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiChatToolCallDeltaChunk {
+    index: usize,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    function: Option<OpenAiChatToolFunctionDeltaChunk>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct OpenAiChatToolFunctionDeltaChunk {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    arguments: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use std::{collections::BTreeMap, env, fs, path::PathBuf, time::Duration};
 
     use serde::Deserialize;
+    use serde_json::json;
     use tokio::time::timeout;
     use tokio_stream::StreamExt;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use super::{
-        OpenAiApiMode, OpenAiCompatibleProvider, OpenAiCompatibleProviderConfig,
-        OpenAiResponsesUsage,
-    };
+    use super::{OpenAiApiMode, OpenAiCompatibleProvider, OpenAiCompatibleProviderConfig};
     use crate::{
         CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
-        ProviderStreamEvent,
+        ProviderStreamEvent, ToolChoice, ToolDef,
     };
-
-    const CLIPROXY_LOOPBACK_DEFAULT_API_KEY: &str = "sk-zerolimit";
 
     #[tokio::test]
     async fn openai_compatible_offline_wiremock_parses_sse_deltas() {
@@ -697,7 +1197,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn openai_responses_offline_wiremock_parses_sse_deltas() {
+    async fn openai_responses_offline_wiremock_streams_tool_call_complete() {
         let server = MockServer::start().await;
 
         Mock::given(method("POST"))
@@ -706,7 +1206,7 @@ mod tests {
                 ResponseTemplate::new(200)
                     .insert_header("content-type", "text/event-stream")
                     .set_body_raw(
-                        deterministic_responses_sse_transcript(),
+                        responses_tool_call_sse_transcript(),
                         "text/event-stream",
                     ),
             )
@@ -718,18 +1218,32 @@ mod tests {
             "test-secret-key",
             OpenAiApiMode::Responses,
         );
-        let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
+        let events = collect_events(&provider, request_with_single_tool("gpt-4o-mini")).await;
 
         assert_eq!(
             events,
             vec![
                 ProviderStreamEvent::Start,
-                ProviderStreamEvent::TextDelta("Hello".to_string()),
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_resp_1".to_string(),
+                    function_name: Some("filesystem_read".to_string()),
+                    arguments_delta: "{\"filePath\":\"/tmp".to_string(),
+                },
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_resp_1".to_string(),
+                    function_name: None,
+                    arguments_delta: "/demo.txt\"}".to_string(),
+                },
+                ProviderStreamEvent::ToolCallComplete {
+                    tool_call_id: "call_resp_1".to_string(),
+                    function_name: "filesystem_read".to_string(),
+                    arguments_json: "{\"filePath\":\"/tmp/demo.txt\"}".to_string(),
+                },
                 ProviderStreamEvent::Done {
                     usage: CompletionUsage {
-                        prompt_tokens: 5,
-                        completion_tokens: 1,
-                        total_tokens: 6,
+                        prompt_tokens: 9,
+                        completion_tokens: 3,
+                        total_tokens: 12,
                     }
                 },
             ]
@@ -740,45 +1254,157 @@ mod tests {
             .await
             .expect("request recording must be enabled");
         assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].url.path(), "/v1/responses");
+
+        let body: serde_json::Value = requests[0].body_json().expect("request body must be JSON");
+        assert_eq!(body.get("tool_choice"), Some(&serde_json::Value::String("auto".to_string())));
+
+        let tools = body
+            .get("tools")
+            .and_then(|value| value.as_array())
+            .expect("responses tools array should be serialized");
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].get("type"), Some(&serde_json::Value::String("function".to_string())));
+        assert_eq!(
+            tools[0].get("name"),
+            Some(&serde_json::Value::String("filesystem_read".to_string()))
+        );
+        assert!(tools[0].get("function").is_none());
     }
 
-    #[test]
-    fn responses_usage_maps_input_output_tokens() {
-        let usage: OpenAiResponsesUsage = serde_json::from_value(serde_json::json!({
-            "input_tokens": 9,
-            "output_tokens": 3,
-            "total_tokens": 12
-        }))
-        .expect("deserialize responses usage");
+    #[tokio::test]
+    async fn openai_responses_offline_wiremock_malformed_args_fail_closed() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(
+                        responses_malformed_tool_args_sse_transcript(),
+                        "text/event-stream",
+                    ),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = provider_for_base_url_with_mode(
+            format!("{}/v1", server.uri()),
+            "test-secret-key",
+            OpenAiApiMode::Responses,
+        );
+        let events = collect_events(&provider, request_with_single_tool("gpt-4o-mini")).await;
+
+        assert!(matches!(events.first(), Some(ProviderStreamEvent::Start)));
+        assert!(events
+            .iter()
+            .any(|event| matches!(event, ProviderStreamEvent::ToolCallDelta { .. })));
+        assert!(events
+            .iter()
+            .any(|event| matches!(event, ProviderStreamEvent::Error { message } if message.contains("malformed arguments JSON"))));
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event, ProviderStreamEvent::ToolCallComplete { .. })));
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event, ProviderStreamEvent::Done { .. })));
+    }
+
+    #[tokio::test]
+    async fn openai_compatible_offline_wiremock_streams_chat_tool_calls() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(tool_call_sse_transcript(), "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = provider_for_base_url(format!("{}/v1", server.uri()), "test-secret-key");
+        let events = collect_events(&provider, request_with_single_tool("gpt-4o-mini")).await;
 
         assert_eq!(
-            usage.into_completion_usage(),
-            CompletionUsage {
-                prompt_tokens: 9,
-                completion_tokens: 3,
-                total_tokens: 12,
-            }
+            events,
+            vec![
+                ProviderStreamEvent::Start,
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_1".to_string(),
+                    function_name: Some("filesystem_read".to_string()),
+                    arguments_delta: "{\"filePath\":\"".to_string(),
+                },
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_1".to_string(),
+                    function_name: None,
+                    arguments_delta: "/tmp/demo.txt\"}".to_string(),
+                },
+                ProviderStreamEvent::ToolCallComplete {
+                    tool_call_id: "call_1".to_string(),
+                    function_name: "filesystem_read".to_string(),
+                    arguments_json: "{\"filePath\":\"/tmp/demo.txt\"}".to_string(),
+                },
+                ProviderStreamEvent::Done {
+                    usage: CompletionUsage {
+                        prompt_tokens: 12,
+                        completion_tokens: 4,
+                        total_tokens: 16,
+                    }
+                },
+            ]
+        );
+
+        let requests = server
+            .received_requests()
+            .await
+            .expect("request recording must be enabled");
+        assert_eq!(requests.len(), 1);
+
+        let body: serde_json::Value = requests[0].body_json().expect("request body must be JSON");
+        assert_eq!(body.get("tool_choice"), Some(&serde_json::Value::String("auto".to_string())));
+
+        let tools = body
+            .get("tools")
+            .and_then(|value| value.as_array())
+            .expect("tools array should be serialized");
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].get("type"), Some(&serde_json::Value::String("function".to_string())));
+        assert_eq!(
+            tools[0].get("function").and_then(|value| value.get("name")),
+            Some(&serde_json::Value::String("filesystem_read".to_string()))
         );
     }
 
-    #[test]
-    fn responses_usage_supports_prompt_completion_token_shape() {
-        let usage: OpenAiResponsesUsage = serde_json::from_value(serde_json::json!({
-            "prompt_tokens": 4,
-            "completion_tokens": 2,
-            "total_tokens": 6
-        }))
-        .expect("deserialize responses usage");
+    #[tokio::test]
+    async fn openai_compatible_offline_wiremock_chat_tool_calls_fail_closed_on_invalid_arguments() {
+        let server = MockServer::start().await;
 
-        assert_eq!(
-            usage.into_completion_usage(),
-            CompletionUsage {
-                prompt_tokens: 4,
-                completion_tokens: 2,
-                total_tokens: 6,
-            }
-        );
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(malformed_tool_call_sse_transcript(), "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = provider_for_base_url(format!("{}/v1", server.uri()), "test-secret-key");
+        let events = collect_events(&provider, request_with_single_tool("gpt-4o-mini")).await;
+
+        assert!(matches!(events.first(), Some(ProviderStreamEvent::Start)));
+        assert!(events
+            .iter()
+            .any(|event| matches!(event, ProviderStreamEvent::ToolCallDelta { .. })));
+        assert!(events.iter().any(|event| matches!(event, ProviderStreamEvent::Error { .. })));
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event, ProviderStreamEvent::ToolCallComplete { .. })));
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event, ProviderStreamEvent::Done { .. })));
     }
 
     #[tokio::test]
@@ -831,7 +1457,7 @@ mod tests {
 
         let provider = OpenAiCompatibleProvider::new(OpenAiCompatibleProviderConfig {
             base_url: provider_config.base_url.clone(),
-            api_key: resolve_live_api_key(&provider_config.api_key, &provider_config.base_url),
+            api_key: resolve_env_reference(&provider_config.api_key),
             api_mode: provider_config.api_mode,
             timeout_ms: provider_config.timeout_ms,
             headers: provider_config.headers.clone(),
@@ -856,6 +1482,8 @@ mod tests {
                     ProviderStreamEvent::TextDelta(delta) => {
                         delta_chars += delta.len();
                     }
+                    ProviderStreamEvent::ToolCallDelta { .. }
+                    | ProviderStreamEvent::ToolCallComplete { .. } => {}
                     ProviderStreamEvent::Done { .. } => {
                         saw_done = true;
                         break;
@@ -899,9 +1527,42 @@ mod tests {
             messages: vec![CompletionMessage {
                 role: MessageRole::User,
                 content: "Say hello from test".to_string(),
+                name: None,
+                tool_call_id: None,
             }],
             temperature: Some(0.0),
             max_tokens: Some(32),
+            tools: None,
+            tool_choice: None,
+            stream: true,
+        }
+    }
+
+    fn request_with_single_tool(model_id: &str) -> CompletionRequest {
+        CompletionRequest {
+            model_id: model_id.to_string(),
+            messages: vec![CompletionMessage {
+                role: MessageRole::User,
+                content: "Read /tmp/demo.txt".to_string(),
+                name: None,
+                tool_call_id: None,
+            }],
+            temperature: Some(0.0),
+            max_tokens: Some(64),
+            tools: Some(vec![ToolDef {
+                tool_id: "fs.read".to_string(),
+                function_name: "filesystem_read".to_string(),
+                description: Some("Read file content".to_string()),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "filePath": {"type": "string"}
+                    },
+                    "required": ["filePath"],
+                    "additionalProperties": false
+                }),
+            }]),
+            tool_choice: Some(ToolChoice::Auto),
             stream: true,
         }
     }
@@ -923,12 +1584,48 @@ mod tests {
         .to_string()
     }
 
-    fn deterministic_responses_sse_transcript() -> String {
+    fn tool_call_sse_transcript() -> String {
         concat!(
-            "event: response.output_text.delta\n",
-            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\n",
+            "data: {\"id\":\"chatcmpl-tool-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"filesystem_read\",\"arguments\":\"{\\\"filePath\\\":\\\"\"}}]},\"finish_reason\":null}],\"usage\":null}\n\n",
+            "data: {\"id\":\"chatcmpl-tool-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"/tmp/demo.txt\\\"}\"}}]},\"finish_reason\":null}],\"usage\":null}\n\n",
+            "data: {\"id\":\"chatcmpl-tool-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":4,\"total_tokens\":16}}\n\n",
+            "data: [DONE]\n\n"
+        )
+        .to_string()
+    }
+
+    fn malformed_tool_call_sse_transcript() -> String {
+        concat!(
+            "data: {\"id\":\"chatcmpl-tool-2\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_bad\",\"type\":\"function\",\"function\":{\"name\":\"filesystem_read\",\"arguments\":\"{\\\"filePath\\\":\"}}]},\"finish_reason\":null}],\"usage\":null}\n\n",
+            "data: {\"id\":\"chatcmpl-tool-2\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":3,\"total_tokens\":14}}\n\n",
+            "data: [DONE]\n\n"
+        )
+        .to_string()
+    }
+
+    fn responses_tool_call_sse_transcript() -> String {
+        concat!(
+            "event: response.output_item.added\n",
+            "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"item_resp_1\",\"call_id\":\"call_resp_1\",\"name\":\"filesystem_read\",\"arguments\":\"{\\\"filePath\\\":\\\"/tmp\"}}\n\n",
+            "event: response.function_call_arguments.delta\n",
+            "data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"item_resp_1\",\"delta\":\"/demo.txt\\\"}\"}\n\n",
+            "event: response.output_item.done\n",
+            "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"item_resp_1\",\"call_id\":\"call_resp_1\",\"name\":\"filesystem_read\",\"arguments\":\"{\\\"filePath\\\":\\\"/tmp/demo.txt\\\"}\"}}\n\n",
             "event: response.completed\n",
-            "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":1,\"total_tokens\":6}}}\n\n",
+            "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":9,\"output_tokens\":3,\"total_tokens\":12}}}\n\n",
+            "data: [DONE]\n\n"
+        )
+        .to_string()
+    }
+
+    fn responses_malformed_tool_args_sse_transcript() -> String {
+        concat!(
+            "event: response.output_item.added\n",
+            "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"item_resp_bad\",\"call_id\":\"call_resp_bad\",\"name\":\"filesystem_read\",\"arguments\":\"{\\\"filePath\\\":\\\"/tmp\"}}\n\n",
+            "event: response.function_call_arguments.delta\n",
+            "data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"item_resp_bad\",\"delta\":\"/demo.txt\\\"\"}\n\n",
+            "event: response.completed\n",
+            "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":9,\"output_tokens\":3,\"total_tokens\":12}}}\n\n",
             "data: [DONE]\n\n"
         )
         .to_string()
@@ -949,36 +1646,17 @@ mod tests {
             .map_err(|err| format!("failed parsing live config {}: {err}", path.display()))
     }
 
-    fn resolve_live_api_key(value: &str, base_url: &str) -> String {
+    fn resolve_env_reference(value: &str) -> String {
         if !(value.starts_with("${") && value.ends_with('}')) {
             return value.to_string();
         }
 
-        let reference = &value[2..value.len() - 1];
-        if reference.is_empty() {
+        let key = &value[2..value.len() - 1];
+        if key.is_empty() {
             return value.to_string();
         }
 
-        if let Some((key, fallback)) = reference.split_once(":-") {
-            if key.is_empty() {
-                return value.to_string();
-            }
-            return env::var(key).unwrap_or_else(|_| fallback.to_string());
-        }
-
-        if reference == "OPENAI_API_KEY" && is_loopback_cliproxy_base_url(base_url) {
-            return env::var(reference)
-                .unwrap_or_else(|_| CLIPROXY_LOOPBACK_DEFAULT_API_KEY.to_string());
-        }
-
-        env::var(reference).unwrap_or_else(|_| value.to_string())
-    }
-
-    fn is_loopback_cliproxy_base_url(base_url: &str) -> bool {
-        let lowered = base_url.trim().to_ascii_lowercase();
-        lowered.contains("127.0.0.1:8317")
-            || lowered.contains("localhost:8317")
-            || lowered.contains("[::1]:8317")
+        env::var(key).unwrap_or_else(|_| value.to_string())
     }
 
     fn default_timeout_ms() -> u64 {

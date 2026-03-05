@@ -10,6 +10,7 @@ use tokio_stream::{self as stream, StreamExt};
 
 use crate::{
     CompletionRequest, CompletionUsage, Provider, ProviderEventStream, ProviderStreamEvent,
+    ToolChoice, ToolDef,
 };
 
 #[derive(Debug, Error)]
@@ -78,7 +79,7 @@ impl MockProvider {
                     source,
                 })?;
 
-            let request = fixture.request.into_completion_request();
+            let request: CompletionRequest = fixture.request.into();
             let digest = request_digest(&request);
             scripted_events.insert(digest, fixture.events.into_iter().map(Into::into).collect());
         }
@@ -143,27 +144,28 @@ struct MockProviderFixture {
 #[derive(Debug, Deserialize)]
 struct FixtureCompletionRequest {
     model_id: String,
-    #[serde(default, alias = "input")]
     messages: Vec<crate::CompletionMessage>,
     #[serde(default)]
     temperature: Option<f32>,
     #[serde(default)]
     max_tokens: Option<u32>,
     #[serde(default)]
-    stream: bool,
+    tools: Option<Vec<ToolDef>>,
     #[serde(default)]
-    tools: Vec<Value>,
+    tool_choice: Option<ToolChoice>,
+    stream: bool,
 }
 
-impl FixtureCompletionRequest {
-    fn into_completion_request(self) -> CompletionRequest {
-        let _ = self.tools;
-        CompletionRequest {
-            model_id: self.model_id,
-            messages: self.messages,
-            temperature: self.temperature,
-            max_tokens: self.max_tokens,
-            stream: self.stream,
+impl From<FixtureCompletionRequest> for CompletionRequest {
+    fn from(value: FixtureCompletionRequest) -> Self {
+        Self {
+            model_id: value.model_id,
+            messages: value.messages,
+            temperature: value.temperature,
+            max_tokens: value.max_tokens,
+            tools: value.tools,
+            tool_choice: value.tool_choice,
+            stream: value.stream,
         }
     }
 }
@@ -172,22 +174,20 @@ impl FixtureCompletionRequest {
 #[serde(tag = "type", rename_all = "snake_case")]
 enum FixtureStreamEvent {
     Start,
-    TextDelta {
-        text: String,
-    },
-    Done {
-        usage: CompletionUsage,
+    TextDelta { text: String },
+    ToolCallDelta {
+        tool_call_id: String,
         #[serde(default)]
-        finish_reason: Option<String>,
+        function_name: Option<String>,
+        arguments_delta: String,
     },
     ToolCall {
-        call_id: String,
-        name: String,
+        tool_call_id: String,
+        function_name: String,
         arguments_json: String,
     },
-    Error {
-        message: String,
-    },
+    Done { usage: CompletionUsage },
+    Error { message: String },
 }
 
 impl From<FixtureStreamEvent> for ProviderStreamEvent {
@@ -195,18 +195,25 @@ impl From<FixtureStreamEvent> for ProviderStreamEvent {
         match value {
             FixtureStreamEvent::Start => Self::Start,
             FixtureStreamEvent::TextDelta { text } => Self::TextDelta(text),
-            FixtureStreamEvent::Done {
-                usage,
-                finish_reason,
-            } => {
-                let _ = finish_reason;
-                Self::Done { usage }
-            }
+            FixtureStreamEvent::ToolCallDelta {
+                tool_call_id,
+                function_name,
+                arguments_delta,
+            } => Self::ToolCallDelta {
+                tool_call_id,
+                function_name,
+                arguments_delta,
+            },
             FixtureStreamEvent::ToolCall {
-                call_id,
-                name,
+                tool_call_id,
+                function_name,
                 arguments_json,
-            } => Self::TextDelta(format!("[tool_call:{name}:{call_id}:{arguments_json}]")),
+            } => Self::ToolCallComplete {
+                tool_call_id,
+                function_name,
+                arguments_json,
+            },
+            FixtureStreamEvent::Done { usage } => Self::Done { usage },
             FixtureStreamEvent::Error { message } => Self::Error { message },
         }
     }
@@ -258,9 +265,13 @@ mod tests {
             messages: vec![CompletionMessage {
                 role: MessageRole::User,
                 content: "this request has no fixture".to_string(),
+                name: None,
+                tool_call_id: None,
             }],
             temperature: Some(0.1),
             max_tokens: Some(7),
+            tools: None,
+            tool_choice: None,
             stream: true,
         };
 
@@ -271,6 +282,42 @@ mod tests {
             vec![ProviderStreamEvent::Error {
                 message: format!("mock fixture missing for request_digest={digest}")
             }]
+        );
+    }
+
+    #[tokio::test]
+    async fn tool_call_fixture_emits_structured_tool_call_events() {
+        let provider = load_fixture_provider();
+        let request = fixture_tool_call_request();
+
+        let events: Vec<_> = provider.stream_completion(request).await.collect().await;
+        assert_eq!(
+            events,
+            vec![
+                ProviderStreamEvent::Start,
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_fs_read_1".to_string(),
+                    function_name: Some("filesystem_read".to_string()),
+                    arguments_delta: "{\"filePath\":".to_string(),
+                },
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_fs_read_1".to_string(),
+                    function_name: None,
+                    arguments_delta: "\"/tmp/demo.txt\"}".to_string(),
+                },
+                ProviderStreamEvent::ToolCallComplete {
+                    tool_call_id: "call_fs_read_1".to_string(),
+                    function_name: "filesystem_read".to_string(),
+                    arguments_json: "{\"filePath\":\"/tmp/demo.txt\"}".to_string(),
+                },
+                ProviderStreamEvent::Done {
+                    usage: crate::CompletionUsage {
+                        prompt_tokens: 21,
+                        completion_tokens: 9,
+                        total_tokens: 30,
+                    }
+                }
+            ]
         );
     }
 
@@ -293,14 +340,57 @@ mod tests {
                 CompletionMessage {
                     role: MessageRole::System,
                     content: "You are deterministic.".to_string(),
+                    name: None,
+                    tool_call_id: None,
                 },
                 CompletionMessage {
                     role: MessageRole::User,
                     content: "Say hello.".to_string(),
+                    name: None,
+                    tool_call_id: None,
                 },
             ],
             temperature: Some(0.0),
             max_tokens: Some(32),
+            tools: None,
+            tool_choice: None,
+            stream: true,
+        }
+    }
+
+    fn fixture_tool_call_request() -> CompletionRequest {
+        CompletionRequest {
+            model_id: "model-mock-1".to_string(),
+            messages: vec![
+                CompletionMessage {
+                    role: MessageRole::System,
+                    content: "You are deterministic.".to_string(),
+                    name: None,
+                    tool_call_id: None,
+                },
+                CompletionMessage {
+                    role: MessageRole::User,
+                    content: "Read /tmp/demo.txt using a tool call.".to_string(),
+                    name: None,
+                    tool_call_id: None,
+                },
+            ],
+            temperature: Some(0.0),
+            max_tokens: Some(64),
+            tools: Some(vec![crate::ToolDef {
+                tool_id: "fs.read".to_string(),
+                function_name: "filesystem_read".to_string(),
+                description: Some("Read file content by absolute path".to_string()),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "filePath": {"type": "string"}
+                    },
+                    "required": ["filePath"],
+                    "additionalProperties": false
+                }),
+            }]),
+            tool_choice: Some(crate::ToolChoice::Auto),
             stream: true,
         }
     }
