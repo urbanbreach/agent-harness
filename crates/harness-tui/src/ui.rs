@@ -278,7 +278,72 @@ fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: 
             lines.push(Line::from(activity.transcript_text.as_str()));
         } else if activity.status == ActivityStatus::Streaming {
             lines.push(Line::from("Waiting for response..."));
-        } else {
+        }
+
+        if !activity.tool_calls.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Tool Calls:",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            )));
+
+            for tool_call in &activity.tool_calls {
+                let status_icon = match tool_call.status {
+                    crate::app::ToolCallDisplayStatus::PendingPermission => "◷",
+                    crate::app::ToolCallDisplayStatus::Queued => "◴",
+                    crate::app::ToolCallDisplayStatus::Running => "◐",
+                    crate::app::ToolCallDisplayStatus::Succeeded => "●",
+                    crate::app::ToolCallDisplayStatus::Failed => "✗",
+                };
+
+                let status_color = match tool_call.status {
+                    crate::app::ToolCallDisplayStatus::PendingPermission
+                    | crate::app::ToolCallDisplayStatus::Queued => theme.fg,
+                    crate::app::ToolCallDisplayStatus::Running => theme.accent,
+                    crate::app::ToolCallDisplayStatus::Succeeded => theme.success,
+                    crate::app::ToolCallDisplayStatus::Failed => theme.error,
+                };
+
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        format!("  {} ", status_icon),
+                        Style::default().fg(status_color),
+                    ),
+                    Span::styled(
+                        &tool_call.tool_id,
+                        Style::default()
+                            .fg(status_color)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        format!(" ({})", tool_call.status),
+                        Style::default().fg(theme.fg),
+                    ),
+                ]));
+
+                if let Some(output) = &tool_call.truncated_output {
+                    if tool_call.status == crate::app::ToolCallDisplayStatus::Succeeded {
+                        lines.push(Line::from(vec![
+                            Span::styled("    └ ", Style::default().fg(theme.fg)),
+                            Span::styled(output, Style::default().fg(theme.fg)),
+                        ]));
+                    }
+                }
+
+                if tool_call.status == crate::app::ToolCallDisplayStatus::Failed {
+                    if let Some(error) = &tool_call.output_summary {
+                        lines.push(Line::from(vec![
+                            Span::styled("    └ ", Style::default().fg(theme.error)),
+                            Span::styled(error, Style::default().fg(theme.error)),
+                        ]));
+                    }
+                }
+            }
+        }
+
+        if lines.is_empty() {
             lines.push(Line::from("No content"));
         }
 
