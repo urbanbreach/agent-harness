@@ -104,14 +104,20 @@ pub fn golden_path_provider() -> MockProvider {
                 CompletionMessage {
                     role: MessageRole::System,
                     content: prompt.to_string(),
+                    name: None,
+                    tool_call_id: None,
                 },
                 CompletionMessage {
                     role: MessageRole::User,
                     content: prompt.to_string(),
+                    name: None,
+                    tool_call_id: None,
                 },
             ],
             temperature: Some(0.0),
             max_tokens: None,
+            tools: None,
+            tool_choice: None,
             stream: true,
         };
 
@@ -137,14 +143,20 @@ pub fn golden_path_provider() -> MockProvider {
             CompletionMessage {
                 role: MessageRole::System,
                 content: "worker-prompt".to_string(),
+                name: None,
+                tool_call_id: None,
             },
             CompletionMessage {
                 role: MessageRole::User,
                 content: "Hello from PTY".to_string(),
+                name: None,
+                tool_call_id: None,
             },
         ],
         temperature: Some(0.0),
         max_tokens: None,
+        tools: None,
+        tool_choice: None,
         stream: true,
     };
 
@@ -186,7 +198,7 @@ pub fn golden_path_profiles() -> BTreeMap<String, AgentProfile> {
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             system_prompt: "worker-prompt".to_string(),
-            toolset: vec![],
+            toolset: vec!["edit.hashline_apply".to_string()],
         },
     );
     profiles
