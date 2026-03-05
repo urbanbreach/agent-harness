@@ -14,8 +14,8 @@ mod scenarios;
 mod sessions;
 mod tui;
 
+use crate::prompt::PromptCommand;
 use crate::tui::TuiCommand;
-use prompt::PromptCommand;
 use replay::ReplayCommand;
 use run::RunCommand;
 use sessions::SessionsCommand;

@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use harness_core::agent::AgentProfile;
 use harness_core::clock::FakeClock;
 use harness_core::config::{PermissionMode, ShellAllowlist};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle};
@@ -42,9 +43,14 @@ async fn hashline_apply_success_writes_file_and_emits_applied_event() {
         .await
         .expect("start run");
 
+    let worker_agent_id = handle
+        .spawn_agent(supervisor_actor(), "worker", None)
+        .await
+        .expect("spawn worker");
+
     let tool_call_id = handle
         .request_tool_call(
-            worker_actor(),
+            worker_actor(worker_agent_id),
             Some("deep".to_string()),
             "edit.hashline_apply",
             serde_json::to_value(&patch).expect("patch json"),
@@ -120,9 +126,14 @@ async fn hashline_apply_mismatch_leaves_file_unchanged() {
         .await
         .expect("start run");
 
+    let worker_agent_id = handle
+        .spawn_agent(supervisor_actor(), "worker", None)
+        .await
+        .expect("spawn worker");
+
     let tool_call_id = handle
         .request_tool_call(
-            worker_actor(),
+            worker_actor(worker_agent_id),
             Some("deep".to_string()),
             "edit.hashline_apply",
             serde_json::to_value(&patch).expect("patch json"),
@@ -188,9 +199,14 @@ async fn hashline_apply_permission_ask_blocks_until_resolved() {
         .await
         .expect("start run");
 
+    let worker_agent_id = handle
+        .spawn_agent(supervisor_actor(), "worker", None)
+        .await
+        .expect("spawn worker");
+
     let tool_call_id = handle
         .request_tool_call(
-            worker_actor(),
+            worker_actor(worker_agent_id),
             Some("deep".to_string()),
             "edit.hashline_apply",
             serde_json::to_value(&patch).expect("patch json"),
@@ -295,6 +311,16 @@ fn test_coordinator(session_dir: &Path, permission_policy: PermissionPolicy) -> 
     config.deterministic_store = true;
     config.permission_policy = permission_policy;
     config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
+    config.agent_profiles.insert(
+        "worker".to_string(),
+        AgentProfile {
+            name: "worker".to_string(),
+            category: "deep".to_string(),
+            model_ref: "mock:model-1".to_string(),
+            system_prompt: "worker-prompt".to_string(),
+            toolset: vec!["edit.hashline_apply".to_string()],
+        },
+    );
 
     spawn_coordinator(
         config,
@@ -303,8 +329,12 @@ fn test_coordinator(session_dir: &Path, permission_policy: PermissionPolicy) -> 
     )
 }
 
-fn worker_actor() -> EventActor {
-    EventActor::new(ActorKind::Worker, Some("agent-worker".to_string()))
+fn worker_actor(agent_id: String) -> EventActor {
+    EventActor::new(ActorKind::Worker, Some(agent_id))
+}
+
+fn supervisor_actor() -> EventActor {
+    EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string()))
 }
 
 fn replace_line_patch(

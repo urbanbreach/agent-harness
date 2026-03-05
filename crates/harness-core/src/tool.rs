@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use thiserror::Error;
 
 use crate::event::{ActorKind, EventActor};
@@ -224,9 +224,107 @@ pub enum ToolError {
 pub trait Tool: Send + Sync {
     fn id(&self) -> &str;
 
+    fn description(&self) -> &str {
+        "No description provided."
+    }
+
+    fn parameters_json_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "additionalProperties": true,
+        })
+    }
+
     fn capability(&self) -> ToolCapability;
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolFunctionNameMapping {
+    function_to_tool_id: BTreeMap<String, ToolId>,
+    tool_id_to_function_name: BTreeMap<ToolId, String>,
+}
+
+impl ToolFunctionNameMapping {
+    pub fn function_to_tool_id(&self) -> &BTreeMap<String, ToolId> {
+        &self.function_to_tool_id
+    }
+
+    pub fn tool_id_to_function_name(&self) -> &BTreeMap<ToolId, String> {
+        &self.tool_id_to_function_name
+    }
+
+    pub fn tool_id_for_function_name(&self, function_name: &str) -> Option<&str> {
+        self.function_to_tool_id
+            .get(function_name)
+            .map(String::as_str)
+    }
+
+    pub fn function_name_for_tool_id(&self, tool_id: &str) -> Option<&str> {
+        self.tool_id_to_function_name
+            .get(tool_id)
+            .map(String::as_str)
+    }
+}
+
+pub fn sanitize_tool_function_name(tool_id: &str) -> String {
+    let mut function_name = tool_id
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+
+    let starts_with_valid_char = function_name
+        .as_bytes()
+        .first()
+        .is_some_and(|first| first.is_ascii_alphabetic() || *first == b'_');
+    if !starts_with_valid_char {
+        function_name.insert_str(0, "t_");
+    }
+
+    function_name
+}
+
+pub fn build_tool_function_name_mapping<I, S>(tool_ids: I) -> ToolFunctionNameMapping
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut sorted_tool_ids = tool_ids
+        .into_iter()
+        .map(|tool_id| tool_id.as_ref().to_string())
+        .collect::<Vec<_>>();
+    sorted_tool_ids.sort();
+    sorted_tool_ids.dedup();
+
+    let mut function_to_tool_id = BTreeMap::new();
+    let mut tool_id_to_function_name = BTreeMap::new();
+    let mut used_function_names = BTreeSet::new();
+
+    for tool_id in sorted_tool_ids {
+        let base_name = sanitize_tool_function_name(&tool_id);
+        let mut function_name = base_name.clone();
+        let mut suffix = 2usize;
+        while used_function_names.contains(&function_name) {
+            function_name = format!("{base_name}_{suffix}");
+            suffix += 1;
+        }
+
+        used_function_names.insert(function_name.clone());
+        function_to_tool_id.insert(function_name.clone(), tool_id.clone());
+        tool_id_to_function_name.insert(tool_id, function_name);
+    }
+
+    ToolFunctionNameMapping {
+        function_to_tool_id,
+        tool_id_to_function_name,
+    }
 }
 
 #[derive(Default)]
@@ -276,6 +374,10 @@ impl ToolRegistry {
             .cloned()
             .collect()
     }
+
+    pub fn function_name_mapping(&self) -> ToolFunctionNameMapping {
+        build_tool_function_name_mapping(self.tools.keys().map(String::as_str))
+    }
 }
 
 pub fn actor_capabilities(actor_kind: ActorKind) -> BTreeSet<ToolCapability> {
@@ -285,6 +387,7 @@ pub fn actor_capabilities(actor_kind: ActorKind) -> BTreeSet<ToolCapability> {
             ToolCapability::EditFs,
             ToolCapability::Shell,
             ToolCapability::Network,
+            ToolCapability::SpawnAgent,
         ]),
         ActorKind::Supervisor | ActorKind::System => BTreeSet::from([
             ToolCapability::ReadFs,
@@ -299,14 +402,18 @@ pub fn actor_capabilities(actor_kind: ActorKind) -> BTreeSet<ToolCapability> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ArtifactStore, ArtifactStoreError, ToolCapability, ToolRegistry};
+    use super::{
+        build_tool_function_name_mapping, sanitize_tool_function_name, ArtifactStore,
+        ArtifactStoreError, ToolCapability, ToolRegistry,
+    };
     use crate::event::ActorKind;
+    use std::collections::BTreeSet;
     use std::fs;
 
     #[test]
-    fn worker_cannot_use_spawn_agent_capability() {
+    fn worker_can_use_spawn_agent_capability() {
         let registry = ToolRegistry::new();
-        assert!(!registry.capability_allowed(ActorKind::Worker, ToolCapability::SpawnAgent));
+        assert!(registry.capability_allowed(ActorKind::Worker, ToolCapability::SpawnAgent));
         assert!(registry.capability_allowed(ActorKind::Worker, ToolCapability::Shell));
     }
 
@@ -338,5 +445,48 @@ mod tests {
             .write_text("../escape.txt", "blocked")
             .expect_err("traversal must fail");
         assert!(matches!(err, ArtifactStoreError::ParentTraversal(_)));
+    }
+
+    #[test]
+    fn sanitize_tool_function_name_applies_milestone_policy() {
+        assert_eq!(sanitize_tool_function_name("fs.read"), "fs_read");
+        assert_eq!(
+            sanitize_tool_function_name("edit/hashline_apply"),
+            "edit_hashline_apply"
+        );
+        assert_eq!(sanitize_tool_function_name("1shell.run"), "t_1shell_run");
+        assert_eq!(sanitize_tool_function_name(""), "t_");
+    }
+
+    #[test]
+    fn function_name_mapping_is_deterministic_unique_and_reversible() {
+        let tool_ids = vec!["fs.read", "fs/read", "fs_read", "1tool"];
+        let mapping_a = build_tool_function_name_mapping(tool_ids.iter().copied());
+
+        let mut reversed_tool_ids = tool_ids.clone();
+        reversed_tool_ids.reverse();
+        let mapping_b = build_tool_function_name_mapping(reversed_tool_ids.iter().copied());
+
+        assert_eq!(mapping_a, mapping_b);
+        assert_eq!(mapping_a.function_to_tool_id().len(), tool_ids.len());
+        assert_eq!(mapping_a.tool_id_to_function_name().len(), tool_ids.len());
+
+        let unique_function_names = mapping_a
+            .function_to_tool_id()
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        assert_eq!(unique_function_names.len(), tool_ids.len());
+
+        for (function_name, tool_id) in mapping_a.function_to_tool_id() {
+            assert_eq!(
+                mapping_a.tool_id_for_function_name(function_name),
+                Some(tool_id.as_str())
+            );
+            assert_eq!(
+                mapping_a.function_name_for_tool_id(tool_id),
+                Some(function_name.as_str())
+            );
+        }
     }
 }
