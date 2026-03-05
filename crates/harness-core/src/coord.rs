@@ -1023,11 +1023,75 @@ impl Coordinator {
             ));
         }
 
+        let effective_category = if actor.kind == ActorKind::Worker {
+            let Some(worker_agent_id) = actor.agent_id.as_deref() else {
+                append_payload_event(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    actor.clone(),
+                    Some(format!("tool_call:{tool_call_id}")),
+                    EventV1::PolicyViolationDetected(PolicyViolationDetectedEvent {
+                        policy: "unknown_worker_agent_id".to_string(),
+                        detail: "worker tool call missing actor agent_id".to_string(),
+                    }),
+                )?;
+
+                return Err(CoordinatorError::PolicyViolation(
+                    "worker tool call missing agent_id".to_string(),
+                ));
+            };
+
+            let Some(worker_profile) = run_state.agents.get(worker_agent_id) else {
+                append_payload_event(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    actor.clone(),
+                    Some(format!("tool_call:{tool_call_id}")),
+                    EventV1::PolicyViolationDetected(PolicyViolationDetectedEvent {
+                        policy: "unknown_worker_agent_id".to_string(),
+                        detail: format!(
+                            "worker agent_id `{worker_agent_id}` is not registered"
+                        ),
+                    }),
+                )?;
+
+                return Err(CoordinatorError::PolicyViolation(format!(
+                    "worker agent_id `{worker_agent_id}` is not registered"
+                )));
+            };
+
+            if !worker_profile.toolset.iter().any(|allowed| allowed == &tool_id) {
+                append_payload_event(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    actor.clone(),
+                    Some(format!("tool_call:{tool_call_id}")),
+                    EventV1::PolicyViolationDetected(PolicyViolationDetectedEvent {
+                        policy: "tool_not_in_toolset".to_string(),
+                        detail: format!(
+                            "tool `{tool_id}` is not in worker `{worker_agent_id}` toolset"
+                        ),
+                    }),
+                )?;
+
+                return Err(CoordinatorError::PolicyViolation(format!(
+                    "tool `{tool_id}` is not in worker toolset"
+                )));
+            }
+
+            Some(worker_profile.category.as_str())
+        } else {
+            category.as_deref()
+        };
+
         let maybe_kind = permission_kind_for_capability(capability);
         let decision = maybe_kind.map(|kind| {
             self.config
                 .permission_policy
-                .evaluate(category.as_deref(), kind)
+                .evaluate(effective_category, kind)
         });
         let hashline_edit = hashline_edit_metadata(&tool_id, &args_json);
 
@@ -2657,7 +2721,7 @@ mod tests {
 
         let tool_call_id = handle
             .request_tool_call(
-                EventActor::new(ActorKind::Worker, Some("agent-worker".to_string())),
+                EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string())),
                 Some("deep".to_string()),
                 "shell.run",
                 json!({"cmd": "true"}),
@@ -2720,7 +2784,7 @@ mod tests {
 
         let tool_call_id = handle
             .request_tool_call(
-                EventActor::new(ActorKind::Worker, Some("agent-worker".to_string())),
+                EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string())),
                 Some("deep".to_string()),
                 "shell.run",
                 json!({"cmd": "echo blocked"}),
@@ -2819,7 +2883,7 @@ mod tests {
 
         let tool_call_id = handle
             .request_tool_call(
-                EventActor::new(ActorKind::Worker, Some("agent-worker".to_string())),
+                EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string())),
                 Some("deep".to_string()),
                 "shell.run",
                 json!({"cmd": "sleep 1"}),

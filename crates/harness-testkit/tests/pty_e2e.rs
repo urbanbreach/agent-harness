@@ -320,9 +320,14 @@ fn write_wiremock_tui_config(session_dir: &Path, wiremock_uri: &str) -> PathBuf 
   }},
   categories: {{
     deep: {{
-      description: "deep",
+      description: "deep work agent",
       model_ref: "default:model-1",
-      tools: ["read"],
+      tools: ["fs.read"],
+    }},
+    worker: {{
+      description: "worker agent",
+      model_ref: "default:model-1",
+      tools: ["fs.read"],
     }},
   }},
   permissions: {{
@@ -338,7 +343,7 @@ fn write_wiremock_tui_config(session_dir: &Path, wiremock_uri: &str) -> PathBuf 
     seed: 42,
   }},
   ui: {{
-    default_profile: "worker",
+    defaultProfile: "worker",
   }},
 }}"#,
         session_dir.display()
@@ -512,7 +517,18 @@ fn capture_visual_checkpoint(
 
     let (rows, cols) = parser.screen().size();
     let focus_region = find_marker_cell(parser.screen(), focus.marker)
-        .map(|(row, col)| anchored_region(row, col, rows, cols, focus))
+        .map(|(row, col)| {
+            anchored_region(
+                row,
+                col,
+                rows,
+                cols,
+                focus.width_cells,
+                focus.height_cells,
+                focus.top_padding_cells,
+                focus.left_padding_cells,
+            )
+        })
         .unwrap_or((0, 0, rows.max(1), cols.max(1)));
 
     let focus_pixels = extract_region_pixels(&image, focus_region);
@@ -558,16 +574,19 @@ fn anchored_region(
     anchor_col: u16,
     rows: u16,
     cols: u16,
-    focus: FocusCapture,
+    width_cells: u16,
+    height_cells: u16,
+    top_padding_cells: u16,
+    left_padding_cells: u16,
 ) -> (u16, u16, u16, u16) {
-    let row_start = anchor_row.saturating_sub(focus.top_padding_cells);
-    let col_start = anchor_col.saturating_sub(focus.left_padding_cells);
+    let row_start = anchor_row.saturating_sub(top_padding_cells);
+    let col_start = anchor_col.saturating_sub(left_padding_cells);
 
     let max_height = rows.saturating_sub(row_start).max(1);
     let max_width = cols.saturating_sub(col_start).max(1);
 
-    let height = focus.height_cells.min(max_height).max(1);
-    let width = focus.width_cells.min(max_width).max(1);
+    let height = height_cells.min(max_height).max(1);
+    let width = width_cells.min(max_width).max(1);
 
     (row_start, col_start, height, width)
 }
@@ -843,12 +862,8 @@ struct GlyphLookup {
     box_drawing: BoxFonts,
     block: BlockFonts,
     smooth_font: Option<Font>,
-    anti_alias_cache: AntiAliasCache,
+    anti_alias_cache: RefCell<BTreeMap<(char, u32), Arc<Vec<u8>>>>,
 }
-
-type AntiAliasCacheKey = (char, u32);
-type AntiAliasMask = Arc<Vec<u8>>;
-type AntiAliasCache = RefCell<BTreeMap<AntiAliasCacheKey, AntiAliasMask>>;
 
 impl GlyphLookup {
     fn new() -> Self {

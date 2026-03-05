@@ -1,0 +1,30 @@
+Agent Harness | run=run_ca65cefff5625ee1b9de0e43b92e3127 | profile=default | provider=default | mode
+┌Tabs──────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Run │ Events │ Diff │ Help                                                                       │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌Activity (j/k active, f┐┌Transcript (following)──────────────────────────┐┌Inspector──────────────┐
+│  req_000001 model-1   ││Assistant:                                      ││Request ID: req_000002 │
+│done ●                 ││worker-prompt-delta                             ││Provider: mock         │
+│> req_000002 model-1   ││                                                ││Model: model-1         │
+│done ●                 ││                                                ││Status: done           │
+│                       ││                                                ││Sequences: <RANGE> │
+│                       ││                                                ││                       │
+│                       │┌Permission Requested────────────────────────────┐│Request:               │
+│                       ││ tool=edit.hashline_apply args={"edit_id":"edit ││{  "request_id":       │
+│                       ││                                                ││"req_000002",          │
+│                       ││          [a]llow  [d]eny  [esc]dismiss         ││"provider_id": "mock", │
+│                       ││                                                ││"model_id": "model-1", │
+│                       ││                                                ││"prompt_summary":      │
+│                       │└────────────────────────────────────────────────┘│"worker-prompt",       │
+│                       ││                                                ││"request_digest":      │
+│                       ││                                                ││"d2c1a2a5067a"}        │
+│                       ││                                                ││                       │
+│                       ││                                                ││                       │
+│                       ││                                                ││                       │
+└───────────────────────┘└────────────────────────────────────────────────┘└───────────────────────┘
+┌Prompt (0 chars)──────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+Tab focus | Ctrl+P palette | q quit | 15 events

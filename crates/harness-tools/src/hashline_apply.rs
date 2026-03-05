@@ -15,6 +15,118 @@ impl Tool for HashlineApplyTool {
         "edit.hashline_apply"
     }
 
+    fn description(&self) -> &str {
+        "Applies a hashline patch to a workspace file and writes an artifact diff."
+    }
+
+    fn parameters_json_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["edit_id", "path", "ops"],
+            "properties": {
+                "edit_id": { "type": "string" },
+                "path": { "type": "string" },
+                "ops": {
+                    "type": "array",
+                    "items": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": ["InsertBefore"],
+                                "properties": {
+                                    "InsertBefore": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": ["anchor", "lines"],
+                                        "properties": {
+                                            "anchor": { "$ref": "#/definitions/LineAnchor" },
+                                            "lines": {
+                                                "type": "array",
+                                                "items": { "type": "string" }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": ["InsertAfter"],
+                                "properties": {
+                                    "InsertAfter": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": ["anchor", "lines"],
+                                        "properties": {
+                                            "anchor": { "$ref": "#/definitions/LineAnchor" },
+                                            "lines": {
+                                                "type": "array",
+                                                "items": { "type": "string" }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": ["Replace"],
+                                "properties": {
+                                    "Replace": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": ["expected", "lines"],
+                                        "properties": {
+                                            "expected": {
+                                                "type": "array",
+                                                "items": { "$ref": "#/definitions/LineAnchor" }
+                                            },
+                                            "lines": {
+                                                "type": "array",
+                                                "items": { "type": "string" }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": ["Delete"],
+                                "properties": {
+                                    "Delete": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": ["expected"],
+                                        "properties": {
+                                            "expected": {
+                                                "type": "array",
+                                                "items": { "$ref": "#/definitions/LineAnchor" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            },
+            "definitions": {
+                "LineAnchor": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["line", "hash"],
+                    "properties": {
+                        "line": { "type": "integer", "minimum": 0 },
+                        "hash": { "type": "string" }
+                    }
+                }
+            }
+        })
+    }
+
     fn capability(&self) -> ToolCapability {
         ToolCapability::EditFs
     }

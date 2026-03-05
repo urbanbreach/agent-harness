@@ -1,19 +1,38 @@
 {
   "request": {
-    "model_id": "model-mock-tools",
-    "input": [
+    "model_id": "model-mock-1",
+    "messages": [
       {
         "role": "system",
-        "content": "Use tools deterministically."
+        "content": "You are deterministic."
       },
       {
         "role": "user",
-        "content": "Read README via tool."
+        "content": "Read /tmp/demo.txt using a tool call."
       }
     ],
-    "tools": [],
     "temperature": 0.0,
-    "max_tokens": 32,
+    "max_tokens": 64,
+    "tools": [
+      {
+        "tool_id": "fs.read",
+        "function_name": "filesystem_read",
+        "description": "Read file content by absolute path",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "filePath": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "filePath"
+          ],
+          "additionalProperties": false
+        }
+      }
+    ],
+    "tool_choice": "auto",
     "stream": true
   },
   "events": [
@@ -21,27 +40,29 @@
       "type": "start"
     },
     {
-      "type": "text_delta",
-      "text": "Calling tool"
+      "type": "tool_call_delta",
+      "tool_call_id": "call_fs_read_1",
+      "function_name": "filesystem_read",
+      "arguments_delta": "{\"filePath\":"
+    },
+    {
+      "type": "tool_call_delta",
+      "tool_call_id": "call_fs_read_1",
+      "arguments_delta": "\"/tmp/demo.txt\"}"
     },
     {
       "type": "tool_call",
-      "call_id": "call_mock_1",
-      "name": "fs_read",
-      "arguments_json": "{\"path\":\"README.md\"}"
-    },
-    {
-      "type": "text_delta",
-      "text": "Tool call emitted"
+      "tool_call_id": "call_fs_read_1",
+      "function_name": "filesystem_read",
+      "arguments_json": "{\"filePath\":\"/tmp/demo.txt\"}"
     },
     {
       "type": "done",
       "usage": {
-        "prompt_tokens": 10,
-        "completion_tokens": 5,
-        "total_tokens": 15
-      },
-      "finish_reason": "tool_calls"
+        "prompt_tokens": 21,
+        "completion_tokens": 9,
+        "total_tokens": 30
+      }
     }
   ]
 }
