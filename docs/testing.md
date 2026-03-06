@@ -213,7 +213,21 @@ cargo test --workspace
 # OPENAI_API_KEY is optional for local CLIProxy when placeholder key fallback is used
 # HARNESS_LIVE_PROXY_MODEL can force a specific real provider model
 # HARNESS_LIVE_PROXY_PROMPT customizes the smoke prompt text
-# HARNESS_LIVE_PROXY_WAIT_TIMEOUT_MS controls prompt wait timeout (default 120000 in live smoke)
+# HARNESS_LIVE_PROXY_WAIT_TIMEOUT_MS controls live smoke wait timeout (default 120000)
+# Sign-off: run both the prompt smoke and the redesigned TUI smoke
+HARNESS_LIVE_PROXY=1 \
+HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
+HARNESS_LIVE_PROXY_PROVIDER=default \
+HARNESS_LIVE_PROXY_MODEL=gpt-5.3-codex \
+cargo test -p harness-testkit live_proxy_prompt_responses_smoke -- --ignored --exact
+
+HARNESS_LIVE_PROXY=1 \
+HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
+HARNESS_LIVE_PROXY_PROVIDER=default \
+HARNESS_LIVE_PROXY_MODEL=gpt-5.3-codex \
+cargo test -p harness-testkit live_proxy_tui_responses_smoke -- --ignored --exact
+
+# Optional: run the whole ignored live proxy suite in one shot
 HARNESS_LIVE_PROXY=1 \
 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
 HARNESS_LIVE_PROXY_PROVIDER=default \
