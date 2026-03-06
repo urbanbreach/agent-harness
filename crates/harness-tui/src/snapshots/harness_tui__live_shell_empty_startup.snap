@@ -1,0 +1,28 @@
+---
+source: crates/harness-tui/src/lib.rs
+expression: "render_live_lines(app, width, height)"
+---
+Harness · unknown · default/default · -                                         
+┌Conversation (following)──────────────────────────────────────────────────────┐
+│ Waiting for first turn…                                                      │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+Ready · prompt ready                                                            
+┌Composer (2 lines · 0 chars) (focused)────────────────────────────────────────┐
+│█                                                                             │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+Enter send   ⇧↵ nl   i details   2 ev   3 diff   4 help   q quit
