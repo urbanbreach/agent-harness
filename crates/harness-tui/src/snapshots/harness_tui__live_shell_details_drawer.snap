@@ -1,0 +1,28 @@
+---
+source: crates/harness-tui/src/lib.rs
+expression: "render_live_lines(app, width, height)"
+---
+Harness · run_fixture · default/default · gpt-5-codex                           
+┌Conversation (following)──────────────────────────────────────────────────────┐
+│ › user · req_001                                   ┌Activity (j/k active, fo┐│
+│   Explain the refactor                             │> req_001 gpt-5-codex   ││
+│ ● assistant · done · openai/gpt-5-codex · current  │done ●                  ││
+│   Working through the steps.                       │                        ││
+│ ● tool fs.read · succeeded                         │                        ││
+│   args {"path":"src/app.rs"}                       │                        ││
+│   ↳ tool output                                    │                        ││
+│                                                    └────────────────────────┘│
+│                                                    ┌Inspector (focused)─────┐│
+│                                                    │Request ID: req_001     ││
+│                                                    │Provider: openai        ││
+│                                                    └────────────────────────┘│
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+Ready · turn 1/1 · req_001 · openai/gpt-5-codex                                 
+┌Composer (2 lines · 0 chars)──────────────────────────────────────────────────┐
+│Type a prompt for the next turn…                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+Enter send   ⇧↵ nl   i close   2 ev   3 diff   4 help   q quit
