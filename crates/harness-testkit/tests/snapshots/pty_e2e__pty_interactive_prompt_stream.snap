@@ -1,11 +1,11 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-expression: "checkpoint_visual_snapshot(&prompt_checkpoint,\n&[\"Hello world\", \"Prompt\"], &prompt_visual)"
+expression: "checkpoint_visual_snapshot(&prompt_checkpoint,\nLIVE_STATE_FIXTURES.draft.snapshot_markers, &prompt_visual)"
 ---
 Hello world: true
-Prompt: true
+Composer: true
 focus_marker: Hello world
-focus_pixels_blake3: 93159510f2b9d033ec408f2708108e324f4b2511a82a0bbf34873071c7f9a315
-focus_region_cells: row=4, col=19, height=6, width=28
+focus_pixels_blake3: 2a6c2aea58dfc2f6df71b1df363dbe9122b3d3b9224451a41369cb78b14eb052
+focus_region_cells: row=6, col=2, height=6, width=28
 image: pty_interactive_prompt_stream.png
 size_px: 2560x1440
