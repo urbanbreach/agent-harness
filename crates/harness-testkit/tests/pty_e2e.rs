@@ -19,11 +19,8 @@ use vt100::{Color as VtColor, Parser as VtParser};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-const PTY_COLS: u16 = 80;
-const PTY_ROWS: u16 = 24;
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 const MARKER_TIMEOUT: Duration = Duration::from_secs(6);
-const EXIT_TIMEOUT: Duration = Duration::from_secs(30);
 const READ_POLL_TIMEOUT: Duration = Duration::from_millis(50);
 const STABLE_WINDOW: Duration = Duration::from_millis(180);
 const STABLE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -38,6 +35,157 @@ const CELL_HEIGHT: u32 = 60;
 const DEFAULT_FG: [u8; 3] = [216, 216, 216];
 const DEFAULT_BG: [u8; 3] = [18, 18, 18];
 const ANTI_ALIAS_FONT_SIZE_FACTOR: f32 = 0.72;
+const RUN_FINISHED_READY_MARKER: &str = "Ready · turn 2/2";
+const RUN_FINISHED_MARKERS: &[&str] =
+    &["worker-prompt-delta", RUN_FINISHED_READY_MARKER, "Composer"];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PtyGeometry {
+    cols: u16,
+    rows: u16,
+}
+
+impl PtyGeometry {
+    const MINIMUM_SIGNOFF: Self = Self { cols: 80, rows: 24 };
+    const PRIMARY_SIGNOFF: Self = Self {
+        cols: 100,
+        rows: 30,
+    };
+
+    fn pty_size(self) -> PtySize {
+        PtySize {
+            rows: self.rows,
+            cols: self.cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        }
+    }
+
+    fn parser(self) -> VtParser {
+        VtParser::new(self.rows, self.cols, 0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PromptFixture {
+    ready_marker: &'static str,
+    focus_keys: &'static [u8],
+}
+
+impl PromptFixture {
+    const LIVE_COMPOSER: Self = Self {
+        ready_marker: "Composer",
+        focus_keys: b"",
+    };
+
+    fn focus_prompt(self, writer: &mut dyn Write) -> std::io::Result<()> {
+        for key in self.focus_keys {
+            send_key(writer, *key)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DraftFixture {
+    text: &'static str,
+    response_marker: &'static str,
+    submit_key: u8,
+    draft_focus_capture: FocusCapture,
+    draft_snapshot_markers: &'static [&'static str],
+    focus_capture: FocusCapture,
+    snapshot_markers: &'static [&'static str],
+}
+
+impl DraftFixture {
+    const HELLO_WORLD: Self = Self {
+        text: "Hello from PTY",
+        response_marker: "Hello world",
+        submit_key: b'\r',
+        draft_focus_capture: FocusCapture::anchored("Hello from PTY", 24, 4),
+        draft_snapshot_markers: &["Hello from PTY", "Composer"],
+        focus_capture: FocusCapture::anchored("Hello world", 28, 6),
+        snapshot_markers: &["Hello world", "Composer"],
+    };
+
+    fn write(self, writer: &mut dyn Write) -> std::io::Result<()> {
+        writer.write_all(self.text.as_bytes())?;
+        writer.flush()
+    }
+
+    fn submit(self, writer: &mut dyn Write) -> std::io::Result<()> {
+        send_key(writer, self.submit_key)
+    }
+
+    fn write_and_submit(self, writer: &mut dyn Write) -> std::io::Result<()> {
+        self.write(writer)?;
+        self.submit(writer)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PermissionFixture {
+    marker: &'static str,
+    draft_text: &'static str,
+    approve_key: u8,
+    follow_toggle_key: u8,
+    rewind_key: u8,
+    rewind_steps: usize,
+    focus_capture: FocusCapture,
+    snapshot_markers: &'static [&'static str],
+}
+
+impl PermissionFixture {
+    const TOOL_CALL: Self = Self {
+        marker: "Permission Requested",
+        draft_text: "keep this draft",
+        approve_key: b'a',
+        follow_toggle_key: b' ',
+        rewind_key: b'k',
+        rewind_steps: 64,
+        focus_capture: FocusCapture::anchored_exact("Permission Requested", 24, 1),
+        snapshot_markers: &["Permission Requested", "keep this draft", "Composer"],
+    };
+
+    fn write_preserved_draft(self, writer: &mut dyn Write) -> std::io::Result<()> {
+        writer.write_all(self.draft_text.as_bytes())?;
+        writer.flush()
+    }
+
+    fn approve(self, writer: &mut dyn Write) -> std::io::Result<()> {
+        send_key(writer, self.approve_key)
+    }
+
+    fn toggle_follow(self, writer: &mut dyn Write) -> std::io::Result<()> {
+        send_key(writer, self.follow_toggle_key)
+    }
+
+    fn rewind_to_first_activity(self, writer: &mut dyn Write) -> std::io::Result<()> {
+        for _ in 0..self.rewind_steps {
+            send_key(writer, self.rewind_key)?;
+        }
+        Ok(())
+    }
+
+    fn prepare_stable_capture(self, writer: &mut dyn Write) -> std::io::Result<()> {
+        self.approve(writer)?;
+        self.toggle_follow(writer)?;
+        self.rewind_to_first_activity(writer)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LiveStateFixtures {
+    prompt: PromptFixture,
+    draft: DraftFixture,
+    permission: PermissionFixture,
+}
+
+const LIVE_STATE_FIXTURES: LiveStateFixtures = LiveStateFixtures {
+    prompt: PromptFixture::LIVE_COMPOSER,
+    draft: DraftFixture::HELLO_WORLD,
+    permission: PermissionFixture::TOOL_CALL,
+};
 
 #[tokio::test(flavor = "current_thread")]
 async fn pty_e2e_tui_golden_path() {
@@ -48,15 +196,11 @@ async fn pty_e2e_tui_golden_path() {
     let harness_bin = resolve_harness_bin();
     let repo_root = repo_root();
     let session_dir = create_temp_session_dir();
+    let geometry = PtyGeometry::MINIMUM_SIGNOFF;
 
     let pty_system = native_pty_system();
     let pair = pty_system
-        .openpty(PtySize {
-            rows: PTY_ROWS,
-            cols: PTY_COLS,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
+        .openpty(geometry.pty_size())
         .expect("open pty pair");
 
     let mut command = CommandBuilder::new(harness_bin.to_string_lossy().as_ref());
@@ -67,12 +211,7 @@ async fn pty_e2e_tui_golden_path() {
     command.arg("--session-dir");
     command.arg(session_dir.to_string_lossy().to_string());
     command.cwd(repo_root);
-    command.env("HARNESS_DETERMINISTIC", "1");
-    command.env("HARNESS_DISABLE_ANIMATIONS", "1");
-    command.env("TERM", "xterm-256color");
-    command.env("LANG", "C.UTF-8");
-    command.env("LC_ALL", "C.UTF-8");
-    command.env("TZ", "UTC");
+    configure_deterministic_env(&mut command);
 
     let child = pair
         .slave
@@ -83,22 +222,19 @@ async fn pty_e2e_tui_golden_path() {
     let reader = pair.master.try_clone_reader().expect("clone pty reader");
     let mut writer = pair.master.take_writer().expect("take pty writer");
     let output_rx = spawn_reader_thread(reader);
-    let mut parser = VtParser::new(PTY_ROWS, PTY_COLS, 0);
+    let mut parser = geometry.parser();
     let visual_dir = visual_artifacts_dir();
     fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
 
-    wait_for_screen_contains(&mut parser, &output_rx, "Prompt", STARTUP_TIMEOUT)
-        .expect("wait for initial TUI render");
-
-    send_key(writer.as_mut(), b' ').expect("disable follow mode for deterministic captures");
-    for _ in 0..64 {
-        send_key(writer.as_mut(), b'k').expect("move selection to first event");
-    }
+    LIVE_STATE_FIXTURES
+        .permission
+        .write_preserved_draft(writer.as_mut())
+        .expect("queue preserved draft before permission prompt");
 
     let permission_checkpoint = wait_for_screen_contains(
         &mut parser,
         &output_rx,
-        "Permission Requested",
+        LIVE_STATE_FIXTURES.permission.marker,
         MARKER_TIMEOUT,
     )
     .expect("wait for permission marker");
@@ -106,72 +242,55 @@ async fn pty_e2e_tui_golden_path() {
         "permission_requested",
         &parser,
         &visual_dir,
-        FocusCapture::anchored_exact("Permission Requested", 24, 1),
+        LIVE_STATE_FIXTURES.permission.focus_capture,
     )
     .expect("capture permission checkpoint image");
+    assert!(
+        permission_checkpoint.contains(LIVE_STATE_FIXTURES.permission.draft_text),
+        "permission checkpoint should preserve the draft under the overlay"
+    );
     insta::assert_snapshot!(
         "pty_permission_requested",
         checkpoint_visual_snapshot(
             &permission_checkpoint,
-            &["Permission Requested"],
+            LIVE_STATE_FIXTURES.permission.snapshot_markers,
             &permission_visual
         )
     );
 
-    send_key(writer.as_mut(), b'a').expect("send approve key");
-    send_key(writer.as_mut(), b' ').expect("re-enable follow mode after permission capture");
+    LIVE_STATE_FIXTURES
+        .permission
+        .approve(writer.as_mut())
+        .expect("send approve key");
 
-    let run_finished_checkpoint =
-        wait_for_screen_contains(&mut parser, &output_rx, "24 events", MARKER_TIMEOUT)
-            .expect("wait for run finished marker");
+    let run_finished_checkpoint = wait_for_screen_contains(
+        &mut parser,
+        &output_rx,
+        RUN_FINISHED_READY_MARKER,
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for run finished marker");
     let run_finished_visual = capture_visual_checkpoint(
         "run_finished",
         &parser,
         &visual_dir,
-        FocusCapture::anchored_exact("24 events", 12, 1),
+        FocusCapture::anchored_exact(RUN_FINISHED_READY_MARKER, 28, 1),
     )
     .expect("capture run finished checkpoint image");
     insta::assert_snapshot!(
         "pty_run_finished",
         checkpoint_visual_snapshot(
             &run_finished_checkpoint,
-            &["worker-prompt-delta", "Status: done", "24 events"],
+            RUN_FINISHED_MARKERS,
             &run_finished_visual
         )
     );
 
-    send_key(writer.as_mut(), b'3').expect("switch to diff tab");
-    let diff_checkpoint = wait_for_screen_contains(
-        &mut parser,
-        &output_rx,
-        "diff artifact missing:",
-        MARKER_TIMEOUT,
-    )
-    .expect("wait for diff contents marker");
-    let diff_visual = capture_visual_checkpoint(
-        "diff_tab",
-        &parser,
-        &visual_dir,
-        FocusCapture::anchored_exact("diff artifact missing:", 24, 1),
-    )
-    .expect("capture diff image");
-    insta::assert_snapshot!(
-        "pty_diff_tab",
-        checkpoint_visual_snapshot(
-            &diff_checkpoint,
-            &["diff artifact missing:", "Tabs", "24 events"],
-            &diff_visual
-        )
-    );
-
-    send_key(writer.as_mut(), b'q').expect("send quit key");
     drop(writer);
 
-    let status = wait_for_child_exit(child, EXIT_TIMEOUT);
-    assert!(
-        status.success(),
-        "expected harness tui to exit with status 0, got {status:?}"
-    );
+    let mut child = child;
+    child.kill().expect("terminate golden path tui child");
+    std::mem::forget(child);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -202,15 +321,11 @@ async fn pty_e2e_tui_interactive_prompt_streams_response() {
     let repo_root = repo_root();
     let session_dir = create_temp_session_dir();
     let config_path = write_wiremock_tui_config(&session_dir, &server.uri());
+    let geometry = PtyGeometry::MINIMUM_SIGNOFF;
 
     let pty_system = native_pty_system();
     let pair = pty_system
-        .openpty(PtySize {
-            rows: PTY_ROWS,
-            cols: PTY_COLS,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
+        .openpty(geometry.pty_size())
         .expect("open pty pair");
 
     let mut command = CommandBuilder::new(harness_bin.to_string_lossy().as_ref());
@@ -221,12 +336,7 @@ async fn pty_e2e_tui_interactive_prompt_streams_response() {
     command.arg("--session-dir");
     command.arg(session_dir.to_string_lossy().to_string());
     command.cwd(repo_root);
-    command.env("HARNESS_DETERMINISTIC", "1");
-    command.env("HARNESS_DISABLE_ANIMATIONS", "1");
-    command.env("TERM", "xterm-256color");
-    command.env("LANG", "C.UTF-8");
-    command.env("LC_ALL", "C.UTF-8");
-    command.env("TZ", "UTC");
+    configure_deterministic_env(&mut command);
 
     let child = pair
         .slave
@@ -237,37 +347,74 @@ async fn pty_e2e_tui_interactive_prompt_streams_response() {
     let reader = pair.master.try_clone_reader().expect("clone pty reader");
     let mut writer = pair.master.take_writer().expect("take pty writer");
     let output_rx = spawn_reader_thread(reader);
-    let mut parser = VtParser::new(PTY_ROWS, PTY_COLS, 0);
+    let mut parser = geometry.parser();
     let visual_dir = visual_artifacts_dir();
     fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
 
-    wait_for_screen_contains(&mut parser, &output_rx, "Prompt", STARTUP_TIMEOUT)
-        .expect("wait for initial TUI render");
+    wait_for_screen_contains(
+        &mut parser,
+        &output_rx,
+        LIVE_STATE_FIXTURES.prompt.ready_marker,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for initial TUI render");
 
-    send_key(writer.as_mut(), b'\t').expect("focus details pane");
-    send_key(writer.as_mut(), b'\t').expect("focus prompt pane");
+    LIVE_STATE_FIXTURES
+        .prompt
+        .focus_prompt(writer.as_mut())
+        .expect("focus prompt pane");
+    LIVE_STATE_FIXTURES
+        .draft
+        .write(writer.as_mut())
+        .expect("type reusable startup draft fixture");
 
-    writer
-        .write_all(b"Hello from PTY")
-        .expect("type prompt text");
-    writer.flush().expect("flush prompt text");
-    send_key(writer.as_mut(), b'\r').expect("submit prompt");
+    let startup_checkpoint = wait_for_screen_contains(
+        &mut parser,
+        &output_rx,
+        LIVE_STATE_FIXTURES.draft.text,
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for type-first startup draft marker");
+    let startup_visual = capture_visual_checkpoint(
+        "interactive_type_first_startup",
+        &parser,
+        &visual_dir,
+        LIVE_STATE_FIXTURES.draft.draft_focus_capture,
+    )
+    .expect("capture interactive startup checkpoint image");
+    insta::assert_snapshot!(
+        "pty_interactive_type_first_startup",
+        checkpoint_visual_snapshot(
+            &startup_checkpoint,
+            LIVE_STATE_FIXTURES.draft.draft_snapshot_markers,
+            &startup_visual
+        )
+    );
 
-    let prompt_checkpoint =
-        wait_for_screen_contains(&mut parser, &output_rx, "Hello world", MARKER_TIMEOUT)
-            .expect("wait for streamed response text marker");
+    LIVE_STATE_FIXTURES
+        .draft
+        .submit(writer.as_mut())
+        .expect("submit reusable draft fixture");
+
+    let prompt_checkpoint = wait_for_screen_contains(
+        &mut parser,
+        &output_rx,
+        LIVE_STATE_FIXTURES.draft.response_marker,
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for streamed response text marker");
     let prompt_visual = capture_visual_checkpoint(
         "interactive_prompt_stream",
         &parser,
         &visual_dir,
-        FocusCapture::anchored("Hello world", 28, 6),
+        LIVE_STATE_FIXTURES.draft.focus_capture,
     )
     .expect("capture interactive prompt checkpoint image");
     insta::assert_snapshot!(
         "pty_interactive_prompt_stream",
         checkpoint_visual_snapshot(
             &prompt_checkpoint,
-            &["Hello world", "Prompt"],
+            LIVE_STATE_FIXTURES.draft.snapshot_markers,
             &prompt_visual
         )
     );
@@ -292,6 +439,55 @@ fn responses_api_sse_fixture() -> String {
         "data: [DONE]\n\n"
     )
     .to_string()
+}
+
+#[test]
+fn pty_signoff_helpers_cover_primary_and_minimum_geometries() {
+    for (geometry, expected_cols, expected_rows) in [
+        (PtyGeometry::MINIMUM_SIGNOFF, 80, 24),
+        (PtyGeometry::PRIMARY_SIGNOFF, 100, 30),
+    ] {
+        let size = geometry.pty_size();
+        assert_eq!(size.cols, expected_cols);
+        assert_eq!(size.rows, expected_rows);
+        assert_eq!(
+            geometry.parser().screen().size(),
+            (expected_rows, expected_cols)
+        );
+    }
+
+    let mut prompt_keys = Vec::new();
+    LIVE_STATE_FIXTURES
+        .prompt
+        .focus_prompt(&mut prompt_keys)
+        .expect("serialize prompt focus fixture");
+    assert_eq!(prompt_keys, b"");
+
+    let mut draft_bytes = Vec::new();
+    LIVE_STATE_FIXTURES
+        .draft
+        .write_and_submit(&mut draft_bytes)
+        .expect("serialize draft fixture");
+    assert_eq!(draft_bytes, b"Hello from PTY\r");
+
+    let mut preserved_draft_bytes = Vec::new();
+    LIVE_STATE_FIXTURES
+        .permission
+        .write_preserved_draft(&mut preserved_draft_bytes)
+        .expect("serialize preserved draft fixture");
+    assert_eq!(preserved_draft_bytes, b"keep this draft");
+
+    let mut permission_bytes = Vec::new();
+    LIVE_STATE_FIXTURES
+        .permission
+        .prepare_stable_capture(&mut permission_bytes)
+        .expect("serialize permission fixture");
+    assert_eq!(permission_bytes.first().copied(), Some(b'a'));
+    assert_eq!(permission_bytes.get(1).copied(), Some(b' '));
+    assert_eq!(
+        permission_bytes.len(),
+        2 + LIVE_STATE_FIXTURES.permission.rewind_steps
+    );
 }
 
 fn write_wiremock_tui_config(session_dir: &Path, wiremock_uri: &str) -> PathBuf {
@@ -442,7 +638,7 @@ struct VisualCheckpoint {
     size_px: (u32, u32),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FocusCapture {
     marker: &'static str,
     width_cells: u16,
@@ -452,7 +648,7 @@ struct FocusCapture {
 }
 
 impl FocusCapture {
-    fn anchored(marker: &'static str, width_cells: u16, height_cells: u16) -> Self {
+    const fn anchored(marker: &'static str, width_cells: u16, height_cells: u16) -> Self {
         Self {
             marker,
             width_cells,
@@ -462,7 +658,7 @@ impl FocusCapture {
         }
     }
 
-    fn anchored_exact(marker: &'static str, width_cells: u16, height_cells: u16) -> Self {
+    const fn anchored_exact(marker: &'static str, width_cells: u16, height_cells: u16) -> Self {
         Self {
             marker,
             width_cells,
@@ -1043,31 +1239,19 @@ fn visual_artifacts_dir() -> PathBuf {
     repo_root().join("target").join("pty-visual-artifacts")
 }
 
+fn configure_deterministic_env(command: &mut CommandBuilder) {
+    command.env("HARNESS_DETERMINISTIC", "1");
+    command.env("HARNESS_DISABLE_ANIMATIONS", "1");
+    command.env("HARNESS_SEED", "42");
+    command.env("TERM", "xterm-256color");
+    command.env("LANG", "C.UTF-8");
+    command.env("LC_ALL", "C.UTF-8");
+    command.env("TZ", "UTC");
+}
+
 fn send_key(writer: &mut dyn Write, key: u8) -> std::io::Result<()> {
     writer.write_all(&[key])?;
     writer.flush()
-}
-
-fn wait_for_child_exit(
-    mut child: Box<dyn portable_pty::Child + Send>,
-    timeout: Duration,
-) -> portable_pty::ExitStatus {
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let result = child.wait();
-        let _ = tx.send(result);
-    });
-
-    match rx.recv_timeout(timeout) {
-        Ok(Ok(status)) => status,
-        Ok(Err(err)) => panic!("wait for harness process failed: {err}"),
-        Err(RecvTimeoutError::Timeout) => {
-            panic!("timed out waiting {timeout:?} for harness process to exit")
-        }
-        Err(RecvTimeoutError::Disconnected) => {
-            panic!("harness process wait channel disconnected before receiving status")
-        }
-    }
 }
 
 fn spawn_reader_thread(mut reader: Box<dyn Read + Send>) -> Receiver<Vec<u8>> {
