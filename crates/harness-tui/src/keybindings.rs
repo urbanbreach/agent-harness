@@ -19,10 +19,12 @@ pub enum Action {
     Palette,
     /// Open/close the help tab
     Help,
+    ToggleDetailsDrawer,
     /// Toggle follow mode
     ToggleFollow,
     /// Submit the prompt
     SubmitPrompt,
+    InsertNewline,
     /// Clear the prompt
     ClearPrompt,
     /// Scroll up in the details pane
@@ -74,8 +76,10 @@ impl Action {
             Action::FocusPrev => "focus_prev",
             Action::Palette => "palette",
             Action::Help => "help",
+            Action::ToggleDetailsDrawer => "toggle_details_drawer",
             Action::ToggleFollow => "toggle_follow",
             Action::SubmitPrompt => "submit_prompt",
+            Action::InsertNewline => "insert_newline",
             Action::ClearPrompt => "clear_prompt",
             Action::ScrollUp => "scroll_up",
             Action::ScrollDown => "scroll_down",
@@ -102,10 +106,11 @@ impl Action {
     /// Get the list of all palette-executable actions.
     pub fn palette_commands() -> &'static [(&'static str, &'static str)] {
         &[
-            ("help", "Open Help tab"),
-            ("run", "Switch to Run tab"),
-            ("events", "Switch to Events tab"),
-            ("diff", "Switch to Diff tab"),
+            ("help", "Open Help surface"),
+            ("run", "Return to conversation surface"),
+            ("details", "Toggle live details drawer"),
+            ("events", "Open Events surface"),
+            ("diff", "Open Diff surface"),
             ("toggle_follow", "Toggle follow mode"),
             ("quit", "Quit the application"),
         ]
@@ -122,8 +127,10 @@ impl FromStr for Action {
             "focus_prev" => Ok(Action::FocusPrev),
             "palette" => Ok(Action::Palette),
             "help" => Ok(Action::Help),
+            "toggle_details_drawer" => Ok(Action::ToggleDetailsDrawer),
             "toggle_follow" => Ok(Action::ToggleFollow),
             "submit_prompt" => Ok(Action::SubmitPrompt),
+            "insert_newline" => Ok(Action::InsertNewline),
             "clear_prompt" => Ok(Action::ClearPrompt),
             "scroll_up" => Ok(Action::ScrollUp),
             "scroll_down" => Ok(Action::ScrollDown),
@@ -285,10 +292,13 @@ impl KeyMap {
             Action::FocusPrev,
         );
 
-        // Tabs
         keymap.bind(
             KeyBinding::new(KeyCode::Char('1'), KeyModifiers::NONE),
             Action::TabRun,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('i'), KeyModifiers::NONE),
+            Action::ToggleDetailsDrawer,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('2'), KeyModifiers::NONE),
@@ -351,6 +361,10 @@ impl KeyMap {
         keymap.bind(
             KeyBinding::new(KeyCode::Enter, KeyModifiers::NONE),
             Action::SubmitPrompt,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Enter, KeyModifiers::SHIFT),
+            Action::InsertNewline,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Esc, KeyModifiers::NONE),
@@ -546,5 +560,12 @@ mod tests {
         let keymap = KeyMap::with_defaults();
         let binding = keymap.get_binding_str(Action::Palette);
         assert_eq!(binding, "Ctrl+p");
+    }
+
+    #[test]
+    fn keymap_binds_shift_enter_to_insert_newline() {
+        let keymap = KeyMap::with_defaults();
+        let event = KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT);
+        assert_eq!(keymap.get_action(&event), Some(Action::InsertNewline));
     }
 }
