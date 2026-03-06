@@ -1,0 +1,28 @@
+---
+source: crates/harness-tui/src/lib.rs
+expression: "render_live_lines(app, width, height)"
+---
+Harness · run_fixture · default/default · gpt-5-codex                           
+┌Conversation (following)──────────────────────────────────────────────────────┐
+│ › user · req_inline_tool                                                     │
+│   Read the file                                                              │
+│ ◐ assistant · streaming… · openai/gpt-5-codex · current                      │
+│   Waiting for response…                                                      │
+│ ◷ tool fs.read · pending permission                                          │
+│   args {"path":"src/lib.rs"}                                                 │
+│               ┌Permission Requested──────────────────────────┐               │
+│ ◷ permission ·│        Apply hashline edit to demo.txt       │               │
+│   Apply hashli│                                              │               │
+│               │         [a]llow  [d]eny  [esc]dismiss        │               │
+│               │                                              │               │
+│               │                                              │               │
+│               └──────────────────────────────────────────────┘               │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+Sending · turn 1/1 · req_inline_tool · openai/gpt-5-codex · waiting for first to
+┌Composer (2 lines · 0 chars) (focused)────────────────────────────────────────┐
+│█                                                                             │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+Enter send   ⇧↵ nl   i details   2 ev   3 diff   4 help   q quit
