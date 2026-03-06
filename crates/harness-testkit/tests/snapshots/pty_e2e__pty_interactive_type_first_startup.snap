@@ -1,0 +1,11 @@
+---
+source: crates/harness-testkit/tests/pty_e2e.rs
+expression: "checkpoint_visual_snapshot(&startup_checkpoint,\nLIVE_STATE_FIXTURES.draft.draft_snapshot_markers, &startup_visual)"
+---
+Hello from PTY: true
+Composer: true
+focus_marker: Hello from PTY
+focus_pixels_blake3: 81e1a0b194589c094c345a02e08ee4ead7c43db052868ee028d754af654e969c
+focus_region_cells: row=18, col=0, height=4, width=24
+image: pty_interactive_type_first_startup.png
+size_px: 2560x1440
