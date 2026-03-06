@@ -1,0 +1,24 @@
+Harness · unknown · default/default · -
+┌Conversation (following)──────────────────────────────────────────────────────┐
+│ Waiting for first turn…                                                      │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+Degraded · live stream lagged by 2; replaying from seq 1 · composer locked
+┌Composer (disabled · Degraded) (focused)──────────────────────────────────────┐
+│Composer disabled — waiting for live recovery before sending.                 │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+i details   2 ev   3 diff   4 help   q quit
