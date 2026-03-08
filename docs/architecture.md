@@ -45,6 +45,8 @@ Provider abstraction for LLM completions:
 Built-in tool implementations:
 
 - `fs.read` - Read file contents
+- `fs.ls` / `fs.glob` / `fs.grep` - Safe workspace discovery and search
+- `edit.hashline_scan` - Generate hashline anchors for editing
 - `shell.run` - Execute shell commands with allowlist
 - `edit.hashline_apply` - Apply atomic hashline patches
 
@@ -107,6 +109,7 @@ Events are the source of truth. All state is derived from events.
 - `ProviderRequestStarted`
 - `ProviderStreamDelta` - Text chunk
 - `ProviderRequestFinished`
+- Provider tool-call deltas/completions are normalized before coordinator execution
 
 **Tool Execution**
 - `ToolCallRequested`
@@ -192,7 +195,18 @@ In headless scenarios, `ask` defaults to `deny` unless the scenario script expli
 
 ### Anti-Footgun: No Redelegation
 
-Workers cannot spawn other agents. Only `ActorKind::Supervisor` may call `SpawnAgent`. Violations emit `PolicyViolationDetected`.
+Workers cannot call direct coordinator spawn APIs. Only `ActorKind::Supervisor` may call `SpawnAgent`. Violations emit `PolicyViolationDetected`.
+
+## Multi-turn Tool Loop
+
+Agent turns can iterate across provider output and tool execution:
+
+1. Provider stream starts and emits text and/or structured tool calls.
+2. Structured tool calls are mapped back to canonical tool ids for the current request.
+3. The coordinator executes allowed tools, waits for completion, and reinjects tool results as tool-role messages.
+4. The agent loop continues until a provider turn completes with no tool calls or a guardrail fails closed.
+
+Guardrails bound the loop by iteration count and total tool calls per turn.
 
 ## Hashline Spec
 
@@ -243,6 +257,13 @@ enum HashlineOp {
 ### Diff Artifacts
 
 On successful apply, a unified diff is written to `artifacts/edit-{edit_id}.diff` and referenced in the `EditApplied` event.
+
+## Tool Output Persistence Policy
+
+Tool results are persisted in two layers:
+
+- Event summaries stay capped for JSONL stability.
+- Redacted full outputs are written under `artifacts/toolcalls/<tool_call_id>/` and referenced with `ArtifactWritten` events.
 
 ## Replay Contract
 
