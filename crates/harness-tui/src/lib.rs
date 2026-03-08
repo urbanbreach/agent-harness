@@ -1,18 +1,22 @@
 pub mod app;
 pub mod event;
 pub mod keybindings;
+pub mod layout;
+pub mod overlay;
 pub mod theme;
 pub mod ui;
 
 pub use keybindings::{Action, KeyMap};
 
 pub use app::{surface_registry, SurfaceDescriptor, SurfaceRole};
+pub use layout::FrameLayoutPlan;
 pub use theme::{LiveShellLayout, LiveShellTokens, ShellGeometry, ShellGeometryTarget, Theme};
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -47,26 +51,108 @@ pub struct TuiOptions {
     pub keybindings: Option<std::collections::BTreeMap<String, String>>,
 }
 
-pub fn run_tui_with_options(options: TuiOptions) -> Result<()> {
+const INTERNAL_THEME_OVERRIDE_KEY: &str = "__harness_tui_theme_override";
+
+static NEXT_THEME_OVERRIDE_ID: AtomicU64 = AtomicU64::new(1);
+static TUI_THEME_OVERRIDES: OnceLock<Mutex<std::collections::BTreeMap<String, Theme>>> =
+    OnceLock::new();
+
+fn tui_theme_overrides() -> &'static Mutex<std::collections::BTreeMap<String, Theme>> {
+    TUI_THEME_OVERRIDES.get_or_init(|| Mutex::new(std::collections::BTreeMap::new()))
+}
+
+fn store_tui_theme_override(theme: Theme) -> String {
+    let id = format!(
+        "theme-{}",
+        NEXT_THEME_OVERRIDE_ID.fetch_add(1, Ordering::Relaxed)
+    );
+    tui_theme_overrides()
+        .lock()
+        .expect("tui theme overrides lock poisoned")
+        .insert(id.clone(), theme);
+    id
+}
+
+fn load_tui_theme_override(id: &str) -> Option<Theme> {
+    tui_theme_overrides()
+        .lock()
+        .expect("tui theme overrides lock poisoned")
+        .get(id)
+        .copied()
+}
+
+fn clear_tui_theme_override(id: &str) {
+    tui_theme_overrides()
+        .lock()
+        .expect("tui theme overrides lock poisoned")
+        .remove(id);
+}
+
+impl TuiOptions {
+    pub fn with_theme(mut self, theme: Theme) -> Self {
+        self.set_theme(theme);
+        self
+    }
+
+    pub fn set_theme(&mut self, theme: Theme) {
+        if let Some(previous_id) = self
+            .keybindings
+            .as_mut()
+            .and_then(|bindings| bindings.remove(INTERNAL_THEME_OVERRIDE_KEY))
+        {
+            clear_tui_theme_override(&previous_id);
+        }
+
+        self.keybindings
+            .get_or_insert_with(std::collections::BTreeMap::new)
+            .insert(
+                INTERNAL_THEME_OVERRIDE_KEY.to_string(),
+                store_tui_theme_override(theme),
+            );
+    }
+
+    pub fn theme(&self) -> Theme {
+        self.keybindings
+            .as_ref()
+            .and_then(|bindings| bindings.get(INTERNAL_THEME_OVERRIDE_KEY))
+            .and_then(|id| load_tui_theme_override(id))
+            .unwrap_or_default()
+    }
+
+    fn take_external_keybindings(&mut self) -> Option<std::collections::BTreeMap<String, String>> {
+        let mut keybindings = self.keybindings.take()?;
+        if let Some(theme_override_id) = keybindings.remove(INTERNAL_THEME_OVERRIDE_KEY) {
+            clear_tui_theme_override(&theme_override_id);
+        }
+
+        (!keybindings.is_empty()).then_some(keybindings)
+    }
+}
+
+pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
+    let theme = options.theme();
+    let keybindings = options.take_external_keybindings();
     let TuiOptions {
         mode,
         exit_on_finish,
         on_ui_intent,
-        keybindings,
+        keybindings: _,
     } = options;
 
     let (mut app, live_updates) = match mode {
         TuiMode::Replay { run_dir, events } => {
             let mut app = AppState::new_replay(run_dir, events);
-            if let Some(bindings) = keybindings {
-                app.apply_keybindings(bindings);
+            app.set_theme(theme);
+            if let Some(bindings) = keybindings.as_ref() {
+                app.apply_keybindings(bindings.clone());
             }
             (app, None)
         }
         TuiMode::Live { run_dir, update_rx } => {
             let mut app = AppState::new_live(Some(run_dir), exit_on_finish, on_ui_intent);
-            if let Some(bindings) = keybindings {
-                app.apply_keybindings(bindings);
+            app.set_theme(theme);
+            if let Some(bindings) = keybindings.as_ref() {
+                app.apply_keybindings(bindings.clone());
             }
             (app, Some(update_rx))
         }
@@ -282,7 +368,7 @@ mod tests {
 
         let debug = format!("{:?}", terminal.backend().buffer());
         assert!(
-            debug.contains("Conversation"),
+            debug.contains("hello world"),
             "live mode must center the conversation surface"
         );
         assert!(
@@ -1177,6 +1263,18 @@ mod tests {
 
 #[cfg(test)]
 #[test]
+fn default_theme_is_harness_app_dark() {
+    let default = Theme::default();
+    let harness = Theme::harness_app_dark();
+
+    assert_eq!(default.surface, harness.surface);
+    assert_eq!(default.border, harness.border);
+    assert_eq!(default.text, harness.text);
+    assert_eq!(default.status, harness.status);
+}
+
+#[cfg(test)]
+#[test]
 fn theme_tokens_cover_live_shell_states() {
     let default = Theme::default();
     let mono = Theme::mono();
@@ -1212,6 +1310,120 @@ fn theme_tokens_cover_live_shell_states() {
     assert_eq!(
         default.live_shell.minimum.target,
         ShellGeometryTarget::Minimum
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn theme_roundtrips_through_tui_options() {
+    let (_tx, rx) = mpsc::channel();
+    let theme = Theme::mono();
+    let options = TuiOptions {
+        mode: TuiMode::Live {
+            run_dir: PathBuf::from("."),
+            update_rx: rx,
+        },
+        exit_on_finish: false,
+        on_ui_intent: None,
+        keybindings: None,
+    }
+    .with_theme(theme);
+
+    assert_eq!(options.theme(), theme);
+}
+
+#[cfg(test)]
+#[test]
+fn command_palette_state_filters_existing_commands() {
+    let mut app = app::AppState::new_live(None, false, None);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    app.handle_key(key(crossterm::event::KeyCode::Char('d')));
+
+    assert!(app.palette_visible);
+    assert_eq!(app.palette_input, "d");
+    assert_eq!(app.palette_cursor, 1);
+    assert_eq!(
+        app.palette_filtered,
+        vec!["details".to_string(), "diff".to_string()]
+    );
+    assert!(app.palette_filtered.iter().all(|command| {
+        Action::palette_commands()
+            .iter()
+            .any(|(existing, _)| existing == command)
+    }));
+}
+
+#[cfg(test)]
+#[test]
+fn hovered_wheel_target_uses_layout_plan() {
+    let area = ratatui::layout::Rect::new(0, 0, 140, 40);
+
+    let mut default_app = app::AppState::new_live(None, false, None);
+    default_app.active_tab = app::Tab::Details;
+
+    let mut themed_app = app::AppState::new_live(None, false, None);
+    themed_app.active_tab = app::Tab::Details;
+    let mut custom_theme = Theme::default();
+    custom_theme.live_shell.primary.centered_content_width = 72;
+    custom_theme.live_shell.primary.content_margin_x = 6;
+    custom_theme.live_shell.primary.activity_drawer_width = 18;
+    custom_theme.live_shell.primary.inspector_drawer_width = 36;
+    themed_app.set_theme(custom_theme);
+
+    let default_target = ui::hovered_wheel_target(&default_app, area, 40, 20);
+    let themed_target = ui::hovered_wheel_target(&themed_app, area, 40, 20);
+
+    assert_ne!(default_target, themed_target);
+    assert_eq!(themed_target, Some(ui::WheelTarget::Inspector));
+}
+
+#[cfg(test)]
+#[test]
+fn layout_plan_minimum_geometry_matches_shell_contract() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.active_tab = app::Tab::Run;
+    let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 80, 24));
+
+    assert_eq!(plan.root, ratatui::layout::Rect::new(0, 0, 80, 24));
+    assert_eq!(plan.header, ratatui::layout::Rect::new(0, 0, 80, 1));
+    assert_eq!(plan.content, ratatui::layout::Rect::new(0, 1, 80, 22));
+    assert_eq!(plan.shell, ratatui::layout::Rect::new(1, 1, 78, 22));
+    assert_eq!(plan.footer, ratatui::layout::Rect::new(0, 23, 80, 1));
+    assert_eq!(
+        plan.transcript,
+        Some(ratatui::layout::Rect::new(1, 1, 78, 18))
+    );
+    assert_eq!(plan.status, Some(ratatui::layout::Rect::new(1, 19, 78, 1)));
+    assert_eq!(
+        plan.composer,
+        Some(ratatui::layout::Rect::new(1, 20, 78, 3))
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn layout_plan_primary_geometry_matches_shell_contract() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.active_tab = app::Tab::Run;
+    let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 100, 30));
+
+    assert_eq!(plan.root, ratatui::layout::Rect::new(0, 0, 100, 30));
+    assert_eq!(plan.header, ratatui::layout::Rect::new(0, 0, 100, 1));
+    assert_eq!(plan.content, ratatui::layout::Rect::new(0, 1, 100, 28));
+    assert_eq!(plan.shell, ratatui::layout::Rect::new(4, 1, 92, 28));
+    assert_eq!(plan.footer, ratatui::layout::Rect::new(0, 29, 100, 1));
+    assert_eq!(
+        plan.transcript,
+        Some(ratatui::layout::Rect::new(4, 1, 92, 24))
+    );
+    assert_eq!(plan.status, Some(ratatui::layout::Rect::new(4, 25, 92, 1)));
+    assert_eq!(
+        plan.composer,
+        Some(ratatui::layout::Rect::new(4, 26, 92, 3))
     );
 }
 
@@ -1441,6 +1653,138 @@ fn render_live_buffer(app: &app::AppState, width: u16, height: u16) -> String {
 }
 
 #[cfg(test)]
+fn render_live_screen(app: &app::AppState, width: u16, height: u16) -> String {
+    let debug = render_live_buffer(app, width, height);
+    let mut in_content = false;
+    let mut rows = Vec::new();
+
+    for line in debug.lines() {
+        if line.trim() == "content: [" {
+            in_content = true;
+            continue;
+        }
+        if in_content && line.trim() == "]," {
+            break;
+        }
+        if !in_content {
+            continue;
+        }
+
+        let trimmed = line.trim();
+        if let Some(content) = trimmed
+            .strip_prefix('"')
+            .and_then(|value| value.strip_suffix("\","))
+        {
+            rows.push(content.to_string());
+        }
+    }
+
+    rows.join("\n")
+}
+
+#[cfg(test)]
+#[test]
+fn overlay_stack_orders_details_palette_permission() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.active_tab = app::Tab::Details;
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    assert_eq!(
+        app.overlay_stack().ordered(),
+        &[
+            overlay::OverlayKind::DetailsDrawer,
+            overlay::OverlayKind::CommandPalette,
+        ]
+    );
+
+    app.ingest_event(permission_requested_event(
+        1,
+        "perm_stack_order",
+        "tool_call_stack_order",
+    ));
+    assert_eq!(
+        app.overlay_stack().ordered(),
+        &[
+            overlay::OverlayKind::DetailsDrawer,
+            overlay::OverlayKind::PermissionModal,
+        ]
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn permission_modal_preempts_palette() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let intent_sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = app::AppState::new_live(None, false, Some(intent_sink));
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    app.handle_key(key(crossterm::event::KeyCode::Char('d')));
+    app.ingest_event(permission_requested_event(
+        1,
+        "perm_preempt_palette",
+        "tool_call_preempt_palette",
+    ));
+
+    app.handle_key(key(crossterm::event::KeyCode::Char('a')));
+
+    assert!(app.palette_visible);
+    assert_eq!(app.palette_input, "d");
+    assert_eq!(
+        app.overlay_stack().top(),
+        Some(overlay::OverlayKind::PermissionModal)
+    );
+
+    let intents = intents.lock().expect("lock intents");
+    assert_eq!(
+        intents.as_slice(),
+        &[UiIntent::ResolvePermission {
+            permission_id: "perm_preempt_palette".to_string(),
+            decision: harness_core::perm::PermissionDecision::Allow,
+        }]
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn focus_returns_after_palette_close() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.focus = app::Focus::Details;
+    app.prompt_buffer = "keep prompt draft".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    app.handle_key(key(crossterm::event::KeyCode::Char('d')));
+    assert!(app.palette_visible);
+    assert_eq!(app.focus, app::Focus::Details);
+    assert_eq!(app.prompt_buffer, "keep prompt draft");
+    let open_debug = render_live_screen(&app, 100, 24);
+    println!("PALETTE_OPEN\n{open_debug}");
+
+    app.handle_key(key(crossterm::event::KeyCode::Esc));
+    assert!(!app.palette_visible);
+    assert_eq!(app.focus, app::Focus::Details);
+    assert_eq!(app.prompt_buffer, "keep prompt draft");
+    assert_eq!(app.prompt_cursor, "keep prompt draft".chars().count());
+    let closed_debug = render_live_screen(&app, 100, 24);
+    println!("PALETTE_CLOSED\n{closed_debug}");
+}
+
+#[cfg(test)]
 #[test]
 fn live_status_strip_distinguishes_terminal_states() {
     let ready = app::AppState::new_live(None, false, None);
@@ -1572,14 +1916,14 @@ fn live_status_strip_distinguishes_terminal_states() {
     let degraded_debug = render_live_buffer(&degraded, 80, 24);
     assert!(degraded_debug.contains("Degraded"));
     assert!(degraded_debug.contains("replaying from seq 1"));
-    assert!(degraded_debug.contains("Composer (disabled · Degraded)"));
+    assert!(degraded_debug.contains("Composer · disabled · Degraded"));
     assert!(degraded_debug.contains("waiting for live recovery"));
 
     let mut disconnected = app::AppState::new_live(None, false, None);
     disconnected.set_status_banner(Some("live event stream disconnected".to_string()));
     let disconnected_debug = render_live_buffer(&disconnected, 80, 24);
     assert!(disconnected_debug.contains("Disconnected"));
-    assert!(disconnected_debug.contains("Composer (disabled · Disconnected)"));
+    assert!(disconnected_debug.contains("Composer · disabled · Disconnected"));
 }
 
 #[cfg(test)]
@@ -1727,7 +2071,7 @@ fn disconnected_stream_disables_composer_with_reopen_guidance() {
     assert!(app.prompt_buffer.is_empty());
     assert!(debug.contains("transcript stays visible"));
     assert!(debug.contains("Disconnected"));
-    assert!(debug.contains("Composer (disabled · Disconnected)"));
+    assert!(debug.contains("Composer · disabled · Disconnected"));
     assert!(debug.contains("Reopen the TUI to reconnect"));
 }
 
@@ -1867,7 +2211,9 @@ fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
     ));
 
     let transcript = render_live_lines(&app, 120, 36);
-    assert!(transcript.contains("tool fs.read · succeeded · 12 lines read"));
+    assert!(transcript.contains("tool fs.read"));
+    assert!(transcript.contains("12 lines read"));
+    assert!(transcript.contains("succeeded"));
     assert!(!transcript.contains(r#"{"path":"src/lib.rs","start_line":42,"limit":20}"#));
     assert!(!transcript.contains("args {"));
 }
@@ -1923,7 +2269,9 @@ fn failed_tool_rows_still_surface_error_summary() {
     ));
 
     let transcript = render_live_lines(&app, 120, 36);
-    assert!(transcript.contains("tool shell.run · failed · exit code: 1 stderr: permission denied"));
+    assert!(transcript.contains("tool shell.run"));
+    assert!(transcript.contains("exit code: 1 stderr: permission denied"));
+    assert!(transcript.contains("failed"));
     assert!(!transcript.contains(r#"{"cmd":"false","cwd":"/tmp/demo"}"#));
     assert!(!transcript.contains("args {"));
 }
@@ -1944,7 +2292,7 @@ fn permission_overlay_preserves_draft_and_transcript_context() {
 
     let debug = render_live_buffer(&app, 80, 24);
     // Composer is disabled when permission is pending, showing hint instead of draft
-    assert!(debug.contains("Composer (disabled · Permission blocked"));
+    assert!(debug.contains("Composer · disabled · Permission blocked"));
     assert!(debug.contains("Permission Requested"));
     assert!(!debug.contains("Select an activity to view transcript"));
     assert!(
@@ -2043,7 +2391,7 @@ fn live_mode_hides_primary_tabs_but_replay_preserves_secondary_access() {
         .expect("draw live frame");
 
     let live_debug = format!("{:?}", live_terminal.backend().buffer());
-    assert!(live_debug.contains("Conversation"));
+    assert!(live_debug.contains("Composer ·"));
     assert!(!live_debug.contains("Tabs"));
     assert!(!live_debug.contains("Activity ("));
     assert!(!live_debug.contains("Inspector"));
@@ -2085,6 +2433,261 @@ fn live_mode_accepts_input_without_focus_switch() {
 
     assert_eq!(app.prompt_buffer, "hello");
     assert_eq!(app.prompt_cursor, 5);
+}
+
+#[cfg(test)]
+#[test]
+fn command_palette_renders_and_filters() {
+    let mut app = app::AppState::new_live(None, false, None);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+
+    assert!(app.palette_visible);
+    assert_eq!(
+        app.palette_filtered,
+        Action::palette_commands()
+            .iter()
+            .map(|(command, _)| (*command).to_string())
+            .collect::<Vec<_>>()
+    );
+
+    let open_debug = render_live_screen(&app, 100, 24);
+    println!("OPEN\n{open_debug}");
+    assert!(open_debug.contains("Commands"));
+    assert!(open_debug.contains("Open Help surface"));
+    assert!(open_debug.contains("Return to conversation surface"));
+
+    app.handle_key(key(crossterm::event::KeyCode::Char('d')));
+
+    assert_eq!(app.palette_input, "d");
+    assert_eq!(app.palette_cursor, 1);
+    assert_eq!(
+        app.palette_filtered,
+        vec!["details".to_string(), "diff".to_string()]
+    );
+
+    let filtered_debug = render_live_screen(&app, 100, 24);
+    println!("FILTERED\n{filtered_debug}");
+    assert!(filtered_debug.contains("Commands"));
+    assert!(filtered_debug.contains("Toggle live details drawer"));
+    assert!(filtered_debug.contains("Open Diff surface"));
+    assert!(!filtered_debug.contains("Open Help surface"));
+}
+
+#[cfg(test)]
+#[test]
+fn command_palette_empty_state_renders() {
+    let mut app = app::AppState::new_live(None, false, None);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    app.handle_key(key(crossterm::event::KeyCode::Char('z')));
+
+    assert!(app.palette_visible);
+    assert!(app.palette_filtered.is_empty());
+
+    let debug = render_live_screen(&app, 100, 24);
+    println!("EMPTY\n{debug}");
+    assert!(debug.contains("Commands"));
+    assert!(debug.contains("No commands"));
+}
+
+#[cfg(test)]
+#[test]
+fn command_palette_enter_executes_selected_command() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.active_tab = app::Tab::Help;
+    app.focus = app::Focus::Details;
+    app.prompt_buffer = "preserve me".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    app.handle_key(key(crossterm::event::KeyCode::Char('e')));
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    assert_eq!(app.active_tab, app::Tab::Events);
+    assert!(!app.palette_visible);
+    assert_eq!(app.focus, app::Focus::Details);
+    assert_eq!(app.prompt_buffer, "preserve me");
+    assert_eq!(app.prompt_cursor, "preserve me".chars().count());
+}
+
+#[cfg(test)]
+#[test]
+fn palette_escape_closes_without_mutating_prompt() {
+    let mut app = app::AppState::new_live(None, false, None);
+    for c in "keep this prompt".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(c)));
+    }
+
+    let prompt_before = app.prompt_buffer.clone();
+    let cursor_before = app.prompt_cursor;
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    app.handle_key(key(crossterm::event::KeyCode::Char('d')));
+
+    assert!(app.palette_visible);
+    assert_eq!(app.palette_input, "d");
+
+    app.handle_key(key(crossterm::event::KeyCode::Esc));
+
+    assert!(!app.palette_visible);
+    assert!(app.palette_input.is_empty());
+    assert_eq!(app.palette_cursor, 0);
+    assert!(app.palette_filtered.is_empty());
+    assert_eq!(app.palette_selected, 0);
+    assert_eq!(app.prompt_buffer, prompt_before);
+    assert_eq!(app.prompt_cursor, cursor_before);
+    assert!(app.prompt_history.is_empty());
+    assert_eq!(app.prompt_history_index, None);
+}
+
+#[cfg(test)]
+#[test]
+fn permission_modal_preempts_prompt_submission() {
+    let intents = Arc::new(std::sync::Mutex::new(Vec::<UiIntent>::new()));
+    let intent_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = app::AppState::new_live(None, false, Some(intent_sink));
+    for c in "blocked by permission".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(c)));
+    }
+    app.ingest_event(permission_requested_event(
+        1,
+        "perm_block_submit",
+        "tool_call_block_submit",
+    ));
+
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    let intents = intents.lock().expect("lock intents");
+    assert!(intents.is_empty());
+    drop(intents);
+
+    assert_eq!(app.prompt_buffer, "blocked by permission");
+    assert_eq!(app.prompt_cursor, "blocked by permission".chars().count());
+    assert!(app.prompt_history.is_empty());
+    assert!(app.activities.is_empty());
+    assert!(app.active_permission().is_some());
+}
+
+#[cfg(test)]
+#[test]
+fn overlay_wheel_routing_preserved() {
+    let mut palette_overlay = app::AppState::new_live(None, false, None);
+    palette_overlay.details_scroll = 6;
+    palette_overlay.transcript_scroll = 4;
+    palette_overlay.follow_mode = false;
+    palette_overlay.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+
+    palette_overlay.handle_mouse(
+        crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::ScrollUp,
+            column: 5,
+            row: 5,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        },
+        Some(crate::ui::WheelTarget::Transcript),
+    );
+    palette_overlay.handle_mouse(
+        crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::ScrollDown,
+            column: 70,
+            row: 8,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        },
+        Some(crate::ui::WheelTarget::Inspector),
+    );
+
+    assert!(palette_overlay.palette_visible);
+    assert_eq!(palette_overlay.details_scroll, 6);
+    assert_eq!(palette_overlay.transcript_scroll, 4);
+    assert!(!palette_overlay.follow_mode);
+
+    let mut permission_overlay = app::AppState::new_live(None, false, None);
+    permission_overlay.details_scroll = 8;
+    permission_overlay.transcript_scroll = 3;
+    permission_overlay.follow_mode = false;
+    permission_overlay.ingest_event(permission_requested_event(
+        1,
+        "perm_overlay_wheel",
+        "tool_call_overlay_wheel",
+    ));
+
+    permission_overlay.handle_mouse(
+        crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::ScrollUp,
+            column: 5,
+            row: 5,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        },
+        Some(crate::ui::WheelTarget::Transcript),
+    );
+    permission_overlay.handle_mouse(
+        crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::ScrollDown,
+            column: 70,
+            row: 8,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        },
+        Some(crate::ui::WheelTarget::Inspector),
+    );
+
+    assert!(permission_overlay.active_permission().is_some());
+    assert_eq!(permission_overlay.details_scroll, 8);
+    assert_eq!(permission_overlay.transcript_scroll, 3);
+    assert!(!permission_overlay.follow_mode);
+}
+
+#[cfg(test)]
+#[test]
+fn replay_secondary_surfaces_remain_reachable_after_live_shell_refactor() {
+    let replay_registry = surface_registry(true);
+    assert!(replay_registry
+        .iter()
+        .all(|surface| surface.tab != app::Tab::Details));
+
+    let mut replay = app::AppState::new_replay(
+        std::path::PathBuf::from("/tmp/replay-session"),
+        session_view_events(),
+    );
+
+    replay.handle_key(key(crossterm::event::KeyCode::Char('2')));
+    assert_eq!(replay.active_tab, app::Tab::Events);
+
+    replay.handle_key(key(crossterm::event::KeyCode::Char('3')));
+    assert_eq!(replay.active_tab, app::Tab::Diff);
+    let replay_diff_debug = render_live_buffer(&replay, 80, 24);
+    assert!(replay_diff_debug.contains("Tabs"));
+    assert!(replay_diff_debug.contains("Diff"));
+
+    replay.handle_key(key(crossterm::event::KeyCode::Char('4')));
+    assert_eq!(replay.active_tab, app::Tab::Help);
+    let replay_help_debug = render_live_buffer(&replay, 80, 24);
+    assert!(replay_help_debug.contains("Tabs"));
+    assert!(replay_help_debug.contains("Help"));
+
+    replay.handle_key(key(crossterm::event::KeyCode::Char('1')));
+    assert_eq!(replay.active_tab, app::Tab::Run);
 }
 
 #[cfg(test)]
@@ -2285,23 +2888,20 @@ fn live_empty_state_respects_compact_geometry() {
     assert_live_shell_frame_invariants(&rendered, 80, 24);
 
     let lines = rendered.lines().collect::<Vec<_>>();
+    let title_row =
+        find_line_containing(&lines, theme.live_shell.empty_state.title).expect("title row");
     let value_prop_row = find_line_containing(&lines, theme.live_shell.empty_state.value_prop)
         .expect("value prop row");
-    let first_example_row = find_line_containing(
-        &lines,
-        theme.live_shell.empty_state.example_prompts[0].prompt,
-    )
-    .expect("first example row");
     let help_row = find_line_containing(&lines, "Enter send").expect("in-panel help row");
     let status_row =
-        find_line_containing(&lines, "Ready · ready for first turn").expect("status strip row");
+        find_line_containing(&lines, "ready for first turn").expect("status strip row");
 
     assert!(
-        value_prop_row > lines.len() / 3,
-        "empty state should sit near the composer"
+        title_row > 0,
+        "empty state title should not render flush against the header"
     );
-    assert!(value_prop_row < first_example_row);
-    assert!(first_example_row < help_row);
+    assert!(title_row < value_prop_row);
+    assert!(value_prop_row < help_row);
     assert!(help_row < status_row);
 }
 
@@ -2340,7 +2940,7 @@ fn live_shell_shift_enter_keeps_draft_multiline() {
         &app,
         80,
         24,
-        &["first line", "second line", "Composer (2 lines · 22 chars)"],
+        &["first line", "second line", "Composer · 2 lines · 22 chars"],
     );
 }
 
@@ -2407,6 +3007,9 @@ fn live_shell_inline_tool_state_snapshot() {
         "tc_inline_tool",
     ));
 
+    let rendered = render_live_lines(&app, 80, 24);
+    println!("{rendered}");
+
     assert_live_shell_contains(
         &app,
         80,
@@ -2433,13 +3036,16 @@ fn live_shell_permission_preserves_draft_snapshot() {
         "tool_call_snapshot",
     ));
 
+    let rendered = render_live_lines(&app, 80, 24);
+    println!("{rendered}");
+
     assert_live_shell_contains(
         &app,
         80,
         24,
         &[
             "Permission blocked",
-            "Composer (disabled · Permission blocked)",
+            "Composer · disabled · Permission blocked",
             "[a]llow  [d]eny  [esc]dismiss",
         ],
     );
@@ -2459,7 +3065,7 @@ fn live_shell_degraded_bootstrap_snapshot() {
         24,
         &[
             "Degraded",
-            "Composer (disabled · Degraded)",
+            "Composer · disabled · Degraded",
             "replaying from seq 1",
         ],
     );
@@ -2475,7 +3081,11 @@ fn live_shell_disconnected_stream_snapshot() {
         &app,
         80,
         24,
-        &["Disconnected", "reopen the TUI", "Conversation"],
+        &[
+            "Disconnected",
+            "reopen the TUI",
+            "Composer · disabled · Disconnected",
+        ],
     );
 }
 
@@ -2489,7 +3099,9 @@ fn live_shell_details_drawer_snapshot() {
     app.handle_key(key(crossterm::event::KeyCode::Tab));
     app.handle_key(key(crossterm::event::KeyCode::Char('i')));
 
-    insta::assert_snapshot!("live_shell_details_drawer", render_live_lines(&app, 80, 24));
+    let rendered = render_live_lines(&app, 80, 24);
+    println!("{rendered}");
+    insta::assert_snapshot!("live_shell_details_drawer", rendered);
 }
 
 #[cfg(test)]
@@ -2503,18 +3115,15 @@ fn assert_live_shell_geometry(width: u16, height: u16) {
     assert_live_shell_frame_invariants(&rendered, width, height);
 
     let lines = rendered.lines().collect::<Vec<_>>();
-    let conversation_top =
-        find_line_containing(&lines, "Conversation").expect("conversation frame title");
-    let conversation_bottom = find_line_containing_from(&lines, conversation_top + 1, "└")
-        .expect("conversation frame bottom border");
     let status_row = find_line_containing(&lines, "Success").expect("status strip");
     let composer_top = find_line_containing(&lines, "Composer").expect("composer frame title");
     let composer_bottom = find_line_containing_from(&lines, composer_top + 1, "└")
         .expect("composer frame bottom border");
     let footer_row = find_line_containing(&lines, "Enter send").expect("footer legend");
 
-    assert!(conversation_top < conversation_bottom);
-    assert_eq!(conversation_bottom + 1, status_row);
+    assert!(lines[..status_row]
+        .iter()
+        .any(|line| line.contains("assistant")));
     assert_eq!(status_row + 1, composer_top);
     assert!(composer_top < composer_bottom);
     assert_eq!(composer_bottom + 1, footer_row);
@@ -2636,6 +3245,13 @@ fn replay_and_diff_surfaces_remain_secondary_but_reachable() {
     }
 
     live.handle_key(key(crossterm::event::KeyCode::Tab));
+    live.handle_key(key(crossterm::event::KeyCode::Char('2')));
+    assert_eq!(live.active_tab, app::Tab::Events);
+    assert!(!live.details_drawer_open());
+    let live_events_debug = render_live_buffer(&live, 80, 24);
+    assert!(live_events_debug.contains("Events"));
+    assert!(live_events_debug.contains("Event details"));
+
     live.handle_key(key(crossterm::event::KeyCode::Char('3')));
     assert_eq!(live.active_tab, app::Tab::Diff);
     assert!(!live.details_drawer_open());
@@ -2655,9 +3271,27 @@ fn replay_and_diff_surfaces_remain_secondary_but_reachable() {
         std::path::PathBuf::from("/tmp/replay-session"),
         session_view_events(),
     );
+    replay.handle_key(key(crossterm::event::KeyCode::Char('2')));
+    assert_eq!(replay.active_tab, app::Tab::Events);
+    let replay_events_debug = render_live_buffer(&replay, 80, 24);
+    assert!(replay_events_debug.contains("Tabs"));
+    assert!(replay_events_debug.contains("Event details"));
+
     replay.handle_key(key(crossterm::event::KeyCode::Char('3')));
     assert_eq!(replay.active_tab, app::Tab::Diff);
-    let replay_debug = render_live_buffer(&replay, 80, 24);
-    assert!(replay_debug.contains("Tabs"));
-    assert!(replay_debug.contains("Diff"));
+    let replay_diff_debug = render_live_buffer(&replay, 80, 24);
+    assert!(replay_diff_debug.contains("Tabs"));
+    assert!(replay_diff_debug.contains("Diff"));
+    assert!(!replay_diff_debug.contains("Commands"));
+    assert!(!replay_diff_debug.contains("Permission Requested"));
+
+    replay.handle_key(key(crossterm::event::KeyCode::Char('4')));
+    assert_eq!(replay.active_tab, app::Tab::Help);
+    let replay_help_debug = render_live_buffer(&replay, 80, 24);
+    assert!(replay_help_debug.contains("Replay surfaces:"));
+    assert!(!replay_help_debug.contains("Commands"));
+    assert!(!replay_help_debug.contains("Permission Requested"));
+
+    replay.handle_key(key(crossterm::event::KeyCode::Char('1')));
+    assert_eq!(replay.active_tab, app::Tab::Run);
 }
