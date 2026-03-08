@@ -12,6 +12,8 @@ use harness_core::event::{
 use harness_core::perm::PermissionDecision;
 
 use crate::keybindings::{Action, KeyMap};
+use crate::overlay::{OverlayKind, OverlayStack, OverlayState};
+use crate::theme::Theme;
 use crate::ui::WheelTarget;
 
 /// Truncation limit for tool output display in the TUI (chars)
@@ -446,6 +448,7 @@ fn take_pending_live_launch_metadata() -> Option<LaunchMetadata> {
         .take()
 }
 
+#[derive(Default)]
 pub struct SessionProjection {
     pub(crate) events: Vec<EventEnvelopeV1>,
     pub(crate) activities: VecDeque<ActivityEntry>,
@@ -455,21 +458,6 @@ pub struct SessionProjection {
     seen_seqs: BTreeSet<u64>,
     pending_permissions: BTreeMap<String, PendingPermission>,
     run_terminal_seen: bool,
-}
-
-impl Default for SessionProjection {
-    fn default() -> Self {
-        Self {
-            events: Vec::new(),
-            activities: VecDeque::new(),
-            memory_caps: MemoryCaps::default(),
-            events_trimmed_count: 0,
-            transcript_trimmed_count: 0,
-            seen_seqs: BTreeSet::new(),
-            pending_permissions: BTreeMap::new(),
-            run_terminal_seen: false,
-        }
-    }
 }
 
 pub struct AppState {
@@ -496,7 +484,9 @@ pub struct AppState {
     pub palette_cursor: usize,
     pub palette_filtered: Vec<String>,
     pub palette_selected: usize,
+    palette_focus_return: Option<Focus>,
     pub keymap: KeyMap,
+    theme: Theme,
     launch_metadata: LaunchMetadata,
     dismissed_permissions: BTreeSet<String>,
     submitted_permission_id: Option<String>,
@@ -530,7 +520,9 @@ impl Default for AppState {
             palette_cursor: 0,
             palette_filtered: Vec::new(),
             palette_selected: 0,
+            palette_focus_return: None,
             keymap: KeyMap::default(),
+            theme: Theme::default(),
             launch_metadata: LaunchMetadata::default(),
             dismissed_permissions: BTreeSet::new(),
             submitted_permission_id: None,
@@ -831,9 +823,10 @@ impl SessionProjection {
             }
             EventV1::ToolCallRequested(data) => {
                 let target_corr_id = event.correlation_id.clone();
-                let use_back = self.activities.back().map_or(true, |entry| {
-                    target_corr_id.is_none() || entry.request_id.is_empty()
-                });
+                let use_back = self
+                    .activities
+                    .back()
+                    .is_none_or(|entry| target_corr_id.is_none() || entry.request_id.is_empty());
 
                 let entry = if use_back {
                     self.activities.back_mut()
@@ -971,6 +964,14 @@ impl AppState {
 
     pub fn apply_keybindings(&mut self, bindings: std::collections::BTreeMap<String, String>) {
         self.keymap.apply_overrides(&bindings);
+    }
+
+    pub fn theme(&self) -> &Theme {
+        &self.theme
+    }
+
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
     }
 
     pub fn set_launch_metadata(&mut self, launch_metadata: LaunchMetadata) {
@@ -1295,6 +1296,14 @@ impl AppState {
             && (self.live_details_drawer_open || self.active_tab == Tab::Details)
     }
 
+    pub fn overlay_stack(&self) -> OverlayStack {
+        OverlayStack::from_state(OverlayState {
+            details_drawer_open: self.details_drawer_open(),
+            palette_visible: self.palette_visible,
+            permission_pending: self.active_permission().is_some(),
+        })
+    }
+
     pub fn permission_submission_pending(&self, permission_id: &str) -> bool {
         self.submitted_permission_id.as_deref() == Some(permission_id)
     }
@@ -1389,7 +1398,7 @@ impl AppState {
     }
 
     pub fn handle_mouse(&mut self, mouse: MouseEvent, hovered_wheel_target: Option<WheelTarget>) {
-        if self.palette_visible || self.active_permission().is_some() {
+        if self.overlay_stack().blocks_pointer_interaction() {
             return;
         }
 
@@ -1413,7 +1422,23 @@ impl AppState {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
-        if self.palette_visible && self.handle_palette_key(&key) {
+        if self.overlay_stack().top() == Some(OverlayKind::PermissionModal) {
+            if let Some(action) = self.keymap.get_action(&key) {
+                match action {
+                    Action::AllowPermission | Action::DenyPermission | Action::DismissModal => {
+                        self.execute_action(action);
+                        self.maybe_auto_exit();
+                    }
+                    _ => {}
+                }
+            }
+            return;
+        }
+
+        if self.overlay_stack().top() == Some(OverlayKind::CommandPalette)
+            && self.handle_palette_key(&key)
+        {
+            self.maybe_auto_exit();
             return;
         }
 
@@ -1527,9 +1552,15 @@ impl AppState {
         self.palette_cursor = 0;
         self.palette_filtered.clear();
         self.palette_selected = 0;
+        if let Some(previous_focus) = self.palette_focus_return.take() {
+            self.focus = previous_focus;
+        }
     }
 
     fn open_palette(&mut self) {
+        if !self.palette_visible {
+            self.palette_focus_return = Some(self.focus);
+        }
         self.palette_visible = true;
         self.palette_input.clear();
         self.palette_cursor = 0;
@@ -1759,9 +1790,9 @@ impl AppState {
                 let opening = self.active_tab != Tab::Run || !self.details_drawer_open();
                 self.active_tab = Tab::Run;
                 self.live_details_drawer_open = opening;
-                if !opening && self.focus == Focus::List {
-                    self.focus = Focus::Details;
-                } else if opening && self.focus == Focus::Prompt {
+                if (!opening && self.focus == Focus::List)
+                    || (opening && self.focus == Focus::Prompt)
+                {
                     self.focus = Focus::Details;
                 }
             }
@@ -2036,11 +2067,12 @@ impl AppState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::overlay::OverlayKind;
     use crate::ui::WheelTarget;
     use crossterm::event::MouseEvent;
     use harness_core::event::{
-        ActorKind, EventActor, EventEnvelopeV1, EventV1, ProviderRequestStartedEvent,
-        UserMessageSubmittedEvent, SCHEMA_VERSION,
+        ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
+        ProviderRequestStartedEvent, UserMessageSubmittedEvent, SCHEMA_VERSION,
     };
 
     fn envelope(seq: u64, request_id: &str, payload: EventV1) -> EventEnvelopeV1 {
@@ -2061,6 +2093,110 @@ mod tests {
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn key_with_modifiers(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+        KeyEvent::new(code, modifiers)
+    }
+
+    #[test]
+    fn overlay_stack_orders_details_palette_permission() {
+        let mut app = AppState::new_live(None, false, None);
+        app.active_tab = Tab::Details;
+
+        app.handle_key(key_with_modifiers(
+            KeyCode::Char('p'),
+            KeyModifiers::CONTROL,
+        ));
+        assert_eq!(
+            app.overlay_stack().ordered(),
+            &[OverlayKind::DetailsDrawer, OverlayKind::CommandPalette]
+        );
+
+        app.ingest_event(envelope(
+            1,
+            "req_overlay_stack",
+            EventV1::PermissionRequested(PermissionRequestedEvent {
+                permission_id: "perm_overlay_stack".to_string(),
+                kind: "edit_fs".to_string(),
+                tool_call_id: Some("tc_overlay_stack".to_string()),
+                summary: "permission summary".to_string(),
+                request_digest: "digest-overlay-stack".to_string(),
+                timeout_ms: 30_000,
+                default_decision: harness_core::event::PermissionDecision::Deny,
+            }),
+        ));
+
+        assert_eq!(
+            app.overlay_stack().ordered(),
+            &[OverlayKind::DetailsDrawer, OverlayKind::PermissionModal]
+        );
+    }
+
+    #[test]
+    fn permission_modal_preempts_palette() {
+        let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+        let intent_sink = {
+            let intents = Arc::clone(&intents);
+            Arc::new(move |intent: UiIntent| {
+                intents.lock().expect("lock intents").push(intent);
+            })
+        };
+
+        let mut app = AppState::new_live(None, false, Some(intent_sink));
+        app.handle_key(key_with_modifiers(
+            KeyCode::Char('p'),
+            KeyModifiers::CONTROL,
+        ));
+        app.handle_key(key(KeyCode::Char('d')));
+
+        app.ingest_event(envelope(
+            1,
+            "req_overlay_preempt",
+            EventV1::PermissionRequested(PermissionRequestedEvent {
+                permission_id: "perm_overlay_preempt".to_string(),
+                kind: "edit_fs".to_string(),
+                tool_call_id: Some("tc_overlay_preempt".to_string()),
+                summary: "permission summary".to_string(),
+                request_digest: "digest-overlay-preempt".to_string(),
+                timeout_ms: 30_000,
+                default_decision: harness_core::event::PermissionDecision::Deny,
+            }),
+        ));
+
+        app.handle_key(key(KeyCode::Char('a')));
+
+        assert!(app.palette_visible);
+        assert_eq!(app.palette_input, "d");
+        assert_eq!(
+            app.overlay_stack().top(),
+            Some(OverlayKind::PermissionModal)
+        );
+        let intents = intents.lock().expect("lock intents");
+        assert_eq!(
+            intents.as_slice(),
+            &[UiIntent::ResolvePermission {
+                permission_id: "perm_overlay_preempt".to_string(),
+                decision: PermissionDecision::Allow,
+            }]
+        );
+    }
+
+    #[test]
+    fn focus_returns_after_palette_close() {
+        let mut app = AppState::new_live(None, false, None);
+        app.focus = Focus::Details;
+
+        app.handle_key(key_with_modifiers(
+            KeyCode::Char('p'),
+            KeyModifiers::CONTROL,
+        ));
+        assert!(app.palette_visible);
+        assert_eq!(app.focus, Focus::Details);
+
+        app.handle_key(key(KeyCode::Esc));
+        assert!(!app.palette_visible);
+        assert_eq!(app.focus, Focus::Details);
     }
 
     #[test]
