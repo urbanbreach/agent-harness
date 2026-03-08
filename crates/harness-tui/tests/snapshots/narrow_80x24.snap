@@ -1,24 +1,24 @@
-Harness · unknown · default/default · -
-┌Conversation (following)──────────────────────────────────────────────────────┐
-│ Waiting for first turn…                                                      │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-└──────────────────────────────────────────────────────────────────────────────┘
-Ready · prompt ready
-┌Composer (2 lines · 14 chars) (focused)───────────────────────────────────────┐
-│Hello from PTY█                                                               │
-│                                                                              │
-└──────────────────────────────────────────────────────────────────────────────┘
-Enter send   ⇧↵ nl   i details   2 ev   3 diff   4 help   q quit
+ Harness · unknown · unknown/unknown · -
+ ┌Conversation (following)────────────────────────────────────────────────────┐
+ │                                                                            │
+ │                                                                            │
+ │                                                                            │
+ │                                                                            │
+ │                                                                            │
+ │                                                                            │
+ │                                                                            │
+ │                                                                            │
+ │                                                                            │
+ │ Inspect code, make edits, or explain failures.                             │
+ │                                                                            │
+ │ › inspect src/ui.rs                                                        │
+ │ › trace the failing test                                                   │
+ │ › review the current diff                                                  │
+ │                                                                            │
+ │ Enter send · Shift+Enter newline · ↑/↓ history                             │
+ └────────────────────────────────────────────────────────────────────────────┘
+ Ready · ready for first turn
+ ┌Composer (1 line · 14 chars) (focused)──────────────────────────────────────┐
+ │Hello from PTY█                                                             │
+ └────────────────────────────────────────────────────────────────────────────┘
+ Enter send  Shift+Enter nl  i details  2 events  3 diff  4 help  q quit
