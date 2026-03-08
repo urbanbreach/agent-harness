@@ -448,6 +448,10 @@ impl KeyMap {
             .unwrap_or_else(|| "-".to_string())
     }
 
+    pub fn get_binding_label(&self, action: Action, label: &str) -> String {
+        format!("{} {label}", self.get_binding_str(action))
+    }
+
     /// Get all current bindings as a sorted list of (key, action) pairs.
     pub fn all_bindings(&self) -> Vec<(&KeyBinding, &Action)> {
         let mut all: Vec<(&KeyBinding, &Action)> = self.bindings.iter().collect();
@@ -560,6 +564,17 @@ mod tests {
         let keymap = KeyMap::with_defaults();
         let binding = keymap.get_binding_str(Action::Palette);
         assert_eq!(binding, "Ctrl+p");
+    }
+
+    #[test]
+    fn keymap_formats_binding_labels_from_overrides() {
+        let mut overrides = BTreeMap::new();
+        overrides.insert("quit".to_string(), "x".to_string());
+
+        let mut keymap = KeyMap::with_defaults();
+        keymap.apply_overrides(&overrides);
+
+        assert_eq!(keymap.get_binding_label(Action::Quit, "quit"), "x quit");
     }
 
     #[test]
