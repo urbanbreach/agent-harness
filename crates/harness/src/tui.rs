@@ -7,7 +7,9 @@ use std::time::{Duration, Instant};
 
 use clap::Args;
 use harness_core::clock::{Clock, FakeClock, RealClock};
-use harness_core::config::{load_config_from_file, resolve_config_path, ShellAllowlist};
+use harness_core::config::{
+    load_config_from_file, resolve_config_path, HarnessConfig, ShellAllowlist,
+};
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle,
 };
@@ -16,6 +18,7 @@ use harness_core::perm::PermissionDecision;
 use harness_core::redact::DefaultRedactor;
 use harness_core::store::{EventStore, EventStoreError};
 use harness_tools::coordinator_registry;
+use harness_tui::app::{set_pending_live_launch_metadata, LaunchMetadata};
 use harness_tui::{
     load_events_from_run_dir, run_tui_with_options, LiveUpdate, TuiMode, TuiOptions, UiIntent,
 };
@@ -23,13 +26,14 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
+use crate::bootstrap;
 use crate::scenarios::{
     create_workspace, default_permission_policy, golden_path_patch, golden_path_profiles,
     golden_path_provider, supervisor_actor, worker_actor, ScenarioName,
 };
 
 const DEFAULT_SESSION_DIR: &str = ".agent-harness/sessions";
-const DEFAULT_INTERACTIVE_PROFILE: &str = "worker";
+const DEFAULT_MOCK_PROFILE: &str = "worker";
 const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Args, Clone)]
@@ -39,6 +43,9 @@ pub struct TuiCommand {
 
     #[arg(long, value_enum, conflicts_with = "replay")]
     pub scenario: Option<ScenarioName>,
+
+    #[arg(long, default_value_t = false, conflicts_with_all = ["replay", "scenario"])]
+    pub mock: bool,
 
     #[arg(long, default_value_t = false)]
     pub deterministic: bool,
@@ -55,12 +62,14 @@ pub struct TuiCommand {
 
 #[derive(Debug)]
 struct LiveSettings {
+    config: Option<HarnessConfig>,
     session_dir: PathBuf,
     shell_allowlist: ShellAllowlist,
     deterministic: bool,
     seed: u64,
     config_digest: String,
     default_profile: String,
+    launch_metadata: LaunchMetadata,
 }
 
 struct LiveBootstrap {
@@ -68,22 +77,38 @@ struct LiveBootstrap {
     run_dir: PathBuf,
 }
 
+enum ResolvedTuiMode {
+    Replay {
+        run_dir: PathBuf,
+    },
+    Interactive {
+        settings: LiveSettings,
+    },
+    Mock {
+        settings: LiveSettings,
+    },
+    Scenario {
+        settings: LiveSettings,
+        scenario: ScenarioName,
+    },
+}
+
 pub fn execute(
     cmd: TuiCommand,
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
 ) -> ExitCode {
-    if let Some(run_dir) = &cmd.replay {
-        return execute_replay_mode(run_dir, cmd.exit_on_finish);
-    }
-
-    let settings = match resolve_live_settings(&cmd, config_path, global_session_dir) {
-        Ok(settings) => settings,
+    let mode = match resolve_tui_mode(&cmd, config_path, global_session_dir) {
+        Ok(mode) => mode,
         Err(err) => {
             eprintln!("tui setup failed: {err}");
             return ExitCode::from(2);
         }
     };
+
+    if let ResolvedTuiMode::Replay { run_dir } = &mode {
+        return execute_replay_mode(run_dir, cmd.exit_on_finish);
+    }
 
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -96,10 +121,17 @@ pub fn execute(
         }
     };
 
-    let run_result = if let Some(scenario) = cmd.scenario {
-        runtime.block_on(run_live_mode(&cmd, &settings, scenario))
-    } else {
-        runtime.block_on(run_interactive_mode(&cmd, &settings))
+    let run_result = match mode {
+        ResolvedTuiMode::Replay { .. } => Ok(()),
+        ResolvedTuiMode::Interactive { settings } => {
+            runtime.block_on(run_interactive_mode(&cmd, &settings, false))
+        }
+        ResolvedTuiMode::Mock { settings } => {
+            runtime.block_on(run_interactive_mode(&cmd, &settings, true))
+        }
+        ResolvedTuiMode::Scenario { settings, scenario } => {
+            runtime.block_on(run_live_mode(&cmd, &settings, scenario))
+        }
     };
 
     match run_result {
@@ -140,6 +172,30 @@ fn execute_replay_mode(run_dir: &Path, exit_on_finish: bool) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+fn resolve_tui_mode(
+    cmd: &TuiCommand,
+    config_path: Option<PathBuf>,
+    global_session_dir: Option<PathBuf>,
+) -> Result<ResolvedTuiMode, String> {
+    if let Some(run_dir) = &cmd.replay {
+        return Ok(ResolvedTuiMode::Replay {
+            run_dir: run_dir.clone(),
+        });
+    }
+
+    let settings = resolve_live_settings(cmd, config_path, global_session_dir)?;
+
+    if let Some(scenario) = cmd.scenario {
+        return Ok(ResolvedTuiMode::Scenario { settings, scenario });
+    }
+
+    if cmd.mock {
+        return Ok(ResolvedTuiMode::Mock { settings });
+    }
+
+    Ok(ResolvedTuiMode::Interactive { settings })
+}
+
 fn resolve_live_settings(
     cmd: &TuiCommand,
     config_path: Option<PathBuf>,
@@ -151,7 +207,8 @@ fn resolve_live_settings(
     let mut config_deterministic = false;
     let mut config_seed = 0;
     let mut config_digest = "none".to_string();
-    let mut config_default_profile = DEFAULT_INTERACTIVE_PROFILE.to_string();
+    let mut config_default_profile = DEFAULT_MOCK_PROFILE.to_string();
+    let mut live_config: Option<HarnessConfig> = None;
 
     if let Some(path) = explicit_config {
         let config =
@@ -159,15 +216,14 @@ fn resolve_live_settings(
         let config_bytes = fs::read(&path)
             .map_err(|err| format!("failed to read config file {}: {err}", path.display()))?;
         config_digest = blake3::hash(&config_bytes).to_hex().to_string();
-        config_default_profile = config
-            .ui
-            .default_profile
-            .clone()
-            .unwrap_or_else(|| DEFAULT_INTERACTIVE_PROFILE.to_string());
-        shell_allowlist = config.permissions.shell_allowlist;
-        config_session_dir = config.paths.session_dir;
+        config_default_profile = bootstrap::interactive_profile_name(&config);
+        shell_allowlist = config.permissions.shell_allowlist.clone();
+        config_session_dir = config.paths.session_dir.clone();
         config_deterministic = config.deterministic.enabled;
         config_seed = config.deterministic.seed;
+        live_config = Some(config);
+    } else if cmd.scenario.is_none() && !cmd.mock {
+        return Err(bootstrap::interactive_config_guidance());
     }
 
     let session_dir = cmd
@@ -179,18 +235,37 @@ fn resolve_live_settings(
         || config_deterministic
         || matches!(std::env::var("HARNESS_DETERMINISTIC").as_deref(), Ok("1"));
     let default_profile = cmd.profile.clone().unwrap_or(config_default_profile);
+    let launch_metadata = interactive_launch_metadata(live_config.as_ref(), &default_profile);
 
     Ok(LiveSettings {
+        config: live_config,
         session_dir,
         shell_allowlist,
         deterministic,
         seed: config_seed,
         config_digest,
         default_profile,
+        launch_metadata,
     })
 }
 
-async fn run_interactive_mode(cmd: &TuiCommand, settings: &LiveSettings) -> Result<(), String> {
+fn interactive_launch_metadata(config: Option<&HarnessConfig>, profile: &str) -> LaunchMetadata {
+    config
+        .and_then(|cfg| cfg.categories.get(profile))
+        .map(|category| LaunchMetadata::from_model_ref(profile.to_string(), &category.model_ref))
+        .unwrap_or_else(|| LaunchMetadata::from_model_ref(profile.to_string(), "mock:model-1"))
+        .with_mode_label(if config.is_some() { "Live" } else { "Demo" })
+}
+
+fn scenario_launch_metadata() -> LaunchMetadata {
+    LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo")
+}
+
+async fn run_interactive_mode(
+    cmd: &TuiCommand,
+    settings: &LiveSettings,
+    demo_mode: bool,
+) -> Result<(), String> {
     fs::create_dir_all(&settings.session_dir)
         .map_err(|err| format!("failed to create session dir: {err}"))?;
 
@@ -221,13 +296,23 @@ async fn run_interactive_mode(cmd: &TuiCommand, settings: &LiveSettings) -> Resu
         Arc::new(RealClock::new())
     };
 
-    let mut coordinator_config = CoordinatorConfig::new(settings.session_dir.clone());
+    let mut coordinator_config = if demo_mode {
+        let mut coordinator_config = CoordinatorConfig::new(settings.session_dir.clone());
+        coordinator_config.permission_policy = default_permission_policy();
+        coordinator_config.tool_registry =
+            Arc::new(coordinator_registry(settings.shell_allowlist.clone()));
+        coordinator_config.provider = Arc::new(golden_path_provider());
+        coordinator_config.agent_profiles = golden_path_profiles();
+        coordinator_config
+    } else {
+        let mut config = settings
+            .config
+            .clone()
+            .ok_or_else(bootstrap::interactive_config_guidance)?;
+        config.apply_session_dir_override(Some(settings.session_dir.clone()));
+        bootstrap::build_interactive_coordinator_config(&config)?
+    };
     coordinator_config.deterministic_store = settings.deterministic;
-    coordinator_config.permission_policy = default_permission_policy();
-    coordinator_config.tool_registry =
-        Arc::new(coordinator_registry(settings.shell_allowlist.clone()));
-    coordinator_config.provider = Arc::new(golden_path_provider());
-    coordinator_config.agent_profiles = golden_path_profiles();
     coordinator_config.run_id_override = Some(run_id_override);
     coordinator_config.config_digest = settings.config_digest.clone();
     coordinator_config.harness_version = env!("CARGO_PKG_VERSION").to_string();
@@ -271,6 +356,7 @@ async fn run_interactive_mode(cmd: &TuiCommand, settings: &LiveSettings) -> Resu
     };
 
     let exit_on_finish = cmd.exit_on_finish;
+    set_pending_live_launch_metadata(settings.launch_metadata.clone());
 
     let tui_result = tokio::task::spawn_blocking(move || {
         run_tui_with_options(TuiOptions {
@@ -387,6 +473,7 @@ async fn run_live_mode(
     };
 
     let exit_on_finish = cmd.exit_on_finish;
+    set_pending_live_launch_metadata(scenario_launch_metadata());
 
     let tui_result = tokio::task::spawn_blocking(move || {
         run_tui_with_options(TuiOptions {
