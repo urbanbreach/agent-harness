@@ -1,19 +1,23 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
+use harness_core::agent::AgentModelRef;
 use harness_core::event::{
-    EventEnvelopeV1, EventV1, ProviderRequestStartedEvent, ToolCallStatus,
-    UserMessageSubmittedEvent,
+    EventEnvelopeV1, EventV1, PermissionDecision as EventPermissionDecision,
+    ProviderRequestStartedEvent, ToolCallStatus, UserMessageSubmittedEvent,
 };
 use harness_core::perm::PermissionDecision;
 
 use crate::keybindings::{Action, KeyMap};
+use crate::ui::WheelTarget;
 
 /// Truncation limit for tool output display in the TUI (chars)
 const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
+const TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS: usize = 72;
+const TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolCallDisplayStatus {
@@ -41,11 +45,131 @@ pub struct ToolCallEntry {
     pub tool_call_id: String,
     pub tool_id: String,
     pub args_summary: String,
+    pub args_digest: String,
     pub status: ToolCallDisplayStatus,
     pub output_summary: Option<String>,
+    pub output_digest: Option<String>,
     pub truncated_output: Option<String>,
+    pub permissions: Vec<PermissionEntry>,
     pub first_seq: u64,
     pub last_seq: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PermissionEntry {
+    pub permission_id: String,
+    pub kind: String,
+    pub tool_call_id: Option<String>,
+    pub summary: String,
+    pub request_digest: String,
+    pub timeout_ms: u64,
+    pub default_decision: EventPermissionDecision,
+    pub resolved_decision: Option<EventPermissionDecision>,
+    pub resolution_reason: Option<String>,
+    pub first_seq: u64,
+    pub last_seq: u64,
+}
+
+impl ToolCallEntry {
+    pub fn transcript_summary(&self) -> Option<String> {
+        match self.status {
+            ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed => self
+                .output_summary
+                .as_deref()
+                .and_then(compact_tool_payload_for_transcript)
+                .or_else(|| compact_tool_payload_for_transcript(&self.args_summary)),
+            ToolCallDisplayStatus::PendingPermission
+            | ToolCallDisplayStatus::Queued
+            | ToolCallDisplayStatus::Running => {
+                compact_tool_payload_for_transcript(&self.args_summary)
+            }
+        }
+    }
+}
+
+fn compact_tool_payload_for_transcript(payload: &str) -> Option<String> {
+    let trimmed = payload.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let compact = match serde_json::from_str::<serde_json::Value>(trimmed) {
+        Ok(value) => compact_json_value_for_transcript(&value),
+        Err(_) => collapse_whitespace(trimmed),
+    };
+
+    Some(truncate_for_transcript(&compact))
+}
+
+fn compact_json_value_for_transcript(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Object(map) => {
+            if map.is_empty() {
+                return "{}".to_string();
+            }
+
+            let mut parts = Vec::new();
+            for (idx, (key, value)) in map.iter().enumerate() {
+                if idx >= TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS {
+                    parts.push("…".to_string());
+                    break;
+                }
+                parts.push(format!("{key}={}", compact_json_leaf_for_transcript(value)));
+            }
+            parts.join(", ")
+        }
+        serde_json::Value::Array(items) => {
+            if items.is_empty() {
+                return "[]".to_string();
+            }
+
+            let mut parts = Vec::new();
+            for (idx, item) in items.iter().enumerate() {
+                if idx >= TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS {
+                    parts.push("…".to_string());
+                    break;
+                }
+                parts.push(compact_json_leaf_for_transcript(item));
+            }
+            format!("[{}]", parts.join(", "))
+        }
+        _ => compact_json_leaf_for_transcript(value),
+    }
+}
+
+fn compact_json_leaf_for_transcript(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(text) => collapse_whitespace(text),
+        serde_json::Value::Number(number) => number.to_string(),
+        serde_json::Value::Bool(flag) => flag.to_string(),
+        serde_json::Value::Null => "null".to_string(),
+        serde_json::Value::Array(items) => format!(
+            "[{} item{}]",
+            items.len(),
+            if items.len() == 1 { "" } else { "s" }
+        ),
+        serde_json::Value::Object(fields) => format!(
+            "{{{} field{}}}",
+            fields.len(),
+            if fields.len() == 1 { "" } else { "s" }
+        ),
+    }
+}
+
+fn collapse_whitespace(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn truncate_for_transcript(text: &str) -> String {
+    if text.chars().count() <= TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS {
+        return text.to_string();
+    }
+
+    let truncated: String = text
+        .chars()
+        .take(TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS.saturating_sub(1))
+        .collect();
+    format!("{truncated}…")
 }
 
 pub struct ActivityEntry {
@@ -57,6 +181,7 @@ pub struct ActivityEntry {
     pub request_data: Option<ProviderRequestStartedEvent>,
     pub transcript_text: String,
     pub error_message: Option<String>,
+    pub permissions: Vec<PermissionEntry>,
     pub tool_calls: Vec<ToolCallEntry>,
     pub first_seq: u64,
     pub last_seq: u64,
@@ -77,6 +202,46 @@ impl std::fmt::Display for ActivityStatus {
             ActivityStatus::Error => write!(f, "error"),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeStateKind {
+    Ready,
+    Sending,
+    Streaming,
+    Success,
+    Failure,
+    Cancelled,
+    PermissionBlocked,
+    PermissionPending,
+    Degraded,
+    Disconnected,
+}
+
+impl RuntimeStateKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Ready => "Ready",
+            Self::Sending => "Sending",
+            Self::Streaming => "Streaming",
+            Self::Success => "Success",
+            Self::Failure => "Failure",
+            Self::Cancelled => "Cancelled",
+            Self::PermissionBlocked => "Permission blocked",
+            Self::PermissionPending => "Permission pending",
+            Self::Degraded => "Degraded",
+            Self::Disconnected => "Disconnected",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeState {
+    pub kind: RuntimeStateKind,
+    pub summary: String,
+    pub detail: Option<String>,
+    pub composer_disabled: bool,
+    pub composer_hint: String,
 }
 
 #[derive(Debug, Clone)]
@@ -203,6 +368,84 @@ struct PendingPermission {
     summary: String,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LaunchMetadata {
+    profile: Option<String>,
+    provider: Option<String>,
+    model: Option<String>,
+    mode_label: Option<String>,
+}
+
+impl LaunchMetadata {
+    pub fn new(
+        profile: impl Into<String>,
+        provider: impl Into<String>,
+        model: Option<String>,
+    ) -> Self {
+        Self {
+            profile: Some(profile.into()),
+            provider: Some(provider.into()),
+            model,
+            mode_label: None,
+        }
+    }
+
+    pub fn from_model_ref(profile: impl Into<String>, model_ref: &str) -> Self {
+        let model_ref = AgentModelRef::parse(model_ref);
+        Self::new(profile, model_ref.provider_id, Some(model_ref.model_id))
+    }
+
+    pub fn with_mode_label(mut self, mode_label: impl Into<String>) -> Self {
+        self.mode_label = Some(mode_label.into());
+        self
+    }
+
+    pub fn profile(&self) -> &str {
+        self.profile
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("unknown")
+    }
+
+    pub fn provider(&self) -> &str {
+        self.provider
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("unknown")
+    }
+
+    pub fn model(&self) -> Option<&str> {
+        self.model
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+    }
+
+    pub fn mode_label(&self) -> Option<&str> {
+        self.mode_label
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+    }
+}
+
+static PENDING_LIVE_LAUNCH_METADATA: OnceLock<Mutex<Option<LaunchMetadata>>> = OnceLock::new();
+
+fn pending_live_launch_metadata() -> &'static Mutex<Option<LaunchMetadata>> {
+    PENDING_LIVE_LAUNCH_METADATA.get_or_init(|| Mutex::new(None))
+}
+
+pub fn set_pending_live_launch_metadata(metadata: LaunchMetadata) {
+    *pending_live_launch_metadata()
+        .lock()
+        .expect("pending live launch metadata lock poisoned") = Some(metadata);
+}
+
+fn take_pending_live_launch_metadata() -> Option<LaunchMetadata> {
+    pending_live_launch_metadata()
+        .lock()
+        .expect("pending live launch metadata lock poisoned")
+        .take()
+}
+
 pub struct SessionProjection {
     pub(crate) events: Vec<EventEnvelopeV1>,
     pub(crate) activities: VecDeque<ActivityEntry>,
@@ -241,6 +484,7 @@ pub struct AppState {
     pub session_path: Option<PathBuf>,
     pub status_banner: Option<String>,
     pub details_scroll: u16,
+    pub transcript_scroll: u16,
     pub auto_exit_on_finish: bool,
     pub prompt_buffer: String,
     pub prompt_cursor: usize,
@@ -253,6 +497,7 @@ pub struct AppState {
     pub palette_filtered: Vec<String>,
     pub palette_selected: usize,
     pub keymap: KeyMap,
+    launch_metadata: LaunchMetadata,
     dismissed_permissions: BTreeSet<String>,
     submitted_permission_id: Option<String>,
     reload_requested: bool,
@@ -273,6 +518,7 @@ impl Default for AppState {
             session_path: None,
             status_banner: None,
             details_scroll: 0,
+            transcript_scroll: 0,
             auto_exit_on_finish: false,
             prompt_buffer: String::new(),
             prompt_cursor: 0,
@@ -285,6 +531,7 @@ impl Default for AppState {
             palette_filtered: Vec::new(),
             palette_selected: 0,
             keymap: KeyMap::default(),
+            launch_metadata: LaunchMetadata::default(),
             dismissed_permissions: BTreeSet::new(),
             submitted_permission_id: None,
             reload_requested: false,
@@ -368,6 +615,83 @@ impl SessionProjection {
             .or_else(|| self.adopt_local_prompt_echo(request_id, seq))
     }
 
+    fn attach_permission_request(&mut self, event: &EventEnvelopeV1) {
+        let EventV1::PermissionRequested(data) = &event.payload else {
+            return;
+        };
+
+        let permission_entry = PermissionEntry {
+            permission_id: data.permission_id.clone(),
+            kind: data.kind.clone(),
+            tool_call_id: data.tool_call_id.clone(),
+            summary: data.summary.clone(),
+            request_digest: data.request_digest.clone(),
+            timeout_ms: data.timeout_ms,
+            default_decision: data.default_decision,
+            resolved_decision: None,
+            resolution_reason: None,
+            first_seq: event.seq,
+            last_seq: event.seq,
+        };
+
+        if let Some(tool_call_id) = data.tool_call_id.as_deref() {
+            if let Some(tool_entry) = self.find_tool_call_mut(tool_call_id) {
+                tool_entry.permissions.push(permission_entry);
+                return;
+            }
+        }
+
+        // Find target activity without holding borrows across or_else
+        let found_by_correlation = event.correlation_id.as_deref().and_then(|request_id| {
+            self.activities
+                .iter()
+                .position(|activity| activity.request_id == request_id)
+        });
+
+        if let Some(idx) = found_by_correlation {
+            if let Some(activity) = self.activities.get_mut(idx) {
+                activity.permissions.push(permission_entry);
+                activity.last_seq = event.seq;
+            }
+        } else if let Some(activity) = self.activities.back_mut() {
+            activity.permissions.push(permission_entry);
+            activity.last_seq = event.seq;
+        }
+    }
+
+    fn update_permission_resolution(
+        &mut self,
+        permission_id: &str,
+        decision: EventPermissionDecision,
+        reason: Option<&str>,
+        seq: u64,
+    ) {
+        for activity in &mut self.activities {
+            for permission in &mut activity.permissions {
+                if permission.permission_id == permission_id {
+                    permission.resolved_decision = Some(decision);
+                    permission.resolution_reason = reason.map(str::to_owned);
+                    permission.last_seq = seq;
+                    activity.last_seq = seq;
+                    return;
+                }
+            }
+
+            for tool_call in &mut activity.tool_calls {
+                for permission in &mut tool_call.permissions {
+                    if permission.permission_id == permission_id {
+                        permission.resolved_decision = Some(decision);
+                        permission.resolution_reason = reason.map(str::to_owned);
+                        permission.last_seq = seq;
+                        tool_call.last_seq = seq;
+                        activity.last_seq = seq;
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
     fn update_derived_state_for_event(&mut self, event: &EventEnvelopeV1) {
         match &event.payload {
             EventV1::PermissionRequested(data) => {
@@ -378,9 +702,16 @@ impl SessionProjection {
                         summary: data.summary.clone(),
                     },
                 );
+                self.attach_permission_request(event);
             }
             EventV1::PermissionResolved(data) => {
                 self.pending_permissions.remove(&data.permission_id);
+                self.update_permission_resolution(
+                    &data.permission_id,
+                    data.decision,
+                    data.reason.as_deref(),
+                    event.seq,
+                );
             }
             EventV1::RunFinished(_) => {
                 self.run_terminal_seen = true;
@@ -413,6 +744,7 @@ impl SessionProjection {
                         request_data: None,
                         transcript_text: String::new(),
                         error_message: None,
+                        permissions: Vec::new(),
                         tool_calls: Vec::new(),
                         first_seq: event.seq,
                         last_seq: event.seq,
@@ -443,6 +775,7 @@ impl SessionProjection {
                         request_data: Some(data.clone()),
                         transcript_text: String::new(),
                         error_message: None,
+                        permissions: Vec::new(),
                         tool_calls: Vec::new(),
                         first_seq: event.seq,
                         last_seq: event.seq,
@@ -471,6 +804,7 @@ impl SessionProjection {
                         request_data: None,
                         transcript_text: data.delta.clone(),
                         error_message: None,
+                        permissions: Vec::new(),
                         tool_calls: Vec::new(),
                         first_seq: event.seq,
                         last_seq: event.seq,
@@ -516,9 +850,12 @@ impl SessionProjection {
                         tool_call_id: data.tool_call_id.clone(),
                         tool_id: data.tool_id.clone(),
                         args_summary: data.args_summary.clone(),
+                        args_digest: data.args_digest.clone(),
                         status: ToolCallDisplayStatus::PendingPermission,
                         output_summary: None,
+                        output_digest: None,
                         truncated_output: None,
+                        permissions: Vec::new(),
                         first_seq: event.seq,
                         last_seq: event.seq,
                     };
@@ -539,6 +876,7 @@ impl SessionProjection {
                         ToolCallStatus::Failed => ToolCallDisplayStatus::Failed,
                     };
                     tool_entry.output_summary = data.output_summary.clone();
+                    tool_entry.output_digest = data.output_digest.clone();
                     if let Some(summary) = &data.output_summary {
                         let display_text =
                             if summary.chars().count() > TOOL_OUTPUT_DISPLAY_MAX_CHARS {
@@ -619,6 +957,7 @@ impl AppState {
         state.session_path = session_path;
         state.auto_exit_on_finish = auto_exit_on_finish;
         state.on_ui_intent = on_ui_intent;
+        state.launch_metadata = take_pending_live_launch_metadata().unwrap_or_default();
         state
     }
 
@@ -632,6 +971,10 @@ impl AppState {
 
     pub fn apply_keybindings(&mut self, bindings: std::collections::BTreeMap<String, String>) {
         self.keymap.apply_overrides(&bindings);
+    }
+
+    pub fn set_launch_metadata(&mut self, launch_metadata: LaunchMetadata) {
+        self.launch_metadata = launch_metadata;
     }
 
     pub fn replace_events(&mut self, events: Vec<EventEnvelopeV1>) {
@@ -651,6 +994,7 @@ impl AppState {
                 .min(self.projection.events.len() - 1);
         }
         self.details_scroll = 0;
+        self.transcript_scroll = 0;
         self.maybe_auto_exit();
     }
 
@@ -674,6 +1018,7 @@ impl AppState {
             self.selected_event_index = self.projection.events.len() - 1;
             self.selected_activity_index = self.projection.activities.len().saturating_sub(1);
             self.details_scroll = 0;
+            self.transcript_scroll = 0;
         }
 
         self.maybe_auto_exit();
@@ -683,17 +1028,193 @@ impl AppState {
         self.status_banner = status;
     }
 
-    pub fn prompt_bootstrap_disabled(&self) -> bool {
-        if self.replay_mode || !self.events.is_empty() {
-            return false;
+    pub fn runtime_state(&self) -> RuntimeState {
+        if let Some(state) = self.status_banner_runtime_state() {
+            return state;
         }
 
-        self.status_banner.as_deref().is_some_and(|banner| {
-            let lower = banner.to_ascii_lowercase();
-            lower.contains("lagged")
-                || lower.contains("replaying")
-                || lower.contains("disconnected")
+        if let Some(state) = self.permission_runtime_state() {
+            return state;
+        }
+
+        if let Some(event) = self.events.last() {
+            if let EventV1::TaskCancelled(cancelled) = &event.payload {
+                let detail =
+                    (!cancelled.reason.trim().is_empty()).then(|| cancelled.reason.clone());
+                let summary = detail
+                    .as_deref()
+                    .map(|reason| format!("last turn cancelled · {reason}"))
+                    .unwrap_or_else(|| "last turn cancelled · ready to try again".to_string());
+                return RuntimeState {
+                    kind: RuntimeStateKind::Cancelled,
+                    summary,
+                    detail,
+                    composer_disabled: false,
+                    composer_hint: "Type a prompt to retry the cancelled turn…".to_string(),
+                };
+            }
+        }
+
+        if let Some(activity) = self.activities.back() {
+            let summary = self.activity_status_summary(activity);
+            return match activity.status {
+                ActivityStatus::Streaming if activity.transcript_text.is_empty() => RuntimeState {
+                    kind: RuntimeStateKind::Sending,
+                    summary: format!("{summary} · waiting for first tokens"),
+                    detail: None,
+                    composer_disabled: false,
+                    composer_hint: "Draft the next prompt while the current turn starts…"
+                        .to_string(),
+                },
+                ActivityStatus::Streaming => RuntimeState {
+                    kind: RuntimeStateKind::Streaming,
+                    summary: format!("{summary} · receiving output"),
+                    detail: None,
+                    composer_disabled: false,
+                    composer_hint: "Draft the next prompt while output continues…".to_string(),
+                },
+                ActivityStatus::Done => RuntimeState {
+                    kind: RuntimeStateKind::Success,
+                    summary: format!("{summary} · ready for next turn"),
+                    detail: None,
+                    composer_disabled: false,
+                    composer_hint: "Type a prompt for the next turn…".to_string(),
+                },
+                ActivityStatus::Error => RuntimeState {
+                    kind: RuntimeStateKind::Failure,
+                    summary: format!("{summary} · inspect transcript and retry when ready"),
+                    detail: activity.error_message.clone(),
+                    composer_disabled: false,
+                    composer_hint: "Type a prompt to retry or continue from the failure…"
+                        .to_string(),
+                },
+            };
+        }
+
+        RuntimeState {
+            kind: RuntimeStateKind::Ready,
+            summary: if self.replay_mode {
+                format!("{} events loaded", self.events.len())
+            } else {
+                "ready for first turn".to_string()
+            },
+            detail: None,
+            composer_disabled: false,
+            composer_hint: "Type a prompt for the next turn…".to_string(),
+        }
+    }
+
+    pub fn composer_disabled(&self) -> bool {
+        self.runtime_state().composer_disabled
+    }
+
+    fn status_banner_runtime_state(&self) -> Option<RuntimeState> {
+        let banner = self.status_banner.as_deref()?;
+        let lower = banner.to_ascii_lowercase();
+
+        if lower.contains("disconnected") {
+            return Some(RuntimeState {
+                kind: RuntimeStateKind::Disconnected,
+                summary: if self.events.is_empty() {
+                    "live event stream unavailable · reopen the TUI to connect".to_string()
+                } else {
+                    "live event stream disconnected · reopen the TUI to reconnect"
+                        .to_string()
+                },
+                detail: Some(banner.to_string()),
+                composer_disabled: true,
+                composer_hint: "Composer disabled — live stream disconnected. Reopen the TUI to reconnect, then continue from the visible transcript.".to_string(),
+            });
+        }
+
+        if lower.contains("lagged") || lower.contains("replaying") {
+            return Some(RuntimeState {
+                kind: RuntimeStateKind::Degraded,
+                summary: format!("{banner} · sending paused until recovery"),
+                detail: Some(banner.to_string()),
+                composer_disabled: true,
+                composer_hint:
+                    "Composer disabled — waiting for live recovery before sending the next turn."
+                        .to_string(),
+            });
+        }
+
+        if lower.contains("failed") || lower.contains("error") || lower.contains("no session path")
+        {
+            return Some(RuntimeState {
+                kind: RuntimeStateKind::Failure,
+                summary: if self.replay_mode {
+                    "reload failed · inspect details".to_string()
+                } else {
+                    "runtime failure · inspect transcript and retry when ready".to_string()
+                },
+                detail: Some(banner.to_string()),
+                composer_disabled: false,
+                composer_hint: "Type a prompt to retry or continue after the failure…".to_string(),
+            });
+        }
+
+        Some(RuntimeState {
+            kind: RuntimeStateKind::Ready,
+            summary: banner.to_string(),
+            detail: Some(banner.to_string()),
+            composer_disabled: false,
+            composer_hint: "Type a prompt for the next turn…".to_string(),
         })
+    }
+
+    fn permission_runtime_state(&self) -> Option<RuntimeState> {
+        let (permission_id, summary) = self.active_permission()?;
+        if self.permission_submission_pending(&permission_id) {
+            Some(RuntimeState {
+                kind: RuntimeStateKind::PermissionPending,
+                summary: format!("permission response pending · {summary}"),
+                detail: Some(summary),
+                composer_disabled: true,
+                composer_hint:
+                    "Composer disabled — waiting for the permission decision to complete."
+                        .to_string(),
+            })
+        } else {
+            Some(RuntimeState {
+                kind: RuntimeStateKind::PermissionBlocked,
+                summary: format!("permission required · {summary}"),
+                detail: Some(summary),
+                composer_disabled: true,
+                composer_hint:
+                    "Composer disabled — approve or deny the pending permission request to continue."
+                        .to_string(),
+            })
+        }
+    }
+
+    fn activity_status_summary(&self, activity: &ActivityEntry) -> String {
+        let turn_count = self.activities.len();
+        let provider = if activity.provider_id.is_empty() {
+            "-"
+        } else {
+            activity.provider_id.as_str()
+        };
+        let model = if activity.model_id.is_empty() {
+            "-"
+        } else {
+            activity.model_id.as_str()
+        };
+
+        [
+            format!("turn {turn_count}/{turn_count}"),
+            if activity.request_id.is_empty() {
+                "pending turn".to_string()
+            } else {
+                activity.request_id.clone()
+            },
+            format!("{provider}/{model}"),
+        ]
+        .join(" · ")
+    }
+
+    pub fn prompt_bootstrap_disabled(&self) -> bool {
+        self.composer_disabled()
     }
 
     pub fn selected_event(&self) -> Option<&EventEnvelopeV1> {
@@ -705,6 +1226,33 @@ impl AppState {
             .events
             .first()
             .map(|event| event.run_id.as_str())
+    }
+
+    pub fn launch_mode_label(&self) -> Option<&str> {
+        self.launch_metadata.mode_label()
+    }
+
+    pub fn active_profile(&self) -> &str {
+        self.launch_metadata.profile()
+    }
+
+    pub fn active_provider(&self) -> &str {
+        self.activities
+            .back()
+            .and_then(|activity| {
+                (!activity.provider_id.trim().is_empty()).then_some(activity.provider_id.as_str())
+            })
+            .unwrap_or_else(|| self.launch_metadata.provider())
+    }
+
+    pub fn current_model_label(&self) -> &str {
+        self.activities
+            .back()
+            .and_then(|activity| {
+                (!activity.model_id.trim().is_empty()).then_some(activity.model_id.as_str())
+            })
+            .or_else(|| self.launch_metadata.model())
+            .unwrap_or("-")
     }
 
     pub fn active_permission(&self) -> Option<(String, String)> {
@@ -830,12 +1378,38 @@ impl AppState {
             request_data: None,
             transcript_text: String::new(),
             error_message: None,
+            permissions: Vec::new(),
             tool_calls: Vec::new(),
             first_seq: 0,
             last_seq: 0,
         });
         self.selected_activity_index = self.activities.len().saturating_sub(1);
         self.details_scroll = 0;
+        self.transcript_scroll = 0;
+    }
+
+    pub fn handle_mouse(&mut self, mouse: MouseEvent, hovered_wheel_target: Option<WheelTarget>) {
+        if self.palette_visible || self.active_permission().is_some() {
+            return;
+        }
+
+        match mouse.kind {
+            MouseEventKind::ScrollUp => match hovered_wheel_target {
+                Some(WheelTarget::Transcript) => self.scroll_transcript_up(3),
+                Some(WheelTarget::Inspector) => {
+                    self.details_scroll = self.details_scroll.saturating_sub(3);
+                }
+                None => {}
+            },
+            MouseEventKind::ScrollDown => match hovered_wheel_target {
+                Some(WheelTarget::Transcript) => self.scroll_transcript_down(3),
+                Some(WheelTarget::Inspector) => {
+                    self.details_scroll = self.details_scroll.saturating_add(3);
+                }
+                None => {}
+            },
+            _ => {}
+        }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
@@ -844,8 +1418,7 @@ impl AppState {
         }
 
         if self.focus == Focus::Prompt
-            && !self.prompt_bootstrap_disabled()
-            && self.active_permission().is_none()
+            && !self.composer_disabled()
             && !key.modifiers.contains(KeyModifiers::CONTROL)
             && !key.modifiers.contains(KeyModifiers::ALT)
             && matches!(key.code, KeyCode::Char(_))
@@ -1084,7 +1657,7 @@ impl AppState {
 
         // Handle prompt-focused actions
         if self.focus == Focus::Prompt {
-            if self.prompt_bootstrap_disabled() {
+            if self.composer_disabled() {
                 match action {
                     Action::SubmitPrompt
                     | Action::InsertNewline
@@ -1178,6 +1751,9 @@ impl AppState {
             }
             Action::ToggleFollow => {
                 self.follow_mode = !self.follow_mode;
+                if self.follow_mode {
+                    self.transcript_scroll = 0;
+                }
             }
             Action::ToggleDetailsDrawer if !self.replay_mode && self.focus != Focus::Prompt => {
                 let opening = self.active_tab != Tab::Run || !self.details_drawer_open();
@@ -1211,7 +1787,11 @@ impl AppState {
                     self.next_event();
                 } else {
                     if self.focus == Focus::Details {
-                        self.details_scroll = self.details_scroll.saturating_add(1);
+                        if self.transcript_surface_active() {
+                            self.scroll_transcript_up(1);
+                        } else {
+                            self.details_scroll = self.details_scroll.saturating_add(1);
+                        }
                     }
                 }
             }
@@ -1222,7 +1802,11 @@ impl AppState {
                     self.previous_event();
                 } else {
                     if self.focus == Focus::Details {
-                        self.details_scroll = self.details_scroll.saturating_sub(1);
+                        if self.transcript_surface_active() {
+                            self.scroll_transcript_down(1);
+                        } else {
+                            self.details_scroll = self.details_scroll.saturating_sub(1);
+                        }
                     }
                 }
             }
@@ -1349,6 +1933,7 @@ impl AppState {
             self.selected_activity_index += 1;
             self.follow_mode = false;
             self.details_scroll = 0;
+            self.transcript_scroll = 0;
         }
     }
 
@@ -1357,6 +1942,25 @@ impl AppState {
             self.selected_activity_index -= 1;
             self.follow_mode = false;
             self.details_scroll = 0;
+            self.transcript_scroll = 0;
+        }
+    }
+
+    fn transcript_surface_active(&self) -> bool {
+        matches!(self.active_tab, Tab::Run | Tab::Details)
+            && self.focus == Focus::Details
+            && !self.details_drawer_open()
+    }
+
+    fn scroll_transcript_up(&mut self, amount: u16) {
+        self.follow_mode = false;
+        self.transcript_scroll = self.transcript_scroll.saturating_add(amount.max(1));
+    }
+
+    fn scroll_transcript_down(&mut self, amount: u16) {
+        self.transcript_scroll = self.transcript_scroll.saturating_sub(amount.max(1));
+        if self.transcript_scroll == 0 {
+            self.follow_mode = true;
         }
     }
 
@@ -1398,7 +2002,7 @@ impl AppState {
     fn submit_prompt(&mut self) {
         if self.prompt_buffer.trim().is_empty()
             || self.active_turn_in_progress()
-            || self.prompt_bootstrap_disabled()
+            || self.composer_disabled()
         {
             return;
         }
@@ -1426,5 +2030,191 @@ impl AppState {
         {
             self.should_quit = true;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::WheelTarget;
+    use crossterm::event::MouseEvent;
+    use harness_core::event::{
+        ActorKind, EventActor, EventEnvelopeV1, EventV1, ProviderRequestStartedEvent,
+        UserMessageSubmittedEvent, SCHEMA_VERSION,
+    };
+
+    fn envelope(seq: u64, request_id: &str, payload: EventV1) -> EventEnvelopeV1 {
+        EventEnvelopeV1 {
+            schema_version: SCHEMA_VERSION,
+            event_id: format!("evt_app_{seq:04}"),
+            seq,
+            run_id: "run_app_tests".to_string(),
+            mono_ms: seq,
+            ts: Some("2026-02-03T12:00:00Z".to_string()),
+            actor: EventActor::new(ActorKind::System, Some("app-tests".to_string())),
+            correlation_id: Some(request_id.to_string()),
+            causation_id: None,
+            stream_key: None,
+            payload,
+        }
+    }
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn details_drawer_toggles_without_stealing_transcript_state() {
+        let mut app = AppState::new_live(None, false, None);
+
+        app.ingest_event(envelope(
+            1,
+            "req_a",
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_a".to_string(),
+                text: "First".to_string(),
+            }),
+        ));
+        app.ingest_event(envelope(
+            2,
+            "req_a",
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_a".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "First".to_string(),
+                request_digest: "digest-a".to_string(),
+            }),
+        ));
+        app.ingest_event(envelope(
+            3,
+            "req_b",
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_b".to_string(),
+                text: "Second".to_string(),
+            }),
+        ));
+        app.ingest_event(envelope(
+            4,
+            "req_b",
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_b".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "Second".to_string(),
+                request_digest: "digest-b".to_string(),
+            }),
+        ));
+
+        app.follow_mode = false;
+        app.focus = Focus::Details;
+        app.selected_activity_index = 0;
+        app.details_scroll = 7;
+
+        app.handle_key(key(KeyCode::Char('i')));
+        assert!(app.details_drawer_open());
+        assert_eq!(app.active_tab, Tab::Run);
+        assert_eq!(app.focus, Focus::Details);
+        assert!(!app.follow_mode);
+        assert_eq!(app.selected_activity_index, 0);
+        assert_eq!(app.details_scroll, 7);
+
+        app.handle_key(key(KeyCode::Char('i')));
+        assert!(!app.details_drawer_open());
+        assert_eq!(app.active_tab, Tab::Run);
+        assert_eq!(app.focus, Focus::Details);
+        assert!(!app.follow_mode);
+        assert_eq!(app.selected_activity_index, 0);
+        assert_eq!(app.details_scroll, 7);
+    }
+
+    #[test]
+    fn mouse_wheel_scrolls_transcript_without_stealing_focus() {
+        let mut app = AppState::new_live(None, false, None);
+        app.focus = Focus::Prompt;
+
+        app.handle_mouse(
+            MouseEvent {
+                kind: MouseEventKind::ScrollUp,
+                column: 5,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            },
+            Some(WheelTarget::Transcript),
+        );
+        assert!(!app.follow_mode);
+        assert_eq!(app.transcript_scroll, 3);
+        assert_eq!(app.focus, Focus::Prompt);
+
+        app.handle_mouse(
+            MouseEvent {
+                kind: MouseEventKind::ScrollDown,
+                column: 5,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            },
+            Some(WheelTarget::Transcript),
+        );
+        assert_eq!(app.transcript_scroll, 0);
+        assert!(app.follow_mode);
+        assert_eq!(app.focus, Focus::Prompt);
+    }
+
+    #[test]
+    fn mouse_wheel_scrolls_inspector_when_hovered() {
+        let mut app = AppState::new_live(None, false, None);
+        app.focus = Focus::List;
+        app.details_scroll = 2;
+        app.transcript_scroll = 4;
+
+        app.handle_mouse(
+            MouseEvent {
+                kind: MouseEventKind::ScrollDown,
+                column: 90,
+                row: 12,
+                modifiers: KeyModifiers::NONE,
+            },
+            Some(WheelTarget::Inspector),
+        );
+        assert_eq!(app.details_scroll, 5);
+        assert_eq!(app.transcript_scroll, 4);
+        assert_eq!(app.focus, Focus::List);
+
+        app.handle_mouse(
+            MouseEvent {
+                kind: MouseEventKind::ScrollUp,
+                column: 90,
+                row: 12,
+                modifiers: KeyModifiers::NONE,
+            },
+            Some(WheelTarget::Inspector),
+        );
+        assert_eq!(app.details_scroll, 2);
+        assert_eq!(app.transcript_scroll, 4);
+        assert_eq!(app.focus, Focus::List);
+    }
+
+    #[test]
+    fn mouse_wheel_ignores_non_scrollable_areas() {
+        let mut app = AppState::new_live(None, false, None);
+        app.focus = Focus::Prompt;
+        app.details_scroll = 6;
+        app.transcript_scroll = 2;
+        app.follow_mode = false;
+
+        app.handle_mouse(
+            MouseEvent {
+                kind: MouseEventKind::ScrollDown,
+                column: 2,
+                row: 2,
+                modifiers: KeyModifiers::NONE,
+            },
+            None,
+        );
+
+        assert_eq!(app.details_scroll, 6);
+        assert_eq!(app.transcript_scroll, 2);
+        assert!(!app.follow_mode);
+        assert_eq!(app.focus, Focus::Prompt);
     }
 }

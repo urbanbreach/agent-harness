@@ -1,9 +1,10 @@
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyEventKind};
+use crossterm::event::{self, Event, KeyEventKind, MouseEvent};
 use std::time::Duration;
 
 pub enum TuiEvent {
     Key(event::KeyEvent),
+    Mouse(MouseEvent),
     Resize(u16, u16),
 }
 
@@ -30,6 +31,7 @@ pub fn poll(timeout: Duration) -> Result<Option<TuiEvent>> {
                 }
                 Ok(Some(TuiEvent::Resize(current_w, current_h)))
             }
+            Event::Mouse(mouse) => Ok(Some(TuiEvent::Mouse(mouse))),
             _ => Ok(None),
         };
     }
