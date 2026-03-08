@@ -17,8 +17,20 @@ use harness_tools::coordinator_registry;
 const DEFAULT_PROVIDER_ID: &str = "default";
 const DEFAULT_INTERACTIVE_PROFILE: &str = "deep";
 
+const CONFIG_SEARCH_LOCATIONS: [&str; 2] = [
+    "./harness.jsonc",
+    "$XDG_CONFIG_HOME/harness/config.jsonc (fallback: ~/.config/harness/config.jsonc)",
+];
+
 pub fn load_harness_config(path: &Path) -> Result<HarnessConfig, String> {
     load_config_from_file(path).map_err(|err| format!("{} ({})", err, path.display()))
+}
+
+pub fn interactive_config_guidance() -> String {
+    format!(
+        "interactive mode requires a config file; pass --config <path> or create {}. If you want the demo/mock UI instead, re-run with --mock",
+        CONFIG_SEARCH_LOCATIONS.join(" or ")
+    )
 }
 
 pub fn build_interactive_coordinator_config(

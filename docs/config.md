@@ -11,6 +11,20 @@ Config files are resolved in this order (first match wins):
 3. **User config**: `$XDG_CONFIG_HOME/harness/config.jsonc`
 4. **Fallback**: `~/.config/harness/config.jsonc`
 
+A valid config is required for normal interactive operation. Bare `harness` and the compatibility alias `harness tui` both fail closed with setup guidance when no config resolves. Use `--mock` to run with the built-in deterministic demo/mock provider without configuration.
+
+## Launch Modes
+
+| Invocation | Config required? | Behavior |
+|---|---:|---|
+| `harness` | Yes | Config-backed interactive TUI. If no config resolves, exit with guidance and suggest `--mock`. |
+| `harness --config /path/to/config.jsonc` | Yes | Config-backed interactive TUI using the explicit config path. |
+| `harness --profile worker` | Yes | Config-backed interactive TUI using the chosen profile override. |
+| `harness --mock` | No | Explicit deterministic demo/mock interactive TUI. |
+| `harness tui` | Yes | Compatibility alias for the config-backed interactive TUI. |
+| `harness tui --mock` | No | Compatibility alias for explicit deterministic demo/mock interactive TUI. |
+| `harness tui --scenario golden_path_interactive --deterministic` | No | Deterministic scenario path kept for PTY/live automation. |
+
 ## Generating Schema
 
 Print the full JSON Schema:
@@ -261,9 +275,36 @@ Some config options can be overridden via CLI flags:
 # Override session directory
 harness run --session-dir /tmp/test-sessions
 
-# Override config path
-harness tui --config /path/to/alternate.jsonc
+# Override config path for the default interactive launch
+harness --config /path/to/alternate.jsonc
+
+# Compatibility alias for the interactive TUI
+harness --config /path/to/alternate.jsonc tui
 ```
+
+## Mock Mode
+
+For testing without a real LLM backend, use the `--mock` flag. This bypasses config requirements and uses deterministic mock responses:
+
+```bash
+# Launch the interactive TUI with mock provider (no config required)
+cargo run -p harness -- --mock
+
+# Compatibility alias for explicit mock mode
+cargo run -p harness -- tui --mock
+
+# Run headless scenario with mock provider
+cargo run -p harness -- run --scenario golden_path --mock --deterministic
+
+# Single prompt with mock
+cargo run -p harness -- prompt --text "Hello" --mock
+```
+
+Mock mode is useful for:
+- UI development and testing
+- CI/CD pipelines
+- Deterministic regression testing
+- Developing without API keys
 
 ## JSON Schema Reference
 
