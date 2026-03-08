@@ -41,6 +41,12 @@ Characteristics:
 Full terminal UI tests using portable-pty:
 
 ```bash
+export HARNESS_DETERMINISTIC=1
+export HARNESS_DISABLE_ANIMATIONS=1
+export HARNESS_SEED=42
+export TZ=UTC LANG=C.UTF-8 LC_ALL=C.UTF-8
+export TERM=xterm-256color
+
 RUST_TEST_THREADS=1 cargo test -p harness-testkit pty_e2e
 ```
 
@@ -54,9 +60,10 @@ Characteristics:
 
 PTY E2E renders terminal cells to deterministic PNG images at key checkpoints:
 
+- `pty_interactive_type_first_startup.png`
+- `pty_interactive_prompt_stream.png`
 - `pty_permission_requested.png`
 - `pty_run_finished.png`
-- `pty_diff_tab.png`
 
 Default output directory:
 
@@ -87,14 +94,41 @@ The `.snap` files store marker checks plus `focus_pixels_blake3` digests for det
 
 In GitLab CI, `rust:pty_e2e` exports `HARNESS_VISUAL_ARTIFACT_DIR=target/pty-visual-artifacts` and always publishes these PNG artifacts so agents can inspect real rendered frames.
 
-### Agent UX review workflow
+### Screenshot-Driven UI Iteration Loop
 
-For agent-driven UX iteration:
+The PTY E2E system enables an agent-driven visual QA workflow:
 
-1. Run PTY E2E to generate deterministic screenshots.
-2. Inspect `target/pty-visual-artifacts/*.png` for visual regressions.
-3. Use `.snap` files to detect focus-region visual hash changes.
-4. Adjust UI code and re-run PTY E2E until both image inspection and hashes are stable.
+```bash
+# Generate deterministic screenshots for the polished shell states
+HARNESS_VISUAL_ARTIFACT_DIR=target/pty-visual-artifacts \
+  RUST_TEST_THREADS=1 cargo test -p harness-testkit pty_e2e
+
+# Inspect generated PNGs for visual regressions
+ls target/pty-visual-artifacts/*.png
+```
+
+**Iteration workflow:**
+
+1. **Generate**: Run PTY E2E to produce deterministic startup, prompt-stream, permission, and finished-state checkpoints.
+2. **Inspect**: Review `target/pty-visual-artifacts/*.png` for layout, spacing, transcript, and composer regressions.
+3. **Verify**: Check `.snap` files for marker presence and focus-region `focus_pixels_blake3` changes.
+4. **Iterate**: Adjust UI code and repeat until both image inspection and hashes are stable.
+
+This screenshot-driven approach allows agents to verify UI changes visually before committing code. In CI, artifacts are published from `target/pty-visual-artifacts/` for review.
+
+### Additive live visual signoff
+
+Before releases, run the live visual verifier against a real provider/tool flow:
+
+```bash
+HARNESS_LIVE_PROXY=1 \
+HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
+HARNESS_LIVE_PROXY_PROVIDER=default \
+HARNESS_LIVE_PROXY_MODEL=gpt-5.3-codex \
+cargo test -p harness-testkit live_proxy_e2e_visual_verifier -- --ignored --exact
+```
+
+This complements the offline `pty_e2e` suite by verifying the same polished startup and finished-state UX against live-provider screenshots and the captured visual manifest.
 
 ## Deterministic Environment
 
@@ -225,7 +259,7 @@ HARNESS_LIVE_PROXY=1 \
 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
 HARNESS_LIVE_PROXY_PROVIDER=default \
 HARNESS_LIVE_PROXY_MODEL=gpt-5.3-codex \
-cargo test -p harness-testkit live_proxy_tui_responses_smoke -- --ignored --exact
+cargo test -p harness-testkit live_proxy_e2e_tui_prompt_responses_smoke -- --ignored --exact
 
 # Optional: run the whole ignored live proxy suite in one shot
 HARNESS_LIVE_PROXY=1 \
@@ -233,6 +267,21 @@ HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
 HARNESS_LIVE_PROXY_PROVIDER=default \
 HARNESS_LIVE_PROXY_MODEL=gpt-5.3-codex \
 cargo test -p harness-testkit live_proxy_e2e -- --ignored
+
+### Live Proxy Visual Verification
+
+For screenshot-driven regression testing against real providers:
+
+```bash
+# Run the live visual verifier against the captured live screenshots/manifest
+HARNESS_LIVE_PROXY=1 \
+HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
+HARNESS_LIVE_PROXY_PROVIDER=default \
+HARNESS_LIVE_PROXY_MODEL=gpt-5.3-codex \
+cargo test -p harness-testkit live_proxy_e2e_visual_verifier -- --ignored --exact
+```
+
+This verifies the polished startup/draft-visible/run-finished checkpoints produced during a real-provider session.
 
 # Provider-layer live smoke (optional, same env gate)
 HARNESS_LIVE_PROXY=1 cargo test -p harness-providers openai -- --ignored
