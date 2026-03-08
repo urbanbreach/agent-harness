@@ -1,5 +1,9 @@
 use ratatui::style::Color;
 
+const fn rgb(red: u8, green: u8, blue: u8) -> Color {
+    Color::Rgb(red, green, blue)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShellGeometryTarget {
     Minimum,
@@ -46,6 +50,9 @@ pub struct ShellRhythm {
     pub transcript_gutter_y: u16,
     pub status_separator: u16,
     pub modal_margin: u16,
+    pub surface_margin_x: u16,
+    pub surface_margin_y: u16,
+    pub surface_gap: u16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,6 +68,14 @@ pub struct StatusGlyphs {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TranscriptGlyphs {
+    pub user_marker: &'static str,
+    pub card_top: &'static str,
+    pub card_mid: &'static str,
+    pub card_bottom: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EmptyStatePrompt {
     pub prompt: &'static str,
 }
@@ -68,6 +83,7 @@ pub struct EmptyStatePrompt {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EmptyStateTokens {
     pub max_width: u16,
+    pub title: &'static str,
     pub value_prop: &'static str,
     pub example_prompts: [EmptyStatePrompt; 3],
     pub demo_mode_label: &'static str,
@@ -92,6 +108,7 @@ pub struct LiveShellTokens {
     pub heights: ShellHeights,
     pub rhythm: ShellRhythm,
     pub glyphs: StatusGlyphs,
+    pub transcript_glyphs: TranscriptGlyphs,
     pub empty_state: EmptyStateTokens,
 }
 
@@ -110,38 +127,43 @@ impl LiveShellTokens {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ChromeColors {
+pub struct SurfaceColors {
     pub canvas: Color,
-    pub border: Color,
-    pub focus_border: Color,
-    pub title: Color,
-    pub header_bg: Color,
-    pub header_fg: Color,
-    pub footer_bg: Color,
-    pub footer_fg: Color,
-    pub modal_bg: Color,
-    pub modal_border: Color,
+    pub shell: Color,
+    pub panel: Color,
+    pub panel_elevated: Color,
+    pub overlay: Color,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BorderColors {
+    pub subtle: Color,
+    pub strong: Color,
+    pub focus: Color,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TextColors {
     pub primary: Color,
     pub secondary: Color,
+    pub tertiary: Color,
     pub accent: Color,
-    pub selected_bg: Color,
-    pub selected_fg: Color,
+    pub inverse: Color,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StatusColors {
     pub success: Color,
-    pub error: Color,
     pub warning: Color,
+    pub error: Color,
+    pub info: Color,
+    pub disabled: Color,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Theme {
-    pub chrome: ChromeColors,
+    pub surface: SurfaceColors,
+    pub border: BorderColors,
     pub text: TextColors,
     pub status: StatusColors,
     pub live_shell: LiveShellTokens,
@@ -180,6 +202,9 @@ impl Theme {
             transcript_gutter_y: 0,
             status_separator: 2,
             modal_margin: 2,
+            surface_margin_x: 2,
+            surface_margin_y: 1,
+            surface_gap: 1,
         },
         glyphs: StatusGlyphs {
             streaming: "◐",
@@ -191,9 +216,16 @@ impl Theme {
             succeeded: "●",
             failed: "✗",
         },
+        transcript_glyphs: TranscriptGlyphs {
+            user_marker: "›",
+            card_top: "╭─",
+            card_mid: "│",
+            card_bottom: "╰─",
+        },
         empty_state: EmptyStateTokens {
             max_width: 62,
-            value_prop: "Inspect code, make edits, or explain failures.",
+            title: "Harness",
+            value_prop: "Start a conversation to begin",
             example_prompts: [
                 EmptyStatePrompt {
                     prompt: "inspect src/ui.rs",
@@ -212,66 +244,70 @@ impl Theme {
 
     pub fn mono() -> Self {
         Self {
-            chrome: ChromeColors {
+            surface: SurfaceColors {
                 canvas: Color::Black,
-                border: Color::Rgb(0x88, 0x70, 0x30),
-                focus_border: Color::Rgb(0xFF, 0xD0, 0x40),
-                title: Color::Rgb(0xFF, 0xB0, 0x00),
-                header_bg: Color::Rgb(0x22, 0x18, 0x00),
-                header_fg: Color::Rgb(0xFF, 0xB0, 0x00),
-                footer_bg: Color::Rgb(0x22, 0x18, 0x00),
-                footer_fg: Color::Rgb(0xCC, 0x90, 0x00),
-                modal_bg: Color::Rgb(0x22, 0x18, 0x00),
-                modal_border: Color::Rgb(0xFF, 0xB0, 0x00),
+                shell: rgb(0x14, 0x10, 0x02),
+                panel: rgb(0x18, 0x12, 0x04),
+                panel_elevated: rgb(0x21, 0x18, 0x05),
+                overlay: rgb(0x2B, 0x1F, 0x07),
+            },
+            border: BorderColors {
+                subtle: rgb(0x88, 0x70, 0x30),
+                strong: rgb(0xCC, 0x90, 0x00),
+                focus: rgb(0xFF, 0xD0, 0x40),
             },
             text: TextColors {
-                primary: Color::Rgb(0xFF, 0xB0, 0x00),
-                secondary: Color::Rgb(0xCC, 0x90, 0x00),
-                accent: Color::Rgb(0xFF, 0xD0, 0x40),
-                selected_bg: Color::Rgb(0x33, 0x22, 0x00),
-                selected_fg: Color::Rgb(0xFF, 0xD0, 0x40),
+                primary: rgb(0xFF, 0xB0, 0x00),
+                secondary: rgb(0xCC, 0x90, 0x00),
+                tertiary: rgb(0x88, 0x70, 0x30),
+                accent: rgb(0xFF, 0xD0, 0x40),
+                inverse: Color::Black,
             },
             status: StatusColors {
-                success: Color::Rgb(0x50, 0xD0, 0x50),
-                error: Color::Rgb(0xD0, 0x50, 0x50),
-                warning: Color::Rgb(0xD0, 0xA0, 0x30),
+                success: rgb(0x50, 0xD0, 0x50),
+                warning: rgb(0xD0, 0xA0, 0x30),
+                error: rgb(0xD0, 0x50, 0x50),
+                info: rgb(0x80, 0xB8, 0xFF),
+                disabled: rgb(0x88, 0x70, 0x30),
             },
             live_shell: Self::OPENCODE_SHELL,
         }
     }
 
-    pub fn opencode_dark() -> Self {
+    pub fn harness_app_dark() -> Self {
         Self {
-            chrome: ChromeColors {
-                canvas: Color::Rgb(0x0D, 0x11, 0x17),
-                border: Color::Rgb(0x30, 0x39, 0x46),
-                focus_border: Color::Rgb(0x78, 0x98, 0xC0),
-                title: Color::Rgb(0x8E, 0x9C, 0xAE),
-                header_bg: Color::Rgb(0x0F, 0x14, 0x1B),
-                header_fg: Color::Rgb(0x8C, 0x99, 0xA9),
-                footer_bg: Color::Rgb(0x0F, 0x14, 0x1B),
-                footer_fg: Color::Rgb(0x73, 0x7F, 0x8E),
-                modal_bg: Color::Rgb(0x14, 0x1A, 0x22),
-                modal_border: Color::Rgb(0x78, 0x98, 0xC0),
+            surface: SurfaceColors {
+                canvas: rgb(0x07, 0x0B, 0x12),
+                shell: rgb(0x0D, 0x15, 0x22),
+                panel: rgb(0x10, 0x1A, 0x29),
+                panel_elevated: rgb(0x15, 0x22, 0x35),
+                overlay: rgb(0x18, 0x27, 0x3B),
+            },
+            border: BorderColors {
+                subtle: rgb(0x24, 0x35, 0x4B),
+                strong: rgb(0x31, 0x47, 0x60),
+                focus: rgb(0x6E, 0xA8, 0xFE),
             },
             text: TextColors {
-                primary: Color::Rgb(0xE6, 0xE9, 0xEF),
-                secondary: Color::Rgb(0x9A, 0xA5, 0xB3),
-                accent: Color::Rgb(0x78, 0x98, 0xC0),
-                selected_bg: Color::Rgb(0x18, 0x20, 0x29),
-                selected_fg: Color::Rgb(0xFF, 0xFF, 0xFF),
+                primary: rgb(0xE7, 0xEE, 0xF7),
+                secondary: rgb(0xA3, 0xB1, 0xC2),
+                tertiary: rgb(0x72, 0x83, 0x99),
+                accent: rgb(0x6E, 0xA8, 0xFE),
+                inverse: rgb(0x07, 0x10, 0x1A),
             },
             status: StatusColors {
-                success: Color::Rgb(0x55, 0xA4, 0x6A),
-                error: Color::Rgb(0xE5, 0x53, 0x53),
-                warning: Color::Rgb(0xC7, 0x97, 0x4D),
+                success: rgb(0x5A, 0xC0, 0x8E),
+                warning: rgb(0xD6, 0xA5, 0x5A),
+                error: rgb(0xE3, 0x6D, 0x6D),
+                info: rgb(0x7C, 0xB7, 0xFF),
+                disabled: rgb(0x5F, 0x70, 0x85),
             },
             live_shell: Self::OPENCODE_SHELL,
         }
     }
 
     pub fn default_theme() -> Self {
-        Self::opencode_dark()
+        Self::harness_app_dark()
     }
 
     pub const fn live_shell_layout(self, width: u16, height: u16) -> LiveShellLayout {
@@ -292,23 +328,40 @@ mod tests {
     #[test]
     fn mono_theme_has_valid_colors() {
         let theme = Theme::mono();
-        assert_eq!(theme.chrome.canvas, Color::Black);
+        assert_eq!(theme.surface.canvas, Color::Black);
         assert_eq!(theme.text.primary, Color::Rgb(0xFF, 0xB0, 0x00));
     }
 
     #[test]
-    fn opencode_dark_theme_has_valid_colors() {
-        let theme = Theme::opencode_dark();
-        assert_eq!(theme.chrome.canvas, Color::Rgb(0x0D, 0x11, 0x17));
-        assert_eq!(theme.text.primary, Color::Rgb(0xE6, 0xE9, 0xEF));
+    fn harness_app_dark_theme_has_exact_palette() {
+        let theme = Theme::harness_app_dark();
+        assert_eq!(theme.surface.canvas, rgb(0x07, 0x0B, 0x12));
+        assert_eq!(theme.surface.shell, rgb(0x0D, 0x15, 0x22));
+        assert_eq!(theme.surface.panel, rgb(0x10, 0x1A, 0x29));
+        assert_eq!(theme.surface.panel_elevated, rgb(0x15, 0x22, 0x35));
+        assert_eq!(theme.surface.overlay, rgb(0x18, 0x27, 0x3B));
+        assert_eq!(theme.border.subtle, rgb(0x24, 0x35, 0x4B));
+        assert_eq!(theme.border.strong, rgb(0x31, 0x47, 0x60));
+        assert_eq!(theme.border.focus, rgb(0x6E, 0xA8, 0xFE));
+        assert_eq!(theme.text.primary, rgb(0xE7, 0xEE, 0xF7));
+        assert_eq!(theme.text.secondary, rgb(0xA3, 0xB1, 0xC2));
+        assert_eq!(theme.text.tertiary, rgb(0x72, 0x83, 0x99));
+        assert_eq!(theme.text.accent, rgb(0x6E, 0xA8, 0xFE));
+        assert_eq!(theme.text.inverse, rgb(0x07, 0x10, 0x1A));
+        assert_eq!(theme.status.success, rgb(0x5A, 0xC0, 0x8E));
+        assert_eq!(theme.status.warning, rgb(0xD6, 0xA5, 0x5A));
+        assert_eq!(theme.status.error, rgb(0xE3, 0x6D, 0x6D));
+        assert_eq!(theme.status.info, rgb(0x7C, 0xB7, 0xFF));
+        assert_eq!(theme.status.disabled, rgb(0x5F, 0x70, 0x85));
     }
 
     #[test]
-    fn default_theme_is_opencode_dark() {
+    fn default_theme_is_harness_app_dark() {
         let default = Theme::default();
-        let opencode = Theme::opencode_dark();
-        assert_eq!(default.chrome.canvas, opencode.chrome.canvas);
-        assert_eq!(default.text.primary, opencode.text.primary);
+        let harness = Theme::harness_app_dark();
+        assert_eq!(default.surface.canvas, harness.surface.canvas);
+        assert_eq!(default.text.primary, harness.text.primary);
+        assert_eq!(default.status.info, harness.status.info);
     }
 
     #[test]
@@ -325,8 +378,38 @@ mod tests {
         assert_eq!(primary.content_margin_x, 2);
         assert_eq!(theme.live_shell.rhythm.status_separator, 2);
         assert_eq!(theme.live_shell.heights.status, 1);
+        assert_eq!(theme.live_shell.transcript_glyphs.user_marker, "›");
+        assert_eq!(theme.live_shell.transcript_glyphs.card_top, "╭─");
 
         assert!(minimum.centered_content_width + minimum.content_margin_x.saturating_mul(2) <= 80);
         assert!(primary.centered_content_width + primary.content_margin_x.saturating_mul(2) <= 100);
+    }
+
+    #[test]
+    fn layout_plan_shell_width_tracks_theme_contracts() {
+        let mut app = crate::app::AppState::new_live(None, false, None);
+        app.active_tab = crate::app::Tab::Run;
+
+        let minimum = crate::layout::FrameLayoutPlan::for_app(
+            &app,
+            ratatui::layout::Rect::new(
+                0,
+                0,
+                ShellGeometry::MINIMUM.width,
+                ShellGeometry::MINIMUM.height,
+            ),
+        );
+        assert_eq!(minimum.shell.width, 78);
+
+        let primary = crate::layout::FrameLayoutPlan::for_app(
+            &app,
+            ratatui::layout::Rect::new(
+                0,
+                0,
+                ShellGeometry::PRIMARY.width,
+                ShellGeometry::PRIMARY.height,
+            ),
+        );
+        assert_eq!(primary.shell.width, 92);
     }
 }
