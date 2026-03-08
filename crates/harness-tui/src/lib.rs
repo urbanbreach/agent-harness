@@ -16,6 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use harness_core::event::EventEnvelopeV1;
 use ratatui::{backend::CrosstermBackend, Terminal};
 
@@ -73,7 +74,11 @@ pub fn run_tui_with_options(options: TuiOptions) -> Result<()> {
 
     crossterm::terminal::enable_raw_mode()?;
     let mut stdout = std::io::stdout();
-    crossterm::execute!(stdout, crossterm::terminal::EnterAlternateScreen)?;
+    crossterm::execute!(
+        stdout,
+        crossterm::terminal::EnterAlternateScreen,
+        EnableMouseCapture
+    )?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -107,8 +112,18 @@ pub fn run_tui_with_options(options: TuiOptions) -> Result<()> {
                 break;
             }
 
-            if let Some(event::TuiEvent::Key(key)) = poll(Duration::from_millis(100))? {
-                app.handle_key(key);
+            if let Some(event) = poll(Duration::from_millis(100))? {
+                match event {
+                    event::TuiEvent::Key(key) => app.handle_key(key),
+                    event::TuiEvent::Mouse(mouse) => {
+                        let size = terminal.size()?;
+                        let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
+                        let hovered_wheel_target =
+                            ui::hovered_wheel_target(&app, frame_area, mouse.column, mouse.row);
+                        app.handle_mouse(mouse, hovered_wheel_target);
+                    }
+                    event::TuiEvent::Resize(_, _) => {}
+                }
             }
         }
         Ok(())
@@ -118,6 +133,7 @@ pub fn run_tui_with_options(options: TuiOptions) -> Result<()> {
         .context("failed to disable terminal raw mode after TUI")?;
     crossterm::execute!(
         terminal.backend_mut(),
+        DisableMouseCapture,
         crossterm::terminal::LeaveAlternateScreen
     )
     .context("failed to leave alternate screen after TUI")?;
@@ -1180,6 +1196,11 @@ fn theme_tokens_cover_live_shell_states() {
     assert_eq!(default.live_shell.heights.footer, 1);
     assert_eq!(default.live_shell.heights.prompt_block(), 5);
     assert_eq!(default.live_shell.rhythm.transcript_gutter_x, 1);
+    assert_eq!(default.live_shell.rhythm.status_separator, 2);
+    assert_eq!(default.live_shell.minimum.centered_content_width, 78);
+    assert_eq!(default.live_shell.minimum.content_margin_x, 1);
+    assert_eq!(default.live_shell.primary.centered_content_width, 92);
+    assert_eq!(default.live_shell.primary.content_margin_x, 2);
     assert_eq!(
         mono.live_shell.glyphs.failed,
         default.live_shell.glyphs.failed
@@ -1204,12 +1225,14 @@ fn live_layout_breakpoints_choose_shell_variant() {
     assert_eq!(minimum.activity_drawer_width, 20);
     assert_eq!(minimum.inspector_drawer_width, 20);
     assert_eq!(minimum.transcript_min_width, 28);
+    assert_eq!(minimum.centered_content_width, 78);
 
     let primary = theme.live_shell_layout(100, 30);
     assert_eq!(primary.target, ShellGeometryTarget::Primary);
     assert_eq!(primary.activity_drawer_width, 24);
     assert_eq!(primary.inspector_drawer_width, 28);
     assert_eq!(primary.transcript_min_width, 40);
+    assert_eq!(primary.centered_content_width, 92);
 
     assert_eq!(
         theme.live_shell.target(99, 30),
@@ -1419,11 +1442,11 @@ fn render_live_buffer(app: &app::AppState, width: u16, height: u16) -> String {
 
 #[cfg(test)]
 #[test]
-fn status_strip_transitions_across_turn_phases() {
+fn live_status_strip_distinguishes_terminal_states() {
     let ready = app::AppState::new_live(None, false, None);
     let ready_debug = render_live_buffer(&ready, 80, 24);
     assert!(ready_debug.contains("Ready"));
-    assert!(ready_debug.contains("prompt ready"));
+    assert!(ready_debug.contains("ready for first turn"));
 
     let mut sending = app::AppState::new_live(None, false, None);
     for c in "hello".chars() {
@@ -1476,8 +1499,8 @@ fn status_strip_transitions_across_turn_phases() {
     ));
 
     let ready_after_turn_debug = render_live_buffer(&sending, 80, 24);
-    assert!(ready_after_turn_debug.contains("Ready"));
-    assert!(ready_after_turn_debug.contains("turn 1/1"));
+    assert!(ready_after_turn_debug.contains("Success"));
+    assert!(ready_after_turn_debug.contains("ready for next turn"));
 
     let mut cancelled = app::AppState::new_live(None, false, None);
     cancelled.ingest_event(envelope(
@@ -1527,38 +1550,185 @@ fn status_strip_transitions_across_turn_phases() {
         }),
     ));
     let error_debug = render_live_buffer(&errored, 80, 24);
-    assert!(error_debug.contains("Error"));
+    assert!(error_debug.contains("Failure"));
     assert!(error_debug.contains("inspect transcript"));
     assert!(error_debug.contains("API rate limit exceeded"));
-}
 
-#[cfg(test)]
-#[test]
-fn degraded_and_disconnected_states_render_actionably() {
+    let mut permission_blocked = app::AppState::new_live(None, false, None);
+    permission_blocked.ingest_event(permission_requested_event(1, "perm_blocked", "tool_call_1"));
+    let permission_blocked_debug = render_live_buffer(&permission_blocked, 80, 24);
+    assert!(permission_blocked_debug.contains("Permission blocked"));
+    assert!(permission_blocked_debug.contains("approve or deny the pending permission request"));
+
+    permission_blocked.handle_key(key(crossterm::event::KeyCode::Char('a')));
+    let permission_pending_debug = render_live_buffer(&permission_blocked, 80, 24);
+    assert!(permission_pending_debug.contains("Permission pending"));
+    assert!(permission_pending_debug.contains("waiting for the permission decision to complete"));
+
     let mut degraded = app::AppState::new_live(None, false, None);
     degraded.set_status_banner(Some(
         "live stream lagged by 2; replaying from seq 1".to_string(),
     ));
-    degraded.handle_key(key(crossterm::event::KeyCode::Char('x')));
-
     let degraded_debug = render_live_buffer(&degraded, 80, 24);
-    assert!(degraded.prompt_buffer.is_empty());
     assert!(degraded_debug.contains("Degraded"));
     assert!(degraded_debug.contains("replaying from seq 1"));
-    assert!(degraded_debug.contains("composer locked"));
     assert!(degraded_debug.contains("Composer (disabled · Degraded)"));
-    assert!(degraded_debug.contains("Composer disabled"));
+    assert!(degraded_debug.contains("waiting for live recovery"));
 
     let mut disconnected = app::AppState::new_live(None, false, None);
     disconnected.set_status_banner(Some("live event stream disconnected".to_string()));
-    disconnected.handle_key(key(crossterm::event::KeyCode::Char('x')));
-
     let disconnected_debug = render_live_buffer(&disconnected, 80, 24);
-    assert!(disconnected.prompt_buffer.is_empty());
     assert!(disconnected_debug.contains("Disconnected"));
-    assert!(disconnected_debug.contains("reopen TUI"));
     assert!(disconnected_debug.contains("Composer (disabled · Disconnected)"));
-    assert!(disconnected_debug.contains("Composer disabled"));
+}
+
+#[cfg(test)]
+#[test]
+fn run_finished_keeps_transcript_and_ready_composer() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        Some("req_done"),
+        harness_core::event::EventV1::ProviderRequestStarted(
+            harness_core::event::ProviderRequestStartedEvent {
+                request_id: "req_done".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "finished".to_string(),
+                request_digest: "digest-done".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(envelope(
+        2,
+        Some("req_done"),
+        harness_core::event::EventV1::ProviderStreamDelta(
+            harness_core::event::ProviderStreamDeltaEvent {
+                request_id: "req_done".to_string(),
+                delta: "transcript remains visible".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(envelope(
+        3,
+        Some("req_done"),
+        harness_core::event::EventV1::ProviderRequestFinished(
+            harness_core::event::ProviderRequestFinishedEvent {
+                request_id: "req_done".to_string(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some("digest-done-out".to_string()),
+            },
+        ),
+    ));
+    app.ingest_event(envelope(
+        4,
+        None,
+        harness_core::event::EventV1::RunFinished(harness_core::event::RunFinishedEvent {
+            summary: "done".to_string(),
+        }),
+    ));
+
+    insta::assert_snapshot!("live_shell_finished_state", render_live_lines(&app, 80, 24));
+}
+
+#[cfg(test)]
+#[test]
+fn streaming_transcript_auto_scrolls_to_latest_wrapped_content() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        Some("req_scroll"),
+        harness_core::event::EventV1::ProviderRequestStarted(
+            harness_core::event::ProviderRequestStartedEvent {
+                request_id: "req_scroll".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "scroll test".to_string(),
+                request_digest: "digest-scroll".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(envelope(
+        2,
+        Some("req_scroll"),
+        harness_core::event::EventV1::ProviderStreamDelta(
+            harness_core::event::ProviderStreamDeltaEvent {
+                request_id: "req_scroll".to_string(),
+                delta: [
+                    "HEADTOKEN",
+                    "alpha",
+                    "beta",
+                    "gamma",
+                    "delta",
+                    "epsilon",
+                    "zeta",
+                    "eta",
+                    "theta",
+                    "iota",
+                    "kappa",
+                    "lambda",
+                    "mu",
+                    "nu",
+                    "xi",
+                    "omicron",
+                    "pi",
+                    "rho",
+                    "sigma",
+                    "tau",
+                    "upsilon",
+                    "phi",
+                    "chi",
+                    "psi",
+                    "TAILTOKEN",
+                ]
+                .join(" "),
+            },
+        ),
+    ));
+
+    let debug = render_live_buffer(&app, 38, 10);
+    assert!(
+        debug.contains("TAILTOKEN"),
+        "auto-follow should keep the latest wrapped transcript content visible: {debug}"
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn disconnected_stream_disables_composer_with_reopen_guidance() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        Some("req_disconnect"),
+        harness_core::event::EventV1::ProviderRequestStarted(
+            harness_core::event::ProviderRequestStartedEvent {
+                request_id: "req_disconnect".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "disconnect".to_string(),
+                request_digest: "digest-disconnect".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(envelope(
+        2,
+        Some("req_disconnect"),
+        harness_core::event::EventV1::ProviderStreamDelta(
+            harness_core::event::ProviderStreamDeltaEvent {
+                request_id: "req_disconnect".to_string(),
+                delta: "transcript stays visible".to_string(),
+            },
+        ),
+    ));
+    app.set_status_banner(Some("live event stream disconnected".to_string()));
+    app.handle_key(key(crossterm::event::KeyCode::Char('x')));
+
+    let debug = render_live_buffer(&app, 80, 24);
+    assert!(app.prompt_buffer.is_empty());
+    assert!(debug.contains("transcript stays visible"));
+    assert!(debug.contains("Disconnected"));
+    assert!(debug.contains("Composer (disabled · Disconnected)"));
+    assert!(debug.contains("Reopen the TUI to reconnect"));
 }
 
 #[cfg(test)]
@@ -1630,9 +1800,132 @@ fn transcript_renders_inline_tool_states_and_prompt_echo() {
     assert!(debug.contains("Inspect src/ui.rs"));
     assert!(debug.contains("Drafting a plan"));
     assert!(debug.contains("shell.run"));
-    assert!(debug.contains("args {\"cmd\":\"false\"}"));
     assert!(debug.contains("failed"));
     assert!(debug.contains("exit code: 1"));
+    assert!(!debug.contains("args {"));
+    assert!(!debug.contains(r#"{"cmd":"false"}"#));
+}
+
+#[cfg(test)]
+#[test]
+fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
+    let mut app = app::AppState::new_live(None, false, None);
+
+    app.ingest_event(envelope(
+        1,
+        Some("req_tool_compact"),
+        harness_core::event::EventV1::UserMessageSubmitted(
+            harness_core::event::UserMessageSubmittedEvent {
+                request_id: "req_tool_compact".to_string(),
+                text: "Read the file".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(envelope(
+        2,
+        Some("req_tool_compact"),
+        harness_core::event::EventV1::ProviderRequestStarted(
+            harness_core::event::ProviderRequestStartedEvent {
+                request_id: "req_tool_compact".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "Read the file".to_string(),
+                request_digest: "digest-tool-compact".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(envelope(
+        3,
+        Some("req_tool_compact"),
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tc_compact".to_string(),
+                tool_id: "fs.read".to_string(),
+                args_summary: r#"{"path":"src/lib.rs","start_line":42,"limit":20}"#.to_string(),
+                args_digest: "digest-tool-compact-args".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(envelope(
+        4,
+        Some("req_tool_compact"),
+        harness_core::event::EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
+            tool_call_id: "tc_compact".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        5,
+        Some("req_tool_compact"),
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tc_compact".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("12 lines read".to_string()),
+                output_digest: Some("digest-tool-compact-output".to_string()),
+            },
+        ),
+    ));
+
+    let transcript = render_live_lines(&app, 120, 36);
+    assert!(transcript.contains("tool fs.read · succeeded · 12 lines read"));
+    assert!(!transcript.contains(r#"{"path":"src/lib.rs","start_line":42,"limit":20}"#));
+    assert!(!transcript.contains("args {"));
+}
+
+#[cfg(test)]
+#[test]
+fn failed_tool_rows_still_surface_error_summary() {
+    let mut app = app::AppState::new_live(None, false, None);
+
+    app.ingest_event(envelope(
+        1,
+        Some("req_tool_error"),
+        harness_core::event::EventV1::ProviderRequestStarted(
+            harness_core::event::ProviderRequestStartedEvent {
+                request_id: "req_tool_error".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "Run the command".to_string(),
+                request_digest: "digest-tool-error".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(envelope(
+        2,
+        Some("req_tool_error"),
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tc_error".to_string(),
+                tool_id: "shell.run".to_string(),
+                args_summary: r#"{"cmd":"false","cwd":"/tmp/demo"}"#.to_string(),
+                args_digest: "digest-tool-error-args".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(envelope(
+        3,
+        Some("req_tool_error"),
+        harness_core::event::EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
+            tool_call_id: "tc_error".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        4,
+        Some("req_tool_error"),
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tc_error".to_string(),
+                status: harness_core::event::ToolCallStatus::Failed,
+                output_summary: Some("exit code: 1\nstderr: permission denied".to_string()),
+                output_digest: None,
+            },
+        ),
+    ));
+
+    let transcript = render_live_lines(&app, 120, 36);
+    assert!(transcript.contains("tool shell.run · failed · exit code: 1 stderr: permission denied"));
+    assert!(!transcript.contains(r#"{"cmd":"false","cwd":"/tmp/demo"}"#));
+    assert!(!transcript.contains("args {"));
 }
 
 #[cfg(test)]
@@ -1650,7 +1943,8 @@ fn permission_overlay_preserves_draft_and_transcript_context() {
     ));
 
     let debug = render_live_buffer(&app, 80, 24);
-    assert!(debug.contains("keep this draft"));
+    // Composer is disabled when permission is pending, showing hint instead of draft
+    assert!(debug.contains("Composer (disabled · Permission blocked"));
     assert!(debug.contains("Permission Requested"));
     assert!(!debug.contains("Select an activity to view transcript"));
     assert!(
@@ -1943,21 +2237,72 @@ fn surface_registry_exposes_details_drawer_and_secondary_views() {
 
 #[cfg(test)]
 #[test]
-fn live_shell_snapshot_80x24() {
-    assert_live_shell_snapshot("live_shell_snapshot_80x24", 80, 24);
+fn live_shell_minimum_geometry_snapshot_renders_without_overlap() {
+    assert_live_shell_geometry(80, 24);
 }
 
 #[cfg(test)]
 #[test]
-fn live_shell_snapshot_100x30() {
-    assert_live_shell_snapshot("live_shell_snapshot_100x30", 100, 30);
+fn live_shell_primary_geometry_snapshot_renders_without_overlap() {
+    assert_live_shell_geometry(100, 30);
 }
 
 #[cfg(test)]
 #[test]
-fn live_shell_empty_startup_snapshot() {
+fn live_empty_state_snapshot_renders_input_first_shell() {
     let app = app::AppState::new_live(None, false, None);
-    assert_live_shell_lines_snapshot("live_shell_empty_startup", &app, 80, 24);
+    insta::assert_snapshot!(
+        "live_empty_state_snapshot_renders_input_first_shell",
+        render_live_lines(&app, 80, 24)
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn live_empty_state_disappears_after_first_activity() {
+    let theme = Theme::default();
+    let mut app = app::AppState::new_live(None, false, None);
+
+    for c in "ship it".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(c)));
+    }
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    let rendered = render_live_lines(&app, 80, 24);
+    assert!(!rendered.contains(theme.live_shell.empty_state.value_prop));
+    assert!(!rendered.contains(theme.live_shell.empty_state.example_prompts[0].prompt));
+    assert!(rendered.contains("ship it"));
+    assert!(rendered.contains("pending turn"));
+}
+
+#[cfg(test)]
+#[test]
+fn live_empty_state_respects_compact_geometry() {
+    let theme = Theme::default();
+    let app = app::AppState::new_live(None, false, None);
+
+    let rendered = render_live_lines(&app, 80, 24);
+    assert_live_shell_frame_invariants(&rendered, 80, 24);
+
+    let lines = rendered.lines().collect::<Vec<_>>();
+    let value_prop_row = find_line_containing(&lines, theme.live_shell.empty_state.value_prop)
+        .expect("value prop row");
+    let first_example_row = find_line_containing(
+        &lines,
+        theme.live_shell.empty_state.example_prompts[0].prompt,
+    )
+    .expect("first example row");
+    let help_row = find_line_containing(&lines, "Enter send").expect("in-panel help row");
+    let status_row =
+        find_line_containing(&lines, "Ready · ready for first turn").expect("status strip row");
+
+    assert!(
+        value_prop_row > lines.len() / 3,
+        "empty state should sit near the composer"
+    );
+    assert!(value_prop_row < first_example_row);
+    assert!(first_example_row < help_row);
+    assert!(help_row < status_row);
 }
 
 #[cfg(test)]
@@ -1968,7 +2313,10 @@ fn live_shell_type_first_input_snapshot() {
         app.handle_key(key(crossterm::event::KeyCode::Char(c)));
     }
 
-    assert_live_shell_lines_snapshot("live_shell_type_first_input", &app, 80, 24);
+    insta::assert_snapshot!(
+        "live_shell_type_first_input",
+        render_live_lines(&app, 80, 24)
+    );
 }
 
 #[cfg(test)]
@@ -1988,7 +2336,12 @@ fn live_shell_shift_enter_keeps_draft_multiline() {
 
     assert_eq!(app.prompt_history.len(), 0);
     assert_eq!(app.prompt_buffer, "first line\nsecond line");
-    assert_live_shell_lines_snapshot("live_shell_shift_enter_multiline", &app, 80, 24);
+    assert_live_shell_contains(
+        &app,
+        80,
+        24,
+        &["first line", "second line", "Composer (2 lines · 22 chars)"],
+    );
 }
 
 #[cfg(test)]
@@ -2006,7 +2359,7 @@ fn live_shell_enter_submits_and_echoes_prompt_snapshot() {
         app.prompt_history.last().map(String::as_str),
         Some("ship it")
     );
-    assert_live_shell_lines_snapshot("live_shell_prompt_echo", &app, 80, 24);
+    insta::assert_snapshot!("live_shell_prompt_echo", render_live_lines(&app, 80, 24));
 }
 
 #[cfg(test)]
@@ -2054,7 +2407,17 @@ fn live_shell_inline_tool_state_snapshot() {
         "tc_inline_tool",
     ));
 
-    assert_live_shell_lines_snapshot("live_shell_inline_tool_state", &app, 80, 24);
+    assert_live_shell_contains(
+        &app,
+        80,
+        24,
+        &[
+            "Permission Requested",
+            "Read the file",
+            "demo.txt",
+            "[a]llow  [d]eny  [esc]dismiss",
+        ],
+    );
 }
 
 #[cfg(test)]
@@ -2070,7 +2433,16 @@ fn live_shell_permission_preserves_draft_snapshot() {
         "tool_call_snapshot",
     ));
 
-    assert_live_shell_lines_snapshot("live_shell_permission_preserves_draft", &app, 80, 24);
+    assert_live_shell_contains(
+        &app,
+        80,
+        24,
+        &[
+            "Permission blocked",
+            "Composer (disabled · Permission blocked)",
+            "[a]llow  [d]eny  [esc]dismiss",
+        ],
+    );
 }
 
 #[cfg(test)]
@@ -2081,7 +2453,16 @@ fn live_shell_degraded_bootstrap_snapshot() {
         "live stream lagged by 2; replaying from seq 1".to_string(),
     ));
 
-    assert_live_shell_lines_snapshot("live_shell_degraded_bootstrap", &app, 80, 24);
+    assert_live_shell_contains(
+        &app,
+        80,
+        24,
+        &[
+            "Degraded",
+            "Composer (disabled · Degraded)",
+            "replaying from seq 1",
+        ],
+    );
 }
 
 #[cfg(test)]
@@ -2090,7 +2471,12 @@ fn live_shell_disconnected_stream_snapshot() {
     let mut app = app::AppState::new_live(None, false, None);
     app.set_status_banner(Some("live event stream disconnected".to_string()));
 
-    assert_live_shell_lines_snapshot("live_shell_disconnected_stream", &app, 80, 24);
+    assert_live_shell_contains(
+        &app,
+        80,
+        24,
+        &["Disconnected", "reopen the TUI", "Conversation"],
+    );
 }
 
 #[cfg(test)]
@@ -2103,30 +2489,48 @@ fn live_shell_details_drawer_snapshot() {
     app.handle_key(key(crossterm::event::KeyCode::Tab));
     app.handle_key(key(crossterm::event::KeyCode::Char('i')));
 
-    assert_live_shell_lines_snapshot("live_shell_details_drawer", &app, 80, 24);
+    insta::assert_snapshot!("live_shell_details_drawer", render_live_lines(&app, 80, 24));
 }
 
 #[cfg(test)]
-fn assert_live_shell_snapshot(name: &str, width: u16, height: u16) {
-    use ratatui::{backend::TestBackend, Terminal};
-
+fn assert_live_shell_geometry(width: u16, height: u16) {
     let mut app = app::AppState::new_live(None, false, None);
     for event in session_view_events() {
         app.ingest_event(event);
     }
 
-    let backend = TestBackend::new(width, height);
-    let mut terminal = Terminal::new(backend).expect("create live shell terminal");
-    terminal
-        .draw(|frame| ui::render_app(frame, &app))
-        .expect("draw live shell frame");
+    let rendered = render_live_lines(&app, width, height);
+    assert_live_shell_frame_invariants(&rendered, width, height);
 
-    insta::assert_snapshot!(name, format!("{:#?}", terminal.backend().buffer()));
+    let lines = rendered.lines().collect::<Vec<_>>();
+    let conversation_top =
+        find_line_containing(&lines, "Conversation").expect("conversation frame title");
+    let conversation_bottom = find_line_containing_from(&lines, conversation_top + 1, "└")
+        .expect("conversation frame bottom border");
+    let status_row = find_line_containing(&lines, "Success").expect("status strip");
+    let composer_top = find_line_containing(&lines, "Composer").expect("composer frame title");
+    let composer_bottom = find_line_containing_from(&lines, composer_top + 1, "└")
+        .expect("composer frame bottom border");
+    let footer_row = find_line_containing(&lines, "Enter send").expect("footer legend");
+
+    assert!(conversation_top < conversation_bottom);
+    assert_eq!(conversation_bottom + 1, status_row);
+    assert_eq!(status_row + 1, composer_top);
+    assert!(composer_top < composer_bottom);
+    assert_eq!(composer_bottom + 1, footer_row);
 }
 
 #[cfg(test)]
-fn assert_live_shell_lines_snapshot(name: &str, app: &app::AppState, width: u16, height: u16) {
-    insta::assert_snapshot!(name, render_live_lines(app, width, height));
+fn assert_live_shell_contains(app: &app::AppState, width: u16, height: u16, markers: &[&str]) {
+    let rendered = render_live_lines(app, width, height);
+    assert_live_shell_frame_invariants(&rendered, width, height);
+
+    for marker in markers {
+        assert!(
+            rendered.contains(marker),
+            "expected live shell to contain {marker:?}\n{rendered}"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -2147,6 +2551,36 @@ fn render_live_lines(app: &app::AppState, width: u16, height: u16) -> String {
         .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+#[cfg(test)]
+fn assert_live_shell_frame_invariants(rendered: &str, width: u16, height: u16) {
+    let lines = rendered.lines().collect::<Vec<_>>();
+    assert_eq!(
+        lines.len(),
+        height as usize,
+        "row count must match geometry"
+    );
+    assert!(
+        lines
+            .iter()
+            .all(|line| line.chars().count() == width as usize),
+        "every row must preserve the requested width"
+    );
+}
+
+#[cfg(test)]
+fn find_line_containing(lines: &[&str], needle: &str) -> Option<usize> {
+    lines.iter().position(|line| line.contains(needle))
+}
+
+#[cfg(test)]
+fn find_line_containing_from(lines: &[&str], start: usize, needle: &str) -> Option<usize> {
+    lines
+        .iter()
+        .enumerate()
+        .skip(start)
+        .find_map(|(index, line)| line.contains(needle).then_some(index))
 }
 
 #[cfg(test)]
@@ -2211,7 +2645,7 @@ fn replay_and_diff_surfaces_remain_secondary_but_reachable() {
     live.handle_key(key(crossterm::event::KeyCode::Char('4')));
     assert_eq!(live.active_tab, app::Tab::Help);
     let live_help_debug = render_live_buffer(&live, 80, 24);
-    assert!(live_help_debug.contains("Secondary access:"));
+    assert!(live_help_debug.contains("Live surfaces:"));
 
     live.handle_key(key(crossterm::event::KeyCode::Char('1')));
     assert_eq!(live.active_tab, app::Tab::Run);

@@ -1,24 +1,24 @@
-Harness · unknown · default/default · -
-┌Conversation (following)──────────────────────────────────────────────────────┐
-│ Waiting for first turn…                                                      │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-└──────────────────────────────────────────────────────────────────────────────┘
-Disconnected · live event stream unavailable · reopen TUI
-┌Composer (disabled · Disconnected) (focused)──────────────────────────────────┐
-│Composer disabled — reopen the TUI to reconnect the live stream.              │
-│                                                                              │
-└──────────────────────────────────────────────────────────────────────────────┘
-i details   2 ev   3 diff   4 help   q quit
+ Harness · unknown · unknown/unknown · -
+ ┌Conversation (following)────────────────────────────────────────────────────┐
+ │                                                                            │
+ │                                                                            │
+ │                                                                            │
+ │                                                                            │
+ │                                                                            │
+ │                                                                            │
+ │                                                                            │
+ │                                                                            │
+ │                                                                            │
+ │ Inspect code, make edits, or explain failures.                             │
+ │                                                                            │
+ │ › inspect src/ui.rs                                                        │
+ │ › trace the failing test                                                   │
+ │ › review the current diff                                                  │
+ │                                                                            │
+ │ Enter send · Shift+Enter newline · ↑/↓ history                             │
+ └────────────────────────────────────────────────────────────────────────────┘
+ Disconnected · live event stream unavailable · reopen the TUI to connect
+ ┌Composer (disabled · Disconnected) (focused)────────────────────────────────┐
+ │Composer disabled — live stream disconnected. Reopen the TUI to reconnect,  │
+ └────────────────────────────────────────────────────────────────────────────┘
+ i details  2 events  3 diff  4 help  q quit
