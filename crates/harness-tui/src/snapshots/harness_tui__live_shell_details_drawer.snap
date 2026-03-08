@@ -1,28 +1,28 @@
 ---
 source: crates/harness-tui/src/lib.rs
-expression: "render_live_lines(&app, 80, 24)"
+expression: rendered
 ---
- Harness · run_fixture · unknown/openai · gpt-5-codex                           
- ┌Conversation (following)────────────────────────────────────────────────────┐ 
- │ › user · req_001                   ┌Activity (j/k active, follow)─────────┐│ 
- │   Explain the refactor             │> req_001 gpt-5-codex done ●          ││ 
- │ ● assistant · done · openai/gpt-5-c│                                      ││ 
- │   Working through the steps.       │                                      ││ 
- │   ● tool fs.read · succeeded · tool│                                      ││ 
- │                                    │                                      ││ 
- │                                    │                                      ││ 
- │                                    └──────────────────────────────────────┘│ 
- │                                    ┌Inspector (focused)───────────────────┐│ 
- │                                    │Activity metadata:                    ││ 
- │                                    │Request ID: req_001                   ││ 
- │                                    │Provider: openai                      ││ 
- │                                    │Model: gpt-5-codex                    ││ 
- │                                    │Status: done                          ││ 
- │                                    │Sequences: 1-10                       ││ 
- │                                    │                                      ││ 
- └────────────────────────────────────└──────────────────────────────────────┘┘ 
- Success · turn 1/1 · req_001 · openai/gpt-5-codex · ready for next turn        
- ┌Composer (1 line · 0 chars)─────────────────────────────────────────────────┐ 
+ run run_fixture · unknown/openai · gpt-5-codex                                 
+  › user · req_001                                                              
+    Explain the refactor              ┌Activity summary · follow─────────────┐  
+  ●  done  assistant · openai/gpt-5-co│› req_001 · gpt-5-codex ·  done       │  
+    Working through the steps.        │                                      │  
+    ╭─ tool fs.read                   │                                      │  
+    │  tool output                    │                                      │  
+    ╰─ ●  succeeded                   │                                      │  
+                                      │                                      │  
+                                      └──────────────────────────────────────┘  
+                                      ┌Inspector detail · focused────────────┐  
+                                      │Activity metadata:                    │  
+                                      │Request ID: req_001                   │  
+                                      │Provider: openai                      │  
+                                      │Model: gpt-5-codex                    │  
+                                      │Status: done                          │  
+                                      │Sequences: 1-10                       │  
+                                      │                                      │  
+                                      └──────────────────────────────────────┘  
+  Success   turn 1/1 · req_001 · openai/gpt-5-codex · ready for next turn       
+ ┌Composer · 1 line · 0 chars─────────────────────────────────────────────────┐ 
  │Type a prompt for the next turn…                                            │ 
  └────────────────────────────────────────────────────────────────────────────┘ 
  Enter send  Shift+Enter nl  i close  2 events  3 diff  4 help  q quit

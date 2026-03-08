@@ -2,27 +2,27 @@
 source: crates/harness-tui/src/lib.rs
 expression: "render_live_lines(&app, 80, 24)"
 ---
- Harness · run_fixture · unknown/openai · gpt-5-codex                           
- ┌Conversation (following)────────────────────────────────────────────────────┐ 
- │ ● assistant · done · openai/gpt-5-codex                                    │ 
- │   transcript remains visible                                               │ 
- │                                                                            │ 
- │                                                                            │ 
- │                                                                            │ 
- │                                                                            │ 
- │                                                                            │ 
- │                                                                            │ 
- │                                                                            │ 
- │                                                                            │ 
- │                                                                            │ 
- │                                                                            │ 
- │                                                                            │ 
- │                                                                            │ 
- │                                                                            │ 
- │                                                                            │ 
- └────────────────────────────────────────────────────────────────────────────┘ 
- Success · turn 1/1 · req_done · openai/gpt-5-codex · ready for next turn       
- ┌Composer (1 line · 0 chars) (focused)───────────────────────────────────────┐ 
+ run run_fixture · unknown/openai · gpt-5-codex                                 
+  ●  done  assistant · openai/gpt-5-codex                                       
+    transcript remains visible                                                  
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+  Success   turn 1/1 · req_done · openai/gpt-5-codex · ready for next turn      
+ ┌Composer · 1 line · 0 chars─────────────────────────────────────────────────┐ 
  │█                                                                           │ 
  └────────────────────────────────────────────────────────────────────────────┘ 
  Enter send  Shift+Enter nl  i details  2 events  3 diff  4 help  q quit
