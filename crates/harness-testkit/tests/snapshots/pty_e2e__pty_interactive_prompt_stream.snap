@@ -5,7 +5,7 @@ expression: "checkpoint_visual_snapshot(&prompt_checkpoint,\nLIVE_STATE_FIXTURES
 Hello world: true
 Composer: true
 focus_marker: Hello world
-focus_pixels_blake3: 2a6c2aea58dfc2f6df71b1df363dbe9122b3d3b9224451a41369cb78b14eb052
-focus_region_cells: row=6, col=2, height=6, width=28
+focus_pixels_blake3: 22585eadecb673976b55a21f2acf0ed00c4e20c69a21455dfdb83fd2043e7e77
+focus_region_cells: row=1, col=3, height=6, width=28
 image: pty_interactive_prompt_stream.png
 size_px: 2560x1440

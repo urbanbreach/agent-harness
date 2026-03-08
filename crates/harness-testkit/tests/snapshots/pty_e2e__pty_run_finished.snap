@@ -3,10 +3,11 @@ source: crates/harness-testkit/tests/pty_e2e.rs
 expression: "checkpoint_visual_snapshot(&run_finished_checkpoint, RUN_FINISHED_MARKERS,\n&run_finished_visual)"
 ---
 worker-prompt-delta: true
-Ready · turn 2/2: true
+Success: true
+ready for next turn: true
 Composer: true
-focus_marker: Ready · turn 2/2
-focus_pixels_blake3: 9be04813bd4e0b0392c04b10c7729c7462f97c46fb5ffcaa9f074c86807d5c9d
-focus_region_cells: row=18, col=0, height=1, width=28
+focus_marker: ready for next turn
+focus_pixels_blake3: 4fab74e179cf837e6ecdf4c7dd48e7ed16181c1f3b5d2becf5750b47487569cd
+focus_region_cells: row=19, col=50, height=1, width=28
 image: pty_run_finished.png
 size_px: 2560x1440
