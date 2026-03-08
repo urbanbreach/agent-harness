@@ -846,6 +846,7 @@ dependencies = [
 name = "harness-testkit"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "blake3",
  "font8x8",
  "fontdue",
@@ -854,7 +855,9 @@ dependencies = [
  "json5",
  "portable-pty",
  "regex",
+ "reqwest",
  "serde_json",
+ "time",
  "tokio",
  "vt100",
  "wiremock",
