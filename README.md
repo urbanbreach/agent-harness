@@ -23,21 +23,28 @@ Agent Harness provides a deterministic, auditable foundation for running AI agen
 cargo build --release
 ```
 
-### Run a Headless Scenario
-
-```bash
-# Golden path scenario (deterministic, no human input)
-cargo run -p harness -- run --scenario golden_path --deterministic
-```
-
 ### Launch the Interactive TUI
 
+`harness` is now the normal config-backed daily launch. It resolves config from `--config`, `./harness.jsonc`, or your XDG config directory. If no config resolves, it fails closed with setup guidance and suggests `--mock`.
+
 ```bash
-# Interactive TUI with prompt input, streaming transcript, and activity inspector
+# Config-backed daily launch
+cargo run -p harness --
+
+# Explicit config path
+cargo run -p harness -- --config configs/harness.example.jsonc
+
+# Explicit deterministic demo/mock mode
+cargo run -p harness -- --mock
+
+# Compatibility alias for the interactive TUI
 cargo run -p harness -- tui
 
-# TUI with a specific scenario
-cargo run -p harness -- tui --scenario golden_path_interactive
+# Compatibility alias with an explicit config path
+cargo run -p harness -- --config configs/harness.example.jsonc tui
+
+# Deterministic scenario path kept for PTY/live automation
+cargo run -p harness -- tui --scenario golden_path_interactive --deterministic
 
 # Replay a previous session
 cargo run -p harness -- replay --session .agent-harness/sessions/<run_id>
@@ -46,14 +53,44 @@ cargo run -p harness -- replay --session .agent-harness/sessions/<run_id>
 cargo run -p harness -- sessions list
 ```
 
+### Demo / Mock Mode
+
+Use `--mock` when you want the deterministic demo workspace without any config file:
+
+```bash
+# Bare launch in explicit mock mode
+cargo run -p harness -- --mock
+
+# Compatibility alias for explicit mock mode
+cargo run -p harness -- tui --mock
+
+# Run a specific scenario with mock provider
+cargo run -p harness -- run --scenario golden_path --mock --deterministic
+```
+
+### Headless Scenarios (Testing)
+
+For deterministic testing with predefined scenarios:
+
+```bash
+# Golden path scenario (deterministic, no human input)
+cargo run -p harness -- run --scenario golden_path --deterministic
+
+# TUI with a specific deterministic scenario
+cargo run -p harness -- tui --scenario golden_path_interactive
+```
+
 ### Headless Prompt (Non-TUI)
 
 ```bash
-# Single prompt, headless execution (no TUI)
-cargo run -p harness -- prompt --text "Explain the code in src/main.rs"
+# Single prompt, headless execution (requires config)
+cargo run -p harness -- prompt --text "Explain the code in src/main.rs" --config my-config.jsonc
 
-# With custom config
+# With explicit config
 cargo run -p harness -- prompt --text "Hello" --config my-config.jsonc
+
+# With mock provider (no config required)
+cargo run -p harness -- prompt --text "Hello" --mock
 
 # Output to file
 cargo run -p harness -- prompt --text "Hello" --out response.jsonl
@@ -75,7 +112,9 @@ Config files use JSONC (JSON with comments). Resolution order:
 
 1. `--config <path>` flag
 2. `./harness.jsonc` in current directory
-3. `$XDG_CONFIG_HOME/harness/config.jsonc` (fallback: `~/.config/harness/config.jsonc`)
+3. `${XDG_CONFIG_HOME:-~/.config}/harness/config.jsonc`
+
+Normal interactive use is config-first: both `cargo run -p harness --` and `cargo run -p harness -- tui` require one of those config locations unless you explicitly opt into `--mock`.
 
 Example with CLIProxy-style base URL:
 
@@ -164,8 +203,18 @@ HARNESS_VISUAL_ARTIFACT_DIR=/tmp/harness-visuals \
 RUST_TEST_THREADS=1 cargo test -p harness-testkit pty_e2e
 ```
 
-The PTY E2E suite now emits deterministic PNG checkpoints (permission modal, run finished, diff tab) and validates visual hashes for agent-visible UX regression testing.
+The PTY E2E suite now emits deterministic PNG checkpoints for the polished startup, prompt stream, permission modal, and run-finished states, and validates visual hashes for agent-visible UX regression testing.
 In GitLab CI, these images are published from `target/pty-visual-artifacts/` by the `rust:pty_e2e` job.
+
+For full pre-release signoff, pair the offline PTY suite with the live visual verifier:
+
+```bash
+HARNESS_LIVE_PROXY=1 \
+HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
+HARNESS_LIVE_PROXY_PROVIDER=default \
+HARNESS_LIVE_PROXY_MODEL=gpt-5.3-codex \
+cargo test -p harness-testkit live_proxy_e2e_visual_verifier -- --ignored --exact
+```
 
 See [docs/testing.md](docs/testing.md) for detailed testing documentation.
 
