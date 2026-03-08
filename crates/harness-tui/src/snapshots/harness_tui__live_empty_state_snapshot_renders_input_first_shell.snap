@@ -4,10 +4,6 @@ expression: "render_live_lines(&app, 80, 24)"
 ---
  Harness · unknown · unknown/unknown · -                                        
  ┌Conversation (following)────────────────────────────────────────────────────┐ 
- │ › user · pending turn                                                      │ 
- │   ship it                                                                  │ 
- │ ◐ assistant · streaming…                                                   │ 
- │   Waiting for response…                                                    │ 
  │                                                                            │ 
  │                                                                            │ 
  │                                                                            │ 
@@ -17,11 +13,15 @@ expression: "render_live_lines(&app, 80, 24)"
  │                                                                            │ 
  │                                                                            │ 
  │                                                                            │ 
+ │ Inspect code, make edits, or explain failures.                             │ 
  │                                                                            │ 
+ │ › inspect src/ui.rs                                                        │ 
+ │ › trace the failing test                                                   │ 
+ │ › review the current diff                                                  │ 
  │                                                                            │ 
- │                                                                            │ 
+ │ Enter send · Shift+Enter newline · ↑/↓ history                             │ 
  └────────────────────────────────────────────────────────────────────────────┘ 
- Sending · turn 1/1 · pending turn · -/- · waiting for first tokens             
+ Ready · ready for first turn                                                   
  ┌Composer (1 line · 0 chars) (focused)───────────────────────────────────────┐ 
  │█                                                                           │ 
  └────────────────────────────────────────────────────────────────────────────┘ 
