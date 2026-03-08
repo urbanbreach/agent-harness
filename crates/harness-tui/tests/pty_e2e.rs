@@ -120,6 +120,7 @@ enum HelperScenario {
     TypeFirstStartup,
     StreamedResponse,
     PermissionWithDraft,
+    DetailsDrawer,
     DegradedBootstrap,
     DisconnectedStream,
 }
@@ -130,6 +131,7 @@ impl HelperScenario {
             Self::TypeFirstStartup => "type_first_startup",
             Self::StreamedResponse => "streamed_response",
             Self::PermissionWithDraft => "permission_with_draft",
+            Self::DetailsDrawer => "details_drawer",
             Self::DegradedBootstrap => "degraded_bootstrap",
             Self::DisconnectedStream => "disconnected_stream",
         }
@@ -140,6 +142,7 @@ impl HelperScenario {
             Self::TypeFirstStartup => "pty_helper_type_first_startup",
             Self::StreamedResponse => "pty_helper_streamed_response",
             Self::PermissionWithDraft => "pty_helper_permission_with_draft",
+            Self::DetailsDrawer => "pty_helper_details_drawer",
             Self::DegradedBootstrap => "pty_helper_degraded_bootstrap",
             Self::DisconnectedStream => "pty_helper_disconnected_stream",
         }
@@ -240,6 +243,11 @@ fn pty_helper_permission_with_draft() {
 }
 
 #[test]
+fn pty_helper_details_drawer() {
+    run_helper_if_requested(HelperScenario::DetailsDrawer);
+}
+
+#[test]
 fn pty_helper_degraded_bootstrap() {
     run_helper_if_requested(HelperScenario::DegradedBootstrap);
 }
@@ -247,6 +255,38 @@ fn pty_helper_degraded_bootstrap() {
 #[test]
 fn pty_helper_disconnected_stream() {
     run_helper_if_requested(HelperScenario::DisconnectedStream);
+}
+
+#[test]
+fn pty_live_details_drawer_remains_reachable() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let mut helper = spawn_helper_pty(HelperScenario::DetailsDrawer, PtyGeometry::PRIMARY_SIGNOFF);
+    wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        LIVE_STATE_FIXTURES.prompt.ready_marker,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup before details drawer flow");
+
+    send_key(helper.writer.as_mut(), b'\t').expect("focus transcript before opening details");
+    send_key(helper.writer.as_mut(), b'i').expect("open details drawer");
+
+    let screen = wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "Request ID:",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for details drawer markers");
+
+    assert!(screen.contains("req_details_drawer"));
+    assert!(screen.contains("gpt-5-codex"));
+
+    terminate_child(helper.child);
 }
 
 fn run_helper_if_requested(scenario: HelperScenario) {
@@ -278,6 +318,17 @@ fn run_helper_if_requested(scenario: HelperScenario) {
                         "tool_call_pty",
                     ))))
                     .expect("send permission request event");
+                thread::park();
+            });
+        }
+        HelperScenario::DetailsDrawer => {
+            let details_tx = tx.clone();
+            thread::spawn(move || {
+                for event in details_drawer_events() {
+                    details_tx
+                        .send(LiveUpdate::Event(Box::new(event)))
+                        .expect("send details drawer events");
+                }
                 thread::park();
             });
         }
@@ -386,6 +437,31 @@ fn streamed_response_events(text: &str) -> Vec<EventEnvelopeV1> {
                 request_id: request_id.to_string(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-output-pty-001".to_string()),
+            }),
+        ),
+    ]
+}
+
+fn details_drawer_events() -> Vec<EventEnvelopeV1> {
+    let request_id = "req_details_drawer";
+    vec![
+        envelope(
+            1,
+            Some(request_id),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: request_id.to_string(),
+                text: "Inspect the details drawer".to_string(),
+            }),
+        ),
+        envelope(
+            2,
+            Some(request_id),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: request_id.to_string(),
+                provider_id: "mock".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "Inspect the details drawer".to_string(),
+                request_digest: "digest-details-drawer".to_string(),
             }),
         ),
     ]
@@ -580,6 +656,7 @@ fn helper_scenario_from_env() -> Option<HelperScenario> {
         Some("type_first_startup") => Some(HelperScenario::TypeFirstStartup),
         Some("streamed_response") => Some(HelperScenario::StreamedResponse),
         Some("permission_with_draft") => Some(HelperScenario::PermissionWithDraft),
+        Some("details_drawer") => Some(HelperScenario::DetailsDrawer),
         Some("degraded_bootstrap") => Some(HelperScenario::DegradedBootstrap),
         Some("disconnected_stream") => Some(HelperScenario::DisconnectedStream),
         _ => None,
@@ -641,7 +718,7 @@ fn normalize_volatile_line(line: &str) -> String {
         return line.to_string();
     };
 
-    let trailing_border = line.ends_with('│').then_some(" │").unwrap_or_default();
+    let trailing_border = if line.ends_with('│') { " │" } else { "" };
     format!("{}Sequences: <RANGE>{trailing_border}", &line[..marker_idx])
 }
 
