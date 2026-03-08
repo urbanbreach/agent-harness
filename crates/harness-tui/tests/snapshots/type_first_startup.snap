@@ -1,30 +1,30 @@
-    Harness · unknown · unknown/unknown · -
-    ┌Conversation (following)──────────────────────────────────────────────────────────────────┐
-    │                                                                                          │
-    │                                                                                          │
-    │                                                                                          │
-    │                                                                                          │
-    │                                                                                          │
-    │                                                                                          │
-    │                                                                                          │
-    │                                                                                          │
-    │                                                                                          │
-    │                                                                                          │
-    │                                                                                          │
-    │                                                                                          │
-    │                                                                                          │
-    │                                                                                          │
-    │                                                                                          │
-    │ Inspect code, make edits, or explain failures.                                           │
-    │                                                                                          │
-    │ › inspect src/ui.rs                                                                      │
-    │ › trace the failing test                                                                 │
-    │ › review the current diff                                                                │
-    │                                                                                          │
-    │ Enter send · Shift+Enter newline · ↑/↓ history                                           │
-    └──────────────────────────────────────────────────────────────────────────────────────────┘
-    Ready · ready for first turn
-    ┌Composer (1 line · 14 chars) (focused)────────────────────────────────────────────────────┐
+    run unknown · unknown/unknown · -
+
+
+
+
+
+
+
+
+
+
+                                               Harness
+
+                   Start a conversation to begin
+                   Enter send · Shift+Enter newline · ↑/↓ history
+
+
+
+
+
+
+
+
+
+
+     Ready   ready for first turn
+    ┌Composer · 1 line · 14 chars──────────────────────────────────────────────────────────────┐
     │Hello from PTY█                                                                           │
     └──────────────────────────────────────────────────────────────────────────────────────────┘
     Enter send  Shift+Enter nl  i details  2 events  3 diff  4 help  q quit
