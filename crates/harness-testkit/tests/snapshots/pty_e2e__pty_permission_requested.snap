@@ -6,7 +6,7 @@ Permission Requested: true
 keep this draft: true
 Composer: true
 focus_marker: Permission Requested
-focus_pixels_blake3: ebc79ac46c1709e0deb85474572b6275f00d7a7ccf17e364bfff12d129aa4b11
+focus_pixels_blake3: 689ef2d62339dd1551290326cc0982c90137c21b9cb7ef75a07a866037d84578
 focus_region_cells: row=8, col=17, height=1, width=24
 image: pty_permission_requested.png
 size_px: 2560x1440
