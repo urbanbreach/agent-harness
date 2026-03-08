@@ -72,7 +72,7 @@ fn tui_cli() {
 }
 
 #[test]
-fn tui_cli_requires_config_for_interactive_mode() {
+fn tui_cli_without_config_prints_config_guidance() {
     let temp = tempdir().expect("tempdir");
     let output = Command::new(env!("CARGO_BIN_EXE_harness"))
         .current_dir(temp.path())
@@ -89,9 +89,126 @@ fn tui_cli_requires_config_for_interactive_mode() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("tui setup failed: interactive tui mode requires a config file")
-            || stderr.contains("tui failed: TUI error:"),
-        "expected interactive tui failure, got:\n{stderr}"
+        stderr.contains("tui setup failed: interactive mode requires a config file"),
+        "expected config guidance prefix, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("./harness.jsonc"),
+        "expected current-directory config location, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("$XDG_CONFIG_HOME/harness/config.jsonc"),
+        "expected XDG config location, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("--mock"),
+        "expected explicit --mock escape hatch, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn tui_cli_bare_harness_reuses_interactive_mode() {
+    let temp = tempdir().expect("tempdir");
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .output()
+        .expect("run bare harness");
+
+    assert!(
+        !output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("tui setup failed: interactive mode requires a config file"),
+        "expected bare harness to enter interactive tui mode, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn tui_cli_legacy_tui_alias_still_works() {
+    let temp = tempdir().expect("tempdir");
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args(["tui", "--exit-on-finish"])
+        .output()
+        .expect("run harness tui");
+
+    assert!(
+        !output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("tui setup failed: interactive mode requires a config file"),
+        "expected legacy tui alias to keep interactive mode behavior, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn tui_cli_mock_flag_starts_demo_mode() {
+    let temp = tempdir().expect("tempdir");
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args(["tui", "--mock", "--exit-on-finish"])
+        .output()
+        .expect("run harness tui mock");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("tui setup failed:"),
+        "expected --mock to bypass config guidance, got:\n{stderr}"
+    );
+    assert!(
+        output.status.success() || stderr.contains("tui failed: TUI error:"),
+        "expected --mock to reach demo mode startup, got stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr,
+    );
+}
+
+#[test]
+fn tui_cli_root_help_only_shows_minimal_interactive_overrides() {
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args(["--help"])
+        .output()
+        .expect("run harness help");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Launch the interactive harness UI or run subcommands"));
+    assert!(stdout.contains("--profile <PROFILE>"));
+    assert!(stdout.contains("--mock"));
+    assert!(stdout.contains("tui"));
+    assert!(stdout.contains("run"));
+    assert!(stdout.contains("prompt"));
+    assert!(
+        !stdout.contains("--replay"),
+        "root help should keep replay off the bare surface"
+    );
+    assert!(
+        !stdout.contains("--scenario"),
+        "root help should keep scenario off the bare surface"
+    );
+    assert!(
+        !stdout.contains("--deterministic"),
+        "root help should keep deterministic off the bare surface"
+    );
+    assert!(
+        !stdout.contains("--exit-on-finish"),
+        "root help should keep advanced tui flags off the bare surface"
     );
 }
 
