@@ -12,10 +12,12 @@ use crate::app::{
     ActivityEntry, ActivityStatus, AppState, Focus, RuntimeStateKind, Tab, ToolCallDisplayStatus,
 };
 use crate::keybindings::Action;
-use crate::theme::{LiveShellLayout, Theme};
-
-const MIN_COMPOSER_LINES: u16 = 1;
-const MAX_COMPOSER_LINES: u16 = 5;
+use crate::layout::{
+    centered_block_area, composer_input_height, details_drawer_areas, inset_rect,
+    secondary_surface_layout, split_secondary_surface, FrameLayoutPlan,
+};
+use crate::overlay::OverlayKind;
+use crate::theme::Theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WheelTarget {
@@ -23,48 +25,23 @@ pub enum WheelTarget {
     Inspector,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-struct WheelHitAreas {
-    transcript: Option<Rect>,
-    overlay: Option<Rect>,
-    inspector: Option<Rect>,
-}
-
 pub fn render_app(frame: &mut Frame, app: &AppState) {
-    let theme = Theme::default();
+    let theme = app.theme();
     let area = frame.area();
-    let shell = theme.live_shell_layout(area.width, area.height);
+    let plan = FrameLayoutPlan::for_app(app, area);
 
     frame.render_widget(
-        Block::default().style(Style::default().bg(theme.chrome.canvas)),
+        Block::default().style(Style::default().bg(theme.surface.canvas)),
         area,
     );
 
-    let main_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(theme.live_shell.heights.header),
-            Constraint::Min(0),
-            Constraint::Length(theme.live_shell.heights.footer),
-        ])
-        .split(area);
-
-    render_header(frame, app, main_chunks[0], &theme, shell);
-    render_content(frame, app, main_chunks[1], &theme, shell);
-    render_footer(frame, app, main_chunks[2], &theme, shell);
-
-    if let Some((permission_id, summary)) = app.active_permission() {
-        render_permission_modal(frame, &permission_id, &summary, &theme);
-    }
+    render_header(frame, app, plan.header, plan.header_text, theme);
+    render_content(frame, app, plan.content, theme, &plan);
+    render_footer(frame, app, plan.footer, plan.footer_text, theme);
+    render_overlays(frame, app, theme, &plan);
 }
 
-fn render_header(
-    frame: &mut Frame,
-    app: &AppState,
-    area: Rect,
-    theme: &Theme,
-    shell: LiveShellLayout,
-) {
+fn render_header(frame: &mut Frame, app: &AppState, area: Rect, text_area: Rect, theme: &Theme) {
     let run_id = app.run_id().unwrap_or("unknown");
 
     let header_text = if app.replay_mode {
@@ -78,26 +55,29 @@ fn render_header(
             app.events.len()
         )
     } else {
-        let harness_label = app
-            .launch_mode_label()
-            .map(|label| format!("Harness {label}"))
-            .unwrap_or_else(|| "Harness".to_string());
-        format!(
-            "{harness_label} · {run_id} · {}/{} · {}",
+        let metadata = format!(
+            "run {run_id} · {}/{} · {}",
             app.active_profile(),
             app.active_provider(),
             app.current_model_label()
-        )
+        );
+        app.launch_mode_label()
+            .map(|label| format!("{label} · {metadata}"))
+            .unwrap_or(metadata)
     };
 
-    let style = Style::default()
-        .fg(theme.chrome.header_fg)
-        .bg(theme.chrome.header_bg);
-    frame.render_widget(Block::default().style(style), area);
-    frame.render_widget(
-        Paragraph::new(header_text).style(style),
-        live_shell_header_footer_area(app, area, shell),
-    );
+    if app.replay_mode {
+        let style = Style::default()
+            .fg(theme.text.secondary)
+            .bg(theme.surface.shell);
+        frame.render_widget(Block::default().style(style), area);
+        frame.render_widget(Paragraph::new(header_text).style(style), text_area);
+    } else {
+        frame.render_widget(
+            Paragraph::new(header_text).style(Style::default().fg(theme.text.tertiary)),
+            text_area,
+        );
+    }
 }
 
 fn render_content(
@@ -105,7 +85,7 @@ fn render_content(
     app: &AppState,
     area: Rect,
     theme: &Theme,
-    shell: LiveShellLayout,
+    plan: &FrameLayoutPlan,
 ) {
     if app.replay_mode {
         let chunks = Layout::default()
@@ -117,9 +97,9 @@ fn render_content(
             .split(area);
 
         render_tabs(frame, app, chunks[0], theme);
-        render_surface(frame, app, chunks[1], theme, shell);
+        render_surface(frame, app, chunks[1], theme, plan);
     } else {
-        render_surface(frame, app, area, theme, shell);
+        render_surface(frame, app, area, theme, plan);
     }
 }
 
@@ -135,23 +115,17 @@ fn render_tabs(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
                     .fg(theme.text.accent)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(theme.text.primary)
+                Style::default().fg(theme.text.secondary)
             };
             Line::from(Span::styled(surface.label, style))
         })
         .collect();
 
     let tabs = Tabs::new(titles)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme.chrome.border))
-                .title("Tabs")
-                .title_style(Style::default().fg(theme.chrome.title)),
-        )
+        .block(panel_block(theme, "Tabs", false, theme.surface.panel))
         .select(replay_tab_index(app.active_tab))
-        .style(Style::default().fg(theme.chrome.border))
-        .highlight_style(Style::default().fg(theme.text.accent));
+        .style(panel_style(theme.surface.panel, theme.text.tertiary))
+        .highlight_style(panel_style(theme.surface.panel, theme.text.accent));
 
     frame.render_widget(tabs, area);
 }
@@ -170,23 +144,19 @@ fn render_surface(
     app: &AppState,
     area: Rect,
     theme: &Theme,
-    shell: LiveShellLayout,
+    plan: &FrameLayoutPlan,
 ) {
-    let area = if app.replay_mode {
-        area
-    } else {
-        centered_live_shell_area(area, shell)
-    };
+    let area = if app.replay_mode { area } else { plan.shell };
 
     match app.active_tab {
         Tab::Run => {
             if app.replay_mode {
-                render_run_workspace(frame, app, area, theme, shell)
+                render_run_workspace(frame, app, area, theme)
             } else {
-                render_live_session_surface(frame, app, area, theme, shell)
+                render_live_session_surface(frame, app, theme, plan)
             }
         }
-        Tab::Details => render_live_session_surface(frame, app, area, theme, shell),
+        Tab::Details => render_live_session_surface(frame, app, theme, plan),
         Tab::Events => render_events_tab(frame, app, area, theme),
         Tab::Diff => render_diff_tab(frame, app, area, theme),
         Tab::Help => render_help_tab(frame, app, area, theme),
@@ -257,13 +227,8 @@ fn help_text(app: &AppState) -> String {
 }
 
 /// Render the Run workspace with 3-pane layout + prompt
-fn render_run_workspace(
-    frame: &mut Frame,
-    app: &AppState,
-    area: Rect,
-    theme: &Theme,
-    shell: LiveShellLayout,
-) {
+fn render_run_workspace(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
+    let shell = app.theme().live_shell_layout(area.width, area.height);
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -290,90 +255,282 @@ fn render_run_workspace(
 fn render_live_session_surface(
     frame: &mut Frame,
     app: &AppState,
-    area: Rect,
     theme: &Theme,
-    shell: LiveShellLayout,
+    plan: &FrameLayoutPlan,
 ) {
-    let prompt_block_height = live_prompt_block_height(app, area, theme);
-    let main_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(theme.live_shell.heights.status),
-            Constraint::Length(prompt_block_height),
-        ])
-        .split(area);
+    let Some(transcript_area) = plan.transcript else {
+        return;
+    };
+    let Some(status_area) = plan.status else {
+        return;
+    };
+    let Some(composer_area) = plan.composer else {
+        return;
+    };
 
-    render_transcript_pane(frame, app, main_chunks[0], theme);
-    if app.details_drawer_open() {
-        render_live_details_overlay(frame, app, main_chunks[0], theme, shell);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(theme.surface.shell)),
+        plan.shell,
+    );
+    render_transcript_pane(frame, app, transcript_area, theme);
+    render_status_strip(frame, app, status_area, theme);
+    render_prompt_pane(frame, app, composer_area, theme);
+}
+
+fn render_overlays(frame: &mut Frame, app: &AppState, theme: &Theme, plan: &FrameLayoutPlan) {
+    for overlay in &app.overlay_stack() {
+        match overlay {
+            OverlayKind::DetailsDrawer => {
+                render_live_details_overlay(frame, app, theme, plan.details_overlay)
+            }
+            OverlayKind::CommandPalette => {
+                render_command_palette_overlay(frame, app, theme, plan.palette_overlay)
+            }
+            OverlayKind::PermissionModal => {
+                if let Some((permission_id, summary)) = app.active_permission() {
+                    if let Some(modal) = plan.permission_modal {
+                        render_permission_modal(frame, &permission_id, &summary, theme, modal);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn render_command_palette_overlay(
+    frame: &mut Frame,
+    app: &AppState,
+    theme: &Theme,
+    overlay: Option<Rect>,
+) {
+    let Some(overlay) = overlay else {
+        return;
+    };
+
+    frame.render_widget(Clear, overlay);
+    let card_surface = theme.surface.panel_elevated;
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.border.focus))
+        .style(Style::default().bg(card_surface));
+    let inner = block.inner(overlay);
+    frame.render_widget(block, overlay);
+
+    if inner.width == 0 || inner.height == 0 {
+        return;
     }
 
-    render_status_strip(frame, app, main_chunks[1], theme);
-    render_prompt_pane(frame, app, main_chunks[2], theme);
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+        ])
+        .split(inner);
+
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            "Commands",
+            Style::default()
+                .fg(theme.text.accent)
+                .bg(card_surface)
+                .add_modifier(Modifier::BOLD),
+        ))),
+        sections[0],
+    );
+
+    render_command_palette_input(frame, app, theme, sections[1]);
+    render_command_palette_list(frame, app, theme, sections[2]);
+}
+
+fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    frame.render_widget(
+        Block::default().style(Style::default().bg(theme.surface.overlay)),
+        area,
+    );
+
+    let mut input = app.palette_input.clone();
+    let cursor_byte = input
+        .char_indices()
+        .nth(app.palette_cursor)
+        .map(|(index, _)| index)
+        .unwrap_or(input.len());
+    input.insert(cursor_byte, '█');
+
+    let line = Line::from(vec![
+        Span::styled(
+            "> ",
+            Style::default()
+                .fg(theme.text.accent)
+                .bg(theme.surface.overlay)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            input,
+            Style::default()
+                .fg(theme.text.primary)
+                .bg(theme.surface.overlay),
+        ),
+    ]);
+    frame.render_widget(Paragraph::new(line), area);
+}
+
+fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    if app.palette_filtered.is_empty() {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                "No commands",
+                Style::default().fg(theme.text.secondary),
+            ))),
+            area,
+        );
+        return;
+    }
+
+    let visible_rows = usize::from(area.height);
+    let selected = app
+        .palette_selected
+        .min(app.palette_filtered.len().saturating_sub(1));
+    let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
+
+    for (row, command) in app
+        .palette_filtered
+        .iter()
+        .enumerate()
+        .skip(scroll)
+        .take(visible_rows)
+    {
+        let row_y = area
+            .y
+            .saturating_add(u16::try_from(row - scroll).unwrap_or(u16::MAX));
+        let row_area = Rect::new(area.x, row_y, area.width, 1);
+        let is_selected = row == selected;
+        if is_selected {
+            frame.render_widget(
+                Block::default().style(Style::default().bg(theme.surface.overlay)),
+                row_area,
+            );
+        }
+
+        frame.render_widget(
+            Paragraph::new(command_palette_row(
+                command,
+                palette_command_description(command),
+                is_selected,
+                theme,
+                row_area.width,
+            )),
+            row_area,
+        );
+    }
+}
+
+fn command_palette_row(
+    command: &str,
+    description: &str,
+    is_selected: bool,
+    theme: &Theme,
+    width: u16,
+) -> Line<'static> {
+    let row_width = usize::from(width);
+    let row_style = if is_selected {
+        Style::default()
+            .fg(theme.text.inverse)
+            .bg(theme.surface.overlay)
+    } else {
+        Style::default()
+    };
+    let label_style = if is_selected {
+        row_style.add_modifier(Modifier::BOLD)
+    } else {
+        row_style.fg(theme.text.primary)
+    };
+    let description_style = if is_selected {
+        row_style
+    } else {
+        row_style.fg(theme.text.secondary)
+    };
+
+    let mut spans = vec![Span::styled(command.to_string(), label_style)];
+    let mut used_width = command.chars().count();
+
+    let gap_width = 2;
+    let available_description = row_width.saturating_sub(used_width.saturating_add(gap_width));
+    let description = truncate_plain_text(description, available_description);
+    if !description.is_empty() {
+        spans.push(Span::styled("  ", row_style));
+        used_width = used_width.saturating_add(gap_width);
+        used_width = used_width.saturating_add(description.chars().count());
+        spans.push(Span::styled(description, description_style));
+    }
+
+    if is_selected && used_width < row_width {
+        spans.push(Span::styled(" ".repeat(row_width - used_width), row_style));
+    }
+
+    Line::from(spans)
+}
+
+fn palette_command_description(command: &str) -> &'static str {
+    Action::palette_commands()
+        .iter()
+        .find_map(|(candidate, description)| (*candidate == command).then_some(*description))
+        .unwrap_or("")
+}
+
+fn truncate_plain_text(text: &str, max_width: usize) -> String {
+    if max_width == 0 {
+        return String::new();
+    }
+
+    let text_width = text.chars().count();
+    if text_width <= max_width {
+        return text.to_string();
+    }
+
+    if max_width == 1 {
+        return "…".to_string();
+    }
+
+    let truncated = text
+        .chars()
+        .take(max_width.saturating_sub(1))
+        .collect::<String>();
+    format!("{truncated}…")
 }
 
 fn render_details_drawer(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     let drawer_chunks = details_drawer_areas(area);
 
-    render_activity_pane(frame, app, drawer_chunks[0], theme);
-    render_inspector_pane(frame, app, drawer_chunks[1], theme);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(theme.surface.panel)),
+        area,
+    );
+    render_details_activity_card(frame, app, drawer_chunks[0], theme);
+    render_details_inspector_card(frame, app, drawer_chunks[1], theme);
 }
 
 fn render_live_details_overlay(
     frame: &mut Frame,
     app: &AppState,
-    area: Rect,
     theme: &Theme,
-    shell: LiveShellLayout,
+    overlay: Option<Rect>,
 ) {
-    let Some(overlay) = live_details_overlay_area(area, theme, shell) else {
+    let Some(overlay) = overlay else {
         return;
     };
 
     frame.render_widget(Clear, overlay);
     render_details_drawer(frame, app, overlay, theme);
-}
-
-fn details_drawer_areas(area: Rect) -> [Rect; 2] {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(8), Constraint::Min(0)])
-        .split(area);
-    [chunks[0], chunks[1]]
-}
-
-fn live_details_overlay_area(area: Rect, theme: &Theme, shell: LiveShellLayout) -> Option<Rect> {
-    let overlay_width = overlay_width(area, shell);
-    let overlay_height = overlay_height(area, theme);
-    if overlay_width == 0 || overlay_height == 0 {
-        return None;
-    }
-
-    let overlay_x = area
-        .x
-        .saturating_add(area.width.saturating_sub(overlay_width).saturating_sub(1));
-    let overlay_y = area.y.saturating_add(1);
-    Some(Rect::new(
-        overlay_x,
-        overlay_y,
-        overlay_width,
-        overlay_height,
-    ))
-}
-
-fn overlay_width(area: Rect, shell: LiveShellLayout) -> u16 {
-    shell
-        .activity_drawer_width
-        .max(shell.inspector_drawer_width)
-        .max(shell.inspector_drawer_width.saturating_mul(2))
-        .max(shell.activity_drawer_width.saturating_add(6))
-        .min(area.width.saturating_sub(2))
-}
-
-fn overlay_height(area: Rect, theme: &Theme) -> u16 {
-    let _ = theme;
-    area.height.saturating_sub(1)
 }
 
 fn activity_surface_visible(app: &AppState) -> bool {
@@ -391,73 +548,45 @@ fn live_secondary_surface_open(app: &AppState) -> bool {
     !app.replay_mode && matches!(app.active_tab, Tab::Events | Tab::Diff | Tab::Help)
 }
 
+fn panel_style(surface: Color, foreground: Color) -> Style {
+    Style::default().fg(foreground).bg(surface)
+}
+
+fn panel_block<'a>(
+    theme: &Theme,
+    title: impl Into<Line<'a>>,
+    is_focused: bool,
+    surface: Color,
+) -> Block<'a> {
+    Block::default()
+        .borders(Borders::ALL)
+        .border_style(panel_border_style(theme, is_focused))
+        .style(Style::default().bg(surface))
+        .title(title)
+        .title_style(panel_style(surface, theme.text.secondary))
+}
+
+fn elevated_card_block<'a>(
+    title: impl Into<Line<'a>>,
+    surface: Color,
+    border: Color,
+    title_color: Color,
+) -> Block<'a> {
+    Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border))
+        .style(Style::default().bg(surface))
+        .title(title)
+        .title_style(panel_style(surface, title_color))
+}
+
 fn panel_border_style(theme: &Theme, is_focused: bool) -> Style {
     let border = if is_focused {
-        theme.chrome.focus_border
+        theme.border.focus
     } else {
-        theme.chrome.border
+        theme.border.subtle
     };
     Style::default().fg(border)
-}
-
-fn inset_area(area: Rect, horizontal: u16, vertical: u16) -> Rect {
-    let double_horizontal = horizontal.saturating_mul(2);
-    let double_vertical = vertical.saturating_mul(2);
-    Rect {
-        x: area.x.saturating_add(horizontal),
-        y: area.y.saturating_add(vertical),
-        width: area.width.saturating_sub(double_horizontal),
-        height: area.height.saturating_sub(double_vertical),
-    }
-}
-
-fn centered_live_shell_area(area: Rect, shell: LiveShellLayout) -> Rect {
-    let max_width = area
-        .width
-        .saturating_sub(shell.content_margin_x.saturating_mul(2));
-    if max_width == 0 {
-        return area;
-    }
-
-    let width = max_width.min(shell.centered_content_width).max(1);
-    let x = area.x.saturating_add(area.width.saturating_sub(width) / 2);
-    Rect::new(x, area.y, width, area.height)
-}
-
-fn live_shell_header_footer_area(app: &AppState, area: Rect, shell: LiveShellLayout) -> Rect {
-    if app.replay_mode {
-        area
-    } else {
-        centered_live_shell_area(area, shell)
-    }
-}
-
-fn live_prompt_block_height(app: &AppState, area: Rect, theme: &Theme) -> u16 {
-    let status_height = theme.live_shell.heights.status;
-    let max_block_height = area.height.saturating_sub(status_height);
-    composer_input_height(&app.prompt_buffer, area.width)
-        .saturating_add(2)
-        .min(max_block_height)
-}
-
-fn composer_input_height(text: &str, width: u16) -> u16 {
-    let inner_width = usize::from(width.saturating_sub(2).max(1));
-    let wrapped_lines = if text.is_empty() {
-        1
-    } else {
-        text.split('\n')
-            .map(|line| {
-                let char_count = line.chars().count();
-                char_count.max(1).div_ceil(inner_width)
-            })
-            .sum()
-    };
-
-    let clamped_lines = wrapped_lines.clamp(
-        usize::from(MIN_COMPOSER_LINES),
-        usize::from(MAX_COMPOSER_LINES),
-    );
-    u16::try_from(clamped_lines).unwrap_or(MAX_COMPOSER_LINES)
 }
 
 fn request_id_label(request_id: &str) -> Cow<'_, str> {
@@ -465,6 +594,95 @@ fn request_id_label(request_id: &str) -> Cow<'_, str> {
         Cow::Borrowed("pending turn")
     } else {
         Cow::Borrowed(request_id)
+    }
+}
+
+fn transcript_label_style(theme: &Theme, is_selected: bool) -> Style {
+    let color = if is_selected {
+        theme.text.accent
+    } else {
+        theme.text.primary
+    };
+    Style::default().fg(color).add_modifier(Modifier::BOLD)
+}
+
+fn muted_meta_style(theme: &Theme) -> Style {
+    Style::default().fg(theme.text.secondary)
+}
+
+fn subdued_payload_style(theme: &Theme) -> Style {
+    Style::default().fg(theme.text.tertiary)
+}
+
+fn transcript_prefix_style(theme: &Theme) -> Style {
+    Style::default().fg(theme.text.tertiary)
+}
+
+fn status_badge(label: impl Into<String>, color: Color, theme: &Theme) -> Span<'static> {
+    Span::styled(
+        format!(" {} ", label.into()),
+        Style::default()
+            .fg(theme.text.inverse)
+            .bg(color)
+            .add_modifier(Modifier::BOLD),
+    )
+}
+
+fn append_prefixed_text_block(
+    lines: &mut Vec<Line<'static>>,
+    text: &str,
+    prefix: &str,
+    prefix_style: Style,
+    content_style: Style,
+) {
+    for line in text.lines() {
+        let mut spans = vec![Span::styled(prefix.to_string(), prefix_style)];
+        if !line.is_empty() {
+            spans.push(Span::styled(line.to_string(), content_style));
+        }
+        lines.push(Line::from(spans));
+    }
+
+    if text.is_empty() {
+        lines.push(Line::from(Span::styled(prefix.to_string(), prefix_style)));
+    }
+}
+
+fn tool_status_tokens(
+    status: ToolCallDisplayStatus,
+    theme: &Theme,
+) -> (&'static str, Color, &'static str, bool) {
+    match status {
+        ToolCallDisplayStatus::PendingPermission => (
+            theme.live_shell.glyphs.pending_permission,
+            theme.status.warning,
+            "pending permission",
+            false,
+        ),
+        ToolCallDisplayStatus::Queued => (
+            theme.live_shell.glyphs.queued,
+            theme.text.secondary,
+            "queued",
+            false,
+        ),
+        ToolCallDisplayStatus::Running => (
+            theme.live_shell.glyphs.running,
+            theme.text.accent,
+            "running",
+            false,
+        ),
+        ToolCallDisplayStatus::Succeeded => (
+            theme.live_shell.glyphs.succeeded,
+            theme.status.success,
+            "succeeded",
+            true,
+        ),
+        ToolCallDisplayStatus::Failed => (
+            theme.live_shell.glyphs.failed,
+            theme.status.error,
+            "failed",
+            true,
+        ),
     }
 }
 
@@ -478,8 +696,9 @@ fn line_label(count: u16) -> &'static str {
 
 fn runtime_state_color(kind: RuntimeStateKind, theme: &Theme) -> Color {
     match kind {
-        RuntimeStateKind::Ready | RuntimeStateKind::Success => theme.status.success,
-        RuntimeStateKind::Sending | RuntimeStateKind::Streaming => theme.text.accent,
+        RuntimeStateKind::Ready => theme.status.info,
+        RuntimeStateKind::Success => theme.status.success,
+        RuntimeStateKind::Sending | RuntimeStateKind::Streaming => theme.status.info,
         RuntimeStateKind::Cancelled
         | RuntimeStateKind::PermissionBlocked
         | RuntimeStateKind::PermissionPending
@@ -491,17 +710,17 @@ fn runtime_state_color(kind: RuntimeStateKind, theme: &Theme) -> Color {
 fn render_status_strip(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     let state = app.runtime_state();
     let base_style = Style::default()
-        .fg(theme.chrome.footer_fg)
-        .bg(theme.chrome.footer_bg);
+        .fg(theme.text.secondary)
+        .bg(theme.surface.shell);
     let status_line = Line::from(vec![
         Span::styled(
-            state.kind.label(),
+            format!(" {} ", state.kind.label()),
             Style::default()
-                .fg(runtime_state_color(state.kind, theme))
-                .bg(theme.chrome.footer_bg)
+                .fg(theme.text.inverse)
+                .bg(runtime_state_color(state.kind, theme))
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" · ", base_style),
+        Span::styled("  ", base_style),
         Span::styled(state.summary, base_style),
     ]);
 
@@ -512,24 +731,19 @@ fn render_status_strip(frame: &mut Frame, app: &AppState, area: Rect, theme: &Th
 fn render_activity_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     let is_focused = app.focus == Focus::List && activity_surface_visible(app);
 
-    let border_style = panel_border_style(theme, is_focused);
-
     let title = format!(
         "Activity (j/k active{}{})",
         if app.follow_mode { ", follow" } else { "" },
         if is_focused { ", focused" } else { "" }
     );
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(border_style)
-        .title(title)
-        .title_style(Style::default().fg(theme.chrome.title));
+    let surface = theme.surface.panel_elevated;
+    let block = panel_block(theme, title, is_focused, surface);
 
     if app.activities.is_empty() {
         let empty = Paragraph::new("No activities yet")
             .block(block)
-            .style(Style::default().fg(theme.text.primary));
+            .style(panel_style(surface, theme.text.secondary));
         frame.render_widget(empty, area);
         return;
     }
@@ -554,11 +768,11 @@ fn render_activity_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &T
 
             let style = if is_selected {
                 Style::default()
-                    .fg(theme.text.selected_fg)
-                    .bg(theme.text.selected_bg)
+                    .fg(theme.text.inverse)
+                    .bg(theme.border.focus)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(theme.text.primary)
+                panel_style(surface, theme.text.primary)
             };
 
             let model_display = if activity.model_id.is_empty() {
@@ -578,16 +792,129 @@ fn render_activity_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &T
 
     let activity_list = Paragraph::new(Text::from(items))
         .block(block)
+        .style(panel_style(surface, theme.text.primary))
         .wrap(Wrap { trim: false });
 
     frame.render_widget(activity_list, area);
 }
 
+fn render_details_activity_card(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
+    let is_focused = app.focus == Focus::List && activity_surface_visible(app);
+    let title = format!(
+        "Activity summary{}{}",
+        if app.follow_mode { " · follow" } else { "" },
+        if is_focused { " · focused" } else { "" }
+    );
+    let surface = theme.surface.panel_elevated;
+    let border = if is_focused {
+        theme.border.focus
+    } else {
+        theme.border.strong
+    };
+    let block = elevated_card_block(
+        title,
+        surface,
+        border,
+        if is_focused {
+            theme.text.primary
+        } else {
+            theme.text.secondary
+        },
+    );
+
+    if app.activities.is_empty() {
+        frame.render_widget(
+            Paragraph::new("No activities yet")
+                .block(block)
+                .style(panel_style(surface, theme.text.secondary)),
+            area,
+        );
+        return;
+    }
+
+    let rows: Vec<Line> = app
+        .activities
+        .iter()
+        .enumerate()
+        .map(|(idx, activity)| {
+            let is_selected = idx == app.selected_activity_index;
+            let (_, badge_color, status_label) = match activity.status {
+                ActivityStatus::Streaming => (
+                    theme.live_shell.glyphs.streaming,
+                    theme.status.info,
+                    "streaming…",
+                ),
+                ActivityStatus::Done => {
+                    (theme.live_shell.glyphs.done, theme.status.success, "done")
+                }
+                ActivityStatus::Error => {
+                    (theme.live_shell.glyphs.error, theme.status.error, "error")
+                }
+            };
+            let marker = if is_selected {
+                format!("{} ", theme.live_shell.transcript_glyphs.user_marker)
+            } else {
+                "  ".to_string()
+            };
+            let model_display = if activity.model_id.is_empty() {
+                "-"
+            } else {
+                activity.model_id.as_str()
+            };
+
+            Line::from(vec![
+                Span::styled(
+                    marker,
+                    Style::default().fg(if is_selected {
+                        theme.text.accent
+                    } else {
+                        theme.text.tertiary
+                    }),
+                ),
+                Span::styled(
+                    request_id_label(&activity.request_id).into_owned(),
+                    transcript_label_style(theme, is_selected),
+                ),
+                Span::styled(format!(" · {model_display} · "), muted_meta_style(theme)),
+                status_badge(status_label, badge_color, theme),
+            ])
+        })
+        .collect();
+
+    frame.render_widget(
+        Paragraph::new(Text::from(rows))
+            .block(block)
+            .style(panel_style(surface, theme.text.primary))
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
 /// Render the Transcript pane (center)
 fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
-    let is_focused = transcript_surface_focused(app);
+    if !app.replay_mode {
+        let inner_area = inset_rect(area, theme.live_shell.rhythm.transcript_gutter_x, 0);
 
-    let border_style = panel_border_style(theme, is_focused);
+        if live_empty_state_visible(app) {
+            render_live_empty_state(frame, app, inner_area, theme);
+            return;
+        }
+
+        let lines = build_transcript_lines(app, theme);
+        let transcript_scroll = transcript_scroll_offset(app, &lines, inner_area);
+        let content = Text::from(lines);
+
+        frame.render_widget(
+            Paragraph::new(content)
+                .style(panel_style(theme.surface.shell, theme.text.primary))
+                .scroll((transcript_scroll, 0))
+                .wrap(Wrap { trim: false }),
+            inner_area,
+        );
+        return;
+    }
+
+    let is_focused = transcript_surface_focused(app);
 
     let title = if app.replay_mode {
         format!(
@@ -603,13 +930,10 @@ fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: 
         )
     };
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(border_style)
-        .title(title)
-        .title_style(Style::default().fg(theme.chrome.title));
+    let surface = theme.surface.panel;
+    let block = panel_block(theme, title, is_focused, surface);
 
-    let inner_area = inset_area(
+    let inner_area = inset_rect(
         block.inner(area),
         theme.live_shell.rhythm.transcript_gutter_x,
         theme.live_shell.rhythm.transcript_gutter_y,
@@ -628,7 +952,7 @@ fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: 
 
     frame.render_widget(
         Paragraph::new(content)
-            .style(Style::default().fg(theme.text.primary))
+            .style(panel_style(surface, theme.text.primary))
             .scroll((transcript_scroll, 0))
             .wrap(Wrap { trim: false }),
         inner_area,
@@ -641,7 +965,7 @@ pub fn hovered_wheel_target(
     column: u16,
     row: u16,
 ) -> Option<WheelTarget> {
-    let hit_areas = wheel_hit_areas(app, area);
+    let hit_areas = FrameLayoutPlan::for_app(app, area).wheel_hit_areas;
     if hit_areas
         .inspector
         .is_some_and(|area| rect_contains(area, column, row))
@@ -658,64 +982,6 @@ pub fn hovered_wheel_target(
         .transcript
         .filter(|area| rect_contains(*area, column, row))
         .map(|_| WheelTarget::Transcript)
-}
-
-fn wheel_hit_areas(app: &AppState, area: Rect) -> WheelHitAreas {
-    if !matches!(app.active_tab, Tab::Run | Tab::Details) {
-        return WheelHitAreas::default();
-    }
-
-    let theme = Theme::default();
-    let shell = theme.live_shell_layout(area.width, area.height);
-    let surface_area = if app.replay_mode {
-        area
-    } else {
-        centered_live_shell_area(area, shell)
-    };
-
-    if app.replay_mode {
-        let main_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(0),
-                Constraint::Length(theme.live_shell.heights.prompt_block()),
-            ])
-            .split(surface_area);
-        let pane_chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(shell.activity_drawer_width),
-                Constraint::Min(shell.transcript_min_width),
-                Constraint::Length(shell.inspector_drawer_width),
-            ])
-            .split(main_chunks[0]);
-        return WheelHitAreas {
-            transcript: Some(pane_chunks[1]),
-            overlay: None,
-            inspector: Some(pane_chunks[2]),
-        };
-    }
-
-    let prompt_block_height = live_prompt_block_height(app, surface_area, &theme);
-    let main_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(theme.live_shell.heights.status),
-            Constraint::Length(prompt_block_height),
-        ])
-        .split(surface_area);
-    let overlay = app
-        .details_drawer_open()
-        .then(|| live_details_overlay_area(main_chunks[0], &theme, shell))
-        .flatten();
-    let inspector = overlay.map(|overlay| details_drawer_areas(overlay)[1]);
-
-    WheelHitAreas {
-        transcript: Some(main_chunks[0]),
-        overlay,
-        inspector,
-    }
 }
 
 fn rect_contains(area: Rect, column: u16, row: u16) -> bool {
@@ -781,66 +1047,76 @@ fn render_live_empty_state(frame: &mut Frame, app: &AppState, area: Rect, theme:
         return;
     }
 
-    let mut lines = Vec::new();
-    if let Some(mode_label) = live_empty_state_mode_label(app, theme) {
-        lines.push(Line::from(Span::styled(
-            mode_label,
-            Style::default()
-                .fg(theme.status.warning)
-                .add_modifier(Modifier::BOLD),
-        )));
-    }
+    let _ = live_empty_state_mode_label(app, theme);
 
-    lines.push(Line::from(Span::styled(
-        theme.live_shell.empty_state.value_prop,
-        Style::default()
-            .fg(theme.text.primary)
-            .add_modifier(Modifier::BOLD),
-    )));
-    lines.push(Line::from(""));
+    let help_row = [
+        app.keymap.get_binding_label(Action::SubmitPrompt, "send"),
+        app.keymap
+            .get_binding_label(Action::InsertNewline, "newline"),
+        format!(
+            "{}/{} history",
+            app.keymap.get_binding_str(Action::HistoryUp),
+            app.keymap.get_binding_str(Action::HistoryDown)
+        ),
+    ]
+    .join(" · ");
 
-    for example in theme.live_shell.empty_state.example_prompts {
-        lines.push(Line::from(vec![
-            Span::styled("› ", Style::default().fg(theme.text.accent)),
-            Span::styled(example.prompt, Style::default().fg(theme.text.primary)),
-        ]));
-    }
-
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        [
-            app.keymap.get_binding_label(Action::SubmitPrompt, "send"),
-            app.keymap
-                .get_binding_label(Action::InsertNewline, "newline"),
-            format!(
-                "{}/{} history",
-                app.keymap.get_binding_str(Action::HistoryUp),
-                app.keymap.get_binding_str(Action::HistoryDown)
-            ),
-        ]
-        .join(" · "),
-        Style::default().fg(theme.text.secondary),
-    )));
-
-    let height = u16::try_from(lines.len())
-        .unwrap_or(area.height)
-        .min(area.height);
-    let width = area
-        .width
-        .min(theme.live_shell.empty_state.max_width)
-        .max(1);
-    let content_area = Rect::new(
-        area.x,
-        area.y.saturating_add(area.height.saturating_sub(height)),
-        width,
-        height,
+    let content_area = centered_block_area(
+        area,
+        area.width
+            .min(theme.live_shell.empty_state.max_width)
+            .max(1),
+        4,
     );
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(content_area);
 
     frame.render_widget(
-        Paragraph::new(Text::from(lines))
-            .alignment(Alignment::Left)
-            .wrap(Wrap { trim: false }),
-        content_area,
+        Paragraph::new(theme.live_shell.empty_state.title)
+            .style(
+                Style::default()
+                    .fg(theme.text.primary)
+                    .bg(theme.surface.shell)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .alignment(Alignment::Center),
+        rows[0],
+    );
+    frame.render_widget(
+        Paragraph::new("").style(
+            Style::default()
+                .fg(theme.text.tertiary)
+                .bg(theme.surface.shell),
+        ),
+        rows[1],
+    );
+    frame.render_widget(
+        Paragraph::new(theme.live_shell.empty_state.value_prop)
+            .style(
+                Style::default()
+                    .fg(theme.text.primary)
+                    .bg(theme.surface.shell)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .alignment(Alignment::Left),
+        rows[2],
+    );
+    frame.render_widget(
+        Paragraph::new(help_row)
+            .style(
+                Style::default()
+                    .fg(theme.text.secondary)
+                    .bg(theme.surface.shell),
+            )
+            .alignment(Alignment::Left),
+        rows[3],
     );
 }
 
@@ -882,18 +1158,15 @@ fn append_activity_lines(
     is_selected: bool,
     theme: &Theme,
 ) {
-    let header_style = if is_selected {
-        Style::default()
-            .fg(theme.text.accent)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(theme.text.primary)
-    };
-    let meta_style = Style::default().fg(theme.text.secondary);
+    let header_style = transcript_label_style(theme, is_selected);
+    let meta_style = muted_meta_style(theme);
 
     if let Some(user_msg) = &activity.user_message {
         lines.push(Line::from(vec![
-            Span::styled("› ", Style::default().fg(theme.text.accent)),
+            Span::styled(
+                format!("{} ", theme.live_shell.transcript_glyphs.user_marker),
+                Style::default().fg(theme.text.accent),
+            ),
             Span::styled("user", header_style),
             Span::styled(
                 format!(" · {}", request_id_label(&activity.request_id)),
@@ -906,13 +1179,13 @@ fn append_activity_lines(
     let (assistant_icon, assistant_color, assistant_status) = match activity.status {
         ActivityStatus::Streaming => (
             theme.live_shell.glyphs.streaming,
-            theme.text.accent,
+            theme.status.info,
             "streaming…",
         ),
         ActivityStatus::Done => (theme.live_shell.glyphs.done, theme.status.success, "done"),
         ActivityStatus::Error => (theme.live_shell.glyphs.error, theme.status.error, "error"),
     };
-    let mut assistant_meta = vec![assistant_status.to_string()];
+    let mut assistant_meta = Vec::new();
     if !activity.provider_id.is_empty() || !activity.model_id.is_empty() {
         assistant_meta.push(format!(
             "{}/{}",
@@ -928,14 +1201,22 @@ fn append_activity_lines(
             }
         ));
     }
-    lines.push(Line::from(vec![
+    let mut assistant_line = vec![
         Span::styled(
             format!("{} ", assistant_icon),
             Style::default().fg(assistant_color),
         ),
+        status_badge(assistant_status, assistant_color, theme),
+        Span::raw(" "),
         Span::styled("assistant", header_style),
-        Span::styled(format!(" · {}", assistant_meta.join(" · ")), meta_style),
-    ]));
+    ];
+    if !assistant_meta.is_empty() {
+        assistant_line.push(Span::styled(
+            format!(" · {}", assistant_meta.join(" · ")),
+            meta_style,
+        ));
+    }
+    lines.push(Line::from(assistant_line));
 
     if !activity.transcript_text.is_empty() {
         append_text_block(lines, &activity.transcript_text, theme.text.primary, "  ");
@@ -963,46 +1244,50 @@ fn append_tool_call_lines(
     tool_call: &crate::app::ToolCallEntry,
     theme: &Theme,
 ) {
-    let (status_icon, status_color) = match tool_call.status {
-        ToolCallDisplayStatus::PendingPermission => (
-            theme.live_shell.glyphs.pending_permission,
-            theme.status.warning,
-        ),
-        ToolCallDisplayStatus::Queued => (theme.live_shell.glyphs.queued, theme.text.secondary),
-        ToolCallDisplayStatus::Running => (theme.live_shell.glyphs.running, theme.text.accent),
-        ToolCallDisplayStatus::Succeeded => {
-            (theme.live_shell.glyphs.succeeded, theme.status.success)
-        }
-        ToolCallDisplayStatus::Failed => (theme.live_shell.glyphs.failed, theme.status.error),
-    };
+    let glyphs = &theme.live_shell.transcript_glyphs;
+    let (status_icon, status_color, status_label, is_final) =
+        tool_status_tokens(tool_call.status, theme);
 
-    let mut row = vec![
-        Span::styled("  ", Style::default().fg(theme.text.secondary)),
+    lines.push(Line::from(vec![
+        Span::styled(
+            format!("  {} ", glyphs.card_top),
+            transcript_prefix_style(theme),
+        ),
+        Span::styled("tool ", muted_meta_style(theme)),
+        Span::styled(
+            tool_call.tool_id.clone(),
+            Style::default()
+                .fg(theme.text.primary)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]));
+
+    if let Some(summary) = tool_call.transcript_summary() {
+        append_prefixed_text_block(
+            lines,
+            &summary,
+            &format!("  {}  ", glyphs.card_mid),
+            transcript_prefix_style(theme),
+            subdued_payload_style(theme),
+        );
+    }
+
+    let mut status_line = vec![
+        Span::styled(
+            format!("  {} ", glyphs.card_bottom),
+            transcript_prefix_style(theme),
+        ),
         Span::styled(
             format!("{} ", status_icon),
             Style::default().fg(status_color),
         ),
-        Span::styled("tool ", Style::default().fg(theme.text.secondary)),
-        Span::styled(
-            tool_call.tool_id.clone(),
-            Style::default()
-                .fg(status_color)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            format!(" · {}", tool_call.status),
-            Style::default().fg(theme.text.secondary),
-        ),
     ];
-
-    if let Some(summary) = tool_call.transcript_summary() {
-        row.push(Span::styled(
-            format!(" · {}", summary),
-            Style::default().fg(theme.text.secondary),
-        ));
+    if is_final {
+        status_line.push(status_badge(status_label, status_color, theme));
+    } else {
+        status_line.push(Span::styled(status_label, subdued_payload_style(theme)));
     }
-
-    lines.push(Line::from(row));
+    lines.push(Line::from(status_line));
 }
 
 fn append_pending_permission_lines(lines: &mut Vec<Line<'static>>, summary: &str, theme: &Theme) {
@@ -1011,13 +1296,14 @@ fn append_pending_permission_lines(lines: &mut Vec<Line<'static>>, summary: &str
             format!("{} ", theme.live_shell.glyphs.pending_permission),
             Style::default().fg(theme.status.warning),
         ),
+        status_badge("requested", theme.status.warning, theme),
+        Span::raw(" "),
         Span::styled(
             "permission",
             Style::default()
                 .fg(theme.status.warning)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" · requested", Style::default().fg(theme.text.secondary)),
     ]));
     append_text_block(lines, summary, theme.text.primary, "  ");
 }
@@ -1046,31 +1332,19 @@ fn append_text_block<'a>(
 }
 
 /// Render the Inspector pane (right)
-fn render_inspector_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
-    let is_focused = app.focus == Focus::Details && activity_surface_visible(app);
+fn build_inspector_content(app: &AppState, theme: &Theme) -> Text<'static> {
     let runtime_state = app.runtime_state();
 
-    let border_style = panel_border_style(theme, is_focused);
-
-    let title = format!("Inspector{}", if is_focused { " (focused)" } else { "" });
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(border_style)
-        .title(title)
-        .title_style(Style::default().fg(theme.chrome.title));
-
-    let content = if let Some(activity) = app.activities.get(app.selected_activity_index) {
+    if let Some(activity) = app.activities.get(app.selected_activity_index) {
         let mut lines = Vec::new();
 
         if let Some(detail) = runtime_state.detail.clone() {
             lines.push(Line::from(vec![
-                Span::styled("Runtime: ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::styled(
+                Span::styled("Runtime ", Style::default().add_modifier(Modifier::BOLD)),
+                status_badge(
                     runtime_state.kind.label(),
-                    Style::default()
-                        .fg(runtime_state_color(runtime_state.kind, theme))
-                        .add_modifier(Modifier::BOLD),
+                    runtime_state_color(runtime_state.kind, theme),
+                    theme,
                 ),
             ]));
             lines.push(Line::from(Span::styled(
@@ -1166,12 +1440,11 @@ fn render_inspector_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &
     } else if let Some(detail) = runtime_state.detail.clone() {
         Text::from(vec![
             Line::from(vec![
-                Span::styled("Runtime: ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::styled(
+                Span::styled("Runtime ", Style::default().add_modifier(Modifier::BOLD)),
+                status_badge(
                     runtime_state.kind.label(),
-                    Style::default()
-                        .fg(runtime_state_color(runtime_state.kind, theme))
-                        .add_modifier(Modifier::BOLD),
+                    runtime_state_color(runtime_state.kind, theme),
+                    theme,
                 ),
             ]),
             Line::from(Span::styled(
@@ -1181,15 +1454,56 @@ fn render_inspector_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &
         ])
     } else {
         Text::from("No activity selected")
-    };
+    }
+}
+
+fn render_inspector_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
+    let is_focused = app.focus == Focus::Details && activity_surface_visible(app);
+
+    let title = format!("Inspector{}", if is_focused { " (focused)" } else { "" });
+    let surface = theme.surface.panel_elevated;
+    let block = panel_block(theme, title, is_focused, surface);
+    let content = build_inspector_content(app, theme);
 
     let paragraph = Paragraph::new(content)
         .block(block)
-        .style(Style::default().fg(theme.text.primary))
+        .style(panel_style(surface, theme.text.primary))
         .scroll((app.details_scroll, 0))
         .wrap(Wrap { trim: true });
 
     frame.render_widget(paragraph, area);
+}
+
+fn render_details_inspector_card(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
+    let is_focused = app.focus == Focus::Details && activity_surface_visible(app);
+    let surface = theme.surface.panel_elevated;
+    let border = if is_focused {
+        theme.border.focus
+    } else {
+        theme.border.strong
+    };
+    let block = elevated_card_block(
+        format!(
+            "Inspector detail{}",
+            if is_focused { " · focused" } else { "" }
+        ),
+        surface,
+        border,
+        if is_focused {
+            theme.text.primary
+        } else {
+            theme.text.secondary
+        },
+    );
+
+    frame.render_widget(
+        Paragraph::new(build_inspector_content(app, theme))
+            .block(block)
+            .style(panel_style(surface, theme.text.primary))
+            .scroll((app.details_scroll, 0))
+            .wrap(Wrap { trim: true }),
+        area,
+    );
 }
 
 fn append_section_header<'a>(lines: &mut Vec<Line<'a>>, title: &str, color: Color) {
@@ -1242,9 +1556,9 @@ fn permission_status_style(
     }
 }
 
-fn append_permission_details<'a>(
-    lines: &mut Vec<Line<'a>>,
-    permissions: &'a [crate::app::PermissionEntry],
+fn append_permission_details(
+    lines: &mut Vec<Line<'static>>,
+    permissions: &[crate::app::PermissionEntry],
     theme: &Theme,
     indent: &str,
 ) {
@@ -1325,9 +1639,9 @@ fn append_permission_details<'a>(
     }
 }
 
-fn append_tool_call_details<'a>(
-    lines: &mut Vec<Line<'a>>,
-    tool_calls: &'a [crate::app::ToolCallEntry],
+fn append_tool_call_details(
+    lines: &mut Vec<Line<'static>>,
+    tool_calls: &[crate::app::ToolCallEntry],
     theme: &Theme,
 ) {
     for tool_call in tool_calls {
@@ -1440,31 +1754,42 @@ fn render_prompt_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &The
     let runtime_state = app.runtime_state();
     let composer_disabled = runtime_state.composer_disabled;
 
-    let border_style = panel_border_style(theme, is_focused);
-
     let char_count = app.prompt_buffer.chars().count();
     let composer_lines = composer_input_height(&app.prompt_buffer, area.width);
     let title = if composer_disabled {
-        format!(
-            "Composer (disabled · {}){}",
-            runtime_state.kind.label(),
-            if is_focused { " (focused)" } else { "" }
-        )
+        format!("Composer · disabled · {}", runtime_state.kind.label())
     } else {
         format!(
-            "Composer ({} {} · {} chars){}",
+            "Composer · {} {} · {} chars",
             composer_lines,
             line_label(composer_lines),
-            char_count,
-            if is_focused { " (focused)" } else { "" }
+            char_count
         )
     };
 
+    let surface = theme.surface.panel_elevated;
+    let border_color = if composer_disabled {
+        theme.status.disabled
+    } else if is_focused {
+        theme.border.focus
+    } else {
+        theme.border.subtle
+    };
+    let title_color = if composer_disabled {
+        theme.status.disabled
+    } else if is_focused {
+        theme.text.primary
+    } else {
+        theme.text.secondary
+    };
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(border_style)
-        .title(title)
-        .title_style(Style::default().fg(theme.chrome.title));
+        .border_style(Style::default().fg(border_color))
+        .style(Style::default().bg(surface))
+        .title(Line::from(Span::styled(
+            title,
+            Style::default().fg(title_color),
+        )));
 
     let mut text = app.prompt_buffer.clone();
     if is_focused && !composer_disabled {
@@ -1478,15 +1803,19 @@ fn render_prompt_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &The
     }
 
     let (text, style) = if text.is_empty() {
+        let hint_color = if composer_disabled {
+            theme.status.disabled
+        } else {
+            theme.text.secondary
+        };
         (
             runtime_state.composer_hint,
-            Style::default().fg(theme.text.secondary),
+            panel_style(surface, hint_color),
         )
     } else if composer_disabled {
-        // Show draft with secondary styling when disabled
-        (text, Style::default().fg(theme.text.secondary))
+        (text, panel_style(surface, theme.status.disabled))
     } else {
-        (text, Style::default().fg(theme.text.primary))
+        (text, panel_style(surface, theme.text.primary))
     };
 
     let paragraph = Paragraph::new(text)
@@ -1499,34 +1828,27 @@ fn render_prompt_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &The
 
 /// Render the Events tab (legacy 2-pane layout)
 fn render_events_tab(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-        .split(area);
+    let layout = render_secondary_surface_shell(frame, area, theme);
+    let [event_list_area, event_details_area] =
+        split_secondary_surface(layout.body, 40, theme.live_shell.rhythm.surface_gap);
 
-    render_event_list(frame, app, chunks[0], theme);
-    render_event_details(frame, app, chunks[1], theme);
+    render_event_list(frame, app, event_list_area, theme);
+    render_event_details(frame, app, event_details_area, theme);
 }
 
 /// Render the event list (left pane of Events tab)
 fn render_event_list(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     let is_focused = app.focus == Focus::List;
 
-    let border_style = panel_border_style(theme, is_focused);
-
     let follow_indicator = if app.follow_mode { ", follow" } else { "" };
     let title = format!("Events (j/k active{})", follow_indicator);
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(border_style)
-        .title(title)
-        .title_style(Style::default().fg(theme.chrome.title));
+    let surface = theme.surface.panel;
+    let block = panel_block(theme, title, is_focused, surface);
 
     if app.events.is_empty() {
         let empty = Paragraph::new("No events")
             .block(block)
-            .style(Style::default().fg(theme.text.primary));
+            .style(panel_style(surface, theme.text.secondary));
         frame.render_widget(empty, area);
         return;
     }
@@ -1543,11 +1865,11 @@ fn render_event_list(frame: &mut Frame, app: &AppState, area: Rect, theme: &Them
 
             let style = if is_selected {
                 Style::default()
-                    .fg(theme.text.selected_fg)
-                    .bg(theme.text.selected_bg)
+                    .fg(theme.text.inverse)
+                    .bg(theme.border.focus)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(theme.text.primary)
+                panel_style(surface, theme.text.primary)
             };
 
             let event_type = format!("{:?}", event.payload)
@@ -1563,6 +1885,7 @@ fn render_event_list(frame: &mut Frame, app: &AppState, area: Rect, theme: &Them
 
     let list = Paragraph::new(Text::from(items))
         .block(block)
+        .style(panel_style(surface, theme.text.primary))
         .wrap(Wrap { trim: false });
 
     frame.render_widget(list, area);
@@ -1572,15 +1895,9 @@ fn render_event_list(frame: &mut Frame, app: &AppState, area: Rect, theme: &Them
 fn render_event_details(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     let is_focused = app.focus == Focus::Details;
 
-    let border_style = panel_border_style(theme, is_focused);
-
     let title = "Event details";
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(border_style)
-        .title(title)
-        .title_style(Style::default().fg(theme.chrome.title));
+    let surface = theme.surface.panel_elevated;
+    let block = panel_block(theme, title, is_focused, surface);
 
     let content = if let Some(event) = app.selected_event() {
         match serde_json::to_string_pretty(event) {
@@ -1593,7 +1910,7 @@ fn render_event_details(frame: &mut Frame, app: &AppState, area: Rect, theme: &T
 
     let paragraph = Paragraph::new(content)
         .block(block)
-        .style(Style::default().fg(theme.text.primary))
+        .style(panel_style(surface, theme.text.primary))
         .wrap(Wrap { trim: true });
 
     frame.render_widget(paragraph, area);
@@ -1601,22 +1918,16 @@ fn render_event_details(frame: &mut Frame, app: &AppState, area: Rect, theme: &T
 
 /// Render the Diff tab
 fn render_diff_tab(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-        .split(area);
+    let layout = render_secondary_surface_shell(frame, area, theme);
+    let [event_list_area, diff_area] =
+        split_secondary_surface(layout.body, 40, theme.live_shell.rhythm.surface_gap);
 
-    render_event_list(frame, app, chunks[0], theme);
+    render_event_list(frame, app, event_list_area, theme);
 
     // Right pane: diff viewer
     let is_focused = app.focus == Focus::Details;
-    let border_style = panel_border_style(theme, is_focused);
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(border_style)
-        .title("Diff")
-        .title_style(Style::default().fg(theme.chrome.title));
+    let surface = theme.surface.panel_elevated;
+    let block = panel_block(theme, "Diff", is_focused, surface);
 
     let content = if let Some(path) = &app.session_path {
         // Try to find and display the diff artifact
@@ -1635,10 +1946,10 @@ fn render_diff_tab(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme)
 
     let paragraph = Paragraph::new(content)
         .block(block)
-        .style(Style::default().fg(theme.text.primary))
+        .style(panel_style(surface, theme.text.primary))
         .wrap(Wrap { trim: true });
 
-    frame.render_widget(paragraph, chunks[1]);
+    frame.render_widget(paragraph, diff_area);
 }
 
 /// Load diff content for an event
@@ -1658,26 +1969,32 @@ fn load_diff_for_event(
 }
 
 fn render_help_tab(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title("Help")
-        .title_style(Style::default().fg(theme.chrome.title));
+    let layout = render_secondary_surface_shell(frame, area, theme);
+    let surface = theme.surface.panel_elevated;
+    let block = panel_block(theme, "Help", false, surface);
 
     let paragraph = Paragraph::new(help_text(app))
         .block(block)
-        .style(Style::default().fg(theme.text.primary))
+        .style(panel_style(surface, theme.text.primary))
         .wrap(Wrap { trim: true });
 
-    frame.render_widget(paragraph, area);
+    frame.render_widget(paragraph, layout.body);
 }
 
-fn render_footer(
+fn render_secondary_surface_shell(
     frame: &mut Frame,
-    app: &AppState,
     area: Rect,
     theme: &Theme,
-    shell: LiveShellLayout,
-) {
+) -> crate::layout::SecondarySurfaceLayout {
+    let layout = secondary_surface_layout(area, theme);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(theme.surface.shell)),
+        layout.shell,
+    );
+    layout
+}
+
+fn render_footer(frame: &mut Frame, app: &AppState, area: Rect, text_area: Rect, theme: &Theme) {
     let state = app.runtime_state();
     let separator = " ".repeat(theme.live_shell.rhythm.status_separator as usize);
     let hint_text = if app.replay_mode {
@@ -1734,64 +2051,73 @@ fn render_footer(
         }
     };
 
-    let style = Style::default()
-        .fg(theme.chrome.footer_fg)
-        .bg(theme.chrome.footer_bg);
-    frame.render_widget(Block::default().style(style), area);
-    frame.render_widget(
-        Paragraph::new(hint_text).style(style),
-        live_shell_header_footer_area(app, area, shell),
-    );
+    let style = Style::default().fg(theme.text.tertiary);
+    if app.replay_mode {
+        let replay_style = style.bg(theme.surface.shell);
+        frame.render_widget(Block::default().style(replay_style), area);
+        frame.render_widget(Paragraph::new(hint_text).style(replay_style), text_area);
+    } else {
+        frame.render_widget(Paragraph::new(hint_text).style(style), text_area);
+    }
 }
 
 /// Render the permission modal
-fn render_permission_modal(frame: &mut Frame, _permission_id: &str, summary: &str, theme: &Theme) {
-    let area = frame.area();
-    let shell = theme.live_shell_layout(area.width, area.height);
-    let horizontal_margin = theme.live_shell.rhythm.modal_margin.saturating_mul(2);
-    let vertical_margin = theme.live_shell.rhythm.modal_margin.saturating_mul(2);
-    let popup_width = shell
-        .permission_modal_width
-        .min(area.width.saturating_sub(horizontal_margin));
-    let popup_height = theme
-        .live_shell
-        .heights
-        .permission_modal
-        .min(area.height.saturating_sub(vertical_margin));
-
-    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
-    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
-
-    let popup_rect = Rect::new(popup_x, popup_y, popup_width, popup_height);
-
-    // Clear the area behind the modal
+fn render_permission_modal(
+    frame: &mut Frame,
+    _permission_id: &str,
+    summary: &str,
+    theme: &Theme,
+    popup_rect: Rect,
+) {
     frame.render_widget(Clear, popup_rect);
+    let surface = theme.surface.overlay;
+    let block = elevated_card_block(
+        Line::from(vec![
+            Span::styled(
+                format!("{} ", theme.live_shell.glyphs.pending_permission),
+                Style::default().fg(theme.status.warning),
+            ),
+            Span::styled(
+                "Permission Requested",
+                Style::default()
+                    .fg(theme.text.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        surface,
+        theme.border.focus,
+        theme.text.accent,
+    );
+    let inner = block.inner(popup_rect);
+    frame.render_widget(block, popup_rect);
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.chrome.modal_border))
-        .title("Permission Requested")
-        .title_style(Style::default().fg(theme.chrome.title));
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
 
-    let content = format!(
-        "{}\n\n[a]llow  [d]eny  [esc]dismiss",
-        summary
-            .chars()
-            .take(popup_width as usize - 4)
-            .collect::<String>()
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(0), Constraint::Length(1)])
+        .split(inner);
+
+    frame.render_widget(
+        Paragraph::new(summary)
+            .style(panel_style(surface, theme.text.primary))
+            .wrap(Wrap { trim: true }),
+        sections[0],
     );
 
-    let paragraph = Paragraph::new(content)
-        .block(block)
-        .style(
-            Style::default()
-                .fg(theme.text.primary)
-                .bg(theme.chrome.modal_bg),
-        )
-        .alignment(Alignment::Center)
-        .wrap(Wrap { trim: true });
-
-    frame.render_widget(paragraph, popup_rect);
+    frame.render_widget(
+        Paragraph::new("[a]llow  [d]eny  [esc]dismiss")
+            .style(
+                Style::default()
+                    .fg(theme.text.secondary)
+                    .bg(theme.surface.panel_elevated)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .alignment(Alignment::Center),
+        sections[1],
+    );
 }
 
 #[cfg(test)]
@@ -1845,7 +2171,7 @@ mod tests {
     }
 
     fn transcript_debug(app: &AppState) -> String {
-        build_transcript_lines(app, &Theme::default())
+        build_transcript_lines(app, app.theme())
             .into_iter()
             .map(|line| {
                 line.spans
@@ -1861,9 +2187,40 @@ mod tests {
     fn theme_provides_default_colors() {
         let theme = Theme::default();
         assert!(matches!(
-            theme.chrome.canvas,
+            theme.surface.canvas,
             ratatui::style::Color::Rgb(_, _, _)
         ));
+    }
+
+    #[test]
+    fn wheel_hit_testing_uses_app_theme() {
+        let area = Rect::new(0, 0, 140, 40);
+
+        let mut default_app = AppState::new_live(None, false, None);
+        default_app.active_tab = Tab::Details;
+        let default_hit_areas = FrameLayoutPlan::for_app(&default_app, area).wheel_hit_areas;
+
+        let mut themed_app = AppState::new_live(None, false, None);
+        themed_app.active_tab = Tab::Details;
+        let mut custom_theme = Theme::default();
+        custom_theme.live_shell.primary.centered_content_width = 72;
+        custom_theme.live_shell.primary.content_margin_x = 6;
+        custom_theme.live_shell.primary.activity_drawer_width = 18;
+        custom_theme.live_shell.primary.inspector_drawer_width = 36;
+        themed_app.set_theme(custom_theme);
+
+        let themed_hit_areas = FrameLayoutPlan::for_app(&themed_app, area).wheel_hit_areas;
+        assert_ne!(default_hit_areas.overlay, themed_hit_areas.overlay);
+        assert_ne!(default_hit_areas.inspector, themed_hit_areas.inspector);
+
+        assert_eq!(
+            hovered_wheel_target(&themed_app, area, 40, 20),
+            Some(WheelTarget::Inspector)
+        );
+        assert_ne!(
+            hovered_wheel_target(&default_app, area, 40, 20),
+            Some(WheelTarget::Inspector)
+        );
     }
 
     #[test]
@@ -1874,7 +2231,8 @@ mod tests {
         );
 
         let debug = render_debug(&app, 100, 24);
-        assert!(debug.contains("Harness Demo"));
+        assert!(debug.contains("Demo"));
+        assert!(debug.contains("run unknown"));
         assert!(debug.contains("deep/proxy · gpt-5.4"));
         assert!(!debug.contains("default/default"));
     }
@@ -1904,14 +2262,16 @@ mod tests {
     }
 
     #[test]
-    fn live_empty_state_labels_explicit_demo_or_mock_mode() {
+    fn live_empty_state_uses_shared_startup_copy_without_mode_badges() {
         let mut demo = AppState::new_live(None, false, None);
         demo.set_launch_metadata(
             LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo"),
         );
 
         let demo_debug = render_debug(&demo, 100, 24);
-        assert!(demo_debug.contains("Demo mode · mock provider"));
+        assert!(demo_debug.contains("Harness"));
+        assert!(demo_debug.contains("Start a conversation to begin"));
+        assert!(!demo_debug.contains("Demo mode · mock provider"));
 
         let mut mock = AppState::new_live(None, false, None);
         mock.set_launch_metadata(
@@ -1919,7 +2279,9 @@ mod tests {
         );
 
         let mock_debug = render_debug(&mock, 100, 24);
-        assert!(mock_debug.contains("Mock mode · mock provider"));
+        assert!(mock_debug.contains("Harness"));
+        assert!(mock_debug.contains("Start a conversation to begin"));
+        assert!(!mock_debug.contains("Mock mode · mock provider"));
     }
 
     #[test]
@@ -1959,7 +2321,7 @@ mod tests {
     fn wheel_target_hits_transcript_when_hovered() {
         let app = AppState::new_live(None, false, None);
         let area = Rect::new(0, 0, 140, 40);
-        let hit_areas = wheel_hit_areas(&app, area);
+        let hit_areas = FrameLayoutPlan::for_app(&app, area).wheel_hit_areas;
         let transcript = hit_areas.transcript.expect("transcript area");
         let (column, row) = rect_center(transcript);
 
@@ -1975,7 +2337,7 @@ mod tests {
         app.active_tab = Tab::Details;
 
         let area = Rect::new(0, 0, 140, 40);
-        let hit_areas = wheel_hit_areas(&app, area);
+        let hit_areas = FrameLayoutPlan::for_app(&app, area).wheel_hit_areas;
         let inspector = hit_areas.inspector.expect("inspector area");
         let (column, row) = rect_center(inspector);
 
@@ -1991,7 +2353,7 @@ mod tests {
         app.active_tab = Tab::Details;
 
         let area = Rect::new(0, 0, 140, 40);
-        let hit_areas = wheel_hit_areas(&app, area);
+        let hit_areas = FrameLayoutPlan::for_app(&app, area).wheel_hit_areas;
         let overlay = hit_areas.overlay.expect("overlay area");
 
         assert_eq!(
@@ -2254,7 +2616,9 @@ mod tests {
         ));
 
         let transcript = transcript_debug(&app);
-        assert!(transcript.contains("tool fs.read · succeeded · 12 lines read"));
+        assert!(transcript.contains("tool fs.read"));
+        assert!(transcript.contains("12 lines read"));
+        assert!(transcript.contains("succeeded"));
         assert!(!transcript.contains(r#"{"path":"src/lib.rs","start_line":42,"limit":20}"#));
         assert!(!transcript.contains("args {"));
         assert_eq!(
@@ -2307,9 +2671,9 @@ mod tests {
         ));
 
         let transcript = transcript_debug(&app);
-        assert!(
-            transcript.contains("tool shell.run · failed · exit code: 1 stderr: permission denied")
-        );
+        assert!(transcript.contains("tool shell.run"));
+        assert!(transcript.contains("exit code: 1 stderr: permission denied"));
+        assert!(transcript.contains("failed"));
         assert!(!transcript.contains(r#"{"cmd":"false","cwd":"/tmp/demo"}"#));
         assert!(!transcript.contains("args {"));
     }
