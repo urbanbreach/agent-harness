@@ -1,24 +1,24 @@
- Harness · unknown · unknown/unknown · -
- ┌Conversation (following)────────────────────────────────────────────────────┐
- │                                                                            │
- │                                                                            │
- │                                                                            │
- │                                                                            │
- │                                                                            │
- │                                                                            │
- │                                                                            │
- │                                                                            │
- │                                                                            │
- │ Inspect code, make edits, or explain failures.                             │
- │                                                                            │
- │ › inspect src/ui.rs                                                        │
- │ › trace the failing test                                                   │
- │ › review the current diff                                                  │
- │                                                                            │
- │ Enter send · Shift+Enter newline · ↑/↓ history                             │
- └────────────────────────────────────────────────────────────────────────────┘
- Disconnected · live event stream unavailable · reopen the TUI to connect
- ┌Composer (disabled · Disconnected) (focused)────────────────────────────────┐
+ run unknown · unknown/unknown · -
+
+
+
+
+
+
+
+                                     Harness
+
+         Start a conversation to begin
+         Enter send · Shift+Enter newline · ↑/↓ history
+
+
+
+
+
+
+
+  Disconnected   live event stream unavailable · reopen the TUI to connect
+ ┌Composer · disabled · Disconnected──────────────────────────────────────────┐
  │Composer disabled — live stream disconnected. Reopen the TUI to reconnect,  │
  └────────────────────────────────────────────────────────────────────────────┘
  i details  2 events  3 diff  4 help  q quit

@@ -1,24 +1,24 @@
- Harness · unknown · unknown/unknown · -
- ┌Conversation (following)────────────────────────────────────────────────────┐
- │                                                                            │
- │                                                                            │
- │                                                                            │
- │                                                                            │
- │                                                                            │
- │                                                                            │
- │                                                                            │
- │                                                                            │
- │                                                                            │
- │ Inspect code, make edits, or explain failures.                             │
- │                                                                            │
- │ › inspect src/ui.rs                                                        │
- │ › trace the failing test                                                   │
- │ › review the current diff                                                  │
- │                                                                            │
- │ Enter send · Shift+Enter newline · ↑/↓ history                             │
- └────────────────────────────────────────────────────────────────────────────┘
- Degraded · live stream lagged by 2; replaying from seq 1 · sending paused unti
- ┌Composer (disabled · Degraded) (focused)────────────────────────────────────┐
+ run unknown · unknown/unknown · -
+
+
+
+
+
+
+
+                                     Harness
+
+         Start a conversation to begin
+         Enter send · Shift+Enter newline · ↑/↓ history
+
+
+
+
+
+
+
+  Degraded   live stream lagged by 2; replaying from seq 1 · sending paused unt
+ ┌Composer · disabled · Degraded──────────────────────────────────────────────┐
  │Composer disabled — waiting for live recovery before sending the next turn. │
  └────────────────────────────────────────────────────────────────────────────┘
  i details  2 events  3 diff  4 help  q quit
