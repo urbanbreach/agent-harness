@@ -188,7 +188,9 @@ impl Tool for FsReadTool {
         }
 
         if args.limit == 0 {
-            return Err(ToolError::InvalidArguments("limit must be >= 1".to_string()));
+            return Err(ToolError::InvalidArguments(
+                "limit must be >= 1".to_string(),
+            ));
         }
 
         let resolved = ctx.resolve_workspace_path(path)?;
@@ -212,11 +214,13 @@ impl Tool for FsReadTool {
         let truncated = available_lines.len() > line_limit;
         let shown_lines = &available_lines[..shown_count];
 
-        let mut display_text = format_fs_read_lines(shown_lines, start_line_index, args.line_numbers);
+        let mut display_text =
+            format_fs_read_lines(shown_lines, start_line_index, args.line_numbers);
         let mut artifacts = Vec::new();
 
         if truncated {
-            let full_output = format_fs_read_lines(available_lines, start_line_index, args.line_numbers);
+            let full_output =
+                format_fs_read_lines(available_lines, start_line_index, args.line_numbers);
             let artifact = ctx
                 .artifact_store()
                 .map_err(|err| {
