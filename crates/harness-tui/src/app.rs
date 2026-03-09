@@ -1,8 +1,12 @@
+#[cfg(test)]
+use std::cell::RefCell;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, OnceLock};
+#[cfg(not(test))]
+use std::sync::OnceLock;
+use std::sync::{Arc, Mutex};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use harness_core::agent::AgentModelRef;
@@ -11,6 +15,7 @@ use harness_core::event::{
     ProviderRequestStartedEvent, ToolCallStatus, UserMessageSubmittedEvent,
 };
 use harness_core::perm::PermissionDecision;
+use harness_core::proj::SessionCatalogEntry;
 
 use crate::keybindings::{Action, KeyMap};
 use crate::overlay::{OverlayKind, OverlayStack, OverlayState};
@@ -410,10 +415,115 @@ pub enum UiIntent {
         permission_id: String,
         decision: PermissionDecision,
     },
+    NewSession,
+    ReplaySession {
+        run_id: String,
+        run_dir: PathBuf,
+    },
+    ContinueSession {
+        run_id: String,
+        run_dir: PathBuf,
+    },
     SubmitPrompt {
         text: String,
     },
     QuitRequested,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StartupLauncherAction {
+    #[default]
+    NewSession,
+    ReplaySession,
+    ContinueSession,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionHistoryEntry {
+    pub run_dir: PathBuf,
+    pub catalog: SessionCatalogEntry,
+}
+
+pub(crate) fn session_history_run_name(entry: &SessionHistoryEntry) -> &str {
+    entry.catalog.run_name.as_deref().unwrap_or("<unavailable>")
+}
+
+pub(crate) fn session_history_status_label(entry: &SessionHistoryEntry) -> &'static str {
+    match entry.catalog.status {
+        Some(harness_core::proj::RunStatus::Running) => "running",
+        Some(harness_core::proj::RunStatus::Finished) => "finished",
+        Some(harness_core::proj::RunStatus::Failed) => "failed",
+        None => "<unavailable>",
+    }
+}
+
+pub(crate) fn session_history_recency_label(entry: &SessionHistoryEntry) -> String {
+    entry
+        .catalog
+        .last_updated_at
+        .as_deref()
+        .map(format_session_history_timestamp)
+        .unwrap_or_else(|| "updated <unavailable>".to_string())
+}
+
+pub(crate) fn session_history_profile_label(entry: &SessionHistoryEntry) -> &str {
+    entry
+        .catalog
+        .profile_preset
+        .as_deref()
+        .unwrap_or("<unavailable>")
+}
+
+pub(crate) fn session_history_provider_model_label(entry: &SessionHistoryEntry) -> &str {
+    entry
+        .catalog
+        .provider_model
+        .as_deref()
+        .unwrap_or("<unavailable>")
+}
+
+pub(crate) fn session_history_resumability_label(entry: &SessionHistoryEntry) -> String {
+    if entry.catalog.is_resumable {
+        "continue ready".to_string()
+    } else {
+        entry
+            .catalog
+            .resume_disabled_reason
+            .as_deref()
+            .map(|reason| format!("continue blocked · {reason}"))
+            .unwrap_or_else(|| "continue blocked".to_string())
+    }
+}
+
+fn format_session_history_timestamp(timestamp: &str) -> String {
+    let trimmed = timestamp.trim();
+    if trimmed.len() >= 16 && trimmed.as_bytes().get(10) == Some(&b'T') {
+        format!("updated {}", trimmed[..16].replace('T', " "))
+    } else if trimmed.is_empty() {
+        "updated <unavailable>".to_string()
+    } else {
+        format!("updated {trimmed}")
+    }
+}
+
+fn session_history_filter_matches(entry: &SessionHistoryEntry, input: &str) -> bool {
+    if input.is_empty() {
+        return true;
+    }
+
+    let candidates = [
+        session_history_run_name(entry).to_lowercase(),
+        entry.catalog.run_id.to_lowercase(),
+        session_history_status_label(entry).to_string(),
+        session_history_recency_label(entry).to_lowercase(),
+        session_history_profile_label(entry).to_lowercase(),
+        session_history_provider_model_label(entry).to_lowercase(),
+        session_history_resumability_label(entry).to_lowercase(),
+    ];
+
+    candidates
+        .iter()
+        .any(|candidate| candidate.starts_with(input))
 }
 
 #[derive(Debug, Clone)]
@@ -481,23 +591,141 @@ impl LaunchMetadata {
     }
 }
 
+#[cfg(not(test))]
 static PENDING_LIVE_LAUNCH_METADATA: OnceLock<Mutex<Option<LaunchMetadata>>> = OnceLock::new();
+#[cfg(not(test))]
+static PENDING_LIVE_PROMPT_DRAFT: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+#[cfg(not(test))]
+static PENDING_LIVE_PROMPT_AUTO_SUBMIT: OnceLock<Mutex<bool>> = OnceLock::new();
 
+#[cfg(test)]
+thread_local! {
+    static PENDING_LIVE_LAUNCH_METADATA: RefCell<Option<LaunchMetadata>> = const { RefCell::new(None) };
+    static PENDING_LIVE_PROMPT_DRAFT: RefCell<Option<String>> = const { RefCell::new(None) };
+    static PENDING_LIVE_PROMPT_AUTO_SUBMIT: RefCell<bool> = const { RefCell::new(false) };
+}
+
+struct PendingLivePrompt {
+    text: String,
+    auto_submit: bool,
+}
+
+#[cfg(not(test))]
 fn pending_live_launch_metadata() -> &'static Mutex<Option<LaunchMetadata>> {
     PENDING_LIVE_LAUNCH_METADATA.get_or_init(|| Mutex::new(None))
 }
 
+#[cfg(not(test))]
+fn pending_live_prompt_draft() -> &'static Mutex<Option<String>> {
+    PENDING_LIVE_PROMPT_DRAFT.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(not(test))]
+fn pending_live_prompt_auto_submit() -> &'static Mutex<bool> {
+    PENDING_LIVE_PROMPT_AUTO_SUBMIT.get_or_init(|| Mutex::new(false))
+}
+
 pub fn set_pending_live_launch_metadata(metadata: LaunchMetadata) {
-    *pending_live_launch_metadata()
-        .lock()
-        .expect("pending live launch metadata lock poisoned") = Some(metadata);
+    #[cfg(test)]
+    {
+        PENDING_LIVE_LAUNCH_METADATA.with(|pending| {
+            *pending.borrow_mut() = Some(metadata);
+        });
+        return;
+    }
+
+    #[cfg(not(test))]
+    {
+        *pending_live_launch_metadata()
+            .lock()
+            .expect("pending live launch metadata lock poisoned") = Some(metadata);
+    }
 }
 
 fn take_pending_live_launch_metadata() -> Option<LaunchMetadata> {
+    #[cfg(test)]
+    {
+        return PENDING_LIVE_LAUNCH_METADATA.with(|pending| pending.borrow_mut().take());
+    }
+
+    #[cfg(not(test))]
     pending_live_launch_metadata()
         .lock()
         .expect("pending live launch metadata lock poisoned")
         .take()
+}
+
+pub fn set_pending_live_prompt_draft(draft: Option<String>) {
+    let draft = draft.filter(|value| !value.trim().is_empty());
+
+    #[cfg(test)]
+    {
+        PENDING_LIVE_PROMPT_DRAFT.with(|pending| {
+            *pending.borrow_mut() = draft;
+        });
+        PENDING_LIVE_PROMPT_AUTO_SUBMIT.with(|pending| {
+            *pending.borrow_mut() = false;
+        });
+        return;
+    }
+
+    #[cfg(not(test))]
+    {
+        *pending_live_prompt_draft()
+            .lock()
+            .expect("pending live prompt draft lock poisoned") = draft;
+        *pending_live_prompt_auto_submit()
+            .lock()
+            .expect("pending live prompt auto-submit lock poisoned") = false;
+    }
+}
+
+pub fn set_pending_live_prompt_auto_submit(prompt: Option<String>) {
+    let prompt = prompt.filter(|value| !value.trim().is_empty());
+    let should_auto_submit = prompt.is_some();
+
+    #[cfg(test)]
+    {
+        PENDING_LIVE_PROMPT_DRAFT.with(|pending| {
+            *pending.borrow_mut() = prompt;
+        });
+        PENDING_LIVE_PROMPT_AUTO_SUBMIT.with(|pending| {
+            *pending.borrow_mut() = should_auto_submit;
+        });
+        return;
+    }
+
+    #[cfg(not(test))]
+    {
+        *pending_live_prompt_draft()
+            .lock()
+            .expect("pending live prompt draft lock poisoned") = prompt;
+        *pending_live_prompt_auto_submit()
+            .lock()
+            .expect("pending live prompt auto-submit lock poisoned") = should_auto_submit;
+    }
+}
+
+fn take_pending_live_prompt() -> Option<PendingLivePrompt> {
+    #[cfg(test)]
+    let draft = PENDING_LIVE_PROMPT_DRAFT.with(|pending| pending.borrow_mut().take());
+    #[cfg(not(test))]
+    let draft = pending_live_prompt_draft()
+        .lock()
+        .expect("pending live prompt draft lock poisoned")
+        .take();
+
+    #[cfg(test)]
+    let auto_submit =
+        PENDING_LIVE_PROMPT_AUTO_SUBMIT.with(|pending| std::mem::take(&mut *pending.borrow_mut()));
+    #[cfg(not(test))]
+    let auto_submit = std::mem::take(
+        &mut *pending_live_prompt_auto_submit()
+            .lock()
+            .expect("pending live prompt auto-submit lock poisoned"),
+    );
+
+    draft.map(|text| PendingLivePrompt { text, auto_submit })
 }
 
 #[derive(Default)]
@@ -539,6 +767,13 @@ pub struct AppState {
     pub palette_filtered: Vec<String>,
     pub palette_selected: usize,
     palette_focus_return: Option<Focus>,
+    pub startup_mode: bool,
+    pub startup_launcher_action: StartupLauncherAction,
+    pub session_history_visible: bool,
+    pub session_history_entries: Vec<SessionHistoryEntry>,
+    pub session_history_filtered: Vec<usize>,
+    pub session_history_selected: usize,
+    pub continue_disabled_banner: Option<String>,
     pub keymap: KeyMap,
     theme: Theme,
     launch_metadata: LaunchMetadata,
@@ -575,6 +810,13 @@ impl Default for AppState {
             palette_filtered: Vec::new(),
             palette_selected: 0,
             palette_focus_return: None,
+            startup_mode: false,
+            startup_launcher_action: StartupLauncherAction::default(),
+            session_history_visible: false,
+            session_history_entries: Vec::new(),
+            session_history_filtered: Vec::new(),
+            session_history_selected: 0,
+            continue_disabled_banner: None,
             keymap: KeyMap::default(),
             theme: Theme::default(),
             launch_metadata: LaunchMetadata::default(),
@@ -635,6 +877,109 @@ impl SessionProjection {
             }
         }
         None
+    }
+
+    fn activity_index_for_request(&self, request_id: &str) -> Option<usize> {
+        self.activities
+            .iter()
+            .position(|activity| activity.request_id == request_id)
+    }
+
+    fn adopt_local_prompt_echo(&mut self, request_id: &str, seq: u64) -> Option<usize> {
+        let last_index = self.activities.len().checked_sub(1)?;
+        let entry = self.activities.get_mut(last_index)?;
+        if !entry.request_id.is_empty() {
+            return None;
+        }
+
+        entry.request_id = request_id.to_string();
+        if entry.first_seq == 0 {
+            entry.first_seq = seq;
+        }
+        entry.last_seq = seq;
+        Some(last_index)
+    }
+
+    fn activity_index_or_local_echo(&mut self, request_id: &str, seq: u64) -> Option<usize> {
+        self.activity_index_for_request(request_id)
+            .or_else(|| self.adopt_local_prompt_echo(request_id, seq))
+    }
+
+    fn attach_permission_request(&mut self, event: &EventEnvelopeV1) {
+        let EventV1::PermissionRequested(data) = &event.payload else {
+            return;
+        };
+
+        let permission_entry = PermissionEntry {
+            permission_id: data.permission_id.clone(),
+            kind: data.kind.clone(),
+            tool_call_id: data.tool_call_id.clone(),
+            summary: data.summary.clone(),
+            request_digest: data.request_digest.clone(),
+            timeout_ms: data.timeout_ms,
+            default_decision: data.default_decision,
+            resolved_decision: None,
+            resolution_reason: None,
+            first_seq: event.seq,
+            last_seq: event.seq,
+        };
+
+        if let Some(tool_call_id) = data.tool_call_id.as_deref() {
+            if let Some(tool_entry) = self.find_tool_call_mut(tool_call_id) {
+                tool_entry.permissions.push(permission_entry);
+                return;
+            }
+        }
+
+        // Find target activity without holding borrows across or_else
+        let found_by_correlation = event.correlation_id.as_deref().and_then(|request_id| {
+            self.activities
+                .iter()
+                .position(|activity| activity.request_id == request_id)
+        });
+
+        if let Some(idx) = found_by_correlation {
+            if let Some(activity) = self.activities.get_mut(idx) {
+                activity.permissions.push(permission_entry);
+                activity.last_seq = event.seq;
+            }
+        } else if let Some(activity) = self.activities.back_mut() {
+            activity.permissions.push(permission_entry);
+            activity.last_seq = event.seq;
+        }
+    }
+
+    fn update_permission_resolution(
+        &mut self,
+        permission_id: &str,
+        decision: EventPermissionDecision,
+        reason: Option<&str>,
+        seq: u64,
+    ) {
+        for activity in &mut self.activities {
+            for permission in &mut activity.permissions {
+                if permission.permission_id == permission_id {
+                    permission.resolved_decision = Some(decision);
+                    permission.resolution_reason = reason.map(str::to_owned);
+                    permission.last_seq = seq;
+                    activity.last_seq = seq;
+                    return;
+                }
+            }
+
+            for tool_call in &mut activity.tool_calls {
+                for permission in &mut tool_call.permissions {
+                    if permission.permission_id == permission_id {
+                        permission.resolved_decision = Some(decision);
+                        permission.resolution_reason = reason.map(str::to_owned);
+                        permission.last_seq = seq;
+                        tool_call.last_seq = seq;
+                        activity.last_seq = seq;
+                        return;
+                    }
+                }
+            }
+        }
     }
 
     fn orchestration_task_row_mut(
@@ -779,109 +1124,6 @@ impl SessionProjection {
         }
     }
 
-    fn activity_index_for_request(&self, request_id: &str) -> Option<usize> {
-        self.activities
-            .iter()
-            .position(|activity| activity.request_id == request_id)
-    }
-
-    fn adopt_local_prompt_echo(&mut self, request_id: &str, seq: u64) -> Option<usize> {
-        let last_index = self.activities.len().checked_sub(1)?;
-        let entry = self.activities.get_mut(last_index)?;
-        if !entry.request_id.is_empty() {
-            return None;
-        }
-
-        entry.request_id = request_id.to_string();
-        if entry.first_seq == 0 {
-            entry.first_seq = seq;
-        }
-        entry.last_seq = seq;
-        Some(last_index)
-    }
-
-    fn activity_index_or_local_echo(&mut self, request_id: &str, seq: u64) -> Option<usize> {
-        self.activity_index_for_request(request_id)
-            .or_else(|| self.adopt_local_prompt_echo(request_id, seq))
-    }
-
-    fn attach_permission_request(&mut self, event: &EventEnvelopeV1) {
-        let EventV1::PermissionRequested(data) = &event.payload else {
-            return;
-        };
-
-        let permission_entry = PermissionEntry {
-            permission_id: data.permission_id.clone(),
-            kind: data.kind.clone(),
-            tool_call_id: data.tool_call_id.clone(),
-            summary: data.summary.clone(),
-            request_digest: data.request_digest.clone(),
-            timeout_ms: data.timeout_ms,
-            default_decision: data.default_decision,
-            resolved_decision: None,
-            resolution_reason: None,
-            first_seq: event.seq,
-            last_seq: event.seq,
-        };
-
-        if let Some(tool_call_id) = data.tool_call_id.as_deref() {
-            if let Some(tool_entry) = self.find_tool_call_mut(tool_call_id) {
-                tool_entry.permissions.push(permission_entry);
-                return;
-            }
-        }
-
-        // Find target activity without holding borrows across or_else
-        let found_by_correlation = event.correlation_id.as_deref().and_then(|request_id| {
-            self.activities
-                .iter()
-                .position(|activity| activity.request_id == request_id)
-        });
-
-        if let Some(idx) = found_by_correlation {
-            if let Some(activity) = self.activities.get_mut(idx) {
-                activity.permissions.push(permission_entry);
-                activity.last_seq = event.seq;
-            }
-        } else if let Some(activity) = self.activities.back_mut() {
-            activity.permissions.push(permission_entry);
-            activity.last_seq = event.seq;
-        }
-    }
-
-    fn update_permission_resolution(
-        &mut self,
-        permission_id: &str,
-        decision: EventPermissionDecision,
-        reason: Option<&str>,
-        seq: u64,
-    ) {
-        for activity in &mut self.activities {
-            for permission in &mut activity.permissions {
-                if permission.permission_id == permission_id {
-                    permission.resolved_decision = Some(decision);
-                    permission.resolution_reason = reason.map(str::to_owned);
-                    permission.last_seq = seq;
-                    activity.last_seq = seq;
-                    return;
-                }
-            }
-
-            for tool_call in &mut activity.tool_calls {
-                for permission in &mut tool_call.permissions {
-                    if permission.permission_id == permission_id {
-                        permission.resolved_decision = Some(decision);
-                        permission.resolution_reason = reason.map(str::to_owned);
-                        permission.last_seq = seq;
-                        tool_call.last_seq = seq;
-                        activity.last_seq = seq;
-                        return;
-                    }
-                }
-            }
-        }
-    }
-
     fn update_derived_state_for_event(&mut self, event: &EventEnvelopeV1) {
         match &event.payload {
             EventV1::PermissionRequested(data) => {
@@ -1015,22 +1257,6 @@ impl SessionProjection {
                     }
                 }
             }
-            EventV1::TaskScheduled(data) => {
-                self.update_orchestration_task(event, &data.task_id, |row| {
-                    if let Some(queue_key) = data.queue_key.as_ref() {
-                        row.queue_key = Some(queue_key.clone());
-                    }
-                    row.warning = None;
-                    row.state = match data.state {
-                        harness_core::event::TaskScheduleState::Queued => {
-                            OrchestrationTaskState::Queued
-                        }
-                        harness_core::event::TaskScheduleState::Started => {
-                            OrchestrationTaskState::Running
-                        }
-                    };
-                });
-            }
             EventV1::TaskCompleted(data) => {
                 self.update_orchestration_task(event, &data.task_id, |row| {
                     row.state = OrchestrationTaskState::Completed;
@@ -1050,6 +1276,22 @@ impl SessionProjection {
                         }
                     }
                 }
+            }
+            EventV1::TaskScheduled(data) => {
+                self.update_orchestration_task(event, &data.task_id, |row| {
+                    if let Some(queue_key) = data.queue_key.as_ref() {
+                        row.queue_key = Some(queue_key.clone());
+                    }
+                    row.warning = None;
+                    row.state = match data.state {
+                        harness_core::event::TaskScheduleState::Queued => {
+                            OrchestrationTaskState::Queued
+                        }
+                        harness_core::event::TaskScheduleState::Started => {
+                            OrchestrationTaskState::Running
+                        }
+                    };
+                });
             }
             EventV1::TaskCancelled(data) => {
                 self.update_orchestration_task(event, &data.task_id, |row| {
@@ -1194,11 +1436,15 @@ impl AppState {
         on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
     ) -> Self {
         let mut state = Self::new();
+        state.launch_metadata = take_pending_live_launch_metadata().unwrap_or_default();
         state.focus = Focus::Prompt;
+        state.live_details_drawer_open = state.launch_metadata.mode_label() == Some("Live");
         state.session_path = session_path;
         state.auto_exit_on_finish = auto_exit_on_finish;
         state.on_ui_intent = on_ui_intent;
-        state.launch_metadata = take_pending_live_launch_metadata().unwrap_or_default();
+        if let Some(pending_prompt) = take_pending_live_prompt() {
+            state.apply_pending_live_prompt(pending_prompt);
+        }
         state
     }
 
@@ -1207,6 +1453,19 @@ impl AppState {
         state.replay_mode = true;
         state.session_path = Some(session_path);
         state.replace_events(events);
+        state
+    }
+
+    pub fn new_startup(
+        session_history_entries: Vec<SessionHistoryEntry>,
+        on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
+    ) -> Self {
+        let mut state = Self::new();
+        state.focus = Focus::Prompt;
+        state.startup_mode = true;
+        state.on_ui_intent = on_ui_intent;
+        state.launch_metadata = take_pending_live_launch_metadata().unwrap_or_default();
+        state.set_session_history_entries(session_history_entries);
         state
     }
 
@@ -1278,6 +1537,24 @@ impl AppState {
     }
 
     pub fn runtime_state(&self) -> RuntimeState {
+        if self.startup_mode {
+            let detail = self.continue_disabled_banner.clone();
+            let summary = detail
+                .as_deref()
+                .map(|reason| format!("startup launcher ready · {reason}"))
+                .unwrap_or_else(|| {
+                    "startup launcher ready · select new/replay/continue or type a prompt"
+                        .to_string()
+                });
+            return RuntimeState {
+                kind: RuntimeStateKind::Ready,
+                summary,
+                detail,
+                composer_disabled: false,
+                composer_hint: "Type a prompt to start a new session, or open the palette to pick launcher actions.".to_string(),
+            };
+        }
+
         if let Some(state) = self.status_banner_runtime_state() {
             return state;
         }
@@ -1306,6 +1583,9 @@ impl AppState {
 
         if let Some(activity) = self.activities.back() {
             let summary = self.activity_status_summary(activity);
+            if let Some(state) = self.tool_runtime_state(activity) {
+                return state;
+            }
             return match activity.status {
                 ActivityStatus::Streaming if activity.transcript_text.is_empty() => RuntimeState {
                     kind: RuntimeStateKind::Sending,
@@ -1354,7 +1634,7 @@ impl AppState {
     }
 
     pub fn composer_disabled(&self) -> bool {
-        self.runtime_state().composer_disabled
+        self.replay_mode || self.runtime_state().composer_disabled
     }
 
     fn status_banner_runtime_state(&self) -> Option<RuntimeState> {
@@ -1462,6 +1742,53 @@ impl AppState {
         .join(" · ")
     }
 
+    fn tool_runtime_state(&self, activity: &ActivityEntry) -> Option<RuntimeState> {
+        if activity.status != ActivityStatus::Streaming {
+            return None;
+        }
+
+        let tool_call = activity.tool_calls.last()?;
+        match tool_call.status {
+            ToolCallDisplayStatus::PendingPermission => None,
+            ToolCallDisplayStatus::Queued => Some(RuntimeState {
+                kind: RuntimeStateKind::Streaming,
+                summary: format!("tool queued · {}", tool_call.tool_id),
+                detail: tool_call.transcript_summary(),
+                composer_disabled: false,
+                composer_hint: "Draft the next prompt while the queued tool waits to start…"
+                    .to_string(),
+            }),
+            ToolCallDisplayStatus::Running => Some(RuntimeState {
+                kind: RuntimeStateKind::Streaming,
+                summary: format!("tool running · {}", tool_call.tool_id),
+                detail: tool_call.transcript_summary(),
+                composer_disabled: false,
+                composer_hint: "Draft the next prompt while the tool runs…".to_string(),
+            }),
+            ToolCallDisplayStatus::Succeeded => Some(RuntimeState {
+                kind: RuntimeStateKind::Streaming,
+                summary: format!(
+                    "tool finished · waiting for final response · {}",
+                    tool_call.tool_id
+                ),
+                detail: tool_call.truncated_output.clone(),
+                composer_disabled: false,
+                composer_hint:
+                    "Draft the next prompt while the assistant finishes after the tool result…"
+                        .to_string(),
+            }),
+            ToolCallDisplayStatus::Failed => Some(RuntimeState {
+                kind: RuntimeStateKind::Failure,
+                summary: format!("tool failed · {}", tool_call.tool_id),
+                detail: tool_call.output_summary.clone(),
+                composer_disabled: false,
+                composer_hint:
+                    "Inspect the tool failure, then retry or continue with a new prompt…"
+                        .to_string(),
+            }),
+        }
+    }
+
     pub fn prompt_bootstrap_disabled(&self) -> bool {
         self.composer_disabled()
     }
@@ -1567,8 +1894,23 @@ impl AppState {
         OverlayStack::from_state(OverlayState {
             details_drawer_open: self.details_drawer_open(),
             palette_visible: self.palette_visible,
+            session_history_visible: self.session_history_visible,
             permission_pending: self.active_permission().is_some(),
         })
+    }
+
+    pub fn set_session_history_entries(&mut self, entries: Vec<SessionHistoryEntry>) {
+        self.session_history_entries = entries;
+        self.update_session_history_filter();
+        self.session_history_selected = self
+            .session_history_selected
+            .min(self.session_history_filtered.len().saturating_sub(1));
+    }
+
+    pub fn selected_session_history_entry(&self) -> Option<&SessionHistoryEntry> {
+        self.session_history_filtered
+            .get(self.session_history_selected)
+            .and_then(|index| self.session_history_entries.get(*index))
     }
 
     pub fn permission_submission_pending(&self, permission_id: &str) -> bool {
@@ -1608,6 +1950,14 @@ impl AppState {
     fn replace_prompt_input(&mut self, prompt: String) {
         self.prompt_cursor = prompt.chars().count();
         self.prompt_buffer = prompt;
+    }
+
+    fn apply_pending_live_prompt(&mut self, pending_prompt: PendingLivePrompt) {
+        if pending_prompt.auto_submit {
+            self.dispatch_submitted_prompt(pending_prompt.text);
+        } else {
+            self.replace_prompt_input(pending_prompt.text);
+        }
     }
 
     fn insert_prompt_char(&mut self, c: char) {
@@ -1664,6 +2014,13 @@ impl AppState {
         self.transcript_scroll = 0;
     }
 
+    fn dispatch_submitted_prompt(&mut self, text: String) {
+        self.prompt_history.push(text.clone());
+        self.clear_prompt_input();
+        self.echo_submitted_prompt(text.clone());
+        self.emit_ui_intent(UiIntent::SubmitPrompt { text });
+    }
+
     pub fn handle_mouse(&mut self, mouse: MouseEvent, hovered_wheel_target: Option<WheelTarget>) {
         if self.overlay_stack().blocks_pointer_interaction() {
             return;
@@ -1702,9 +2059,12 @@ impl AppState {
             return;
         }
 
-        if self.overlay_stack().top() == Some(OverlayKind::CommandPalette)
-            && self.handle_palette_key(&key)
-        {
+        if self.session_history_visible && self.handle_session_history_key(&key) {
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.palette_visible && self.handle_palette_key(&key) {
             self.maybe_auto_exit();
             return;
         }
@@ -1755,43 +2115,105 @@ impl AppState {
                 true
             }
             KeyCode::Backspace => {
-                if self.palette_cursor > 0 {
-                    self.palette_cursor -= 1;
-                    let byte_idx = self
-                        .palette_input
-                        .char_indices()
-                        .nth(self.palette_cursor)
-                        .map(|(i, _)| i)
-                        .unwrap_or(self.palette_input.len());
-                    self.palette_input.remove(byte_idx);
-                    self.update_palette_filter();
-                }
+                self.overlay_backspace(Self::update_palette_filter);
                 true
             }
             KeyCode::Char(c) => {
-                let byte_idx = self
-                    .palette_input
-                    .char_indices()
-                    .nth(self.palette_cursor)
-                    .map(|(i, _)| i)
-                    .unwrap_or(self.palette_input.len());
-                self.palette_input.insert(byte_idx, c);
-                self.palette_cursor += 1;
-                self.update_palette_filter();
+                self.overlay_insert_char(c, Self::update_palette_filter);
                 true
             }
             _ => false,
         }
     }
 
+    fn handle_session_history_key(&mut self, key: &KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc => {
+                self.close_session_history();
+                true
+            }
+            KeyCode::Enter => {
+                self.execute_selected_session_launcher_action();
+                true
+            }
+            KeyCode::Up => {
+                if self.session_history_selected > 0 {
+                    self.session_history_selected -= 1;
+                }
+                true
+            }
+            KeyCode::Down => {
+                if self.session_history_selected + 1 < self.session_history_filtered.len() {
+                    self.session_history_selected += 1;
+                }
+                true
+            }
+            KeyCode::Backspace => {
+                self.overlay_backspace(Self::update_session_history_filter);
+                true
+            }
+            KeyCode::Char(c) => {
+                self.overlay_insert_char(c, Self::update_session_history_filter);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn overlay_backspace(&mut self, on_change: fn(&mut Self)) {
+        if self.palette_cursor == 0 {
+            return;
+        }
+
+        self.palette_cursor -= 1;
+        let byte_idx = self
+            .palette_input
+            .char_indices()
+            .nth(self.palette_cursor)
+            .map(|(index, _)| index)
+            .unwrap_or(self.palette_input.len());
+        self.palette_input.remove(byte_idx);
+        on_change(self);
+    }
+
+    fn overlay_insert_char(&mut self, c: char, on_change: fn(&mut Self)) {
+        let byte_idx = self
+            .palette_input
+            .char_indices()
+            .nth(self.palette_cursor)
+            .map(|(index, _)| index)
+            .unwrap_or(self.palette_input.len());
+        self.palette_input.insert(byte_idx, c);
+        self.palette_cursor += 1;
+        on_change(self);
+    }
+
     fn update_palette_filter(&mut self) {
         let input = self.palette_input.to_lowercase();
-        self.palette_filtered = Action::palette_commands()
+        self.palette_filtered = self
+            .palette_commands()
             .iter()
-            .filter(|(cmd, _)| cmd.to_lowercase().starts_with(&input))
+            .filter(|(cmd, _)| {
+                cmd.to_lowercase().starts_with(&input)
+                    || Action::palette_command_label(cmd)
+                        .to_lowercase()
+                        .starts_with(&input)
+            })
             .map(|(cmd, _)| cmd.to_string())
             .collect();
         self.palette_selected = 0;
+    }
+
+    fn update_session_history_filter(&mut self) {
+        let input = self.palette_input.to_lowercase();
+        self.session_history_filtered = self
+            .session_history_entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| session_history_filter_matches(entry, &input))
+            .map(|(index, _)| index)
+            .collect();
+        self.session_history_selected = 0;
     }
 
     fn execute_palette_command(&mut self) {
@@ -1801,6 +2223,16 @@ impl AppState {
         };
 
         match cmd.as_str() {
+            "new_session" => {
+                self.startup_launcher_action = StartupLauncherAction::NewSession;
+                self.apply_new_session_launcher_selection();
+            }
+            "resume_session" => {
+                self.begin_session_history_picker(StartupLauncherAction::ContinueSession);
+            }
+            "replay_session" => {
+                self.begin_session_history_picker(StartupLauncherAction::ReplaySession);
+            }
             "help" => self.execute_action(Action::Help),
             "details" => self.execute_action(Action::ToggleDetailsDrawer),
             "run" => self.execute_action(Action::TabRun),
@@ -1810,15 +2242,20 @@ impl AppState {
             "quit" => self.execute_action(Action::Quit),
             _ => {}
         }
-        self.close_palette();
+        if !self.session_history_visible {
+            self.close_palette();
+        }
     }
 
     fn close_palette(&mut self) {
         self.palette_visible = false;
+        self.session_history_visible = false;
         self.palette_input.clear();
         self.palette_cursor = 0;
         self.palette_filtered.clear();
+        self.session_history_filtered.clear();
         self.palette_selected = 0;
+        self.session_history_selected = 0;
         if let Some(previous_focus) = self.palette_focus_return.take() {
             self.focus = previous_focus;
         }
@@ -1829,13 +2266,149 @@ impl AppState {
             self.palette_focus_return = Some(self.focus);
         }
         self.palette_visible = true;
+        self.session_history_visible = false;
         self.palette_input.clear();
         self.palette_cursor = 0;
-        self.palette_filtered = Action::palette_commands()
+        self.palette_filtered = self
+            .palette_commands()
             .iter()
             .map(|(cmd, _)| cmd.to_string())
             .collect();
+        self.session_history_filtered.clear();
         self.palette_selected = 0;
+    }
+
+    fn palette_commands(&self) -> &'static [(&'static str, &'static str)] {
+        Action::palette_commands()
+    }
+
+    fn begin_session_history_picker(&mut self, action: StartupLauncherAction) {
+        self.startup_launcher_action = action;
+        self.continue_disabled_banner = None;
+        self.palette_visible = true;
+        self.palette_input.clear();
+        self.palette_cursor = 0;
+        self.update_session_history_filter();
+        self.open_session_history();
+    }
+
+    fn open_session_history(&mut self) {
+        if !self.session_history_visible {
+            self.palette_focus_return.get_or_insert(self.focus);
+        }
+        self.palette_visible = true;
+        self.session_history_selected = self
+            .session_history_selected
+            .min(self.session_history_filtered.len().saturating_sub(1));
+        self.session_history_visible = true;
+    }
+
+    fn close_session_history(&mut self) {
+        self.close_palette();
+    }
+
+    fn execute_selected_session_launcher_action(&mut self) {
+        if self.session_history_entries.is_empty() {
+            if matches!(
+                self.startup_launcher_action,
+                StartupLauncherAction::ContinueSession
+            ) {
+                self.continue_disabled_banner =
+                    Some("continue unavailable: no session history entries".to_string());
+            } else {
+                self.continue_disabled_banner =
+                    Some("replay unavailable: no session history entries".to_string());
+            }
+            self.open_session_history();
+            return;
+        }
+
+        if self.session_history_filtered.is_empty() {
+            self.continue_disabled_banner =
+                Some("no sessions match the current filter".to_string());
+            self.open_session_history();
+            return;
+        }
+
+        let Some(selected) = self.selected_session_history_entry() else {
+            return;
+        };
+        let selected_run_id = selected.catalog.run_id.clone();
+        let selected_run_dir = selected.run_dir.clone();
+        let selected_resumable = selected.catalog.is_resumable;
+        let selected_resume_disabled_reason = selected.catalog.resume_disabled_reason.clone();
+
+        match self.startup_launcher_action {
+            StartupLauncherAction::NewSession => {
+                self.apply_new_session_launcher_selection();
+            }
+            StartupLauncherAction::ReplaySession => {
+                self.continue_disabled_banner = None;
+                self.replay_mode = true;
+                self.emit_ui_intent(UiIntent::ReplaySession {
+                    run_id: selected_run_id,
+                    run_dir: selected_run_dir,
+                });
+                if self.startup_mode {
+                    self.should_quit = true;
+                }
+                self.close_session_history();
+            }
+            StartupLauncherAction::ContinueSession => {
+                if !selected_resumable {
+                    self.continue_disabled_banner = selected_resume_disabled_reason
+                        .map(|reason| format!("continue unavailable: {reason}"))
+                        .or_else(|| {
+                            Some("continue unavailable for the selected session".to_string())
+                        });
+                    return;
+                }
+
+                self.continue_disabled_banner = None;
+                self.replay_mode = false;
+                set_pending_live_prompt_draft(Some(self.prompt_buffer.clone()));
+                self.emit_ui_intent(UiIntent::ContinueSession {
+                    run_id: selected_run_id,
+                    run_dir: selected_run_dir,
+                });
+                if self.startup_mode {
+                    self.should_quit = true;
+                }
+                self.close_session_history();
+            }
+        }
+    }
+
+    fn apply_new_session_launcher_selection(&mut self) {
+        let prompt_buffer = self.prompt_buffer.clone();
+        let prompt_cursor = self.prompt_cursor;
+        set_pending_live_prompt_draft(Some(prompt_buffer.clone()));
+
+        self.projection.reset();
+        self.selected_event_index = 0;
+        self.selected_activity_index = 0;
+        self.follow_mode = true;
+        self.details_scroll = 0;
+        self.transcript_scroll = 0;
+        self.status_banner = None;
+        self.dismissed_permissions.clear();
+        self.submitted_permission_id = None;
+        self.prompt_history.clear();
+        self.prompt_history_index = None;
+        self.replay_mode = false;
+        self.session_path = None;
+        self.active_tab = Tab::Run;
+        self.live_details_drawer_open = false;
+        self.continue_disabled_banner = None;
+
+        self.prompt_buffer = prompt_buffer;
+        self.prompt_cursor = prompt_cursor.min(self.prompt_buffer.chars().count());
+
+        self.close_session_history();
+        self.emit_ui_intent(UiIntent::NewSession);
+        if self.startup_mode {
+            self.should_quit = true;
+        }
     }
 
     fn set_active_tab(&mut self, tab: Tab) {
@@ -1855,7 +2428,7 @@ impl AppState {
 
     fn normalize_focus_for_active_tab(&mut self) {
         if self.replay_mode {
-            if self.active_tab != Tab::Run && self.focus == Focus::Prompt {
+            if self.focus == Focus::Prompt {
                 self.focus = Focus::List;
             }
             return;
@@ -1881,6 +2454,14 @@ impl AppState {
     }
 
     fn cycle_focus_forward(&mut self) {
+        if self.replay_mode {
+            self.focus = match self.focus {
+                Focus::List => Focus::Details,
+                Focus::Details | Focus::Prompt => Focus::List,
+            };
+            return;
+        }
+
         self.focus = if !self.replay_mode && self.active_tab == Tab::Run {
             if self.details_drawer_open() {
                 match self.focus {
@@ -1904,6 +2485,14 @@ impl AppState {
     }
 
     fn cycle_focus_backward(&mut self) {
+        if self.replay_mode {
+            self.focus = match self.focus {
+                Focus::List | Focus::Prompt => Focus::Details,
+                Focus::Details => Focus::List,
+            };
+            return;
+        }
+
         self.focus = if !self.replay_mode && self.active_tab == Tab::Run {
             if self.details_drawer_open() {
                 match self.focus {
@@ -2301,15 +2890,20 @@ impl AppState {
         if self.prompt_buffer.trim().is_empty()
             || self.active_turn_in_progress()
             || self.composer_disabled()
+            || self.replay_mode
         {
             return;
         }
 
+        if self.startup_mode {
+            let text = self.prompt_buffer.clone();
+            self.emit_ui_intent(UiIntent::SubmitPrompt { text });
+            self.should_quit = true;
+            return;
+        }
+
         let text = self.prompt_buffer.clone();
-        self.prompt_history.push(text.clone());
-        self.clear_prompt_input();
-        self.echo_submitted_prompt(text.clone());
-        self.emit_ui_intent(UiIntent::SubmitPrompt { text });
+        self.dispatch_submitted_prompt(text);
     }
 
     fn update_transient_state_for_event(&mut self, event: &EventEnvelopeV1) {
@@ -2339,7 +2933,7 @@ mod tests {
     use crossterm::event::MouseEvent;
     use harness_core::event::{
         ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
-        ProviderRequestStartedEvent, UserMessageSubmittedEvent, SCHEMA_VERSION,
+        ProviderRequestStartedEvent, TaskCompletedEvent, UserMessageSubmittedEvent, SCHEMA_VERSION,
     };
 
     fn envelope(seq: u64, request_id: &str, payload: EventV1) -> EventEnvelopeV1 {
@@ -2532,6 +3126,19 @@ mod tests {
     }
 
     #[test]
+    fn config_backed_live_launch_opens_details_by_default() {
+        set_pending_live_launch_metadata(
+            LaunchMetadata::new("deep", "default", Some("gpt-5.3-codex".to_string()))
+                .with_mode_label("Live"),
+        );
+
+        let app = AppState::new_live(None, false, None);
+
+        assert!(app.details_drawer_open());
+        assert_eq!(app.focus, Focus::Prompt);
+    }
+
+    #[test]
     fn mouse_wheel_scrolls_transcript_without_stealing_focus() {
         let mut app = AppState::new_live(None, false, None);
         app.focus = Focus::Prompt;
@@ -2619,5 +3226,160 @@ mod tests {
         assert_eq!(app.transcript_scroll, 2);
         assert!(!app.follow_mode);
         assert_eq!(app.focus, Focus::Prompt);
+    }
+
+    #[test]
+    fn historical_task_completed_marks_turn_done_and_unblocks_first_resumed_submit() {
+        let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+        let sink = {
+            let intents = intents.clone();
+            Arc::new(move |intent: UiIntent| {
+                intents.lock().expect("lock intents").push(intent);
+            })
+        };
+
+        let mut app = AppState::new_live(None, false, Some(sink));
+        app.ingest_event(envelope(
+            1,
+            "req_resume_1",
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_resume_1".to_string(),
+                text: "previous question".to_string(),
+            }),
+        ));
+        app.ingest_event(envelope(
+            2,
+            "req_resume_1",
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_resume_1".to_string(),
+                provider_id: "mock".to_string(),
+                model_id: "model-1".to_string(),
+                prompt_summary: "previous question".to_string(),
+                request_digest: "digest-resume-1".to_string(),
+            }),
+        ));
+        app.ingest_event(envelope(
+            3,
+            "req_resume_1",
+            EventV1::ProviderStreamDelta(harness_core::event::ProviderStreamDeltaEvent {
+                request_id: "req_resume_1".to_string(),
+                delta: "previous answer".to_string(),
+            }),
+        ));
+        app.ingest_event(envelope(
+            4,
+            "req_resume_1",
+            EventV1::TaskCompleted(TaskCompletedEvent {
+                task_id: "task_000123".to_string(),
+                result_summary: "previous answer".to_string(),
+                result_digest: "digest-task-123".to_string(),
+            }),
+        ));
+
+        assert_eq!(app.runtime_state().kind, RuntimeStateKind::Success);
+
+        for c in "next".chars() {
+            app.handle_key(key(KeyCode::Char(c)));
+        }
+        app.handle_key(key(KeyCode::Enter));
+
+        let intents = intents.lock().expect("lock intents");
+        assert!(
+            intents
+                .iter()
+                .any(|intent| matches!(intent, UiIntent::SubmitPrompt { text } if text == "next")),
+            "historical streaming residue should not block first resumed submit"
+        );
+    }
+
+    #[test]
+    fn startup_prompt_enter_emits_submit_intent_and_quits_launcher() {
+        let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+        let sink = {
+            let intents = Arc::clone(&intents);
+            Arc::new(move |intent: UiIntent| {
+                intents.lock().expect("lock intents").push(intent);
+            })
+        };
+
+        let mut app = AppState::new_startup(Vec::new(), Some(sink));
+
+        for c in "ship it".chars() {
+            app.handle_key(key(KeyCode::Char(c)));
+        }
+        app.handle_key(key(KeyCode::Enter));
+
+        assert!(app.should_quit, "startup submit should leave the launcher");
+        assert_eq!(
+            intents.lock().expect("lock intents").as_slice(),
+            &[UiIntent::SubmitPrompt {
+                text: "ship it".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn live_bootstrap_auto_submit_echoes_and_emits_first_prompt() {
+        let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+        let sink = {
+            let intents = Arc::clone(&intents);
+            Arc::new(move |intent: UiIntent| {
+                intents.lock().expect("lock intents").push(intent);
+            })
+        };
+
+        let mut app = AppState::new();
+        app.focus = Focus::Prompt;
+        app.on_ui_intent = Some(sink);
+
+        app.apply_pending_live_prompt(PendingLivePrompt {
+            text: "boot prompt".to_string(),
+            auto_submit: true,
+        });
+
+        assert!(app.prompt_buffer.is_empty());
+        assert_eq!(app.prompt_history, vec!["boot prompt".to_string()]);
+        assert_eq!(
+            app.activities
+                .back()
+                .and_then(|activity| activity.user_message.as_ref())
+                .map(|message| message.text.as_str()),
+            Some("boot prompt")
+        );
+        assert_eq!(
+            intents.lock().expect("lock intents").as_slice(),
+            &[UiIntent::SubmitPrompt {
+                text: "boot prompt".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn replay_mode_focus_cycle_skips_prompt_and_blocks_draft_edits() {
+        let mut app = AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new());
+
+        app.handle_key(key(KeyCode::Tab));
+        assert_eq!(app.focus, Focus::Details);
+
+        app.handle_key(key(KeyCode::Tab));
+        assert_eq!(app.focus, Focus::List);
+
+        app.focus = Focus::Prompt;
+        app.handle_key(key(KeyCode::Char('x')));
+        assert!(app.prompt_buffer.is_empty());
+    }
+
+    #[test]
+    fn startup_mode_uses_pending_launch_metadata() {
+        set_pending_live_launch_metadata(
+            LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo"),
+        );
+
+        let app = AppState::new_startup(Vec::new(), None);
+
+        assert_eq!(app.active_profile(), "worker");
+        assert_eq!(app.active_provider(), "mock");
+        assert_eq!(app.current_model_label(), "model-1");
+        assert_eq!(app.launch_mode_label(), Some("Demo"));
     }
 }
