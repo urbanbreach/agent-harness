@@ -22,6 +22,11 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use harness_core::event::EventEnvelopeV1;
+use harness_core::event::{
+    ActorKind, EventActor, EventV1, ProviderRequestFinishedEvent, ProviderRequestStartedEvent,
+    ProviderStreamDeltaEvent, RunStartedEvent, TaskScheduleState, TaskScheduledEvent,
+    UserMessageSubmittedEvent,
+};
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 use app::AppState;
@@ -980,7 +985,7 @@ mod tests {
     }
 
     #[test]
-    fn task_scheduled_queued_updates_tool_status() {
+    fn task_scheduled_queued_does_not_reuse_tool_call_id_as_task_id() {
         let mut app = AppState::new_live(None, false, None);
 
         app.ingest_event(envelope(
@@ -1020,9 +1025,14 @@ mod tests {
         let tool_call = activity.tool_calls.first().unwrap();
         assert_eq!(
             tool_call.status,
-            crate::app::ToolCallDisplayStatus::Queued,
-            "tool call should be queued after TaskScheduled(Queued)"
+            crate::app::ToolCallDisplayStatus::PendingPermission,
+            "TaskScheduled must not treat task_id as a tool_call_id"
         );
+
+        let rows = app.orchestration_visible_rows();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].task_id, "tc_001");
+        assert_eq!(rows[0].state, crate::app::OrchestrationTaskState::Queued);
     }
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -1158,6 +1168,20 @@ mod tests {
     }
 
     fn envelope(seq: u64, correlation_id: Option<&str>, payload: EventV1) -> EventEnvelopeV1 {
+        envelope_with_actor(
+            seq,
+            correlation_id,
+            EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+            payload,
+        )
+    }
+
+    fn envelope_with_actor(
+        seq: u64,
+        correlation_id: Option<&str>,
+        actor: EventActor,
+        payload: EventV1,
+    ) -> EventEnvelopeV1 {
         EventEnvelopeV1 {
             schema_version: SCHEMA_VERSION,
             event_id: format!("evt-{seq:04}"),
@@ -1165,7 +1189,7 @@ mod tests {
             run_id: "run_fixture".to_string(),
             mono_ms: seq,
             ts: None,
-            actor: EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+            actor,
             correlation_id: correlation_id.map(str::to_string),
             causation_id: None,
             stream_key: Some("run:run_fixture".to_string()),
@@ -3294,4 +3318,383 @@ fn replay_and_diff_surfaces_remain_secondary_but_reachable() {
 
     replay.handle_key(key(crossterm::event::KeyCode::Char('1')));
     assert_eq!(replay.active_tab, app::Tab::Run);
+}
+
+fn envelope_with_actor(
+    seq: u64,
+    correlation_id: Option<&str>,
+    actor: harness_core::event::EventActor,
+    payload: harness_core::event::EventV1,
+) -> harness_core::event::EventEnvelopeV1 {
+    harness_core::event::EventEnvelopeV1 {
+        schema_version: harness_core::event::SCHEMA_VERSION,
+        event_id: format!("evt-{seq:04}"),
+        seq,
+        run_id: "run_fixture".to_string(),
+        mono_ms: seq,
+        ts: None,
+        actor,
+        correlation_id: correlation_id.map(str::to_string),
+        causation_id: None,
+        stream_key: Some("run:run_fixture".to_string()),
+        payload,
+    }
+}
+
+fn orchestration_fixture_app() -> app::AppState {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.ingest_event(envelope_with_actor(
+        1,
+        Some("req_001"),
+        EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_001".to_string(),
+            text: "Explain the refactor".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        2,
+        Some("req_001"),
+        EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_001".to_string(),
+            provider_id: "openai".to_string(),
+            model_id: "gpt-5-codex".to_string(),
+            prompt_summary: "Explain the refactor".to_string(),
+            request_digest: "digest-req-001".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        3,
+        Some("req_001"),
+        EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+        EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            request_id: "req_001".to_string(),
+            delta: "Working through the steps.".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        4,
+        Some("req_001"),
+        EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: "req_001".to_string(),
+            finish_reason: "stop".to_string(),
+            output_digest: Some("digest-final".to_string()),
+        }),
+    ));
+
+    app.ingest_event(envelope_with_actor(
+        11,
+        None,
+        EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+        EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+            agent_id: "w1".to_string(),
+            profile: "deep".to_string(),
+            parent_agent_id: None,
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        12,
+        None,
+        EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+        EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+            agent_id: "w2".to_string(),
+            profile: "scout".to_string(),
+            parent_agent_id: None,
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        13,
+        Some("req_001"),
+        EventActor::new(ActorKind::Worker, Some("w1".to_string())),
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "scan".to_string(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("scan".to_string()),
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        14,
+        Some("req_001"),
+        EventActor::new(ActorKind::Worker, Some("w1".to_string())),
+        EventV1::StaleDetected(harness_core::event::StaleDetectedEvent {
+            task_id: "scan".to_string(),
+            stale_for_ms: 3001,
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        15,
+        Some("req_001"),
+        EventActor::new(ActorKind::Supervisor, None),
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "dispatch".to_string(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("dispatch".to_string()),
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        16,
+        Some("req_001"),
+        EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "tool:read".to_string(),
+            state: TaskScheduleState::Queued,
+            queue_key: Some("tool:read".to_string()),
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        17,
+        Some("req_001"),
+        EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "tool:done".to_string(),
+            state: TaskScheduleState::Queued,
+            queue_key: Some("tool:done".to_string()),
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        18,
+        Some("req_001"),
+        EventActor::new(ActorKind::Worker, Some("w2".to_string())),
+        EventV1::TaskCompleted(harness_core::event::TaskCompletedEvent {
+            task_id: "tool:done".to_string(),
+            result_summary: "done".to_string(),
+            result_digest: "digest-done".to_string(),
+        }),
+    ));
+
+    app
+}
+
+#[cfg(test)]
+#[test]
+fn orchestration_projection_resolves_owner_labels() {
+    let app = orchestration_fixture_app();
+    let summary = app.orchestration_summary();
+    assert_eq!(summary.active_agents, 1);
+    assert_eq!(summary.queued, 1);
+    assert_eq!(summary.running, 1);
+    assert_eq!(summary.stale, 1);
+
+    let rows = app.orchestration_visible_rows();
+    let running = rows.iter().find(|row| row.task_id == "dispatch").unwrap();
+    assert_eq!(
+        app.orchestration_owner_labels(running),
+        crate::app::OrchestrationOwnerLabels {
+            label: "supervisor".to_string(),
+            profile: "n/a".to_string(),
+        }
+    );
+    let stale = rows.iter().find(|row| row.task_id == "scan").unwrap();
+    assert_eq!(
+        app.orchestration_owner_labels(stale),
+        crate::app::OrchestrationOwnerLabels {
+            label: "w1".to_string(),
+            profile: "deep".to_string(),
+        }
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn orchestration_projection_tracks_stale_then_late_result() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        None,
+        EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+            agent_id: "agent_worker".to_string(),
+            profile: "researcher".to_string(),
+            parent_agent_id: None,
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        2,
+        Some("req_stale"),
+        EventActor::new(ActorKind::Worker, Some("agent_worker".to_string())),
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_stale".to_string(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("agent:running:stale".to_string()),
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        3,
+        Some("req_stale"),
+        EventActor::new(ActorKind::Worker, Some("agent_worker".to_string())),
+        EventV1::StaleDetected(harness_core::event::StaleDetectedEvent {
+            task_id: "task_stale".to_string(),
+            stale_for_ms: 3001,
+        }),
+    ));
+    assert_eq!(app.orchestration_summary().stale, 1);
+    assert_eq!(
+        app.orchestration_latest_warning(),
+        Some("stale for 3001 ms")
+    );
+
+    app.ingest_event(envelope_with_actor(
+        4,
+        Some("req_stale"),
+        EventActor::new(ActorKind::Worker, Some("agent_worker".to_string())),
+        EventV1::TaskResultLate(harness_core::event::TaskResultLateEvent {
+            task_id: "task_stale".to_string(),
+            result_digest: "digest-late".to_string(),
+        }),
+    ));
+    let rows = app.orchestration_visible_rows();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0].state,
+        crate::app::OrchestrationTaskState::LateResult
+    );
+    assert_eq!(
+        rows[0].warning.as_deref(),
+        Some("late result after stale cancellation")
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn live_shell_orchestration_status_strip_snapshot() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        None,
+        EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+            agent_id: "w1".to_string(),
+            profile: "deep".to_string(),
+            parent_agent_id: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        None,
+        EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+            agent_id: "w2".to_string(),
+            profile: "scout".to_string(),
+            parent_agent_id: None,
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        3,
+        None,
+        EventActor::new(ActorKind::Worker, Some("w1".to_string())),
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_running".to_string(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("agent:running".to_string()),
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        4,
+        None,
+        EventActor::new(ActorKind::Worker, Some("w2".to_string())),
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_stale".to_string(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("agent:stale".to_string()),
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        5,
+        None,
+        EventActor::new(ActorKind::Worker, Some("w2".to_string())),
+        EventV1::StaleDetected(harness_core::event::StaleDetectedEvent {
+            task_id: "task_stale".to_string(),
+            stale_for_ms: 3001,
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        6,
+        None,
+        EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_queue".to_string(),
+            state: TaskScheduleState::Queued,
+            queue_key: Some("tool:queue".to_string()),
+        }),
+    ));
+
+    let status_row = render_live_lines(&app, 120, 8)
+        .lines()
+        .find(|line| line.contains("Ready"))
+        .unwrap()
+        .to_string();
+    insta::assert_snapshot!(status_row);
+}
+
+#[cfg(test)]
+#[test]
+fn live_shell_details_drawer_orchestration() {
+    let mut app = orchestration_fixture_app();
+    app.active_tab = app::Tab::Details;
+    app.focus = app::Focus::Details;
+    let rendered = render_live_lines(&app, 120, 30);
+    insta::assert_snapshot!(rendered);
+}
+
+#[cfg(test)]
+#[test]
+fn live_shell_details_drawer_orchestration_minimum() {
+    let mut app = orchestration_fixture_app();
+    app.active_tab = app::Tab::Details;
+    app.focus = app::Focus::Details;
+    let rendered = render_live_lines(&app, 80, 24);
+    insta::assert_snapshot!(rendered);
+}
+
+#[cfg(test)]
+#[test]
+fn replay_mode_does_not_render_orchestration_summary() {
+    let events = vec![
+        envelope_with_actor(
+            1,
+            None,
+            EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "replay-run".to_string(),
+                workspace_root: "/tmp/workspace".to_string(),
+            }),
+        ),
+        envelope_with_actor(
+            2,
+            None,
+            EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+            EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+                agent_id: "agent_replay".to_string(),
+                profile: "researcher".to_string(),
+                parent_agent_id: None,
+            }),
+        ),
+        envelope_with_actor(
+            3,
+            Some("req_replay_orch"),
+            EventActor::new(ActorKind::Worker, Some("agent_replay".to_string())),
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: "task_replay_orch".to_string(),
+                state: TaskScheduleState::Queued,
+                queue_key: Some("agent:queued:replay".to_string()),
+            }),
+        ),
+        envelope_with_actor(
+            4,
+            Some("req_replay_orch"),
+            EventActor::new(ActorKind::Worker, Some("agent_replay".to_string())),
+            EventV1::StaleDetected(harness_core::event::StaleDetectedEvent {
+                task_id: "task_replay_orch".to_string(),
+                stale_for_ms: 3001,
+            }),
+        ),
+    ];
+
+    let mut replay =
+        app::AppState::new_replay(std::path::PathBuf::from("/tmp/replay-session"), events);
+    let replay_run = render_live_lines(&replay, 120, 30);
+    assert!(!replay_run.contains("Orchestration"));
+    assert!(!replay_run.contains("agents "));
+
+    replay.handle_key(key(crossterm::event::KeyCode::Char('2')));
+    assert!(!render_live_lines(&replay, 120, 30).contains("Orchestration"));
 }
