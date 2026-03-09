@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
@@ -6,7 +7,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use harness_core::agent::AgentModelRef;
 use harness_core::event::{
-    EventEnvelopeV1, EventV1, PermissionDecision as EventPermissionDecision,
+    ActorKind, EventEnvelopeV1, EventV1, PermissionDecision as EventPermissionDecision,
     ProviderRequestStartedEvent, ToolCallStatus, UserMessageSubmittedEvent,
 };
 use harness_core::perm::PermissionDecision;
@@ -204,6 +205,57 @@ impl std::fmt::Display for ActivityStatus {
             ActivityStatus::Error => write!(f, "error"),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrchestrationTaskState {
+    Queued,
+    Running,
+    Stale,
+    Completed,
+    Cancelled,
+    LateResult,
+}
+
+impl OrchestrationTaskState {
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Self::Completed | Self::Cancelled | Self::LateResult)
+    }
+
+    fn sort_rank(self) -> u8 {
+        match self {
+            Self::Stale => 0,
+            Self::Running => 1,
+            Self::Queued => 2,
+            Self::Completed | Self::Cancelled | Self::LateResult => 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrchestrationTaskRow {
+    pub task_id: String,
+    pub queue_key: Option<String>,
+    pub state: OrchestrationTaskState,
+    pub warning: Option<String>,
+    pub owner_kind: ActorKind,
+    pub owner_agent_id: Option<String>,
+    pub first_seq: u64,
+    pub last_seq: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OrchestrationSummary {
+    pub active_agents: usize,
+    pub queued: usize,
+    pub running: usize,
+    pub stale: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrchestrationOwnerLabels {
+    pub label: String,
+    pub profile: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -455,6 +507,8 @@ pub struct SessionProjection {
     pub(crate) memory_caps: MemoryCaps,
     pub(crate) events_trimmed_count: usize,
     pub(crate) transcript_trimmed_count: usize,
+    orchestration_tasks: BTreeMap<String, OrchestrationTaskRow>,
+    agent_profiles: BTreeMap<String, String>,
     seen_seqs: BTreeSet<u64>,
     pending_permissions: BTreeMap<String, PendingPermission>,
     run_terminal_seen: bool,
@@ -550,6 +604,8 @@ impl SessionProjection {
     fn reset(&mut self) {
         self.events.clear();
         self.activities.clear();
+        self.orchestration_tasks.clear();
+        self.agent_profiles.clear();
         self.seen_seqs.clear();
         self.pending_permissions.clear();
         self.run_terminal_seen = false;
@@ -579,6 +635,148 @@ impl SessionProjection {
             }
         }
         None
+    }
+
+    fn orchestration_task_row_mut(
+        &mut self,
+        event: &EventEnvelopeV1,
+        task_id: &str,
+    ) -> &mut OrchestrationTaskRow {
+        let row = self
+            .orchestration_tasks
+            .entry(task_id.to_string())
+            .or_insert_with(|| OrchestrationTaskRow {
+                task_id: task_id.to_string(),
+                queue_key: None,
+                state: OrchestrationTaskState::Queued,
+                warning: None,
+                owner_kind: event.actor.kind,
+                owner_agent_id: event.actor.agent_id.clone(),
+                first_seq: event.seq,
+                last_seq: event.seq,
+            });
+
+        row.owner_kind = event.actor.kind;
+        if let Some(agent_id) = event.actor.agent_id.as_ref() {
+            row.owner_agent_id = Some(agent_id.clone());
+        }
+        row.last_seq = event.seq;
+        row
+    }
+
+    fn update_orchestration_task<F>(&mut self, event: &EventEnvelopeV1, task_id: &str, update: F)
+    where
+        F: FnOnce(&mut OrchestrationTaskRow),
+    {
+        {
+            let row = self.orchestration_task_row_mut(event, task_id);
+            update(row);
+        }
+        self.enforce_orchestration_retention();
+    }
+
+    fn enforce_orchestration_retention(&mut self) {
+        let mut terminal_rows = self
+            .orchestration_tasks
+            .iter()
+            .filter(|(_, row)| row.state.is_terminal())
+            .map(|(task_id, row)| (task_id.clone(), row.last_seq))
+            .collect::<Vec<_>>();
+
+        if terminal_rows.len() <= 5 {
+            return;
+        }
+
+        terminal_rows.sort_by_key(|(task_id, last_seq)| (Reverse(*last_seq), task_id.clone()));
+        for (task_id, _) in terminal_rows.into_iter().skip(5) {
+            self.orchestration_tasks.remove(&task_id);
+        }
+    }
+
+    pub fn orchestration_summary(&self) -> OrchestrationSummary {
+        let mut summary = OrchestrationSummary::default();
+        let mut active_agents = BTreeSet::new();
+
+        for row in self.orchestration_tasks.values() {
+            if row.state.is_terminal() {
+                continue;
+            }
+
+            if row.owner_kind == ActorKind::Worker {
+                if let Some(agent_id) = row.owner_agent_id.as_deref() {
+                    active_agents.insert(agent_id);
+                }
+            }
+
+            match row.state {
+                OrchestrationTaskState::Queued => summary.queued += 1,
+                OrchestrationTaskState::Running => summary.running += 1,
+                OrchestrationTaskState::Stale => summary.stale += 1,
+                OrchestrationTaskState::Completed
+                | OrchestrationTaskState::Cancelled
+                | OrchestrationTaskState::LateResult => {}
+            }
+        }
+
+        summary.active_agents = active_agents.len();
+        summary
+    }
+
+    pub fn orchestration_latest_warning(&self) -> Option<&str> {
+        self.orchestration_tasks
+            .values()
+            .filter_map(|row| {
+                row.warning
+                    .as_ref()
+                    .map(|warning| (row.last_seq, warning.as_str()))
+            })
+            .max_by_key(|(last_seq, _)| *last_seq)
+            .map(|(_, warning)| warning)
+    }
+
+    pub fn orchestration_visible_rows(&self) -> Vec<OrchestrationTaskRow> {
+        let mut rows = self
+            .orchestration_tasks
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        rows.sort_by_key(|row| {
+            (
+                row.state.is_terminal(),
+                row.state.sort_rank(),
+                Reverse(row.last_seq),
+                row.task_id.clone(),
+            )
+        });
+        rows
+    }
+
+    pub fn orchestration_owner_labels(
+        &self,
+        row: &OrchestrationTaskRow,
+    ) -> OrchestrationOwnerLabels {
+        match row.owner_kind {
+            ActorKind::Worker => {
+                let label = row
+                    .owner_agent_id
+                    .clone()
+                    .unwrap_or_else(|| "worker".to_string());
+                let profile = self
+                    .agent_profiles
+                    .get(label.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| "n/a".to_string());
+                OrchestrationOwnerLabels { label, profile }
+            }
+            ActorKind::Supervisor => OrchestrationOwnerLabels {
+                label: "supervisor".to_string(),
+                profile: "n/a".to_string(),
+            },
+            ActorKind::System | ActorKind::User => OrchestrationOwnerLabels {
+                label: "system".to_string(),
+                profile: "n/a".to_string(),
+            },
+        }
     }
 
     fn activity_index_for_request(&self, request_id: &str) -> Option<usize> {
@@ -715,6 +913,10 @@ impl SessionProjection {
                     entry.error_message = Some(data.error.clone());
                 }
             }
+            EventV1::AgentSpawned(data) => {
+                self.agent_profiles
+                    .insert(data.agent_id.clone(), data.profile.clone());
+            }
             EventV1::UserMessageSubmitted(data) => {
                 if let Some(index) = self.activity_index_or_local_echo(&data.request_id, event.seq)
                 {
@@ -814,12 +1016,58 @@ impl SessionProjection {
                 }
             }
             EventV1::TaskScheduled(data) => {
-                if data.state == harness_core::event::TaskScheduleState::Queued {
-                    if let Some(tool_entry) = self.find_tool_call_mut(&data.task_id) {
-                        tool_entry.status = ToolCallDisplayStatus::Queued;
-                        tool_entry.last_seq = event.seq;
+                self.update_orchestration_task(event, &data.task_id, |row| {
+                    if let Some(queue_key) = data.queue_key.as_ref() {
+                        row.queue_key = Some(queue_key.clone());
+                    }
+                    row.warning = None;
+                    row.state = match data.state {
+                        harness_core::event::TaskScheduleState::Queued => {
+                            OrchestrationTaskState::Queued
+                        }
+                        harness_core::event::TaskScheduleState::Started => {
+                            OrchestrationTaskState::Running
+                        }
+                    };
+                });
+            }
+            EventV1::TaskCompleted(data) => {
+                self.update_orchestration_task(event, &data.task_id, |row| {
+                    row.state = OrchestrationTaskState::Completed;
+                    row.warning = None;
+                });
+
+                if let Some(request_id) = event.correlation_id.as_deref() {
+                    if let Some(index) = self.activity_index_or_local_echo(request_id, event.seq) {
+                        if let Some(entry) = self.activities.get_mut(index) {
+                            entry.status = ActivityStatus::Done;
+                            if entry.transcript_text.is_empty()
+                                && !data.result_summary.trim().is_empty()
+                            {
+                                entry.transcript_text = data.result_summary.clone();
+                            }
+                            entry.last_seq = event.seq;
+                        }
                     }
                 }
+            }
+            EventV1::TaskCancelled(data) => {
+                self.update_orchestration_task(event, &data.task_id, |row| {
+                    row.state = OrchestrationTaskState::Cancelled;
+                    row.warning = (!data.reason.trim().is_empty()).then(|| data.reason.clone());
+                });
+            }
+            EventV1::TaskResultLate(data) => {
+                self.update_orchestration_task(event, &data.task_id, |row| {
+                    row.state = OrchestrationTaskState::LateResult;
+                    row.warning = Some("late result after stale cancellation".to_string());
+                });
+            }
+            EventV1::StaleDetected(data) => {
+                self.update_orchestration_task(event, &data.task_id, |row| {
+                    row.state = OrchestrationTaskState::Stale;
+                    row.warning = Some(format!("stale for {} ms", data.stale_for_ms));
+                });
             }
             EventV1::ToolCallRequested(data) => {
                 let target_corr_id = event.correlation_id.clone();
@@ -1263,6 +1511,25 @@ impl AppState {
             .filter(|(permission_id, _)| !self.dismissed_permissions.contains(*permission_id))
             .min_by_key(|(_, pending)| pending.seq)
             .map(|(permission_id, pending)| (permission_id.clone(), pending.summary.clone()))
+    }
+
+    pub fn orchestration_summary(&self) -> OrchestrationSummary {
+        self.projection.orchestration_summary()
+    }
+
+    pub fn orchestration_latest_warning(&self) -> Option<&str> {
+        self.projection.orchestration_latest_warning()
+    }
+
+    pub fn orchestration_visible_rows(&self) -> Vec<OrchestrationTaskRow> {
+        self.projection.orchestration_visible_rows()
+    }
+
+    pub fn orchestration_owner_labels(
+        &self,
+        row: &OrchestrationTaskRow,
+    ) -> OrchestrationOwnerLabels {
+        self.projection.orchestration_owner_labels(row)
     }
 
     pub fn transcript_pending_permissions(&self) -> Vec<(String, String)> {
