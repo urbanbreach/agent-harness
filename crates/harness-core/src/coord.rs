@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,8 +13,8 @@ use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::{
-    default_provider, run_single_turn_streaming, AgentProfile, AgentRequest, AgentRuntimeEvent,
-    AgentTurnOutcome,
+    default_provider, run_multi_turn_streaming, AgentProfile, AgentRequest, AgentRuntimeEvent,
+    AgentTurnOutcome, ProviderConversationTurn,
 };
 use crate::clock::Clock;
 use crate::edit::hashline::HashlinePatch;
@@ -24,11 +25,13 @@ use crate::event::{
     PolicyViolationDetectedEvent, RunFinishedEvent, RunStartedEvent, StaleDetectedEvent,
     TaskCancelledEvent, TaskCompletedEvent, TaskResultLateEvent, TaskScheduleState,
     TaskScheduledEvent, ToolCallFinishedEvent, ToolCallStartedEvent, ToolCallStatus,
+    UserMessageSubmittedEvent,
 };
 use crate::perm::{
     permission_kind_for_capability, PermissionDecision, PermissionKind, PermissionPolicy,
     PolicyDecision,
 };
+use crate::proj::inspect_resume_plan;
 use crate::redact::Redactor;
 use crate::sched::{
     ConcurrencyKey, ScheduleDecision, Scheduler, SchedulerLimits, TaskProgressSnapshot,
@@ -128,6 +131,11 @@ pub enum Command {
         workspace_root: PathBuf,
         respond_to: oneshot::Sender<Result<RunInfo, CoordinatorError>>,
     },
+    ResumeRun {
+        run_id: String,
+        run_name: String,
+        respond_to: oneshot::Sender<Result<RunInfo, CoordinatorError>>,
+    },
     StopRun {
         respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
     },
@@ -158,6 +166,13 @@ pub enum Command {
         tool_id: String,
         args_json: Value,
         respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
+    },
+    ExecuteAgentToolCall {
+        actor: EventActor,
+        category: Option<String>,
+        tool_id: String,
+        args_json: Value,
+        respond_to: oneshot::Sender<Result<ToolResult, String>>,
     },
     ResolvePermission {
         permission_id: String,
@@ -256,6 +271,10 @@ pub enum CoordinatorError {
     UnknownAgent(String),
     #[error("permission denied for tool call: {0}")]
     PermissionDenied(String),
+    #[error("resume is disabled for run `{run_id}`: {reason}")]
+    ResumeDisabled { run_id: String, reason: String },
+    #[error("resume restoration failed for run `{run_id}`: {reason}")]
+    ResumeRestoreFailed { run_id: String, reason: String },
 }
 
 #[derive(Clone)]
@@ -274,6 +293,26 @@ impl CoordinatorHandle {
             .send(Command::StartRun {
                 run_name: run_name.into(),
                 workspace_root: workspace_root.into(),
+                respond_to,
+            })
+            .await
+            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
+
+        response_rx
+            .await
+            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+    }
+
+    pub async fn resume_run(
+        &self,
+        run_id: impl Into<String>,
+        run_name: impl Into<String>,
+    ) -> Result<RunInfo, CoordinatorError> {
+        let (respond_to, response_rx) = oneshot::channel();
+        self.tx
+            .send(Command::ResumeRun {
+                run_id: run_id.into(),
+                run_name: run_name.into(),
                 respond_to,
             })
             .await
@@ -562,6 +601,14 @@ impl Coordinator {
                 let result = self.start_run_internal(run_name, workspace_root);
                 let _ = respond_to.send(result);
             }
+            Command::ResumeRun {
+                run_id,
+                run_name,
+                respond_to,
+            } => {
+                let result = self.resume_run_internal(run_id, run_name);
+                let _ = respond_to.send(result);
+            }
             Command::StopRun { respond_to } => {
                 let result = self.stop_run_internal("run stopped".to_string());
                 let _ = respond_to.send(result);
@@ -604,8 +651,24 @@ impl Coordinator {
                 args_json,
                 respond_to,
             } => {
-                let result = self.request_tool_call_internal(actor, category, tool_id, args_json);
+                let result =
+                    self.request_tool_call_internal(actor, category, tool_id, args_json, None);
                 let _ = respond_to.send(result);
+            }
+            Command::ExecuteAgentToolCall {
+                actor,
+                category,
+                tool_id,
+                args_json,
+                respond_to,
+            } => {
+                let _ = self.request_tool_call_internal(
+                    actor,
+                    category,
+                    tool_id,
+                    args_json,
+                    Some(respond_to),
+                );
             }
             Command::ResolvePermission {
                 permission_id,
@@ -739,6 +802,7 @@ impl Coordinator {
             next_provider_request_id: 1,
             next_permission_id: 1,
             agents: BTreeMap::new(),
+            provider_context_by_agent: BTreeMap::new(),
             tasks: BTreeMap::new(),
             pending_permissions: BTreeMap::new(),
             cancelled_running_tasks: BTreeSet::new(),
@@ -764,6 +828,184 @@ impl Coordinator {
         )?;
 
         write_run_metadata(&run_state, &self.config, self.clock.as_ref())?;
+
+        self.run_state = Some(run_state);
+        Ok(run_info)
+    }
+
+    fn resume_run_internal(
+        &mut self,
+        run_id: String,
+        run_name: String,
+    ) -> Result<RunInfo, CoordinatorError> {
+        if self.run_state.is_some() {
+            return Err(CoordinatorError::RunAlreadyStarted);
+        }
+
+        let run_dir = self.config.session_dir.join(&run_id);
+        let event_store = JsonlFileEventStore::open_existing(
+            &self.config.session_dir,
+            &run_id,
+            self.config.deterministic_store,
+        )?;
+        let event_store = Arc::new(event_store);
+
+        let resume_plan = inspect_resume_plan(&run_dir);
+        if !resume_plan.is_resumable {
+            let reason = resume_plan
+                .resume_disabled_reason
+                .unwrap_or_else(|| "resume disabled without reason".to_string());
+            return Err(CoordinatorError::ResumeDisabled { run_id, reason });
+        }
+
+        if resume_plan.run_id != run_id {
+            return Err(CoordinatorError::ResumeRestoreFailed {
+                run_id: run_id.clone(),
+                reason: format!(
+                    "resume plan run_id mismatch: expected `{}`, actual `{}`",
+                    run_id, resume_plan.run_id
+                ),
+            });
+        }
+
+        let workspace_root = resume_plan
+            .workspace_root
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .ok_or_else(|| CoordinatorError::ResumeRestoreFailed {
+                run_id: run_id.clone(),
+                reason: "workspace root is missing from resume plan".to_string(),
+            })?;
+
+        let next_event_seq = checked_next_counter(resume_plan.max_seq, &run_id, "event sequence")?;
+        let store_next_seq = event_store.next_seq()?;
+        if store_next_seq != next_event_seq {
+            return Err(CoordinatorError::ResumeRestoreFailed {
+                run_id,
+                reason: format!(
+                    "event-store sequence mismatch: resume plan expects {next_event_seq}, store reports {store_next_seq}"
+                ),
+            });
+        }
+
+        let mut agents = BTreeMap::new();
+        let mut restored_agent_bindings = Vec::new();
+        let mut max_agent_id = 0_u64;
+        for (agent_id, profile_name) in &resume_plan.known_agents {
+            let parsed_agent_id = parse_prefixed_counter(agent_id, "agent_").ok_or_else(|| {
+                CoordinatorError::ResumeRestoreFailed {
+                    run_id: run_id.clone(),
+                    reason: format!("invalid agent id in resume plan: `{agent_id}`"),
+                }
+            })?;
+            max_agent_id = max_agent_id.max(parsed_agent_id);
+
+            let profile_cfg = self
+                .config
+                .agent_profiles
+                .get(profile_name)
+                .cloned()
+                .ok_or_else(|| CoordinatorError::ResumeRestoreFailed {
+                    run_id: run_id.clone(),
+                    reason: format!(
+                        "historical agent `{agent_id}` references missing profile binding `{profile_name}`"
+                    ),
+                })?;
+            agents.insert(agent_id.clone(), profile_cfg);
+            restored_agent_bindings.push((agent_id.clone(), profile_name.clone()));
+        }
+
+        let provider_context_by_agent =
+            restore_provider_context_from_history(&self.config.session_dir, &run_id)?;
+
+        let next_agent_id = checked_next_counter(max_agent_id, &run_id, "agent id")?;
+        let next_tool_call_id = checked_next_counter(
+            resume_plan.id_watermarks.max_tool_call_id,
+            &run_id,
+            "tool call id",
+        )?;
+        let next_task_id =
+            checked_next_counter(resume_plan.id_watermarks.max_task_id, &run_id, "task id")?;
+        let next_provider_request_id = checked_next_counter(
+            resume_plan.id_watermarks.max_request_id,
+            &run_id,
+            "provider request id",
+        )?;
+        let next_permission_id = checked_next_counter(
+            resume_plan.id_watermarks.max_permission_id,
+            &run_id,
+            "permission id",
+        )?;
+
+        let artifacts_dir = run_dir.join("artifacts");
+        fs::create_dir_all(&artifacts_dir).map_err(|source| {
+            CoordinatorError::CreateSessionDirectory {
+                path: artifacts_dir.display().to_string(),
+                source,
+            }
+        })?;
+
+        let events_path = event_store.file_path().to_path_buf();
+        let run_info = RunInfo {
+            run_id: run_id.clone(),
+            run_name: run_name.clone(),
+            workspace_root: workspace_root.clone(),
+            run_dir,
+            artifacts_dir,
+            events_path,
+        };
+
+        let mut run_state = RunState {
+            info: run_info.clone(),
+            event_store,
+            next_event_seq,
+            next_agent_id,
+            next_tool_call_id,
+            next_task_id,
+            next_provider_request_id,
+            next_permission_id,
+            agents,
+            provider_context_by_agent,
+            tasks: BTreeMap::new(),
+            pending_permissions: BTreeMap::new(),
+            cancelled_running_tasks: BTreeSet::new(),
+            queued_agent_turns: BTreeMap::new(),
+            running_agent_turns: BTreeMap::new(),
+            scheduler: Scheduler::new(SchedulerLimits {
+                provider_model: self.config.provider_model_concurrency,
+                tool: self.config.tool_concurrency,
+            }),
+            shutdown_token: CancellationToken::new(),
+        };
+
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            &mut run_state,
+            system_actor(),
+            Some(format!("run:{run_id}")),
+            EventV1::RunStarted(RunStartedEvent {
+                run_name,
+                workspace_root: workspace_root.display().to_string(),
+            }),
+        )?;
+
+        for (agent_id, profile) in restored_agent_bindings {
+            append_payload_event(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                &mut run_state,
+                system_actor(),
+                Some(format!("agent:{agent_id}")),
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id,
+                    profile,
+                    parent_agent_id: None,
+                }),
+            )?;
+        }
 
         self.run_state = Some(run_state);
         Ok(run_info)
@@ -884,6 +1126,7 @@ impl Coordinator {
                 self.job_tx.clone(),
                 run_state,
                 self.config.provider.clone(),
+                self.config.tool_registry.clone(),
                 profile_cfg,
                 request,
                 request_id,
@@ -936,12 +1179,26 @@ impl Coordinator {
             model_ref: profile.model_ref.clone(),
         };
 
+        append_payload_event_with_correlation(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor.clone(),
+            Some(format!("agent:{}", request.agent_id)),
+            Some(request_id.clone()),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: request_id.clone(),
+                text: request.prompt.clone(),
+            }),
+        )?;
+
         schedule_agent_turn(
             self.clock.as_ref(),
             self.redactor.as_ref(),
             self.job_tx.clone(),
             run_state,
             self.config.provider.clone(),
+            self.config.tool_registry.clone(),
             profile,
             request,
             request_id.clone(),
@@ -956,6 +1213,7 @@ impl Coordinator {
         category: Option<String>,
         tool_id: String,
         args_json: Value,
+        respond_to: Option<oneshot::Sender<Result<ToolResult, String>>>,
     ) -> Result<String, CoordinatorError> {
         let clock = self.clock.clone();
         let redactor = self.redactor.clone();
@@ -969,6 +1227,8 @@ impl Coordinator {
         let tool_call_id = format!("toolcall_{:06}", run_state.next_tool_call_id);
         run_state.next_tool_call_id += 1;
 
+        let request_correlation_id = tool_request_correlation_id(run_state, &actor);
+
         append_tool_call_requested_event(
             self.clock.as_ref(),
             self.redactor.as_ref(),
@@ -977,6 +1237,7 @@ impl Coordinator {
             &tool_call_id,
             &tool_id,
             &args_json,
+            request_correlation_id.as_deref(),
         )?;
 
         let Some(tool) = self.config.tool_registry.get(&tool_id) else {
@@ -1051,9 +1312,7 @@ impl Coordinator {
                     Some(format!("tool_call:{tool_call_id}")),
                     EventV1::PolicyViolationDetected(PolicyViolationDetectedEvent {
                         policy: "unknown_worker_agent_id".to_string(),
-                        detail: format!(
-                            "worker agent_id `{worker_agent_id}` is not registered"
-                        ),
+                        detail: format!("worker agent_id `{worker_agent_id}` is not registered"),
                     }),
                 )?;
 
@@ -1062,7 +1321,11 @@ impl Coordinator {
                 )));
             };
 
-            if !worker_profile.toolset.iter().any(|allowed| allowed == &tool_id) {
+            if !worker_profile
+                .toolset
+                .iter()
+                .any(|allowed| allowed == &tool_id)
+            {
                 append_payload_event(
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
@@ -1105,7 +1368,12 @@ impl Coordinator {
                     hashline_edit.as_ref(),
                     maybe_kind.expect("permission kind exists when policy decision exists"),
                     "policy denied request",
+                    request_correlation_id.as_deref(),
                 )?;
+                if let Some(respond_to) = respond_to {
+                    let _ =
+                        respond_to.send(Err("tool call denied: policy denied request".to_string()));
+                }
                 return Err(CoordinatorError::PermissionDenied(tool_call_id));
             }
             Some(PolicyDecision::Ask {
@@ -1129,6 +1397,7 @@ impl Coordinator {
                     digest,
                     timeout_ms,
                     event_permission_decision(default_decision),
+                    request_correlation_id.as_deref(),
                 )?;
 
                 run_state.pending_permissions.insert(
@@ -1138,6 +1407,8 @@ impl Coordinator {
                         tool_id,
                         args_json,
                         actor,
+                        request_correlation_id,
+                        respond_to,
                     },
                 );
 
@@ -1159,6 +1430,8 @@ impl Coordinator {
                     args_json,
                     actor,
                     self.config.tool_registry.clone(),
+                    request_correlation_id,
+                    respond_to,
                 )?;
             }
         }
@@ -1209,6 +1482,8 @@ impl Coordinator {
                     pending.args_json,
                     pending.actor,
                     self.config.tool_registry.clone(),
+                    pending.request_correlation_id,
+                    pending.respond_to,
                 )?;
             }
             PermissionDecision::Deny => {
@@ -1221,6 +1496,7 @@ impl Coordinator {
                         &pending.tool_call_id,
                         &metadata,
                         "permission denied".to_string(),
+                        pending.request_correlation_id.as_deref(),
                     )?;
                 }
 
@@ -1230,7 +1506,11 @@ impl Coordinator {
                     run_state,
                     &pending.tool_call_id,
                     "permission denied",
+                    pending.request_correlation_id.as_deref(),
                 )?;
+                if let Some(respond_to) = pending.respond_to {
+                    let _ = respond_to.send(Err("tool call denied: permission denied".to_string()));
+                }
             }
         }
 
@@ -1267,6 +1547,7 @@ impl Coordinator {
                 &pending.tool_call_id,
                 &metadata,
                 "permission denied by timeout".to_string(),
+                pending.request_correlation_id.as_deref(),
             );
         }
 
@@ -1276,7 +1557,13 @@ impl Coordinator {
             run_state,
             &pending.tool_call_id,
             "permission denied by timeout",
+            pending.request_correlation_id.as_deref(),
         );
+        if let Some(respond_to) = pending.respond_to {
+            let _ = respond_to.send(Err(
+                "tool call timed out: permission request timed out".to_string()
+            ));
+        }
     }
 
     fn job_progress_internal(&mut self, task_id: String, kind: JobProgressKind) {
@@ -1333,16 +1620,19 @@ impl Coordinator {
         let Some(task) = run_state.tasks.get(&task_id) else {
             return Ok(());
         };
+        let owner_actor = task.owner_actor.clone();
+        let request_correlation_id = task.request_correlation_id.clone();
 
         task.cancellation_token.cancel();
         run_state.cancelled_running_tasks.insert(task_id.clone());
 
-        append_payload_event(
+        append_payload_event_with_correlation(
             self.clock.as_ref(),
             self.redactor.as_ref(),
             run_state,
-            system_actor(),
+            owner_actor,
             Some(format!("task:{task_id}")),
+            request_correlation_id,
             EventV1::TaskCancelled(TaskCancelledEvent { task_id, reason }),
         )?;
 
@@ -1378,15 +1668,16 @@ impl Coordinator {
         for stale_task in stale {
             let task_id = stale_task.task_id;
             let stale_for_ms = stale_task.stale_for_ms;
-            let actor = run_state
-                .running_agent_turns
+            let (actor, request_correlation_id) = run_state
+                .tasks
                 .get(&task_id)
-                .map(|running| agent_actor(&running.agent_id))
-                .unwrap_or_else(system_actor);
-            let correlation_id = run_state
-                .running_agent_turns
-                .get(&task_id)
-                .map(|running| running.request_id.clone());
+                .map(|task| {
+                    (
+                        task.owner_actor.clone(),
+                        task.request_correlation_id.clone(),
+                    )
+                })
+                .unwrap_or_else(|| (system_actor(), None));
 
             append_payload_event_with_correlation(
                 self.clock.as_ref(),
@@ -1394,7 +1685,7 @@ impl Coordinator {
                 run_state,
                 actor,
                 Some(format!("task:{task_id}")),
-                correlation_id,
+                request_correlation_id,
                 EventV1::StaleDetected(StaleDetectedEvent {
                     task_id: task_id.clone(),
                     stale_for_ms,
@@ -1424,12 +1715,13 @@ impl Coordinator {
         };
 
         if run_state.cancelled_running_tasks.remove(&task_id) {
-            append_payload_event(
+            append_payload_event_with_correlation(
                 self.clock.as_ref(),
                 self.redactor.as_ref(),
                 run_state,
-                system_actor(),
+                task.owner_actor,
                 Some(format!("task:{task_id}")),
+                task.request_correlation_id,
                 EventV1::TaskResultLate(TaskResultLateEvent {
                     task_id,
                     result_digest: digest12(format!("{:?}", outcome).as_bytes()),
@@ -1439,9 +1731,11 @@ impl Coordinator {
         }
 
         let _ = run_state.scheduler.complete(&task.queue_key);
+        let request_correlation_id = task.request_correlation_id.clone();
 
         match outcome {
             JobOutcome::Succeeded { result } => {
+                let result_for_response = result.clone();
                 if let Some(metadata) = task.hashline_edit.as_ref() {
                     match workspace_file_digest(&run_state.info.workspace_root, &metadata.path) {
                         Ok(new_file_digest) => {
@@ -1455,6 +1749,7 @@ impl Coordinator {
                                 new_file_digest,
                                 diff_rel_path,
                                 diff_digest,
+                                request_correlation_id.as_deref(),
                             )?;
                         }
                         Err(reason) => {
@@ -1465,6 +1760,7 @@ impl Coordinator {
                                 &task.tool_call_id,
                                 metadata,
                                 format!("failed to compute file digest: {reason}"),
+                                request_correlation_id.as_deref(),
                             )?;
                         }
                     }
@@ -1478,14 +1774,16 @@ impl Coordinator {
                         run_state,
                         &task.tool_call_id,
                         artifact,
+                        request_correlation_id.as_deref(),
                     )?;
                 }
-                append_payload_event(
+                append_payload_event_with_correlation(
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
                     run_state,
-                    system_actor(),
+                    task.owner_actor.clone(),
                     Some(format!("task:{task_id}")),
+                    request_correlation_id.clone(),
                     EventV1::TaskCompleted(TaskCompletedEvent {
                         task_id,
                         result_digest: digest12(result_summary.as_bytes()),
@@ -1500,9 +1798,14 @@ impl Coordinator {
                     &task.tool_call_id,
                     ToolCallStatus::Succeeded,
                     Some(result_summary),
+                    request_correlation_id.as_deref(),
                 )?;
+                if let Some(respond_to) = task.respond_to {
+                    let _ = respond_to.send(Ok(result_for_response));
+                }
             }
             JobOutcome::Failed { error } => {
+                let error_for_response = error.clone();
                 if let Some(metadata) = task.hashline_edit.as_ref() {
                     append_edit_rejected_event(
                         self.clock.as_ref(),
@@ -1511,15 +1814,17 @@ impl Coordinator {
                         &task.tool_call_id,
                         metadata,
                         error.clone(),
+                        request_correlation_id.as_deref(),
                     )?;
                 }
 
-                append_payload_event(
+                append_payload_event_with_correlation(
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
                     run_state,
-                    system_actor(),
+                    task.owner_actor.clone(),
                     Some(format!("task:{task_id}")),
+                    request_correlation_id.clone(),
                     EventV1::TaskCancelled(TaskCancelledEvent {
                         task_id,
                         reason: error,
@@ -1532,9 +1837,15 @@ impl Coordinator {
                     run_state,
                     &task.tool_call_id,
                     "tool execution failed",
+                    request_correlation_id.as_deref(),
                 )?;
+                if let Some(respond_to) = task.respond_to {
+                    let _ = respond_to
+                        .send(Err(format!("tool execution failed: {error_for_response}")));
+                }
             }
             JobOutcome::Cancelled { reason } => {
+                let reason_for_response = reason.clone();
                 if let Some(metadata) = task.hashline_edit.as_ref() {
                     append_edit_rejected_event(
                         self.clock.as_ref(),
@@ -1543,15 +1854,17 @@ impl Coordinator {
                         &task.tool_call_id,
                         metadata,
                         reason.clone(),
+                        request_correlation_id.as_deref(),
                     )?;
                 }
 
-                append_payload_event(
+                append_payload_event_with_correlation(
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
                     run_state,
-                    system_actor(),
+                    task.owner_actor.clone(),
                     Some(format!("task:{task_id}")),
+                    request_correlation_id.clone(),
                     EventV1::TaskCancelled(TaskCancelledEvent { task_id, reason }),
                 )?;
 
@@ -1561,7 +1874,12 @@ impl Coordinator {
                     run_state,
                     &task.tool_call_id,
                     "tool execution cancelled",
+                    request_correlation_id.as_deref(),
                 )?;
+                if let Some(respond_to) = task.respond_to {
+                    let _ =
+                        respond_to.send(Err(format!("tool call cancelled: {reason_for_response}")));
+                }
             }
         }
 
@@ -1691,6 +2009,14 @@ impl Coordinator {
         if !was_cancelled {
             match outcome {
                 AgentTurnTaskOutcome::Succeeded { output } => {
+                    run_state
+                        .provider_context_by_agent
+                        .entry(running.agent_id.clone())
+                        .or_default()
+                        .push(ProviderConversationTurn {
+                            user_prompt: running.request_prompt,
+                            assistant_response: output.clone(),
+                        });
                     append_payload_event_with_correlation(
                         self.clock.as_ref(),
                         self.redactor.as_ref(),
@@ -1741,6 +2067,7 @@ impl Coordinator {
                     self.job_tx.clone(),
                     run_state,
                     self.config.provider.clone(),
+                    self.config.tool_registry.clone(),
                     queued,
                 )?;
             }
@@ -1760,6 +2087,7 @@ struct RunState {
     next_provider_request_id: u64,
     next_permission_id: u64,
     agents: BTreeMap<String, AgentProfile>,
+    provider_context_by_agent: BTreeMap<String, Vec<ProviderConversationTurn>>,
     tasks: BTreeMap<String, TaskState>,
     pending_permissions: BTreeMap<String, PendingPermissionState>,
     cancelled_running_tasks: BTreeSet<String>,
@@ -1776,6 +2104,7 @@ struct QueuedAgentTurn {
     request_id: String,
     profile: AgentProfile,
     request: AgentRequest,
+    prior_turns: Vec<ProviderConversationTurn>,
     queue_key: ConcurrencyKey,
 }
 
@@ -1783,6 +2112,7 @@ struct QueuedAgentTurn {
 struct RunningAgentTurn {
     agent_id: String,
     request_id: String,
+    request_prompt: String,
     queue_key: ConcurrencyKey,
     cancellation_token: CancellationToken,
 }
@@ -1802,12 +2132,15 @@ struct HashlineEditMetadata {
 
 struct TaskState {
     tool_call_id: String,
+    owner_actor: EventActor,
+    request_correlation_id: Option<String>,
     queue_key: ConcurrencyKey,
     state: TaskExecutionState,
     cancellation_token: CancellationToken,
     last_progress_mono_ms: u64,
     last_progress_kind: JobProgressKind,
     hashline_edit: Option<HashlineEditMetadata>,
+    respond_to: Option<oneshot::Sender<Result<ToolResult, String>>>,
 }
 
 struct PendingPermissionState {
@@ -1815,6 +2148,8 @@ struct PendingPermissionState {
     tool_id: String,
     args_json: Value,
     actor: EventActor,
+    request_correlation_id: Option<String>,
+    respond_to: Option<oneshot::Sender<Result<ToolResult, String>>>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1828,6 +2163,8 @@ fn start_tool_call_execution<C, R>(
     args_json: Value,
     actor: EventActor,
     tool_registry: Arc<ToolRegistry>,
+    request_correlation_id: Option<String>,
+    respond_to: Option<oneshot::Sender<Result<ToolResult, String>>>,
 ) -> Result<(), CoordinatorError>
 where
     C: Clock + ?Sized,
@@ -1852,6 +2189,7 @@ where
             run_state,
             &tool_call_id,
             "unknown tool",
+            request_correlation_id.as_deref(),
         )?;
         return Err(CoordinatorError::PolicyViolation(format!(
             "tool `{tool_id}` is not registered"
@@ -1883,6 +2221,7 @@ where
             run_state,
             &tool_call_id,
             "capability forbidden",
+            request_correlation_id.as_deref(),
         )?;
         return Err(CoordinatorError::PolicyViolation(
             "tool capability forbidden for actor".to_string(),
@@ -1891,10 +2230,23 @@ where
 
     let hashline_edit = hashline_edit_metadata(&tool_id, &args_json);
 
-    append_tool_call_started_event(clock, redactor, run_state, &tool_call_id)?;
+    append_tool_call_started_event(
+        clock,
+        redactor,
+        run_state,
+        &tool_call_id,
+        request_correlation_id.as_deref(),
+    )?;
 
     if let Some(metadata) = hashline_edit.as_ref() {
-        append_edit_proposed_event(clock, redactor, run_state, &tool_call_id, metadata)?;
+        append_edit_proposed_event(
+            clock,
+            redactor,
+            run_state,
+            &tool_call_id,
+            metadata,
+            request_correlation_id.as_deref(),
+        )?;
     }
 
     let task_id = format!("task_{:06}", run_state.next_task_id);
@@ -1904,12 +2256,13 @@ where
         tool_id: tool_id.clone(),
     };
 
-    append_payload_event(
+    append_payload_event_with_correlation(
         clock,
         redactor,
         run_state,
-        system_actor(),
+        actor.clone(),
         Some(format!("task:{task_id}")),
+        request_correlation_id.clone(),
         EventV1::TaskScheduled(TaskScheduledEvent {
             task_id: task_id.clone(),
             state: TaskScheduleState::Started,
@@ -1925,12 +2278,15 @@ where
         task_id.clone(),
         TaskState {
             tool_call_id: tool_call_id.clone(),
+            owner_actor: actor.clone(),
+            request_correlation_id,
             queue_key,
             state: TaskExecutionState::Running,
             cancellation_token: cancellation_token.clone(),
             last_progress_mono_ms: clock.mono_ms(),
             last_progress_kind: JobProgressKind::Heartbeat,
             hashline_edit,
+            respond_to,
         },
     );
 
@@ -1989,6 +2345,7 @@ fn schedule_agent_turn<C, R>(
     job_tx: mpsc::Sender<Command>,
     run_state: &mut RunState,
     provider: Arc<dyn Provider>,
+    tool_registry: Arc<ToolRegistry>,
     profile: AgentProfile,
     request: AgentRequest,
     request_id: String,
@@ -1999,6 +2356,11 @@ where
 {
     let model = crate::agent::AgentModelRef::parse(&request.model_ref);
     let agent_id = request.agent_id.clone();
+    let prior_turns = run_state
+        .provider_context_by_agent
+        .get(&agent_id)
+        .cloned()
+        .unwrap_or_default();
     let task_id = format!("task_{:06}", run_state.next_task_id);
     run_state.next_task_id += 1;
 
@@ -2029,12 +2391,14 @@ where
                 job_tx,
                 run_state,
                 provider,
+                tool_registry,
                 QueuedAgentTurn {
                     task_id,
                     agent_id,
                     request_id,
                     profile,
                     request,
+                    prior_turns,
                     queue_key,
                 },
             )?;
@@ -2059,6 +2423,7 @@ where
                     request_id,
                     profile,
                     request,
+                    prior_turns,
                     queue_key,
                 },
             );
@@ -2068,12 +2433,42 @@ where
     Ok(())
 }
 
+fn append_agent_turn_task_scheduled_event<C, R>(
+    clock: &C,
+    redactor: &R,
+    run_state: &mut RunState,
+    task_id: &str,
+    agent_id: &str,
+    request_id: &str,
+    queue_key: &ConcurrencyKey,
+    state: TaskScheduleState,
+) -> Result<EventEnvelopeV1, CoordinatorError>
+where
+    C: Clock + ?Sized,
+    R: Redactor + ?Sized,
+{
+    append_payload_event_with_correlation(
+        clock,
+        redactor,
+        run_state,
+        agent_actor(agent_id),
+        Some(format!("task:{task_id}")),
+        Some(request_id.to_string()),
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: task_id.to_string(),
+            state,
+            queue_key: Some(queue_key.queue_key()),
+        }),
+    )
+}
+
 fn start_agent_turn_execution<C, R>(
     _clock: &C,
     _redactor: &R,
     job_tx: mpsc::Sender<Command>,
     run_state: &mut RunState,
     provider: Arc<dyn Provider>,
+    tool_registry: Arc<ToolRegistry>,
     task: QueuedAgentTurn,
 ) -> Result<(), CoordinatorError>
 where
@@ -2087,6 +2482,7 @@ where
         RunningAgentTurn {
             agent_id: task.agent_id.clone(),
             request_id: task.request_id.clone(),
+            request_prompt: task.request.prompt.clone(),
             queue_key: task.queue_key.clone(),
             cancellation_token: cancellation_token.clone(),
         },
@@ -2108,11 +2504,39 @@ where
                     },
                 }).await;
             }
-            outcome = run_single_turn_streaming(
+            outcome = run_multi_turn_streaming(
                 provider,
+                tool_registry,
                 &task.profile,
                 task.request_id.clone(),
                 task.request,
+                &task.prior_turns,
+                {
+                    let job_tx = job_tx.clone();
+                    let agent_id = task.agent_id.clone();
+                    let category = Some(task.profile.category.clone());
+                    move |tool_id, args_json| {
+                        let job_tx = job_tx.clone();
+                        let agent_id = agent_id.clone();
+                        let category = category.clone();
+                        async move {
+                            let (respond_to, response_rx) = oneshot::channel();
+                            job_tx
+                                .send(Command::ExecuteAgentToolCall {
+                                    actor: EventActor::new(ActorKind::Worker, Some(agent_id)),
+                                    category,
+                                    tool_id,
+                                    args_json,
+                                    respond_to,
+                                })
+                                .await
+                                .map_err(|_| "tool call channel closed".to_string())?;
+                            response_rx
+                                .await
+                                .map_err(|_| "tool call response channel closed".to_string())?
+                        }
+                    }
+                },
                 |event| {
                     let job_tx = job_tx.clone();
                     let task_id = task.task_id.clone();
@@ -2168,35 +2592,6 @@ where
     Ok(())
 }
 
-fn append_agent_turn_task_scheduled_event<C, R>(
-    clock: &C,
-    redactor: &R,
-    run_state: &mut RunState,
-    task_id: &str,
-    agent_id: &str,
-    request_id: &str,
-    queue_key: &ConcurrencyKey,
-    state: TaskScheduleState,
-) -> Result<EventEnvelopeV1, CoordinatorError>
-where
-    C: Clock + ?Sized,
-    R: Redactor + ?Sized,
-{
-    append_payload_event_with_correlation(
-        clock,
-        redactor,
-        run_state,
-        agent_actor(agent_id),
-        Some(format!("task:{task_id}")),
-        Some(request_id.to_string()),
-        EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: task_id.to_string(),
-            state,
-            queue_key: Some(queue_key.queue_key()),
-        }),
-    )
-}
-
 fn finalize_permission_denied<C, R>(
     clock: &C,
     redactor: &R,
@@ -2205,6 +2600,7 @@ fn finalize_permission_denied<C, R>(
     hashline_edit: Option<&HashlineEditMetadata>,
     kind: PermissionKind,
     reason: &str,
+    request_correlation_id: Option<&str>,
 ) -> Result<(), CoordinatorError>
 where
     C: Clock + ?Sized,
@@ -2234,10 +2630,18 @@ where
             &tool_call_id,
             metadata,
             reason.to_string(),
+            request_correlation_id,
         )?;
     }
 
-    append_failed_tool_call_finished_event(clock, redactor, run_state, &tool_call_id, reason)?;
+    append_failed_tool_call_finished_event(
+        clock,
+        redactor,
+        run_state,
+        &tool_call_id,
+        reason,
+        request_correlation_id,
+    )?;
     Ok(())
 }
 
@@ -2287,6 +2691,7 @@ fn append_tool_call_requested_event<C, R>(
     tool_call_id: &str,
     tool_id: &str,
     args_json: &Value,
+    request_correlation_id: Option<&str>,
 ) -> Result<EventEnvelopeV1, CoordinatorError>
 where
     C: Clock + ?Sized,
@@ -2294,7 +2699,9 @@ where
 {
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
     let mut context = EventContext::new(run_state.next_event_seq, actor);
-    context.correlation_id = Some(tool_call_id.to_string());
+    context.correlation_id = request_correlation_id
+        .map(ToOwned::to_owned)
+        .or_else(|| Some(tool_call_id.to_string()));
     context.stream_key = Some(format!("tool_call:{tool_call_id}"));
     let envelope = builder.tool_call_requested(context, tool_call_id, tool_id, args_json)?;
     append_built_event(run_state, envelope)
@@ -2312,6 +2719,7 @@ fn append_permission_requested_event<C, R>(
     request_digest: String,
     timeout_ms: u64,
     default_decision: EventPermissionDecision,
+    request_correlation_id: Option<&str>,
 ) -> Result<EventEnvelopeV1, CoordinatorError>
 where
     C: Clock + ?Sized,
@@ -2319,7 +2727,9 @@ where
 {
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
     let mut context = EventContext::new(run_state.next_event_seq, system_actor());
-    context.correlation_id = Some(tool_call_id.to_string());
+    context.correlation_id = request_correlation_id
+        .map(ToOwned::to_owned)
+        .or_else(|| Some(tool_call_id.to_string()));
     context.stream_key = Some(format!("permission:{permission_id}"));
 
     let envelope = builder.permission_requested(
@@ -2341,6 +2751,7 @@ fn append_tool_call_started_event<C, R>(
     redactor: &R,
     run_state: &mut RunState,
     tool_call_id: &str,
+    request_correlation_id: Option<&str>,
 ) -> Result<EventEnvelopeV1, CoordinatorError>
 where
     C: Clock + ?Sized,
@@ -2348,7 +2759,9 @@ where
 {
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
     let mut context = EventContext::new(run_state.next_event_seq, system_actor());
-    context.correlation_id = Some(tool_call_id.to_string());
+    context.correlation_id = request_correlation_id
+        .map(ToOwned::to_owned)
+        .or_else(|| Some(tool_call_id.to_string()));
     context.stream_key = Some(format!("tool_call:{tool_call_id}"));
     let envelope = builder.build(
         context,
@@ -2366,6 +2779,7 @@ fn append_tool_call_finished_event<C, R>(
     tool_call_id: &str,
     status: ToolCallStatus,
     output_summary: Option<String>,
+    request_correlation_id: Option<&str>,
 ) -> Result<EventEnvelopeV1, CoordinatorError>
 where
     C: Clock + ?Sized,
@@ -2374,7 +2788,9 @@ where
     let output_digest = output_summary.as_ref().map(|s| digest12(s.as_bytes()));
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
     let mut context = EventContext::new(run_state.next_event_seq, system_actor());
-    context.correlation_id = Some(tool_call_id.to_string());
+    context.correlation_id = request_correlation_id
+        .map(ToOwned::to_owned)
+        .or_else(|| Some(tool_call_id.to_string()));
     context.stream_key = Some(format!("tool_call:{tool_call_id}"));
     let envelope = builder.build(
         context,
@@ -2394,6 +2810,7 @@ fn append_edit_proposed_event<C, R>(
     run_state: &mut RunState,
     tool_call_id: &str,
     metadata: &HashlineEditMetadata,
+    request_correlation_id: Option<&str>,
 ) -> Result<EventEnvelopeV1, CoordinatorError>
 where
     C: Clock + ?Sized,
@@ -2401,7 +2818,9 @@ where
 {
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
     let mut context = EventContext::new(run_state.next_event_seq, system_actor());
-    context.correlation_id = Some(tool_call_id.to_string());
+    context.correlation_id = request_correlation_id
+        .map(ToOwned::to_owned)
+        .or_else(|| Some(tool_call_id.to_string()));
     context.stream_key = Some(format!("edit:{}", metadata.edit_id));
 
     let envelope = builder.build(
@@ -2427,6 +2846,7 @@ fn append_edit_applied_event<C, R>(
     new_file_digest: String,
     diff_rel_path: Option<String>,
     diff_digest: Option<String>,
+    request_correlation_id: Option<&str>,
 ) -> Result<EventEnvelopeV1, CoordinatorError>
 where
     C: Clock + ?Sized,
@@ -2434,7 +2854,9 @@ where
 {
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
     let mut context = EventContext::new(run_state.next_event_seq, system_actor());
-    context.correlation_id = Some(tool_call_id.to_string());
+    context.correlation_id = request_correlation_id
+        .map(ToOwned::to_owned)
+        .or_else(|| Some(tool_call_id.to_string()));
     context.stream_key = Some(format!("edit:{}", metadata.edit_id));
 
     let envelope = builder.build(
@@ -2458,6 +2880,7 @@ fn append_edit_rejected_event<C, R>(
     tool_call_id: &str,
     metadata: &HashlineEditMetadata,
     reason: String,
+    request_correlation_id: Option<&str>,
 ) -> Result<EventEnvelopeV1, CoordinatorError>
 where
     C: Clock + ?Sized,
@@ -2465,7 +2888,9 @@ where
 {
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
     let mut context = EventContext::new(run_state.next_event_seq, system_actor());
-    context.correlation_id = Some(tool_call_id.to_string());
+    context.correlation_id = request_correlation_id
+        .map(ToOwned::to_owned)
+        .or_else(|| Some(tool_call_id.to_string()));
     context.stream_key = Some(format!("edit:{}", metadata.edit_id));
 
     let envelope = builder.build(
@@ -2486,6 +2911,7 @@ fn append_failed_tool_call_finished_event<C, R>(
     run_state: &mut RunState,
     tool_call_id: &str,
     reason: &str,
+    request_correlation_id: Option<&str>,
 ) -> Result<EventEnvelopeV1, CoordinatorError>
 where
     C: Clock + ?Sized,
@@ -2498,6 +2924,7 @@ where
         tool_call_id,
         ToolCallStatus::Failed,
         Some(reason.to_string()),
+        request_correlation_id,
     )
 }
 
@@ -2507,6 +2934,7 @@ fn append_artifact_written_event<C, R>(
     run_state: &mut RunState,
     tool_call_id: &str,
     artifact: &crate::tool::ArtifactRef,
+    request_correlation_id: Option<&str>,
 ) -> Result<EventEnvelopeV1, CoordinatorError>
 where
     C: Clock + ?Sized,
@@ -2523,7 +2951,9 @@ where
 
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
     let mut context = EventContext::new(run_state.next_event_seq, system_actor());
-    context.correlation_id = Some(tool_call_id.to_string());
+    context.correlation_id = request_correlation_id
+        .map(ToOwned::to_owned)
+        .or_else(|| Some(tool_call_id.to_string()));
     context.stream_key = Some(format!("tool_call:{tool_call_id}"));
     let envelope = builder.build(
         context,
@@ -2598,6 +3028,19 @@ fn permission_request_digest(tool_id: &str, args_json: &Value) -> String {
     digest12(&bytes)
 }
 
+fn tool_request_correlation_id(run_state: &RunState, actor: &EventActor) -> Option<String> {
+    if actor.kind != ActorKind::Worker {
+        return None;
+    }
+
+    let agent_id = actor.agent_id.as_deref()?;
+    run_state
+        .running_agent_turns
+        .values()
+        .find(|turn| turn.agent_id == agent_id)
+        .map(|turn| turn.request_id.clone())
+}
+
 fn hashline_edit_metadata(tool_id: &str, args_json: &Value) -> Option<HashlineEditMetadata> {
     if tool_id != HASHLINE_APPLY_TOOL_ID {
         return None;
@@ -2669,6 +3112,212 @@ fn workspace_file_digest(workspace_root: &Path, relative_path: &str) -> Result<S
     Ok(blake3::hash(&bytes).to_hex().to_string())
 }
 
+#[derive(Default)]
+struct HistoricalRequestState {
+    user_text: Option<String>,
+    prompt_summary: Option<String>,
+    assistant_output: String,
+    agent_id: Option<String>,
+}
+
+fn restore_historical_user_prompt(
+    run_id: &str,
+    request_id: &str,
+    user_text: Option<String>,
+    prompt_summary: Option<String>,
+) -> Result<String, CoordinatorError> {
+    if let Some(user_text) = user_text {
+        return Ok(user_text);
+    }
+
+    let Some(prompt_summary) = prompt_summary
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Err(CoordinatorError::ResumeRestoreFailed {
+            run_id: run_id.to_string(),
+            reason: format!("missing user message for completed request `{request_id}`"),
+        });
+    };
+
+    if prompt_summary.ends_with('…') {
+        return Err(CoordinatorError::ResumeRestoreFailed {
+            run_id: run_id.to_string(),
+            reason: format!(
+                "missing user message for completed request `{request_id}` and prompt_summary is truncated"
+            ),
+        });
+    }
+
+    Ok(prompt_summary.to_string())
+}
+
+fn restore_provider_context_from_history(
+    session_dir: &Path,
+    run_id: &str,
+) -> Result<BTreeMap<String, Vec<ProviderConversationTurn>>, CoordinatorError> {
+    let events_path = session_dir.join(run_id).join("events.jsonl");
+    let file =
+        fs::File::open(&events_path).map_err(|source| CoordinatorError::ResumeRestoreFailed {
+            run_id: run_id.to_string(),
+            reason: format!(
+                "failed to open historical events {}: {source}",
+                events_path.display()
+            ),
+        })?;
+
+    let mut histories: BTreeMap<String, Vec<ProviderConversationTurn>> = BTreeMap::new();
+    let mut requests: BTreeMap<String, HistoricalRequestState> = BTreeMap::new();
+    let mut expected_seq = 1_u64;
+
+    for (line_number, line) in BufReader::new(file).lines().enumerate() {
+        let line = line.map_err(|source| CoordinatorError::ResumeRestoreFailed {
+            run_id: run_id.to_string(),
+            reason: format!(
+                "failed to read historical event line {} in {}: {source}",
+                line_number + 1,
+                events_path.display()
+            ),
+        })?;
+
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        let event: EventEnvelopeV1 = serde_json::from_str(&line).map_err(|source| {
+            CoordinatorError::ResumeRestoreFailed {
+                run_id: run_id.to_string(),
+                reason: format!(
+                    "invalid historical event line {} in {}: {source}",
+                    line_number + 1,
+                    events_path.display()
+                ),
+            }
+        })?;
+
+        if event.seq != expected_seq {
+            return Err(CoordinatorError::ResumeRestoreFailed {
+                run_id: run_id.to_string(),
+                reason: format!(
+                    "historical sequence mismatch at {}: expected {expected_seq}, got {}",
+                    events_path.display(),
+                    event.seq
+                ),
+            });
+        }
+        expected_seq = expected_seq.saturating_add(1);
+
+        match &event.payload {
+            EventV1::UserMessageSubmitted(payload) => {
+                requests
+                    .entry(payload.request_id.clone())
+                    .or_default()
+                    .user_text = Some(payload.text.clone());
+            }
+            EventV1::ProviderRequestStarted(payload) => {
+                requests
+                    .entry(payload.request_id.clone())
+                    .or_default()
+                    .prompt_summary = Some(payload.prompt_summary.clone());
+                if let Some(agent_id) = event
+                    .actor
+                    .agent_id
+                    .as_deref()
+                    .filter(|value| !value.trim().is_empty())
+                {
+                    requests
+                        .entry(payload.request_id.clone())
+                        .or_default()
+                        .agent_id = Some(agent_id.to_string());
+                }
+            }
+            EventV1::ProviderStreamDelta(payload) => {
+                requests
+                    .entry(payload.request_id.clone())
+                    .or_default()
+                    .assistant_output
+                    .push_str(&payload.delta);
+            }
+            EventV1::TaskCompleted(payload) => {
+                let Some(request_id) = event.correlation_id.as_deref() else {
+                    continue;
+                };
+
+                let Some(agent_id) = event
+                    .actor
+                    .agent_id
+                    .as_deref()
+                    .filter(|value| !value.trim().is_empty())
+                    .map(str::to_string)
+                else {
+                    return Err(CoordinatorError::ResumeRestoreFailed {
+                        run_id: run_id.to_string(),
+                        reason: format!(
+                            "task completion for request `{request_id}` missing agent actor"
+                        ),
+                    });
+                };
+
+                let request_state = requests.remove(request_id).ok_or_else(|| {
+                    CoordinatorError::ResumeRestoreFailed {
+                        run_id: run_id.to_string(),
+                        reason: format!(
+                            "missing provider request history for completed request `{request_id}`"
+                        ),
+                    }
+                })?;
+
+                let user_prompt = restore_historical_user_prompt(
+                    run_id,
+                    request_id,
+                    request_state.user_text,
+                    request_state.prompt_summary,
+                )?;
+
+                let assistant_response = if payload.result_summary.is_empty() {
+                    request_state.assistant_output
+                } else {
+                    payload.result_summary.clone()
+                };
+
+                histories
+                    .entry(request_state.agent_id.unwrap_or(agent_id))
+                    .or_default()
+                    .push(ProviderConversationTurn {
+                        user_prompt,
+                        assistant_response,
+                    });
+            }
+            _ => {}
+        }
+    }
+
+    Ok(histories)
+}
+
+fn parse_prefixed_counter(id: &str, expected_prefix: &str) -> Option<u64> {
+    let tail = id.strip_prefix(expected_prefix)?;
+    if tail.is_empty() {
+        return None;
+    }
+
+    tail.parse::<u64>().ok()
+}
+
+fn checked_next_counter(
+    value: u64,
+    run_id: &str,
+    counter_kind: &'static str,
+) -> Result<u64, CoordinatorError> {
+    value
+        .checked_add(1)
+        .ok_or_else(|| CoordinatorError::ResumeRestoreFailed {
+            run_id: run_id.to_string(),
+            reason: format!("{counter_kind} counter overflow"),
+        })
+}
+
 fn append_built_event(
     run_state: &mut RunState,
     envelope: EventEnvelopeV1,
@@ -2711,15 +3360,25 @@ mod tests {
 
     use async_trait::async_trait;
     use serde_json::json;
+    use tokio::sync::mpsc;
+    use tokio_util::sync::CancellationToken;
 
     use crate::clock::FakeClock;
     use crate::config::PermissionMode;
-    use crate::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1, ToolCallStatus};
+    use crate::event::{
+        ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1,
+        ProviderRequestStartedEvent, RunFinishedEvent, RunStartedEvent, TaskCompletedEvent,
+        ToolCallStatus, SCHEMA_VERSION,
+    };
     use crate::perm::{PermissionDecision, PermissionPolicy};
     use crate::redact::DefaultRedactor;
+    use crate::sched::{ConcurrencyKey, ScheduleDecision};
     use crate::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 
-    use super::{spawn_coordinator, CoordinatorConfig};
+    use super::{
+        restore_provider_context_from_history, spawn_coordinator, Coordinator, CoordinatorConfig,
+        JobOutcome, JobProgressKind, TaskExecutionState, TaskState,
+    };
 
     struct TestShellTool;
 
@@ -2973,6 +3632,230 @@ mod tests {
                 EventV1::ToolCallStarted(data) if data.tool_call_id == tool_call_id
             )
         }));
+    }
+
+    #[test]
+    fn stale_tool_task_late_result_preserves_owner_actor() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let config = test_config(temp_dir.path());
+        let clock = Arc::new(FakeClock::new());
+        let redactor = Arc::new(DefaultRedactor::default());
+        let (_command_tx, command_rx) = mpsc::channel(1);
+        let (job_tx, job_rx) = mpsc::channel(1);
+        let mut coordinator =
+            Coordinator::new(config, clock.clone(), redactor, command_rx, job_tx, job_rx);
+
+        let run = coordinator
+            .start_run_internal("stale_owner".to_string(), temp_dir.path().to_path_buf())
+            .expect("start run");
+        let task_id = "task_000001".to_string();
+        let queue_key = ConcurrencyKey::Tool {
+            tool_id: "shell.run".to_string(),
+        };
+        let owner_actor = EventActor::new(ActorKind::Worker, Some("agent_000001".to_string()));
+        let request_correlation_id = Some("req_000001".to_string());
+
+        {
+            let run_state = coordinator.run_state.as_mut().expect("run state");
+            assert!(matches!(
+                run_state
+                    .scheduler
+                    .schedule(task_id.clone(), queue_key.clone()),
+                ScheduleDecision::Started(_)
+            ));
+            run_state.tasks.insert(
+                task_id.clone(),
+                TaskState {
+                    tool_call_id: "toolcall_000001".to_string(),
+                    owner_actor: owner_actor.clone(),
+                    request_correlation_id: request_correlation_id.clone(),
+                    queue_key,
+                    state: TaskExecutionState::Running,
+                    cancellation_token: CancellationToken::new(),
+                    last_progress_mono_ms: 0,
+                    last_progress_kind: JobProgressKind::Heartbeat,
+                    hashline_edit: None,
+                    respond_to: None,
+                },
+            );
+        }
+
+        clock.advance(25);
+        coordinator
+            .watchdog_tick_internal()
+            .expect("detect stale tool task");
+        coordinator
+            .job_finished_internal(
+                task_id.clone(),
+                JobOutcome::Cancelled {
+                    reason: "job cancelled".to_string(),
+                },
+            )
+            .expect("record late result");
+
+        let events = read_events(&run.events_path);
+        assert!(events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::StaleDetected(data)
+                    if data.task_id == task_id
+                        && event.actor == owner_actor
+                        && event.correlation_id.as_deref() == request_correlation_id.as_deref()
+            )
+        }));
+        assert!(events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskResultLate(data)
+                    if data.task_id == task_id
+                        && event.actor == owner_actor
+                        && event.correlation_id.as_deref() == request_correlation_id.as_deref()
+            )
+        }));
+    }
+
+    #[test]
+    fn restore_provider_context_uses_task_completed_summary_for_iterative_history() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let run_id = "run_iterative_restore";
+        write_restore_history_fixture(
+            temp_dir.path(),
+            run_id,
+            &[
+                restore_fixture_event(
+                    run_id,
+                    1,
+                    EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+                    None,
+                    EventV1::RunStarted(RunStartedEvent {
+                        run_name: "interactive".to_string(),
+                        workspace_root: "/workspace/project".to_string(),
+                    }),
+                ),
+                restore_fixture_event(
+                    run_id,
+                    2,
+                    EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+                    None,
+                    EventV1::AgentSpawned(AgentSpawnedEvent {
+                        agent_id: "agent_000001".to_string(),
+                        profile: "alpha".to_string(),
+                        parent_agent_id: None,
+                    }),
+                ),
+                restore_fixture_event(
+                    run_id,
+                    3,
+                    EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                    Some("req_000001"),
+                    EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                        request_id: "req_000001".to_string(),
+                        provider_id: "mock".to_string(),
+                        model_id: "model-1".to_string(),
+                        prompt_summary: "first question".to_string(),
+                        request_digest: "digest-1".to_string(),
+                    }),
+                ),
+                restore_fixture_event(
+                    run_id,
+                    4,
+                    EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                    Some("req_000001"),
+                    EventV1::ProviderStreamDelta(crate::event::ProviderStreamDeltaEvent {
+                        request_id: "req_000001".to_string(),
+                        delta: "calling tool".to_string(),
+                    }),
+                ),
+                restore_fixture_event(
+                    run_id,
+                    5,
+                    EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                    Some("req_000001_iter_02"),
+                    EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                        request_id: "req_000001_iter_02".to_string(),
+                        provider_id: "mock".to_string(),
+                        model_id: "model-1".to_string(),
+                        prompt_summary: "tool result follow-up".to_string(),
+                        request_digest: "digest-2".to_string(),
+                    }),
+                ),
+                restore_fixture_event(
+                    run_id,
+                    6,
+                    EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                    Some("req_000001_iter_02"),
+                    EventV1::ProviderStreamDelta(crate::event::ProviderStreamDeltaEvent {
+                        request_id: "req_000001_iter_02".to_string(),
+                        delta: "final answer".to_string(),
+                    }),
+                ),
+                restore_fixture_event(
+                    run_id,
+                    7,
+                    EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                    Some("req_000001"),
+                    EventV1::TaskCompleted(TaskCompletedEvent {
+                        task_id: "task_000001".to_string(),
+                        result_summary: "final answer".to_string(),
+                        result_digest: "digest-task".to_string(),
+                    }),
+                ),
+                restore_fixture_event(
+                    run_id,
+                    8,
+                    EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+                    None,
+                    EventV1::RunFinished(RunFinishedEvent {
+                        summary: "done".to_string(),
+                    }),
+                ),
+            ],
+        );
+
+        let restored = restore_provider_context_from_history(temp_dir.path(), run_id)
+            .expect("restore provider context");
+        let turns = restored
+            .get("agent_000001")
+            .expect("agent should have restored history");
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].user_prompt, "first question");
+        assert_eq!(turns[0].assistant_response, "final answer");
+    }
+
+    fn write_restore_history_fixture(session_dir: &Path, run_id: &str, events: &[EventEnvelopeV1]) {
+        let run_dir = session_dir.join(run_id);
+        fs::create_dir_all(&run_dir).expect("create run directory");
+
+        let mut body = String::new();
+        for event in events {
+            let line = serde_json::to_string(event).expect("serialize event");
+            body.push_str(&line);
+            body.push('\n');
+        }
+
+        fs::write(run_dir.join("events.jsonl"), body).expect("write events");
+    }
+
+    fn restore_fixture_event(
+        run_id: &str,
+        seq: u64,
+        actor: EventActor,
+        correlation_id: Option<&str>,
+        payload: EventV1,
+    ) -> EventEnvelopeV1 {
+        EventEnvelopeV1 {
+            schema_version: SCHEMA_VERSION,
+            event_id: format!("evt-{seq:04}"),
+            seq,
+            run_id: run_id.to_string(),
+            mono_ms: seq,
+            ts: None,
+            actor,
+            correlation_id: correlation_id.map(str::to_string),
+            causation_id: None,
+            stream_key: Some(format!("run:{run_id}")),
+            payload,
+        }
     }
 
     fn read_events(path: &Path) -> Vec<EventEnvelopeV1> {
