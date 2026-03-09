@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use harness_providers::{
-    CompletionMessage, CompletionRequest, MessageRole, Provider, ProviderEventStream,
-    ProviderStreamEvent, ToolChoice, ToolDef,
+    AssistantToolCall, CompletionMessage, CompletionRequest, MessageRole, Provider,
+    ProviderEventStream, ProviderStreamEvent, ToolChoice, ToolDef,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -40,6 +40,12 @@ pub struct AgentRequest {
     pub agent_id: String,
     pub prompt: String,
     pub model_ref: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderConversationTurn {
+    pub user_prompt: String,
+    pub assistant_response: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,6 +116,7 @@ pub async fn run_single_turn_streaming<F, Fut>(
     profile: &AgentProfile,
     request_id: String,
     request: AgentRequest,
+    prior_turns: &[ProviderConversationTurn],
     mut emit: F,
 ) -> AgentTurnOutcome
 where
@@ -117,22 +124,10 @@ where
     Fut: Future<Output = ()>,
 {
     let model = AgentModelRef::parse(&request.model_ref);
+    let messages = build_provider_context_messages(profile, prior_turns, &request.prompt);
     let completion_request = CompletionRequest {
         model_id: model.model_id.clone(),
-        messages: vec![
-            CompletionMessage {
-                role: MessageRole::System,
-                content: profile.system_prompt.clone(),
-                name: None,
-                tool_call_id: None,
-            },
-            CompletionMessage {
-                role: MessageRole::User,
-                content: request.prompt.clone(),
-                name: None,
-                tool_call_id: None,
-            },
-        ],
+        messages,
         temperature: Some(0.0),
         max_tokens: None,
         tools: None,
@@ -212,6 +207,7 @@ pub async fn run_multi_turn_streaming<F, Fut, T, TFut>(
     profile: &AgentProfile,
     request_id: String,
     request: AgentRequest,
+    prior_turns: &[ProviderConversationTurn],
     mut call_tool_and_wait: T,
     mut emit: F,
 ) -> AgentTurnOutcome
@@ -227,29 +223,12 @@ where
         Err(reason) => return AgentTurnOutcome::Failed { reason },
     };
 
-    let mut messages = vec![
-        CompletionMessage {
-            role: MessageRole::System,
-            content: profile.system_prompt.clone(),
-            name: None,
-            tool_call_id: None,
-        },
-        CompletionMessage {
-            role: MessageRole::User,
-            content: request.prompt.clone(),
-            name: None,
-            tool_call_id: None,
-        },
-    ];
+    let mut messages = build_provider_context_messages(profile, prior_turns, &request.prompt);
 
     let mut total_tool_calls = 0usize;
 
-    for iter in 1..=MAX_ITERS {
-        let turn_request_id = if iter == 1 {
-            request_id.clone()
-        } else {
-            format!("{request_id}_iter_{iter:02}")
-        };
+    for _iter in 1..=MAX_ITERS {
+        let turn_request_id = request_id.clone();
 
         let completion_request = CompletionRequest {
             model_id: model.model_id.clone(),
@@ -331,11 +310,23 @@ where
         ))
         .await;
 
+        let assistant_tool_calls = (!tool_calls.is_empty()).then(|| {
+            tool_calls
+                .iter()
+                .map(|tool_call| AssistantToolCall {
+                    tool_call_id: tool_call.tool_call_id.clone(),
+                    function_name: tool_call.function_name.clone(),
+                    arguments_json: tool_call.arguments_json.clone(),
+                })
+                .collect::<Vec<_>>()
+        });
+
         messages.push(CompletionMessage {
             role: MessageRole::Assistant,
             content: output.clone(),
             name: None,
             tool_call_id: None,
+            assistant_tool_calls,
         });
 
         if tool_calls.is_empty() {
@@ -345,9 +336,7 @@ where
         total_tool_calls += tool_calls.len();
         if total_tool_calls > MAX_TOOL_CALLS_TOTAL {
             return AgentTurnOutcome::Failed {
-                reason: format!(
-                    "agent turn exceeded MAX_TOOL_CALLS_TOTAL={MAX_TOOL_CALLS_TOTAL}"
-                ),
+                reason: format!("agent turn exceeded MAX_TOOL_CALLS_TOTAL={MAX_TOOL_CALLS_TOTAL}"),
             };
         }
 
@@ -401,6 +390,7 @@ where
                 content: tool_result_to_message_content(&tool_result),
                 name: Some(tool_call.function_name),
                 tool_call_id: Some(tool_call.tool_call_id),
+                assistant_tool_calls: None,
             });
         }
     }
@@ -408,6 +398,48 @@ where
     AgentTurnOutcome::Failed {
         reason: format!("agent turn exceeded MAX_ITERS={MAX_ITERS}"),
     }
+}
+
+pub fn build_provider_context_messages(
+    profile: &AgentProfile,
+    prior_turns: &[ProviderConversationTurn],
+    prompt: &str,
+) -> Vec<CompletionMessage> {
+    let mut messages = Vec::with_capacity(2 + prior_turns.len().saturating_mul(2));
+    messages.push(CompletionMessage {
+        role: MessageRole::System,
+        content: profile.system_prompt.clone(),
+        name: None,
+        tool_call_id: None,
+        assistant_tool_calls: None,
+    });
+
+    for turn in prior_turns {
+        messages.push(CompletionMessage {
+            role: MessageRole::User,
+            content: turn.user_prompt.clone(),
+            name: None,
+            tool_call_id: None,
+            assistant_tool_calls: None,
+        });
+        messages.push(CompletionMessage {
+            role: MessageRole::Assistant,
+            content: turn.assistant_response.clone(),
+            name: None,
+            tool_call_id: None,
+            assistant_tool_calls: None,
+        });
+    }
+
+    messages.push(CompletionMessage {
+        role: MessageRole::User,
+        content: prompt.to_string(),
+        name: None,
+        tool_call_id: None,
+        assistant_tool_calls: None,
+    });
+
+    messages
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -500,11 +532,7 @@ mod tests {
         let tool_registry = test_tool_registry();
         let tool_defs =
             build_provider_tool_defs(&profile, tool_registry.as_ref()).expect("build tool defs");
-        let function_name = tool_defs
-            .first()
-            .expect("tool def")
-            .function_name
-            .clone();
+        let function_name = tool_defs.first().expect("tool def").function_name.clone();
 
         let tool_result = ToolResult::text("file content");
         let tool_result_message = tool_result_to_message_content(&tool_result);
@@ -522,7 +550,12 @@ mod tests {
             vec![
                 completion_system_message("sys"),
                 completion_user_message("Use a tool"),
-                completion_assistant_message("calling tool"),
+                completion_assistant_message_with_tool_call(
+                    "calling tool",
+                    &function_name,
+                    "call_1",
+                    r#"{"filePath":"/tmp/demo.txt"}"#,
+                ),
                 completion_tool_message(&tool_result_message, &function_name, "call_1"),
             ],
             &tool_defs,
@@ -572,6 +605,7 @@ mod tests {
             &profile,
             "req_000001".to_string(),
             request,
+            &[],
             {
                 let seen_calls = seen_calls.clone();
                 move |tool_id, args_json| {
@@ -649,6 +683,7 @@ mod tests {
             &profile,
             "req_000002".to_string(),
             request,
+            &[],
             {
                 let call_count = call_count.clone();
                 move |_tool_id, _args_json| {
@@ -681,11 +716,7 @@ mod tests {
         let tool_registry = test_tool_registry();
         let tool_defs =
             build_provider_tool_defs(&profile, tool_registry.as_ref()).expect("build tool defs");
-        let function_name = tool_defs
-            .first()
-            .expect("tool def")
-            .function_name
-            .clone();
+        let function_name = tool_defs.first().expect("tool def").function_name.clone();
 
         let first_request = completion_request(
             "model-1",
@@ -725,6 +756,7 @@ mod tests {
             &profile,
             "req_000003".to_string(),
             request,
+            &[],
             {
                 let call_count = call_count.clone();
                 move |_tool_id, _args_json| {
@@ -752,7 +784,8 @@ mod tests {
 
     #[tokio::test]
     async fn multi_turn_runner_fails_closed_on_tool_failure() {
-        let outcome = run_with_single_tool_call_failure("tool execution failed: command failed").await;
+        let outcome =
+            run_with_single_tool_call_failure("tool execution failed: command failed").await;
         assert_failure_reason_contains(outcome, "command failed");
     }
 
@@ -777,11 +810,7 @@ mod tests {
         let tool_registry = test_tool_registry();
         let tool_defs =
             build_provider_tool_defs(&profile, tool_registry.as_ref()).expect("build tool defs");
-        let function_name = tool_defs
-            .first()
-            .expect("tool def")
-            .function_name
-            .clone();
+        let function_name = tool_defs.first().expect("tool def").function_name.clone();
 
         let first_request = completion_request(
             "model-1",
@@ -821,6 +850,7 @@ mod tests {
             &profile,
             "req_000004".to_string(),
             request,
+            &[],
             move |_tool_id, _args_json| {
                 let error = error.clone();
                 async move { Err(error) }
@@ -879,6 +909,7 @@ mod tests {
             content: content.to_string(),
             name: None,
             tool_call_id: None,
+            assistant_tool_calls: None,
         }
     }
 
@@ -888,15 +919,26 @@ mod tests {
             content: content.to_string(),
             name: None,
             tool_call_id: None,
+            assistant_tool_calls: None,
         }
     }
 
-    fn completion_assistant_message(content: &str) -> harness_providers::CompletionMessage {
+    fn completion_assistant_message_with_tool_call(
+        content: &str,
+        function_name: &str,
+        tool_call_id: &str,
+        arguments_json: &str,
+    ) -> harness_providers::CompletionMessage {
         harness_providers::CompletionMessage {
             role: harness_providers::MessageRole::Assistant,
             content: content.to_string(),
             name: None,
             tool_call_id: None,
+            assistant_tool_calls: Some(vec![harness_providers::AssistantToolCall {
+                tool_call_id: tool_call_id.to_string(),
+                function_name: function_name.to_string(),
+                arguments_json: arguments_json.to_string(),
+            }]),
         }
     }
 
@@ -910,6 +952,7 @@ mod tests {
             content: content.to_string(),
             name: Some(function_name.to_string()),
             tool_call_id: Some(tool_call_id.to_string()),
+            assistant_tool_calls: None,
         }
     }
 
