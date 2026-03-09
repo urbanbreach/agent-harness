@@ -1,6 +1,6 @@
-    run run_fixture · unknown/unknown · -
-     ◷  requested  permission
-       Apply hashline edit to demo.txt
+  run run_fixture · unknown/unknown · -
+   ◷  requested  permission
+     Apply hashline edit to demo.txt
 
 
 
@@ -23,8 +23,8 @@
 
 
 
-     Permission blocked   permission required · Apply hashline edit to demo.txt  ·  agents 0
-    ┌Composer · disabled · Permission blocked──────────────────────────────────────────────────┐
-    │keep this draft                                                                           │
-    └──────────────────────────────────────────────────────────────────────────────────────────┘
-    i details  2 events  3 diff  4 help  q quit
+   Permission blocked   permission required · Apply hashline edit to demo.txt
+  ┌Composer · disabled · Permission blocked──────────────────────────────────────────────────────┐
+  │keep this draft                                                                               │
+  └──────────────────────────────────────────────────────────────────────────────────────────────┘
+  i details  2 events  3 diff  4 help  q quit
