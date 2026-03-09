@@ -2,4 +2,4 @@
 source: crates/harness-tui/src/lib.rs
 expression: status_row
 ---
-                      Ready   ready for first turn  ·  agents 2 · queued 1 · running 1 · stale 1
+   Ready   ready for first turn  ·  agents 2 · queued 1 · running 1 · stale 1 · warn stale for 3001 ms
