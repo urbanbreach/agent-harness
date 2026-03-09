@@ -9,7 +9,14 @@ pub enum OverlayKind {
 pub struct OverlayState {
     pub details_drawer_open: bool,
     pub palette_visible: bool,
+    pub session_history_visible: bool,
     pub permission_pending: bool,
+}
+
+impl OverlayState {
+    pub fn command_palette_channel_visible(self) -> bool {
+        self.palette_visible || self.session_history_visible
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -23,7 +30,7 @@ impl OverlayStack {
         if state.details_drawer_open {
             overlays.push(OverlayKind::DetailsDrawer);
         }
-        if state.palette_visible && !state.permission_pending {
+        if state.command_palette_channel_visible() && !state.permission_pending {
             overlays.push(OverlayKind::CommandPalette);
         }
         if state.permission_pending {
