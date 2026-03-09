@@ -1,4 +1,5 @@
-    run unknown · unknown/unknown · -
+  run unknown · unknown/unknown · -
+   Waiting for first turn…
 
 
 
@@ -9,10 +10,6 @@
 
 
 
-                                               Harness
-
-                   Start a conversation to begin
-                   Enter send · Shift+Enter newline · ↑/↓ history
 
 
 
@@ -23,8 +20,11 @@
 
 
 
-     Ready   ready for first turn  ·  agents 0 · queued 0 · running 0 · stale 0
-    ┌Composer · 1 line · 14 chars──────────────────────────────────────────────────────────────┐
-    │Hello from PTY█                                                                           │
-    └──────────────────────────────────────────────────────────────────────────────────────────┘
-    Enter send  Shift+Enter nl  i details  2 events  3 diff  4 help  q quit
+
+
+
+   Ready   ready for first turn
+  ┌Composer · 1 line · 14 chars──────────────────────────────────────────────────────────────────┐
+  │Hello from PTY█                                                                               │
+  └──────────────────────────────────────────────────────────────────────────────────────────────┘
+  Enter send  Shift+Enter nl  i details  2 events  3 diff  4 help  q quit
