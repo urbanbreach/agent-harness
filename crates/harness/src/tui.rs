@@ -1230,7 +1230,7 @@ fn unique_interactive_run_id() -> String {
 mod tests {
     use super::*;
     use harness_core::event::{AgentSpawnedEvent, ProviderRequestStartedEvent};
-    use harness_tui::app::AppState;
+    use harness_tui::app::{set_pending_live_prompt_draft, AppState};
 
     #[test]
     fn tui_startup_new_session_bootstraps_live_after_intent() {
