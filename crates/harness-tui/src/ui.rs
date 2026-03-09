@@ -9,13 +9,16 @@ use ratatui::{
 };
 
 use crate::app::{
-    ActivityEntry, ActivityStatus, AppState, Focus, OrchestrationTaskRow, OrchestrationTaskState,
-    RuntimeStateKind, Tab, ToolCallDisplayStatus,
+    session_history_profile_label, session_history_provider_model_label,
+    session_history_recency_label, session_history_resumability_label, session_history_run_name,
+    session_history_status_label, ActivityEntry, ActivityStatus, AppState, Focus,
+    OrchestrationTaskRow, OrchestrationTaskState, RuntimeStateKind, StartupLauncherAction, Tab,
+    ToolCallDisplayStatus,
 };
 use crate::keybindings::Action;
 use crate::layout::{
-    centered_block_area, composer_input_height, details_drawer_areas, inset_rect,
-    secondary_surface_layout, split_secondary_surface, FrameLayoutPlan,
+    composer_input_height, details_drawer_areas, inset_rect, secondary_surface_layout,
+    split_secondary_surface, startup_shell_area, FrameLayoutPlan,
 };
 use crate::overlay::OverlayKind;
 use crate::theme::Theme;
@@ -43,6 +46,10 @@ pub fn render_app(frame: &mut Frame, app: &AppState) {
 }
 
 fn render_header(frame: &mut Frame, app: &AppState, area: Rect, text_area: Rect, theme: &Theme) {
+    if startup_shell_visible(app) {
+        return;
+    }
+
     let run_id = app.run_id().unwrap_or("unknown");
 
     let header_text = if app.replay_mode {
@@ -274,6 +281,7 @@ fn render_live_session_surface(
         plan.shell,
     );
     render_transcript_pane(frame, app, transcript_area, theme);
+    render_live_details_overlay(frame, app, theme, plan.details_overlay);
     render_status_strip(frame, app, status_area, theme);
     render_prompt_pane(frame, app, composer_area, theme);
 }
@@ -281,9 +289,7 @@ fn render_live_session_surface(
 fn render_overlays(frame: &mut Frame, app: &AppState, theme: &Theme, plan: &FrameLayoutPlan) {
     for overlay in &app.overlay_stack() {
         match overlay {
-            OverlayKind::DetailsDrawer => {
-                render_live_details_overlay(frame, app, theme, plan.details_overlay)
-            }
+            OverlayKind::DetailsDrawer => {}
             OverlayKind::CommandPalette => {
                 render_command_palette_overlay(frame, app, theme, plan.palette_overlay)
             }
@@ -310,10 +316,21 @@ fn render_command_palette_overlay(
 
     frame.render_widget(Clear, overlay);
     let card_surface = theme.surface.panel_elevated;
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.border.focus))
-        .style(Style::default().bg(card_surface));
+    let block = elevated_card_block(
+        Line::from(Span::styled(
+            if app.session_history_visible {
+                session_history_overlay_title(app)
+            } else {
+                "Command palette"
+            },
+            Style::default()
+                .fg(theme.text.accent)
+                .add_modifier(Modifier::BOLD),
+        )),
+        card_surface,
+        theme.border.focus,
+        theme.text.accent,
+    );
     let inner = block.inner(overlay);
     frame.render_widget(block, overlay);
 
@@ -321,28 +338,51 @@ fn render_command_palette_overlay(
         return;
     }
 
+    if app.session_history_visible {
+        render_session_history_overlay(frame, app, theme, inner, card_surface);
+    } else {
+        let sections = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Min(0)])
+            .split(inner);
+
+        render_command_palette_input(frame, app, theme, sections[0]);
+        render_command_palette_list(frame, app, theme, sections[1]);
+    }
+}
+
+fn render_session_history_overlay(
+    frame: &mut Frame,
+    app: &AppState,
+    theme: &Theme,
+    area: Rect,
+    card_surface: Color,
+) {
+    let show_banner = app.continue_disabled_banner.is_some();
     let sections = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
+            Constraint::Length(if show_banner { 1 } else { 0 }),
             Constraint::Length(1),
             Constraint::Min(0),
         ])
-        .split(inner);
+        .split(area);
 
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            "Commands",
-            Style::default()
-                .fg(theme.text.accent)
-                .bg(card_surface)
-                .add_modifier(Modifier::BOLD),
-        ))),
-        sections[0],
-    );
+    if let Some(banner) = app.continue_disabled_banner.as_deref() {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                truncate_plain_text(banner, usize::from(sections[0].width)),
+                Style::default()
+                    .fg(theme.status.warning)
+                    .bg(card_surface)
+                    .add_modifier(Modifier::BOLD),
+            ))),
+            sections[0],
+        );
+    }
 
     render_command_palette_input(frame, app, theme, sections[1]);
-    render_command_palette_list(frame, app, theme, sections[2]);
+    render_session_history_list(frame, app, theme, sections[2]);
 }
 
 fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
@@ -424,7 +464,7 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
 
         frame.render_widget(
             Paragraph::new(command_palette_row(
-                command,
+                Action::palette_command_label(command),
                 palette_command_description(command),
                 is_selected,
                 theme,
@@ -436,7 +476,7 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
 }
 
 fn command_palette_row(
-    command: &str,
+    label: &str,
     description: &str,
     is_selected: bool,
     theme: &Theme,
@@ -461,8 +501,8 @@ fn command_palette_row(
         row_style.fg(theme.text.secondary)
     };
 
-    let mut spans = vec![Span::styled(command.to_string(), label_style)];
-    let mut used_width = command.chars().count();
+    let mut spans = vec![Span::styled(label.to_string(), label_style)];
+    let mut used_width = label.chars().count();
 
     let gap_width = 2;
     let available_description = row_width.saturating_sub(used_width.saturating_add(gap_width));
@@ -479,6 +519,222 @@ fn command_palette_row(
     }
 
     Line::from(spans)
+}
+
+fn render_session_history_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    if app.session_history_filtered.is_empty() {
+        let empty = if app.session_history_entries.is_empty() {
+            "No session history"
+        } else {
+            "No matching sessions"
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                empty,
+                Style::default().fg(theme.text.secondary),
+            ))),
+            area,
+        );
+        return;
+    }
+
+    let row_height = 2usize;
+    let visible_rows = (usize::from(area.height) / row_height).max(1);
+    let selected = app
+        .session_history_selected
+        .min(app.session_history_filtered.len().saturating_sub(1));
+    let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
+
+    for (visible_index, entry_index) in app
+        .session_history_filtered
+        .iter()
+        .enumerate()
+        .skip(scroll)
+        .take(visible_rows)
+    {
+        let entry = &app.session_history_entries[*entry_index];
+        let row_offset = (visible_index - scroll) * row_height;
+        let row_y = area
+            .y
+            .saturating_add(u16::try_from(row_offset).unwrap_or(u16::MAX));
+        if row_y >= area.y.saturating_add(area.height) {
+            break;
+        }
+
+        let remaining_height = area
+            .height
+            .saturating_sub(u16::try_from(row_offset).unwrap_or(u16::MAX));
+        let row_area = Rect::new(area.x, row_y, area.width, remaining_height.min(2));
+        let is_selected = visible_index == selected;
+        if is_selected {
+            frame.render_widget(
+                Block::default().style(Style::default().bg(theme.surface.overlay)),
+                row_area,
+            );
+        }
+
+        let primary_area = Rect::new(row_area.x, row_area.y, row_area.width, 1);
+        frame.render_widget(
+            Paragraph::new(session_history_primary_line(entry, app, is_selected, theme)),
+            primary_area,
+        );
+
+        if row_area.height > 1 {
+            let secondary_area =
+                Rect::new(row_area.x, row_area.y.saturating_add(1), row_area.width, 1);
+            frame.render_widget(
+                Paragraph::new(session_history_secondary_line(
+                    entry,
+                    app,
+                    is_selected,
+                    theme,
+                    secondary_area.width,
+                )),
+                secondary_area,
+            );
+        }
+    }
+}
+
+fn session_history_overlay_title(app: &AppState) -> &'static str {
+    match app.startup_launcher_action {
+        StartupLauncherAction::ReplaySession => "Replay session",
+        StartupLauncherAction::ContinueSession => "Resume session",
+        StartupLauncherAction::NewSession => "Session history",
+    }
+}
+
+fn session_history_primary_line(
+    entry: &crate::app::SessionHistoryEntry,
+    app: &AppState,
+    is_selected: bool,
+    theme: &Theme,
+) -> Line<'static> {
+    let row_style = if is_selected {
+        Style::default()
+            .fg(theme.text.inverse)
+            .bg(theme.surface.overlay)
+    } else {
+        Style::default()
+    };
+    let title_style = if is_selected {
+        row_style.add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(theme.text.primary)
+            .add_modifier(Modifier::BOLD)
+    };
+    let meta_style = if is_selected {
+        row_style
+    } else {
+        Style::default().fg(theme.text.secondary)
+    };
+    let action_style = if is_selected {
+        row_style.add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(session_history_action_color(app, entry, theme))
+            .add_modifier(Modifier::BOLD)
+    };
+    let status_style = if is_selected {
+        row_style
+    } else {
+        Style::default().fg(session_history_status_color(entry, theme))
+    };
+
+    Line::from(vec![
+        Span::styled(session_history_action_prefix(app, entry), action_style),
+        Span::styled(session_history_run_name(entry).to_string(), title_style),
+        Span::styled(" · ", meta_style),
+        Span::styled(session_history_recency_label(entry), meta_style),
+        Span::styled(" · ", meta_style),
+        Span::styled(
+            session_history_status_label(entry).to_string(),
+            status_style,
+        ),
+    ])
+}
+
+fn session_history_secondary_line(
+    entry: &crate::app::SessionHistoryEntry,
+    app: &AppState,
+    is_selected: bool,
+    theme: &Theme,
+    width: u16,
+) -> Line<'static> {
+    let row_style = if is_selected {
+        Style::default()
+            .fg(theme.text.inverse)
+            .bg(theme.surface.overlay)
+    } else {
+        Style::default().fg(match app.startup_launcher_action {
+            StartupLauncherAction::ReplaySession => theme.text.secondary,
+            StartupLauncherAction::ContinueSession | StartupLauncherAction::NewSession => {
+                if entry.catalog.is_resumable {
+                    theme.status.success
+                } else {
+                    theme.status.warning
+                }
+            }
+        })
+    };
+    let content = format!(
+        "  {} · {} · {}",
+        session_history_profile_label(entry),
+        session_history_provider_model_label(entry),
+        session_history_resumability_label(entry),
+    );
+
+    Line::from(Span::styled(
+        truncate_plain_text(&content, usize::from(width)),
+        row_style,
+    ))
+}
+
+fn session_history_action_prefix(
+    app: &AppState,
+    entry: &crate::app::SessionHistoryEntry,
+) -> String {
+    match app.startup_launcher_action {
+        StartupLauncherAction::ReplaySession => "↺ replay ".to_string(),
+        StartupLauncherAction::ContinueSession | StartupLauncherAction::NewSession => {
+            if entry.catalog.is_resumable {
+                "▶ resume ".to_string()
+            } else {
+                "! blocked ".to_string()
+            }
+        }
+    }
+}
+
+fn session_history_action_color(
+    app: &AppState,
+    entry: &crate::app::SessionHistoryEntry,
+    theme: &Theme,
+) -> Color {
+    match app.startup_launcher_action {
+        StartupLauncherAction::ReplaySession => theme.status.info,
+        StartupLauncherAction::ContinueSession | StartupLauncherAction::NewSession => {
+            if entry.catalog.is_resumable {
+                theme.status.success
+            } else {
+                theme.status.warning
+            }
+        }
+    }
+}
+
+fn session_history_status_color(entry: &crate::app::SessionHistoryEntry, theme: &Theme) -> Color {
+    match entry.catalog.status {
+        Some(harness_core::proj::RunStatus::Running) => theme.status.info,
+        Some(harness_core::proj::RunStatus::Finished) => theme.status.success,
+        Some(harness_core::proj::RunStatus::Failed) => theme.status.error,
+        None => theme.text.secondary,
+    }
 }
 
 fn palette_command_description(command: &str) -> &'static str {
@@ -510,6 +766,10 @@ fn truncate_plain_text(text: &str, max_width: usize) -> String {
 }
 
 fn render_details_drawer(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
     let drawer_chunks = details_drawer_areas(area);
 
     frame.render_widget(
@@ -611,7 +871,7 @@ fn muted_meta_style(theme: &Theme) -> Style {
 }
 
 fn subdued_payload_style(theme: &Theme) -> Style {
-    Style::default().fg(theme.text.tertiary)
+    Style::default().fg(theme.text.secondary)
 }
 
 fn transcript_prefix_style(theme: &Theme) -> Style {
@@ -628,23 +888,207 @@ fn status_badge(label: impl Into<String>, color: Color, theme: &Theme) -> Span<'
     )
 }
 
-fn append_prefixed_text_block(
+fn tool_status_badge(status: ToolCallDisplayStatus, theme: &Theme) -> Span<'static> {
+    let (_, color, label, _) = tool_status_tokens(status, theme);
+    status_badge(label, color, theme)
+}
+
+fn tool_detail_label_style(label: &str, theme: &Theme, status: ToolCallDisplayStatus) -> Style {
+    let color = match label {
+        "state" => match status {
+            ToolCallDisplayStatus::PendingPermission => theme.status.warning,
+            ToolCallDisplayStatus::Queued => theme.text.secondary,
+            ToolCallDisplayStatus::Running => theme.text.accent,
+            ToolCallDisplayStatus::Succeeded => theme.status.success,
+            ToolCallDisplayStatus::Failed => theme.status.error,
+        },
+        "result" => theme.status.success,
+        "error" => theme.status.error,
+        _ => theme.text.secondary,
+    };
+    Style::default().fg(color).add_modifier(Modifier::BOLD)
+}
+
+fn append_tool_card_row(
     lines: &mut Vec<Line<'static>>,
-    text: &str,
     prefix: &str,
-    prefix_style: Style,
-    content_style: Style,
+    label: &str,
+    value: &str,
+    label_style: Style,
+    value_style: Style,
+    theme: &Theme,
 ) {
-    for line in text.lines() {
-        let mut spans = vec![Span::styled(prefix.to_string(), prefix_style)];
-        if !line.is_empty() {
-            spans.push(Span::styled(line.to_string(), content_style));
+    let mut spans = vec![Span::styled(
+        prefix.to_string(),
+        transcript_prefix_style(theme),
+    )];
+    spans.push(Span::styled(format!("{label:<6}"), label_style));
+    if !value.is_empty() {
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(value.to_string(), value_style));
+    }
+    lines.push(Line::from(spans));
+}
+
+fn tool_state_summary(tool_call: &crate::app::ToolCallEntry) -> Option<&'static str> {
+    match tool_call.status {
+        ToolCallDisplayStatus::PendingPermission => Some("awaiting approval before execution"),
+        ToolCallDisplayStatus::Queued => Some("waiting for execution"),
+        ToolCallDisplayStatus::Running => Some("running…"),
+        ToolCallDisplayStatus::Succeeded if tool_call.truncated_output.is_none() => {
+            Some("completed without output")
         }
-        lines.push(Line::from(spans));
+        ToolCallDisplayStatus::Failed if tool_call.truncated_output.is_none() => {
+            Some("failed without error payload")
+        }
+        _ => None,
+    }
+}
+
+fn tool_footer_summary(tool_call: &crate::app::ToolCallEntry) -> String {
+    let mut parts = vec![format!("call {}", tool_call.tool_call_id)];
+    if !tool_call.permissions.is_empty() {
+        let count = tool_call.permissions.len();
+        parts.push(format!(
+            "{count} permission{}",
+            if count == 1 { "" } else { "s" }
+        ));
+    }
+    parts.join(" · ")
+}
+
+fn tool_status_summary(app: &AppState) -> Option<(String, Color)> {
+    let activity = app.activities.get(app.selected_activity_index)?;
+    let tool_calls = &activity.tool_calls;
+    if tool_calls.is_empty() {
+        return None;
     }
 
-    if text.is_empty() {
-        lines.push(Line::from(Span::styled(prefix.to_string(), prefix_style)));
+    if tool_calls.len() == 1 {
+        let tool_call = &tool_calls[0];
+        let (_, color, label, _) = tool_status_tokens(tool_call.status, app.theme());
+        return Some((format!("tool {} {label}", tool_call.tool_id), color));
+    }
+
+    let mut pending = 0usize;
+    let mut queued = 0usize;
+    let mut running = 0usize;
+    let mut succeeded = 0usize;
+    let mut failed = 0usize;
+    for tool_call in tool_calls {
+        match tool_call.status {
+            ToolCallDisplayStatus::PendingPermission => pending += 1,
+            ToolCallDisplayStatus::Queued => queued += 1,
+            ToolCallDisplayStatus::Running => running += 1,
+            ToolCallDisplayStatus::Succeeded => succeeded += 1,
+            ToolCallDisplayStatus::Failed => failed += 1,
+        }
+    }
+
+    let mut segments = vec!["tools".to_string()];
+    if running > 0 {
+        segments.push(format!("{running} running"));
+    }
+    if pending > 0 {
+        segments.push(format!("{pending} approval"));
+    }
+    if queued > 0 {
+        segments.push(format!("{queued} queued"));
+    }
+    if failed > 0 {
+        segments.push(format!("{failed} failed"));
+    }
+    if succeeded > 0 {
+        segments.push(format!("{succeeded} done"));
+    }
+
+    let color = if failed > 0 {
+        app.theme().status.error
+    } else if pending > 0 {
+        app.theme().status.warning
+    } else if running > 0 {
+        app.theme().text.accent
+    } else if queued > 0 {
+        app.theme().text.secondary
+    } else {
+        app.theme().status.success
+    };
+
+    Some((segments.join(" · "), color))
+}
+
+fn compact_inline_payload(payload: &str, max_chars: usize) -> Option<String> {
+    let trimmed = payload.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let collapsed = match serde_json::from_str::<serde_json::Value>(trimmed) {
+        Ok(value) => compact_inline_json_value(&value),
+        Err(_) => trimmed.split_whitespace().collect::<Vec<_>>().join(" "),
+    };
+    if collapsed.chars().count() <= max_chars {
+        return Some(collapsed);
+    }
+
+    let truncated = collapsed
+        .chars()
+        .take(max_chars.saturating_sub(1))
+        .collect::<String>();
+    Some(format!("{truncated}…"))
+}
+
+fn compact_inline_json_value(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Object(map) => {
+            if map.is_empty() {
+                return "{}".to_string();
+            }
+
+            let mut parts = Vec::new();
+            for (key, value) in map.iter().take(4) {
+                parts.push(format!("{key}={}", compact_inline_json_leaf(value)));
+            }
+            if map.len() > 4 {
+                parts.push("…".to_string());
+            }
+            parts.join(", ")
+        }
+        serde_json::Value::Array(items) => {
+            if items.is_empty() {
+                return "[]".to_string();
+            }
+
+            let mut parts = items
+                .iter()
+                .take(4)
+                .map(compact_inline_json_leaf)
+                .collect::<Vec<_>>();
+            if items.len() > 4 {
+                parts.push("…".to_string());
+            }
+            format!("[{}]", parts.join(", "))
+        }
+        _ => compact_inline_json_leaf(value),
+    }
+}
+
+fn compact_inline_json_leaf(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(text) => text.split_whitespace().collect::<Vec<_>>().join(" "),
+        serde_json::Value::Number(number) => number.to_string(),
+        serde_json::Value::Bool(flag) => flag.to_string(),
+        serde_json::Value::Null => "null".to_string(),
+        serde_json::Value::Array(items) => format!(
+            "[{} item{}]",
+            items.len(),
+            if items.len() == 1 { "" } else { "s" }
+        ),
+        serde_json::Value::Object(fields) => format!(
+            "{{{} field{}}}",
+            fields.len(),
+            if fields.len() == 1 { "" } else { "s" }
+        ),
     }
 }
 
@@ -712,7 +1156,7 @@ fn render_status_strip(frame: &mut Frame, app: &AppState, area: Rect, theme: &Th
     let base_style = Style::default()
         .fg(theme.text.secondary)
         .bg(theme.surface.shell);
-    let mut spans = vec![
+    let mut spans: Vec<Span<'static>> = vec![
         Span::styled(
             format!(" {} ", state.kind.label()),
             Style::default()
@@ -726,6 +1170,23 @@ fn render_status_strip(frame: &mut Frame, app: &AppState, area: Rect, theme: &Th
 
     if !app.replay_mode {
         append_orchestration_status(&mut spans, app, area.width, base_style, theme);
+    }
+
+    if let Some((tool_summary, tool_color)) = tool_status_summary(app) {
+        let separator = "  ·  ";
+        let available = usize::from(area.width)
+            .saturating_sub(status_strip_width(&spans))
+            .saturating_sub(separator.chars().count());
+        if available > 10 {
+            spans.push(Span::styled(separator, base_style));
+            spans.push(Span::styled(
+                truncate_plain_text(&tool_summary, available),
+                Style::default()
+                    .fg(tool_color)
+                    .bg(theme.surface.shell)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
     }
 
     let status_line = Line::from(spans);
@@ -953,6 +1414,29 @@ fn orchestration_card_lines(
     lines
 }
 
+#[cfg(test)]
+pub(crate) fn orchestration_card_text_for_test(
+    app: &AppState,
+    height: u16,
+    width: u16,
+) -> Vec<String> {
+    orchestration_card_lines(
+        app,
+        &app.orchestration_visible_rows(),
+        app.theme(),
+        height,
+        width,
+    )
+    .into_iter()
+    .map(|line| {
+        line.spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>()
+    })
+    .collect()
+}
+
 fn orchestration_summary_line(app: &AppState, theme: &Theme, width: u16) -> Line<'static> {
     let summary = app.orchestration_summary();
     let text = format!(
@@ -987,6 +1471,7 @@ fn orchestration_task_line(
         "{} · {}/{} · {}",
         row.task_id, owner.label, owner.profile, queue_key
     );
+
     let badge_width = state_label.chars().count().saturating_add(4);
     let detail = truncate_plain_text(&detail, usize::from(width).saturating_sub(badge_width));
 
@@ -1158,26 +1643,46 @@ fn transcript_visual_rows(lines: &[Line<'static>], viewport_width: usize) -> usi
 }
 
 fn live_empty_state_visible(app: &AppState) -> bool {
-    !app.replay_mode && app.activities.is_empty() && app.transcript_pending_permissions().is_empty()
+    startup_shell_visible(app)
 }
 
-fn live_empty_state_mode_label<'a>(app: &AppState, theme: &'a Theme) -> Option<&'a str> {
+fn startup_shell_visible(app: &AppState) -> bool {
+    !app.replay_mode
+        && app.activities.is_empty()
+        && app.transcript_pending_permissions().is_empty()
+        && app.prompt_buffer.is_empty()
+}
+
+fn startup_mode_label(app: &AppState) -> Option<&str> {
+    if !app.startup_mode {
+        return None;
+    }
+
     let mode = app.launch_mode_label()?.trim();
     if mode.eq_ignore_ascii_case("demo") {
-        Some(theme.live_shell.empty_state.demo_mode_label)
+        Some("Demo")
     } else if mode.eq_ignore_ascii_case("mock") {
-        Some(theme.live_shell.empty_state.mock_mode_label)
+        Some("Mock")
     } else {
         None
     }
+}
+
+fn startup_shell_metadata(app: &AppState) -> String {
+    let mut segments = vec![
+        format!("Preset {}", app.active_profile()),
+        format!("{}/{}", app.active_provider(), app.current_model_label()),
+    ];
+    if let Some(mode) = startup_mode_label(app) {
+        segments.push(mode.to_string());
+    }
+    segments.join(" · ")
 }
 
 fn render_live_empty_state(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     if area.width == 0 || area.height == 0 {
         return;
     }
-
-    let _ = live_empty_state_mode_label(app, theme);
 
     let help_row = [
         app.keymap.get_binding_label(Action::SubmitPrompt, "send"),
@@ -1191,16 +1696,24 @@ fn render_live_empty_state(frame: &mut Frame, app: &AppState, area: Rect, theme:
     ]
     .join(" · ");
 
-    let content_area = centered_block_area(
-        area,
-        area.width
-            .min(theme.live_shell.empty_state.max_width)
-            .max(1),
-        4,
-    );
+    let shell_area = startup_shell_area(area, theme);
+    let surface = theme.surface.panel;
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.border.strong))
+        .style(Style::default().bg(surface));
+    let content_area = block.inner(shell_area);
+
+    frame.render_widget(block, shell_area);
+
+    if content_area.width == 0 || content_area.height == 0 {
+        return;
+    }
+
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(1),
@@ -1213,40 +1726,38 @@ fn render_live_empty_state(frame: &mut Frame, app: &AppState, area: Rect, theme:
             .style(
                 Style::default()
                     .fg(theme.text.primary)
-                    .bg(theme.surface.shell)
+                    .bg(surface)
                     .add_modifier(Modifier::BOLD),
             )
             .alignment(Alignment::Center),
         rows[0],
     );
     frame.render_widget(
-        Paragraph::new("").style(
-            Style::default()
-                .fg(theme.text.tertiary)
-                .bg(theme.surface.shell),
-        ),
+        Paragraph::new(startup_shell_metadata(app))
+            .style(Style::default().fg(theme.text.tertiary).bg(surface))
+            .alignment(Alignment::Center),
         rows[1],
+    );
+    frame.render_widget(
+        Paragraph::new("").style(Style::default().fg(theme.text.tertiary).bg(surface)),
+        rows[2],
     );
     frame.render_widget(
         Paragraph::new(theme.live_shell.empty_state.value_prop)
             .style(
                 Style::default()
                     .fg(theme.text.primary)
-                    .bg(theme.surface.shell)
+                    .bg(surface)
                     .add_modifier(Modifier::BOLD),
             )
-            .alignment(Alignment::Left),
-        rows[2],
+            .alignment(Alignment::Center),
+        rows[3],
     );
     frame.render_widget(
         Paragraph::new(help_row)
-            .style(
-                Style::default()
-                    .fg(theme.text.secondary)
-                    .bg(theme.surface.shell),
-            )
-            .alignment(Alignment::Left),
-        rows[3],
+            .style(Style::default().fg(theme.text.secondary).bg(surface))
+            .alignment(Alignment::Center),
+        rows[4],
     );
 }
 
@@ -1375,8 +1886,7 @@ fn append_tool_call_lines(
     theme: &Theme,
 ) {
     let glyphs = &theme.live_shell.transcript_glyphs;
-    let (status_icon, status_color, status_label, is_final) =
-        tool_status_tokens(tool_call.status, theme);
+    let (status_icon, status_color, _status_label, _) = tool_status_tokens(tool_call.status, theme);
 
     lines.push(Line::from(vec![
         Span::styled(
@@ -1390,19 +1900,62 @@ fn append_tool_call_lines(
                 .fg(theme.text.primary)
                 .add_modifier(Modifier::BOLD),
         ),
+        Span::raw(" "),
+        tool_status_badge(tool_call.status, theme),
     ]));
 
-    if let Some(summary) = tool_call.transcript_summary() {
-        append_prefixed_text_block(
+    if let Some(state_summary) = tool_state_summary(tool_call) {
+        append_tool_card_row(
             lines,
-            &summary,
-            &format!("  {}  ", glyphs.card_mid),
-            transcript_prefix_style(theme),
+            &format!("  {} ", glyphs.card_mid),
+            "state",
+            state_summary,
+            tool_detail_label_style("state", theme, tool_call.status),
             subdued_payload_style(theme),
+            theme,
         );
     }
 
-    let mut status_line = vec![
+    if let Some(args_summary) = compact_inline_payload(&tool_call.args_summary, 96) {
+        append_tool_card_row(
+            lines,
+            &format!("  {} ", glyphs.card_mid),
+            "args",
+            &args_summary,
+            tool_detail_label_style("args", theme, tool_call.status),
+            subdued_payload_style(theme),
+            theme,
+        );
+    }
+
+    if let Some(output) = tool_call
+        .truncated_output
+        .as_deref()
+        .and_then(|output| compact_inline_payload(output, 96))
+    {
+        let label = if tool_call.status == ToolCallDisplayStatus::Failed {
+            "error"
+        } else {
+            "result"
+        };
+        let output_style = if tool_call.status == ToolCallDisplayStatus::Failed {
+            Style::default().fg(theme.status.error)
+        } else {
+            subdued_payload_style(theme)
+        };
+        append_tool_card_row(
+            lines,
+            &format!("  {} ", glyphs.card_mid),
+            label,
+            &output,
+            tool_detail_label_style(label, theme, tool_call.status),
+            output_style,
+            theme,
+        );
+    }
+
+    let footer = tool_footer_summary(tool_call);
+    let status_line = vec![
         Span::styled(
             format!("  {} ", glyphs.card_bottom),
             transcript_prefix_style(theme),
@@ -1411,12 +1964,8 @@ fn append_tool_call_lines(
             format!("{} ", status_icon),
             Style::default().fg(status_color),
         ),
+        Span::styled(footer, Style::default().fg(theme.text.tertiary)),
     ];
-    if is_final {
-        status_line.push(status_badge(status_label, status_color, theme));
-    } else {
-        status_line.push(Span::styled(status_label, subdued_payload_style(theme)));
-    }
     lines.push(Line::from(status_line));
 }
 
@@ -1842,24 +2391,28 @@ fn append_tool_call_details(
                 format!("{} ", status_icon),
                 Style::default().fg(status_color),
             ),
+            Span::styled("tool ", Style::default().fg(theme.text.secondary)),
             Span::styled(
                 tool_call.tool_id.clone(),
                 Style::default()
                     .fg(status_color)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                format!(" · {}", tool_call.status),
-                Style::default().fg(theme.text.secondary),
-            ),
+            Span::raw(" "),
+            tool_status_badge(tool_call.status, theme),
         ]));
-        lines.push(Line::from(vec![
-            Span::styled("  Call ID: ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::styled(
-                tool_call.tool_call_id.clone(),
-                Style::default().fg(theme.text.secondary),
-            ),
-        ]));
+        append_labeled_value(
+            lines,
+            "  Call ID: ",
+            tool_call.tool_call_id.clone(),
+            theme.text.secondary,
+        );
+        append_labeled_value(
+            lines,
+            "  State: ",
+            tool_call.status.to_string(),
+            status_color,
+        );
         append_labeled_value(
             lines,
             "  Sequences: ",
@@ -1874,7 +2427,7 @@ fn append_tool_call_details(
         );
         append_detail_payload(
             lines,
-            "  Raw args:",
+            "  Args:",
             &tool_call.args_summary,
             theme.text.primary,
         );
@@ -1897,9 +2450,9 @@ fn append_tool_call_details(
                 );
             }
             let (label, color) = if tool_call.status == ToolCallDisplayStatus::Failed {
-                ("  Raw error:", theme.status.error)
+                ("  Error:", theme.status.error)
             } else {
-                ("  Raw output:", theme.text.primary)
+                ("  Result:", theme.text.primary)
             };
             append_detail_payload(lines, label, output, color);
         }
@@ -1928,6 +2481,27 @@ fn format_detail_payload(payload: &str) -> String {
 
 /// Render the Prompt input pane (bottom)
 fn render_prompt_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
+    if app.replay_mode {
+        let surface = theme.surface.panel_elevated;
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.status.disabled))
+            .style(Style::default().bg(surface))
+            .title(Line::from(Span::styled(
+                "Composer · replay read-only",
+                Style::default().fg(theme.status.disabled),
+            )));
+        let paragraph = Paragraph::new(
+            "Replay is read-only — prompt editing and submit are disabled. Inspect the transcript or press r to reload.",
+        )
+        .block(block)
+        .style(panel_style(surface, theme.status.disabled))
+        .wrap(Wrap { trim: false });
+
+        frame.render_widget(paragraph, area);
+        return;
+    }
+
     let is_focused = app.focus == Focus::Prompt;
     let runtime_state = app.runtime_state();
     let composer_disabled = runtime_state.composer_disabled;
@@ -2229,6 +2803,16 @@ fn render_footer(frame: &mut Frame, app: &AppState, area: Rect, text_area: Rect,
         }
     };
 
+    let hint_text = if !app.replay_mode
+        && app
+            .launch_mode_label()
+            .is_some_and(|label| label.eq_ignore_ascii_case("continued"))
+    {
+        format!("continued live run{separator}{hint_text}")
+    } else {
+        hint_text
+    };
+
     let style = Style::default().fg(theme.text.tertiary);
     if app.replay_mode {
         let replay_style = style.bg(theme.surface.shell);
@@ -2382,21 +2966,25 @@ mod tests {
         themed_app.active_tab = Tab::Details;
         let mut custom_theme = Theme::default();
         custom_theme.live_shell.primary.centered_content_width = 72;
-        custom_theme.live_shell.primary.content_margin_x = 6;
+        custom_theme.live_shell.primary.content_margin_x = 10;
         custom_theme.live_shell.primary.activity_drawer_width = 18;
-        custom_theme.live_shell.primary.inspector_drawer_width = 36;
+        custom_theme.live_shell.primary.details_sidebar_width = 36;
         themed_app.set_theme(custom_theme);
 
         let themed_hit_areas = FrameLayoutPlan::for_app(&themed_app, area).wheel_hit_areas;
         assert_ne!(default_hit_areas.overlay, themed_hit_areas.overlay);
         assert_ne!(default_hit_areas.inspector, themed_hit_areas.inspector);
 
+        let themed_inspector = themed_hit_areas.inspector.expect("themed inspector area");
+        let probe_column = themed_inspector.x.saturating_add(2);
+        let probe_row = themed_inspector.y.saturating_add(1);
+
         assert_eq!(
-            hovered_wheel_target(&themed_app, area, 40, 20),
+            hovered_wheel_target(&themed_app, area, probe_column, probe_row),
             Some(WheelTarget::Inspector)
         );
         assert_ne!(
-            hovered_wheel_target(&default_app, area, 40, 20),
+            hovered_wheel_target(&default_app, area, probe_column, probe_row),
             Some(WheelTarget::Inspector)
         );
     }
@@ -2409,9 +2997,9 @@ mod tests {
         );
 
         let debug = render_debug(&app, 100, 24);
-        assert!(debug.contains("Demo"));
-        assert!(debug.contains("run unknown"));
-        assert!(debug.contains("deep/proxy · gpt-5.4"));
+        assert!(!debug.contains("Demo"));
+        assert!(!debug.contains("run unknown"));
+        assert!(debug.contains("Preset deep · proxy/gpt-5.4"));
         assert!(!debug.contains("default/default"));
     }
 
@@ -2460,6 +3048,30 @@ mod tests {
         assert!(mock_debug.contains("Harness"));
         assert!(mock_debug.contains("Start a conversation to begin"));
         assert!(!mock_debug.contains("Mock mode · mock provider"));
+        assert!(!mock_debug.contains("Preset worker · mock/model-1 · Mock"));
+    }
+
+    #[test]
+    fn startup_shell_shows_profile_provider_and_model_chrome() {
+        let mut app = AppState::new_startup(Vec::new(), None);
+        app.set_launch_metadata(
+            LaunchMetadata::from_model_ref("deep", "proxy:gpt-5.4").with_mode_label("Demo"),
+        );
+
+        let debug = render_debug(&app, 100, 24);
+        assert!(debug.contains("Harness"));
+        assert!(debug.contains("Preset deep · proxy/gpt-5.4 · Demo"));
+        assert!(debug.contains("Start a conversation to begin"));
+    }
+
+    #[test]
+    fn replay_prompt_pane_is_visibly_read_only() {
+        let app = AppState::new_replay(std::path::PathBuf::from("/tmp/replay-session"), Vec::new());
+
+        let debug = render_debug(&app, 100, 24);
+        assert!(debug.contains("Composer · replay read-only"));
+        assert!(debug.contains("Replay is read-only"));
+        assert!(!debug.contains("Type a prompt for the next turn"));
     }
 
     #[test]
@@ -2613,10 +3225,11 @@ mod tests {
             .collect::<Vec<_>>();
         let tool_debug = inspector_screens
             .iter()
-            .find(|debug| debug.contains("Raw args:"))
+            .find(|debug| debug.contains("Args:"))
             .expect("tool detail section should be reachable via scroll");
         assert!(tool_debug.contains("Tool calls:"));
-        assert!(tool_debug.contains("Raw args:"));
+        assert!(tool_debug.contains("Args:"));
+        assert!(tool_debug.contains("State: succeeded"));
         assert!(
             inspector_screens
                 .iter()
@@ -2632,9 +3245,9 @@ mod tests {
 
         let output_debug = inspector_screens
             .iter()
-            .find(|debug| debug.contains("Raw output:"))
+            .find(|debug| debug.contains("Result:"))
             .expect("tool output section should be reachable via scroll");
-        assert!(output_debug.contains("Raw output:"));
+        assert!(output_debug.contains("Result:"));
         assert!(output_debug.contains("digest-tool-detail-output"));
         assert!(
             inspector_screens.iter().any(
@@ -2795,6 +3408,8 @@ mod tests {
 
         let transcript = transcript_debug(&app);
         assert!(transcript.contains("tool fs.read"));
+        assert!(transcript.contains("args   limit=20, path=src/lib.rs, start_line=42"));
+        assert!(transcript.contains("result 12 lines read"));
         assert!(transcript.contains("12 lines read"));
         assert!(transcript.contains("succeeded"));
         assert!(!transcript.contains(r#"{"path":"src/lib.rs","start_line":42,"limit":20}"#));
@@ -2850,9 +3465,48 @@ mod tests {
 
         let transcript = transcript_debug(&app);
         assert!(transcript.contains("tool shell.run"));
+        assert!(transcript.contains("args   cmd=false, cwd=/tmp/demo"));
+        assert!(transcript.contains("error  exit code: 1 stderr: permission denied"));
         assert!(transcript.contains("exit code: 1 stderr: permission denied"));
         assert!(transcript.contains("failed"));
         assert!(!transcript.contains(r#"{"cmd":"false","cwd":"/tmp/demo"}"#));
         assert!(!transcript.contains("args {"));
+    }
+
+    #[test]
+    fn status_strip_surfaces_selected_tool_summary() {
+        let mut app = AppState::new_live(None, false, None);
+
+        app.ingest_event(envelope(
+            1,
+            "req_tool_status",
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_tool_status".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "Check tool status".to_string(),
+                request_digest: "digest-tool-status".to_string(),
+            }),
+        ));
+        app.ingest_event(envelope(
+            2,
+            "req_tool_status",
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_status".to_string(),
+                tool_id: "shell.run".to_string(),
+                args_summary: r#"{"cmd":"false"}"#.to_string(),
+                args_digest: "digest-tool-status-args".to_string(),
+            }),
+        ));
+        app.ingest_event(envelope(
+            3,
+            "req_tool_status",
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tc_status".to_string(),
+            }),
+        ));
+
+        let debug = render_debug(&app, 160, 30);
+        assert!(debug.contains("tool shell.run running"));
     }
 }
