@@ -1,0 +1,5 @@
+---
+source: crates/harness-tui/src/lib.rs
+expression: status_row
+---
+                      Ready   ready for first turn  ·  agents 2 · queued 1 · running 1 · stale 1
