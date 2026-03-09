@@ -174,7 +174,9 @@ impl From<FixtureCompletionRequest> for CompletionRequest {
 #[serde(tag = "type", rename_all = "snake_case")]
 enum FixtureStreamEvent {
     Start,
-    TextDelta { text: String },
+    TextDelta {
+        text: String,
+    },
     ToolCallDelta {
         tool_call_id: String,
         #[serde(default)]
@@ -186,8 +188,12 @@ enum FixtureStreamEvent {
         function_name: String,
         arguments_json: String,
     },
-    Done { usage: CompletionUsage },
-    Error { message: String },
+    Done {
+        usage: CompletionUsage,
+    },
+    Error {
+        message: String,
+    },
 }
 
 impl From<FixtureStreamEvent> for ProviderStreamEvent {
@@ -267,6 +273,7 @@ mod tests {
                 content: "this request has no fixture".to_string(),
                 name: None,
                 tool_call_id: None,
+                assistant_tool_calls: None,
             }],
             temperature: Some(0.1),
             max_tokens: Some(7),
@@ -342,12 +349,14 @@ mod tests {
                     content: "You are deterministic.".to_string(),
                     name: None,
                     tool_call_id: None,
+                    assistant_tool_calls: None,
                 },
                 CompletionMessage {
                     role: MessageRole::User,
                     content: "Say hello.".to_string(),
                     name: None,
                     tool_call_id: None,
+                    assistant_tool_calls: None,
                 },
             ],
             temperature: Some(0.0),
@@ -367,12 +376,14 @@ mod tests {
                     content: "You are deterministic.".to_string(),
                     name: None,
                     tool_call_id: None,
+                    assistant_tool_calls: None,
                 },
                 CompletionMessage {
                     role: MessageRole::User,
                     content: "Read /tmp/demo.txt using a tool call.".to_string(),
                     name: None,
                     tool_call_id: None,
+                    assistant_tool_calls: None,
                 },
             ],
             temperature: Some(0.0),

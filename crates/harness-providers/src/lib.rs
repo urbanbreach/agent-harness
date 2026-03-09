@@ -29,6 +29,15 @@ pub struct CompletionMessage {
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assistant_tool_calls: Option<Vec<AssistantToolCall>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssistantToolCall {
+    pub tool_call_id: String,
+    pub function_name: String,
+    pub arguments_json: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -102,8 +111,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, ProviderStreamEvent,
-        ToolChoice, ToolDef,
+        AssistantToolCall, CompletionMessage, CompletionRequest, CompletionUsage, MessageRole,
+        ProviderStreamEvent, ToolChoice, ToolDef,
     };
 
     #[test]
@@ -116,12 +125,18 @@ mod tests {
                     content: "calling tool".to_string(),
                     name: Some("assistant-tool-router".to_string()),
                     tool_call_id: None,
+                    assistant_tool_calls: Some(vec![AssistantToolCall {
+                        tool_call_id: "call_1".to_string(),
+                        function_name: "filesystem_read".to_string(),
+                        arguments_json: "{\"filePath\":\"/tmp/demo.txt\"}".to_string(),
+                    }]),
                 },
                 CompletionMessage {
                     role: MessageRole::Tool,
                     content: "{\"ok\":true}".to_string(),
                     name: Some("filesystem_read".to_string()),
                     tool_call_id: Some("call_1".to_string()),
+                    assistant_tool_calls: None,
                 },
             ],
             temperature: Some(0.0),
@@ -159,6 +174,7 @@ mod tests {
                 content: "hello".to_string(),
                 name: None,
                 tool_call_id: None,
+                assistant_tool_calls: None,
             }],
             temperature: None,
             max_tokens: None,
@@ -181,6 +197,7 @@ mod tests {
             .expect("first message should be object");
         assert!(!message.contains_key("name"));
         assert!(!message.contains_key("tool_call_id"));
+        assert!(!message.contains_key("assistant_tool_calls"));
     }
 
     #[test]
