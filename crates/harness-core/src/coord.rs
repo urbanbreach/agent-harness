@@ -1301,14 +1301,15 @@ impl Coordinator {
             return Err(CoordinatorError::RunNotStarted);
         };
 
-        if run_state.queued_agent_turns.remove(&task_id).is_some() {
+        if let Some(queued) = run_state.queued_agent_turns.remove(&task_id) {
             let _ = run_state.scheduler.cancel_queued(&task_id);
-            append_payload_event(
+            append_payload_event_with_correlation(
                 self.clock.as_ref(),
                 self.redactor.as_ref(),
                 run_state,
-                system_actor(),
+                agent_actor(&queued.agent_id),
                 Some(format!("task:{task_id}")),
+                Some(queued.request_id),
                 EventV1::TaskCancelled(TaskCancelledEvent { task_id, reason }),
             )?;
             return Ok(());
@@ -1317,12 +1318,13 @@ impl Coordinator {
         if let Some(running) = run_state.running_agent_turns.get(&task_id) {
             running.cancellation_token.cancel();
             run_state.cancelled_running_tasks.insert(task_id.clone());
-            append_payload_event(
+            append_payload_event_with_correlation(
                 self.clock.as_ref(),
                 self.redactor.as_ref(),
                 run_state,
-                system_actor(),
+                agent_actor(&running.agent_id),
                 Some(format!("task:{task_id}")),
+                Some(running.request_id.clone()),
                 EventV1::TaskCancelled(TaskCancelledEvent { task_id, reason }),
             )?;
             return Ok(());
@@ -1376,13 +1378,23 @@ impl Coordinator {
         for stale_task in stale {
             let task_id = stale_task.task_id;
             let stale_for_ms = stale_task.stale_for_ms;
+            let actor = run_state
+                .running_agent_turns
+                .get(&task_id)
+                .map(|running| agent_actor(&running.agent_id))
+                .unwrap_or_else(system_actor);
+            let correlation_id = run_state
+                .running_agent_turns
+                .get(&task_id)
+                .map(|running| running.request_id.clone());
 
-            append_payload_event(
+            append_payload_event_with_correlation(
                 self.clock.as_ref(),
                 self.redactor.as_ref(),
                 run_state,
-                system_actor(),
+                actor,
                 Some(format!("task:{task_id}")),
+                correlation_id,
                 EventV1::StaleDetected(StaleDetectedEvent {
                     task_id: task_id.clone(),
                     stale_for_ms,
@@ -1673,39 +1685,56 @@ impl Coordinator {
             return Ok(());
         };
 
+        let was_cancelled = run_state.cancelled_running_tasks.remove(&task_id);
         let dequeued = run_state.scheduler.complete(&running.queue_key);
 
-        match outcome {
-            AgentTurnTaskOutcome::Succeeded { output } => {
-                append_payload_event_with_correlation(
-                    self.clock.as_ref(),
-                    self.redactor.as_ref(),
-                    run_state,
-                    agent_actor(&running.agent_id),
-                    Some(format!("task:{task_id}")),
-                    Some(request_id),
-                    EventV1::TaskCompleted(TaskCompletedEvent {
-                        task_id,
-                        result_digest: digest12(output.as_bytes()),
-                        result_summary: output,
-                    }),
-                )?;
-            }
-            AgentTurnTaskOutcome::Failed { reason } => {
-                append_payload_event_with_correlation(
-                    self.clock.as_ref(),
-                    self.redactor.as_ref(),
-                    run_state,
-                    agent_actor(&running.agent_id),
-                    Some(format!("task:{task_id}")),
-                    Some(request_id),
-                    EventV1::TaskCancelled(TaskCancelledEvent { task_id, reason }),
-                )?;
+        if !was_cancelled {
+            match outcome {
+                AgentTurnTaskOutcome::Succeeded { output } => {
+                    append_payload_event_with_correlation(
+                        self.clock.as_ref(),
+                        self.redactor.as_ref(),
+                        run_state,
+                        agent_actor(&running.agent_id),
+                        Some(format!("task:{task_id}")),
+                        Some(request_id),
+                        EventV1::TaskCompleted(TaskCompletedEvent {
+                            task_id,
+                            result_digest: digest12(output.as_bytes()),
+                            result_summary: output,
+                        }),
+                    )?;
+                }
+                AgentTurnTaskOutcome::Failed { reason } => {
+                    append_payload_event_with_correlation(
+                        self.clock.as_ref(),
+                        self.redactor.as_ref(),
+                        run_state,
+                        agent_actor(&running.agent_id),
+                        Some(format!("task:{task_id}")),
+                        Some(request_id),
+                        EventV1::TaskCancelled(TaskCancelledEvent { task_id, reason }),
+                    )?;
+                }
             }
         }
 
         for task in dequeued {
-            if let Some(queued) = run_state.queued_agent_turns.remove(&task.task_id) {
+            if let Some(queued) = run_state.queued_agent_turns.get(&task.task_id).cloned() {
+                append_agent_turn_task_scheduled_event(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    &queued.task_id,
+                    &queued.agent_id,
+                    &queued.request_id,
+                    &queued.queue_key,
+                    TaskScheduleState::Started,
+                )?;
+
+                let Some(queued) = run_state.queued_agent_turns.remove(&task.task_id) else {
+                    continue;
+                };
                 start_agent_turn_execution(
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
@@ -1753,6 +1782,7 @@ struct QueuedAgentTurn {
 #[derive(Debug, Clone)]
 struct RunningAgentTurn {
     agent_id: String,
+    request_id: String,
     queue_key: ConcurrencyKey,
     cancellation_token: CancellationToken,
 }
@@ -1968,6 +1998,7 @@ where
     R: Redactor + ?Sized,
 {
     let model = crate::agent::AgentModelRef::parse(&request.model_ref);
+    let agent_id = request.agent_id.clone();
     let task_id = format!("task_{:06}", run_state.next_task_id);
     run_state.next_task_id += 1;
 
@@ -1981,17 +2012,15 @@ where
         .schedule(task_id.clone(), queue_key.clone())
     {
         ScheduleDecision::Started(_) => {
-            append_payload_event(
+            append_agent_turn_task_scheduled_event(
                 clock,
                 redactor,
                 run_state,
-                system_actor(),
-                Some(format!("task:{task_id}")),
-                EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: task_id.clone(),
-                    state: TaskScheduleState::Started,
-                    queue_key: Some(queue_key.queue_key()),
-                }),
+                &task_id,
+                &agent_id,
+                &request_id,
+                &queue_key,
+                TaskScheduleState::Started,
             )?;
 
             start_agent_turn_execution(
@@ -2002,7 +2031,7 @@ where
                 provider,
                 QueuedAgentTurn {
                     task_id,
-                    agent_id: request.agent_id.clone(),
+                    agent_id,
                     request_id,
                     profile,
                     request,
@@ -2011,24 +2040,22 @@ where
             )?;
         }
         ScheduleDecision::Queued(_) => {
-            append_payload_event(
+            append_agent_turn_task_scheduled_event(
                 clock,
                 redactor,
                 run_state,
-                system_actor(),
-                Some(format!("task:{task_id}")),
-                EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: task_id.clone(),
-                    state: TaskScheduleState::Queued,
-                    queue_key: Some(queue_key.queue_key()),
-                }),
+                &task_id,
+                &agent_id,
+                &request_id,
+                &queue_key,
+                TaskScheduleState::Queued,
             )?;
 
             run_state.queued_agent_turns.insert(
                 task_id.clone(),
                 QueuedAgentTurn {
                     task_id,
-                    agent_id: request.agent_id.clone(),
+                    agent_id,
                     request_id,
                     profile,
                     request,
@@ -2059,6 +2086,7 @@ where
         task.task_id.clone(),
         RunningAgentTurn {
             agent_id: task.agent_id.clone(),
+            request_id: task.request_id.clone(),
             queue_key: task.queue_key.clone(),
             cancellation_token: cancellation_token.clone(),
         },
@@ -2138,6 +2166,35 @@ where
     });
 
     Ok(())
+}
+
+fn append_agent_turn_task_scheduled_event<C, R>(
+    clock: &C,
+    redactor: &R,
+    run_state: &mut RunState,
+    task_id: &str,
+    agent_id: &str,
+    request_id: &str,
+    queue_key: &ConcurrencyKey,
+    state: TaskScheduleState,
+) -> Result<EventEnvelopeV1, CoordinatorError>
+where
+    C: Clock + ?Sized,
+    R: Redactor + ?Sized,
+{
+    append_payload_event_with_correlation(
+        clock,
+        redactor,
+        run_state,
+        agent_actor(agent_id),
+        Some(format!("task:{task_id}")),
+        Some(request_id.to_string()),
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: task_id.to_string(),
+            state,
+            queue_key: Some(queue_key.queue_key()),
+        }),
+    )
 }
 
 fn finalize_permission_denied<C, R>(
