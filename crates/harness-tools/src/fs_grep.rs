@@ -132,7 +132,9 @@ fn collect_grep_matches(
         .into_iter()
         .filter_entry(|entry| !should_skip_entry(workspace_root, entry))
         .map(|entry| {
-            entry.map_err(|err| ToolError::Execution(format!("failed to traverse directory tree: {err}")))
+            entry.map_err(|err| {
+                ToolError::Execution(format!("failed to traverse directory tree: {err}"))
+            })
         })
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
@@ -319,15 +321,17 @@ mod tests {
         .expect("write src/main.txt");
         fs::write(root.join("target/build/generated.txt"), "TODO hidden")
             .expect("write target file");
-        fs::write(root.join(".git/objects/cache.txt"), "TODO hidden")
-            .expect("write git file");
+        fs::write(root.join(".git/objects/cache.txt"), "TODO hidden").expect("write git file");
         fs::write(
             root.join(".agent-harness/sessions/run-1/log.txt"),
             "TODO hidden",
         )
         .expect("write sessions file");
-        fs::write(root.join("src/binary.bin"), [0xff_u8, 0xfe, 0x00, 0x54, 0x4f, 0x44, 0x4f])
-            .expect("write binary");
+        fs::write(
+            root.join("src/binary.bin"),
+            [0xff_u8, 0xfe, 0x00, 0x54, 0x4f, 0x44, 0x4f],
+        )
+        .expect("write binary");
 
         let result =
             collect_grep_matches(root, root, "TODO", None, 100, 1).expect("collect matches");
