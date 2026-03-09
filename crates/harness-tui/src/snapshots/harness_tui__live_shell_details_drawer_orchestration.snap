@@ -2,33 +2,33 @@
 source: crates/harness-tui/src/lib.rs
 expression: rendered
 ---
-              run run_fixture · unknown/openai · gpt-5-codex                                                            
-               › user · req_001                                                                                         
-                 Explain the refactor             ○ Orchestration                                                       
-               ●  done  assistant · openai/gpt-5-cagents 1 · queued 1 · running 1 · stale 1                             
-                 Working through the steps.       warn: stale for 3001 ms                                               
-                                                   stale  scan · w1/deep · scan                                         
-                                                   running  dispatch · supervisor/n/a · dispatch                        
-                                                   queued  tool:read · system/n/a · tool:read                           
-                                                   completed  tool:done · w2/scout · tool:done                          
-                                                                                                                        
-                                                  ● Details                                                             
-                                                  Activity metadata:                                                    
-                                                  Request ID: req_001                                                   
-                                                  Provider: openai                                                      
-                                                  Model: gpt-5-codex                                                    
-                                                  Status: done                                                          
-                                                  Sequences: 1-18                                                       
-                                                                                                                        
-                                                  Request metadata:                                                     
-                                                  Prompt summary:                                                       
-                                                  Explain the refactor                                                  
-                                                  Request digest: digest-req-001                                        
-                                                  Raw request:                                                          
-                                                  {                                                                     
-                                                  "model_id": "gpt-5-codex",                                            
-               Success   turn 1/1 · req_001 · openai/gpt-5-codex · ready for next turn  ·  agents 1                     
-              ┌Composer · 1 line · 0 chars───────────────────────────────────────────────────────────────┐              
-              │Type a prompt for the next turn…                                                          │              
-              └──────────────────────────────────────────────────────────────────────────────────────────┘              
-              Enter send  Shift+Enter nl  i close  2 events  3 diff  4 help  q quit
+  run run_fixture · unknown/openai · gpt-5-codex                                                    
+   › user · req_001                                        ○ Orchestration                          
+     Explain the refactor                                   stale  scan w1/deep stale for 3001 ms   
+   ●  done  assistant · openai/gpt-5-codex                  running  dispatch supervisor/n/a        
+     Working through the steps.                             queued  tool:read system/n/a            
+     ╭─ tool fs.read  succeeded                             queued  tool:fs.read system/n/a         
+     │ args   path=src/app.rs                               done  tool:done w2/scout                
+     │ result tool output                                                                           
+     ╰─ ● call tool_call_1 · 1 permission                                                           
+                                                                                                    
+                                                           ● Details                                
+                                                           Activity metadata:                       
+                                                           Request ID: req_001                      
+                                                           Provider: openai                         
+                                                           Model: gpt-5-codex                       
+                                                           Status: done                             
+                                                           Sequences: 1-18                          
+                                                                                                    
+                                                           Request metadata:                        
+                                                           Prompt summary:                          
+                                                           Explain the refactor                     
+                                                           Request digest: digest-req-001           
+                                                           Raw request:                             
+                                                           {                                        
+                                                           "model_id": "gpt-5-codex",               
+   Success   turn 1/1 · req_001 · openai/gpt-5-codex · ready for next turn  ·  agents 1 · queued 2  
+  ┌Composer · 1 line · 0 chars───────────────────────────────────────────────────────────────────┐  
+  │Type a prompt for the next turn…                                                              │  
+  └──────────────────────────────────────────────────────────────────────────────────────────────┘  
+  Enter send  Shift+Enter nl  i close  2 events  3 diff  4 help  q quit
