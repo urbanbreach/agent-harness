@@ -1,9 +1,12 @@
 use std::process::Command;
+use std::thread;
+use std::time::Duration;
+use std::time::SystemTime;
 
 use harness_core::event::{
-    ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionDecision, PermissionRequestedEvent,
-    RunFailedEvent, RunFinishedEvent, RunStartedEvent, TaskScheduleState, TaskScheduledEvent,
-    SCHEMA_VERSION,
+    ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1, PermissionDecision,
+    PermissionRequestedEvent, ProviderRequestStartedEvent, RunFailedEvent, RunFinishedEvent,
+    RunStartedEvent, TaskScheduleState, TaskScheduledEvent, SCHEMA_VERSION,
 };
 use tempfile::tempdir;
 
@@ -30,6 +33,20 @@ fn write_events_jsonl(run_dir: &std::path::Path, events: &[EventEnvelopeV1]) {
         .collect::<Vec<_>>()
         .join("\n");
     std::fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).expect("write events");
+}
+
+fn write_events_lines(run_dir: &std::path::Path, lines: &[&str]) {
+    let body = lines.join("\n");
+    std::fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).expect("write events");
+}
+
+fn events_modified(run_dir: &std::path::Path) -> SystemTime {
+    run_dir
+        .join("events.jsonl")
+        .metadata()
+        .expect("read events metadata")
+        .modified()
+        .expect("read events modified time")
 }
 
 #[test]
@@ -149,7 +166,7 @@ fn sessions_list_cli_prints_finished_and_failed_runs() {
                 "run_finished",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "finished-run".to_string(),
+                    run_name: "interactive".to_string(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -170,7 +187,7 @@ fn sessions_list_cli_prints_finished_and_failed_runs() {
                 "run_failed",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "failed-run".to_string(),
+                    run_name: "interactive".to_string(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -216,12 +233,341 @@ fn sessions_list_cli_prints_finished_and_failed_runs() {
     assert!(stdout.contains("run_id"));
     assert!(stdout.contains("status"));
     assert!(stdout.contains("run_name"));
+    assert!(stdout.contains("profile"));
+    assert!(stdout.contains("provider/model"));
     assert!(stdout.contains("run_finished"));
     assert!(stdout.contains("finished"));
-    assert!(stdout.contains("finished-run"));
+    assert!(stdout.contains("interactive"));
     assert!(stdout.contains("run_failed"));
     assert!(stdout.contains("failed"));
-    assert!(stdout.contains("failed-run"));
+}
+
+#[test]
+fn session_history_entries_sort_by_recency() {
+    let session_dir = tempdir().expect("tempdir");
+    let older_dir = session_dir.path().join("alpha_session");
+    std::fs::create_dir_all(&older_dir).expect("create older run dir");
+    let older_events = [
+        envelope(
+            "run_older",
+            1,
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "older-run".to_string(),
+                workspace_root: "/tmp/workspace".to_string(),
+            }),
+        ),
+        envelope(
+            "run_older",
+            2,
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: "done".to_string(),
+            }),
+        ),
+    ];
+    write_events_jsonl(&older_dir, &older_events);
+    let older_modified = events_modified(&older_dir);
+
+    let newer_dir = session_dir.path().join("omega_session");
+    std::fs::create_dir_all(&newer_dir).expect("create newer run dir");
+    let newer_events = [
+        envelope(
+            "run_newer",
+            1,
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "newer-run".to_string(),
+                workspace_root: "/tmp/workspace".to_string(),
+            }),
+        ),
+        envelope(
+            "run_newer",
+            2,
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: "done".to_string(),
+            }),
+        ),
+    ];
+    write_events_jsonl(&newer_dir, &newer_events);
+
+    for _ in 0..20 {
+        if events_modified(&newer_dir) > older_modified {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+        write_events_jsonl(&newer_dir, &newer_events);
+    }
+
+    assert!(
+        events_modified(&newer_dir) > older_modified,
+        "test fixture must encode real recency independent of lexical directory names"
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "list",
+        ])
+        .output()
+        .expect("run harness sessions list for recency order");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let rows = stdout.lines().skip(1).collect::<Vec<_>>();
+    assert_eq!(rows.len(), 2, "expected exactly two session rows\n{stdout}");
+    assert!(
+        rows[0].contains("run_newer"),
+        "expected newer session first\n{stdout}"
+    );
+    assert!(
+        rows[1].contains("run_older"),
+        "expected older session second\n{stdout}"
+    );
+}
+
+#[test]
+fn session_history_marks_corrupt_runs_without_hiding_them() {
+    let session_dir = tempdir().expect("tempdir");
+    let good_dir = session_dir.path().join("run_good");
+    let corrupt_dir = session_dir.path().join("run_corrupt");
+    std::fs::create_dir_all(&good_dir).expect("create good run dir");
+    std::fs::create_dir_all(&corrupt_dir).expect("create corrupt run dir");
+
+    write_events_jsonl(
+        &good_dir,
+        &[
+            envelope(
+                "run_good",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                "run_good",
+                2,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ],
+    );
+    write_events_lines(&corrupt_dir, &["{this is not json"]);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "list",
+        ])
+        .output()
+        .expect("run harness sessions list with corrupt run");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("run_good"));
+    assert!(stdout.contains("run_corrupt"));
+    assert!(stdout.contains("events unavailable:"));
+    assert!(stdout.contains("<unavailable>"));
+}
+
+#[test]
+fn session_history_excludes_scenario_fixture_runs_by_default() {
+    let session_dir = tempdir().expect("tempdir");
+    let interactive_dir = session_dir.path().join("interactive_run");
+    let scenario_dir = session_dir.path().join("scenario_run");
+    std::fs::create_dir_all(&interactive_dir).expect("create interactive run dir");
+    std::fs::create_dir_all(&scenario_dir).expect("create scenario run dir");
+
+    write_events_jsonl(
+        &interactive_dir,
+        &[
+            envelope(
+                "run_interactive",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                "run_interactive",
+                2,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ],
+    );
+    write_events_jsonl(
+        &scenario_dir,
+        &[
+            envelope(
+                "run_scenario",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "golden_path".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                "run_scenario",
+                2,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "list",
+        ])
+        .output()
+        .expect("run harness sessions list for scenario filtering");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("run_interactive"));
+    assert!(
+        !stdout.contains("run_scenario"),
+        "scenario fixture sessions must be excluded by default\n{stdout}"
+    );
+}
+
+#[test]
+fn session_history_exposes_profile_and_model_labels() {
+    let session_dir = tempdir().expect("tempdir");
+    let run_dir = session_dir.path().join("run_profile_model");
+    std::fs::create_dir_all(&run_dir).expect("create run dir");
+
+    write_events_jsonl(
+        &run_dir,
+        &[
+            envelope(
+                "run_profile_model",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                "run_profile_model",
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_1".to_string(),
+                    profile: "worker".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                "run_profile_model",
+                3,
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_1".to_string(),
+                    provider_id: "openai".to_string(),
+                    model_id: "gpt-5.3-codex".to_string(),
+                    prompt_summary: "hello".to_string(),
+                    request_digest: "digest-1".to_string(),
+                }),
+            ),
+            envelope(
+                "run_profile_model",
+                4,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "list",
+        ])
+        .output()
+        .expect("run harness sessions list for profile/model labels");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("worker"));
+    assert!(stdout.contains("openai/gpt-5.3-codex"));
+}
+
+#[test]
+fn session_history_flags_non_resumable_sessions_with_reason() {
+    let session_dir = tempdir().expect("tempdir");
+    let prompt_run_dir = session_dir.path().join("prompt_run");
+    std::fs::create_dir_all(&prompt_run_dir).expect("create run dir");
+
+    write_events_jsonl(
+        &prompt_run_dir,
+        &[
+            envelope(
+                "run_prompt",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "prompt".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                "run_prompt",
+                2,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "list",
+        ])
+        .output()
+        .expect("run harness sessions list for non-resumable flags");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("run_prompt"));
+    assert!(stdout.contains("no"));
+    assert!(stdout.contains("prompt runs are not resumable"));
 }
 
 #[test]
