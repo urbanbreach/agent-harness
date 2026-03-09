@@ -95,6 +95,7 @@ pub struct LiveShellLayout {
     pub target: ShellGeometryTarget,
     pub activity_drawer_width: u16,
     pub inspector_drawer_width: u16,
+    pub details_sidebar_width: u16,
     pub transcript_min_width: u16,
     pub permission_modal_width: u16,
     pub centered_content_width: u16,
@@ -175,6 +176,7 @@ impl Theme {
             target: ShellGeometryTarget::Minimum,
             activity_drawer_width: 20,
             inspector_drawer_width: 20,
+            details_sidebar_width: 34,
             transcript_min_width: 28,
             permission_modal_width: 48,
             centered_content_width: 78,
@@ -184,6 +186,7 @@ impl Theme {
             target: ShellGeometryTarget::Primary,
             activity_drawer_width: 24,
             inspector_drawer_width: 28,
+            details_sidebar_width: 40,
             transcript_min_width: 40,
             permission_modal_width: 56,
             centered_content_width: 92,
@@ -374,8 +377,10 @@ mod tests {
         assert_eq!(minimum.target, ShellGeometryTarget::Minimum);
         assert_eq!(minimum.centered_content_width, 78);
         assert_eq!(minimum.content_margin_x, 1);
+        assert_eq!(minimum.details_sidebar_width, 34);
         assert_eq!(primary.centered_content_width, 92);
         assert_eq!(primary.content_margin_x, 2);
+        assert_eq!(primary.details_sidebar_width, 40);
         assert_eq!(theme.live_shell.rhythm.status_separator, 2);
         assert_eq!(theme.live_shell.heights.status, 1);
         assert_eq!(theme.live_shell.transcript_glyphs.user_marker, "›");
@@ -410,6 +415,6 @@ mod tests {
                 ShellGeometry::PRIMARY.height,
             ),
         );
-        assert_eq!(primary.shell.width, 92);
+        assert_eq!(primary.shell.width, 96);
     }
 }
