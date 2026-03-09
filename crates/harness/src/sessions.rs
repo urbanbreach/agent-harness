@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Subcommand;
-use harness_core::proj::RunStatus;
+use harness_core::proj::{RunStatus, SessionModeSource};
 
-use crate::replay::summarize_session;
+use crate::replay::inspect_session_catalog;
 
 const DEFAULT_SESSION_DIR: &str = ".agent-harness/sessions";
 
@@ -22,47 +22,90 @@ pub fn execute(command: SessionsCommand, global_session_dir: Option<PathBuf>) ->
 
 fn list_sessions(global_session_dir: Option<PathBuf>) -> ExitCode {
     let session_dir = global_session_dir.unwrap_or_else(|| PathBuf::from(DEFAULT_SESSION_DIR));
-    let read_dir = match fs::read_dir(&session_dir) {
-        Ok(read_dir) => read_dir,
+    if !session_dir.exists() {
+        eprintln!(
+            "failed to read session directory {}: directory does not exist",
+            session_dir.display()
+        );
+        return ExitCode::from(1);
+    }
+    if let Err(err) = fs::read_dir(&session_dir) {
+        eprintln!(
+            "failed to read session directory {}: {err}",
+            session_dir.display()
+        );
+        return ExitCode::from(1);
+    }
+
+    let entries = match inspect_session_catalog(&session_dir) {
+        Ok(entries) => entries,
         Err(err) => {
-            eprintln!(
-                "failed to read session directory {}: {err}",
-                session_dir.display()
-            );
+            eprintln!("{err}");
             return ExitCode::from(1);
         }
     };
 
-    let mut run_dirs = read_dir
-        .filter_map(|entry| entry.ok().map(|it| it.path()))
-        .filter(|path| path.is_dir() && path.join("events.jsonl").exists())
-        .collect::<Vec<_>>();
-    run_dirs.sort();
+    println!(
+        "{:<40} {:<12} {:<16} {:<24} {:<20} {:<16} {:<5} reason",
+        "run_id", "status", "run_name", "profile", "provider/model", "mode", "resume"
+    );
 
-    println!("{:<40} {:<12} run_name", "run_id", "status");
-    for run_dir in run_dirs {
-        match summarize_session(&run_dir) {
-            Ok(summary) => {
-                println!(
-                    "{:<40} {:<12} {}",
-                    summary.run_id,
-                    status_label(summary.status),
-                    summary.run_name.as_deref().unwrap_or("<unknown>")
-                );
-            }
-            Err(err) => {
-                eprintln!("failed to summarize {}: {err}", run_dir.display());
-            }
+    for entry in entries {
+        if matches!(
+            entry.catalog.mode_source,
+            SessionModeSource::ScenarioFixture | SessionModeSource::ReplayOnly
+        ) {
+            continue;
         }
+
+        println!(
+            "{:<40} {:<12} {:<16} {:<24} {:<20} {:<16} {:<5} {}",
+            entry.catalog.run_id,
+            status_label(entry.catalog.status),
+            entry.catalog.run_name.as_deref().unwrap_or("<unavailable>"),
+            entry
+                .catalog
+                .profile_preset
+                .as_deref()
+                .unwrap_or("<unavailable>"),
+            entry
+                .catalog
+                .provider_model
+                .as_deref()
+                .unwrap_or("<unavailable>"),
+            mode_source_label(entry.catalog.mode_source),
+            if entry.catalog.is_resumable {
+                "yes"
+            } else {
+                "no"
+            },
+            entry
+                .catalog
+                .resume_disabled_reason
+                .as_deref()
+                .unwrap_or("-")
+        );
     }
 
     ExitCode::SUCCESS
 }
 
-fn status_label(status: RunStatus) -> &'static str {
+fn status_label(status: Option<RunStatus>) -> &'static str {
     match status {
-        RunStatus::Running => "running",
-        RunStatus::Finished => "finished",
-        RunStatus::Failed => "failed",
+        Some(RunStatus::Running) => "running",
+        Some(RunStatus::Finished) => "finished",
+        Some(RunStatus::Failed) => "failed",
+        None => "<unavailable>",
+    }
+}
+
+fn mode_source_label(mode_source: SessionModeSource) -> &'static str {
+    match mode_source {
+        SessionModeSource::InteractiveLive => "interactive_live",
+        SessionModeSource::InteractiveMock => "interactive_mock",
+        SessionModeSource::Prompt => "prompt",
+        SessionModeSource::ScenarioFixture => "scenario_fixture",
+        SessionModeSource::ReplayOnly => "replay_only",
+        SessionModeSource::Unknown => "<unavailable>",
     }
 }
