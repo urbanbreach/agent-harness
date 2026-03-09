@@ -278,7 +278,8 @@ async fn consume_chat_sse_stream(
                 }
             }
 
-            if !consume_tool_call_deltas(&tx, &choice.delta.tool_calls, &mut tool_call_state).await {
+            if !consume_tool_call_deltas(&tx, &choice.delta.tool_calls, &mut tool_call_state).await
+            {
                 return;
             }
 
@@ -359,7 +360,11 @@ async fn consume_tool_call_deltas(
                 function_name_delta = Some(name);
             }
 
-            if let Some(arguments) = function.arguments.as_ref().filter(|value| !value.is_empty()) {
+            if let Some(arguments) = function
+                .arguments
+                .as_ref()
+                .filter(|value| !value.is_empty())
+            {
                 accumulator.arguments_json.push_str(arguments);
                 arguments_delta = arguments.clone();
             }
@@ -544,7 +549,9 @@ async fn consume_responses_sse_stream(
 
                 let pending_tool_calls = std::mem::take(&mut tool_calls);
                 for (state_key, state) in pending_tool_calls {
-                    if let Err(message) = emit_responses_tool_call_complete(&tx, &state_key, state).await {
+                    if let Err(message) =
+                        emit_responses_tool_call_complete(&tx, &state_key, state).await
+                    {
                         let _ = tx.send(ProviderStreamEvent::Error { message }).await;
                         return;
                     }
@@ -597,8 +604,9 @@ async fn handle_responses_tool_item_added(
     let Some(key) = item.id.clone().or_else(|| item.call_id.clone()) else {
         let _ = tx
             .send(ProviderStreamEvent::Error {
-                message: "openai_compatible responses tool call is missing both item id and call id"
-                    .to_string(),
+                message:
+                    "openai_compatible responses tool call is missing both item id and call id"
+                        .to_string(),
             })
             .await;
         return false;
@@ -614,10 +622,7 @@ async fn handle_responses_tool_item_added(
 
     if let Some(arguments_delta) = item.arguments.filter(|value| !value.is_empty()) {
         state.arguments_json.push_str(&arguments_delta);
-        let tool_call_id = state
-            .tool_call_id
-            .clone()
-            .unwrap_or_else(|| key.clone());
+        let tool_call_id = state.tool_call_id.clone().unwrap_or_else(|| key.clone());
 
         if tx
             .send(ProviderStreamEvent::ToolCallDelta {
@@ -655,8 +660,8 @@ async fn handle_responses_arguments_delta(
         return true;
     };
 
-    let state_key = find_responses_tool_call_key(tool_calls, &item_id)
-        .unwrap_or_else(|| item_id.clone());
+    let state_key =
+        find_responses_tool_call_key(tool_calls, &item_id).unwrap_or_else(|| item_id.clone());
     let state = tool_calls.entry(state_key.clone()).or_default();
     state.arguments_json.push_str(&arguments_delta);
 
@@ -695,8 +700,9 @@ async fn handle_responses_tool_item_done(
     else {
         let _ = tx
             .send(ProviderStreamEvent::Error {
-                message: "openai_compatible responses tool completion missing both item id and call id"
-                    .to_string(),
+                message:
+                    "openai_compatible responses tool completion missing both item id and call id"
+                        .to_string(),
             })
             .await;
         return false;
@@ -745,9 +751,7 @@ async fn emit_responses_tool_call_complete(
     state_key: &str,
     state: ResponsesToolCallAccumulator,
 ) -> Result<(), String> {
-    let tool_call_id = state
-        .tool_call_id
-        .unwrap_or_else(|| state_key.to_string());
+    let tool_call_id = state.tool_call_id.unwrap_or_else(|| state_key.to_string());
 
     let Some(function_name) = state.function_name.filter(|value| !value.is_empty()) else {
         return Err(format!(
@@ -875,17 +879,58 @@ struct OpenAiChatMessage {
     name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<OpenAiChatMessageToolCall>>,
 }
 
 impl From<CompletionMessage> for OpenAiChatMessage {
     fn from(message: CompletionMessage) -> Self {
+        let CompletionMessage {
+            role,
+            content,
+            name,
+            tool_call_id,
+            assistant_tool_calls,
+        } = message;
+
+        let tool_calls = assistant_tool_calls
+            .filter(|calls| !calls.is_empty())
+            .map(|calls| {
+                calls
+                    .into_iter()
+                    .map(|call| OpenAiChatMessageToolCall {
+                        id: call.tool_call_id,
+                        kind: "function",
+                        function: OpenAiChatMessageToolCallFunction {
+                            name: call.function_name,
+                            arguments: call.arguments_json,
+                        },
+                    })
+                    .collect()
+            });
+
         Self {
-            role: role_to_openai(&message.role).to_string(),
-            content: message.content,
-            name: message.name,
-            tool_call_id: message.tool_call_id,
+            role: role_to_openai(&role).to_string(),
+            content,
+            name,
+            tool_call_id,
+            tool_calls,
         }
     }
+}
+
+#[derive(Debug, Serialize)]
+struct OpenAiChatMessageToolCall {
+    id: String,
+    #[serde(rename = "type")]
+    kind: &'static str,
+    function: OpenAiChatMessageToolCallFunction,
+}
+
+#[derive(Debug, Serialize)]
+struct OpenAiChatMessageToolCallFunction {
+    name: String,
+    arguments: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -945,7 +990,7 @@ impl From<CompletionRequest> for OpenAiResponsesRequest {
 
         Self {
             model: model_id,
-            input: messages.into_iter().map(Into::into).collect(),
+            input: serialize_responses_input(messages),
             temperature,
             max_output_tokens: max_tokens,
             tools: tools.map(|tools| tools.into_iter().map(Into::into).collect()),
@@ -955,21 +1000,82 @@ impl From<CompletionRequest> for OpenAiResponsesRequest {
     }
 }
 
-#[derive(Debug, Serialize)]
-struct OpenAiResponsesInputItem {
-    role: String,
-    content: Vec<OpenAiResponsesContentItem>,
+fn serialize_responses_input(messages: Vec<CompletionMessage>) -> Vec<OpenAiResponsesInputItem> {
+    let mut input = Vec::new();
+    for message in messages {
+        input.extend(OpenAiResponsesInputItem::from_completion_message(message));
+    }
+    input
 }
 
-impl From<CompletionMessage> for OpenAiResponsesInputItem {
-    fn from(message: CompletionMessage) -> Self {
-        Self {
-            role: role_to_openai(&message.role).to_string(),
-            content: vec![OpenAiResponsesContentItem {
-                item_type: "input_text".to_string(),
-                text: message.content,
-            }],
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum OpenAiResponsesInputItem {
+    Message {
+        role: String,
+        content: Vec<OpenAiResponsesContentItem>,
+    },
+    FunctionCall {
+        #[serde(rename = "type")]
+        item_type: &'static str,
+        call_id: String,
+        name: String,
+        arguments: String,
+    },
+    FunctionCallOutput {
+        #[serde(rename = "type")]
+        item_type: &'static str,
+        call_id: String,
+        output: String,
+    },
+}
+
+impl OpenAiResponsesInputItem {
+    fn from_completion_message(message: CompletionMessage) -> Vec<Self> {
+        let CompletionMessage {
+            role,
+            content,
+            name: _,
+            tool_call_id,
+            assistant_tool_calls,
+        } = message;
+
+        if matches!(role, MessageRole::Tool) {
+            return vec![Self::FunctionCallOutput {
+                item_type: "function_call_output",
+                call_id: tool_call_id.unwrap_or_default(),
+                output: content,
+            }];
         }
+
+        let item_type = match role {
+            MessageRole::Assistant => "output_text",
+            MessageRole::System | MessageRole::User => "input_text",
+            MessageRole::Tool => unreachable!("tool messages handled above"),
+        };
+
+        let mut items = vec![Self::Message {
+            role: role_to_openai(&role).to_string(),
+            content: vec![OpenAiResponsesContentItem {
+                item_type: item_type.to_string(),
+                text: content,
+            }],
+        }];
+
+        if matches!(role, MessageRole::Assistant) {
+            if let Some(tool_calls) = assistant_tool_calls {
+                for tool_call in tool_calls {
+                    items.push(Self::FunctionCall {
+                        item_type: "function_call",
+                        call_id: tool_call.tool_call_id,
+                        name: tool_call.function_name,
+                        arguments: tool_call.arguments_json,
+                    });
+                }
+            }
+        }
+
+        items
     }
 }
 
@@ -1133,7 +1239,10 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use super::{OpenAiApiMode, OpenAiCompatibleProvider, OpenAiCompatibleProviderConfig};
+    use super::{
+        OpenAiApiMode, OpenAiCompatibleProvider, OpenAiCompatibleProviderConfig,
+        OpenAiResponsesRequest,
+    };
     use crate::{
         CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
         ProviderStreamEvent, ToolChoice, ToolDef,
@@ -1205,10 +1314,7 @@ mod tests {
             .respond_with(
                 ResponseTemplate::new(200)
                     .insert_header("content-type", "text/event-stream")
-                    .set_body_raw(
-                        responses_tool_call_sse_transcript(),
-                        "text/event-stream",
-                    ),
+                    .set_body_raw(responses_tool_call_sse_transcript(), "text/event-stream"),
             )
             .mount(&server)
             .await;
@@ -1256,19 +1362,240 @@ mod tests {
         assert_eq!(requests.len(), 1);
 
         let body: serde_json::Value = requests[0].body_json().expect("request body must be JSON");
-        assert_eq!(body.get("tool_choice"), Some(&serde_json::Value::String("auto".to_string())));
+        assert_eq!(
+            body.get("tool_choice"),
+            Some(&serde_json::Value::String("auto".to_string()))
+        );
 
         let tools = body
             .get("tools")
             .and_then(|value| value.as_array())
             .expect("responses tools array should be serialized");
         assert_eq!(tools.len(), 1);
-        assert_eq!(tools[0].get("type"), Some(&serde_json::Value::String("function".to_string())));
+        assert_eq!(
+            tools[0].get("type"),
+            Some(&serde_json::Value::String("function".to_string()))
+        );
         assert_eq!(
             tools[0].get("name"),
             Some(&serde_json::Value::String("filesystem_read".to_string()))
         );
         assert!(tools[0].get("function").is_none());
+    }
+
+    #[test]
+    fn openai_responses_request_replays_assistant_tool_call_before_function_call_output() {
+        let request = CompletionRequest {
+            model_id: "gpt-4o-mini".to_string(),
+            messages: vec![
+                CompletionMessage {
+                    role: MessageRole::System,
+                    content: "sys".to_string(),
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: None,
+                },
+                CompletionMessage {
+                    role: MessageRole::User,
+                    content: "Use a tool".to_string(),
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: None,
+                },
+                CompletionMessage {
+                    role: MessageRole::Assistant,
+                    content: "calling tool".to_string(),
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: Some(vec![crate::AssistantToolCall {
+                        tool_call_id: "call_1".to_string(),
+                        function_name: "filesystem_read".to_string(),
+                        arguments_json: "{\"filePath\":\"/tmp/demo.txt\"}".to_string(),
+                    }]),
+                },
+                CompletionMessage {
+                    role: MessageRole::Tool,
+                    content: "{\"display_text\":\"ok\"}".to_string(),
+                    name: Some("filesystem_read".to_string()),
+                    tool_call_id: Some("call_1".to_string()),
+                    assistant_tool_calls: None,
+                },
+            ],
+            temperature: Some(0.0),
+            max_tokens: None,
+            tools: None,
+            tool_choice: None,
+            stream: true,
+        };
+
+        let body = serde_json::to_value(OpenAiResponsesRequest::from(request))
+            .expect("serialize responses request");
+        let input = body
+            .get("input")
+            .and_then(serde_json::Value::as_array)
+            .expect("responses request input array");
+
+        assert!(input
+            .iter()
+            .take(3)
+            .all(|item| item.get("role").is_some() && item.get("content").is_some()));
+        assert_eq!(
+            input[0]
+                .get("content")
+                .and_then(serde_json::Value::as_array)
+                .and_then(|content| content.first())
+                .and_then(|item| item.get("type")),
+            Some(&serde_json::Value::String("input_text".to_string()))
+        );
+        assert_eq!(
+            input[1]
+                .get("content")
+                .and_then(serde_json::Value::as_array)
+                .and_then(|content| content.first())
+                .and_then(|item| item.get("type")),
+            Some(&serde_json::Value::String("input_text".to_string()))
+        );
+        assert_eq!(
+            input[2]
+                .get("content")
+                .and_then(serde_json::Value::as_array)
+                .and_then(|content| content.first())
+                .and_then(|item| item.get("type")),
+            Some(&serde_json::Value::String("output_text".to_string()))
+        );
+
+        let function_call_index = input
+            .iter()
+            .position(|item| {
+                item.get("type") == Some(&serde_json::Value::String("function_call".to_string()))
+            })
+            .expect("assistant tool call should replay as function_call item");
+        let function_call_output_index = input
+            .iter()
+            .position(|item| {
+                item.get("type")
+                    == Some(&serde_json::Value::String(
+                        "function_call_output".to_string(),
+                    ))
+            })
+            .expect("tool result should serialize as function_call_output item");
+
+        assert!(
+            function_call_index < function_call_output_index,
+            "function_call replay must precede function_call_output"
+        );
+        assert_eq!(
+            input[function_call_index].get("call_id"),
+            Some(&serde_json::Value::String("call_1".to_string()))
+        );
+        assert_eq!(
+            input[function_call_index].get("name"),
+            Some(&serde_json::Value::String("filesystem_read".to_string()))
+        );
+        assert_eq!(
+            input[function_call_index].get("arguments"),
+            Some(&serde_json::Value::String(
+                "{\"filePath\":\"/tmp/demo.txt\"}".to_string()
+            ))
+        );
+        assert_eq!(
+            input[function_call_output_index].get("call_id"),
+            Some(&serde_json::Value::String("call_1".to_string()))
+        );
+        assert_eq!(
+            input[function_call_output_index].get("output"),
+            Some(&serde_json::Value::String(
+                "{\"display_text\":\"ok\"}".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn openai_chat_request_replays_assistant_tool_call_in_tool_calls_field() {
+        let request = CompletionRequest {
+            model_id: "gpt-4o-mini".to_string(),
+            messages: vec![
+                CompletionMessage {
+                    role: MessageRole::System,
+                    content: "sys".to_string(),
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: None,
+                },
+                CompletionMessage {
+                    role: MessageRole::User,
+                    content: "Use a tool".to_string(),
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: None,
+                },
+                CompletionMessage {
+                    role: MessageRole::Assistant,
+                    content: "calling tool".to_string(),
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: Some(vec![crate::AssistantToolCall {
+                        tool_call_id: "call_1".to_string(),
+                        function_name: "filesystem_read".to_string(),
+                        arguments_json: "{\"filePath\":\"/tmp/demo.txt\"}".to_string(),
+                    }]),
+                },
+                CompletionMessage {
+                    role: MessageRole::Tool,
+                    content: "{\"display_text\":\"ok\"}".to_string(),
+                    name: Some("filesystem_read".to_string()),
+                    tool_call_id: Some("call_1".to_string()),
+                    assistant_tool_calls: None,
+                },
+            ],
+            temperature: Some(0.0),
+            max_tokens: None,
+            tools: None,
+            tool_choice: None,
+            stream: true,
+        };
+
+        let body = serde_json::to_value(super::OpenAiChatCompletionsRequest::from(request))
+            .expect("serialize chat request");
+        let messages = body
+            .get("messages")
+            .and_then(serde_json::Value::as_array)
+            .expect("chat request messages array");
+
+        let assistant = &messages[2];
+        let tool_calls = assistant
+            .get("tool_calls")
+            .and_then(serde_json::Value::as_array)
+            .expect("assistant message should include tool_calls replay");
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(
+            tool_calls[0].get("id"),
+            Some(&serde_json::Value::String("call_1".to_string()))
+        );
+        assert_eq!(
+            tool_calls[0].get("type"),
+            Some(&serde_json::Value::String("function".to_string()))
+        );
+        assert_eq!(
+            tool_calls[0]
+                .get("function")
+                .and_then(|value| value.get("name")),
+            Some(&serde_json::Value::String("filesystem_read".to_string()))
+        );
+        assert_eq!(
+            tool_calls[0]
+                .get("function")
+                .and_then(|value| value.get("arguments")),
+            Some(&serde_json::Value::String(
+                "{\"filePath\":\"/tmp/demo.txt\"}".to_string()
+            ))
+        );
+
+        let tool_message = &messages[3];
+        assert_eq!(
+            tool_message.get("tool_call_id"),
+            Some(&serde_json::Value::String("call_1".to_string()))
+        );
     }
 
     #[tokio::test]
@@ -1363,14 +1690,20 @@ mod tests {
         assert_eq!(requests.len(), 1);
 
         let body: serde_json::Value = requests[0].body_json().expect("request body must be JSON");
-        assert_eq!(body.get("tool_choice"), Some(&serde_json::Value::String("auto".to_string())));
+        assert_eq!(
+            body.get("tool_choice"),
+            Some(&serde_json::Value::String("auto".to_string()))
+        );
 
         let tools = body
             .get("tools")
             .and_then(|value| value.as_array())
             .expect("tools array should be serialized");
         assert_eq!(tools.len(), 1);
-        assert_eq!(tools[0].get("type"), Some(&serde_json::Value::String("function".to_string())));
+        assert_eq!(
+            tools[0].get("type"),
+            Some(&serde_json::Value::String("function".to_string()))
+        );
         assert_eq!(
             tools[0].get("function").and_then(|value| value.get("name")),
             Some(&serde_json::Value::String("filesystem_read".to_string()))
@@ -1398,7 +1731,9 @@ mod tests {
         assert!(events
             .iter()
             .any(|event| matches!(event, ProviderStreamEvent::ToolCallDelta { .. })));
-        assert!(events.iter().any(|event| matches!(event, ProviderStreamEvent::Error { .. })));
+        assert!(events
+            .iter()
+            .any(|event| matches!(event, ProviderStreamEvent::Error { .. })));
         assert!(!events
             .iter()
             .any(|event| matches!(event, ProviderStreamEvent::ToolCallComplete { .. })));
@@ -1529,6 +1864,7 @@ mod tests {
                 content: "Say hello from test".to_string(),
                 name: None,
                 tool_call_id: None,
+                assistant_tool_calls: None,
             }],
             temperature: Some(0.0),
             max_tokens: Some(32),
@@ -1546,6 +1882,7 @@ mod tests {
                 content: "Read /tmp/demo.txt".to_string(),
                 name: None,
                 tool_call_id: None,
+                assistant_tool_calls: None,
             }],
             temperature: Some(0.0),
             max_tokens: Some(64),
