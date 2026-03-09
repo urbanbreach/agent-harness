@@ -1,1 +1,0 @@
-- TUI layout tests can be achieved efficiently using `TestBackend` from ratatui with simple 80x24 area and `insta::assert_debug_snapshot!`.

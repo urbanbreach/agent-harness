@@ -1,3 +1,0 @@
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
-     Running `target/debug/harness config validate --config /tmp/tmp.J4EAKb62ot`
-config validation failed: missing required config sections: backgroundTask, categories, permissions, providers

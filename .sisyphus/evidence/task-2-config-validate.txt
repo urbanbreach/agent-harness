@@ -1,1 +1,0 @@
-config valid: configs/harness.example.jsonc

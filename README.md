@@ -1,254 +1,93 @@
-# Agent Harness
+# Agent harness
 
-Event-sourced multi-agent orchestration harness with append-only JSONL sessions, strict permissions, and atomic hashline edits.
 
-Behavioral inspiration from [Oh My OpenCode](https://github.com/opencode-ai/opencode) and [Oh My Pi](https://github.com/can1357/oh-my-pi). No code or prompts were copied. See [License Hygiene](#license-hygiene).
 
-## Overview
+## Getting started
 
-Agent Harness provides a deterministic, auditable foundation for running AI agents:
+To make it easy for you to get started with GitLab, here's a list of recommended next steps.
 
-- **Append-only event log**: Every action recorded as JSONL with schema versioning
-- **Single-authority Coordinator**: Central scheduler with concurrency gates and stale detection
-- **Permission model**: Explicit allow/deny/ask for edits, shell, and network operations
-- **Hashline edits**: Atomic file patches with content-addressed anchors (blake3)
-- **Modern TUI**: Ratatui-based interface with live streaming and replay modes
-- **Deterministic replay**: Same inputs produce identical JSONL digests
+Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
 
-## Quickstart
+## Add your files
 
-### Installation
-
-```bash
-cargo build --release
-```
-
-### Launch the Interactive TUI
-
-`harness` is now the normal config-backed daily launch. It resolves config from `--config`, `./harness.jsonc`, or your XDG config directory. If no config resolves, it fails closed with setup guidance and suggests `--mock`.
-
-```bash
-# Config-backed daily launch
-cargo run -p harness --
-
-# Explicit config path
-cargo run -p harness -- --config configs/harness.example.jsonc
-
-# Explicit deterministic demo/mock mode
-cargo run -p harness -- --mock
-
-# Compatibility alias for the interactive TUI
-cargo run -p harness -- tui
-
-# Compatibility alias with an explicit config path
-cargo run -p harness -- --config configs/harness.example.jsonc tui
-
-# Deterministic scenario path kept for PTY/live automation
-cargo run -p harness -- tui --scenario golden_path_interactive --deterministic
-
-# Replay a previous session
-cargo run -p harness -- replay --session .agent-harness/sessions/<run_id>
-
-# List all sessions
-cargo run -p harness -- sessions list
-```
-
-### Demo / Mock Mode
-
-Use `--mock` when you want the deterministic demo workspace without any config file:
-
-```bash
-# Bare launch in explicit mock mode
-cargo run -p harness -- --mock
-
-# Compatibility alias for explicit mock mode
-cargo run -p harness -- tui --mock
-
-# Run a specific scenario with mock provider
-cargo run -p harness -- run --scenario golden_path --mock --deterministic
-```
-
-### Headless Scenarios (Testing)
-
-For deterministic testing with predefined scenarios:
-
-```bash
-# Golden path scenario (deterministic, no human input)
-cargo run -p harness -- run --scenario golden_path --deterministic
-
-# TUI with a specific deterministic scenario
-cargo run -p harness -- tui --scenario golden_path_interactive
-```
-
-### Headless Prompt (Non-TUI)
-
-```bash
-# Single prompt, headless execution (requires config)
-cargo run -p harness -- prompt --text "Explain the code in src/main.rs" --config my-config.jsonc
-
-# With explicit config
-cargo run -p harness -- prompt --text "Hello" --config my-config.jsonc
-
-# With mock provider (no config required)
-cargo run -p harness -- prompt --text "Hello" --mock
-
-# Output to file
-cargo run -p harness -- prompt --text "Hello" --out response.jsonl
-```
-
-### Validate Configuration
-
-```bash
-# Print JSON Schema
-cargo run -p harness -- schema
-
-# Validate a config file
-cargo run -p harness -- config validate --config configs/harness.example.jsonc
-```
-
-## Configuration
-
-Config files use JSONC (JSON with comments). Resolution order:
-
-1. `--config <path>` flag
-2. `./harness.jsonc` in current directory
-3. `${XDG_CONFIG_HOME:-~/.config}/harness/config.jsonc`
-
-Normal interactive use is config-first: both `cargo run -p harness --` and `cargo run -p harness -- tui` require one of those config locations unless you explicitly opt into `--mock`.
-
-Example with CLIProxy-style base URL:
-
-```jsonc
-{
-  "providers": {
-    "default": {
-      "type": "openai_compatible",
-      "base_url": "http://127.0.0.1:8317/v1",
-      "api_key": "${OPENAI_API_KEY:-sk-zerolimit}"
-    }
-  }
-}
-```
-
-See [docs/config.md](docs/config.md) for full documentation and [configs/harness.example.jsonc](configs/harness.example.jsonc) for a complete example.
-
-## CLIproxyAPI Quickstart
-
-Connect to a local CLIproxyAPI instance using the OpenAI Responses API:
-
-```jsonc
-{
-  "providers": {
-    "default": {
-      "type": "openai_compatible",
-      "base_url": "http://127.0.0.1:8317/v1",
-      "api_key": "${OPENAI_API_KEY:-sk-zerolimit}",
-      "api_mode": "responses",
-      "models": {
-        "gpt-5.3-codex": {
-          "display_name": "GPT-5.3 Codex",
-          "max_input_tokens": 128000,
-          "max_output_tokens": 16384
-        }
-      }
-    }
-  }
-}
-```
-
-Set your API key (optional when your local CLIProxy uses subscription auth and accepts a placeholder token like `sk-zerolimit`):
-
-```bash
-export OPENAI_API_KEY="your-api-key-here"
-```
-
-The `api_mode` setting controls which API endpoint to use:
-- `"responses"` - Use `/v1/responses` (OpenAI Responses API with streaming)
-- `"chat_completions"` - Use `/v1/chat/completions` (standard chat completions)
-- `"auto"` - Try responses first, fall back to chat completions on 404/405
-
-## Testing
-
-The project uses a three-level testing pyramid:
-
-### Unit Tests
-
-```bash
-cargo test --workspace
-```
-
-### Integration Tests
-
-```bash
-# With snapshot testing (requires INSTA_UPDATE=no in CI)
-INSTA_UPDATE=no cargo test --workspace --all-features
-```
-
-### PTY E2E Tests
-
-Deterministic end-to-end tests using portable-pty and vt100 parsing:
-
-```bash
-# Required environment for deterministic runs
-export HARNESS_DETERMINISTIC=1
-export HARNESS_DISABLE_ANIMATIONS=1
-export TZ=UTC LANG=C.UTF-8 LC_ALL=C.UTF-8
-export TERM=xterm-256color
-
-# Run PTY tests (single-threaded for determinism)
-RUST_TEST_THREADS=1 cargo test -p harness-testkit pty_e2e
-
-# Optional: write deterministic UI screenshots to a custom directory
-HARNESS_VISUAL_ARTIFACT_DIR=/tmp/harness-visuals \
-RUST_TEST_THREADS=1 cargo test -p harness-testkit pty_e2e
-```
-
-The PTY E2E suite now emits deterministic PNG checkpoints for the polished startup, prompt stream, permission modal, and run-finished states, and validates visual hashes for agent-visible UX regression testing.
-In GitLab CI, these images are published from `target/pty-visual-artifacts/` by the `rust:pty_e2e` job.
-
-For full pre-release signoff, pair the offline PTY suite with the live visual verifier:
-
-```bash
-HARNESS_LIVE_PROXY=1 \
-HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
-HARNESS_LIVE_PROXY_PROVIDER=default \
-HARNESS_LIVE_PROXY_MODEL=gpt-5.3-codex \
-cargo test -p harness-testkit live_proxy_e2e_visual_verifier -- --ignored --exact
-```
-
-See [docs/testing.md](docs/testing.md) for detailed testing documentation.
-
-## Documentation
-
-- [docs/architecture.md](docs/architecture.md) - Crate boundaries, event schema, coordinator design
-- [docs/config.md](docs/config.md) - Configuration reference and JSON Schema
-- [docs/testing.md](docs/testing.md) - Testing levels, deterministic environments, snapshots
-
-## Project Structure
+* [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
+* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
 
 ```
-crates/
-  harness/          # CLI binary (run, tui, replay, schema, config)
-  harness-core/     # Event store, coordinator, permissions, projections
-  harness-providers/# Provider abstraction, MockProvider, OpenAI-compatible proxy
-  harness-tools/    # Built-in tools (fs.read, shell.run, edit.hashline_apply)
-  harness-tui/      # Ratatui interface (live mode, replay mode, diff viewer)
-  harness-testkit/  # Test helpers, fixtures, PTY E2E harness
+cd existing_repo
+git remote add origin https://gitlab.dclabra.fi/urbanbreach/agent-harness.git
+git branch -M main
+git push -uf origin main
 ```
 
-## License Hygiene
+## Integrate with your tools
 
-This project draws behavioral inspiration from Oh My OpenCode and Oh My Pi:
+* [Set up project integrations](https://gitlab.dclabra.fi/urbanbreach/agent-harness/-/settings/integrations)
 
-- **Architecture patterns**: Event sourcing, hashline edits, permission models
-- **User experience**: Terminal UI workflows, streaming output
+## Collaborate with your team
 
-No code, prompts, or proprietary implementations were copied. All code is original and independently authored.
+* [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
+* [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
+* [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
+* [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
+* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
 
-**License notes**:
-- MIT-licensed repositories (like Oh My OpenCode) are fine for inspiration
-- Pi Agent Rust license is unclear; do not copy code from it
+## Test and Deploy
+
+Use the built-in continuous integration in GitLab.
+
+* [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
+* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
+* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
+* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
+* [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+
+***
+
+# Editing this README
+
+When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+
+## Suggestions for a good README
+
+Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+
+## Name
+Choose a self-explaining name for your project.
+
+## Description
+Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+
+## Badges
+On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+
+## Visuals
+Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+
+## Installation
+Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+
+## Usage
+Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+
+## Support
+Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+
+## Roadmap
+If you have ideas for releases in the future, it is a good idea to list them in the README.
+
+## Contributing
+State if you are open to contributions and what your requirements are for accepting them.
+
+For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+
+You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+
+## Authors and acknowledgment
+Show your appreciation to those who have contributed to the project.
 
 ## License
+For open source projects, say how it is licensed.
 
-MIT License - see LICENSE file for details.
+## Project status
+If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
