@@ -1,15 +1,19 @@
 use harness_core::event::{
-    ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionDecision, PermissionRequestedEvent,
-    ProviderRequestFinishedEvent, ProviderRequestStartedEvent, ProviderStreamDeltaEvent,
+    ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1, PermissionDecision,
+    PermissionRequestedEvent, ProviderRequestFinishedEvent, ProviderRequestStartedEvent,
+    ProviderStreamDeltaEvent, RunFinishedEvent, RunStartedEvent, StaleDetectedEvent,
     TaskCompletedEvent, TaskResultLateEvent, TaskScheduleState, TaskScheduledEvent,
+    ToolCallFinishedEvent, ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus,
     UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
+use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
+use harness_tui::app::{set_pending_live_launch_metadata, LaunchMetadata, SessionHistoryEntry};
 use harness_tui::{run_tui_with_options, LiveUpdate, TuiMode, TuiOptions, UiIntent};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::cmp;
 use std::fs;
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{
     mpsc::{self, Receiver, RecvTimeoutError, Sender},
     Arc, Mutex,
@@ -25,6 +29,7 @@ const STABLE_WINDOW: Duration = Duration::from_millis(180);
 const STABLE_TIMEOUT: Duration = Duration::from_secs(2);
 const ORCHESTRATION_EVENT_DELAY: Duration = Duration::from_millis(250);
 const PRESERVED_DRAFT_TEXT: &str = "keep this draft";
+const STARTUP_LAUNCHER_READY_MARKER: &str = "startup launcher ready";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PtyGeometry {
@@ -123,34 +128,48 @@ const LIVE_STATE_FIXTURES: LiveStateFixtures = LiveStateFixtures {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HelperScenario {
+    StartupShell,
+    StartupPalette,
+    StartupSessionHistory,
     TypeFirstStartup,
     StreamedResponse,
+    ToolLifecycle,
     PermissionWithDraft,
     DetailsDrawer,
     LiveOrchestrationLifecycle,
     LiveOrchestrationStaleLateResult,
     DegradedBootstrap,
     DisconnectedStream,
+    ReplayReadOnly,
 }
 
 impl HelperScenario {
     fn env_value(self) -> &'static str {
         match self {
+            Self::StartupShell => "startup_shell",
+            Self::StartupPalette => "startup_palette",
+            Self::StartupSessionHistory => "startup_session_history",
             Self::TypeFirstStartup => "type_first_startup",
             Self::StreamedResponse => "streamed_response",
+            Self::ToolLifecycle => "tool_lifecycle",
             Self::PermissionWithDraft => "permission_with_draft",
             Self::DetailsDrawer => "details_drawer",
             Self::LiveOrchestrationLifecycle => "live_orchestration_lifecycle",
             Self::LiveOrchestrationStaleLateResult => "live_orchestration_stale_late_result",
             Self::DegradedBootstrap => "degraded_bootstrap",
             Self::DisconnectedStream => "disconnected_stream",
+            Self::ReplayReadOnly => "replay_read_only",
         }
     }
 
     fn helper_test_name(self) -> &'static str {
         match self {
+            Self::StartupShell => "pty_helper_startup_shell",
+            Self::StartupPalette => "pty_helper_startup_palette",
+            Self::StartupSessionHistory => "pty_helper_startup_session_history",
             Self::TypeFirstStartup => "pty_helper_type_first_startup",
             Self::StreamedResponse => "pty_helper_streamed_response",
+            Self::ToolLifecycle => "pty_helper_tool_lifecycle",
             Self::PermissionWithDraft => "pty_helper_permission_with_draft",
             Self::DetailsDrawer => "pty_helper_details_drawer",
             Self::LiveOrchestrationLifecycle => "pty_helper_live_orchestration_lifecycle",
@@ -159,8 +178,29 @@ impl HelperScenario {
             }
             Self::DegradedBootstrap => "pty_helper_degraded_bootstrap",
             Self::DisconnectedStream => "pty_helper_disconnected_stream",
+            Self::ReplayReadOnly => "pty_helper_replay_read_only",
         }
     }
+}
+
+#[test]
+fn startup_shell_renders_bottom_composer_snapshot() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let startup = capture_type_first_startup_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
+    assert_or_update_snapshot("type_first_startup", &startup);
+
+    let lines = startup.lines().collect::<Vec<_>>();
+    let composer_top = find_line_containing(&lines, "Composer").expect("composer title row");
+    let composer_bottom =
+        find_line_containing_from(&lines, composer_top + 1, "└").expect("composer bottom row");
+    let footer_row = find_line_containing_from(&lines, composer_bottom + 1, "Enter send")
+        .expect("footer legend");
+
+    assert!(composer_top < composer_bottom);
+    assert_eq!(composer_bottom + 1, footer_row);
 }
 
 #[test]
@@ -172,8 +212,21 @@ fn pty_e2e_snapshots_are_stable() {
     let type_first_startup = capture_type_first_startup_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
     assert_or_update_snapshot("type_first_startup", &type_first_startup);
 
+    let startup_shell = capture_startup_shell_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
+    assert_or_update_snapshot("startup_shell", &startup_shell);
+
+    let startup_palette = capture_startup_palette_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
+    assert_or_update_snapshot("startup_palette", &startup_palette);
+
+    let startup_session_history =
+        capture_startup_session_history_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
+    assert_or_update_snapshot("startup_session_history", &startup_session_history);
+
     let streamed_response = capture_streamed_response_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
     assert_or_update_snapshot("streamed_response", &streamed_response);
+
+    let tool_lifecycle = capture_tool_lifecycle_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
+    assert_or_update_snapshot("tool_lifecycle", &tool_lifecycle);
 
     let permission_with_draft =
         capture_permission_with_draft_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
@@ -204,7 +257,11 @@ fn snapshot_files_exist_and_are_secret_clean() {
     let snapshot_dir = snapshot_dir();
     let expected = [
         snapshot_dir.join("type_first_startup.snap"),
+        snapshot_dir.join("startup_shell.snap"),
+        snapshot_dir.join("startup_palette.snap"),
+        snapshot_dir.join("startup_session_history.snap"),
         snapshot_dir.join("streamed_response.snap"),
+        snapshot_dir.join("tool_lifecycle.snap"),
         snapshot_dir.join("permission_with_draft.snap"),
         snapshot_dir.join("narrow_80x24.snap"),
         snapshot_dir.join("degraded_bootstrap.snap"),
@@ -247,8 +304,28 @@ fn pty_helper_type_first_startup() {
 }
 
 #[test]
+fn pty_helper_startup_shell() {
+    run_helper_if_requested(HelperScenario::StartupShell);
+}
+
+#[test]
+fn pty_helper_startup_palette() {
+    run_helper_if_requested(HelperScenario::StartupPalette);
+}
+
+#[test]
+fn pty_helper_startup_session_history() {
+    run_helper_if_requested(HelperScenario::StartupSessionHistory);
+}
+
+#[test]
 fn pty_helper_streamed_response() {
     run_helper_if_requested(HelperScenario::StreamedResponse);
+}
+
+#[test]
+fn pty_helper_tool_lifecycle() {
+    run_helper_if_requested(HelperScenario::ToolLifecycle);
 }
 
 #[test]
@@ -279,6 +356,11 @@ fn pty_helper_degraded_bootstrap() {
 #[test]
 fn pty_helper_disconnected_stream() {
     run_helper_if_requested(HelperScenario::DisconnectedStream);
+}
+
+#[test]
+fn pty_helper_replay_read_only() {
+    run_helper_if_requested(HelperScenario::ReplayReadOnly);
 }
 
 #[test]
@@ -333,17 +415,49 @@ fn pty_live_orchestration_drawer_and_status() {
         MARKER_TIMEOUT,
     )
     .expect("wait for queued orchestration state");
-    assert!(queued_screen.contains("Orchestration"));
-    assert!(queued_screen.contains("queued  task_live_cycle"));
+    assert_screen_contains_all(
+        &queued_screen,
+        &[
+            "○ Orchestration",
+            "agents 1 · queued 1 · running 0 · sta…",
+            "queued  task_live_cycle · w1/deep",
+            "ready for next turn  ·  agents 1 · queued 1 · running 0 · stale 0",
+        ],
+    );
 
-    let late_screen = wait_for_screen_contains(
+    let started_screen = wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "running  task_live_cycle",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for started orchestration state");
+    assert_screen_contains_all(
+        &started_screen,
+        &[
+            "○ Orchestration",
+            "agents 1 · queued 0 · running 1 · sta…",
+            "running  task_live_cycle · w1/deep",
+            "ready for next turn  ·  agents 1 · queued 0 · running 1 · stale 0",
+        ],
+    );
+
+    let completed_screen = wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
         "completed  task_live_cycle",
         MARKER_TIMEOUT,
     )
     .expect("wait for completed orchestration state");
-    assert!(late_screen.contains("completed  task_live_cycle"));
+    assert_screen_contains_all(
+        &completed_screen,
+        &[
+            "○ Orchestration",
+            "agents 0 · queued 0 · running 0 · sta…",
+            "completed  task_live_cycle",
+            "Success   turn 1/1 · req_orch · mock/m1 · ready for next turn",
+        ],
+    );
 
     terminate_child(helper.child);
 }
@@ -368,7 +482,16 @@ fn pty_live_orchestration_stale_late_result_flow() {
         MARKER_TIMEOUT,
     )
     .expect("wait for stale orchestration warning");
-    assert!(stale_screen.contains("stale  task_stale"));
+    assert_screen_contains_all(
+        &stale_screen,
+        &[
+            "○ Orchestration",
+            "agents 1 · queued 0 · running 0 · sta…",
+            "warn: stale for 3001 ms",
+            "stale  task_stale · w1/deep",
+            "ready for next turn  ·  agents 1 · queued 0 · running 0 · stale 1 · warn stale for 3001 ms",
+        ],
+    );
 
     let late_result_screen = wait_for_screen_contains(
         &mut helper.parser,
@@ -377,9 +500,91 @@ fn pty_live_orchestration_stale_late_result_flow() {
         MARKER_TIMEOUT,
     )
     .expect("wait for late result orchestration row");
-    assert!(late_result_screen.contains("late result after stale cancellation"));
+    assert_screen_contains_all(
+        &late_result_screen,
+        &[
+            "○ Orchestration",
+            "agents 0 · queued 0 · running 0 · sta…",
+            "warn: late result after stale cancell…",
+            "late-result  task_stale · w1/deep",
+            "ready for next turn  ·  agents 0 · queued 0 · running 0 · stale 0 · warn late result after stale cancellation",
+        ],
+    );
+    assert!(
+        !late_result_screen.contains("stale  task_stale · w1/deep"),
+        "late result screen still shows stale row\n{late_result_screen}"
+    );
 
     terminate_child(helper.child);
+}
+
+#[test]
+fn replay_mode_never_emits_submit_prompt_intent() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let marker_dir = tempfile::tempdir().expect("create replay marker tempdir");
+    let marker_path = marker_dir.path().join("replay-intent.txt");
+
+    let mut helper = spawn_helper_pty_with_intent_marker(
+        HelperScenario::ReplayReadOnly,
+        PtyGeometry::PRIMARY_SIGNOFF,
+        &marker_path,
+    );
+    wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "q quit",
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for replay startup render");
+
+    send_key(helper.writer.as_mut(), b'\t').expect("focus replay details surface");
+    send_key(helper.writer.as_mut(), b'\t').expect("attempt replay prompt focus");
+    helper
+        .writer
+        .write_all(b"blocked in replay")
+        .expect("type replay draft");
+    helper.writer.flush().expect("flush replay draft");
+    send_key(helper.writer.as_mut(), b'\r').expect("attempt replay submit");
+
+    let current = helper.parser.screen().contents();
+    let stable = stabilize_screen(&mut helper.parser, &helper.output_rx, current);
+
+    assert!(
+        stable.contains("q quit"),
+        "expected replay status to stay visible after submit attempt\n{stable}"
+    );
+    assert!(
+        stable.contains("replay read-only"),
+        "expected replay composer to render a read-only title\n{stable}"
+    );
+    assert!(
+        stable.contains("Replay is read-only"),
+        "expected replay composer body to explain read-only behavior\n{stable}"
+    );
+    assert!(
+        !stable.contains("blocked in replay"),
+        "replay surface unexpectedly preserved typed draft text\n{stable}"
+    );
+    assert!(
+        !marker_path.exists(),
+        "replay submit unexpectedly emitted a UI intent"
+    );
+
+    terminate_child(helper.child);
+}
+
+#[test]
+fn startup_shell_displays_meaningful_mock_launch_metadata() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let startup_shell = capture_startup_shell_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
+    assert!(startup_shell.contains("Preset worker · mock/model-1 · Demo"));
+    assert!(!startup_shell.contains("Preset unknown · unknown/-"));
 }
 
 fn run_helper_if_requested(scenario: HelperScenario) {
@@ -399,7 +604,33 @@ fn run_helper_if_requested(scenario: HelperScenario) {
     };
 
     match scenario {
+        HelperScenario::StartupShell
+        | HelperScenario::StartupPalette
+        | HelperScenario::StartupSessionHistory => {
+            set_pending_live_launch_metadata(helper_startup_launch_metadata());
+            run_tui_with_options(TuiOptions {
+                mode: TuiMode::Startup {
+                    session_history_entries: startup_session_history_entries(),
+                },
+                exit_on_finish: false,
+                on_ui_intent,
+                keybindings: None,
+            })
+            .expect("run startup helper tui");
+            return;
+        }
         HelperScenario::TypeFirstStartup | HelperScenario::StreamedResponse => {}
+        HelperScenario::ToolLifecycle => {
+            let tool_tx = tx.clone();
+            thread::spawn(move || {
+                for event in tool_lifecycle_events() {
+                    tool_tx
+                        .send(LiveUpdate::Event(Box::new(event)))
+                        .expect("send tool lifecycle events");
+                }
+                thread::park();
+            });
+        }
         HelperScenario::PermissionWithDraft => {
             let permission_tx = tx.clone();
             thread::spawn(move || {
@@ -485,6 +716,21 @@ fn run_helper_if_requested(scenario: HelperScenario) {
             .expect("run disconnected helper tui");
             return;
         }
+        HelperScenario::ReplayReadOnly => {
+            let marker_path = replay_intent_marker_path_from_env();
+            let replay_events = replay_read_only_events();
+            run_tui_with_options(TuiOptions {
+                mode: TuiMode::Replay {
+                    run_dir: run_dir.path().to_path_buf(),
+                    events: replay_events,
+                },
+                exit_on_finish: false,
+                on_ui_intent: marker_path.map(replay_intent_handler),
+                keybindings: None,
+            })
+            .expect("run replay read-only helper tui");
+            return;
+        }
     }
 
     let _keepalive = tx;
@@ -498,6 +744,37 @@ fn run_helper_if_requested(scenario: HelperScenario) {
         keybindings: None,
     })
     .expect("run helper tui");
+}
+
+fn replay_intent_handler(marker_path: PathBuf) -> Arc<dyn Fn(UiIntent) + Send + Sync> {
+    Arc::new(move |intent: UiIntent| {
+        fs::write(&marker_path, format!("{intent:?}"))
+            .expect("persist unexpected replay intent marker");
+    })
+}
+
+fn helper_startup_launch_metadata() -> LaunchMetadata {
+    LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo")
+}
+
+fn replay_read_only_events() -> Vec<EventEnvelopeV1> {
+    vec![
+        envelope(
+            1,
+            Some("run_fixture"),
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "replay-fixture".to_string(),
+                workspace_root: "/tmp/workspace".to_string(),
+            }),
+        ),
+        envelope(
+            2,
+            Some("run_fixture"),
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: "done".to_string(),
+            }),
+        ),
+    ]
 }
 
 fn streamed_response_intent_handler(tx: Sender<LiveUpdate>) -> Arc<dyn Fn(UiIntent) + Send + Sync> {
@@ -575,6 +852,103 @@ fn streamed_response_events(text: &str) -> Vec<EventEnvelopeV1> {
     ]
 }
 
+fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
+    let request_id = "req_tool_lifecycle";
+    vec![
+        envelope(
+            1,
+            Some(request_id),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: request_id.to_string(),
+                text: "Inspect tool activity".to_string(),
+            }),
+        ),
+        envelope(
+            2,
+            Some(request_id),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: request_id.to_string(),
+                provider_id: "mock".to_string(),
+                model_id: "model-1".to_string(),
+                prompt_summary: "Inspect tool activity".to_string(),
+                request_digest: "digest-tool-lifecycle-request".to_string(),
+            }),
+        ),
+        envelope(
+            3,
+            Some(request_id),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_read".to_string(),
+                tool_id: "fs.read".to_string(),
+                args_summary: r#"{"path":"src/ui.rs","start_line":1,"limit":24}"#.to_string(),
+                args_digest: "digest-tool-lifecycle-read-args".to_string(),
+            }),
+        ),
+        envelope(
+            4,
+            Some(request_id),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tc_read".to_string(),
+            }),
+        ),
+        envelope(
+            5,
+            Some(request_id),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_read".to_string(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("24 lines read from src/ui.rs".to_string()),
+                output_digest: Some("digest-tool-lifecycle-read-output".to_string()),
+            }),
+        ),
+        envelope(
+            6,
+            Some(request_id),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_shell".to_string(),
+                tool_id: "shell.run".to_string(),
+                args_summary: r#"{"cmd":"cargo test -p harness-tui","cwd":"/workspace"}"#
+                    .to_string(),
+                args_digest: "digest-tool-lifecycle-shell-args".to_string(),
+            }),
+        ),
+        envelope(
+            7,
+            Some(request_id),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tc_shell".to_string(),
+            }),
+        ),
+        envelope(
+            8,
+            Some(request_id),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_shell".to_string(),
+                status: ToolCallStatus::Failed,
+                output_summary: Some("exit code: 1\nstderr: snapshot mismatch".to_string()),
+                output_digest: None,
+            }),
+        ),
+        envelope(
+            9,
+            Some(request_id),
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: request_id.to_string(),
+                delta: "Tool summaries are now easier to scan.".to_string(),
+            }),
+        ),
+        envelope(
+            10,
+            Some(request_id),
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: request_id.to_string(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some("digest-tool-lifecycle-response".to_string()),
+            }),
+        ),
+    ]
+}
+
 fn details_drawer_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_details_drawer";
     vec![
@@ -642,33 +1016,12 @@ fn orchestration_base_events() -> Vec<EventEnvelopeV1> {
     ]
 }
 
-fn envelope_with_actor(
-    seq: u64,
-    correlation_id: Option<&str>,
-    actor: EventActor,
-    payload: EventV1,
-) -> EventEnvelopeV1 {
-    EventEnvelopeV1 {
-        schema_version: SCHEMA_VERSION,
-        event_id: format!("evt-{seq:04}"),
-        seq,
-        run_id: "run_fixture".to_string(),
-        mono_ms: seq,
-        ts: None,
-        actor,
-        correlation_id: correlation_id.map(str::to_string),
-        causation_id: None,
-        stream_key: Some("run:run_fixture".to_string()),
-        payload,
-    }
-}
-
 fn orchestration_lifecycle_queued_events() -> Vec<EventEnvelopeV1> {
     vec![
         envelope(
             5,
             None,
-            EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+            EventV1::AgentSpawned(AgentSpawnedEvent {
                 agent_id: "w1".to_string(),
                 profile: "deep".to_string(),
                 parent_agent_id: None,
@@ -718,7 +1071,7 @@ fn orchestration_stale_started_events() -> Vec<EventEnvelopeV1> {
         envelope(
             5,
             None,
-            EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+            EventV1::AgentSpawned(AgentSpawnedEvent {
                 agent_id: "w1".to_string(),
                 profile: "deep".to_string(),
                 parent_agent_id: None,
@@ -742,7 +1095,7 @@ fn orchestration_stale_detected_events() -> Vec<EventEnvelopeV1> {
         7,
         Some("req_orch"),
         EventActor::new(ActorKind::Worker, Some("w1".to_string())),
-        EventV1::StaleDetected(harness_core::event::StaleDetectedEvent {
+        EventV1::StaleDetected(StaleDetectedEvent {
             task_id: "task_stale".to_string(),
             stale_for_ms: 3001,
         }),
@@ -797,6 +1150,27 @@ fn envelope(seq: u64, correlation_id: Option<&str>, payload: EventV1) -> EventEn
     }
 }
 
+fn envelope_with_actor(
+    seq: u64,
+    correlation_id: Option<&str>,
+    actor: EventActor,
+    payload: EventV1,
+) -> EventEnvelopeV1 {
+    EventEnvelopeV1 {
+        schema_version: SCHEMA_VERSION,
+        event_id: format!("evt-{seq:04}"),
+        seq,
+        run_id: "run_fixture".to_string(),
+        mono_ms: seq,
+        ts: None,
+        actor,
+        correlation_id: correlation_id.map(str::to_string),
+        causation_id: None,
+        stream_key: Some("run:run_fixture".to_string()),
+        payload,
+    }
+}
+
 fn capture_type_first_startup_snapshot(geometry: PtyGeometry) -> String {
     let mut helper = spawn_helper_pty(HelperScenario::TypeFirstStartup, geometry);
     wait_for_screen_contains(
@@ -824,6 +1198,84 @@ fn capture_type_first_startup_snapshot(geometry: PtyGeometry) -> String {
     normalize_snapshot(&screen)
 }
 
+fn capture_startup_shell_snapshot(geometry: PtyGeometry) -> String {
+    let mut helper = spawn_helper_pty(HelperScenario::StartupShell, geometry);
+    let screen = wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        STARTUP_LAUNCHER_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup launcher shell render");
+
+    terminate_child(helper.child);
+    normalize_snapshot(&screen)
+}
+
+fn capture_startup_palette_snapshot(geometry: PtyGeometry) -> String {
+    let mut helper = spawn_helper_pty(HelperScenario::StartupPalette, geometry);
+    wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        STARTUP_LAUNCHER_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup launcher before opening palette");
+
+    send_key(helper.writer.as_mut(), 0x10).expect("open startup command palette");
+
+    let screen = wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "Command palette",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for startup command palette");
+
+    terminate_child(helper.child);
+    normalize_snapshot(&screen)
+}
+
+fn capture_startup_session_history_snapshot(geometry: PtyGeometry) -> String {
+    let mut helper = spawn_helper_pty(HelperScenario::StartupSessionHistory, geometry);
+    wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        STARTUP_LAUNCHER_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup launcher before opening history");
+
+    send_key(helper.writer.as_mut(), 0x10).expect("open startup command palette");
+    wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "Command palette",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for startup palette before opening history");
+    helper
+        .writer
+        .write_all(b"resume")
+        .expect("filter startup command palette to resume");
+    helper
+        .writer
+        .flush()
+        .expect("flush startup command palette filter");
+    send_key(helper.writer.as_mut(), b'\r').expect("enter startup session history");
+
+    let screen = wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "Resume session",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for startup session history picker");
+
+    terminate_child(helper.child);
+    normalize_snapshot(&screen)
+}
+
 fn capture_streamed_response_snapshot(geometry: PtyGeometry) -> String {
     let mut helper = spawn_helper_pty(HelperScenario::StreamedResponse, geometry);
     wait_for_screen_contains(
@@ -846,6 +1298,20 @@ fn capture_streamed_response_snapshot(geometry: PtyGeometry) -> String {
         MARKER_TIMEOUT,
     )
     .expect("wait for streamed response marker");
+
+    terminate_child(helper.child);
+    normalize_snapshot(&screen)
+}
+
+fn capture_tool_lifecycle_snapshot(geometry: PtyGeometry) -> String {
+    let mut helper = spawn_helper_pty(HelperScenario::ToolLifecycle, geometry);
+    let screen = wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "snapshot mismatch",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for tool lifecycle marker");
 
     terminate_child(helper.child);
     normalize_snapshot(&screen)
@@ -915,6 +1381,15 @@ fn open_live_details_drawer(helper: &mut SpawnedHelper) {
     send_key(helper.writer.as_mut(), b'i').expect("open details drawer");
 }
 
+fn assert_screen_contains_all(screen: &str, markers: &[&str]) {
+    for marker in markers {
+        assert!(
+            screen.contains(marker),
+            "expected screen marker {marker:?}\n{screen}"
+        );
+    }
+}
+
 fn send_live_updates(tx: &Sender<LiveUpdate>, events: Vec<EventEnvelopeV1>) {
     for event in events {
         tx.send(LiveUpdate::Event(Box::new(event)))
@@ -940,6 +1415,22 @@ struct SpawnedHelper {
 }
 
 fn spawn_helper_pty(scenario: HelperScenario, geometry: PtyGeometry) -> SpawnedHelper {
+    spawn_helper_pty_with_optional_intent_marker(scenario, geometry, None)
+}
+
+fn spawn_helper_pty_with_intent_marker(
+    scenario: HelperScenario,
+    geometry: PtyGeometry,
+    marker_path: &Path,
+) -> SpawnedHelper {
+    spawn_helper_pty_with_optional_intent_marker(scenario, geometry, Some(marker_path))
+}
+
+fn spawn_helper_pty_with_optional_intent_marker(
+    scenario: HelperScenario,
+    geometry: PtyGeometry,
+    marker_path: Option<&Path>,
+) -> SpawnedHelper {
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(geometry.pty_size())
@@ -951,6 +1442,12 @@ fn spawn_helper_pty(scenario: HelperScenario, geometry: PtyGeometry) -> SpawnedH
     command.arg(scenario.helper_test_name());
     command.arg("--nocapture");
     command.env("HARNESS_TUI_PTY_HELPER_SCENARIO", scenario.env_value());
+    if let Some(marker_path) = marker_path {
+        command.env(
+            "HARNESS_TUI_REPLAY_INTENT_MARKER",
+            marker_path.to_string_lossy().as_ref(),
+        );
+    }
     configure_deterministic_env(&mut command);
 
     let child = pair
@@ -979,8 +1476,12 @@ fn helper_scenario_from_env() -> Option<HelperScenario> {
         .ok()
         .as_deref()
     {
+        Some("startup_shell") => Some(HelperScenario::StartupShell),
+        Some("startup_palette") => Some(HelperScenario::StartupPalette),
+        Some("startup_session_history") => Some(HelperScenario::StartupSessionHistory),
         Some("type_first_startup") => Some(HelperScenario::TypeFirstStartup),
         Some("streamed_response") => Some(HelperScenario::StreamedResponse),
+        Some("tool_lifecycle") => Some(HelperScenario::ToolLifecycle),
         Some("permission_with_draft") => Some(HelperScenario::PermissionWithDraft),
         Some("details_drawer") => Some(HelperScenario::DetailsDrawer),
         Some("live_orchestration_lifecycle") => Some(HelperScenario::LiveOrchestrationLifecycle),
@@ -989,8 +1490,13 @@ fn helper_scenario_from_env() -> Option<HelperScenario> {
         }
         Some("degraded_bootstrap") => Some(HelperScenario::DegradedBootstrap),
         Some("disconnected_stream") => Some(HelperScenario::DisconnectedStream),
+        Some("replay_read_only") => Some(HelperScenario::ReplayReadOnly),
         _ => None,
     }
+}
+
+fn replay_intent_marker_path_from_env() -> Option<PathBuf> {
+    std::env::var_os("HARNESS_TUI_REPLAY_INTENT_MARKER").map(PathBuf::from)
 }
 
 fn assert_or_update_snapshot(name: &str, actual: &str) {
@@ -1006,6 +1512,7 @@ fn assert_or_update_snapshot(name: &str, actual: &str) {
             path.display()
         )
     });
+    let expected = normalize_snapshot(&expected);
     assert_eq!(
         actual,
         expected,
@@ -1044,6 +1551,19 @@ fn normalize_snapshot(input: &str) -> String {
 }
 
 fn normalize_volatile_line(line: &str) -> String {
+    if !line.contains("warn ") {
+        if let Some(idx) = line.find("ready for next turn") {
+            let end = idx + "ready for next turn".len();
+            return line[..end].to_string();
+        }
+    }
+
+    if !line.contains("warn ") {
+        if let Some(idx) = line.find("  ·  agents 0") {
+            return line[..idx].to_string();
+        }
+    }
+
     let Some(marker_idx) = line.find("Sequences:") else {
         return line.to_string();
     };
@@ -1169,4 +1689,51 @@ fn snapshot_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("snapshots")
+}
+
+fn startup_session_history_entries() -> Vec<SessionHistoryEntry> {
+    vec![
+        SessionHistoryEntry {
+            run_dir: PathBuf::from("/tmp/sessions/run_resume"),
+            catalog: SessionCatalogEntry {
+                run_id: "run_resume".to_string(),
+                run_name: Some("alpha-run".to_string()),
+                status: Some(RunStatus::Finished),
+                last_updated_at: Some("2026-03-08T12:34:56Z".to_string()),
+                workspace_root: Some("/tmp/workspace".to_string()),
+                profile_preset: Some("deep".to_string()),
+                provider_model: Some("openai/gpt-5.4".to_string()),
+                mode_source: SessionModeSource::InteractiveLive,
+                is_resumable: true,
+                resume_disabled_reason: None,
+            },
+        },
+        SessionHistoryEntry {
+            run_dir: PathBuf::from("/tmp/sessions/run_blocked"),
+            catalog: SessionCatalogEntry {
+                run_id: "run_blocked".to_string(),
+                run_name: Some("beta-prompt".to_string()),
+                status: Some(RunStatus::Failed),
+                last_updated_at: Some("2026-03-07T03:21:00Z".to_string()),
+                workspace_root: Some("/tmp/workspace".to_string()),
+                profile_preset: Some("ops".to_string()),
+                provider_model: Some("anthropic/claude-3.7".to_string()),
+                mode_source: SessionModeSource::InteractiveLive,
+                is_resumable: false,
+                resume_disabled_reason: Some("prompt runs are not resumable".to_string()),
+            },
+        },
+    ]
+}
+
+fn find_line_containing(lines: &[&str], needle: &str) -> Option<usize> {
+    lines.iter().position(|line| line.contains(needle))
+}
+
+fn find_line_containing_from(lines: &[&str], start: usize, needle: &str) -> Option<usize> {
+    lines
+        .iter()
+        .enumerate()
+        .skip(start)
+        .find_map(|(index, line)| line.contains(needle).then_some(index))
 }
