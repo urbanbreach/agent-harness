@@ -106,6 +106,9 @@ impl Action {
     /// Get the list of all palette-executable actions.
     pub fn palette_commands() -> &'static [(&'static str, &'static str)] {
         &[
+            ("new_session", "Start a fresh live session"),
+            ("resume_session", "Resume a prior session when resumable"),
+            ("replay_session", "Replay a previous session as read-only"),
             ("help", "Open Help surface"),
             ("run", "Return to conversation surface"),
             ("details", "Toggle live details drawer"),
@@ -114,6 +117,22 @@ impl Action {
             ("toggle_follow", "Toggle follow mode"),
             ("quit", "Quit the application"),
         ]
+    }
+
+    pub fn palette_command_label(command: &str) -> &'static str {
+        match command {
+            "new_session" => "New session",
+            "resume_session" => "Resume session",
+            "replay_session" => "Replay session",
+            "help" => "Help",
+            "run" => "Run",
+            "details" => "Details",
+            "events" => "Events",
+            "diff" => "Diff",
+            "toggle_follow" => "Toggle follow",
+            "quit" => "Quit",
+            _ => "",
+        }
     }
 }
 
