@@ -1,6 +1,7 @@
 use harness_core::event::{
     ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionDecision, PermissionRequestedEvent,
     ProviderRequestFinishedEvent, ProviderRequestStartedEvent, ProviderStreamDeltaEvent,
+    TaskCompletedEvent, TaskResultLateEvent, TaskScheduleState, TaskScheduledEvent,
     UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use harness_tui::{run_tui_with_options, LiveUpdate, TuiMode, TuiOptions, UiIntent};
@@ -22,6 +23,7 @@ const MARKER_TIMEOUT: Duration = Duration::from_secs(12);
 const READ_POLL_TIMEOUT: Duration = Duration::from_millis(50);
 const STABLE_WINDOW: Duration = Duration::from_millis(180);
 const STABLE_TIMEOUT: Duration = Duration::from_secs(2);
+const ORCHESTRATION_EVENT_DELAY: Duration = Duration::from_millis(250);
 const PRESERVED_DRAFT_TEXT: &str = "keep this draft";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +36,10 @@ impl PtyGeometry {
     const MINIMUM_SIGNOFF: Self = Self { cols: 80, rows: 24 };
     const PRIMARY_SIGNOFF: Self = Self {
         cols: 100,
+        rows: 30,
+    };
+    const WIDE_SIGNOFF: Self = Self {
+        cols: 160,
         rows: 30,
     };
 
@@ -121,6 +127,8 @@ enum HelperScenario {
     StreamedResponse,
     PermissionWithDraft,
     DetailsDrawer,
+    LiveOrchestrationLifecycle,
+    LiveOrchestrationStaleLateResult,
     DegradedBootstrap,
     DisconnectedStream,
 }
@@ -132,6 +140,8 @@ impl HelperScenario {
             Self::StreamedResponse => "streamed_response",
             Self::PermissionWithDraft => "permission_with_draft",
             Self::DetailsDrawer => "details_drawer",
+            Self::LiveOrchestrationLifecycle => "live_orchestration_lifecycle",
+            Self::LiveOrchestrationStaleLateResult => "live_orchestration_stale_late_result",
             Self::DegradedBootstrap => "degraded_bootstrap",
             Self::DisconnectedStream => "disconnected_stream",
         }
@@ -143,6 +153,10 @@ impl HelperScenario {
             Self::StreamedResponse => "pty_helper_streamed_response",
             Self::PermissionWithDraft => "pty_helper_permission_with_draft",
             Self::DetailsDrawer => "pty_helper_details_drawer",
+            Self::LiveOrchestrationLifecycle => "pty_helper_live_orchestration_lifecycle",
+            Self::LiveOrchestrationStaleLateResult => {
+                "pty_helper_live_orchestration_stale_late_result"
+            }
             Self::DegradedBootstrap => "pty_helper_degraded_bootstrap",
             Self::DisconnectedStream => "pty_helper_disconnected_stream",
         }
@@ -248,6 +262,16 @@ fn pty_helper_details_drawer() {
 }
 
 #[test]
+fn pty_helper_live_orchestration_lifecycle() {
+    run_helper_if_requested(HelperScenario::LiveOrchestrationLifecycle);
+}
+
+#[test]
+fn pty_helper_live_orchestration_stale_late_result() {
+    run_helper_if_requested(HelperScenario::LiveOrchestrationStaleLateResult);
+}
+
+#[test]
 fn pty_helper_degraded_bootstrap() {
     run_helper_if_requested(HelperScenario::DegradedBootstrap);
 }
@@ -285,6 +309,75 @@ fn pty_live_details_drawer_remains_reachable() {
 
     assert!(screen.contains("req_details_drawer"));
     assert!(screen.contains("gpt-5-codex"));
+
+    terminate_child(helper.child);
+}
+
+#[test]
+fn pty_live_orchestration_drawer_and_status() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let mut helper = spawn_helper_pty(
+        HelperScenario::LiveOrchestrationLifecycle,
+        PtyGeometry::WIDE_SIGNOFF,
+    );
+    wait_for_live_startup(&mut helper);
+    open_live_details_drawer(&mut helper);
+
+    let queued_screen = wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "queued  task_live_cycle",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for queued orchestration state");
+    assert!(queued_screen.contains("Orchestration"));
+    assert!(queued_screen.contains("queued  task_live_cycle"));
+
+    let late_screen = wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "completed  task_live_cycle",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for completed orchestration state");
+    assert!(late_screen.contains("completed  task_live_cycle"));
+
+    terminate_child(helper.child);
+}
+
+#[test]
+fn pty_live_orchestration_stale_late_result_flow() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let mut helper = spawn_helper_pty(
+        HelperScenario::LiveOrchestrationStaleLateResult,
+        PtyGeometry::WIDE_SIGNOFF,
+    );
+    wait_for_live_startup(&mut helper);
+    open_live_details_drawer(&mut helper);
+
+    let stale_screen = wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "warn: stale for 3001 ms",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for stale orchestration warning");
+    assert!(stale_screen.contains("stale  task_stale"));
+
+    let late_result_screen = wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "late-result  task_stale",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for late result orchestration row");
+    assert!(late_result_screen.contains("late result after stale cancellation"));
 
     terminate_child(helper.child);
 }
@@ -331,6 +424,46 @@ fn run_helper_if_requested(scenario: HelperScenario) {
                 }
                 thread::park();
             });
+        }
+        HelperScenario::LiveOrchestrationLifecycle => {
+            send_live_updates(&tx, orchestration_base_events());
+            spawn_phased_live_updates(
+                tx.clone(),
+                vec![
+                    (
+                        ORCHESTRATION_EVENT_DELAY,
+                        orchestration_lifecycle_queued_events(),
+                    ),
+                    (
+                        ORCHESTRATION_EVENT_DELAY,
+                        orchestration_lifecycle_started_events(),
+                    ),
+                    (
+                        ORCHESTRATION_EVENT_DELAY,
+                        orchestration_lifecycle_completed_events(),
+                    ),
+                ],
+            );
+        }
+        HelperScenario::LiveOrchestrationStaleLateResult => {
+            send_live_updates(&tx, orchestration_base_events());
+            spawn_phased_live_updates(
+                tx.clone(),
+                vec![
+                    (
+                        ORCHESTRATION_EVENT_DELAY,
+                        orchestration_stale_started_events(),
+                    ),
+                    (
+                        ORCHESTRATION_EVENT_DELAY,
+                        orchestration_stale_detected_events(),
+                    ),
+                    (
+                        ORCHESTRATION_EVENT_DELAY,
+                        orchestration_late_result_events(),
+                    ),
+                ],
+            );
         }
         HelperScenario::DegradedBootstrap => {
             tx.send(LiveUpdate::Status(
@@ -465,6 +598,167 @@ fn details_drawer_events() -> Vec<EventEnvelopeV1> {
             }),
         ),
     ]
+}
+
+fn orchestration_base_events() -> Vec<EventEnvelopeV1> {
+    let request_id = "req_orch";
+    vec![
+        envelope(
+            1,
+            Some(request_id),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: request_id.to_string(),
+                text: "Inspect live orchestration".to_string(),
+            }),
+        ),
+        envelope(
+            2,
+            Some(request_id),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: request_id.to_string(),
+                provider_id: "mock".to_string(),
+                model_id: "m1".to_string(),
+                prompt_summary: "Inspect live orchestration".to_string(),
+                request_digest: "digest-orch-request".to_string(),
+            }),
+        ),
+        envelope(
+            3,
+            Some(request_id),
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: request_id.to_string(),
+                delta: "Done.".to_string(),
+            }),
+        ),
+        envelope(
+            4,
+            Some(request_id),
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: request_id.to_string(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some("digest-orch-output".to_string()),
+            }),
+        ),
+    ]
+}
+
+fn envelope_with_actor(
+    seq: u64,
+    correlation_id: Option<&str>,
+    actor: EventActor,
+    payload: EventV1,
+) -> EventEnvelopeV1 {
+    EventEnvelopeV1 {
+        schema_version: SCHEMA_VERSION,
+        event_id: format!("evt-{seq:04}"),
+        seq,
+        run_id: "run_fixture".to_string(),
+        mono_ms: seq,
+        ts: None,
+        actor,
+        correlation_id: correlation_id.map(str::to_string),
+        causation_id: None,
+        stream_key: Some("run:run_fixture".to_string()),
+        payload,
+    }
+}
+
+fn orchestration_lifecycle_queued_events() -> Vec<EventEnvelopeV1> {
+    vec![
+        envelope(
+            5,
+            None,
+            EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+                agent_id: "w1".to_string(),
+                profile: "deep".to_string(),
+                parent_agent_id: None,
+            }),
+        ),
+        envelope_with_actor(
+            6,
+            Some("req_orch"),
+            EventActor::new(ActorKind::Worker, Some("w1".to_string())),
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: "task_live_cycle".to_string(),
+                state: TaskScheduleState::Queued,
+                queue_key: Some("agent:queue:deep".to_string()),
+            }),
+        ),
+    ]
+}
+
+fn orchestration_lifecycle_started_events() -> Vec<EventEnvelopeV1> {
+    vec![envelope_with_actor(
+        7,
+        Some("req_orch"),
+        EventActor::new(ActorKind::Worker, Some("w1".to_string())),
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_live_cycle".to_string(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("agent:queue:deep".to_string()),
+        }),
+    )]
+}
+
+fn orchestration_lifecycle_completed_events() -> Vec<EventEnvelopeV1> {
+    vec![envelope_with_actor(
+        8,
+        Some("req_orch"),
+        EventActor::new(ActorKind::Worker, Some("w1".to_string())),
+        EventV1::TaskCompleted(TaskCompletedEvent {
+            task_id: "task_live_cycle".to_string(),
+            result_summary: "done".to_string(),
+            result_digest: "digest-live-cycle".to_string(),
+        }),
+    )]
+}
+
+fn orchestration_stale_started_events() -> Vec<EventEnvelopeV1> {
+    vec![
+        envelope(
+            5,
+            None,
+            EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+                agent_id: "w1".to_string(),
+                profile: "deep".to_string(),
+                parent_agent_id: None,
+            }),
+        ),
+        envelope_with_actor(
+            6,
+            Some("req_orch"),
+            EventActor::new(ActorKind::Worker, Some("w1".to_string())),
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: "task_stale".to_string(),
+                state: TaskScheduleState::Started,
+                queue_key: Some("agent:running:stale".to_string()),
+            }),
+        ),
+    ]
+}
+
+fn orchestration_stale_detected_events() -> Vec<EventEnvelopeV1> {
+    vec![envelope_with_actor(
+        7,
+        Some("req_orch"),
+        EventActor::new(ActorKind::Worker, Some("w1".to_string())),
+        EventV1::StaleDetected(harness_core::event::StaleDetectedEvent {
+            task_id: "task_stale".to_string(),
+            stale_for_ms: 3001,
+        }),
+    )]
+}
+
+fn orchestration_late_result_events() -> Vec<EventEnvelopeV1> {
+    vec![envelope_with_actor(
+        8,
+        Some("req_orch"),
+        EventActor::new(ActorKind::Worker, Some("w1".to_string())),
+        EventV1::TaskResultLate(TaskResultLateEvent {
+            task_id: "task_stale".to_string(),
+            result_digest: "digest-late-result".to_string(),
+        }),
+    )]
 }
 
 fn permission_requested_event(
@@ -606,6 +900,38 @@ fn capture_helper_screen_snapshot(
     normalize_snapshot(&screen)
 }
 
+fn wait_for_live_startup(helper: &mut SpawnedHelper) {
+    wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        LIVE_STATE_FIXTURES.prompt.ready_marker,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for live helper startup render");
+}
+
+fn open_live_details_drawer(helper: &mut SpawnedHelper) {
+    send_key(helper.writer.as_mut(), b'\t').expect("focus transcript before opening details");
+    send_key(helper.writer.as_mut(), b'i').expect("open details drawer");
+}
+
+fn send_live_updates(tx: &Sender<LiveUpdate>, events: Vec<EventEnvelopeV1>) {
+    for event in events {
+        tx.send(LiveUpdate::Event(Box::new(event)))
+            .expect("send helper live event");
+    }
+}
+
+fn spawn_phased_live_updates(tx: Sender<LiveUpdate>, steps: Vec<(Duration, Vec<EventEnvelopeV1>)>) {
+    thread::spawn(move || {
+        for (delay, events) in steps {
+            thread::sleep(delay);
+            send_live_updates(&tx, events);
+        }
+        thread::park();
+    });
+}
+
 struct SpawnedHelper {
     child: Box<dyn portable_pty::Child + Send>,
     writer: Box<dyn Write + Send>,
@@ -657,6 +983,10 @@ fn helper_scenario_from_env() -> Option<HelperScenario> {
         Some("streamed_response") => Some(HelperScenario::StreamedResponse),
         Some("permission_with_draft") => Some(HelperScenario::PermissionWithDraft),
         Some("details_drawer") => Some(HelperScenario::DetailsDrawer),
+        Some("live_orchestration_lifecycle") => Some(HelperScenario::LiveOrchestrationLifecycle),
+        Some("live_orchestration_stale_late_result") => {
+            Some(HelperScenario::LiveOrchestrationStaleLateResult)
+        }
         Some("degraded_bootstrap") => Some(HelperScenario::DegradedBootstrap),
         Some("disconnected_stream") => Some(HelperScenario::DisconnectedStream),
         _ => None,
