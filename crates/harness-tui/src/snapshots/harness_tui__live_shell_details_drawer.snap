@@ -4,23 +4,23 @@ expression: rendered
 ---
  run run_fixture · unknown/openai · gpt-5-codex                                 
   › user · req_001                                                              
-    Explain the refactor               ○ Orchestration                          
-  ●  done  assistant · openai/gpt-5-codagents 0 · queued 1 · running 0 · sta…   
-    Working through the steps.         warn: none                               
-    ╭─ tool fs.read                     queued  tool_call_1 · system/n/a · …    
-    │  tool output                                                              
-    ╰─ ●  succeeded                                                             
+    Explain the refactor                                                        
+  ●  done  assistant · openai/gpt-5-codex                                       
+    Working through the steps.                                                  
+    ╭─ tool fs.read  succeeded                                                  
+    │ args   path=src/app.rs                                                    
+    │ result tool output                                                        
+    ╰─ ● call tool_call_1 · 1 permission                                        
                                                                                 
                                                                                 
-                                       ● Details                                
-                                       Activity metadata:                       
-                                       Request ID: req_001                      
-                                       Provider: openai                         
-                                       Model: gpt-5-codex                       
-                                       Status: done                             
-                                       Sequences: 1-10                          
-                                                                                
-                                       Request metadata:                        
+  ○ Activity · follow                                                           
+  › req_001 · gpt-5-codex ·  done                                               
+  ● Details                                                                     
+  Activity metadata:                                                            
+  Request ID: req_001                                                           
+  Provider: openai                                                              
+  Model: gpt-5-codex                                                            
+  Status: done                                                                  
   Success   turn 1/1 · req_001 · openai/gpt-5-codex · ready for next turn       
  ┌Composer · 1 line · 0 chars─────────────────────────────────────────────────┐ 
  │Type a prompt for the next turn…                                            │ 

@@ -3,6 +3,7 @@ source: crates/harness-tui/src/lib.rs
 expression: "render_live_lines(&app, 80, 24)"
 ---
  run unknown · unknown/unknown · -                                              
+  Waiting for first turn…                                                       
                                                                                 
                                                                                 
                                                                                 
@@ -10,10 +11,9 @@ expression: "render_live_lines(&app, 80, 24)"
                                                                                 
                                                                                 
                                                                                 
-                                     Harness                                    
                                                                                 
-         Start a conversation to begin                                          
-         Enter send · Shift+Enter newline · ↑/↓ history                         
+                                                                                
+                                                                                
                                                                                 
                                                                                 
                                                                                 
