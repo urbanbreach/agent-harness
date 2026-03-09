@@ -13,6 +13,7 @@ use tokio_stream::{Stream, StreamExt};
 use crate::event::{EventActor, EventEnvelopeV1, EventV1};
 
 const EVENTS_FILE_NAME: &str = "events.jsonl";
+const WRITER_LOCK_FILE_NAME: &str = ".writer.lock";
 const SUBSCRIBER_BUFFER: usize = 1024;
 
 pub type EventStream = Pin<Box<dyn Stream<Item = Result<EventEnvelopeV1, EventStoreError>> + Send>>;
@@ -93,6 +94,14 @@ pub enum EventStoreError {
         #[source]
         source: std::io::Error,
     },
+    #[error("failed to acquire event writer lock {path}: {source}")]
+    AcquireWriterLock {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("run directory does not exist: {path}")]
+    RunDirectoryMissing { path: String },
     #[error("failed to read event log {path}: {source}")]
     ReadLog {
         path: String,
@@ -204,10 +213,39 @@ impl EventStore for InMemoryEventStore {
 
 #[derive(Debug)]
 pub struct JsonlFileEventStore {
+    _writer_lock: WriterLock,
     file_path: PathBuf,
     deterministic: bool,
     state: Mutex<JsonlState>,
     tx: broadcast::Sender<EventEnvelopeV1>,
+}
+
+#[derive(Debug)]
+struct WriterLock {
+    path: PathBuf,
+    _file: File,
+}
+
+impl WriterLock {
+    fn acquire(run_dir: &Path) -> Result<Self, EventStoreError> {
+        let path = run_dir.join(WRITER_LOCK_FILE_NAME);
+        let file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|source| EventStoreError::AcquireWriterLock {
+                path: display_path(&path),
+                source,
+            })?;
+
+        Ok(Self { path, _file: file })
+    }
+}
+
+impl Drop for WriterLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
 }
 
 #[derive(Debug)]
@@ -222,16 +260,44 @@ impl JsonlFileEventStore {
         run_id: impl AsRef<str>,
         deterministic: bool,
     ) -> Result<Self, EventStoreError> {
+        Self::open_internal(session_dir, run_id, deterministic, true)
+    }
+
+    pub fn open_existing(
+        session_dir: impl AsRef<Path>,
+        run_id: impl AsRef<str>,
+        deterministic: bool,
+    ) -> Result<Self, EventStoreError> {
+        Self::open_internal(session_dir, run_id, deterministic, false)
+    }
+
+    fn open_internal(
+        session_dir: impl AsRef<Path>,
+        run_id: impl AsRef<str>,
+        deterministic: bool,
+        create_run_dir: bool,
+    ) -> Result<Self, EventStoreError> {
         let run_dir = session_dir.as_ref().join(run_id.as_ref());
-        fs::create_dir_all(&run_dir).map_err(|source| EventStoreError::CreateDirectory {
-            path: display_path(&run_dir),
-            source,
-        })?;
+        if create_run_dir {
+            fs::create_dir_all(&run_dir).map_err(|source| EventStoreError::CreateDirectory {
+                path: display_path(&run_dir),
+                source,
+            })?;
+        } else if !run_dir.is_dir() {
+            return Err(EventStoreError::RunDirectoryMissing {
+                path: display_path(&run_dir),
+            });
+        }
+
+        let writer_lock = WriterLock::acquire(&run_dir)?;
 
         let file_path = run_dir.join(EVENTS_FILE_NAME);
-        let file = OpenOptions::new()
-            .append(true)
-            .create(true)
+        let mut options = OpenOptions::new();
+        options.append(true);
+        if create_run_dir {
+            options.create(true);
+        }
+        let file = options
             .open(&file_path)
             .map_err(|source| EventStoreError::OpenLog {
                 path: display_path(&file_path),
@@ -242,6 +308,7 @@ impl JsonlFileEventStore {
         let (tx, _) = broadcast::channel(SUBSCRIBER_BUFFER);
 
         Ok(Self {
+            _writer_lock: writer_lock,
             file_path,
             deterministic,
             state: Mutex::new(JsonlState { file, next_seq }),
@@ -251,6 +318,11 @@ impl JsonlFileEventStore {
 
     pub fn file_path(&self) -> &Path {
         &self.file_path
+    }
+
+    pub fn next_seq(&self) -> Result<u64, EventStoreError> {
+        let state = lock_state(&self.state)?;
+        Ok(state.next_seq)
     }
 }
 
