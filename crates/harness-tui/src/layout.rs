@@ -5,6 +5,9 @@ use crate::theme::{LiveShellLayout, Theme};
 
 const MIN_COMPOSER_LINES: u16 = 1;
 const MAX_COMPOSER_LINES: u16 = 5;
+const STARTUP_SHELL_HEIGHT: u16 = 7;
+const LIVE_DETAILS_MIN_TRANSCRIPT_WIDTH: u16 = 48;
+const LIVE_DETAILS_MIN_TRANSCRIPT_HEIGHT: u16 = 8;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WheelHitAreas {
@@ -136,15 +139,18 @@ impl FrameLayoutPlan {
             ])
             .split(plan.shell);
 
-        plan.transcript = Some(main_chunks[0]);
+        let (transcript_area, details_area) = if app.details_drawer_open() {
+            live_details_drawer_layout(main_chunks[0], theme, shell_layout)
+        } else {
+            (main_chunks[0], None)
+        };
+
+        plan.transcript = Some(transcript_area);
         plan.status = Some(main_chunks[1]);
         plan.composer = Some(main_chunks[2]);
-        plan.details_overlay = app
-            .details_drawer_open()
-            .then(|| live_details_overlay_area(main_chunks[0], theme, shell_layout))
-            .flatten();
+        plan.details_overlay = details_area;
         plan.wheel_hit_areas = WheelHitAreas {
-            transcript: Some(main_chunks[0]),
+            transcript: Some(transcript_area),
             overlay: plan.details_overlay,
             inspector: plan
                 .details_overlay
@@ -156,11 +162,29 @@ impl FrameLayoutPlan {
 }
 
 pub(crate) fn details_drawer_areas(area: Rect) -> [Rect; 2] {
+    if area.height == 0 {
+        return [area, area];
+    }
+
+    let gap = u16::from(area.height > 12);
+    let max_summary_height = area.height.saturating_sub(gap + 1).max(1);
+    let preferred_summary_height = if area.height <= 9 {
+        2
+    } else if area.height <= 13 {
+        3
+    } else {
+        area.height.saturating_div(3).clamp(4, 8)
+    };
+    let summary_height = preferred_summary_height.min(max_summary_height);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(8), Constraint::Min(0)])
+        .constraints([
+            Constraint::Length(summary_height),
+            Constraint::Length(gap),
+            Constraint::Min(0),
+        ])
         .split(area);
-    [chunks[0], chunks[1]]
+    [chunks[0], chunks[2]]
 }
 
 pub(crate) fn composer_input_height(text: &str, width: u16) -> u16 {
@@ -242,6 +266,15 @@ pub(crate) fn centered_block_area(area: Rect, width: u16, height: u16) -> Rect {
     Rect::new(x, y, width, height)
 }
 
+pub(crate) fn startup_shell_area(area: Rect, theme: &Theme) -> Rect {
+    let horizontal_margin = theme.live_shell.rhythm.surface_margin_x.saturating_mul(2);
+    let max_width = area.width.saturating_sub(horizontal_margin).max(1);
+    let width = max_width
+        .min(theme.live_shell.empty_state.max_width.saturating_add(2))
+        .max(1);
+    centered_block_area(area, width, STARTUP_SHELL_HEIGHT)
+}
+
 fn live_prompt_block_height(app: &AppState, area: Rect, theme: &Theme) -> u16 {
     let status_height = theme.live_shell.heights.status;
     let max_block_height = area.height.saturating_sub(status_height);
@@ -258,42 +291,68 @@ fn centered_live_shell_area(area: Rect, shell: LiveShellLayout) -> Rect {
         return area;
     }
 
-    let width = max_width.min(shell.centered_content_width).max(1);
+    let width = match shell.target {
+        crate::theme::ShellGeometryTarget::Minimum => {
+            max_width.min(shell.centered_content_width).max(1)
+        }
+        crate::theme::ShellGeometryTarget::Primary => max_width.max(1),
+    };
     let x = area.x.saturating_add(area.width.saturating_sub(width) / 2);
     Rect::new(x, area.y, width, area.height)
 }
 
-fn live_details_overlay_area(area: Rect, theme: &Theme, shell: LiveShellLayout) -> Option<Rect> {
-    let overlay_width = overlay_width(area, shell);
-    let overlay_height = overlay_height(area, theme);
-    if overlay_width == 0 || overlay_height == 0 {
-        return None;
+fn live_details_drawer_layout(
+    area: Rect,
+    theme: &Theme,
+    shell: LiveShellLayout,
+) -> (Rect, Option<Rect>) {
+    if area.width == 0 || area.height == 0 {
+        return (area, None);
     }
 
-    let overlay_x = area
-        .x
-        .saturating_add(area.width.saturating_sub(overlay_width).saturating_sub(1));
-    let overlay_y = area.y.saturating_add(1);
-    Some(Rect::new(
-        overlay_x,
-        overlay_y,
-        overlay_width,
-        overlay_height,
-    ))
-}
+    let gap = theme.live_shell.rhythm.surface_gap.max(1);
+    let sidebar_width = shell
+        .details_sidebar_width
+        .min(area.width.saturating_sub(1));
+    let min_transcript_width = shell
+        .transcript_min_width
+        .max(LIVE_DETAILS_MIN_TRANSCRIPT_WIDTH);
 
-fn overlay_width(area: Rect, shell: LiveShellLayout) -> u16 {
-    shell
-        .activity_drawer_width
-        .max(shell.inspector_drawer_width)
-        .max(shell.inspector_drawer_width.saturating_mul(2))
-        .max(shell.activity_drawer_width.saturating_add(6))
-        .min(area.width.saturating_sub(2))
-}
+    if area.width
+        >= min_transcript_width
+            .saturating_add(gap)
+            .saturating_add(sidebar_width)
+    {
+        let transcript_width = area.width.saturating_sub(sidebar_width).saturating_sub(gap);
+        let sidebar_x = area.x.saturating_add(transcript_width).saturating_add(gap);
+        return (
+            Rect::new(area.x, area.y, transcript_width, area.height),
+            Some(Rect::new(sidebar_x, area.y, sidebar_width, area.height)),
+        );
+    }
 
-fn overlay_height(area: Rect, theme: &Theme) -> u16 {
-    let _ = theme;
-    area.height.saturating_sub(1)
+    let max_details_height = area
+        .height
+        .saturating_sub(gap.saturating_add(LIVE_DETAILS_MIN_TRANSCRIPT_HEIGHT));
+    if max_details_height == 0 {
+        return (area, None);
+    }
+
+    let details_height = area
+        .height
+        .saturating_div(3)
+        .clamp(8, 10)
+        .min(max_details_height);
+    let transcript_height = area
+        .height
+        .saturating_sub(details_height)
+        .saturating_sub(gap);
+    let details_y = area.y.saturating_add(transcript_height).saturating_add(gap);
+
+    (
+        Rect::new(area.x, area.y, area.width, transcript_height),
+        Some(Rect::new(area.x, details_y, area.width, details_height)),
+    )
 }
 
 fn permission_modal_area(area: Rect, theme: &Theme, shell: LiveShellLayout) -> Option<Rect> {
