@@ -57,7 +57,15 @@
         shell: "ask",
         network: "deny",
       },
-      tools: ["fs.read", "edit.hashline_apply", "shell.run"],
+      tools: [
+        "fs.read",
+        "fs.glob",
+        "fs.ls",
+        "fs.grep",
+        "edit.hashline_scan",
+        "edit.hashline_apply",
+        "shell.run",
+      ],
     },
   },
 
