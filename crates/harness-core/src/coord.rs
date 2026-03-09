@@ -3637,7 +3637,8 @@ mod tests {
     #[test]
     fn stale_tool_task_late_result_preserves_owner_actor() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
-        let config = test_config(temp_dir.path());
+        let mut config = test_config(temp_dir.path());
+        config.stale_timeout_ms = 20;
         let clock = Arc::new(FakeClock::new());
         let redactor = Arc::new(DefaultRedactor::default());
         let (_command_tx, command_rx) = mpsc::channel(1);
