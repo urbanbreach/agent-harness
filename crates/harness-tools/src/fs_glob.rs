@@ -136,7 +136,10 @@ fn collect_glob_matches(
 
     let total_count = matched_paths.len();
     let capped_limit = limit.min(total_count);
-    let paths = matched_paths.into_iter().take(capped_limit).collect::<Vec<_>>();
+    let paths = matched_paths
+        .into_iter()
+        .take(capped_limit)
+        .collect::<Vec<_>>();
     let truncated_count = total_count.saturating_sub(capped_limit);
 
     Ok(GlobMatches {
@@ -194,7 +197,8 @@ mod tests {
         fs::create_dir_all(root.join("tests")).expect("create tests dir");
         fs::create_dir_all(root.join("target/build")).expect("create target dir");
         fs::create_dir_all(root.join(".git/objects")).expect("create .git dir");
-        fs::create_dir_all(root.join(".agent-harness/sessions/run-1")).expect("create sessions dir");
+        fs::create_dir_all(root.join(".agent-harness/sessions/run-1"))
+            .expect("create sessions dir");
 
         fs::write(root.join("src/lib.rs"), "pub fn lib() {}").expect("write src/lib.rs");
         fs::write(root.join("src/nested/mod.rs"), "pub fn nested() {}")
