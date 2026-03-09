@@ -9,7 +9,8 @@ use ratatui::{
 };
 
 use crate::app::{
-    ActivityEntry, ActivityStatus, AppState, Focus, RuntimeStateKind, Tab, ToolCallDisplayStatus,
+    ActivityEntry, ActivityStatus, AppState, Focus, OrchestrationTaskRow, OrchestrationTaskState,
+    RuntimeStateKind, Tab, ToolCallDisplayStatus,
 };
 use crate::keybindings::Action;
 use crate::layout::{
@@ -515,7 +516,7 @@ fn render_details_drawer(frame: &mut Frame, app: &AppState, area: Rect, theme: &
         Block::default().style(Style::default().bg(theme.surface.panel)),
         area,
     );
-    render_details_activity_card(frame, app, drawer_chunks[0], theme);
+    render_details_orchestration_card(frame, app, drawer_chunks[0], theme);
     render_details_inspector_card(frame, app, drawer_chunks[1], theme);
 }
 
@@ -529,7 +530,6 @@ fn render_live_details_overlay(
         return;
     };
 
-    frame.render_widget(Clear, overlay);
     render_details_drawer(frame, app, overlay, theme);
 }
 
@@ -712,7 +712,7 @@ fn render_status_strip(frame: &mut Frame, app: &AppState, area: Rect, theme: &Th
     let base_style = Style::default()
         .fg(theme.text.secondary)
         .bg(theme.surface.shell);
-    let status_line = Line::from(vec![
+    let mut spans = vec![
         Span::styled(
             format!(" {} ", state.kind.label()),
             Style::default()
@@ -722,9 +722,80 @@ fn render_status_strip(frame: &mut Frame, app: &AppState, area: Rect, theme: &Th
         ),
         Span::styled("  ", base_style),
         Span::styled(state.summary, base_style),
-    ]);
+    ];
+
+    if !app.replay_mode {
+        append_orchestration_status(&mut spans, app, area.width, base_style, theme);
+    }
+
+    let status_line = Line::from(spans);
 
     frame.render_widget(Paragraph::new(status_line).style(base_style), area);
+}
+
+fn append_orchestration_status(
+    spans: &mut Vec<Span<'static>>,
+    app: &AppState,
+    width: u16,
+    base_style: Style,
+    theme: &Theme,
+) {
+    let summary = app.orchestration_summary();
+    let latest_warning = app.orchestration_latest_warning();
+    let count_segments = [
+        format!("  ·  agents {}", summary.active_agents),
+        format!(" · queued {}", summary.queued),
+        format!(" · running {}", summary.running),
+        format!(" · stale {}", summary.stale),
+    ];
+
+    let mut appended_all_counts = true;
+    for segment in count_segments {
+        if !append_status_segment_if_fits(spans, width, segment, base_style) {
+            appended_all_counts = false;
+            break;
+        }
+    }
+
+    if !appended_all_counts {
+        return;
+    }
+
+    let Some(latest_warning) = latest_warning else {
+        return;
+    };
+
+    let available = usize::from(width).saturating_sub(status_strip_width(spans));
+    let warning_prefix_width = " · warn ".chars().count();
+    if available <= warning_prefix_width {
+        return;
+    }
+
+    let warning_style = Style::default()
+        .fg(theme.status.warning)
+        .bg(theme.surface.shell)
+        .add_modifier(Modifier::BOLD);
+    let warning_segment = truncate_plain_text(&format!(" · warn {latest_warning}"), available);
+    spans.push(Span::styled(warning_segment, warning_style));
+}
+
+fn append_status_segment_if_fits(
+    spans: &mut Vec<Span<'static>>,
+    width: u16,
+    segment: String,
+    style: Style,
+) -> bool {
+    let available = usize::from(width).saturating_sub(status_strip_width(spans));
+    if segment.chars().count() > available {
+        return false;
+    }
+
+    spans.push(Span::styled(segment, style));
+    true
+}
+
+fn status_strip_width(spans: &[Span<'_>]) -> usize {
+    spans.iter().map(|span| span.content.chars().count()).sum()
 }
 
 /// Render the Activity pane (left)
@@ -798,96 +869,155 @@ fn render_activity_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &T
     frame.render_widget(activity_list, area);
 }
 
-fn render_details_activity_card(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
+fn render_details_orchestration_card(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     let is_focused = app.focus == Focus::List && activity_surface_visible(app);
-    let title = format!(
-        "Activity summary{}{}",
-        if app.follow_mode { " · follow" } else { "" },
-        if is_focused { " · focused" } else { "" }
-    );
-    let surface = theme.surface.panel_elevated;
-    let border = if is_focused {
-        theme.border.focus
+    let surface = if is_focused {
+        theme.surface.overlay
     } else {
-        theme.border.strong
+        theme.surface.panel_elevated
     };
-    let block = elevated_card_block(
-        title,
+    let [title_area, body_area] = details_section_areas(area);
+
+    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
+    render_details_section_title(
+        frame,
+        title_area,
+        theme,
         surface,
-        border,
-        if is_focused {
-            theme.text.primary
-        } else {
-            theme.text.secondary
-        },
+        "Orchestration",
+        None,
+        is_focused,
     );
 
-    if app.activities.is_empty() {
-        frame.render_widget(
-            Paragraph::new("No activities yet")
-                .block(block)
-                .style(panel_style(surface, theme.text.secondary)),
-            area,
-        );
+    if body_area.width == 0 || body_area.height == 0 {
         return;
     }
 
-    let rows: Vec<Line> = app
-        .activities
-        .iter()
-        .enumerate()
-        .map(|(idx, activity)| {
-            let is_selected = idx == app.selected_activity_index;
-            let (_, badge_color, status_label) = match activity.status {
-                ActivityStatus::Streaming => (
-                    theme.live_shell.glyphs.streaming,
-                    theme.status.info,
-                    "streaming…",
-                ),
-                ActivityStatus::Done => {
-                    (theme.live_shell.glyphs.done, theme.status.success, "done")
-                }
-                ActivityStatus::Error => {
-                    (theme.live_shell.glyphs.error, theme.status.error, "error")
-                }
-            };
-            let marker = if is_selected {
-                format!("{} ", theme.live_shell.transcript_glyphs.user_marker)
-            } else {
-                "  ".to_string()
-            };
-            let model_display = if activity.model_id.is_empty() {
-                "-"
-            } else {
-                activity.model_id.as_str()
-            };
-
-            Line::from(vec![
-                Span::styled(
-                    marker,
-                    Style::default().fg(if is_selected {
-                        theme.text.accent
-                    } else {
-                        theme.text.tertiary
-                    }),
-                ),
-                Span::styled(
-                    request_id_label(&activity.request_id).into_owned(),
-                    transcript_label_style(theme, is_selected),
-                ),
-                Span::styled(format!(" · {model_display} · "), muted_meta_style(theme)),
-                status_badge(status_label, badge_color, theme),
-            ])
-        })
-        .collect();
+    let rows = app.orchestration_visible_rows();
+    let visible_rows =
+        orchestration_card_lines(app, &rows, theme, body_area.height, body_area.width);
 
     frame.render_widget(
-        Paragraph::new(Text::from(rows))
-            .block(block)
-            .style(panel_style(surface, theme.text.primary))
-            .wrap(Wrap { trim: false }),
-        area,
+        Paragraph::new(Text::from(visible_rows)).style(panel_style(surface, theme.text.primary)),
+        body_area,
     );
+}
+
+fn orchestration_card_lines(
+    app: &AppState,
+    rows: &[OrchestrationTaskRow],
+    theme: &Theme,
+    height: u16,
+    width: u16,
+) -> Vec<Line<'static>> {
+    if height == 0 {
+        return Vec::new();
+    }
+
+    let mut lines = Vec::new();
+    lines.push(orchestration_summary_line(app, theme, width));
+
+    if height == 1 {
+        return lines;
+    }
+
+    lines.push(orchestration_warning_line(app, theme, width));
+    let task_slots = usize::from(height.saturating_sub(2));
+    if task_slots == 0 || rows.is_empty() {
+        return lines;
+    }
+
+    if rows.len() <= task_slots {
+        lines.extend(
+            rows.iter()
+                .map(|row| orchestration_task_line(app, row, theme, width)),
+        );
+        return lines;
+    }
+
+    if task_slots == 1 {
+        lines.push(orchestration_overflow_line(rows.len(), theme));
+        return lines;
+    }
+
+    let visible_task_count = task_slots.saturating_sub(1);
+    lines.extend(
+        rows.iter()
+            .take(visible_task_count)
+            .map(|row| orchestration_task_line(app, row, theme, width)),
+    );
+    lines.push(orchestration_overflow_line(
+        rows.len().saturating_sub(visible_task_count),
+        theme,
+    ));
+    lines
+}
+
+fn orchestration_summary_line(app: &AppState, theme: &Theme, width: u16) -> Line<'static> {
+    let summary = app.orchestration_summary();
+    let text = format!(
+        "agents {} · queued {} · running {} · stale {}",
+        summary.active_agents, summary.queued, summary.running, summary.stale
+    );
+    Line::from(Span::styled(
+        truncate_plain_text(&text, usize::from(width)),
+        muted_meta_style(theme),
+    ))
+}
+
+fn orchestration_warning_line(app: &AppState, theme: &Theme, width: u16) -> Line<'static> {
+    let warning = app.orchestration_latest_warning().unwrap_or("none");
+    let text = format!("warn: {warning}");
+    Line::from(Span::styled(
+        truncate_plain_text(&text, usize::from(width)),
+        Style::default().fg(theme.status.warning),
+    ))
+}
+
+fn orchestration_task_line(
+    app: &AppState,
+    row: &OrchestrationTaskRow,
+    theme: &Theme,
+    width: u16,
+) -> Line<'static> {
+    let (state_label, state_color) = orchestration_state_tokens(row.state, theme);
+    let owner = app.orchestration_owner_labels(row);
+    let queue_key = row.queue_key.as_deref().unwrap_or("queue:none");
+    let detail = format!(
+        "{} · {}/{} · {}",
+        row.task_id, owner.label, owner.profile, queue_key
+    );
+    let badge_width = state_label.chars().count().saturating_add(4);
+    let detail = truncate_plain_text(&detail, usize::from(width).saturating_sub(badge_width));
+
+    Line::from(vec![
+        status_badge(state_label, state_color, theme),
+        Span::raw(" "),
+        Span::styled(detail, muted_meta_style(theme)),
+    ])
+}
+
+fn orchestration_overflow_line(hidden_count: usize, theme: &Theme) -> Line<'static> {
+    Line::from(Span::styled(
+        format!("+{hidden_count} more"),
+        Style::default()
+            .fg(theme.text.tertiary)
+            .add_modifier(Modifier::BOLD),
+    ))
+}
+
+fn orchestration_state_tokens(
+    state: OrchestrationTaskState,
+    theme: &Theme,
+) -> (&'static str, Color) {
+    match state {
+        OrchestrationTaskState::Queued => ("queued", theme.text.secondary),
+        OrchestrationTaskState::Running => ("running", theme.status.info),
+        OrchestrationTaskState::Stale => ("stale", theme.status.warning),
+        OrchestrationTaskState::Completed => ("completed", theme.status.success),
+        OrchestrationTaskState::Cancelled => ("cancelled", theme.status.error),
+        OrchestrationTaskState::LateResult => ("late-result", theme.status.warning),
+    }
 }
 
 /// Render the Transcript pane (center)
@@ -1476,34 +1606,82 @@ fn render_inspector_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &
 
 fn render_details_inspector_card(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     let is_focused = app.focus == Focus::Details && activity_surface_visible(app);
-    let surface = theme.surface.panel_elevated;
-    let border = if is_focused {
-        theme.border.focus
+    let surface = if is_focused {
+        theme.surface.overlay
     } else {
-        theme.border.strong
+        theme.surface.panel_elevated
     };
-    let block = elevated_card_block(
-        format!(
-            "Inspector detail{}",
-            if is_focused { " · focused" } else { "" }
-        ),
-        surface,
-        border,
-        if is_focused {
-            theme.text.primary
-        } else {
-            theme.text.secondary
-        },
+    let [title_area, body_area] = details_section_areas(area);
+
+    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
+    render_details_section_title(
+        frame, title_area, theme, surface, "Details", None, is_focused,
     );
 
     frame.render_widget(
         Paragraph::new(build_inspector_content(app, theme))
-            .block(block)
             .style(panel_style(surface, theme.text.primary))
             .scroll((app.details_scroll, 0))
             .wrap(Wrap { trim: true }),
-        area,
+        body_area,
     );
+}
+
+fn details_section_areas(area: Rect) -> [Rect; 2] {
+    let inner = inset_rect(area, 1, 0);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .split(inner);
+    [chunks[0], chunks[1]]
+}
+
+fn render_details_section_title(
+    frame: &mut Frame,
+    area: Rect,
+    theme: &Theme,
+    surface: Color,
+    title: &str,
+    meta: Option<&str>,
+    is_focused: bool,
+) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let indicator = if is_focused { "●" } else { "○" };
+    let indicator_color = if is_focused {
+        theme.text.accent
+    } else {
+        theme.text.tertiary
+    };
+
+    let mut spans = vec![
+        Span::styled(
+            format!("{indicator} "),
+            Style::default().fg(indicator_color).bg(surface),
+        ),
+        Span::styled(
+            title.to_string(),
+            Style::default()
+                .fg(if is_focused {
+                    theme.text.primary
+                } else {
+                    theme.text.secondary
+                })
+                .bg(surface)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ];
+
+    if let Some(meta) = meta {
+        spans.push(Span::styled(
+            format!(" · {meta}"),
+            Style::default().fg(theme.text.tertiary).bg(surface),
+        ));
+    }
+
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 fn append_section_header<'a>(lines: &mut Vec<Line<'a>>, title: &str, color: Color) {
