@@ -80,9 +80,10 @@ impl Tool for HashlineScanTool {
         });
 
         let redacted_artifact = redact_value(&DefaultRedactor::default(), &structured_json);
-        let redacted_artifact_text = serde_json::to_string_pretty(&redacted_artifact).map_err(|err| {
-            ToolError::Execution(format!("failed to serialize hashline scan artifact: {err}"))
-        })?;
+        let redacted_artifact_text =
+            serde_json::to_string_pretty(&redacted_artifact).map_err(|err| {
+                ToolError::Execution(format!("failed to serialize hashline scan artifact: {err}"))
+            })?;
 
         let artifact_name = format!("hashline_scan/{}.json", sanitize_artifact_name(&args.path));
         let artifact = ctx
@@ -160,7 +161,10 @@ mod tests {
     use harness_core::tool::{Tool, ToolContext};
     use serde_json::json;
 
-    fn test_context(workspace_root: &std::path::Path, artifacts_dir: &std::path::Path) -> ToolContext {
+    fn test_context(
+        workspace_root: &std::path::Path,
+        artifacts_dir: &std::path::Path,
+    ) -> ToolContext {
         ToolContext {
             run_id: "run-1".to_string(),
             workspace_root: workspace_root.to_path_buf(),
