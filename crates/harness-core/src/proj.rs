@@ -1,9 +1,17 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::event::{EventEnvelopeV1, EventV1};
+
+const EVENTS_FILE_NAME: &str = "events.jsonl";
+const REQUEST_ID_PREFIX: &str = "req_";
+const TASK_ID_PREFIX: &str = "task_";
+const TOOL_CALL_ID_PREFIX: &str = "toolcall_";
+const PERMISSION_ID_PREFIX: &str = "perm_";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -11,6 +19,127 @@ pub enum RunStatus {
     Running,
     Finished,
     Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionModeSource {
+    InteractiveLive,
+    InteractiveMock,
+    Prompt,
+    ScenarioFixture,
+    ReplayOnly,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct SessionCatalogMetadata {
+    #[serde(default)]
+    pub run_id: Option<String>,
+    #[serde(default)]
+    pub run_name: Option<String>,
+    #[serde(default)]
+    pub workspace_root: Option<String>,
+    #[serde(default)]
+    pub profile_preset: Option<String>,
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub mode_source: Option<SessionModeSource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionCatalogEntry {
+    pub run_id: String,
+    pub run_name: Option<String>,
+    pub status: Option<RunStatus>,
+    pub last_updated_at: Option<String>,
+    pub workspace_root: Option<String>,
+    pub profile_preset: Option<String>,
+    pub provider_model: Option<String>,
+    pub mode_source: SessionModeSource,
+    pub is_resumable: bool,
+    pub resume_disabled_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LifecycleSegmentStatus {
+    #[default]
+    Missing,
+    Active,
+    Finished,
+    Failed,
+}
+
+impl LifecycleSegmentStatus {
+    fn run_status(self) -> Option<RunStatus> {
+        match self {
+            Self::Missing => None,
+            Self::Active => Some(RunStatus::Running),
+            Self::Finished => Some(RunStatus::Finished),
+            Self::Failed => Some(RunStatus::Failed),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ResumeIdWatermarks {
+    pub max_request_id: u64,
+    pub max_task_id: u64,
+    pub max_tool_call_id: u64,
+    pub max_permission_id: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResumePlan {
+    pub run_id: String,
+    pub latest_lifecycle_status: LifecycleSegmentStatus,
+    pub max_seq: u64,
+    pub id_watermarks: ResumeIdWatermarks,
+    pub known_agents: BTreeMap<String, String>,
+    pub known_profiles: BTreeSet<String>,
+    pub pending_permissions: BTreeSet<String>,
+    pub tasks_in_flight: BTreeSet<String>,
+    pub workspace_root: Option<String>,
+    pub provider_model: Option<String>,
+    pub is_resumable: bool,
+    pub resume_disabled_reason: Option<String>,
+}
+
+impl ResumePlan {
+    pub fn run_status(&self) -> Option<RunStatus> {
+        self.latest_lifecycle_status.run_status()
+    }
+
+    fn blocked(run_id: String, reason: String) -> Self {
+        Self {
+            run_id,
+            latest_lifecycle_status: LifecycleSegmentStatus::Missing,
+            max_seq: 0,
+            id_watermarks: ResumeIdWatermarks::default(),
+            known_agents: BTreeMap::new(),
+            known_profiles: BTreeSet::new(),
+            pending_permissions: BTreeSet::new(),
+            tasks_in_flight: BTreeSet::new(),
+            workspace_root: None,
+            provider_model: None,
+            is_resumable: false,
+            resume_disabled_reason: Some(reason),
+        }
+    }
+}
+
+impl SessionCatalogEntry {
+    pub fn is_default_picker_candidate(&self) -> bool {
+        matches!(
+            self.mode_source,
+            SessionModeSource::InteractiveLive | SessionModeSource::InteractiveMock
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -60,6 +189,18 @@ pub struct TimelineIndex {
 pub enum ProjectionError {
     #[error("events must be strictly increasing by seq: previous={previous}, current={current}")]
     NonMonotonicSeq { previous: u64, current: u64 },
+    #[error("events must be contiguous by seq: expected={expected}, current={current}")]
+    NonContiguousSeq { expected: u64, current: u64 },
+    #[error("events contain multiple run ids: expected={expected}, actual={actual}")]
+    RunIdMismatch { expected: String, actual: String },
+    #[error(
+        "invalid {counter_kind} id `{id}`; expected prefix `{expected_prefix}` followed by digits"
+    )]
+    InvalidCounterId {
+        counter_kind: &'static str,
+        id: String,
+        expected_prefix: &'static str,
+    },
 }
 
 pub fn project_run_summary<'a>(
@@ -90,6 +231,402 @@ pub fn project_timeline_index<'a>(
     }
 
     Ok(index)
+}
+
+pub fn inspect_resume_plan(run_dir: &Path) -> ResumePlan {
+    let fallback_run_id = fallback_run_id_from_path(run_dir);
+    let events = match read_events_for_resume_inspection(run_dir) {
+        Ok(events) => events,
+        Err(reason) => return ResumePlan::blocked(fallback_run_id, reason),
+    };
+
+    match project_resume_plan(events.iter(), &fallback_run_id) {
+        Ok(plan) => plan,
+        Err(err) => ResumePlan::blocked(
+            fallback_run_id,
+            format!("event log is corrupt or non-monotonic: {err}"),
+        ),
+    }
+}
+
+pub fn project_resume_plan<'a>(
+    events: impl IntoIterator<Item = &'a EventEnvelopeV1>,
+    fallback_run_id: &str,
+) -> Result<ResumePlan, ProjectionError> {
+    let mut latest_lifecycle_status = LifecycleSegmentStatus::Missing;
+    let mut id_watermarks = ResumeIdWatermarks::default();
+    let mut known_agents = BTreeMap::new();
+    let mut known_profiles = BTreeSet::new();
+    let mut pending_permissions = BTreeSet::new();
+    let mut tasks_in_flight = BTreeSet::new();
+    let mut workspace_root = None;
+    let mut provider_model = None;
+    let mut run_id: Option<String> = None;
+    let mut max_seq = 0_u64;
+    let mut expected_seq = 1_u64;
+
+    for event in events {
+        if event.seq != expected_seq {
+            return Err(ProjectionError::NonContiguousSeq {
+                expected: expected_seq,
+                current: event.seq,
+            });
+        }
+        expected_seq += 1;
+        max_seq = event.seq;
+
+        match run_id.as_deref() {
+            None => run_id = Some(event.run_id.clone()),
+            Some(existing) if existing == event.run_id.as_str() => {}
+            Some(existing) => {
+                return Err(ProjectionError::RunIdMismatch {
+                    expected: existing.to_string(),
+                    actual: event.run_id.clone(),
+                })
+            }
+        }
+
+        match &event.payload {
+            EventV1::RunStarted(payload) => {
+                latest_lifecycle_status = LifecycleSegmentStatus::Active;
+                workspace_root = Some(payload.workspace_root.clone());
+                known_agents.clear();
+                known_profiles.clear();
+                pending_permissions.clear();
+                tasks_in_flight.clear();
+            }
+            EventV1::RunFinished(_) => {
+                if latest_lifecycle_status != LifecycleSegmentStatus::Missing {
+                    latest_lifecycle_status = LifecycleSegmentStatus::Finished;
+                }
+            }
+            EventV1::RunFailed(_) => {
+                if latest_lifecycle_status != LifecycleSegmentStatus::Missing {
+                    latest_lifecycle_status = LifecycleSegmentStatus::Failed;
+                }
+            }
+            EventV1::AgentSpawned(payload) => {
+                known_agents.insert(payload.agent_id.clone(), payload.profile.clone());
+                known_profiles.insert(payload.profile.clone());
+            }
+            EventV1::TaskScheduled(payload) => {
+                update_id_watermark(
+                    &mut id_watermarks.max_task_id,
+                    &payload.task_id,
+                    TASK_ID_PREFIX,
+                    "task",
+                )?;
+                tasks_in_flight.insert(payload.task_id.clone());
+            }
+            EventV1::TaskCancelled(payload) => {
+                update_id_watermark(
+                    &mut id_watermarks.max_task_id,
+                    &payload.task_id,
+                    TASK_ID_PREFIX,
+                    "task",
+                )?;
+                tasks_in_flight.remove(&payload.task_id);
+            }
+            EventV1::TaskCompleted(payload) => {
+                update_id_watermark(
+                    &mut id_watermarks.max_task_id,
+                    &payload.task_id,
+                    TASK_ID_PREFIX,
+                    "task",
+                )?;
+                tasks_in_flight.remove(&payload.task_id);
+            }
+            EventV1::TaskResultLate(payload) => {
+                update_id_watermark(
+                    &mut id_watermarks.max_task_id,
+                    &payload.task_id,
+                    TASK_ID_PREFIX,
+                    "task",
+                )?;
+                tasks_in_flight.remove(&payload.task_id);
+            }
+            EventV1::ProviderRequestStarted(payload) => {
+                update_id_watermark(
+                    &mut id_watermarks.max_request_id,
+                    &payload.request_id,
+                    REQUEST_ID_PREFIX,
+                    "request",
+                )?;
+                provider_model = Some(format!("{}/{}", payload.provider_id, payload.model_id));
+            }
+            EventV1::ProviderStreamDelta(payload) => {
+                update_id_watermark(
+                    &mut id_watermarks.max_request_id,
+                    &payload.request_id,
+                    REQUEST_ID_PREFIX,
+                    "request",
+                )?;
+            }
+            EventV1::ProviderRequestFinished(payload) => {
+                update_id_watermark(
+                    &mut id_watermarks.max_request_id,
+                    &payload.request_id,
+                    REQUEST_ID_PREFIX,
+                    "request",
+                )?;
+            }
+            EventV1::ToolCallRequested(payload) => {
+                update_id_watermark(
+                    &mut id_watermarks.max_tool_call_id,
+                    &payload.tool_call_id,
+                    TOOL_CALL_ID_PREFIX,
+                    "tool call",
+                )?;
+            }
+            EventV1::ToolCallStarted(payload) => {
+                update_id_watermark(
+                    &mut id_watermarks.max_tool_call_id,
+                    &payload.tool_call_id,
+                    TOOL_CALL_ID_PREFIX,
+                    "tool call",
+                )?;
+            }
+            EventV1::ToolCallFinished(payload) => {
+                update_id_watermark(
+                    &mut id_watermarks.max_tool_call_id,
+                    &payload.tool_call_id,
+                    TOOL_CALL_ID_PREFIX,
+                    "tool call",
+                )?;
+            }
+            EventV1::PermissionRequested(payload) => {
+                update_id_watermark(
+                    &mut id_watermarks.max_permission_id,
+                    &payload.permission_id,
+                    PERMISSION_ID_PREFIX,
+                    "permission",
+                )?;
+                pending_permissions.insert(payload.permission_id.clone());
+            }
+            EventV1::PermissionResolved(payload) => {
+                update_id_watermark(
+                    &mut id_watermarks.max_permission_id,
+                    &payload.permission_id,
+                    PERMISSION_ID_PREFIX,
+                    "permission",
+                )?;
+                pending_permissions.remove(&payload.permission_id);
+            }
+            EventV1::UserMessageSubmitted(payload) => {
+                update_id_watermark(
+                    &mut id_watermarks.max_request_id,
+                    &payload.request_id,
+                    REQUEST_ID_PREFIX,
+                    "request",
+                )?;
+            }
+            _ => {}
+        }
+    }
+
+    let run_id = run_id.unwrap_or_else(|| fallback_run_id.to_string());
+    let resume_disabled_reason = resume_plan_disabled_reason(
+        max_seq,
+        latest_lifecycle_status,
+        &pending_permissions,
+        &tasks_in_flight,
+        workspace_root.as_deref(),
+        &known_profiles,
+        provider_model.as_deref(),
+    );
+
+    Ok(ResumePlan {
+        run_id,
+        latest_lifecycle_status,
+        max_seq,
+        id_watermarks,
+        known_agents,
+        known_profiles,
+        pending_permissions,
+        tasks_in_flight,
+        workspace_root,
+        provider_model,
+        is_resumable: resume_disabled_reason.is_none(),
+        resume_disabled_reason,
+    })
+}
+
+fn read_events_for_resume_inspection(run_dir: &Path) -> Result<Vec<EventEnvelopeV1>, String> {
+    let events_path = run_dir.join(EVENTS_FILE_NAME);
+    let body = fs::read_to_string(&events_path)
+        .map_err(|source| format!("failed to read {}: {source}", events_path.display()))?;
+
+    let mut events = Vec::new();
+    for (index, line) in body.lines().enumerate() {
+        let event = serde_json::from_str::<EventEnvelopeV1>(line).map_err(|source| {
+            format!(
+                "invalid JSON event at line {} in {}: {source}",
+                index + 1,
+                events_path.display()
+            )
+        })?;
+        events.push(event);
+    }
+
+    Ok(events)
+}
+
+fn fallback_run_id_from_path(run_dir: &Path) -> String {
+    run_dir
+        .file_name()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("<unknown-run>")
+        .to_string()
+}
+
+fn update_id_watermark(
+    max_value: &mut u64,
+    id: &str,
+    expected_prefix: &'static str,
+    counter_kind: &'static str,
+) -> Result<(), ProjectionError> {
+    let Some(parsed) = parse_prefixed_counter(id, expected_prefix) else {
+        return Err(ProjectionError::InvalidCounterId {
+            counter_kind,
+            id: id.to_string(),
+            expected_prefix,
+        });
+    };
+    *max_value = (*max_value).max(parsed);
+    Ok(())
+}
+
+fn parse_prefixed_counter(id: &str, expected_prefix: &str) -> Option<u64> {
+    let tail = id.strip_prefix(expected_prefix)?;
+    if tail.is_empty() {
+        return None;
+    }
+    tail.parse::<u64>().ok()
+}
+
+fn resume_plan_disabled_reason(
+    max_seq: u64,
+    latest_lifecycle_status: LifecycleSegmentStatus,
+    pending_permissions: &BTreeSet<String>,
+    tasks_in_flight: &BTreeSet<String>,
+    workspace_root: Option<&str>,
+    known_profiles: &BTreeSet<String>,
+    provider_model: Option<&str>,
+) -> Option<String> {
+    if max_seq == 0 {
+        return Some("session events are unavailable".to_string());
+    }
+    if latest_lifecycle_status == LifecycleSegmentStatus::Missing {
+        return Some("latest lifecycle segment is unavailable".to_string());
+    }
+    if latest_lifecycle_status == LifecycleSegmentStatus::Active {
+        return Some("run is still active".to_string());
+    }
+    if !pending_permissions.is_empty() {
+        return Some("pending permissions must be resolved".to_string());
+    }
+    if !tasks_in_flight.is_empty() {
+        return Some("tasks are still in flight".to_string());
+    }
+    if workspace_root
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_none()
+    {
+        return Some("workspace root is unavailable".to_string());
+    }
+    if known_profiles.is_empty() {
+        return Some("agent/profile bindings are unavailable".to_string());
+    }
+    if provider_model.is_none() {
+        return Some("provider/model binding is unavailable".to_string());
+    }
+
+    None
+}
+
+pub fn project_session_catalog_entry<'a>(
+    events: impl IntoIterator<Item = &'a EventEnvelopeV1>,
+    fallback_run_id: &str,
+    metadata: Option<&SessionCatalogMetadata>,
+    last_updated_at: Option<String>,
+    degraded_reason: Option<String>,
+) -> Result<SessionCatalogEntry, ProjectionError> {
+    let collected = events.into_iter().collect::<Vec<_>>();
+
+    let run_started = collected.iter().find_map(|event| match &event.payload {
+        EventV1::RunStarted(data) => Some(data),
+        _ => None,
+    });
+    let spawned = collected.iter().find_map(|event| match &event.payload {
+        EventV1::AgentSpawned(data) => Some(data),
+        _ => None,
+    });
+    let provider_started = collected
+        .iter()
+        .rev()
+        .find_map(|event| match &event.payload {
+            EventV1::ProviderRequestStarted(data) => Some(data),
+            _ => None,
+        });
+
+    let run_name = run_started
+        .map(|data| data.run_name.clone())
+        .or_else(|| metadata.and_then(|meta| meta.run_name.clone()));
+    let workspace_root = run_started
+        .map(|data| data.workspace_root.clone())
+        .or_else(|| metadata.and_then(|meta| meta.workspace_root.clone()));
+    let profile_preset = spawned
+        .map(|data| data.profile.clone())
+        .or_else(|| metadata.and_then(|meta| meta.profile_preset.clone()));
+    let provider = provider_started
+        .map(|data| data.provider_id.clone())
+        .or_else(|| metadata.and_then(|meta| meta.provider.clone()));
+    let model = provider_started
+        .map(|data| data.model_id.clone())
+        .or_else(|| metadata.and_then(|meta| meta.model.clone()));
+
+    let provider_model = match (provider.as_deref(), model.as_deref()) {
+        (Some(provider), Some(model)) => Some(format!("{provider}/{model}")),
+        (Some(provider), None) => Some(format!("{provider}/<unavailable>")),
+        (None, Some(model)) => Some(format!("<unavailable>/{model}")),
+        (None, None) => None,
+    };
+
+    let mode_source = metadata
+        .and_then(|meta| meta.mode_source)
+        .unwrap_or_else(|| infer_mode_source(run_name.as_deref(), provider.as_deref()));
+
+    let run_id = collected
+        .first()
+        .map(|event| event.run_id.clone())
+        .or_else(|| metadata.and_then(|meta| meta.run_id.clone()))
+        .unwrap_or_else(|| fallback_run_id.to_string());
+
+    let resume_plan = project_resume_plan(collected.iter().copied(), fallback_run_id)?;
+    let status = resume_plan.run_status();
+
+    let resume_disabled_reason = resume_disabled_reason(
+        mode_source,
+        &resume_plan,
+        profile_preset.as_deref(),
+        provider_model.as_deref(),
+        degraded_reason,
+    );
+
+    Ok(SessionCatalogEntry {
+        run_id,
+        run_name,
+        status,
+        last_updated_at,
+        workspace_root,
+        profile_preset,
+        provider_model,
+        mode_source,
+        is_resumable: resume_disabled_reason.is_none(),
+        resume_disabled_reason,
+    })
 }
 
 fn apply_run_summary_event(summary: &mut RunSummary, event: &EventEnvelopeV1) {
@@ -178,6 +715,62 @@ fn event_type_name(event: &EventV1) -> String {
         EventV1::UserMessageSubmitted(_) => "user_message_submitted",
     }
     .to_string()
+}
+
+fn infer_mode_source(run_name: Option<&str>, provider: Option<&str>) -> SessionModeSource {
+    match run_name.unwrap_or_default() {
+        "interactive" => {
+            if provider == Some("mock") {
+                SessionModeSource::InteractiveMock
+            } else {
+                SessionModeSource::InteractiveLive
+            }
+        }
+        "prompt" => SessionModeSource::Prompt,
+        "replay" => SessionModeSource::ReplayOnly,
+        "golden_path" | "golden_path_interactive" => SessionModeSource::ScenarioFixture,
+        _ => SessionModeSource::Unknown,
+    }
+}
+
+fn resume_disabled_reason(
+    mode_source: SessionModeSource,
+    resume_plan: &ResumePlan,
+    profile_preset: Option<&str>,
+    provider_model: Option<&str>,
+    degraded_reason: Option<String>,
+) -> Option<String> {
+    if let Some(reason) = degraded_reason {
+        return Some(reason);
+    }
+
+    match mode_source {
+        SessionModeSource::ScenarioFixture => {
+            return Some("scenario fixture runs are excluded from resume".to_string());
+        }
+        SessionModeSource::ReplayOnly => {
+            return Some("replay-only launches are not resumable".to_string());
+        }
+        SessionModeSource::Prompt => {
+            return Some("prompt runs are not resumable".to_string());
+        }
+        SessionModeSource::Unknown => {
+            return Some("session mode source is unavailable".to_string());
+        }
+        SessionModeSource::InteractiveLive | SessionModeSource::InteractiveMock => {}
+    }
+
+    if let Some(reason) = &resume_plan.resume_disabled_reason {
+        return Some(reason.clone());
+    }
+    if profile_preset.is_none() {
+        return Some("profile preset is unavailable".to_string());
+    }
+    if provider_model.is_none() {
+        return Some("provider/model is unavailable".to_string());
+    }
+
+    None
 }
 
 fn enforce_seq(last_seq: Option<u64>, current_seq: u64) -> Result<(), ProjectionError> {
