@@ -84,7 +84,9 @@ fn list_directory_entries(directory: &Path, limit: usize) -> Result<ListResult, 
         .map_err(|err| ToolError::Execution(format!("failed to list directory: {err}")))?
         .map(|entry| {
             entry
-                .map_err(|err| ToolError::Execution(format!("failed to read directory entry: {err}")))
+                .map_err(|err| {
+                    ToolError::Execution(format!("failed to read directory entry: {err}"))
+                })
                 .and_then(|entry| {
                     let file_type = entry.file_type().map_err(|err| {
                         ToolError::Execution(format!("failed to read directory entry type: {err}"))
