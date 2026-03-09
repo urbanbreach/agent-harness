@@ -2,6 +2,7 @@ use font8x8::unicode::{BasicFonts, BlockFonts, BoxFonts, LatinFonts, UnicodeFont
 use fontdue::{Font, FontSettings};
 use image::{imageops::FilterType, Rgb, RgbImage};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use serde_json::{json, Value};
 use std::cell::RefCell;
 use std::cmp;
 use std::collections::BTreeMap;
@@ -35,13 +36,13 @@ const CELL_HEIGHT: u32 = 60;
 const DEFAULT_FG: [u8; 3] = [216, 216, 216];
 const DEFAULT_BG: [u8; 3] = [18, 18, 18];
 const ANTI_ALIAS_FONT_SIZE_FACTOR: f32 = 0.72;
+const STARTUP_LAUNCHER_READY_MARKER: &str = "startup launcher ready";
+const STARTUP_COMMAND_PALETTE_MARKER: &str = "Command palette";
+const STARTUP_RESUME_HISTORY_MARKER: &str = "Resume session";
+const STARTUP_REPLAY_HISTORY_MARKER: &str = "Replay session";
+const REPLAY_READY_MARKER: &str = "q quit";
 const RUN_FINISHED_READY_MARKER: &str = "ready for next turn";
-const RUN_FINISHED_MARKERS: &[&str] = &[
-    "worker-prompt-delta",
-    "Success",
-    RUN_FINISHED_READY_MARKER,
-    "Composer",
-];
+const RUN_FINISHED_MARKERS: &[&str] = &["Success", RUN_FINISHED_READY_MARKER, "Composer"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PtyGeometry {
@@ -190,6 +191,142 @@ const LIVE_STATE_FIXTURES: LiveStateFixtures = LiveStateFixtures {
     draft: DraftFixture::HELLO_WORLD,
     permission: PermissionFixture::TOOL_CALL,
 };
+
+struct SpawnedHarnessPty {
+    child: Box<dyn portable_pty::Child + Send>,
+    writer: Box<dyn Write + Send>,
+    output_rx: Receiver<Vec<u8>>,
+    parser: VtParser,
+}
+
+fn spawn_harness_tui(
+    geometry: PtyGeometry,
+    session_dir: &Path,
+    configure: impl FnOnce(&mut CommandBuilder),
+) -> SpawnedHarnessPty {
+    let harness_bin = resolve_harness_bin();
+    let repo_root = repo_root();
+    let pty_system = native_pty_system();
+    let pair = pty_system
+        .openpty(geometry.pty_size())
+        .expect("open pty pair");
+
+    let mut command = CommandBuilder::new(harness_bin.to_string_lossy().as_ref());
+    command.arg("tui");
+    configure(&mut command);
+    command.arg("--deterministic");
+    command.arg("--session-dir");
+    command.arg(session_dir.to_string_lossy().to_string());
+    command.cwd(repo_root);
+    configure_deterministic_env(&mut command);
+
+    let child = pair
+        .slave
+        .spawn_command(command)
+        .expect("spawn harness tui command");
+    drop(pair.slave);
+
+    let reader = pair.master.try_clone_reader().expect("clone pty reader");
+    let writer = pair.master.take_writer().expect("take pty writer");
+
+    SpawnedHarnessPty {
+        child,
+        writer,
+        output_rx: spawn_reader_thread(reader),
+        parser: geometry.parser(),
+    }
+}
+
+fn open_startup_command_palette(
+    parser: &mut VtParser,
+    output_rx: &Receiver<Vec<u8>>,
+    writer: &mut dyn Write,
+) -> String {
+    send_key(writer, 0x10).expect("open startup command palette with Ctrl+P");
+    wait_for_screen_contains(
+        parser,
+        output_rx,
+        STARTUP_COMMAND_PALETTE_MARKER,
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for startup command palette")
+}
+
+fn open_startup_session_history(
+    parser: &mut VtParser,
+    output_rx: &Receiver<Vec<u8>>,
+    writer: &mut dyn Write,
+    command_name: &str,
+    overlay_marker: &str,
+) -> String {
+    open_startup_command_palette(parser, output_rx, writer);
+    writer
+        .write_all(command_name.as_bytes())
+        .expect("type startup launcher palette command");
+    writer
+        .flush()
+        .expect("flush startup launcher palette command");
+    send_key(writer, b'\r').expect("open startup session history overlay");
+    wait_for_screen_contains(parser, output_rx, overlay_marker, MARKER_TIMEOUT)
+        .expect("wait for startup session history overlay")
+}
+
+fn type_text(writer: &mut dyn Write, text: &str) {
+    writer
+        .write_all(text.as_bytes())
+        .expect("type text into PTY");
+    writer.flush().expect("flush PTY text");
+}
+
+fn quit_tui(writer: &mut dyn Write) {
+    writer.write_all(b"\tq").expect("send quit chord");
+    writer.flush().expect("flush quit chord");
+}
+
+fn wait_for_process_exit(
+    child: &mut Box<dyn portable_pty::Child + Send>,
+    output_rx: &Receiver<Vec<u8>>,
+    parser: &mut VtParser,
+    timeout: Duration,
+) -> Result<(), String> {
+    let deadline = Instant::now() + timeout;
+
+    loop {
+        drain_output(parser, output_rx);
+
+        match child
+            .try_wait()
+            .map_err(|err| format!("failed to poll harness PTY child: {err}"))?
+        {
+            Some(status) if status.success() => return Ok(()),
+            Some(status) => {
+                return Err(format!(
+                    "harness PTY child exited with status {:?}; final screen:\n{}",
+                    status.exit_code(),
+                    screen_contents(parser)
+                ));
+            }
+            None => {}
+        }
+
+        let now = Instant::now();
+        if now >= deadline {
+            child
+                .kill()
+                .map_err(|err| format!("failed to kill timed out PTY child: {err}"))?;
+            return Err(format!(
+                "timed out waiting for PTY child to exit after {timeout:?}; final screen:\n{}",
+                screen_contents(parser)
+            ));
+        }
+
+        let wait_timeout = cmp::min(READ_POLL_TIMEOUT, deadline.saturating_duration_since(now));
+        match output_rx.recv_timeout(wait_timeout) {
+            Ok(chunk) => parser.process(&chunk),
+            Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => {}
+        }
+    }
+}
 
 #[tokio::test(flavor = "current_thread")]
 async fn pty_e2e_tui_golden_path() {
@@ -428,6 +565,407 @@ async fn pty_e2e_tui_interactive_prompt_streams_response() {
     let mut child = child;
     child.kill().expect("terminate interactive tui child");
     std::mem::forget(child);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn pty_e2e_continue_quiescent_session() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let server = MockServer::start().await;
+    let sse_body = responses_api_sse_fixture();
+    let response_template = ResponseTemplate::new(200)
+        .insert_header("content-type", "text/event-stream")
+        .set_body_raw(sse_body.clone(), "text/event-stream");
+
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(response_template.clone())
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(response_template)
+        .mount(&server)
+        .await;
+
+    let session_dir = create_temp_session_dir();
+    let run_id = "run_resume_quiescent";
+    let run_dir = write_quiescent_resume_fixture(&session_dir, run_id);
+    let events_path = run_dir.join("events.jsonl");
+    let before_events = load_events_jsonl(&events_path);
+    let config_path = write_wiremock_tui_config(&session_dir, &server.uri());
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+
+    let mut harness = spawn_harness_tui(PtyGeometry::PRIMARY_SIGNOFF, &session_dir, |command| {
+        command.arg("--config");
+        command.arg(config_path.to_string_lossy().to_string());
+    });
+
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        STARTUP_LAUNCHER_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup launcher ready");
+    let startup_visual = capture_visual_checkpoint(
+        "startup_launcher_ready",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact(STARTUP_LAUNCHER_READY_MARKER, 40, 2),
+    )
+    .expect("capture startup launcher checkpoint image");
+    insta::assert_snapshot!(
+        "pty_startup_launcher_ready",
+        checkpoint_visual_snapshot(
+            &screen_contents(&harness.parser),
+            &[STARTUP_LAUNCHER_READY_MARKER, "Composer", "q quit"],
+            &startup_visual,
+        )
+    );
+
+    let palette_screen = open_startup_command_palette(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+    );
+    let palette_visual = capture_visual_checkpoint(
+        "startup_command_palette",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact(STARTUP_COMMAND_PALETTE_MARKER, 28, 5),
+    )
+    .expect("capture startup command palette image");
+    insta::assert_snapshot!(
+        "pty_startup_command_palette",
+        checkpoint_visual_snapshot(
+            &palette_screen,
+            &[
+                STARTUP_COMMAND_PALETTE_MARKER,
+                "New session",
+                "Resume session"
+            ],
+            &palette_visual,
+        )
+    );
+
+    type_text(harness.writer.as_mut(), "resume");
+    send_key(harness.writer.as_mut(), b'\r').expect("enter startup session history");
+    let history_screen = wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        STARTUP_RESUME_HISTORY_MARKER,
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for startup session history overlay");
+    let history_visual = capture_visual_checkpoint(
+        "startup_resume_history",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("continue ready", 28, 3),
+    )
+    .expect("capture startup resume history image");
+    insta::assert_snapshot!(
+        "pty_startup_resume_history",
+        checkpoint_visual_snapshot(
+            &history_screen,
+            &[
+                STARTUP_RESUME_HISTORY_MARKER,
+                "interactive",
+                "continue ready"
+            ],
+            &history_visual,
+        )
+    );
+
+    send_key(harness.writer.as_mut(), b'\r').expect("continue selected quiescent session");
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        "historical answer",
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for historical transcript after continue");
+
+    LIVE_STATE_FIXTURES
+        .draft
+        .write_and_submit(harness.writer.as_mut())
+        .expect("submit resumed prompt");
+
+    let continued_screen = wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        LIVE_STATE_FIXTURES.draft.response_marker,
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for resumed prompt response");
+    let continued_visual = capture_visual_checkpoint(
+        "continue_quiescent_session",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored(LIVE_STATE_FIXTURES.draft.response_marker, 28, 6),
+    )
+    .expect("capture continued session checkpoint image");
+    insta::assert_snapshot!(
+        "pty_continue_quiescent_session",
+        checkpoint_visual_snapshot(
+            &continued_screen,
+            &[
+                LIVE_STATE_FIXTURES.draft.response_marker,
+                "historical answer",
+                RUN_FINISHED_READY_MARKER,
+            ],
+            &continued_visual,
+        )
+    );
+
+    quit_tui(harness.writer.as_mut());
+    wait_for_process_exit(
+        &mut harness.child,
+        &harness.output_rx,
+        &mut harness.parser,
+        Duration::from_secs(10),
+    )
+    .expect("quit continued session cleanly");
+
+    let after_events = load_events_jsonl(&events_path);
+    assert!(
+        after_events.len() > before_events.len(),
+        "continued session should append events to the existing run"
+    );
+    assert!(
+        after_events.iter().all(|event| {
+            event
+                .get("run_id")
+                .and_then(Value::as_str)
+                .is_some_and(|value| value == run_id)
+        }),
+        "continue should keep appending to the same run_id"
+    );
+    assert!(
+        after_events.iter().any(|event| {
+            event
+                .get("payload")
+                .and_then(|payload| payload.get("event_type"))
+                .and_then(Value::as_str)
+                == Some("user_message_submitted")
+                && event
+                    .get("payload")
+                    .and_then(|payload| payload.get("data"))
+                    .and_then(|data| data.get("text"))
+                    .and_then(Value::as_str)
+                    == Some(LIVE_STATE_FIXTURES.draft.text)
+        }),
+        "continued session should accept a new prompt on the resumed run"
+    );
+    assert_eq!(session_run_dirs(&session_dir), vec![run_dir]);
+}
+
+#[test]
+fn pty_e2e_continue_rejects_active_or_unrestorable_session() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let session_dir = create_temp_session_dir();
+    write_active_blocked_fixture(&session_dir, "run_active_blocked");
+    write_corrupt_blocked_fixture(&session_dir, "run_unrestorable_blocked");
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+
+    let mut harness = spawn_harness_tui(PtyGeometry::PRIMARY_SIGNOFF, &session_dir, |command| {
+        command.arg("--mock");
+    });
+
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        STARTUP_LAUNCHER_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup launcher ready");
+
+    open_startup_session_history(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+        "resume",
+        STARTUP_RESUME_HISTORY_MARKER,
+    );
+    type_text(harness.writer.as_mut(), "run_active_blocked");
+    send_key(harness.writer.as_mut(), b'\r').expect("attempt continue on active session");
+
+    let active_screen = wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        "tasks are still in flight",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for active-session rejection banner");
+    let active_visual = capture_visual_checkpoint(
+        "continue_rejected_active",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("tasks are still in flight", 28, 1),
+    )
+    .expect("capture active-session rejection image");
+    insta::assert_snapshot!(
+        "pty_continue_rejected_active",
+        checkpoint_visual_snapshot(
+            &active_screen,
+            &[
+                STARTUP_RESUME_HISTORY_MARKER,
+                "run_active_blocked",
+                "tasks are still in flight",
+            ],
+            &active_visual,
+        )
+    );
+
+    send_key(harness.writer.as_mut(), 0x1b).expect("close active-session rejection overlay");
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        STARTUP_LAUNCHER_READY_MARKER,
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for startup launcher after active-session rejection");
+
+    open_startup_session_history(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+        "resume",
+        STARTUP_RESUME_HISTORY_MARKER,
+    );
+    type_text(harness.writer.as_mut(), "run_unrestorable_blocked");
+    send_key(harness.writer.as_mut(), b'\r').expect("attempt continue on corrupt session");
+
+    let unrestorable_screen = wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        "events unavailable",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for unrestorable-session rejection banner");
+    let unrestorable_visual = capture_visual_checkpoint(
+        "continue_rejected_unrestorable",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("events unavailable", 28, 1),
+    )
+    .expect("capture unrestorable-session rejection image");
+    insta::assert_snapshot!(
+        "pty_continue_rejected_unrestorable",
+        checkpoint_visual_snapshot(
+            &unrestorable_screen,
+            &[
+                STARTUP_RESUME_HISTORY_MARKER,
+                "run_unrestorable_blocked",
+                "events unavailable",
+            ],
+            &unrestorable_visual,
+        )
+    );
+
+    send_key(harness.writer.as_mut(), 0x1b).expect("close unrestorable-session rejection overlay");
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        STARTUP_LAUNCHER_READY_MARKER,
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for startup launcher after unrestorable-session rejection");
+
+    quit_tui(harness.writer.as_mut());
+    wait_for_process_exit(
+        &mut harness.child,
+        &harness.output_rx,
+        &mut harness.parser,
+        Duration::from_secs(10),
+    )
+    .expect("quit blocked-session launcher cleanly");
+}
+
+#[test]
+fn pty_e2e_replay_never_appends_events() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let session_dir = create_temp_session_dir();
+    let run_dir = write_replay_fixture(&session_dir, "run_replay_safe");
+    let events_path = run_dir.join("events.jsonl");
+    let before =
+        fs::read_to_string(&events_path).expect("read replay fixture events before launch");
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+
+    let mut harness = spawn_harness_tui(PtyGeometry::PRIMARY_SIGNOFF, &session_dir, |command| {
+        command.arg("--mock");
+    });
+
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        STARTUP_LAUNCHER_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup launcher ready");
+
+    open_startup_session_history(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+        "replay",
+        STARTUP_REPLAY_HISTORY_MARKER,
+    );
+    send_key(harness.writer.as_mut(), b'\r').expect("select replay session");
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        REPLAY_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for replay shell to render");
+
+    send_key(harness.writer.as_mut(), b'\t').expect("focus replay details pane");
+    send_key(harness.writer.as_mut(), b'\t').expect("attempt replay prompt focus");
+    type_text(harness.writer.as_mut(), "blocked in replay");
+    send_key(harness.writer.as_mut(), b'\r').expect("attempt replay submit");
+
+    let replay_screen = wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        REPLAY_READY_MARKER,
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for stable replay screen after submit attempt");
+    let replay_visual = capture_visual_checkpoint(
+        "replay_read_only",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact(REPLAY_READY_MARKER, 20, 2),
+    )
+    .expect("capture replay read-only image");
+    insta::assert_snapshot!(
+        "pty_replay_read_only",
+        checkpoint_visual_snapshot(
+            &replay_screen,
+            &[REPLAY_READY_MARKER, "run_replay_safe", "done"],
+            &replay_visual,
+        )
+    );
+
+    harness.child.kill().expect("terminate replay PTY child");
+    std::mem::forget(harness.child);
+
+    let after = fs::read_to_string(&events_path).expect("read replay fixture events after launch");
+    assert_eq!(after, before, "replay mode must not append to events.jsonl");
 }
 
 fn responses_api_sse_fixture() -> String {
@@ -1334,6 +1872,285 @@ fn create_temp_session_dir() -> PathBuf {
     let dir = base.join(format!("pty-e2e-{}-{suffix}", std::process::id()));
     fs::create_dir_all(&dir).expect("create unique temp session dir");
     dir
+}
+
+fn session_run_dirs(session_dir: &Path) -> Vec<PathBuf> {
+    let mut run_dirs = fs::read_dir(session_dir)
+        .expect("read session dir")
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| path.is_dir() && path.join("events.jsonl").exists())
+        .collect::<Vec<_>>();
+    run_dirs.sort();
+    run_dirs
+}
+
+fn load_events_jsonl(events_path: &Path) -> Vec<Value> {
+    fs::read_to_string(events_path)
+        .expect("read events jsonl")
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str(line).expect("parse events jsonl line"))
+        .collect()
+}
+
+fn write_quiescent_resume_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
+    write_session_fixture(
+        session_dir,
+        run_id,
+        &[
+            session_event(
+                run_id,
+                1,
+                event_actor("system", Some("coordinator")),
+                None,
+                "run_started",
+                json!({
+                    "run_name": "interactive",
+                    "workspace_root": "/workspace/project",
+                }),
+            ),
+            session_event(
+                run_id,
+                2,
+                event_actor("system", Some("coordinator")),
+                None,
+                "agent_spawned",
+                json!({
+                    "agent_id": "agent_000001",
+                    "profile": "worker",
+                    "parent_agent_id": Value::Null,
+                }),
+            ),
+            session_event(
+                run_id,
+                3,
+                event_actor("user", Some("interactive-user")),
+                Some("req_000001"),
+                "user_message_submitted",
+                json!({
+                    "request_id": "req_000001",
+                    "text": "historical question",
+                }),
+            ),
+            session_event(
+                run_id,
+                4,
+                event_actor("worker", Some("agent_000001")),
+                Some("req_000001"),
+                "provider_request_started",
+                json!({
+                    "request_id": "req_000001",
+                    "provider_id": "default",
+                    "model_id": "model-1",
+                    "prompt_summary": "historical question",
+                    "request_digest": "digest-historical-request",
+                }),
+            ),
+            session_event(
+                run_id,
+                5,
+                event_actor("worker", Some("agent_000001")),
+                Some("req_000001"),
+                "provider_stream_delta",
+                json!({
+                    "request_id": "req_000001",
+                    "delta": "historical answer",
+                }),
+            ),
+            session_event(
+                run_id,
+                6,
+                event_actor("worker", Some("agent_000001")),
+                Some("req_000001"),
+                "task_completed",
+                json!({
+                    "task_id": "task_000001",
+                    "result_summary": "historical answer",
+                    "result_digest": "digest-historical-answer",
+                }),
+            ),
+            session_event(
+                run_id,
+                7,
+                event_actor("system", Some("coordinator")),
+                None,
+                "run_finished",
+                json!({
+                    "summary": "segment complete",
+                }),
+            ),
+        ],
+    )
+}
+
+fn write_active_blocked_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
+    write_session_fixture(
+        session_dir,
+        run_id,
+        &[
+            session_event(
+                run_id,
+                1,
+                event_actor("system", Some("coordinator")),
+                None,
+                "run_started",
+                json!({
+                    "run_name": "interactive",
+                    "workspace_root": "/workspace/project",
+                }),
+            ),
+            session_event(
+                run_id,
+                2,
+                event_actor("system", Some("coordinator")),
+                None,
+                "agent_spawned",
+                json!({
+                    "agent_id": "agent_000001",
+                    "profile": "worker",
+                    "parent_agent_id": Value::Null,
+                }),
+            ),
+            session_event(
+                run_id,
+                3,
+                event_actor("worker", Some("agent_000001")),
+                Some("req_000001"),
+                "provider_request_started",
+                json!({
+                    "request_id": "req_000001",
+                    "provider_id": "default",
+                    "model_id": "model-1",
+                    "prompt_summary": "unfinished prompt",
+                    "request_digest": "digest-active-request",
+                }),
+            ),
+            session_event(
+                run_id,
+                4,
+                event_actor("system", Some("coordinator")),
+                None,
+                "task_scheduled",
+                json!({
+                    "task_id": "task_000001",
+                    "state": "started",
+                    "queue_key": "tool:shell.run",
+                }),
+            ),
+            session_event(
+                run_id,
+                5,
+                event_actor("system", Some("coordinator")),
+                None,
+                "run_finished",
+                json!({
+                    "summary": "segment closed while work remained active",
+                }),
+            ),
+        ],
+    )
+}
+
+fn write_corrupt_blocked_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
+    let run_dir = session_dir.join(run_id);
+    fs::create_dir_all(run_dir.join("artifacts")).expect("create corrupt fixture artifacts dir");
+
+    let valid_first_line = serde_json::to_string(&session_event(
+        run_id,
+        1,
+        event_actor("system", Some("coordinator")),
+        None,
+        "run_started",
+        json!({
+            "run_name": "interactive",
+            "workspace_root": "/workspace/project",
+        }),
+    ))
+    .expect("serialize corrupt fixture first line");
+
+    fs::write(
+        run_dir.join("events.jsonl"),
+        format!("{valid_first_line}\n{{bad-json}}\n"),
+    )
+    .expect("write corrupt fixture events");
+    run_dir
+}
+
+fn write_replay_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
+    write_session_fixture(
+        session_dir,
+        run_id,
+        &[
+            session_event(
+                run_id,
+                1,
+                event_actor("system", Some("coordinator")),
+                None,
+                "run_started",
+                json!({
+                    "run_name": "interactive",
+                    "workspace_root": "/workspace/project",
+                }),
+            ),
+            session_event(
+                run_id,
+                2,
+                event_actor("system", Some("coordinator")),
+                None,
+                "run_finished",
+                json!({
+                    "summary": "done",
+                }),
+            ),
+        ],
+    )
+}
+
+fn write_session_fixture(session_dir: &Path, run_id: &str, events: &[Value]) -> PathBuf {
+    let run_dir = session_dir.join(run_id);
+    fs::create_dir_all(run_dir.join("artifacts")).expect("create session fixture artifacts dir");
+
+    let mut body = String::new();
+    for event in events {
+        let line = serde_json::to_string(event).expect("serialize session fixture event");
+        body.push_str(&line);
+        body.push('\n');
+    }
+    fs::write(run_dir.join("events.jsonl"), body).expect("write session fixture events");
+    run_dir
+}
+
+fn event_actor(kind: &str, actor_id: Option<&str>) -> Value {
+    json!({
+        "kind": kind,
+        "agent_id": actor_id,
+    })
+}
+
+fn session_event(
+    run_id: &str,
+    seq: u64,
+    actor: Value,
+    correlation_id: Option<&str>,
+    event_type: &str,
+    data: Value,
+) -> Value {
+    json!({
+        "schema_version": 1,
+        "event_id": format!("evt-{seq:04}"),
+        "seq": seq,
+        "run_id": run_id,
+        "mono_ms": seq,
+        "ts": Value::Null,
+        "actor": actor,
+        "correlation_id": correlation_id,
+        "causation_id": Value::Null,
+        "stream_key": format!("run:{run_id}"),
+        "payload": {
+            "event_type": event_type,
+            "data": data,
+        },
+    })
 }
 
 #[cfg(target_os = "windows")]
