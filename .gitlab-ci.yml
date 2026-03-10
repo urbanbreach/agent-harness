@@ -16,6 +16,7 @@ variables:
   TERM: "xterm-256color"
   HARNESS_DETERMINISTIC: "1"
   HARNESS_DISABLE_ANIMATIONS: "1"
+  HARNESS_SEED: "42"
 
 .rust_cache: &rust_cache
   key: "${CI_PROJECT_NAME}-${CI_COMMIT_REF_SLUG}"
