@@ -1,0 +1,18 @@
+ run run_fixture · unknown/mock · gpt-5-codex
+  › user · req_details_drawer
+    │ Inspect the details drawer
+  ◐  streaming…  assistant · mock/gpt-5-codex · current
+    │ Waiting for response…
+
+  ○ Orchestration · 0 tracked · 0 active · 0 warn
+  overview · 0 active agents · 0 queued · 0 running · 0 s…
+  ● Details · req_details_drawer · streaming…
+  Request ID: req_details_drawer
+  Provider: mock
+  Model: gpt-5-codex
+  Prompt summary: Inspect the details drawer
+  Sending   turn 1/1 · req_details_drawer · mock/gpt-5-code
+ Composer · ready · 1 line · 0 chars───────────────────────
+ Draft the next prompt while the current turn starts…
+ ──────────────────────────────────────────────────────────
+ Enter send  Shift+Enter nl  i close  2 events  3 diff  4 h

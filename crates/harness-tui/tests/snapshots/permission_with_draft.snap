@@ -8,22 +8,22 @@
 
 
 
-
-                      ┌◷ Permission Requested────────────────────────────────┐
-                      │Apply hashline edit to demo.txt                       │
-                      │                                                      │
-                      │                                                      │
-                      │                                                      │
-                      │             [a]llow  [d]eny  [esc]dismiss            │
-                      └──────────────────────────────────────────────────────┘
-
-
-
+                 ┌◷ Permission Requested──────────────────────────────────────────┐
+                 │ FAIL CLOSED    EDIT FS                                         │
+                 │Apply hashline edit to demo.txt                                 │
+                 │default deny · timeout 30s                                      │
+                 │tool call tool_call_pty · digest digest-perm-pty                │
+                 │Review the request before granting access. Deny keeps the run f…│
+                 │                                                                │
+                 │            [d] deny   [esc] dismiss   [a] allow once           │
+                 └────────────────────────────────────────────────────────────────┘
 
 
 
 
-   Permission blocked   permission required · Apply hashline edit to demo.txt
+
+
+   Permission blocked   decision required · Apply hashline edit to demo.txt
   ┌Composer · disabled · Permission blocked──────────────────────────────────────────────────────┐
   │keep this draft                                                                               │
   └──────────────────────────────────────────────────────────────────────────────────────────────┘

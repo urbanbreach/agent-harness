@@ -1,0 +1,30 @@
+
+
+
+
+
+
+
+
+               ┌Harness─────────────────────────────────────────────────────────────┐
+    ┌Continue session · 2 matches · 1 blocked──────────────────────────────────────────────────┐
+    │> █                                                                                       │
+    │Interactive histories · 1 ready · 1 blocked · blocked rows stay visible                   │
+    │▶ continue alpha-run · continue ready · finished · deep/openai/gpt-5.4                    │
+    │! blocked beta-blocked · continue blocked · run is still active · running · ops/anthropic/│
+    │                                                                                          │
+    │                                                                                          │
+    │                                                                                          │
+    │                                                                                          │
+    │                                                                                          │
+    └──────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+
+
+
+   Ready   startup launcher ready · choose New/Continue/Replay or type to quick-start
+  ┌Composer · 1 line · 0 chars───────────────────────────────────────────────────────────────────┐
+  │Type to quick-start a new session while the lifecycle actions stay available.                 │
+  └──────────────────────────────────────────────────────────────────────────────────────────────┘
+  ↑ prev  ↓ next  Enter select  Tab composer  Ctrl+p palette  q quit

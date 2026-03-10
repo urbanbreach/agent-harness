@@ -1,24 +1,24 @@
- run unknown · unknown/unknown · -
 
 
 
 
 
 
-
-                                     Harness
-
-         Start a conversation to begin
-         Enter send · Shift+Enter newline · ↑/↓ history
-
-
-
-
+      ┌ Disconnected   Connection lost───────────────────────────────────┐
+      │connection lost · reopen the TUI to establish the live stream     │
+      │live event stream disconnected                                    │
+      │Draft preserved locally — reopen the TUI to reconnect before send…│
+      │                                                                  │
+      │Reconnect required · reopen the TUI, then continue from the visib…│
+      └──────────────────────────────────────────────────────────────────┘
 
 
 
-  Disconnected   live event stream unavailable · reopen the TUI to connect
- ┌Composer · disabled · Disconnected──────────────────────────────────────────┐
- │Composer disabled — live stream disconnected. Reopen the TUI to reconnect,  │
- └────────────────────────────────────────────────────────────────────────────┘
+
+
+
+  Disconnected   connection lost · reopen the TUI to establish the live stream
+ Composer · disabled · Disconnected────────────────────────────────────────────
+ Draft preserved locally — reopen the TUI to reconnect before sending another
+ ──────────────────────────────────────────────────────────────────────────────
  i details  2 events  3 diff  4 help  q quit

@@ -39,6 +39,9 @@ struct PtyGeometry {
 
 impl PtyGeometry {
     const MINIMUM_SIGNOFF: Self = Self { cols: 80, rows: 24 };
+    const HALF_SCREEN_SPLIT: Self = Self { cols: 80, rows: 48 };
+    const SPLIT_TIER_WINDOW: Self = Self { cols: 96, rows: 40 };
+    const SIX_WINDOW_DENSE: Self = Self { cols: 60, rows: 18 };
     const PRIMARY_SIGNOFF: Self = Self {
         cols: 100,
         rows: 30,
@@ -195,7 +198,7 @@ fn startup_shell_renders_bottom_composer_snapshot() {
     let lines = startup.lines().collect::<Vec<_>>();
     let composer_top = find_line_containing(&lines, "Composer").expect("composer title row");
     let composer_bottom =
-        find_line_containing_from(&lines, composer_top + 1, "└").expect("composer bottom row");
+        find_line_containing_from(&lines, composer_top + 1, "─").expect("composer bottom row");
     let footer_row = find_line_containing_from(&lines, composer_bottom + 1, "Enter send")
         .expect("footer legend");
 
@@ -235,6 +238,29 @@ fn pty_e2e_snapshots_are_stable() {
     let narrow_80x24 = capture_type_first_startup_snapshot(PtyGeometry::MINIMUM_SIGNOFF);
     assert_or_update_snapshot("narrow_80x24", &narrow_80x24);
 
+    let split_tall_startup_shell = capture_startup_shell_snapshot(PtyGeometry::HALF_SCREEN_SPLIT);
+    assert_or_update_snapshot("split_tall_startup_shell", &split_tall_startup_shell);
+
+    let split_tier_startup_shell = capture_startup_shell_snapshot(PtyGeometry::SPLIT_TIER_WINDOW);
+    assert_or_update_snapshot("split_tier_startup_shell", &split_tier_startup_shell);
+
+    let quarter_tile_startup_shell = capture_startup_shell_snapshot(PtyGeometry::MINIMUM_SIGNOFF);
+    assert_or_update_snapshot("quarter_tile_startup_shell", &quarter_tile_startup_shell);
+
+    let six_window_startup_shell = capture_startup_shell_snapshot(PtyGeometry::SIX_WINDOW_DENSE);
+    assert_or_update_snapshot("six_window_startup_shell", &six_window_startup_shell);
+
+    let split_tall_details_drawer =
+        capture_live_details_drawer_snapshot(PtyGeometry::HALF_SCREEN_SPLIT);
+    assert_or_update_snapshot("split_tall_details_drawer", &split_tall_details_drawer);
+
+    let six_window_details_drawer =
+        capture_live_details_drawer_snapshot(PtyGeometry::SIX_WINDOW_DENSE);
+    assert_or_update_snapshot("six_window_details_drawer", &six_window_details_drawer);
+
+    let narrow_events_surface = capture_events_tab_snapshot(PtyGeometry::MINIMUM_SIGNOFF);
+    assert_or_update_snapshot("narrow_events_surface", &narrow_events_surface);
+
     let degraded_bootstrap = capture_helper_screen_snapshot(
         HelperScenario::DegradedBootstrap,
         PtyGeometry::MINIMUM_SIGNOFF,
@@ -264,6 +290,13 @@ fn snapshot_files_exist_and_are_secret_clean() {
         snapshot_dir.join("tool_lifecycle.snap"),
         snapshot_dir.join("permission_with_draft.snap"),
         snapshot_dir.join("narrow_80x24.snap"),
+        snapshot_dir.join("split_tall_startup_shell.snap"),
+        snapshot_dir.join("split_tier_startup_shell.snap"),
+        snapshot_dir.join("quarter_tile_startup_shell.snap"),
+        snapshot_dir.join("six_window_startup_shell.snap"),
+        snapshot_dir.join("split_tall_details_drawer.snap"),
+        snapshot_dir.join("six_window_details_drawer.snap"),
+        snapshot_dir.join("narrow_events_surface.snap"),
         snapshot_dir.join("degraded_bootstrap.snap"),
         snapshot_dir.join("disconnected_stream.snap"),
     ];
@@ -279,6 +312,9 @@ fn snapshot_files_exist_and_are_secret_clean() {
 fn pty_helpers_support_primary_and_minimum_geometries() {
     for (geometry, expected_cols, expected_rows) in [
         (PtyGeometry::MINIMUM_SIGNOFF, 80, 24),
+        (PtyGeometry::HALF_SCREEN_SPLIT, 80, 48),
+        (PtyGeometry::SPLIT_TIER_WINDOW, 96, 40),
+        (PtyGeometry::SIX_WINDOW_DENSE, 60, 18),
         (PtyGeometry::PRIMARY_SIGNOFF, 100, 30),
     ] {
         let size = geometry.pty_size();
@@ -369,30 +405,37 @@ fn pty_live_details_drawer_remains_reachable() {
         return;
     }
 
-    let mut helper = spawn_helper_pty(HelperScenario::DetailsDrawer, PtyGeometry::PRIMARY_SIGNOFF);
-    wait_for_screen_contains(
-        &mut helper.parser,
-        &helper.output_rx,
-        LIVE_STATE_FIXTURES.prompt.ready_marker,
-        STARTUP_TIMEOUT,
-    )
-    .expect("wait for startup before details drawer flow");
+    for geometry in [
+        PtyGeometry::PRIMARY_SIGNOFF,
+        PtyGeometry::HALF_SCREEN_SPLIT,
+        PtyGeometry::SPLIT_TIER_WINDOW,
+        PtyGeometry::SIX_WINDOW_DENSE,
+    ] {
+        let mut helper = spawn_helper_pty(HelperScenario::DetailsDrawer, geometry);
+        wait_for_screen_contains(
+            &mut helper.parser,
+            &helper.output_rx,
+            LIVE_STATE_FIXTURES.prompt.ready_marker,
+            STARTUP_TIMEOUT,
+        )
+        .expect("wait for startup before details drawer flow");
 
-    send_key(helper.writer.as_mut(), b'\t').expect("focus transcript before opening details");
-    send_key(helper.writer.as_mut(), b'i').expect("open details drawer");
+        send_key(helper.writer.as_mut(), b'\t').expect("focus transcript before opening details");
+        send_key(helper.writer.as_mut(), b'i').expect("open details drawer");
 
-    let screen = wait_for_screen_contains(
-        &mut helper.parser,
-        &helper.output_rx,
-        "Request ID:",
-        MARKER_TIMEOUT,
-    )
-    .expect("wait for details drawer markers");
+        let screen = wait_for_screen_contains(
+            &mut helper.parser,
+            &helper.output_rx,
+            "Request ID:",
+            MARKER_TIMEOUT,
+        )
+        .expect("wait for details drawer markers");
 
-    assert!(screen.contains("req_details_drawer"));
-    assert!(screen.contains("gpt-5-codex"));
+        assert!(screen.contains("req_details_drawer"));
+        assert!(screen.contains("gpt-5-codex"));
 
-    terminate_child(helper.child);
+        terminate_child(helper.child);
+    }
 }
 
 #[test]
@@ -418,10 +461,10 @@ fn pty_live_orchestration_drawer_and_status() {
     assert_screen_contains_all(
         &queued_screen,
         &[
-            "○ Orchestration",
-            "agents 1 · queued 1 · running 0 · sta…",
+            "○ Orchestration · 1 tracked · 1 active",
+            "overview · 1 active agents",
             "queued  task_live_cycle · w1/deep",
-            "ready for next turn  ·  agents 1 · queued 1 · running 0 · stale 0",
+            "ready for next turn  ·  orch 1a 1q 0r 0s",
         ],
     );
 
@@ -435,10 +478,10 @@ fn pty_live_orchestration_drawer_and_status() {
     assert_screen_contains_all(
         &started_screen,
         &[
-            "○ Orchestration",
-            "agents 1 · queued 0 · running 1 · sta…",
+            "○ Orchestration · 1 tracked · 1 active",
+            "overview · 1 active agents",
             "running  task_live_cycle · w1/deep",
-            "ready for next turn  ·  agents 1 · queued 0 · running 1 · stale 0",
+            "ready for next turn  ·  orch 1a 0q 1r 0s",
         ],
     );
 
@@ -452,10 +495,10 @@ fn pty_live_orchestration_drawer_and_status() {
     assert_screen_contains_all(
         &completed_screen,
         &[
-            "○ Orchestration",
-            "agents 0 · queued 0 · running 0 · sta…",
+            "○ Orchestration · 1 tracked · 0 active",
+            "overview · 0 active agents",
             "completed  task_live_cycle",
-            "Success   turn 1/1 · req_orch · mock/m1 · ready for next turn",
+            "ready for next turn  ·  orch 0a 0q 0r 0s",
         ],
     );
 
@@ -478,18 +521,18 @@ fn pty_live_orchestration_stale_late_result_flow() {
     let stale_screen = wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
-        "warn: stale for 3001 ms",
+        "watch · stale for 3001 ms",
         MARKER_TIMEOUT,
     )
     .expect("wait for stale orchestration warning");
     assert_screen_contains_all(
         &stale_screen,
         &[
-            "○ Orchestration",
-            "agents 1 · queued 0 · running 0 · sta…",
-            "warn: stale for 3001 ms",
+            "○ Orchestration · 1 tracked · 1 active",
+            "overview · 1 active agents",
+            "watch · stale for 3001 ms",
             "stale  task_stale · w1/deep",
-            "ready for next turn  ·  agents 1 · queued 0 · running 0 · stale 1 · warn stale for 3001 ms",
+            "ready for next turn  ·  orch 1a 0q 0r 1s · warn stale for 3001 ms",
         ],
     );
 
@@ -503,11 +546,11 @@ fn pty_live_orchestration_stale_late_result_flow() {
     assert_screen_contains_all(
         &late_result_screen,
         &[
-            "○ Orchestration",
-            "agents 0 · queued 0 · running 0 · sta…",
-            "warn: late result after stale cancell…",
+            "○ Orchestration · 1 tracked · 0 active",
+            "overview · 0 active agents",
+            "watch · late result after stale",
             "late-result  task_stale · w1/deep",
-            "ready for next turn  ·  agents 0 · queued 0 · running 0 · stale 0 · warn late result after stale cancellation",
+            "ready for next turn  ·  orch 0a 0q 0r 0s · warn late result after stale cancellation",
         ],
     );
     assert!(
@@ -557,7 +600,7 @@ fn replay_mode_never_emits_submit_prompt_intent() {
         "expected replay status to stay visible after submit attempt\n{stable}"
     );
     assert!(
-        stable.contains("replay read-only"),
+        stable.contains("Replay archive · read-only"),
         "expected replay composer to render a read-only title\n{stable}"
     );
     assert!(
@@ -582,9 +625,18 @@ fn startup_shell_displays_meaningful_mock_launch_metadata() {
         return;
     }
 
-    let startup_shell = capture_startup_shell_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
-    assert!(startup_shell.contains("Preset worker · mock/model-1 · Demo"));
-    assert!(!startup_shell.contains("Preset unknown · unknown/-"));
+    for geometry in [
+        PtyGeometry::PRIMARY_SIGNOFF,
+        PtyGeometry::HALF_SCREEN_SPLIT,
+        PtyGeometry::SPLIT_TIER_WINDOW,
+        PtyGeometry::MINIMUM_SIGNOFF,
+        PtyGeometry::SIX_WINDOW_DENSE,
+    ] {
+        let startup_shell = capture_startup_shell_snapshot(geometry);
+        assert!(startup_shell.contains("Preset worker · mock/model-1 · Demo"));
+        assert!(!startup_shell.contains("Preset unknown · unknown/-"));
+        assert!(startup_shell.contains("Harness"));
+    }
 }
 
 fn run_helper_if_requested(scenario: HelperScenario) {
@@ -707,6 +759,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
             run_tui_with_options(TuiOptions {
                 mode: TuiMode::Live {
                     run_dir: run_dir.path().to_path_buf(),
+                    historical_events: Vec::new(),
                     update_rx: rx,
                 },
                 exit_on_finish: false,
@@ -737,6 +790,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
+            historical_events: Vec::new(),
             update_rx: rx,
         },
         exit_on_finish: false,
@@ -1267,7 +1321,7 @@ fn capture_startup_session_history_snapshot(geometry: PtyGeometry) -> String {
     let screen = wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
-        "Resume session",
+        "Continue session",
         MARKER_TIMEOUT,
     )
     .expect("wait for startup session history picker");
@@ -1345,6 +1399,46 @@ fn capture_permission_with_draft_snapshot(geometry: PtyGeometry) -> String {
         screen.contains(PRESERVED_DRAFT_TEXT),
         "permission snapshot lost draft"
     );
+    terminate_child(helper.child);
+    normalize_snapshot(&screen)
+}
+
+fn capture_live_details_drawer_snapshot(geometry: PtyGeometry) -> String {
+    let mut helper = spawn_helper_pty(HelperScenario::DetailsDrawer, geometry);
+    wait_for_live_startup(&mut helper);
+    open_live_details_drawer(&mut helper);
+
+    let screen = wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "Request ID:",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for live details drawer markers");
+
+    assert_screen_contains_all(
+        &screen,
+        &["Request ID:", "Provider:", "Model:", "Prompt summary:"],
+    );
+    terminate_child(helper.child);
+    normalize_snapshot(&screen)
+}
+
+fn capture_events_tab_snapshot(geometry: PtyGeometry) -> String {
+    let mut helper = spawn_helper_pty(HelperScenario::ToolLifecycle, geometry);
+    wait_for_live_startup(&mut helper);
+    send_key(helper.writer.as_mut(), b'\t').expect("move focus away from prompt before Events tab");
+    send_key(helper.writer.as_mut(), b'2').expect("open Events tab");
+
+    let screen = wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "Event log",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for Events surface in narrow geometry");
+
+    assert_screen_contains_all(&screen, &["Event log", "Event details"]);
     terminate_child(helper.child);
     normalize_snapshot(&screen)
 }
@@ -1712,15 +1806,15 @@ fn startup_session_history_entries() -> Vec<SessionHistoryEntry> {
             run_dir: PathBuf::from("/tmp/sessions/run_blocked"),
             catalog: SessionCatalogEntry {
                 run_id: "run_blocked".to_string(),
-                run_name: Some("beta-prompt".to_string()),
-                status: Some(RunStatus::Failed),
+                run_name: Some("beta-blocked".to_string()),
+                status: Some(RunStatus::Running),
                 last_updated_at: Some("2026-03-07T03:21:00Z".to_string()),
                 workspace_root: Some("/tmp/workspace".to_string()),
                 profile_preset: Some("ops".to_string()),
                 provider_model: Some("anthropic/claude-3.7".to_string()),
                 mode_source: SessionModeSource::InteractiveLive,
                 is_resumable: false,
-                resume_disabled_reason: Some("prompt runs are not resumable".to_string()),
+                resume_disabled_reason: Some("run is still active".to_string()),
             },
         },
     ]

@@ -1,24 +1,24 @@
- run unknown · unknown/unknown · -
 
 
 
 
 
 
-
-                                     Harness
-
-         Start a conversation to begin
-         Enter send · Shift+Enter newline · ↑/↓ history
-
-
-
-
+      ┌ Degraded   Live recovery in progress─────────────────────────────┐
+      │recovery in progress · live stream lagged by 2; replaying from se…│
+      │live stream lagged by 2; replaying from seq 1                     │
+      │Draft preserved locally — Harness is replaying live state before …│
+      │                                                                  │
+      │Sending paused · keep drafting locally until catch-up completes   │
+      └──────────────────────────────────────────────────────────────────┘
 
 
 
-  Degraded   live stream lagged by 2; replaying from seq 1 · sending paused unt
- ┌Composer · disabled · Degraded──────────────────────────────────────────────┐
- │Composer disabled — waiting for live recovery before sending the next turn. │
- └────────────────────────────────────────────────────────────────────────────┘
+
+
+
+  Degraded   recovery in progress · live stream lagged by 2; replaying from seq
+ Composer · disabled · Degraded────────────────────────────────────────────────
+ Draft preserved locally — Harness is replaying live state before it will send
+ ──────────────────────────────────────────────────────────────────────────────
  i details  2 events  3 diff  4 help  q quit

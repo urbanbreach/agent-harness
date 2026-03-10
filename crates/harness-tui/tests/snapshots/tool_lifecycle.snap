@@ -1,8 +1,16 @@
   run run_fixture · unknown/mock · model-1
-   › user · req_pty_001
-     │ Hello from PTY
+   › user · req_tool_lifecycle
+     │ Inspect tool activity
    ●  done  assistant · mock/model-1 · current
-     │ Hello world
+     │ Tool summaries are now easier to scan.
+     ╭─ tool fs.read  succeeded
+     │ args   limit=24, path=src/ui.rs, start_line=1
+     │ result 24 lines read from src/ui.rs
+     └ ● call tc_read
+     ╭─ tool shell.run  failed
+     │ args   cmd=cargo test -p harness-tui, cwd=/workspace
+     │ error  exit code: 1 stderr: snapshot mismatch
+     └ ✗ call tc_shell
 
 
 
@@ -15,15 +23,7 @@
 
 
 
-
-
-
-
-
-
-
-
-   Success   turn 1/1 · req_pty_001 · mock/model-1 · ready for next turn
+   Success   turn 1/1 · req_tool_lifecycle · mock/model-1 · ready for next turn
   Composer · ready · 1 line · 0 chars─────────────────────────────────────────────────────────────
    › █
   ────────────────────────────────────────────────────────────────────────────────────────────────
