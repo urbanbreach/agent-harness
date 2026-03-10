@@ -78,6 +78,9 @@ pub fn selected_live_viewport() -> LiveViewportPreset {
     }
 }
 
+type AntiAliasMask = Arc<Vec<u8>>;
+type AntiAliasCache = RefCell<BTreeMap<(char, u32), AntiAliasMask>>;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FocusCapture {
     marker: String,
@@ -160,15 +163,6 @@ pub struct LiveVisualRun {
 }
 
 impl LiveVisualRun {
-    pub fn new(test_name: &str, run_id: &str) -> Result<Self, String> {
-        Self::new_in_with_options(
-            visual_artifacts_root(),
-            test_name,
-            run_id,
-            LiveVisualRunOptions::default(),
-        )
-    }
-
     pub fn new_in(root: PathBuf, test_name: &str, run_id: &str) -> Result<Self, String> {
         Self::new_in_with_options(root, test_name, run_id, LiveVisualRunOptions::default())
     }
@@ -250,18 +244,8 @@ impl LiveVisualRun {
             .map_err(|err| format!("failed to save {}: {err}", png_path.display()))?;
 
         let (rows, cols) = parser.screen().size();
-        let focus_region = find_marker_cell(parser.screen(), &focus.marker).map(|(row, col)| {
-            anchored_region(
-                row,
-                col,
-                rows,
-                cols,
-                focus.width_cells,
-                focus.height_cells,
-                focus.top_padding_cells,
-                focus.left_padding_cells,
-            )
-        });
+        let focus_region = find_marker_cell(parser.screen(), &focus.marker)
+            .map(|(row, col)| anchored_region((row, col), (rows, cols), focus));
         let focus_marker_found = focus_region.is_some();
         let focus_region_cells = focus_region.unwrap_or((0, 0, rows.max(1), cols.max(1)));
         let focus_pixels = extract_region_pixels(&image, focus_region_cells);
@@ -393,15 +377,6 @@ pub struct VisualManifest {
 }
 
 impl VisualManifest {
-    pub fn new_in(output_dir: PathBuf, test_name: &str, run_id: &str) -> Result<Self, String> {
-        Self::new_in_with_metadata(
-            output_dir,
-            test_name,
-            run_id,
-            Value::Object(serde_json::Map::new()),
-        )
-    }
-
     pub fn new_in_with_metadata(
         output_dir: PathBuf,
         test_name: &str,
@@ -664,10 +639,19 @@ pub fn assert_checkpoint_markers(
 
 fn visual_artifacts_root() -> PathBuf {
     if let Ok(dir) = std::env::var("HARNESS_VISUAL_ARTIFACT_DIR") {
-        return PathBuf::from(dir);
+        return resolve_artifact_root(dir);
     }
 
     repo_root().join("target").join("pty-visual-artifacts")
+}
+
+fn resolve_artifact_root(dir: impl Into<PathBuf>) -> PathBuf {
+    let dir = dir.into();
+    if dir.is_absolute() {
+        dir
+    } else {
+        repo_root().join(dir)
+    }
 }
 
 fn repo_root() -> PathBuf {
@@ -707,23 +691,20 @@ fn find_marker_cell(screen: &vt100::Screen, marker: &str) -> Option<(u16, u16)> 
 }
 
 fn anchored_region(
-    anchor_row: u16,
-    anchor_col: u16,
-    rows: u16,
-    cols: u16,
-    width_cells: u16,
-    height_cells: u16,
-    top_padding_cells: u16,
-    left_padding_cells: u16,
+    anchor: (u16, u16),
+    bounds: (u16, u16),
+    focus: &FocusCapture,
 ) -> (u16, u16, u16, u16) {
-    let row_start = anchor_row.saturating_sub(top_padding_cells);
-    let col_start = anchor_col.saturating_sub(left_padding_cells);
+    let (anchor_row, anchor_col) = anchor;
+    let (rows, cols) = bounds;
+    let row_start = anchor_row.saturating_sub(focus.top_padding_cells);
+    let col_start = anchor_col.saturating_sub(focus.left_padding_cells);
 
     let max_height = rows.saturating_sub(row_start).max(1);
     let max_width = cols.saturating_sub(col_start).max(1);
 
-    let height = height_cells.min(max_height).max(1);
-    let width = width_cells.min(max_width).max(1);
+    let height = focus.height_cells.min(max_height).max(1);
+    let width = focus.width_cells.min(max_width).max(1);
 
     (row_start, col_start, height, width)
 }
@@ -1001,7 +982,7 @@ struct GlyphLookup {
     box_drawing: BoxFonts,
     block: BlockFonts,
     smooth_font: Option<Font>,
-    anti_alias_cache: RefCell<BTreeMap<(char, u32), Arc<Vec<u8>>>>,
+    anti_alias_cache: AntiAliasCache,
 }
 
 impl GlyphLookup {
@@ -1054,7 +1035,7 @@ impl GlyphLookup {
         true
     }
 
-    fn anti_alias_mask_for(&self, ch: char, raster_scale: u32) -> Option<Arc<Vec<u8>>> {
+    fn anti_alias_mask_for(&self, ch: char, raster_scale: u32) -> Option<AntiAliasMask> {
         let cache_key = (ch, raster_scale);
         if let Some(mask) = self.anti_alias_cache.borrow().get(&cache_key) {
             return Some(mask.clone());
@@ -1195,6 +1176,11 @@ fn prune_old_live_visual_runs(test_root: &Path, current_run_id: &str) -> Result<
                 return None;
             }
             let name = path.file_name()?.to_str()?.to_string();
+            let is_manifest_backed_run =
+                path.join("manifest.json").exists() || path.join("manifest.jsonl").exists();
+            if name != current_run_id && !is_manifest_backed_run {
+                return None;
+            }
             let modified = entry
                 .metadata()
                 .ok()?

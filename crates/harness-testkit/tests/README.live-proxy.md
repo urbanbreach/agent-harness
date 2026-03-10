@@ -29,8 +29,18 @@ HARNESS_LIVE_PROXY=1 \
 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
 HARNESS_LIVE_PROXY_PROVIDER=default \
 HARNESS_LIVE_PROXY_MODEL=gpt-5.3-codex \
-HARNESS_VISUAL_ARTIFACT_DIR=target/live-proxy-visual-artifacts \
+HARNESS_VISUAL_ARTIFACT_DIR=target/pty-visual-artifacts \
 cargo test -p harness-testkit live_proxy_e2e_tui_tool_flow -- --ignored --exact
+```
+
+## Local helper trust checks
+
+These exact helper tests keep the manifest/retention layer machine-verifiable without requiring
+live proxy credentials:
+
+```bash
+cargo test -p harness-testkit live_visual_checkpoint_writes_png_and_manifest -- --exact
+cargo test -p harness-testkit live_visual_run_retention_prunes_old_runs -- --exact
 ```
 
 ## Artifact layout
@@ -39,6 +49,12 @@ Artifacts are written under:
 
 ```text
 <artifact-root>/live-proxy/<test-name>/<run-id>/
+```
+
+Recommended local root for both offline PTY and live manifest inspection:
+
+```text
+target/pty-visual-artifacts/
 ```
 
 Example run id:
@@ -63,6 +79,7 @@ Each run directory includes:
 
 - default: keep the latest **5** screenshot runs per test
 - override with `HARNESS_LIVE_VISUAL_KEEP_RUNS=<n>`
+- pruning only applies to manifest-backed `run-*` evidence directories; sidecars stay untouched
 
 ## Viewport presets
 

@@ -21,8 +21,8 @@ use support::live_vision::{self, LiveVisionProxyConfig};
 use support::live_visual::{
     assert_checkpoint_markers, default_live_run_metadata, selected_live_viewport, FocusCapture,
     LiveVisualRun, LiveVisualRunOptions, CHECKPOINT_DRAFT_VISIBLE,
-    CHECKPOINT_HASHLINE_SCAN_FINISHED, CHECKPOINT_RUN_FINISHED, CHECKPOINT_SHELL_CREATE_FINISHED,
-    CHECKPOINT_STARTUP,
+    CHECKPOINT_HASHLINE_SCAN_FINISHED, CHECKPOINT_PERMISSION_REQUESTED, CHECKPOINT_RUN_FINISHED,
+    CHECKPOINT_SHELL_CREATE_FINISHED, CHECKPOINT_STARTUP,
 };
 use vt100::Parser as VtParser;
 use wiremock::matchers::{method, path};
@@ -39,10 +39,26 @@ const LIVE_PROXY_VISION_VERIFIER_PROFILE: &str = "live_proxy_vision_verifier";
 const LIVE_TUI_SESSION_NAMESPACE: &str = "live-proxy-tui-session";
 const TOOL_FLOW_SESSION_NAMESPACE: &str = "tool-flow-session";
 const VISION_VERIFIER_SESSION_NAMESPACE: &str = "vision-verifier-session";
+#[expect(
+    dead_code,
+    reason = "reserved for the ignored live visual-verifier lane"
+)]
 const LIVE_TUI_VISUAL_VERIFIER_SESSION_NAMESPACE: &str = "live-proxy-visual-verifier-session";
+#[expect(
+    dead_code,
+    reason = "reserved for the ignored live visual-verifier lane"
+)]
 const TOOL_FLOW_VISUAL_VERIFIER_SESSION_NAMESPACE: &str = "tool-flow-visual-verifier-session";
+#[expect(
+    dead_code,
+    reason = "reserved for the ignored live visual-verifier lane"
+)]
 const VISION_VISUAL_VERIFIER_SESSION_NAMESPACE: &str = "vision-visual-verifier-session";
 const LIVE_PROXY_TUI_TOOL_FLOW_TEST_NAME: &str = "live_proxy_e2e_tui_tool_flow";
+#[expect(
+    dead_code,
+    reason = "reserved for the ignored live visual-verifier lane"
+)]
 const LIVE_PROXY_VISUAL_VERIFIER_TEST_NAME: &str = "live_proxy_e2e_visual_verifier";
 const LIVE_TOOL_FLOW_RELATIVE_PATH: &str = "tmp/live_tool_flow.md";
 const LIVE_TOOL_FLOW_DRAFT_MARKER: &str =
@@ -127,18 +143,6 @@ struct LivePromptVisualArtifacts {
     run_finished_png: PathBuf,
 }
 
-impl LivePromptVisualArtifacts {
-    fn png_path(&self, checkpoint_id: &str) -> Option<&Path> {
-        match checkpoint_id {
-            CHECKPOINT_STARTUP => Some(&self.startup_png),
-            CHECKPOINT_DRAFT_VISIBLE => Some(&self.draft_visible_png),
-            CHECKPOINT_RUN_FINISHED => Some(&self.run_finished_png),
-            _ => None,
-        }
-        .map(PathBuf::as_path)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LivePromptSmokeResult {
     events_body: String,
@@ -182,20 +186,6 @@ struct LiveToolFlowArtifacts {
     shell_create_finished_png: PathBuf,
     hashline_scan_finished_png: PathBuf,
     run_finished_png: PathBuf,
-}
-
-impl LiveToolFlowArtifacts {
-    fn png_path(&self, checkpoint_id: &str) -> Option<&Path> {
-        match checkpoint_id {
-            CHECKPOINT_STARTUP => Some(&self.startup_png),
-            CHECKPOINT_DRAFT_VISIBLE => Some(&self.draft_visible_png),
-            CHECKPOINT_SHELL_CREATE_FINISHED => Some(&self.shell_create_finished_png),
-            CHECKPOINT_HASHLINE_SCAN_FINISHED => Some(&self.hashline_scan_finished_png),
-            CHECKPOINT_RUN_FINISHED => Some(&self.run_finished_png),
-            _ => None,
-        }
-        .map(PathBuf::as_path)
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1718,6 +1708,119 @@ fn live_visual_checkpoint_marker_assertions_respect_required_and_forbidden_state
 }
 
 #[test]
+fn live_visual_manifest_orders_checkpoints_and_jsonl_by_stage() {
+    let artifact_root = unique_temp_dir("live-visual-ordering");
+    let mut visual_run = LiveVisualRun::new_in_with_options(
+        artifact_root,
+        "live_visual_manifest_orders_checkpoints_and_jsonl_by_stage",
+        "run-ordered",
+        LiveVisualRunOptions {
+            run_metadata: json!({
+                "provider": "default",
+                "model": "model-1",
+                "profile": "deep",
+                "viewport": {
+                    "preset": "desktop"
+                }
+            }),
+        },
+    )
+    .expect("create ordered live visual run");
+    let parser = parser_with_screen(&[
+        LIVE_TUI_READY_MARKER,
+        "permission marker",
+        LIVE_TUI_ASSISTANT_DONE_MARKER,
+    ]);
+
+    visual_run
+        .capture_checkpoint_with_metadata(
+            CHECKPOINT_RUN_FINISHED,
+            &parser,
+            &[LIVE_TUI_READY_MARKER, LIVE_TUI_ASSISTANT_DONE_MARKER],
+            &FocusCapture::anchored_exact(LIVE_TUI_ASSISTANT_DONE_MARKER, 24, 3),
+            Some(json!({
+                "purpose": "ordered-run-finished",
+                "stage": CHECKPOINT_RUN_FINISHED,
+            })),
+        )
+        .expect("capture run-finished checkpoint first");
+    let permission_checkpoint = visual_run
+        .capture_checkpoint_with_metadata(
+            CHECKPOINT_PERMISSION_REQUESTED,
+            &parser,
+            &[LIVE_TUI_READY_MARKER, "permission marker"],
+            &FocusCapture::anchored_exact("permission marker", 24, 3),
+            Some(json!({
+                "purpose": "ordered-permission",
+                "stage": CHECKPOINT_PERMISSION_REQUESTED,
+            })),
+        )
+        .expect("capture permission checkpoint second");
+    visual_run
+        .capture_checkpoint_with_metadata(
+            CHECKPOINT_STARTUP,
+            &parser,
+            &[LIVE_TUI_READY_MARKER],
+            &FocusCapture::anchored_exact(LIVE_TUI_READY_MARKER, 24, 3),
+            Some(json!({
+                "purpose": "ordered-startup",
+                "stage": CHECKPOINT_STARTUP,
+            })),
+        )
+        .expect("capture startup checkpoint third");
+
+    let manifest: Value = serde_json::from_str(
+        &fs::read_to_string(permission_checkpoint.manifest_json_path())
+            .expect("read ordered manifest"),
+    )
+    .expect("parse ordered manifest");
+    let checkpoint_ids = manifest
+        .get("checkpoints")
+        .and_then(Value::as_array)
+        .expect("ordered manifest checkpoints")
+        .iter()
+        .map(|entry| {
+            entry
+                .get("checkpoint_id")
+                .and_then(Value::as_str)
+                .expect("checkpoint id present")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        checkpoint_ids,
+        vec![
+            CHECKPOINT_STARTUP,
+            CHECKPOINT_PERMISSION_REQUESTED,
+            CHECKPOINT_RUN_FINISHED,
+        ],
+        "manifest.json should remain stage-sorted regardless of capture order"
+    );
+
+    let manifest_jsonl = fs::read_to_string(permission_checkpoint.manifest_jsonl_path())
+        .expect("read ordered manifest.jsonl");
+    let manifest_jsonl_ids = manifest_jsonl
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).expect("parse manifest.jsonl entry"))
+        .map(|entry| {
+            entry
+                .get("checkpoint_id")
+                .and_then(Value::as_str)
+                .expect("checkpoint id present in manifest.jsonl")
+                .to_string()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        manifest_jsonl_ids,
+        vec![
+            CHECKPOINT_STARTUP.to_string(),
+            CHECKPOINT_PERMISSION_REQUESTED.to_string(),
+            CHECKPOINT_RUN_FINISHED.to_string(),
+        ],
+        "manifest.jsonl should stay aligned with manifest.json ordering"
+    );
+}
+
+#[test]
 fn selected_live_viewport_honors_preset_override() {
     let _guard = live_proxy_env_lock()
         .lock()
@@ -1771,6 +1874,55 @@ fn live_visual_run_retention_prunes_old_runs() {
     assert!(
         entries.len() <= 2,
         "retention should keep at most current + one old run: {entries:?}"
+    );
+}
+
+#[test]
+fn live_visual_run_retention_keeps_non_run_sidecars() {
+    let _guard = live_proxy_env_lock()
+        .lock()
+        .expect("live proxy env test lock should not be poisoned");
+    let artifact_root = unique_temp_dir("live-visual-retention-sidecars");
+    let test_root = artifact_root
+        .join("live-proxy")
+        .join("live_visual_run_retention_keeps_non_run_sidecars");
+    fs::create_dir_all(&test_root).expect("create retention sidecar test root");
+    let sidecar_dir = test_root.join("notes-cache");
+    fs::create_dir_all(&sidecar_dir).expect("create sidecar dir");
+    fs::write(sidecar_dir.join("README.txt"), "keep me\n").expect("write sidecar marker");
+
+    for name in ["run-old-1", "run-old-2", "run-old-3"] {
+        let path = test_root.join(name);
+        fs::create_dir_all(&path).expect("create old visual run dir");
+        fs::write(path.join("manifest.json"), "{}\n").expect("write old manifest");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    with_live_proxy_env(
+        &[("HARNESS_LIVE_VISUAL_KEEP_RUNS", Some(OsStr::new("1")))],
+        || {
+            LiveVisualRun::new_in(
+                artifact_root.clone(),
+                "live_visual_run_retention_keeps_non_run_sidecars",
+                "run-current",
+            )
+            .expect("create retained visual run with sidecar")
+        },
+    );
+
+    let entries = fs::read_dir(&test_root)
+        .expect("read retention sidecar output dir")
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.file_name().to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+    assert!(entries.iter().any(|entry| entry == "run-current"));
+    assert!(
+        entries.iter().any(|entry| entry == "notes-cache"),
+        "retention should not prune non-run sidecars: {entries:?}"
+    );
+    assert!(
+        entries.len() <= 3,
+        "retention should keep sidecar + current + one manifest-backed old run: {entries:?}"
     );
 }
 
@@ -2197,6 +2349,10 @@ fn resolve_live_vision_proxy_config(
     )
 }
 
+#[expect(
+    dead_code,
+    reason = "reserved for the ignored live visual-verifier lane"
+)]
 fn resolve_live_vision_proxy_config_for_run(
     run_config: &PromptRunConfig,
 ) -> Result<LiveVisionProxyConfig, String> {
@@ -2235,6 +2391,10 @@ fn resolve_live_proxy_config_path(
     }
 }
 
+#[expect(
+    dead_code,
+    reason = "reserved for the ignored live visual-verifier lane"
+)]
 fn vision_verdict_satisfies(status: &str) -> bool {
     matches!(
         status.trim().to_ascii_lowercase().as_str(),
@@ -3056,6 +3216,10 @@ fn sanitize_hashline_artifact_name(path: &Path) -> String {
     }
 }
 
+#[expect(
+    dead_code,
+    reason = "reserved for the ignored live visual-verifier lane"
+)]
 fn live_vision_checkpoint_contracts() -> &'static [LiveVisionCheckpointContract] {
     &[
         LiveVisionCheckpointContract {
@@ -3096,6 +3260,10 @@ fn live_vision_checkpoint_contracts() -> &'static [LiveVisionCheckpointContract]
     ]
 }
 
+#[expect(
+    dead_code,
+    reason = "reserved for the ignored live visual-verifier lane"
+)]
 fn write_structured_vision_verdict(
     checkpoint_id: &str,
     verdict: &live_vision::LiveVisionVerdict,
