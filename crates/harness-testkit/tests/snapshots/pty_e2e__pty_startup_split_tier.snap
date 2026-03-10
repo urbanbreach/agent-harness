@@ -1,0 +1,15 @@
+---
+source: crates/harness-testkit/tests/pty_e2e.rs
+assertion_line: 977
+expression: "checkpoint_visual_snapshot(&startup_screen, STARTUP_LIFECYCLE_MARKERS,\n&startup_visual,)"
+---
+startup launcher ready: true
+Dispatch a new run: true
+New session: true
+Continue session: true
+Replay session: true
+focus_marker: startup launcher ready
+focus_pixels_blake3: 558bbc9340f597c61d6a8e928dcf5c399a16704c79cfe1cd4335b92b060bc3aa
+focus_region_cells: row=35, col=10, height=2, width=40
+image: pty_startup_split_tier.png
+size_px: 1536x1200

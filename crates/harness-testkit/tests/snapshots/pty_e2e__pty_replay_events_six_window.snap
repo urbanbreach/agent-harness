@@ -1,0 +1,13 @@
+---
+source: crates/harness-testkit/tests/pty_e2e.rs
+expression: "checkpoint_visual_snapshot(&events_screen,\n&[\"Event log\", \"Event details\", \"recorded\", \"selected seq\"], &events_visual,)"
+---
+Event log: true
+Event details: false
+recorded: true
+selected seq: true
+focus_marker: Event log
+focus_pixels_blake3: b2f2b736aa639c485d1ea1c6048025c52045af57403e94aed2a864754852a28a
+focus_region_cells: row=6, col=3, height=6, width=20
+image: pty_replay_events_six_window.png
+size_px: 960x540

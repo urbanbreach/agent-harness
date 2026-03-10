@@ -1,0 +1,12 @@
+---
+source: crates/harness-testkit/tests/pty_e2e.rs
+expression: "checkpoint_visual_snapshot(&replay_history_screen,\n&[STARTUP_REPLAY_HISTORY_MARKER, \"interactive\", \"read-only\"],\n&replay_history_visual,)"
+---
+Replay session: true
+interactive: true
+read-only: true
+focus_marker: Replay session
+focus_pixels_blake3: 624e060ce6eaf32e7ce04e91b30a93702d2433cf2a781e08638d126595b81e73
+focus_region_cells: row=22, col=47, height=3, width=28
+image: pty_startup_replay_history.png
+size_px: 2560x1440

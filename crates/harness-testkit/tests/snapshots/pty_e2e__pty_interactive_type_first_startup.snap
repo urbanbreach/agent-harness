@@ -5,7 +5,7 @@ expression: "checkpoint_visual_snapshot(&startup_checkpoint,\nLIVE_STATE_FIXTURE
 Hello from PTY: true
 Composer: true
 focus_marker: Hello from PTY
-focus_pixels_blake3: 56f69e00afff8fff7cd06e47ea4b79d24301f3935c055e681d8619d8cd2c57c5
+focus_pixels_blake3: 01e717c2821cd3f37360c603d0ce8902c0e9d99fc53976a9d085814420ab6310
 focus_region_cells: row=19, col=0, height=4, width=24
 image: pty_interactive_type_first_startup.png
-size_px: 2560x1440
+size_px: 1280x720

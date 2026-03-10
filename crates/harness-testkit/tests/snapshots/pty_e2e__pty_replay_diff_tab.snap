@@ -1,0 +1,13 @@
+---
+source: crates/harness-testkit/tests/pty_e2e.rs
+expression: "checkpoint_visual_snapshot(&diff_screen,\n&[\"diff artifact missing:\", \"artifact view · seq\", \"read-only\", run_id,],\n&diff_visual,)"
+---
+diff artifact missing:: true
+artifact view · seq: true
+read-only: true
+run_replay_diff: true
+focus_marker: diff artifact missing:
+focus_pixels_blake3: 4e80e9a4569ea42c087cdd4b99ebee2738aadac5d7227bf756a27c261529e2fe
+focus_region_cells: row=7, col=56, height=6, width=26
+image: pty_replay_diff_tab.png
+size_px: 2560x1440

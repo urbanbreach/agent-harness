@@ -1,0 +1,14 @@
+---
+source: crates/harness-testkit/tests/pty_e2e.rs
+assertion_line: 1070
+expression: "checkpoint_visual_snapshot(&post_run_screen, POST_RUN_HANDOFF_MARKERS,\n&post_run_visual)"
+---
+Next action: true
+Continue this session: true
+Replay this run: true
+Start another session: true
+focus_marker: Next action
+focus_pixels_blake3: e434c9d52f17f18aa84ffa734544a31de0411866d73e198b3bee01d065c961b7
+focus_region_cells: row=13, col=13, height=6, width=28
+image: pty_post_run_split_tier.png
+size_px: 1536x1200

@@ -1,0 +1,12 @@
+---
+source: crates/harness-testkit/tests/pty_e2e.rs
+expression: "checkpoint_visual_snapshot(&diff_screen,\n&[\"artifact view · seq\", \"diff artifact missing:\", \"Diff\",], &diff_visual,)"
+---
+artifact view · seq: true
+diff artifact missing:: true
+Diff: true
+focus_marker: diff artifact missing:
+focus_pixels_blake3: f615e4fa8a654413e1a83f1117e09fc9b67776a43e829dd977911218d04d2738
+focus_region_cells: row=4, col=57, height=6, width=28
+image: pty_continue_live_diff_primary.png
+size_px: 2560x1440

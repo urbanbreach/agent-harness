@@ -1,0 +1,13 @@
+---
+source: crates/harness-testkit/tests/pty_e2e.rs
+assertion_line: 1222
+expression: "checkpoint_visual_snapshot(&unrestorable_screen,\n&[STARTUP_CONTINUE_HISTORY_MARKER, \"continue blocked\", \"events unavailable\",],\n&unrestorable_visual,)"
+---
+Continue session: true
+continue blocked: true
+events unavailable: true
+focus_marker: events unavailable
+focus_pixels_blake3: 4466a138993c6c3fd07da6f381a0fc79d2551e38bb1f6e9b9d7e0ec0c55eb9db
+focus_region_cells: row=19, col=57, height=1, width=28
+image: pty_continue_rejected_unrestorable.png
+size_px: 2560x1440

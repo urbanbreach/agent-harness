@@ -1,0 +1,13 @@
+---
+source: crates/harness-testkit/tests/pty_e2e.rs
+expression: "checkpoint_visual_snapshot(&continued_screen,\n&[&format!(\"Continued · run {run_id}\"), CONTINUED_LIVE_RUN_MARKER,\n\"Composer\", \"Same run reopened live\",], &continued_visual,)"
+---
+Continued · run run_resume_quiescent: true
+Continued live run: true
+Composer: true
+Same run reopened live: true
+focus_marker: Continued live run
+focus_pixels_blake3: cbec0355f14de144f7d33bc1e141d4ef7f011b7190fcc8e1c2945b24c20d8f32
+focus_region_cells: row=17, col=45, height=1, width=18
+image: pty_continue_quiescent_session.png
+size_px: 2560x1440

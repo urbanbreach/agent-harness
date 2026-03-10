@@ -3,10 +3,12 @@ source: crates/harness-testkit/tests/pty_e2e.rs
 expression: "checkpoint_visual_snapshot(&permission_checkpoint,\nLIVE_STATE_FIXTURES.permission.snapshot_markers, &permission_visual)"
 ---
 Permission Requested: true
+FAIL CLOSED: true
 keep this draft: true
-Composer: true
+[d] deny: true
+Composer · disabled: true
 focus_marker: Permission Requested
-focus_pixels_blake3: 880a4bbc2e3336e5b343ebd5008058c85a32fd61ea58dcfd1aadc684748d21e5
-focus_region_cells: row=8, col=19, height=1, width=24
+focus_pixels_blake3: e4f4151aea2441c2e88ad6524de318de935427ec489b273b36e6e1df084e2caa
+focus_region_cells: row=7, col=14, height=1, width=24
 image: pty_permission_requested.png
-size_px: 2560x1440
+size_px: 1280x720

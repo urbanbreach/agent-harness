@@ -1,0 +1,13 @@
+---
+source: crates/harness-testkit/tests/pty_e2e.rs
+assertion_line: 811
+expression: "checkpoint_visual_snapshot(&palette_screen,\n&[STARTUP_COMMAND_PALETTE_MARKER, \"New session\", \"Continue session\",],\n&palette_visual,)"
+---
+Command palette: true
+New session: true
+Continue session: true
+focus_marker: Command palette
+focus_pixels_blake3: d9c704417d64be8a09d950735c67f2e521b7a1c232360ae95aff3b29deff37c8
+focus_region_cells: row=18, col=35, height=5, width=28
+image: pty_startup_command_palette.png
+size_px: 2560x1440

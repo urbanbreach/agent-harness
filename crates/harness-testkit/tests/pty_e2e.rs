@@ -31,18 +31,238 @@ const GLYPH_VERTICAL_SCALE: u32 = 2;
 const RASTER_SCALE: u32 = 4;
 const RASTER_CELL_WIDTH: u32 = GLYPH_WIDTH * RASTER_SCALE;
 const RASTER_CELL_HEIGHT: u32 = GLYPH_HEIGHT * GLYPH_VERTICAL_SCALE * RASTER_SCALE;
-const CELL_WIDTH: u32 = 32;
-const CELL_HEIGHT: u32 = 60;
+const PRIMARY_SIGNOFF_COLS: u16 = 160;
+const PRIMARY_SIGNOFF_ROWS: u16 = 48;
+const CELL_WIDTH: u32 = 16;
+const CELL_HEIGHT: u32 = 30;
 const DEFAULT_FG: [u8; 3] = [216, 216, 216];
 const DEFAULT_BG: [u8; 3] = [18, 18, 18];
 const ANTI_ALIAS_FONT_SIZE_FACTOR: f32 = 0.72;
 const STARTUP_LAUNCHER_READY_MARKER: &str = "startup launcher ready";
+const STARTUP_LAUNCHER_GUIDANCE_MARKER: &str = "Dispatch a new run";
 const STARTUP_COMMAND_PALETTE_MARKER: &str = "Command palette";
-const STARTUP_RESUME_HISTORY_MARKER: &str = "Resume session";
+const STARTUP_CONTINUE_HISTORY_MARKER: &str = "Continue session";
+const STARTUP_CONTINUE_SCOPE_MARKER: &str = "Interactive histories";
 const STARTUP_REPLAY_HISTORY_MARKER: &str = "Replay session";
 const REPLAY_READY_MARKER: &str = "q quit";
-const RUN_FINISHED_READY_MARKER: &str = "ready for next turn";
-const RUN_FINISHED_MARKERS: &[&str] = &["Success", RUN_FINISHED_READY_MARKER, "Composer"];
+const NEXT_ACTION_MARKER: &str = "Next action";
+const CONTINUED_LIVE_RUN_MARKER: &str = "Continued live run";
+const STARTUP_LIFECYCLE_MARKERS: &[&str] = &[
+    STARTUP_LAUNCHER_READY_MARKER,
+    STARTUP_LAUNCHER_GUIDANCE_MARKER,
+    "New session",
+    "Continue session",
+    "Replay session",
+];
+const POST_RUN_HANDOFF_MARKERS: &[&str] = &[
+    NEXT_ACTION_MARKER,
+    "Continue this session",
+    "Replay this run",
+    "Start another session",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct OfflineVisualEvidenceContract {
+    family: &'static str,
+    state: &'static str,
+    png: &'static str,
+    snapshot: &'static str,
+}
+
+const OFFLINE_VISUAL_EVIDENCE_CONTRACTS: &[OfflineVisualEvidenceContract] = &[
+    OfflineVisualEvidenceContract {
+        family: "startup",
+        state: "happy_path",
+        png: "pty_startup_launcher_ready.png",
+        snapshot: "pty_startup_launcher_ready",
+    },
+    OfflineVisualEvidenceContract {
+        family: "startup",
+        state: "happy_path",
+        png: "pty_startup_command_palette.png",
+        snapshot: "pty_startup_command_palette",
+    },
+    OfflineVisualEvidenceContract {
+        family: "startup",
+        state: "happy_path",
+        png: "pty_startup_continue_history.png",
+        snapshot: "pty_startup_continue_history",
+    },
+    OfflineVisualEvidenceContract {
+        family: "startup",
+        state: "happy_path",
+        png: "pty_startup_replay_history.png",
+        snapshot: "pty_startup_replay_history",
+    },
+    OfflineVisualEvidenceContract {
+        family: "startup",
+        state: "responsive",
+        png: "pty_startup_quarter_tile.png",
+        snapshot: "pty_startup_quarter_tile",
+    },
+    OfflineVisualEvidenceContract {
+        family: "startup",
+        state: "responsive",
+        png: "pty_startup_split_tall.png",
+        snapshot: "pty_startup_split_tall",
+    },
+    OfflineVisualEvidenceContract {
+        family: "startup",
+        state: "responsive",
+        png: "pty_startup_split_tier.png",
+        snapshot: "pty_startup_split_tier",
+    },
+    OfflineVisualEvidenceContract {
+        family: "startup",
+        state: "responsive",
+        png: "pty_startup_six_window.png",
+        snapshot: "pty_startup_six_window",
+    },
+    OfflineVisualEvidenceContract {
+        family: "continue_session",
+        state: "failure_path",
+        png: "pty_continue_rejected_active.png",
+        snapshot: "pty_continue_rejected_active",
+    },
+    OfflineVisualEvidenceContract {
+        family: "continue_session",
+        state: "failure_path",
+        png: "pty_continue_rejected_unrestorable.png",
+        snapshot: "pty_continue_rejected_unrestorable",
+    },
+    OfflineVisualEvidenceContract {
+        family: "permission",
+        state: "happy_path",
+        png: "pty_permission_requested.png",
+        snapshot: "pty_permission_requested",
+    },
+    OfflineVisualEvidenceContract {
+        family: "live_shell",
+        state: "happy_path",
+        png: "pty_interactive_type_first_startup.png",
+        snapshot: "pty_interactive_type_first_startup",
+    },
+    OfflineVisualEvidenceContract {
+        family: "live_shell",
+        state: "happy_path",
+        png: "pty_interactive_prompt_stream.png",
+        snapshot: "pty_interactive_prompt_stream",
+    },
+    OfflineVisualEvidenceContract {
+        family: "live_details",
+        state: "happy_path",
+        png: "pty_continue_live_details_primary.png",
+        snapshot: "pty_continue_live_details_primary",
+    },
+    OfflineVisualEvidenceContract {
+        family: "live_details",
+        state: "responsive",
+        png: "pty_continue_details_quarter_tile.png",
+        snapshot: "pty_continue_details_quarter_tile",
+    },
+    OfflineVisualEvidenceContract {
+        family: "live_details",
+        state: "responsive",
+        png: "pty_continue_details_split_tall.png",
+        snapshot: "pty_continue_details_split_tall",
+    },
+    OfflineVisualEvidenceContract {
+        family: "live_details",
+        state: "responsive",
+        png: "pty_continue_details_split_tier.png",
+        snapshot: "pty_continue_details_split_tier",
+    },
+    OfflineVisualEvidenceContract {
+        family: "live_details",
+        state: "responsive",
+        png: "pty_continue_details_six_window.png",
+        snapshot: "pty_continue_details_six_window",
+    },
+    OfflineVisualEvidenceContract {
+        family: "live_secondary",
+        state: "happy_path",
+        png: "pty_continue_live_events.png",
+        snapshot: "pty_continue_live_events",
+    },
+    OfflineVisualEvidenceContract {
+        family: "live_secondary",
+        state: "happy_path",
+        png: "pty_continue_live_help.png",
+        snapshot: "pty_continue_live_help",
+    },
+    OfflineVisualEvidenceContract {
+        family: "live_secondary",
+        state: "happy_path",
+        png: "pty_continue_live_diff_primary.png",
+        snapshot: "pty_continue_live_diff_primary",
+    },
+    OfflineVisualEvidenceContract {
+        family: "post_run",
+        state: "happy_path",
+        png: "pty_run_finished.png",
+        snapshot: "pty_run_finished",
+    },
+    OfflineVisualEvidenceContract {
+        family: "post_run",
+        state: "responsive",
+        png: "pty_post_run_quarter_tile.png",
+        snapshot: "pty_post_run_quarter_tile",
+    },
+    OfflineVisualEvidenceContract {
+        family: "post_run",
+        state: "responsive",
+        png: "pty_post_run_split_tall.png",
+        snapshot: "pty_post_run_split_tall",
+    },
+    OfflineVisualEvidenceContract {
+        family: "post_run",
+        state: "responsive",
+        png: "pty_post_run_split_tier.png",
+        snapshot: "pty_post_run_split_tier",
+    },
+    OfflineVisualEvidenceContract {
+        family: "post_run",
+        state: "responsive",
+        png: "pty_post_run_six_window.png",
+        snapshot: "pty_post_run_six_window",
+    },
+    OfflineVisualEvidenceContract {
+        family: "continue_session",
+        state: "happy_path",
+        png: "pty_continue_quiescent_session.png",
+        snapshot: "pty_continue_quiescent_session",
+    },
+    OfflineVisualEvidenceContract {
+        family: "replay",
+        state: "happy_path",
+        png: "pty_replay_from_handoff_read_only.png",
+        snapshot: "pty_replay_from_handoff_read_only",
+    },
+    OfflineVisualEvidenceContract {
+        family: "replay",
+        state: "failure_path",
+        png: "pty_replay_read_only.png",
+        snapshot: "pty_replay_read_only",
+    },
+    OfflineVisualEvidenceContract {
+        family: "replay_secondary",
+        state: "happy_path",
+        png: "pty_replay_diff_tab.png",
+        snapshot: "pty_replay_diff_tab",
+    },
+    OfflineVisualEvidenceContract {
+        family: "replay_secondary",
+        state: "happy_path",
+        png: "pty_replay_help_tab.png",
+        snapshot: "pty_replay_help_tab",
+    },
+    OfflineVisualEvidenceContract {
+        family: "replay_secondary",
+        state: "responsive",
+        png: "pty_replay_events_six_window.png",
+        snapshot: "pty_replay_events_six_window",
+    },
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PtyGeometry {
@@ -52,9 +272,12 @@ struct PtyGeometry {
 
 impl PtyGeometry {
     const MINIMUM_SIGNOFF: Self = Self { cols: 80, rows: 24 };
+    const HALF_SCREEN_SPLIT: Self = Self { cols: 80, rows: 48 };
+    const SPLIT_TIER_WINDOW: Self = Self { cols: 96, rows: 40 };
+    const SIX_WINDOW_DENSE: Self = Self { cols: 60, rows: 18 };
     const PRIMARY_SIGNOFF: Self = Self {
-        cols: 100,
-        rows: 30,
+        cols: PRIMARY_SIGNOFF_COLS,
+        rows: PRIMARY_SIGNOFF_ROWS,
     };
 
     fn pty_size(self) -> PtySize {
@@ -110,7 +333,7 @@ impl DraftFixture {
         draft_focus_capture: FocusCapture::anchored("Hello from PTY", 24, 4),
         draft_snapshot_markers: &["Hello from PTY", "Composer"],
         focus_capture: FocusCapture::anchored("Hello world", 28, 6),
-        snapshot_markers: &["Hello world", "Composer"],
+        snapshot_markers: &["Hello world", "Composer · ready"],
     };
 
     fn write(self, writer: &mut dyn Write) -> std::io::Result<()> {
@@ -149,7 +372,13 @@ impl PermissionFixture {
         rewind_key: b'k',
         rewind_steps: 64,
         focus_capture: FocusCapture::anchored_exact("Permission Requested", 24, 1),
-        snapshot_markers: &["Permission Requested", "keep this draft", "Composer"],
+        snapshot_markers: &[
+            "Permission Requested",
+            "FAIL CLOSED",
+            "keep this draft",
+            "[d] deny",
+            "Composer · disabled",
+        ],
     };
 
     fn write_preserved_draft(self, writer: &mut dyn Write) -> std::io::Result<()> {
@@ -271,6 +500,124 @@ fn open_startup_session_history(
         .expect("wait for startup session history overlay")
 }
 
+fn move_list_selection(writer: &mut dyn Write, steps: usize) {
+    for _ in 0..steps {
+        writer
+            .write_all(b"\x1b[B")
+            .expect("write down-arrow escape sequence");
+        writer.flush().expect("flush down-arrow escape sequence");
+    }
+}
+
+fn open_startup_launcher_action(
+    parser: &mut VtParser,
+    output_rx: &Receiver<Vec<u8>>,
+    writer: &mut dyn Write,
+    down_steps: usize,
+    marker: &str,
+) -> String {
+    move_list_selection(writer, down_steps);
+    send_key(writer, b'\r').expect("select startup launcher action");
+    wait_for_screen_contains(parser, output_rx, marker, MARKER_TIMEOUT)
+        .expect("wait for startup launcher action screen")
+}
+
+fn select_list_action(writer: &mut dyn Write, down_steps: usize) {
+    move_list_selection(writer, down_steps);
+    send_key(writer, b'\r').expect("select focused list action");
+}
+
+fn open_live_details_drawer(
+    parser: &mut VtParser,
+    output_rx: &Receiver<Vec<u8>>,
+    writer: &mut dyn Write,
+) -> String {
+    send_key(writer, b'\t').expect("focus transcript before opening details drawer");
+    send_key(writer, b'i').expect("toggle live details drawer");
+    wait_for_screen_contains(parser, output_rx, "Request ID:", MARKER_TIMEOUT)
+        .expect("wait for live details drawer")
+}
+
+fn open_live_secondary_tab(
+    parser: &mut VtParser,
+    output_rx: &Receiver<Vec<u8>>,
+    writer: &mut dyn Write,
+    tab_key: u8,
+    marker: &str,
+) -> String {
+    send_key(writer, tab_key).expect("switch live secondary tab");
+    wait_for_screen_contains(parser, output_rx, marker, MARKER_TIMEOUT)
+        .expect("wait for live secondary tab")
+}
+
+fn spawn_resumed_quiescent_session(
+    geometry: PtyGeometry,
+    session_dir: &Path,
+    config_path: &Path,
+    run_id: &str,
+) -> SpawnedHarnessPty {
+    let mut harness = spawn_harness_tui(geometry, session_dir, |command| {
+        command.arg("--config");
+        command.arg(config_path.to_string_lossy().to_string());
+    });
+
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        STARTUP_LAUNCHER_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup launcher ready before continuing quiescent session");
+
+    open_startup_session_history(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+        "resume",
+        "continue ready",
+    );
+    send_key(harness.writer.as_mut(), b'\r').expect("select quiescent session from history");
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        NEXT_ACTION_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for post-run handoff before reopening quiescent session");
+    send_key(harness.writer.as_mut(), b'\r').expect("reopen quiescent session live");
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        &format!("Continued · run {run_id}"),
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for continued live session shell");
+
+    harness
+}
+
+async fn start_responses_wiremock_server() -> MockServer {
+    let server = MockServer::start().await;
+    let sse_body = responses_api_sse_fixture();
+    let response_template = ResponseTemplate::new(200)
+        .insert_header("content-type", "text/event-stream")
+        .set_body_raw(sse_body.clone(), "text/event-stream");
+
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(response_template.clone())
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(response_template)
+        .mount(&server)
+        .await;
+
+    server
+}
+
 fn type_text(writer: &mut dyn Write, text: &str) {
     writer
         .write_all(text.as_bytes())
@@ -278,9 +625,10 @@ fn type_text(writer: &mut dyn Write, text: &str) {
     writer.flush().expect("flush PTY text");
 }
 
-fn quit_tui(writer: &mut dyn Write) {
-    writer.write_all(b"\tq").expect("send quit chord");
-    writer.flush().expect("flush quit chord");
+fn quit_startup_tui(parser: &mut VtParser, output_rx: &Receiver<Vec<u8>>, writer: &mut dyn Write) {
+    open_startup_command_palette(parser, output_rx, writer);
+    type_text(writer, "quit");
+    send_key(writer, b'\r').expect("confirm quit from startup palette");
 }
 
 fn wait_for_process_exit(
@@ -329,59 +677,179 @@ fn wait_for_process_exit(
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn pty_e2e_tui_golden_path() {
+async fn pty_e2e_lifecycle_shell_flow() {
     if !cfg!(target_os = "linux") {
         return;
     }
 
-    let harness_bin = resolve_harness_bin();
-    let repo_root = repo_root();
-    let session_dir = create_temp_session_dir();
-    let geometry = PtyGeometry::MINIMUM_SIGNOFF;
-
-    let pty_system = native_pty_system();
-    let pair = pty_system
-        .openpty(geometry.pty_size())
-        .expect("open pty pair");
-
-    let mut command = CommandBuilder::new(harness_bin.to_string_lossy().as_ref());
-    command.arg("tui");
-    command.arg("--scenario");
-    command.arg("golden_path_interactive");
-    command.arg("--deterministic");
-    command.arg("--session-dir");
-    command.arg(session_dir.to_string_lossy().to_string());
-    command.cwd(repo_root);
-    configure_deterministic_env(&mut command);
-
-    let child = pair
-        .slave
-        .spawn_command(command)
-        .expect("spawn harness tui command");
-    drop(pair.slave);
-
-    let reader = pair.master.try_clone_reader().expect("clone pty reader");
-    let mut writer = pair.master.take_writer().expect("take pty writer");
-    let output_rx = spawn_reader_thread(reader);
-    let mut parser = geometry.parser();
+    let lifecycle_session_dir = create_temp_session_dir();
+    let lifecycle_run_id = "run_resume_quiescent";
+    let lifecycle_run_dir =
+        write_quiescent_resume_fixture(&lifecycle_session_dir, lifecycle_run_id);
+    let lifecycle_events_path = lifecycle_run_dir.join("events.jsonl");
     let visual_dir = visual_artifacts_dir();
     fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
 
+    let mut lifecycle_harness = spawn_harness_tui(
+        PtyGeometry::PRIMARY_SIGNOFF,
+        &lifecycle_session_dir,
+        |command| {
+            command.arg("--mock");
+        },
+    );
+
+    let startup_screen = wait_for_screen_contains(
+        &mut lifecycle_harness.parser,
+        &lifecycle_harness.output_rx,
+        STARTUP_LAUNCHER_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for lifecycle startup launcher ready");
+    let startup_visual = capture_visual_checkpoint(
+        "mock_lifecycle_startup_launcher_ready",
+        &lifecycle_harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact(STARTUP_LAUNCHER_READY_MARKER, 40, 2),
+    )
+    .expect("capture lifecycle startup launcher checkpoint image");
+    insta::assert_snapshot!(
+        "pty_mock_lifecycle_startup_launcher_ready",
+        checkpoint_visual_snapshot(&startup_screen, STARTUP_LIFECYCLE_MARKERS, &startup_visual)
+    );
+
+    let history_screen = open_startup_launcher_action(
+        &mut lifecycle_harness.parser,
+        &lifecycle_harness.output_rx,
+        lifecycle_harness.writer.as_mut(),
+        1,
+        "continue ready",
+    );
+    let history_visual = capture_visual_checkpoint(
+        "mock_lifecycle_continue_history",
+        &lifecycle_harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("continue ready", 28, 3),
+    )
+    .expect("capture startup continue history image");
+    insta::assert_snapshot!(
+        "pty_mock_lifecycle_continue_history",
+        checkpoint_visual_snapshot(
+            &history_screen,
+            &[
+                STARTUP_CONTINUE_HISTORY_MARKER,
+                STARTUP_CONTINUE_SCOPE_MARKER,
+                "continue ready",
+            ],
+            &history_visual,
+        )
+    );
+
+    send_key(lifecycle_harness.writer.as_mut(), b'\r')
+        .expect("select continued quiescent session from startup history");
+    let continued_screen = wait_for_screen_contains(
+        &mut lifecycle_harness.parser,
+        &lifecycle_harness.output_rx,
+        NEXT_ACTION_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for post-run handoff after continuing quiescent session");
+    assert!(
+        continued_screen.contains("Continue this session"),
+        "continued quiescent session should expose the post-run continue action"
+    );
+
+    select_list_action(lifecycle_harness.writer.as_mut(), 1);
+    wait_for_screen_contains(
+        &mut lifecycle_harness.parser,
+        &lifecycle_harness.output_rx,
+        REPLAY_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for replay shell launched from post-run handoff");
+
+    let events_during_replay_before_submit = fs::read_to_string(&lifecycle_events_path)
+        .expect("read lifecycle run events after replay handoff enters replay mode");
+
+    send_key(lifecycle_harness.writer.as_mut(), b'\t').expect("focus replay details pane");
+    send_key(lifecycle_harness.writer.as_mut(), b'\t').expect("attempt replay prompt focus");
+    type_text(lifecycle_harness.writer.as_mut(), "blocked in replay");
+    send_key(lifecycle_harness.writer.as_mut(), b'\r').expect("attempt replay submit from handoff");
+
+    let replay_screen = wait_for_screen_contains(
+        &mut lifecycle_harness.parser,
+        &lifecycle_harness.output_rx,
+        REPLAY_READY_MARKER,
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for stable replay screen after handoff submit attempt");
+    let replay_visual = capture_visual_checkpoint(
+        "replay_from_handoff_read_only",
+        &lifecycle_harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact(REPLAY_READY_MARKER, 20, 2),
+    )
+    .expect("capture replay-from-handoff read-only image");
+    insta::assert_snapshot!(
+        "pty_replay_from_handoff_read_only",
+        checkpoint_visual_snapshot(
+            &replay_screen,
+            &[REPLAY_READY_MARKER, lifecycle_run_id, "Replay is read-only"],
+            &replay_visual,
+        )
+    );
+
+    let events_after_replay_submit = fs::read_to_string(&lifecycle_events_path)
+        .expect("read lifecycle run events after replay submit attempt");
+    assert_eq!(
+        events_after_replay_submit, events_during_replay_before_submit,
+        "replay mode launched from the lifecycle handoff must stay read-only while active"
+    );
+
+    send_key(lifecycle_harness.writer.as_mut(), b'q').expect("close replay and return to startup");
+    wait_for_screen_contains(
+        &mut lifecycle_harness.parser,
+        &lifecycle_harness.output_rx,
+        STARTUP_LAUNCHER_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup launcher after closing replay from handoff");
+    let events_after_replay_close = fs::read_to_string(&lifecycle_events_path)
+        .expect("read lifecycle run events after closing replay");
+    assert_eq!(
+        events_after_replay_close, events_during_replay_before_submit,
+        "closing replay launched from the lifecycle handoff must not append to events.jsonl"
+    );
+    lifecycle_harness
+        .child
+        .kill()
+        .expect("terminate lifecycle launcher after replay signoff");
+    std::mem::forget(lifecycle_harness.child);
+
+    let scenario_session_dir = create_temp_session_dir();
+    let mut scenario_harness = spawn_harness_tui(
+        PtyGeometry::MINIMUM_SIGNOFF,
+        &scenario_session_dir,
+        |command| {
+            command.arg("--scenario");
+            command.arg("golden_path_interactive");
+        },
+    );
+
     LIVE_STATE_FIXTURES
         .permission
-        .write_preserved_draft(writer.as_mut())
+        .write_preserved_draft(scenario_harness.writer.as_mut())
         .expect("queue preserved draft before permission prompt");
 
     let permission_checkpoint = wait_for_screen_contains(
-        &mut parser,
-        &output_rx,
+        &mut scenario_harness.parser,
+        &scenario_harness.output_rx,
         LIVE_STATE_FIXTURES.permission.marker,
         MARKER_TIMEOUT,
     )
     .expect("wait for permission marker");
     let permission_visual = capture_visual_checkpoint(
         "permission_requested",
-        &parser,
+        &scenario_harness.parser,
         &visual_dir,
         LIVE_STATE_FIXTURES.permission.focus_capture,
     )
@@ -401,37 +869,37 @@ async fn pty_e2e_tui_golden_path() {
 
     LIVE_STATE_FIXTURES
         .permission
-        .approve(writer.as_mut())
+        .approve(scenario_harness.writer.as_mut())
         .expect("send approve key");
 
     let run_finished_checkpoint = wait_for_screen_contains(
-        &mut parser,
-        &output_rx,
-        RUN_FINISHED_READY_MARKER,
+        &mut scenario_harness.parser,
+        &scenario_harness.output_rx,
+        NEXT_ACTION_MARKER,
         MARKER_TIMEOUT,
     )
-    .expect("wait for run finished marker");
+    .expect("wait for post-run handoff marker");
     let run_finished_visual = capture_visual_checkpoint(
         "run_finished",
-        &parser,
+        &scenario_harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact(RUN_FINISHED_READY_MARKER, 28, 1),
+        FocusCapture::anchored_exact(NEXT_ACTION_MARKER, 28, 1),
     )
-    .expect("capture run finished checkpoint image");
+    .expect("capture run finished handoff checkpoint image");
     insta::assert_snapshot!(
         "pty_run_finished",
         checkpoint_visual_snapshot(
             &run_finished_checkpoint,
-            RUN_FINISHED_MARKERS,
+            POST_RUN_HANDOFF_MARKERS,
             &run_finished_visual
         )
     );
 
-    drop(writer);
-
-    let mut child = child;
-    child.kill().expect("terminate golden path tui child");
-    std::mem::forget(child);
+    scenario_harness
+        .child
+        .kill()
+        .expect("terminate scenario lifecycle handoff after signoff");
+    std::mem::forget(scenario_harness.child);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -573,23 +1041,7 @@ async fn pty_e2e_continue_quiescent_session() {
         return;
     }
 
-    let server = MockServer::start().await;
-    let sse_body = responses_api_sse_fixture();
-    let response_template = ResponseTemplate::new(200)
-        .insert_header("content-type", "text/event-stream")
-        .set_body_raw(sse_body.clone(), "text/event-stream");
-
-    Mock::given(method("POST"))
-        .and(path("/v1/responses"))
-        .respond_with(response_template.clone())
-        .mount(&server)
-        .await;
-
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(response_template)
-        .mount(&server)
-        .await;
+    let server = start_responses_wiremock_server().await;
 
     let session_dir = create_temp_session_dir();
     let run_id = "run_resume_quiescent";
@@ -623,8 +1075,8 @@ async fn pty_e2e_continue_quiescent_session() {
         "pty_startup_launcher_ready",
         checkpoint_visual_snapshot(
             &screen_contents(&harness.parser),
-            &[STARTUP_LAUNCHER_READY_MARKER, "Composer", "q quit"],
-            &startup_visual,
+            STARTUP_LIFECYCLE_MARKERS,
+            &startup_visual
         )
     );
 
@@ -647,34 +1099,63 @@ async fn pty_e2e_continue_quiescent_session() {
             &[
                 STARTUP_COMMAND_PALETTE_MARKER,
                 "New session",
-                "Resume session"
+                "Continue session",
             ],
             &palette_visual,
         )
     );
 
-    type_text(harness.writer.as_mut(), "resume");
-    send_key(harness.writer.as_mut(), b'\r').expect("enter startup session history");
-    let history_screen = wait_for_screen_contains(
+    let replay_history_screen = open_startup_session_history(
         &mut harness.parser,
         &harness.output_rx,
-        STARTUP_RESUME_HISTORY_MARKER,
+        harness.writer.as_mut(),
+        "replay",
+        STARTUP_REPLAY_HISTORY_MARKER,
+    );
+    let replay_history_visual = capture_visual_checkpoint(
+        "startup_replay_history",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact(STARTUP_REPLAY_HISTORY_MARKER, 28, 3),
+    )
+    .expect("capture startup replay history image");
+    insta::assert_snapshot!(
+        "pty_startup_replay_history",
+        checkpoint_visual_snapshot(
+            &replay_history_screen,
+            &[STARTUP_REPLAY_HISTORY_MARKER, "interactive", "read-only"],
+            &replay_history_visual,
+        )
+    );
+    send_key(harness.writer.as_mut(), 0x1b).expect("close replay history overlay");
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        STARTUP_LAUNCHER_READY_MARKER,
         MARKER_TIMEOUT,
     )
-    .expect("wait for startup session history overlay");
+    .expect("wait for startup launcher after closing replay history overlay");
+
+    let history_screen = open_startup_session_history(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+        "resume",
+        "continue ready",
+    );
     let history_visual = capture_visual_checkpoint(
-        "startup_resume_history",
+        "startup_continue_history",
         &harness.parser,
         &visual_dir,
         FocusCapture::anchored_exact("continue ready", 28, 3),
     )
     .expect("capture startup resume history image");
     insta::assert_snapshot!(
-        "pty_startup_resume_history",
+        "pty_startup_continue_history",
         checkpoint_visual_snapshot(
             &history_screen,
             &[
-                STARTUP_RESUME_HISTORY_MARKER,
+                STARTUP_CONTINUE_HISTORY_MARKER,
                 "interactive",
                 "continue ready"
             ],
@@ -683,31 +1164,30 @@ async fn pty_e2e_continue_quiescent_session() {
     );
 
     send_key(harness.writer.as_mut(), b'\r').expect("continue selected quiescent session");
-    wait_for_screen_contains(
+    let handoff_screen = wait_for_screen_contains(
         &mut harness.parser,
         &harness.output_rx,
-        "historical answer",
+        NEXT_ACTION_MARKER,
         STARTUP_TIMEOUT,
     )
-    .expect("wait for historical transcript after continue");
-
-    LIVE_STATE_FIXTURES
-        .draft
-        .write_and_submit(harness.writer.as_mut())
-        .expect("submit resumed prompt");
-
+    .expect("wait for quiescent-session handoff before resuming live session");
+    assert!(
+        !handoff_screen.contains(&format!("Continued · run {run_id}")),
+        "continued live header must stay hidden until the handoff is confirmed"
+    );
+    send_key(harness.writer.as_mut(), b'\r').expect("resume quiescent session from handoff");
     let continued_screen = wait_for_screen_contains(
         &mut harness.parser,
         &harness.output_rx,
-        LIVE_STATE_FIXTURES.draft.response_marker,
-        MARKER_TIMEOUT,
+        &format!("Continued · run {run_id}"),
+        STARTUP_TIMEOUT,
     )
-    .expect("wait for resumed prompt response");
+    .expect("wait for continued-session handoff after reopening run");
     let continued_visual = capture_visual_checkpoint(
         "continue_quiescent_session",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored(LIVE_STATE_FIXTURES.draft.response_marker, 28, 6),
+        FocusCapture::anchored_exact(CONTINUED_LIVE_RUN_MARKER, 18, 1),
     )
     .expect("capture continued session checkpoint image");
     insta::assert_snapshot!(
@@ -715,22 +1195,99 @@ async fn pty_e2e_continue_quiescent_session() {
         checkpoint_visual_snapshot(
             &continued_screen,
             &[
-                LIVE_STATE_FIXTURES.draft.response_marker,
-                "historical answer",
-                RUN_FINISHED_READY_MARKER,
+                &format!("Continued · run {run_id}"),
+                CONTINUED_LIVE_RUN_MARKER,
+                "Composer",
+                "Same run reopened live",
             ],
             &continued_visual,
         )
     );
 
-    quit_tui(harness.writer.as_mut());
-    wait_for_process_exit(
-        &mut harness.child,
-        &harness.output_rx,
+    let details_screen = open_live_details_drawer(
         &mut harness.parser,
-        Duration::from_secs(10),
+        &harness.output_rx,
+        harness.writer.as_mut(),
+    );
+    let details_visual = capture_visual_checkpoint(
+        "continue_live_details_primary",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("Request ID:", 28, 6),
     )
-    .expect("quit continued session cleanly");
+    .expect("capture primary live details drawer image");
+    insta::assert_snapshot!(
+        "pty_continue_live_details_primary",
+        checkpoint_visual_snapshot(
+            &details_screen,
+            &[
+                "Request ID:",
+                "Provider:",
+                "Model:",
+                "Prompt summary:",
+                "historical question",
+            ],
+            &details_visual,
+        )
+    );
+
+    let events_screen = open_live_secondary_tab(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+        b'2',
+        "Event log",
+    );
+    let events_visual = capture_visual_checkpoint(
+        "continue_live_events",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("Event log", 24, 6),
+    )
+    .expect("capture continued-session events tab image");
+    insta::assert_snapshot!(
+        "pty_continue_live_events",
+        checkpoint_visual_snapshot(
+            &events_screen,
+            &["Event log", "Event details", "recorded", "selected seq"],
+            &events_visual,
+        )
+    );
+
+    let help_screen = open_live_secondary_tab(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+        b'4',
+        "Keyboard Shortcuts:",
+    );
+    let help_visual = capture_visual_checkpoint(
+        "continue_live_help",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("Keyboard Shortcuts:", 26, 10),
+    )
+    .expect("capture continued-session help tab image");
+    insta::assert_snapshot!(
+        "pty_continue_live_help",
+        checkpoint_visual_snapshot(
+            &help_screen,
+            &[
+                "Keyboard Shortcuts:",
+                "Live surfaces:",
+                "Toggle details drawer",
+                "Open Events surface",
+                "Open Help surface",
+            ],
+            &help_visual,
+        )
+    );
+
+    harness
+        .child
+        .kill()
+        .expect("terminate continued-session launcher after coverage");
+    std::mem::forget(harness.child);
 
     let after_events = load_events_jsonl(&events_path);
     assert!(
@@ -747,22 +1304,476 @@ async fn pty_e2e_continue_quiescent_session() {
         "continue should keep appending to the same run_id"
     );
     assert!(
-        after_events.iter().any(|event| {
+        after_events.iter().skip(before_events.len()).any(|event| {
             event
                 .get("payload")
                 .and_then(|payload| payload.get("event_type"))
                 .and_then(Value::as_str)
-                == Some("user_message_submitted")
-                && event
-                    .get("payload")
-                    .and_then(|payload| payload.get("data"))
-                    .and_then(|data| data.get("text"))
-                    .and_then(Value::as_str)
-                    == Some(LIVE_STATE_FIXTURES.draft.text)
+                == Some("run_started")
         }),
-        "continued session should accept a new prompt on the resumed run"
+        "continued session should reopen the same run through the lifecycle handoff"
     );
     assert_eq!(session_run_dirs(&session_dir), vec![run_dir]);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn pty_e2e_live_details_drawer_stays_usable_across_window_sizes() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let server = start_responses_wiremock_server().await;
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+
+    for (geometry, snapshot_name, artifact_name) in [
+        (
+            PtyGeometry::MINIMUM_SIGNOFF,
+            "pty_continue_details_quarter_tile",
+            "continue_details_quarter_tile",
+        ),
+        (
+            PtyGeometry::HALF_SCREEN_SPLIT,
+            "pty_continue_details_split_tall",
+            "continue_details_split_tall",
+        ),
+        (
+            PtyGeometry::SPLIT_TIER_WINDOW,
+            "pty_continue_details_split_tier",
+            "continue_details_split_tier",
+        ),
+        (
+            PtyGeometry::SIX_WINDOW_DENSE,
+            "pty_continue_details_six_window",
+            "continue_details_six_window",
+        ),
+    ] {
+        let session_dir = create_temp_session_dir();
+        let run_id = "run_resume_quiescent";
+        write_quiescent_resume_fixture(&session_dir, run_id);
+        let config_path = write_wiremock_tui_config(&session_dir, &server.uri());
+        let mut harness =
+            spawn_resumed_quiescent_session(geometry, &session_dir, &config_path, run_id);
+
+        let details_screen = open_live_details_drawer(
+            &mut harness.parser,
+            &harness.output_rx,
+            harness.writer.as_mut(),
+        );
+        let details_visual = capture_visual_checkpoint(
+            artifact_name,
+            &harness.parser,
+            &visual_dir,
+            FocusCapture::anchored_exact("Request ID:", 24, 6),
+        )
+        .expect("capture responsive live details drawer image");
+
+        insta::assert_snapshot!(
+            snapshot_name,
+            checkpoint_visual_snapshot(
+                &details_screen,
+                &[
+                    "Request ID:",
+                    "Provider:",
+                    "Model:",
+                    "Prompt summary:",
+                    "historical question",
+                ],
+                &details_visual,
+            )
+        );
+
+        harness
+            .child
+            .kill()
+            .expect("terminate responsive continued-session harness");
+        std::mem::forget(harness.child);
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn pty_e2e_live_diff_tab_covers_primary_live_secondary_surface() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let server = start_responses_wiremock_server().await;
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+
+    let session_dir = create_temp_session_dir();
+    let run_id = "run_resume_quiescent";
+    write_quiescent_resume_fixture(&session_dir, run_id);
+    let config_path = write_wiremock_tui_config(&session_dir, &server.uri());
+    let mut harness = spawn_resumed_quiescent_session(
+        PtyGeometry::PRIMARY_SIGNOFF,
+        &session_dir,
+        &config_path,
+        run_id,
+    );
+
+    send_key(harness.writer.as_mut(), b'\t').expect("focus details before opening live diff tab");
+    let diff_screen = open_live_secondary_tab(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+        b'3',
+        "diff artifact missing:",
+    );
+    let diff_visual = capture_visual_checkpoint(
+        "continue_live_diff_primary",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("diff artifact missing:", 28, 6),
+    )
+    .expect("capture live diff tab image");
+
+    insta::assert_snapshot!(
+        "pty_continue_live_diff_primary",
+        checkpoint_visual_snapshot(
+            &diff_screen,
+            &["artifact view · seq", "diff artifact missing:", "Diff",],
+            &diff_visual,
+        )
+    );
+
+    harness.child.kill().expect("terminate live diff harness");
+    std::mem::forget(harness.child);
+}
+
+#[test]
+fn pty_e2e_replay_secondary_surfaces_cover_diff_and_help() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let session_dir = create_temp_session_dir();
+    let run_id = "run_replay_diff";
+    write_replay_diff_fixture(&session_dir, run_id);
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+
+    let mut harness = spawn_harness_tui(PtyGeometry::PRIMARY_SIGNOFF, &session_dir, |command| {
+        command.arg("--mock");
+    });
+
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        STARTUP_LAUNCHER_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup launcher before opening replay secondary surfaces");
+
+    open_startup_session_history(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+        "replay",
+        STARTUP_REPLAY_HISTORY_MARKER,
+    );
+    send_key(harness.writer.as_mut(), b'\r').expect("select replay diff fixture session");
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        REPLAY_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for replay shell before opening secondary tabs");
+
+    send_key(harness.writer.as_mut(), b'\t').expect("focus replay details surface before diff tab");
+
+    let diff_screen = open_live_secondary_tab(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+        b'3',
+        "diff artifact missing:",
+    );
+    let diff_visual = capture_visual_checkpoint(
+        "replay_diff_tab",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("diff artifact missing:", 26, 6),
+    )
+    .expect("capture replay diff tab image");
+    insta::assert_snapshot!(
+        "pty_replay_diff_tab",
+        checkpoint_visual_snapshot(
+            &diff_screen,
+            &[
+                "diff artifact missing:",
+                "artifact view · seq",
+                "read-only",
+                run_id,
+            ],
+            &diff_visual,
+        )
+    );
+
+    let help_screen = open_live_secondary_tab(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+        b'4',
+        "Keyboard Shortcuts:",
+    );
+    let help_visual = capture_visual_checkpoint(
+        "replay_help_tab",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("Keyboard Shortcuts:", 26, 12),
+    )
+    .expect("capture replay help tab image");
+    insta::assert_snapshot!(
+        "pty_replay_help_tab",
+        checkpoint_visual_snapshot(
+            &help_screen,
+            &[
+                "Keyboard Shortcuts:",
+                "Replay surfaces:",
+                "Open Diff surface",
+                "Reload session",
+                "Quit",
+            ],
+            &help_visual,
+        )
+    );
+
+    harness
+        .child
+        .kill()
+        .expect("terminate replay secondary-surface harness");
+    std::mem::forget(harness.child);
+}
+
+#[test]
+fn pty_e2e_replay_events_cover_dense_secondary_layout() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let session_dir = create_temp_session_dir();
+    let run_id = "run_replay_diff";
+    write_replay_diff_fixture(&session_dir, run_id);
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+
+    let mut harness = spawn_harness_tui(PtyGeometry::SIX_WINDOW_DENSE, &session_dir, |command| {
+        command.arg("--mock");
+    });
+
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        STARTUP_LAUNCHER_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup launcher before replay events tab");
+
+    open_startup_session_history(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+        "replay",
+        STARTUP_REPLAY_HISTORY_MARKER,
+    );
+    send_key(harness.writer.as_mut(), b'\r').expect("select replay session for dense events tab");
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        REPLAY_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for replay shell before opening dense events tab");
+
+    send_key(harness.writer.as_mut(), b'\t').expect("focus replay details before events tab");
+    let events_screen = open_live_secondary_tab(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+        b'2',
+        "Event log",
+    );
+    let events_visual = capture_visual_checkpoint(
+        "replay_events_six_window",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("Event log", 20, 6),
+    )
+    .expect("capture dense replay events tab image");
+
+    insta::assert_snapshot!(
+        "pty_replay_events_six_window",
+        checkpoint_visual_snapshot(
+            &events_screen,
+            &["Event log", "Event details", "recorded", "selected seq"],
+            &events_visual,
+        )
+    );
+
+    harness
+        .child
+        .kill()
+        .expect("terminate dense replay events harness");
+    std::mem::forget(harness.child);
+}
+
+#[test]
+fn pty_e2e_startup_launcher_stays_usable_in_split_and_dense_windows() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let session_dir = create_temp_session_dir();
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+
+    for (geometry, snapshot_name, artifact_name) in [
+        (
+            PtyGeometry::MINIMUM_SIGNOFF,
+            "pty_startup_quarter_tile",
+            "startup_quarter_tile",
+        ),
+        (
+            PtyGeometry::HALF_SCREEN_SPLIT,
+            "pty_startup_split_tall",
+            "startup_split_tall",
+        ),
+        (
+            PtyGeometry::SPLIT_TIER_WINDOW,
+            "pty_startup_split_tier",
+            "startup_split_tier",
+        ),
+        (
+            PtyGeometry::SIX_WINDOW_DENSE,
+            "pty_startup_six_window",
+            "startup_six_window",
+        ),
+    ] {
+        let mut harness = spawn_harness_tui(geometry, &session_dir, |command| {
+            command.arg("--mock");
+        });
+
+        let startup_screen = wait_for_screen_contains(
+            &mut harness.parser,
+            &harness.output_rx,
+            STARTUP_LAUNCHER_READY_MARKER,
+            STARTUP_TIMEOUT,
+        )
+        .expect("wait for startup launcher in alternate window shape");
+        let startup_visual = capture_visual_checkpoint(
+            artifact_name,
+            &harness.parser,
+            &visual_dir,
+            FocusCapture::anchored_exact(STARTUP_LAUNCHER_READY_MARKER, 40, 2),
+        )
+        .expect("capture alternate startup launcher image");
+
+        insta::assert_snapshot!(
+            snapshot_name,
+            checkpoint_visual_snapshot(&startup_screen, STARTUP_LIFECYCLE_MARKERS, &startup_visual,)
+        );
+
+        quit_startup_tui(
+            &mut harness.parser,
+            &harness.output_rx,
+            harness.writer.as_mut(),
+        );
+        wait_for_process_exit(
+            &mut harness.child,
+            &harness.output_rx,
+            &mut harness.parser,
+            Duration::from_secs(10),
+        )
+        .expect("quit alternate startup launcher cleanly");
+    }
+}
+
+#[test]
+fn pty_e2e_post_run_handoff_stays_usable_in_split_and_dense_windows() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+
+    for (geometry, snapshot_name, artifact_name) in [
+        (
+            PtyGeometry::MINIMUM_SIGNOFF,
+            "pty_post_run_quarter_tile",
+            "post_run_quarter_tile",
+        ),
+        (
+            PtyGeometry::HALF_SCREEN_SPLIT,
+            "pty_post_run_split_tall",
+            "post_run_split_tall",
+        ),
+        (
+            PtyGeometry::SPLIT_TIER_WINDOW,
+            "pty_post_run_split_tier",
+            "post_run_split_tier",
+        ),
+        (
+            PtyGeometry::SIX_WINDOW_DENSE,
+            "pty_post_run_six_window",
+            "post_run_six_window",
+        ),
+    ] {
+        let session_dir = create_temp_session_dir();
+        let mut harness = spawn_harness_tui(geometry, &session_dir, |command| {
+            command.arg("--scenario");
+            command.arg("golden_path_interactive");
+        });
+
+        LIVE_STATE_FIXTURES
+            .permission
+            .write_preserved_draft(harness.writer.as_mut())
+            .expect("queue preserved draft before narrow post-run handoff");
+
+        wait_for_screen_contains(
+            &mut harness.parser,
+            &harness.output_rx,
+            LIVE_STATE_FIXTURES.permission.marker,
+            MARKER_TIMEOUT,
+        )
+        .expect("wait for permission marker before narrow post-run handoff");
+        LIVE_STATE_FIXTURES
+            .permission
+            .approve(harness.writer.as_mut())
+            .expect("approve permission before narrow post-run handoff");
+
+        let post_run_screen = wait_for_screen_contains(
+            &mut harness.parser,
+            &harness.output_rx,
+            NEXT_ACTION_MARKER,
+            MARKER_TIMEOUT,
+        )
+        .expect("wait for narrow post-run handoff marker");
+        let post_run_visual = capture_visual_checkpoint(
+            artifact_name,
+            &harness.parser,
+            &visual_dir,
+            FocusCapture::anchored_exact(NEXT_ACTION_MARKER, 28, 6),
+        )
+        .expect("capture narrow post-run handoff image");
+
+        insta::assert_snapshot!(
+            snapshot_name,
+            checkpoint_visual_snapshot(
+                &post_run_screen,
+                POST_RUN_HANDOFF_MARKERS,
+                &post_run_visual
+            )
+        );
+
+        harness
+            .child
+            .kill()
+            .expect("terminate narrow post-run handoff after checkpoint");
+        std::mem::forget(harness.child);
+    }
 }
 
 #[test]
@@ -794,9 +1805,8 @@ fn pty_e2e_continue_rejects_active_or_unrestorable_session() {
         &harness.output_rx,
         harness.writer.as_mut(),
         "resume",
-        STARTUP_RESUME_HISTORY_MARKER,
+        "tasks are still in flight",
     );
-    type_text(harness.writer.as_mut(), "run_active_blocked");
     send_key(harness.writer.as_mut(), b'\r').expect("attempt continue on active session");
 
     let active_screen = wait_for_screen_contains(
@@ -818,8 +1828,8 @@ fn pty_e2e_continue_rejects_active_or_unrestorable_session() {
         checkpoint_visual_snapshot(
             &active_screen,
             &[
-                STARTUP_RESUME_HISTORY_MARKER,
-                "run_active_blocked",
+                STARTUP_CONTINUE_HISTORY_MARKER,
+                "continue blocked",
                 "tasks are still in flight",
             ],
             &active_visual,
@@ -840,9 +1850,9 @@ fn pty_e2e_continue_rejects_active_or_unrestorable_session() {
         &harness.output_rx,
         harness.writer.as_mut(),
         "resume",
-        STARTUP_RESUME_HISTORY_MARKER,
+        "events unavailable",
     );
-    type_text(harness.writer.as_mut(), "run_unrestorable_blocked");
+    move_list_selection(harness.writer.as_mut(), 1);
     send_key(harness.writer.as_mut(), b'\r').expect("attempt continue on corrupt session");
 
     let unrestorable_screen = wait_for_screen_contains(
@@ -864,8 +1874,8 @@ fn pty_e2e_continue_rejects_active_or_unrestorable_session() {
         checkpoint_visual_snapshot(
             &unrestorable_screen,
             &[
-                STARTUP_RESUME_HISTORY_MARKER,
-                "run_unrestorable_blocked",
+                STARTUP_CONTINUE_HISTORY_MARKER,
+                "continue blocked",
                 "events unavailable",
             ],
             &unrestorable_visual,
@@ -881,14 +1891,11 @@ fn pty_e2e_continue_rejects_active_or_unrestorable_session() {
     )
     .expect("wait for startup launcher after unrestorable-session rejection");
 
-    quit_tui(harness.writer.as_mut());
-    wait_for_process_exit(
-        &mut harness.child,
-        &harness.output_rx,
-        &mut harness.parser,
-        Duration::from_secs(10),
-    )
-    .expect("quit blocked-session launcher cleanly");
+    harness
+        .child
+        .kill()
+        .expect("terminate blocked-session launcher after rejection coverage");
+    std::mem::forget(harness.child);
 }
 
 #[test]
@@ -956,7 +1963,12 @@ fn pty_e2e_replay_never_appends_events() {
         "pty_replay_read_only",
         checkpoint_visual_snapshot(
             &replay_screen,
-            &[REPLAY_READY_MARKER, "run_replay_safe", "done"],
+            &[
+                REPLAY_READY_MARKER,
+                "run_replay_safe",
+                "Replay archive · read-only",
+                "Replay is read-only"
+            ],
             &replay_visual,
         )
     );
@@ -987,7 +1999,14 @@ fn responses_api_sse_fixture() -> String {
 fn pty_signoff_helpers_cover_primary_and_minimum_geometries() {
     for (geometry, expected_cols, expected_rows) in [
         (PtyGeometry::MINIMUM_SIGNOFF, 80, 24),
-        (PtyGeometry::PRIMARY_SIGNOFF, 100, 30),
+        (PtyGeometry::HALF_SCREEN_SPLIT, 80, 48),
+        (PtyGeometry::SPLIT_TIER_WINDOW, 96, 40),
+        (PtyGeometry::SIX_WINDOW_DENSE, 60, 18),
+        (
+            PtyGeometry::PRIMARY_SIGNOFF,
+            PRIMARY_SIGNOFF_COLS,
+            PRIMARY_SIGNOFF_ROWS,
+        ),
     ] {
         let size = geometry.pty_size();
         assert_eq!(size.cols, expected_cols);
@@ -1126,6 +2145,59 @@ fn wait_for_screen_contains(
     }
 }
 
+#[test]
+fn pty_visual_regression_contract_covers_redesigned_surface_families() {
+    let mut unique_pngs = std::collections::BTreeSet::new();
+    let mut unique_snapshots = std::collections::BTreeSet::new();
+    let mut covered_family_states = std::collections::BTreeSet::new();
+
+    for contract in OFFLINE_VISUAL_EVIDENCE_CONTRACTS {
+        assert!(
+            contract.png.starts_with("pty_") && contract.png.ends_with(".png"),
+            "offline evidence PNG must stay under the pty_* naming contract: {contract:?}"
+        );
+        assert!(
+            contract.snapshot.starts_with("pty_"),
+            "offline evidence snapshot must stay under the pty_* naming contract: {contract:?}"
+        );
+        assert!(
+            unique_pngs.insert(contract.png),
+            "offline evidence PNG names must stay unique: {}",
+            contract.png
+        );
+        assert!(
+            unique_snapshots.insert(contract.snapshot),
+            "offline evidence snapshot names must stay unique: {}",
+            contract.snapshot
+        );
+        covered_family_states.insert((contract.family, contract.state));
+    }
+
+    for required in [
+        ("startup", "happy_path"),
+        ("startup", "responsive"),
+        ("continue_session", "happy_path"),
+        ("continue_session", "failure_path"),
+        ("permission", "happy_path"),
+        ("live_shell", "happy_path"),
+        ("live_details", "happy_path"),
+        ("live_details", "responsive"),
+        ("live_secondary", "happy_path"),
+        ("post_run", "happy_path"),
+        ("post_run", "responsive"),
+        ("replay", "happy_path"),
+        ("replay", "failure_path"),
+        ("replay_secondary", "happy_path"),
+        ("replay_secondary", "responsive"),
+    ] {
+        assert!(
+            covered_family_states.contains(&required),
+            "offline PTY corpus must cover {:?}",
+            required
+        );
+    }
+}
+
 fn stabilize_screen(
     parser: &mut vt100::Parser,
     output_rx: &Receiver<Vec<u8>>,
@@ -1170,6 +2242,9 @@ fn drain_output(parser: &mut vt100::Parser, output_rx: &Receiver<Vec<u8>>) {
 fn screen_contents(parser: &vt100::Parser) -> String {
     parser.screen().contents()
 }
+
+type AntiAliasMask = Arc<Vec<u8>>;
+type AntiAliasCache = RefCell<BTreeMap<(char, u32), AntiAliasMask>>;
 
 #[derive(Debug)]
 struct VisualCheckpoint {
@@ -1255,18 +2330,7 @@ fn capture_visual_checkpoint(
 
     let (rows, cols) = parser.screen().size();
     let focus_region = find_marker_cell(parser.screen(), focus.marker)
-        .map(|(row, col)| {
-            anchored_region(
-                row,
-                col,
-                rows,
-                cols,
-                focus.width_cells,
-                focus.height_cells,
-                focus.top_padding_cells,
-                focus.left_padding_cells,
-            )
-        })
+        .map(|(row, col)| anchored_region((row, col), (rows, cols), focus))
         .unwrap_or((0, 0, rows.max(1), cols.max(1)));
 
     let focus_pixels = extract_region_pixels(&image, focus_region);
@@ -1308,23 +2372,20 @@ fn find_marker_cell(screen: &vt100::Screen, marker: &str) -> Option<(u16, u16)> 
 }
 
 fn anchored_region(
-    anchor_row: u16,
-    anchor_col: u16,
-    rows: u16,
-    cols: u16,
-    width_cells: u16,
-    height_cells: u16,
-    top_padding_cells: u16,
-    left_padding_cells: u16,
+    anchor: (u16, u16),
+    bounds: (u16, u16),
+    focus: FocusCapture,
 ) -> (u16, u16, u16, u16) {
-    let row_start = anchor_row.saturating_sub(top_padding_cells);
-    let col_start = anchor_col.saturating_sub(left_padding_cells);
+    let (anchor_row, anchor_col) = anchor;
+    let (rows, cols) = bounds;
+    let row_start = anchor_row.saturating_sub(focus.top_padding_cells);
+    let col_start = anchor_col.saturating_sub(focus.left_padding_cells);
 
     let max_height = rows.saturating_sub(row_start).max(1);
     let max_width = cols.saturating_sub(col_start).max(1);
 
-    let height = height_cells.min(max_height).max(1);
-    let width = width_cells.min(max_width).max(1);
+    let height = focus.height_cells.min(max_height).max(1);
+    let width = focus.width_cells.min(max_width).max(1);
 
     (row_start, col_start, height, width)
 }
@@ -1600,7 +2661,7 @@ struct GlyphLookup {
     box_drawing: BoxFonts,
     block: BlockFonts,
     smooth_font: Option<Font>,
-    anti_alias_cache: RefCell<BTreeMap<(char, u32), Arc<Vec<u8>>>>,
+    anti_alias_cache: AntiAliasCache,
 }
 
 impl GlyphLookup {
@@ -1653,7 +2714,7 @@ impl GlyphLookup {
         true
     }
 
-    fn anti_alias_mask_for(&self, ch: char, raster_scale: u32) -> Option<Arc<Vec<u8>>> {
+    fn anti_alias_mask_for(&self, ch: char, raster_scale: u32) -> Option<AntiAliasMask> {
         let cache_key = (ch, raster_scale);
         if let Some(mask) = self.anti_alias_cache.borrow().get(&cache_key) {
             return Some(mask.clone());
@@ -1774,11 +2835,58 @@ fn ttf_antialias_enabled() -> bool {
 }
 
 fn visual_artifacts_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("HARNESS_VISUAL_ARTIFACT_DIR") {
-        return PathBuf::from(dir);
+    static PREPARED: OnceLock<()> = OnceLock::new();
+    let dir = if let Ok(dir) = std::env::var("HARNESS_VISUAL_ARTIFACT_DIR") {
+        resolve_artifact_root(dir)
+    } else {
+        repo_root().join("target").join("pty-visual-artifacts")
+    };
+
+    PREPARED.get_or_init(|| {
+        fs::create_dir_all(&dir).expect("create visual artifacts dir");
+        prune_stale_pty_visual_artifacts(&dir).expect("prune stale PTY visual artifacts");
+    });
+
+    dir
+}
+
+fn resolve_artifact_root(dir: impl Into<PathBuf>) -> PathBuf {
+    let dir = dir.into();
+    if dir.is_absolute() {
+        dir
+    } else {
+        repo_root().join(dir)
+    }
+}
+
+fn prune_stale_pty_visual_artifacts(visual_dir: &Path) -> Result<(), String> {
+    let entries = fs::read_dir(visual_dir).map_err(|err| {
+        format!(
+            "failed to read PTY visual artifacts dir {}: {err}",
+            visual_dir.display()
+        )
+    })?;
+
+    for entry in entries.filter_map(|entry| entry.ok()) {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !file_name.starts_with("pty_") || !file_name.ends_with(".png") {
+            continue;
+        }
+        fs::remove_file(&path).map_err(|err| {
+            format!(
+                "failed to remove stale PTY artifact {}: {err}",
+                path.display()
+            )
+        })?;
     }
 
-    repo_root().join("target").join("pty-visual-artifacts")
+    Ok(())
 }
 
 fn configure_deterministic_env(command: &mut CommandBuilder) {
@@ -2100,6 +3208,61 @@ fn write_replay_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
                 "run_finished",
                 json!({
                     "summary": "done",
+                }),
+            ),
+        ],
+    )
+}
+
+fn write_replay_diff_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
+    write_session_fixture(
+        session_dir,
+        run_id,
+        &[
+            session_event(
+                run_id,
+                1,
+                event_actor("system", Some("coordinator")),
+                None,
+                "run_started",
+                json!({
+                    "run_name": "interactive",
+                    "workspace_root": "/workspace/project",
+                }),
+            ),
+            session_event(
+                run_id,
+                2,
+                event_actor("user", Some("interactive-user")),
+                Some("req_replay_diff"),
+                "user_message_submitted",
+                json!({
+                    "request_id": "req_replay_diff",
+                    "text": "Show the generated diff",
+                }),
+            ),
+            session_event(
+                run_id,
+                3,
+                event_actor("worker", Some("agent_000001")),
+                Some("req_replay_diff"),
+                "edit_applied",
+                json!({
+                    "edit_id": "edit_replay_diff",
+                    "path": "demo.txt",
+                    "new_file_digest": "digest-replay-diff-file",
+                    "diff_rel_path": "artifacts/edit-replay-diff.diff",
+                    "diff_digest": "digest-replay-diff-artifact",
+                }),
+            ),
+            session_event(
+                run_id,
+                4,
+                event_actor("system", Some("coordinator")),
+                None,
+                "run_finished",
+                json!({
+                    "summary": "diff ready",
                 }),
             ),
         ],

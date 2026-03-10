@@ -1,0 +1,13 @@
+---
+source: crates/harness-testkit/tests/pty_e2e.rs
+assertion_line: 496
+expression: "checkpoint_visual_snapshot(&replay_screen,\n&[REPLAY_READY_MARKER, lifecycle_run_id, \"Replay is read-only\"],\n&replay_visual,)"
+---
+q quit: true
+run_resume_quiescent: true
+Replay is read-only: true
+focus_marker: q quit
+focus_pixels_blake3: 8b461178fe84e7f8c77acd7f0909104d6192953e0d01812ce090a99260777c91
+focus_region_cells: row=47, col=54, height=1, width=20
+image: pty_replay_from_handoff_read_only.png
+size_px: 2560x1440

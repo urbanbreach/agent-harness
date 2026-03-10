@@ -1,0 +1,14 @@
+---
+source: crates/harness-testkit/tests/pty_e2e.rs
+expression: "checkpoint_visual_snapshot(&details_screen,\n&[\"Request ID:\", \"Provider:\", \"Model:\", \"Prompt summary:\",\n\"historical question\",], &details_visual,)"
+---
+Request ID:: true
+Provider:: true
+Model:: true
+Prompt summary:: true
+historical question: true
+focus_marker: Request ID:
+focus_pixels_blake3: 0e2fb25db70b8d76f3ba8375a045fa84ec664a58c6d746ea0aefc152d97c7d13
+focus_region_cells: row=9, col=2, height=6, width=24
+image: pty_continue_details_six_window.png
+size_px: 960x540
