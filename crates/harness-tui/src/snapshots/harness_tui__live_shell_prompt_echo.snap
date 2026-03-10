@@ -4,9 +4,9 @@ expression: "render_live_lines(&app, 80, 24)"
 ---
  run unknown · unknown/unknown · -                                              
   › user · pending turn                                                         
-    ship it                                                                     
-  ◐  streaming…  assistant                                                      
-    Waiting for response…                                                       
+    │ ship it                                                                   
+  ◐  streaming…  assistant · current                                            
+    │ Waiting for response…                                                     
                                                                                 
                                                                                 
                                                                                 
@@ -22,7 +22,7 @@ expression: "render_live_lines(&app, 80, 24)"
                                                                                 
                                                                                 
   Sending   turn 1/1 · pending turn · -/- · waiting for first tokens            
- ┌Composer · 1 line · 0 chars─────────────────────────────────────────────────┐ 
- │█                                                                           │ 
- └────────────────────────────────────────────────────────────────────────────┘ 
+ Composer · ready · 1 line · 0 chars─────────────────────────────────────────── 
+  › █                                                                           
+ ────────────────────────────────────────────────────────────────────────────── 
  Enter send  Shift+Enter nl  i details  2 events  3 diff  4 help  q quit

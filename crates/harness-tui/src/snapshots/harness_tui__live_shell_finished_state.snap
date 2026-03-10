@@ -3,8 +3,8 @@ source: crates/harness-tui/src/lib.rs
 expression: "render_live_lines(&app, 80, 24)"
 ---
  run run_fixture · unknown/openai · gpt-5-codex                                 
-  ●  done  assistant · openai/gpt-5-codex                                       
-    transcript remains visible                                                  
+  ●  done  assistant · openai/gpt-5-codex · current                             
+    │ transcript remains visible                                                
                                                                                 
                                                                                 
                                                                                 
@@ -22,7 +22,7 @@ expression: "render_live_lines(&app, 80, 24)"
                                                                                 
                                                                                 
   Success   turn 1/1 · req_done · openai/gpt-5-codex · ready for next turn      
- ┌Composer · 1 line · 0 chars─────────────────────────────────────────────────┐ 
- │█                                                                           │ 
- └────────────────────────────────────────────────────────────────────────────┘ 
+ Composer · ready · 1 line · 0 chars─────────────────────────────────────────── 
+  › █                                                                           
+ ────────────────────────────────────────────────────────────────────────────── 
  Enter send  Shift+Enter nl  i details  2 events  3 diff  4 help  q quit

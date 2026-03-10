@@ -21,8 +21,8 @@ expression: "render_live_lines(&app, 80, 24)"
                                                                                 
                                                                                 
                                                                                 
-  Ready   ready for first turn  ·  agents 0 · queued 0 · running 0 · stale 0    
- ┌Composer · 1 line · 0 chars─────────────────────────────────────────────────┐ 
- │█                                                                           │ 
- └────────────────────────────────────────────────────────────────────────────┘ 
+  Ready   ready for first turn  ·  orch 0a 0q 0r 0s                             
+ Composer · ready · 1 line · 0 chars─────────────────────────────────────────── 
+  › █                                                                           
+ ────────────────────────────────────────────────────────────────────────────── 
  Enter send  Shift+Enter nl  i details  2 events  3 diff  4 help  q quit

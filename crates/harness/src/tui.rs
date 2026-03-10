@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::mpsc as std_mpsc;
@@ -85,12 +86,16 @@ struct LiveBootstrap {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum LauncherSelection {
+enum InteractiveWorkflow {
+    Startup,
     NewSession,
-    ReplaySession { run_dir: PathBuf },
-    ContinueSession { run_id: String, run_dir: PathBuf },
+    Continue { run_id: String, run_dir: PathBuf },
+    Replay { run_dir: PathBuf },
     Quit,
 }
+
+type SelectedWorkflow = Arc<Mutex<Option<InteractiveWorkflow>>>;
+type UiIntentSink = Arc<dyn Fn(UiIntent) + Send + Sync>;
 
 enum ResolvedTuiMode {
     Replay {
@@ -284,19 +289,61 @@ async fn run_interactive_mode(
     fs::create_dir_all(&settings.session_dir)
         .map_err(|err| format!("failed to create session dir: {err}"))?;
 
-    let session_history_entries = load_startup_session_history_entries(&settings.session_dir)?;
-    set_pending_live_launch_metadata(settings.launch_metadata.clone());
-    let selection = run_startup_launcher(cmd.exit_on_finish, session_history_entries).await?;
+    run_interactive_workflow_loop(
+        || {
+            set_pending_live_launch_metadata(settings.launch_metadata.clone());
+            load_startup_session_history_entries(&settings.session_dir)
+        },
+        |session_history_entries| run_startup_launcher(cmd.exit_on_finish, session_history_entries),
+        || run_new_live_session(cmd, settings, demo_mode),
+        |run_id, run_dir| run_continue_session_bootstrap(cmd, settings, demo_mode, run_id, run_dir),
+        |run_dir| async move {
+            run_replay_tui(run_dir, cmd.exit_on_finish).await?;
+            Ok(InteractiveWorkflow::Startup)
+        },
+    )
+    .await
+}
 
-    match selection {
-        LauncherSelection::NewSession => run_new_live_session(cmd, settings, demo_mode).await,
-        LauncherSelection::ReplaySession { run_dir } => {
-            run_replay_tui(run_dir, cmd.exit_on_finish).await
-        }
-        LauncherSelection::ContinueSession { run_id, run_dir } => {
-            run_continue_session_bootstrap(cmd, settings, demo_mode, run_id, run_dir).await
-        }
-        LauncherSelection::Quit => Ok(()),
+async fn run_interactive_workflow_loop<
+    LoadStartupEntries,
+    StartupRunner,
+    NewSessionRunner,
+    ContinueRunner,
+    ReplayRunner,
+    StartupFuture,
+    NewSessionFuture,
+    ContinueFuture,
+    ReplayFuture,
+>(
+    mut load_startup_entries: LoadStartupEntries,
+    mut run_startup: StartupRunner,
+    mut run_new_session: NewSessionRunner,
+    mut run_continue: ContinueRunner,
+    mut run_replay: ReplayRunner,
+) -> Result<(), String>
+where
+    LoadStartupEntries: FnMut() -> Result<Vec<SessionHistoryEntry>, String>,
+    StartupRunner: FnMut(Vec<SessionHistoryEntry>) -> StartupFuture,
+    StartupFuture: Future<Output = Result<InteractiveWorkflow, String>>,
+    NewSessionRunner: FnMut() -> NewSessionFuture,
+    NewSessionFuture: Future<Output = Result<InteractiveWorkflow, String>>,
+    ContinueRunner: FnMut(String, PathBuf) -> ContinueFuture,
+    ContinueFuture: Future<Output = Result<InteractiveWorkflow, String>>,
+    ReplayRunner: FnMut(PathBuf) -> ReplayFuture,
+    ReplayFuture: Future<Output = Result<InteractiveWorkflow, String>>,
+{
+    let mut workflow = InteractiveWorkflow::Startup;
+    loop {
+        workflow = match workflow {
+            InteractiveWorkflow::Startup => run_startup(load_startup_entries()?).await?,
+            InteractiveWorkflow::NewSession => run_new_session().await?,
+            InteractiveWorkflow::Continue { run_id, run_dir } => {
+                run_continue(run_id, run_dir).await?
+            }
+            InteractiveWorkflow::Replay { run_dir } => run_replay(run_dir).await?,
+            InteractiveWorkflow::Quit => return Ok(()),
+        };
     }
 }
 
@@ -306,12 +353,7 @@ fn load_startup_session_history_entries(
     inspect_session_catalog(session_dir).map(|entries| {
         entries
             .into_iter()
-            .filter(|entry| {
-                !matches!(
-                    entry.catalog.mode_source,
-                    SessionModeSource::ScenarioFixture | SessionModeSource::ReplayOnly
-                )
-            })
+            .filter(startup_session_history_entry_visible)
             .map(|entry| SessionHistoryEntry {
                 run_dir: entry.run_dir,
                 catalog: entry.catalog,
@@ -320,10 +362,17 @@ fn load_startup_session_history_entries(
     })
 }
 
+fn startup_session_history_entry_visible(entry: &crate::replay::SessionInspectionEntry) -> bool {
+    !matches!(
+        entry.catalog.mode_source,
+        SessionModeSource::ScenarioFixture | SessionModeSource::ReplayOnly
+    )
+}
+
 async fn run_startup_launcher(
     exit_on_finish: bool,
     session_history_entries: Vec<SessionHistoryEntry>,
-) -> Result<LauncherSelection, String> {
+) -> Result<InteractiveWorkflow, String> {
     let selected_intent = Arc::new(Mutex::new(None::<UiIntent>));
     let selected_intent_sink = Arc::clone(&selected_intent);
     let on_ui_intent = Arc::new(move |intent: UiIntent| {
@@ -367,24 +416,22 @@ async fn run_startup_launcher(
         .map_err(|_| "startup launcher intent lock poisoned".to_string())?
         .clone();
 
-    Ok(map_launcher_intent(selected_intent))
+    Ok(map_startup_intent_to_workflow(selected_intent))
 }
 
-fn map_launcher_intent(intent: Option<UiIntent>) -> LauncherSelection {
+fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> InteractiveWorkflow {
     match intent {
-        Some(UiIntent::NewSession) => LauncherSelection::NewSession,
-        Some(UiIntent::ReplaySession { run_dir, .. }) => {
-            LauncherSelection::ReplaySession { run_dir }
-        }
+        Some(UiIntent::NewSession) => InteractiveWorkflow::NewSession,
+        Some(UiIntent::ReplaySession { run_dir, .. }) => InteractiveWorkflow::Replay { run_dir },
         Some(UiIntent::ContinueSession { run_id, run_dir }) => {
-            LauncherSelection::ContinueSession { run_id, run_dir }
+            InteractiveWorkflow::Continue { run_id, run_dir }
         }
         Some(UiIntent::SubmitPrompt { text }) => {
             set_pending_live_prompt_auto_submit(Some(text));
-            LauncherSelection::NewSession
+            InteractiveWorkflow::NewSession
         }
         Some(UiIntent::QuitRequested) | None | Some(UiIntent::ResolvePermission { .. }) => {
-            LauncherSelection::Quit
+            InteractiveWorkflow::Quit
         }
     }
 }
@@ -410,7 +457,7 @@ async fn run_continue_session_bootstrap(
     demo_mode: bool,
     run_id: String,
     run_dir: PathBuf,
-) -> Result<(), String> {
+) -> Result<InteractiveWorkflow, String> {
     let resume_plan = inspect_resume_plan(&run_dir);
     if !resume_plan.is_resumable {
         let reason = resume_plan
@@ -479,9 +526,6 @@ async fn run_continue_session_bootstrap(
     );
 
     let (live_update_tx, live_update_rx) = std_mpsc::channel::<LiveUpdate>();
-    for event in &historical_events {
-        let _ = live_update_tx.send(LiveUpdate::Event(Box::new(event.clone())));
-    }
     let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
 
     let event_forwarder_task = tokio::spawn(async move {
@@ -500,26 +544,19 @@ async fn run_continue_session_bootstrap(
         .await
     });
 
-    let ui_intent_sender = {
-        let intent_tx = intent_tx.clone();
-        Arc::new(move |intent: UiIntent| {
-            let _ = intent_tx.send(intent);
-        })
-    };
+    let (selected_workflow, ui_intent_sender) = build_live_ui_intent_router(intent_tx.clone());
 
     let exit_on_finish = cmd.exit_on_finish;
     set_pending_live_launch_metadata(continue_metadata);
 
     let tui_result = tokio::task::spawn_blocking(move || {
-        run_tui_with_options(TuiOptions {
-            mode: TuiMode::Live {
-                run_dir: run.run_dir,
-                update_rx: live_update_rx,
-            },
+        run_tui_with_options(continue_live_tui_options(
+            run.run_dir,
+            historical_events,
+            live_update_rx,
             exit_on_finish,
-            on_ui_intent: Some(ui_intent_sender),
-            keybindings: None,
-        })
+            ui_intent_sender,
+        ))
     })
     .await
     .map_err(|err| format!("TUI task failed: {err}"))?;
@@ -542,7 +579,84 @@ async fn run_continue_session_bootstrap(
         }
     }
 
-    Ok(())
+    take_selected_workflow(&selected_workflow)
+}
+
+fn continue_live_tui_options(
+    run_dir: PathBuf,
+    historical_events: Vec<EventEnvelopeV1>,
+    update_rx: std_mpsc::Receiver<LiveUpdate>,
+    exit_on_finish: bool,
+    ui_intent_sender: UiIntentSink,
+) -> TuiOptions {
+    TuiOptions {
+        mode: TuiMode::Live {
+            run_dir,
+            historical_events,
+            update_rx,
+        },
+        exit_on_finish,
+        on_ui_intent: Some(ui_intent_sender),
+        keybindings: None,
+    }
+}
+
+fn build_live_ui_intent_router(
+    intent_tx: mpsc::UnboundedSender<UiIntent>,
+) -> (SelectedWorkflow, UiIntentSink) {
+    let selected_workflow = Arc::new(Mutex::new(None::<InteractiveWorkflow>));
+    let selected_workflow_sink = Arc::clone(&selected_workflow);
+    let on_ui_intent = Arc::new(move |intent: UiIntent| {
+        if let Some(workflow) = live_workflow_from_intent(&intent) {
+            capture_first_workflow(&selected_workflow_sink, workflow);
+        }
+        if forward_intent_to_live_run(&intent) {
+            let _ = intent_tx.send(intent);
+        }
+    });
+
+    (selected_workflow, on_ui_intent)
+}
+
+fn live_workflow_from_intent(intent: &UiIntent) -> Option<InteractiveWorkflow> {
+    match intent {
+        UiIntent::NewSession => Some(InteractiveWorkflow::NewSession),
+        UiIntent::ReplaySession { run_dir, .. } => Some(InteractiveWorkflow::Replay {
+            run_dir: run_dir.clone(),
+        }),
+        UiIntent::ContinueSession { run_id, run_dir } => Some(InteractiveWorkflow::Continue {
+            run_id: run_id.clone(),
+            run_dir: run_dir.clone(),
+        }),
+        UiIntent::QuitRequested => Some(InteractiveWorkflow::Quit),
+        UiIntent::ResolvePermission { .. } | UiIntent::SubmitPrompt { .. } => None,
+    }
+}
+
+fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
+    matches!(
+        intent,
+        UiIntent::ResolvePermission { .. }
+            | UiIntent::SubmitPrompt { .. }
+            | UiIntent::QuitRequested
+    )
+}
+
+fn capture_first_workflow(selected_workflow: &SelectedWorkflow, workflow: InteractiveWorkflow) {
+    if let Ok(mut slot) = selected_workflow.lock() {
+        if slot.is_none() {
+            *slot = Some(workflow);
+        }
+    }
+}
+
+fn take_selected_workflow(
+    selected_workflow: &SelectedWorkflow,
+) -> Result<InteractiveWorkflow, String> {
+    selected_workflow
+        .lock()
+        .map_err(|_| "live workflow selection lock poisoned".to_string())
+        .map(|mut slot| slot.take().unwrap_or(InteractiveWorkflow::Quit))
 }
 
 fn latest_run_name(events: &[EventEnvelopeV1]) -> Option<String> {
@@ -662,7 +776,7 @@ async fn run_new_live_session(
     cmd: &TuiCommand,
     settings: &LiveSettings,
     demo_mode: bool,
-) -> Result<(), String> {
+) -> Result<InteractiveWorkflow, String> {
     let run_id_override = if settings.deterministic {
         deterministic_run_id(settings.seed, ScenarioName::GoldenPathInteractive)
     } else {
@@ -742,12 +856,7 @@ async fn run_new_live_session(
         handle_ui_intents(intent_coordinator, intent_rx, user_actor(), Some(agent_id)).await
     });
 
-    let ui_intent_sender = {
-        let intent_tx = intent_tx.clone();
-        Arc::new(move |intent: UiIntent| {
-            let _ = intent_tx.send(intent);
-        })
-    };
+    let (selected_workflow, ui_intent_sender) = build_live_ui_intent_router(intent_tx.clone());
 
     let exit_on_finish = cmd.exit_on_finish;
     set_pending_live_launch_metadata(settings.launch_metadata.clone());
@@ -756,6 +865,7 @@ async fn run_new_live_session(
         run_tui_with_options(TuiOptions {
             mode: TuiMode::Live {
                 run_dir: run.run_dir,
+                historical_events: Vec::new(),
                 update_rx: live_update_rx,
             },
             exit_on_finish,
@@ -784,7 +894,7 @@ async fn run_new_live_session(
         }
     }
 
-    Ok(())
+    take_selected_workflow(&selected_workflow)
 }
 
 async fn run_live_mode(
@@ -873,6 +983,7 @@ async fn run_live_mode(
         run_tui_with_options(TuiOptions {
             mode: TuiMode::Live {
                 run_dir,
+                historical_events: Vec::new(),
                 update_rx: live_update_rx,
             },
             exit_on_finish,
@@ -1235,8 +1346,8 @@ mod tests {
     #[test]
     fn tui_startup_new_session_bootstraps_live_after_intent() {
         assert_eq!(
-            map_launcher_intent(Some(UiIntent::NewSession)),
-            LauncherSelection::NewSession
+            map_startup_intent_to_workflow(Some(UiIntent::NewSession)),
+            InteractiveWorkflow::NewSession
         );
     }
 
@@ -1244,11 +1355,11 @@ mod tests {
     fn tui_startup_replay_session_uses_replay_mode() {
         let run_dir = PathBuf::from("/tmp/sessions/run_replay");
         assert_eq!(
-            map_launcher_intent(Some(UiIntent::ReplaySession {
+            map_startup_intent_to_workflow(Some(UiIntent::ReplaySession {
                 run_id: "run_replay".to_string(),
                 run_dir: run_dir.clone(),
             })),
-            LauncherSelection::ReplaySession { run_dir }
+            InteractiveWorkflow::Replay { run_dir }
         );
     }
 

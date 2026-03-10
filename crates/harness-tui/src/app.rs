@@ -15,12 +15,13 @@ use harness_core::event::{
     ProviderRequestStartedEvent, ToolCallStatus, UserMessageSubmittedEvent,
 };
 use harness_core::perm::PermissionDecision;
-use harness_core::proj::SessionCatalogEntry;
+use harness_core::proj::{SessionCatalogEntry, SessionModeSource};
 
 use crate::keybindings::{Action, KeyMap};
 use crate::overlay::{OverlayKind, OverlayStack, OverlayState};
 use crate::theme::Theme;
 use crate::ui::WheelTarget;
+use crate::view_model;
 
 /// Truncation limit for tool output display in the TUI (chars)
 const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
@@ -438,6 +439,71 @@ pub enum StartupLauncherAction {
     ContinueSession,
 }
 
+impl StartupLauncherAction {
+    pub const ORDERED: [Self; 3] = [Self::NewSession, Self::ContinueSession, Self::ReplaySession];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::NewSession => "New session",
+            Self::ContinueSession => "Continue session",
+            Self::ReplaySession => "Replay session",
+        }
+    }
+
+    const fn previous(self) -> Self {
+        match self {
+            Self::NewSession => Self::ReplaySession,
+            Self::ContinueSession => Self::NewSession,
+            Self::ReplaySession => Self::ContinueSession,
+        }
+    }
+
+    const fn next(self) -> Self {
+        match self {
+            Self::NewSession => Self::ContinueSession,
+            Self::ContinueSession => Self::ReplaySession,
+            Self::ReplaySession => Self::NewSession,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PostRunHandoffAction {
+    #[default]
+    ContinueSession,
+    ReplayRun,
+    StartAnotherSession,
+    Quit,
+}
+
+impl PostRunHandoffAction {
+    pub const ORDERED: [Self; 4] = [
+        Self::ContinueSession,
+        Self::ReplayRun,
+        Self::StartAnotherSession,
+        Self::Quit,
+    ];
+
+    pub const FALLBACK_ORDERED: [Self; 2] = [Self::StartAnotherSession, Self::Quit];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::ContinueSession => "Continue this session",
+            Self::ReplayRun => "Replay this run",
+            Self::StartAnotherSession => "Start another session",
+            Self::Quit => "Quit",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LifecycleShellState {
+    #[default]
+    None,
+    Startup,
+    PostRun,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionHistoryEntry {
     pub run_dir: PathBuf,
@@ -495,6 +561,32 @@ pub(crate) fn session_history_resumability_label(entry: &SessionHistoryEntry) ->
     }
 }
 
+fn session_history_entry_matches_action(
+    entry: &SessionHistoryEntry,
+    action: StartupLauncherAction,
+) -> bool {
+    match action {
+        StartupLauncherAction::ContinueSession => matches!(
+            entry.catalog.mode_source,
+            SessionModeSource::InteractiveLive | SessionModeSource::InteractiveMock
+        ),
+        StartupLauncherAction::ReplaySession | StartupLauncherAction::NewSession => !matches!(
+            entry.catalog.mode_source,
+            SessionModeSource::ScenarioFixture | SessionModeSource::ReplayOnly
+        ),
+    }
+}
+
+const fn session_history_action_sort_bucket(
+    entry: &SessionHistoryEntry,
+    action: StartupLauncherAction,
+) -> u8 {
+    match action {
+        StartupLauncherAction::ContinueSession if !entry.catalog.is_resumable => 1,
+        _ => 0,
+    }
+}
+
 fn format_session_history_timestamp(timestamp: &str) -> String {
     let trimmed = timestamp.trim();
     if trimmed.len() >= 16 && trimmed.as_bytes().get(10) == Some(&b'T') {
@@ -521,15 +613,30 @@ fn session_history_filter_matches(entry: &SessionHistoryEntry, input: &str) -> b
         session_history_resumability_label(entry).to_lowercase(),
     ];
 
-    candidates
-        .iter()
-        .any(|candidate| candidate.starts_with(input))
+    candidates.iter().any(|candidate| candidate.contains(input))
 }
 
 #[derive(Debug, Clone)]
 struct PendingPermission {
     seq: u64,
+    kind: String,
     summary: String,
+    request_digest: String,
+    timeout_ms: u64,
+    default_decision: EventPermissionDecision,
+    tool_call_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActivePermissionView {
+    pub permission_id: String,
+    pub kind: String,
+    pub summary: String,
+    pub request_digest: String,
+    pub timeout_ms: u64,
+    pub default_decision: EventPermissionDecision,
+    pub tool_call_id: Option<String>,
+    pub tool_label: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -610,122 +717,120 @@ struct PendingLivePrompt {
     auto_submit: bool,
 }
 
-#[cfg(not(test))]
-fn pending_live_launch_metadata() -> &'static Mutex<Option<LaunchMetadata>> {
-    PENDING_LIVE_LAUNCH_METADATA.get_or_init(|| Mutex::new(None))
-}
+struct PendingLiveState;
 
-#[cfg(not(test))]
-fn pending_live_prompt_draft() -> &'static Mutex<Option<String>> {
-    PENDING_LIVE_PROMPT_DRAFT.get_or_init(|| Mutex::new(None))
-}
+impl PendingLiveState {
+    #[cfg(not(test))]
+    fn launch_metadata() -> &'static Mutex<Option<LaunchMetadata>> {
+        PENDING_LIVE_LAUNCH_METADATA.get_or_init(|| Mutex::new(None))
+    }
 
-#[cfg(not(test))]
-fn pending_live_prompt_auto_submit() -> &'static Mutex<bool> {
-    PENDING_LIVE_PROMPT_AUTO_SUBMIT.get_or_init(|| Mutex::new(false))
+    #[cfg(not(test))]
+    fn prompt_draft() -> &'static Mutex<Option<String>> {
+        PENDING_LIVE_PROMPT_DRAFT.get_or_init(|| Mutex::new(None))
+    }
+
+    #[cfg(not(test))]
+    fn prompt_auto_submit() -> &'static Mutex<bool> {
+        PENDING_LIVE_PROMPT_AUTO_SUBMIT.get_or_init(|| Mutex::new(false))
+    }
+
+    fn set_launch_metadata(metadata: LaunchMetadata) {
+        #[cfg(test)]
+        {
+            PENDING_LIVE_LAUNCH_METADATA.with(|pending| {
+                *pending.borrow_mut() = Some(metadata);
+            });
+        }
+
+        #[cfg(not(test))]
+        {
+            *Self::launch_metadata()
+                .lock()
+                .expect("pending live launch metadata lock poisoned") = Some(metadata);
+        }
+    }
+
+    fn take_launch_metadata() -> Option<LaunchMetadata> {
+        #[cfg(test)]
+        {
+            PENDING_LIVE_LAUNCH_METADATA.with(|pending| pending.borrow_mut().take())
+        }
+
+        #[cfg(not(test))]
+        {
+            Self::launch_metadata()
+                .lock()
+                .expect("pending live launch metadata lock poisoned")
+                .take()
+        }
+    }
+
+    fn set_prompt(prompt: Option<String>, auto_submit: bool) {
+        #[cfg(test)]
+        {
+            PENDING_LIVE_PROMPT_DRAFT.with(|pending| {
+                *pending.borrow_mut() = prompt;
+            });
+            PENDING_LIVE_PROMPT_AUTO_SUBMIT.with(|pending| {
+                *pending.borrow_mut() = auto_submit;
+            });
+        }
+
+        #[cfg(not(test))]
+        {
+            *Self::prompt_draft()
+                .lock()
+                .expect("pending live prompt draft lock poisoned") = prompt;
+            *Self::prompt_auto_submit()
+                .lock()
+                .expect("pending live prompt auto-submit lock poisoned") = auto_submit;
+        }
+    }
+
+    fn take_prompt() -> Option<PendingLivePrompt> {
+        #[cfg(test)]
+        let draft = PENDING_LIVE_PROMPT_DRAFT.with(|pending| pending.borrow_mut().take());
+        #[cfg(not(test))]
+        let draft = Self::prompt_draft()
+            .lock()
+            .expect("pending live prompt draft lock poisoned")
+            .take();
+
+        #[cfg(test)]
+        let auto_submit = PENDING_LIVE_PROMPT_AUTO_SUBMIT
+            .with(|pending| std::mem::take(&mut *pending.borrow_mut()));
+        #[cfg(not(test))]
+        let auto_submit = std::mem::take(
+            &mut *Self::prompt_auto_submit()
+                .lock()
+                .expect("pending live prompt auto-submit lock poisoned"),
+        );
+
+        draft.map(|text| PendingLivePrompt { text, auto_submit })
+    }
 }
 
 pub fn set_pending_live_launch_metadata(metadata: LaunchMetadata) {
-    #[cfg(test)]
-    {
-        PENDING_LIVE_LAUNCH_METADATA.with(|pending| {
-            *pending.borrow_mut() = Some(metadata);
-        });
-        return;
-    }
-
-    #[cfg(not(test))]
-    {
-        *pending_live_launch_metadata()
-            .lock()
-            .expect("pending live launch metadata lock poisoned") = Some(metadata);
-    }
+    PendingLiveState::set_launch_metadata(metadata);
 }
 
 fn take_pending_live_launch_metadata() -> Option<LaunchMetadata> {
-    #[cfg(test)]
-    {
-        return PENDING_LIVE_LAUNCH_METADATA.with(|pending| pending.borrow_mut().take());
-    }
-
-    #[cfg(not(test))]
-    pending_live_launch_metadata()
-        .lock()
-        .expect("pending live launch metadata lock poisoned")
-        .take()
+    PendingLiveState::take_launch_metadata()
 }
 
 pub fn set_pending_live_prompt_draft(draft: Option<String>) {
-    let draft = draft.filter(|value| !value.trim().is_empty());
-
-    #[cfg(test)]
-    {
-        PENDING_LIVE_PROMPT_DRAFT.with(|pending| {
-            *pending.borrow_mut() = draft;
-        });
-        PENDING_LIVE_PROMPT_AUTO_SUBMIT.with(|pending| {
-            *pending.borrow_mut() = false;
-        });
-        return;
-    }
-
-    #[cfg(not(test))]
-    {
-        *pending_live_prompt_draft()
-            .lock()
-            .expect("pending live prompt draft lock poisoned") = draft;
-        *pending_live_prompt_auto_submit()
-            .lock()
-            .expect("pending live prompt auto-submit lock poisoned") = false;
-    }
+    PendingLiveState::set_prompt(draft.filter(|value| !value.trim().is_empty()), false);
 }
 
 pub fn set_pending_live_prompt_auto_submit(prompt: Option<String>) {
     let prompt = prompt.filter(|value| !value.trim().is_empty());
     let should_auto_submit = prompt.is_some();
-
-    #[cfg(test)]
-    {
-        PENDING_LIVE_PROMPT_DRAFT.with(|pending| {
-            *pending.borrow_mut() = prompt;
-        });
-        PENDING_LIVE_PROMPT_AUTO_SUBMIT.with(|pending| {
-            *pending.borrow_mut() = should_auto_submit;
-        });
-        return;
-    }
-
-    #[cfg(not(test))]
-    {
-        *pending_live_prompt_draft()
-            .lock()
-            .expect("pending live prompt draft lock poisoned") = prompt;
-        *pending_live_prompt_auto_submit()
-            .lock()
-            .expect("pending live prompt auto-submit lock poisoned") = should_auto_submit;
-    }
+    PendingLiveState::set_prompt(prompt, should_auto_submit);
 }
 
 fn take_pending_live_prompt() -> Option<PendingLivePrompt> {
-    #[cfg(test)]
-    let draft = PENDING_LIVE_PROMPT_DRAFT.with(|pending| pending.borrow_mut().take());
-    #[cfg(not(test))]
-    let draft = pending_live_prompt_draft()
-        .lock()
-        .expect("pending live prompt draft lock poisoned")
-        .take();
-
-    #[cfg(test)]
-    let auto_submit =
-        PENDING_LIVE_PROMPT_AUTO_SUBMIT.with(|pending| std::mem::take(&mut *pending.borrow_mut()));
-    #[cfg(not(test))]
-    let auto_submit = std::mem::take(
-        &mut *pending_live_prompt_auto_submit()
-            .lock()
-            .expect("pending live prompt auto-submit lock poisoned"),
-    );
-
-    draft.map(|text| PendingLivePrompt { text, auto_submit })
+    PendingLiveState::take_prompt()
 }
 
 #[derive(Default)]
@@ -769,6 +874,9 @@ pub struct AppState {
     palette_focus_return: Option<Focus>,
     pub startup_mode: bool,
     pub startup_launcher_action: StartupLauncherAction,
+    post_run_handoff_action: PostRunHandoffAction,
+    continued_post_run_handoff_active: bool,
+    continued_live_reopen_surface_active: bool,
     pub session_history_visible: bool,
     pub session_history_entries: Vec<SessionHistoryEntry>,
     pub session_history_filtered: Vec<usize>,
@@ -812,6 +920,9 @@ impl Default for AppState {
             palette_focus_return: None,
             startup_mode: false,
             startup_launcher_action: StartupLauncherAction::default(),
+            post_run_handoff_action: PostRunHandoffAction::default(),
+            continued_post_run_handoff_active: false,
+            continued_live_reopen_surface_active: false,
             session_history_visible: false,
             session_history_entries: Vec::new(),
             session_history_filtered: Vec::new(),
@@ -859,9 +970,9 @@ impl SessionProjection {
         self.seen_seqs.contains(&seq)
     }
 
-    fn ingest_event(&mut self, event: EventEnvelopeV1) -> usize {
+    fn ingest_event(&mut self, event: EventEnvelopeV1, historical: bool) -> usize {
         self.seen_seqs.insert(event.seq);
-        self.update_derived_state_for_event(&event);
+        self.update_derived_state_for_event(&event, historical);
         self.events.push(event);
         self.enforce_event_memory_cap()
     }
@@ -1124,14 +1235,19 @@ impl SessionProjection {
         }
     }
 
-    fn update_derived_state_for_event(&mut self, event: &EventEnvelopeV1) {
+    fn update_derived_state_for_event(&mut self, event: &EventEnvelopeV1, historical: bool) {
         match &event.payload {
             EventV1::PermissionRequested(data) => {
                 self.pending_permissions.insert(
                     data.permission_id.clone(),
                     PendingPermission {
                         seq: event.seq,
+                        kind: data.kind.clone(),
                         summary: data.summary.clone(),
+                        request_digest: data.request_digest.clone(),
+                        timeout_ms: data.timeout_ms,
+                        default_decision: data.default_decision,
+                        tool_call_id: data.tool_call_id.clone(),
                     },
                 );
                 self.attach_permission_request(event);
@@ -1146,10 +1262,14 @@ impl SessionProjection {
                 );
             }
             EventV1::RunFinished(_) => {
-                self.run_terminal_seen = true;
+                if !historical {
+                    self.run_terminal_seen = true;
+                }
             }
             EventV1::RunFailed(data) => {
-                self.run_terminal_seen = true;
+                if !historical {
+                    self.run_terminal_seen = true;
+                }
                 if let Some(entry) = self.activities.back_mut() {
                     entry.status = ActivityStatus::Error;
                     entry.error_message = Some(data.error.clone());
@@ -1461,7 +1581,7 @@ impl AppState {
         on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
     ) -> Self {
         let mut state = Self::new();
-        state.focus = Focus::Prompt;
+        state.focus = Focus::List;
         state.startup_mode = true;
         state.on_ui_intent = on_ui_intent;
         state.launch_metadata = take_pending_live_launch_metadata().unwrap_or_default();
@@ -1506,13 +1626,36 @@ impl AppState {
         self.maybe_auto_exit();
     }
 
+    pub fn ingest_historical_event(&mut self, event: EventEnvelopeV1) {
+        self.ingest_event_internal(event, true);
+    }
+
     pub fn ingest_event(&mut self, event: EventEnvelopeV1) {
+        self.ingest_event_internal(event, false);
+    }
+
+    fn ingest_event_internal(&mut self, event: EventEnvelopeV1, historical: bool) {
         if self.projection.has_seen_seq(event.seq) {
             return;
         }
 
+        let terminal_event = matches!(
+            &event.payload,
+            EventV1::RunFinished(_) | EventV1::RunFailed(_)
+        );
+        let entered_post_run_handoff = if historical {
+            terminal_event && self.launch_mode_label() == Some("Continued")
+        } else {
+            terminal_event
+        };
+        if !historical {
+            self.continued_live_reopen_surface_active = false;
+        }
+        if historical && entered_post_run_handoff {
+            self.continued_post_run_handoff_active = true;
+        }
         self.update_transient_state_for_event(&event);
-        let trimmed_events = self.projection.ingest_event(event);
+        let trimmed_events = self.projection.ingest_event(event, historical);
 
         if trimmed_events > 0 {
             if self.selected_event_index >= trimmed_events {
@@ -1529,6 +1672,10 @@ impl AppState {
             self.transcript_scroll = 0;
         }
 
+        if entered_post_run_handoff && self.post_run_handoff_enabled() {
+            self.enter_post_run_handoff();
+        }
+
         self.maybe_auto_exit();
     }
 
@@ -1537,99 +1684,144 @@ impl AppState {
     }
 
     pub fn runtime_state(&self) -> RuntimeState {
-        if self.startup_mode {
-            let detail = self.continue_disabled_banner.clone();
-            let summary = detail
-                .as_deref()
-                .map(|reason| format!("startup launcher ready · {reason}"))
-                .unwrap_or_else(|| {
-                    "startup launcher ready · select new/replay/continue or type a prompt"
-                        .to_string()
-                });
-            return RuntimeState {
-                kind: RuntimeStateKind::Ready,
+        let active_permission = self.active_permission().map(|(permission_id, summary)| {
+            view_model::PermissionRuntimeInput {
+                submission_pending: self.permission_submission_pending(&permission_id),
                 summary,
-                detail,
-                composer_disabled: false,
-                composer_hint: "Type a prompt to start a new session, or open the palette to pick launcher actions.".to_string(),
-            };
-        }
+            }
+        });
 
-        if let Some(state) = self.status_banner_runtime_state() {
-            return state;
-        }
+        let state = view_model::runtime_state(view_model::RuntimeStateInput {
+            replay_mode: self.replay_mode,
+            lifecycle_shell_state: self.lifecycle_shell_state(),
+            continue_disabled_banner: self.continue_disabled_banner.as_deref(),
+            status_banner: self.status_banner.as_deref(),
+            event_count: self.events.len(),
+            last_event: self.events.last().map(|event| &event.payload),
+            latest_activity: self.activities.back(),
+            activity_count: self.activities.len(),
+            active_permission,
+        });
 
-        if let Some(state) = self.permission_runtime_state() {
-            return state;
-        }
+        self.enhance_runtime_state(state)
+    }
 
-        if let Some(event) = self.events.last() {
-            if let EventV1::TaskCancelled(cancelled) = &event.payload {
-                let detail =
-                    (!cancelled.reason.trim().is_empty()).then(|| cancelled.reason.clone());
-                let summary = detail
+    fn enhance_runtime_state(&self, mut state: RuntimeState) -> RuntimeState {
+        match state.kind {
+            RuntimeStateKind::PermissionBlocked => {
+                if let Some(permission) = self.active_permission_view() {
+                    state.summary = format!("decision required · {}", permission.summary);
+                    state.detail = Some(permission.summary);
+                    state.composer_hint =
+                        "Draft preserved under the permission checkpoint — deny to stay fail-closed, or allow once after reviewing the request.".to_string();
+                }
+            }
+            RuntimeStateKind::PermissionPending => {
+                if let Some(permission) = self.active_permission_view() {
+                    state.summary = format!(
+                        "decision submitted · awaiting confirmation · {}",
+                        permission.summary
+                    );
+                    state.detail = Some(permission.summary);
+                    state.composer_hint =
+                        "Draft preserved while Harness records the permission decision. Wait for confirmation before sending another turn.".to_string();
+                }
+            }
+            RuntimeStateKind::Degraded => {
+                state.summary = state
+                    .detail
                     .as_deref()
-                    .map(|reason| format!("last turn cancelled · {reason}"))
-                    .unwrap_or_else(|| "last turn cancelled · ready to try again".to_string());
-                return RuntimeState {
-                    kind: RuntimeStateKind::Cancelled,
-                    summary,
-                    detail,
-                    composer_disabled: false,
-                    composer_hint: "Type a prompt to retry the cancelled turn…".to_string(),
+                    .map(|detail| format!("recovery in progress · {detail}"))
+                    .unwrap_or_else(|| {
+                        "recovery in progress · sending paused until live state catches up"
+                            .to_string()
+                    });
+                state.composer_hint =
+                    "Draft preserved locally — Harness is replaying live state before it will send the next turn.".to_string();
+            }
+            RuntimeStateKind::Disconnected => {
+                state.summary = if self.activities.is_empty() {
+                    "connection lost · reopen the TUI to establish the live stream".to_string()
+                } else {
+                    "connection lost · transcript preserved · reopen required before sending"
+                        .to_string()
                 };
+                state.composer_hint =
+                    "Draft preserved locally — reopen the TUI to reconnect before sending another turn.".to_string();
             }
+            RuntimeStateKind::Failure => {
+                if self.status_banner.as_deref().is_some_and(|banner| {
+                    let banner = banner.to_ascii_lowercase();
+                    banner.contains("failed")
+                        || banner.contains("error")
+                        || banner.contains("no session path")
+                }) {
+                    state.summary =
+                        "runtime failure · inspect transcript or details, then retry when ready"
+                            .to_string();
+                    state.composer_hint =
+                        "Composer stays available — review the failure, adjust the draft, then retry when ready.".to_string();
+                } else if self
+                    .activities
+                    .back()
+                    .is_some_and(|activity| activity.status == ActivityStatus::Error)
+                {
+                    state.summary =
+                        "turn failed · inspect transcript, adjust the draft, then retry"
+                            .to_string();
+                    state.composer_hint =
+                        "Composer stays available — fix the draft or continue with a recovery prompt.".to_string();
+                }
+            }
+            _ => {}
         }
 
-        if let Some(activity) = self.activities.back() {
-            let summary = self.activity_status_summary(activity);
-            if let Some(state) = self.tool_runtime_state(activity) {
-                return state;
-            }
-            return match activity.status {
-                ActivityStatus::Streaming if activity.transcript_text.is_empty() => RuntimeState {
-                    kind: RuntimeStateKind::Sending,
-                    summary: format!("{summary} · waiting for first tokens"),
-                    detail: None,
-                    composer_disabled: false,
-                    composer_hint: "Draft the next prompt while the current turn starts…"
-                        .to_string(),
-                },
-                ActivityStatus::Streaming => RuntimeState {
-                    kind: RuntimeStateKind::Streaming,
-                    summary: format!("{summary} · receiving output"),
-                    detail: None,
-                    composer_disabled: false,
-                    composer_hint: "Draft the next prompt while output continues…".to_string(),
-                },
-                ActivityStatus::Done => RuntimeState {
-                    kind: RuntimeStateKind::Success,
-                    summary: format!("{summary} · ready for next turn"),
-                    detail: None,
-                    composer_disabled: false,
-                    composer_hint: "Type a prompt for the next turn…".to_string(),
-                },
-                ActivityStatus::Error => RuntimeState {
-                    kind: RuntimeStateKind::Failure,
-                    summary: format!("{summary} · inspect transcript and retry when ready"),
-                    detail: activity.error_message.clone(),
-                    composer_disabled: false,
-                    composer_hint: "Type a prompt to retry or continue from the failure…"
-                        .to_string(),
-                },
-            };
-        }
+        state
+    }
 
-        RuntimeState {
-            kind: RuntimeStateKind::Ready,
-            summary: if self.replay_mode {
-                format!("{} events loaded", self.events.len())
-            } else {
-                "ready for first turn".to_string()
-            },
-            detail: None,
-            composer_disabled: false,
-            composer_hint: "Type a prompt for the next turn…".to_string(),
+    pub fn lifecycle_shell_state(&self) -> LifecycleShellState {
+        view_model::lifecycle_shell_state(
+            self.replay_mode,
+            self.startup_mode,
+            self.projection.run_terminal_seen,
+            self.continued_post_run_handoff_active,
+            self.post_run_handoff_enabled(),
+        )
+    }
+
+    pub fn lifecycle_shell_actions_visible(&self) -> bool {
+        self.lifecycle_shell_state() != LifecycleShellState::None
+    }
+
+    pub fn startup_shell_visible(&self) -> bool {
+        matches!(self.lifecycle_shell_state(), LifecycleShellState::Startup)
+    }
+
+    pub fn post_run_handoff_visible(&self) -> bool {
+        matches!(self.lifecycle_shell_state(), LifecycleShellState::PostRun)
+    }
+
+    pub fn continued_post_run_handoff_active(&self) -> bool {
+        self.continued_post_run_handoff_active
+    }
+
+    pub(crate) fn continued_live_reopen_surface_visible(&self) -> bool {
+        self.continued_live_reopen_surface_active && self.continued_live_run()
+    }
+
+    fn post_run_handoff_enabled(&self) -> bool {
+        self.session_path.is_some() || self.on_ui_intent.is_some()
+    }
+
+    pub fn post_run_handoff_notice(&self) -> Option<&'static str> {
+        view_model::post_run_handoff_notice(self.post_run_can_reopen())
+    }
+
+    pub fn post_run_handoff_actions(&self) -> &'static [PostRunHandoffAction] {
+        if self.post_run_can_reopen() {
+            &PostRunHandoffAction::ORDERED
+        } else {
+            &PostRunHandoffAction::FALLBACK_ORDERED
         }
     }
 
@@ -1637,156 +1829,81 @@ impl AppState {
         self.replay_mode || self.runtime_state().composer_disabled
     }
 
-    fn status_banner_runtime_state(&self) -> Option<RuntimeState> {
-        let banner = self.status_banner.as_deref()?;
-        let lower = banner.to_ascii_lowercase();
+    pub(crate) fn startup_card_view_model(&self) -> view_model::StartupCardViewModel {
+        view_model::startup_card_view_model(
+            self.startup_mode,
+            self.launch_mode_label(),
+            self.active_profile(),
+            self.active_provider(),
+            self.current_model_label(),
+        )
+    }
 
-        if lower.contains("disconnected") {
-            return Some(RuntimeState {
-                kind: RuntimeStateKind::Disconnected,
-                summary: if self.events.is_empty() {
-                    "live event stream unavailable · reopen the TUI to connect".to_string()
-                } else {
-                    "live event stream disconnected · reopen the TUI to reconnect"
-                        .to_string()
-                },
-                detail: Some(banner.to_string()),
-                composer_disabled: true,
-                composer_hint: "Composer disabled — live stream disconnected. Reopen the TUI to reconnect, then continue from the visible transcript.".to_string(),
-            });
-        }
+    pub(crate) fn post_run_card_view_model(&self) -> view_model::PostRunCardViewModel {
+        view_model::post_run_card_view_model(
+            self.post_run_handoff_notice(),
+            &self.runtime_state().summary,
+        )
+    }
 
-        if lower.contains("lagged") || lower.contains("replaying") {
-            return Some(RuntimeState {
-                kind: RuntimeStateKind::Degraded,
-                summary: format!("{banner} · sending paused until recovery"),
-                detail: Some(banner.to_string()),
-                composer_disabled: true,
-                composer_hint:
-                    "Composer disabled — waiting for live recovery before sending the next turn."
-                        .to_string(),
-            });
-        }
-
-        if lower.contains("failed") || lower.contains("error") || lower.contains("no session path")
-        {
-            return Some(RuntimeState {
-                kind: RuntimeStateKind::Failure,
-                summary: if self.replay_mode {
-                    "reload failed · inspect details".to_string()
-                } else {
-                    "runtime failure · inspect transcript and retry when ready".to_string()
-                },
-                detail: Some(banner.to_string()),
-                composer_disabled: false,
-                composer_hint: "Type a prompt to retry or continue after the failure…".to_string(),
-            });
-        }
-
-        Some(RuntimeState {
-            kind: RuntimeStateKind::Ready,
-            summary: banner.to_string(),
-            detail: Some(banner.to_string()),
-            composer_disabled: false,
-            composer_hint: "Type a prompt for the next turn…".to_string(),
+    pub(crate) fn footer_hints_view_model(&self) -> view_model::FooterHintsViewModel {
+        view_model::footer_hints_view_model(view_model::FooterHintsInput {
+            replay_mode: self.replay_mode,
+            post_run_handoff_visible: self.post_run_handoff_visible(),
+            active_tab: self.active_tab,
+            startup_shell_visible: self.startup_shell_visible(),
+            focus: self.focus,
+            details_drawer_open: self.details_drawer_open(),
+            composer_disabled: self.composer_disabled(),
+            continued_live_run: self.continued_live_run(),
         })
     }
 
-    fn permission_runtime_state(&self) -> Option<RuntimeState> {
-        let (permission_id, summary) = self.active_permission()?;
-        if self.permission_submission_pending(&permission_id) {
-            Some(RuntimeState {
-                kind: RuntimeStateKind::PermissionPending,
-                summary: format!("permission response pending · {summary}"),
-                detail: Some(summary),
-                composer_disabled: true,
-                composer_hint:
-                    "Composer disabled — waiting for the permission decision to complete."
-                        .to_string(),
-            })
+    pub(crate) fn continued_live_run(&self) -> bool {
+        !self.replay_mode
+            && self
+                .launch_mode_label()
+                .is_some_and(|label| label.eq_ignore_ascii_case("continued"))
+    }
+
+    fn post_run_can_reopen(&self) -> bool {
+        self.post_run_reopen_target().is_some()
+    }
+
+    fn post_run_reopen_target(&self) -> Option<(&str, &PathBuf)> {
+        let run_id = self.run_id().filter(|run_id| !run_id.trim().is_empty())?;
+        let session_path = self.session_path.as_ref()?;
+        Some((run_id, session_path))
+    }
+
+    fn default_post_run_handoff_action(&self) -> PostRunHandoffAction {
+        if self.post_run_can_reopen() {
+            PostRunHandoffAction::ContinueSession
         } else {
-            Some(RuntimeState {
-                kind: RuntimeStateKind::PermissionBlocked,
-                summary: format!("permission required · {summary}"),
-                detail: Some(summary),
-                composer_disabled: true,
-                composer_hint:
-                    "Composer disabled — approve or deny the pending permission request to continue."
-                        .to_string(),
-            })
+            PostRunHandoffAction::StartAnotherSession
         }
     }
 
-    fn activity_status_summary(&self, activity: &ActivityEntry) -> String {
-        let turn_count = self.activities.len();
-        let provider = if activity.provider_id.is_empty() {
-            "-"
+    pub(crate) fn selected_post_run_handoff_action(&self) -> PostRunHandoffAction {
+        let selected = self.post_run_handoff_action;
+        if self.post_run_handoff_actions().contains(&selected) {
+            selected
         } else {
-            activity.provider_id.as_str()
-        };
-        let model = if activity.model_id.is_empty() {
-            "-"
-        } else {
-            activity.model_id.as_str()
-        };
-
-        [
-            format!("turn {turn_count}/{turn_count}"),
-            if activity.request_id.is_empty() {
-                "pending turn".to_string()
-            } else {
-                activity.request_id.clone()
-            },
-            format!("{provider}/{model}"),
-        ]
-        .join(" · ")
+            self.default_post_run_handoff_action()
+        }
     }
 
-    fn tool_runtime_state(&self, activity: &ActivityEntry) -> Option<RuntimeState> {
-        if activity.status != ActivityStatus::Streaming {
-            return None;
-        }
+    fn reset_post_run_handoff_selection(&mut self) {
+        self.post_run_handoff_action = self.default_post_run_handoff_action();
+    }
 
-        let tool_call = activity.tool_calls.last()?;
-        match tool_call.status {
-            ToolCallDisplayStatus::PendingPermission => None,
-            ToolCallDisplayStatus::Queued => Some(RuntimeState {
-                kind: RuntimeStateKind::Streaming,
-                summary: format!("tool queued · {}", tool_call.tool_id),
-                detail: tool_call.transcript_summary(),
-                composer_disabled: false,
-                composer_hint: "Draft the next prompt while the queued tool waits to start…"
-                    .to_string(),
-            }),
-            ToolCallDisplayStatus::Running => Some(RuntimeState {
-                kind: RuntimeStateKind::Streaming,
-                summary: format!("tool running · {}", tool_call.tool_id),
-                detail: tool_call.transcript_summary(),
-                composer_disabled: false,
-                composer_hint: "Draft the next prompt while the tool runs…".to_string(),
-            }),
-            ToolCallDisplayStatus::Succeeded => Some(RuntimeState {
-                kind: RuntimeStateKind::Streaming,
-                summary: format!(
-                    "tool finished · waiting for final response · {}",
-                    tool_call.tool_id
-                ),
-                detail: tool_call.truncated_output.clone(),
-                composer_disabled: false,
-                composer_hint:
-                    "Draft the next prompt while the assistant finishes after the tool result…"
-                        .to_string(),
-            }),
-            ToolCallDisplayStatus::Failed => Some(RuntimeState {
-                kind: RuntimeStateKind::Failure,
-                summary: format!("tool failed · {}", tool_call.tool_id),
-                detail: tool_call.output_summary.clone(),
-                composer_disabled: false,
-                composer_hint:
-                    "Inspect the tool failure, then retry or continue with a new prompt…"
-                        .to_string(),
-            }),
-        }
+    fn enter_post_run_handoff(&mut self) {
+        self.close_palette();
+        self.live_details_drawer_open = false;
+        self.active_tab = Tab::Run;
+        self.focus = Focus::List;
+        self.continued_live_reopen_surface_active = false;
+        self.reset_post_run_handoff_selection();
     }
 
     pub fn prompt_bootstrap_disabled(&self) -> bool {
@@ -1838,6 +1955,43 @@ impl AppState {
             .filter(|(permission_id, _)| !self.dismissed_permissions.contains(*permission_id))
             .min_by_key(|(_, pending)| pending.seq)
             .map(|(permission_id, pending)| (permission_id.clone(), pending.summary.clone()))
+    }
+
+    pub(crate) fn transcript_first_shell_redesign_active(&self) -> bool {
+        !self.replay_mode
+            && matches!(self.active_tab, Tab::Run | Tab::Details)
+            && !self.startup_shell_visible()
+            && !self.post_run_handoff_visible()
+            && self.active_permission().is_none()
+    }
+
+    pub fn active_permission_view(&self) -> Option<ActivePermissionView> {
+        self.projection
+            .pending_permissions
+            .iter()
+            .filter(|(permission_id, _)| !self.dismissed_permissions.contains(*permission_id))
+            .min_by_key(|(_, pending)| pending.seq)
+            .map(|(permission_id, pending)| ActivePermissionView {
+                permission_id: permission_id.clone(),
+                kind: pending.kind.clone(),
+                summary: pending.summary.clone(),
+                request_digest: pending.request_digest.clone(),
+                timeout_ms: pending.timeout_ms,
+                default_decision: pending.default_decision,
+                tool_call_id: pending.tool_call_id.clone(),
+                tool_label: pending
+                    .tool_call_id
+                    .as_deref()
+                    .and_then(|tool_call_id| self.tool_label_for_call(tool_call_id)),
+            })
+    }
+
+    fn tool_label_for_call(&self, tool_call_id: &str) -> Option<String> {
+        self.activities
+            .iter()
+            .flat_map(|activity| activity.tool_calls.iter())
+            .find(|tool_call| tool_call.tool_call_id == tool_call_id)
+            .map(|tool_call| tool_call.tool_id.clone())
     }
 
     pub fn orchestration_summary(&self) -> OrchestrationSummary {
@@ -1945,11 +2099,13 @@ impl AppState {
         self.prompt_buffer.clear();
         self.prompt_cursor = 0;
         self.prompt_history_index = None;
+        self.continued_live_reopen_surface_active = false;
     }
 
     fn replace_prompt_input(&mut self, prompt: String) {
         self.prompt_cursor = prompt.chars().count();
         self.prompt_buffer = prompt;
+        self.continued_live_reopen_surface_active = false;
     }
 
     fn apply_pending_live_prompt(&mut self, pending_prompt: PendingLivePrompt) {
@@ -1961,6 +2117,7 @@ impl AppState {
     }
 
     fn insert_prompt_char(&mut self, c: char) {
+        self.continued_live_reopen_surface_active = false;
         let byte_idx = self.prompt_cursor_byte_index();
         self.prompt_buffer.insert(byte_idx, c);
         self.prompt_cursor += 1;
@@ -1971,6 +2128,7 @@ impl AppState {
             return;
         }
 
+        self.continued_live_reopen_surface_active = false;
         self.prompt_cursor -= 1;
         let byte_idx = self.prompt_cursor_byte_index();
         self.prompt_buffer.remove(byte_idx);
@@ -1981,6 +2139,7 @@ impl AppState {
             return;
         }
 
+        self.continued_live_reopen_surface_active = false;
         let byte_idx = self.prompt_cursor_byte_index();
         self.prompt_buffer.remove(byte_idx);
     }
@@ -2067,6 +2226,21 @@ impl AppState {
         if self.palette_visible && self.handle_palette_key(&key) {
             self.maybe_auto_exit();
             return;
+        }
+
+        if self.startup_shell_visible()
+            && self.focus != Focus::Prompt
+            && !self.composer_disabled()
+            && !key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::ALT)
+            && matches!(key.code, KeyCode::Char(_))
+        {
+            if let KeyCode::Char(c) = key.code {
+                self.focus = Focus::Prompt;
+                self.execute_action(Action::Char(c));
+                self.maybe_auto_exit();
+                return;
+            }
         }
 
         if self.focus == Focus::Prompt
@@ -2206,13 +2380,23 @@ impl AppState {
 
     fn update_session_history_filter(&mut self) {
         let input = self.palette_input.to_lowercase();
-        self.session_history_filtered = self
+        let mut filtered = self
             .session_history_entries
             .iter()
             .enumerate()
+            .filter(|(_, entry)| {
+                session_history_entry_matches_action(entry, self.startup_launcher_action)
+            })
             .filter(|(_, entry)| session_history_filter_matches(entry, &input))
-            .map(|(index, _)| index)
-            .collect();
+            .map(|(index, entry)| {
+                (
+                    index,
+                    session_history_action_sort_bucket(entry, self.startup_launcher_action),
+                )
+            })
+            .collect::<Vec<_>>();
+        filtered.sort_by_key(|(index, bucket)| (*bucket, *index));
+        self.session_history_filtered = filtered.into_iter().map(|(index, _)| index).collect();
         self.session_history_selected = 0;
     }
 
@@ -2258,6 +2442,78 @@ impl AppState {
         self.session_history_selected = 0;
         if let Some(previous_focus) = self.palette_focus_return.take() {
             self.focus = previous_focus;
+        }
+    }
+
+    fn select_previous_post_run_handoff_action(&mut self) {
+        let actions = self.post_run_handoff_actions();
+        let current = self.selected_post_run_handoff_action();
+        let current_index = actions
+            .iter()
+            .position(|action| *action == current)
+            .unwrap_or(0);
+        let previous_index = if current_index == 0 {
+            actions.len().saturating_sub(1)
+        } else {
+            current_index - 1
+        };
+        self.post_run_handoff_action = actions[previous_index];
+    }
+
+    fn select_next_post_run_handoff_action(&mut self) {
+        let actions = self.post_run_handoff_actions();
+        let current = self.selected_post_run_handoff_action();
+        let current_index = actions
+            .iter()
+            .position(|action| *action == current)
+            .unwrap_or(0);
+        let next_index = if current_index + 1 >= actions.len() {
+            0
+        } else {
+            current_index + 1
+        };
+        self.post_run_handoff_action = actions[next_index];
+    }
+
+    fn execute_post_run_handoff_action(&mut self) {
+        match self.selected_post_run_handoff_action() {
+            PostRunHandoffAction::ContinueSession => {
+                if self.continued_post_run_handoff_active {
+                    self.continued_post_run_handoff_active = false;
+                    self.continued_live_reopen_surface_active = true;
+                    self.active_tab = Tab::Run;
+                    self.focus = Focus::Prompt;
+                    return;
+                }
+                let Some((run_id, run_dir)) = self.post_run_reopen_target() else {
+                    self.reset_post_run_handoff_selection();
+                    return;
+                };
+                set_pending_live_prompt_draft(Some(self.prompt_buffer.clone()));
+                self.emit_ui_intent(UiIntent::ContinueSession {
+                    run_id: run_id.to_string(),
+                    run_dir: run_dir.clone(),
+                });
+                self.should_quit = true;
+            }
+            PostRunHandoffAction::ReplayRun => {
+                let Some((run_id, run_dir)) = self.post_run_reopen_target() else {
+                    self.reset_post_run_handoff_selection();
+                    return;
+                };
+                self.emit_ui_intent(UiIntent::ReplaySession {
+                    run_id: run_id.to_string(),
+                    run_dir: run_dir.clone(),
+                });
+                self.should_quit = true;
+            }
+            PostRunHandoffAction::StartAnotherSession => {
+                self.apply_new_session_launcher_selection();
+            }
+            PostRunHandoffAction::Quit => {
+                self.should_quit = true;
+                self.emit_ui_intent(UiIntent::QuitRequested);
+            }
         }
     }
 
@@ -2380,6 +2636,7 @@ impl AppState {
     }
 
     fn apply_new_session_launcher_selection(&mut self) {
+        let lifecycle_exit = self.startup_mode || self.post_run_handoff_visible();
         let prompt_buffer = self.prompt_buffer.clone();
         let prompt_cursor = self.prompt_cursor;
         set_pending_live_prompt_draft(Some(prompt_buffer.clone()));
@@ -2397,6 +2654,8 @@ impl AppState {
         self.prompt_history_index = None;
         self.replay_mode = false;
         self.session_path = None;
+        self.continued_post_run_handoff_active = false;
+        self.continued_live_reopen_surface_active = false;
         self.active_tab = Tab::Run;
         self.live_details_drawer_open = false;
         self.continue_disabled_banner = None;
@@ -2406,8 +2665,30 @@ impl AppState {
 
         self.close_session_history();
         self.emit_ui_intent(UiIntent::NewSession);
-        if self.startup_mode {
+        if lifecycle_exit {
             self.should_quit = true;
+        }
+    }
+
+    fn select_previous_startup_launcher_action(&mut self) {
+        self.startup_launcher_action = self.startup_launcher_action.previous();
+        self.continue_disabled_banner = None;
+    }
+
+    fn select_next_startup_launcher_action(&mut self) {
+        self.startup_launcher_action = self.startup_launcher_action.next();
+        self.continue_disabled_banner = None;
+    }
+
+    fn execute_startup_launcher_action(&mut self) {
+        match self.startup_launcher_action {
+            StartupLauncherAction::NewSession => self.apply_new_session_launcher_selection(),
+            StartupLauncherAction::ReplaySession => {
+                self.begin_session_history_picker(StartupLauncherAction::ReplaySession);
+            }
+            StartupLauncherAction::ContinueSession => {
+                self.begin_session_history_picker(StartupLauncherAction::ContinueSession);
+            }
         }
     }
 
@@ -2429,6 +2710,13 @@ impl AppState {
     fn normalize_focus_for_active_tab(&mut self) {
         if self.replay_mode {
             if self.focus == Focus::Prompt {
+                self.focus = Focus::List;
+            }
+            return;
+        }
+
+        if self.post_run_handoff_visible() {
+            if self.focus == Focus::Prompt || self.active_tab == Tab::Run {
                 self.focus = Focus::List;
             }
             return;
@@ -2462,6 +2750,18 @@ impl AppState {
             return;
         }
 
+        if self.post_run_handoff_visible() {
+            self.focus = if self.active_tab == Tab::Run {
+                Focus::List
+            } else {
+                match self.focus {
+                    Focus::List | Focus::Prompt => Focus::Details,
+                    Focus::Details => Focus::List,
+                }
+            };
+            return;
+        }
+
         self.focus = if !self.replay_mode && self.active_tab == Tab::Run {
             if self.details_drawer_open() {
                 match self.focus {
@@ -2489,6 +2789,18 @@ impl AppState {
             self.focus = match self.focus {
                 Focus::List | Focus::Prompt => Focus::Details,
                 Focus::Details => Focus::List,
+            };
+            return;
+        }
+
+        if self.post_run_handoff_visible() {
+            self.focus = if self.active_tab == Tab::Run {
+                Focus::List
+            } else {
+                match self.focus {
+                    Focus::List | Focus::Prompt => Focus::Details,
+                    Focus::Details => Focus::List,
+                }
             };
             return;
         }
@@ -2536,6 +2848,42 @@ impl AppState {
                         self.dismissed_permissions.insert(permission_id);
                         self.maybe_auto_exit();
                     }
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        if self.post_run_handoff_visible() && self.focus == Focus::List {
+            match action {
+                Action::SubmitPrompt => {
+                    self.execute_post_run_handoff_action();
+                    return;
+                }
+                Action::MoveUp | Action::HistoryUp => {
+                    self.select_previous_post_run_handoff_action();
+                    return;
+                }
+                Action::MoveDown | Action::HistoryDown => {
+                    self.select_next_post_run_handoff_action();
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        if self.startup_shell_visible() && self.focus == Focus::List {
+            match action {
+                Action::SubmitPrompt => {
+                    self.execute_startup_launcher_action();
+                    return;
+                }
+                Action::MoveUp | Action::HistoryUp => {
+                    self.select_previous_startup_launcher_action();
+                    return;
+                }
+                Action::MoveDown | Action::HistoryDown => {
+                    self.select_next_startup_launcher_action();
                     return;
                 }
                 _ => {}
@@ -2642,7 +2990,11 @@ impl AppState {
                     self.transcript_scroll = 0;
                 }
             }
-            Action::ToggleDetailsDrawer if !self.replay_mode && self.focus != Focus::Prompt => {
+            Action::ToggleDetailsDrawer
+                if !self.replay_mode
+                    && self.focus != Focus::Prompt
+                    && !self.post_run_handoff_visible() =>
+            {
                 let opening = self.active_tab != Tab::Run || !self.details_drawer_open();
                 self.active_tab = Tab::Run;
                 self.live_details_drawer_open = opening;
@@ -2933,7 +3285,8 @@ mod tests {
     use crossterm::event::MouseEvent;
     use harness_core::event::{
         ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
-        ProviderRequestStartedEvent, TaskCompletedEvent, UserMessageSubmittedEvent, SCHEMA_VERSION,
+        ProviderRequestStartedEvent, RunFailedEvent, RunFinishedEvent, TaskCompletedEvent,
+        UserMessageSubmittedEvent, SCHEMA_VERSION,
     };
 
     fn envelope(seq: u64, request_id: &str, payload: EventV1) -> EventEnvelopeV1 {
@@ -3293,6 +3646,75 @@ mod tests {
     }
 
     #[test]
+    fn historical_terminal_events_do_not_trigger_post_run_handoff_until_live_finish() {
+        let mut app = AppState::new_live(
+            Some(PathBuf::from("/tmp/sessions/run_resume")),
+            true,
+            Some(Arc::new(|_| {})),
+        );
+
+        app.ingest_historical_event(envelope(
+            1,
+            "req_resume_terminal",
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: "previous run complete".to_string(),
+            }),
+        ));
+
+        assert_eq!(app.lifecycle_shell_state(), LifecycleShellState::None);
+        assert!(!app.post_run_handoff_visible());
+        assert!(!app.should_quit);
+        assert_eq!(app.events.len(), 1);
+
+        app.ingest_event(envelope(
+            2,
+            "req_live_terminal",
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: "live run complete".to_string(),
+            }),
+        ));
+
+        assert_eq!(app.lifecycle_shell_state(), LifecycleShellState::PostRun);
+        assert!(app.post_run_handoff_visible());
+        assert!(app.should_quit);
+    }
+
+    #[test]
+    fn continued_quiescent_bootstrap_requires_explicit_handoff_confirmation() {
+        set_pending_live_launch_metadata(
+            LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Continued"),
+        );
+        let mut app = AppState::new_live(
+            Some(PathBuf::from("/tmp/sessions/run_resume_quiescent")),
+            false,
+            Some(Arc::new(|_| {})),
+        );
+
+        app.ingest_historical_event(envelope(
+            1,
+            "req_resume_terminal",
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: "previous run complete".to_string(),
+            }),
+        ));
+
+        assert_eq!(app.lifecycle_shell_state(), LifecycleShellState::PostRun);
+        assert!(app.post_run_handoff_visible());
+        assert!(app.continued_post_run_handoff_active());
+        assert_eq!(app.active_tab, Tab::Run);
+        assert_eq!(app.focus, Focus::List);
+        assert!(app.composer_disabled());
+
+        app.handle_key(key(KeyCode::Enter));
+
+        assert!(!app.post_run_handoff_visible());
+        assert!(!app.continued_post_run_handoff_active());
+        assert_eq!(app.focus, Focus::Prompt);
+        assert!(!app.composer_disabled());
+        assert!(!app.should_quit);
+    }
+
+    #[test]
     fn startup_prompt_enter_emits_submit_intent_and_quits_launcher() {
         let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
         let sink = {
@@ -3381,5 +3803,174 @@ mod tests {
         assert_eq!(app.active_provider(), "mock");
         assert_eq!(app.current_model_label(), "model-1");
         assert_eq!(app.launch_mode_label(), Some("Demo"));
+    }
+
+    #[test]
+    fn lifecycle_shell_state_transitions() {
+        let mut startup = AppState::new_startup(Vec::new(), None);
+        startup.prompt_buffer = "draft prompt".to_string();
+
+        assert_eq!(
+            startup.lifecycle_shell_state(),
+            LifecycleShellState::Startup
+        );
+        assert!(startup.startup_shell_visible());
+        assert!(!startup.post_run_handoff_visible());
+        assert!(startup.lifecycle_shell_actions_visible());
+        assert_eq!(
+            startup.runtime_state().summary,
+            "startup launcher ready · choose New/Continue/Replay or type to quick-start"
+        );
+
+        let live = AppState::new_live(None, false, None);
+
+        assert_eq!(live.lifecycle_shell_state(), LifecycleShellState::None);
+        assert!(!live.startup_shell_visible());
+        assert!(!live.post_run_handoff_visible());
+        assert!(!live.lifecycle_shell_actions_visible());
+
+        let mut finished =
+            AppState::new_live(Some(PathBuf::from("/tmp/live-finished")), false, None);
+        finished.ingest_event(envelope(
+            1,
+            "req_lifecycle_finished",
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: "done".to_string(),
+            }),
+        ));
+
+        assert_eq!(
+            finished.lifecycle_shell_state(),
+            LifecycleShellState::PostRun
+        );
+        assert!(!finished.startup_shell_visible());
+        assert!(finished.post_run_handoff_visible());
+        assert!(finished.lifecycle_shell_actions_visible());
+        assert_eq!(finished.post_run_handoff_notice(), None);
+        assert_eq!(
+            finished.post_run_handoff_actions(),
+            &PostRunHandoffAction::ORDERED
+        );
+        assert_eq!(
+            finished.selected_post_run_handoff_action(),
+            PostRunHandoffAction::ContinueSession
+        );
+        assert!(finished.composer_disabled());
+
+        let mut failed = AppState::new_live(Some(PathBuf::from("/tmp/live-failed")), false, None);
+        failed.ingest_event(envelope(
+            1,
+            "req_lifecycle_failed",
+            EventV1::RunFailed(RunFailedEvent {
+                error: "boom".to_string(),
+            }),
+        ));
+
+        assert_eq!(failed.lifecycle_shell_state(), LifecycleShellState::PostRun);
+        assert!(failed.post_run_handoff_visible());
+        assert!(failed.lifecycle_shell_actions_visible());
+
+        let fallback_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = Arc::new(|_| {});
+        let mut missing_session_path = AppState::new_live(None, false, Some(fallback_sink));
+        missing_session_path.ingest_event(envelope(
+            1,
+            "req_lifecycle_missing_path",
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: "done without persisted path".to_string(),
+            }),
+        ));
+
+        assert_eq!(
+            missing_session_path.lifecycle_shell_state(),
+            LifecycleShellState::PostRun
+        );
+        assert!(missing_session_path.post_run_handoff_visible());
+        assert_eq!(
+            missing_session_path.post_run_handoff_notice(),
+            Some("current run cannot be reopened")
+        );
+        assert_eq!(
+            missing_session_path.post_run_handoff_actions(),
+            &PostRunHandoffAction::FALLBACK_ORDERED
+        );
+        assert_eq!(
+            missing_session_path.selected_post_run_handoff_action(),
+            PostRunHandoffAction::StartAnotherSession
+        );
+        assert!(missing_session_path.composer_disabled());
+
+        let mut terminal_without_routing = AppState::new_live(None, false, None);
+        terminal_without_routing.ingest_event(envelope(
+            1,
+            "req_lifecycle_without_routing",
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: "done without lifecycle routing".to_string(),
+            }),
+        ));
+
+        assert_eq!(
+            terminal_without_routing.lifecycle_shell_state(),
+            LifecycleShellState::None
+        );
+        assert!(!terminal_without_routing.post_run_handoff_visible());
+        assert!(!terminal_without_routing.composer_disabled());
+    }
+
+    #[test]
+    fn post_run_handoff_ignores_completed_turns_without_terminal_event() {
+        let mut app = AppState::new_live(None, false, None);
+        app.ingest_event(envelope(
+            1,
+            "req_completed_turn",
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_completed_turn".to_string(),
+                text: "status?".to_string(),
+            }),
+        ));
+        app.ingest_event(envelope(
+            2,
+            "req_completed_turn",
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_completed_turn".to_string(),
+                provider_id: "mock".to_string(),
+                model_id: "model-1".to_string(),
+                prompt_summary: "status?".to_string(),
+                request_digest: "digest-completed-turn".to_string(),
+            }),
+        ));
+        app.ingest_event(envelope(
+            3,
+            "req_completed_turn",
+            EventV1::TaskCompleted(TaskCompletedEvent {
+                task_id: "task_completed_turn".to_string(),
+                result_summary: "all done".to_string(),
+                result_digest: "digest-task-completed-turn".to_string(),
+            }),
+        ));
+
+        assert_eq!(app.runtime_state().kind, RuntimeStateKind::Success);
+        assert_eq!(app.lifecycle_shell_state(), LifecycleShellState::None);
+        assert!(!app.startup_shell_visible());
+        assert!(!app.post_run_handoff_visible());
+        assert!(!app.lifecycle_shell_actions_visible());
+    }
+
+    #[test]
+    fn replay_mode_never_reports_lifecycle_shell_actions() {
+        let replay = AppState::new_replay(
+            PathBuf::from("/tmp/replay-session"),
+            vec![envelope(
+                1,
+                "req_replay_terminal",
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            )],
+        );
+
+        assert_eq!(replay.lifecycle_shell_state(), LifecycleShellState::None);
+        assert!(!replay.startup_shell_visible());
+        assert!(!replay.post_run_handoff_visible());
+        assert!(!replay.lifecycle_shell_actions_visible());
     }
 }

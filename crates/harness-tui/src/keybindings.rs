@@ -107,7 +107,7 @@ impl Action {
     pub fn palette_commands() -> &'static [(&'static str, &'static str)] {
         &[
             ("new_session", "Start a fresh live session"),
-            ("resume_session", "Resume a prior session when resumable"),
+            ("resume_session", "Continue a prior session when resumable"),
             ("replay_session", "Replay a previous session as read-only"),
             ("help", "Open Help surface"),
             ("run", "Return to conversation surface"),
@@ -122,7 +122,7 @@ impl Action {
     pub fn palette_command_label(command: &str) -> &'static str {
         match command {
             "new_session" => "New session",
-            "resume_session" => "Resume session",
+            "resume_session" => "Continue session",
             "replay_session" => "Replay session",
             "help" => "Help",
             "run" => "Run",

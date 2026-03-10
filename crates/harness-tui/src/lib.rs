@@ -5,6 +5,7 @@ pub mod layout;
 pub mod overlay;
 pub mod theme;
 pub mod ui;
+mod view_model;
 
 pub use keybindings::{Action, KeyMap};
 
@@ -33,6 +34,41 @@ pub enum LiveUpdate {
     Status(String),
 }
 
+#[cfg(test)]
+#[test]
+fn replay_mode_snapshot_renders_two_pane_layout() {
+    tests::module_replay_mode_snapshot_renders_two_pane_layout();
+}
+
+#[cfg(test)]
+#[test]
+fn diff_tab_snapshot_renders_artifact_contents() {
+    tests::module_diff_tab_snapshot_renders_artifact_contents();
+}
+
+#[cfg(test)]
+#[test]
+fn replay_mode_never_reports_lifecycle_shell_actions() {
+    let replay = app::AppState::new_replay(
+        PathBuf::from("/tmp/replay-session"),
+        vec![envelope(
+            1,
+            Some("req_replay_terminal"),
+            harness_core::event::EventV1::RunFinished(harness_core::event::RunFinishedEvent {
+                summary: "done".to_string(),
+            }),
+        )],
+    );
+
+    assert_eq!(
+        replay.lifecycle_shell_state(),
+        app::LifecycleShellState::None
+    );
+    assert!(!replay.startup_shell_visible());
+    assert!(!replay.post_run_handoff_visible());
+    assert!(!replay.lifecycle_shell_actions_visible());
+}
+
 pub enum TuiMode {
     Startup {
         session_history_entries: Vec<SessionHistoryEntry>,
@@ -43,6 +79,7 @@ pub enum TuiMode {
     },
     Live {
         run_dir: PathBuf,
+        historical_events: Vec<EventEnvelopeV1>,
         update_rx: Receiver<LiveUpdate>,
     },
 }
@@ -161,11 +198,18 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             }
             (app, None)
         }
-        TuiMode::Live { run_dir, update_rx } => {
+        TuiMode::Live {
+            run_dir,
+            historical_events,
+            update_rx,
+        } => {
             let mut app = AppState::new_live(Some(run_dir), exit_on_finish, on_ui_intent);
             app.set_theme(theme);
             if let Some(bindings) = keybindings.as_ref() {
                 app.apply_keybindings(bindings.clone());
+            }
+            for event in historical_events {
+                app.ingest_historical_event(event);
             }
             (app, Some(update_rx))
         }
@@ -245,6 +289,7 @@ pub fn run_tui() -> Result<()> {
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
             run_dir: PathBuf::from("."),
+            historical_events: Vec::new(),
             update_rx: rx,
         },
         exit_on_finish: false,
@@ -316,7 +361,7 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn replay_mode_snapshot_renders_two_pane_layout() {
+    pub(super) fn module_replay_mode_snapshot_renders_two_pane_layout() {
         let run_dir = write_replay_fixture(sample_replay_events());
         let events = load_events_from_run_dir(run_dir.path()).expect("load replay events");
 
@@ -448,7 +493,7 @@ mod tests {
     }
 
     #[test]
-    fn diff_tab_snapshot_renders_artifact_contents() {
+    pub(super) fn module_diff_tab_snapshot_renders_artifact_contents() {
         let run_dir = write_diff_fixture(true);
         let events = load_events_from_run_dir(run_dir.path()).expect("load diff fixture");
 
@@ -1310,6 +1355,7 @@ fn default_theme_is_harness_app_dark() {
 fn theme_tokens_cover_live_shell_states() {
     let default = Theme::default();
     let mono = Theme::mono();
+    let tokens = default.token_families();
 
     assert_eq!(default.live_shell.glyphs.streaming, "◐");
     assert_eq!(default.live_shell.glyphs.done, "●");
@@ -1319,6 +1365,14 @@ fn theme_tokens_cover_live_shell_states() {
     assert_eq!(default.live_shell.glyphs.running, "◐");
     assert_eq!(default.live_shell.glyphs.succeeded, "●");
     assert_eq!(default.live_shell.glyphs.failed, "✗");
+    assert_eq!(tokens.live_shell.glyphs.ascii.status.streaming, "o");
+    assert_eq!(
+        tokens.live_shell.glyphs.ascii.status.pending_permission,
+        "?"
+    );
+    assert_eq!(tokens.live_shell.glyphs.ascii.status.failed, "x");
+    assert_eq!(tokens.live_shell.glyphs.ascii.transcript.user_marker, ">");
+    assert_eq!(tokens.live_shell.glyphs.ascii.transcript.card_top, "+-");
 
     assert_eq!(default.live_shell.heights.header, 1);
     assert_eq!(default.live_shell.heights.tabs, 3);
@@ -1331,6 +1385,26 @@ fn theme_tokens_cover_live_shell_states() {
     assert_eq!(default.live_shell.minimum.content_margin_x, 1);
     assert_eq!(default.live_shell.primary.centered_content_width, 92);
     assert_eq!(default.live_shell.primary.content_margin_x, 2);
+    assert_eq!(tokens.palette.surfaces, default.surface);
+    assert_eq!(tokens.palette.borders, default.border);
+    assert_eq!(
+        tokens.live_shell.geometry.breakpoints,
+        crate::theme::ShellBreakpoints::DEFAULT
+    );
+    assert_eq!(
+        tokens.live_shell.geometry.minimum,
+        default.live_shell.minimum
+    );
+    assert_eq!(
+        tokens.live_shell.spacing.heights,
+        default.live_shell.heights
+    );
+    assert_eq!(tokens.live_shell.spacing.rhythm, default.live_shell.rhythm);
+    assert_eq!(tokens.live_shell.copy.startup, default.live_shell.startup);
+    assert_eq!(
+        tokens.live_shell.copy.empty_state,
+        default.live_shell.empty_state
+    );
     assert_eq!(
         mono.live_shell.glyphs.failed,
         default.live_shell.glyphs.failed
@@ -1353,6 +1427,7 @@ fn theme_roundtrips_through_tui_options() {
     let options = TuiOptions {
         mode: TuiMode::Live {
             run_dir: PathBuf::from("."),
+            historical_events: Vec::new(),
             update_rx: rx,
         },
         exit_on_finish: false,
@@ -1488,6 +1563,27 @@ fn wide_primary_live_layout_uses_available_width() {
 
 #[cfg(test)]
 #[test]
+fn split_window_live_layout_uses_available_width() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.active_tab = app::Tab::Run;
+
+    let area = ratatui::layout::Rect::new(0, 0, 96, 40);
+    let theme = app.theme();
+    let shell_layout = theme.live_shell_layout(area.width, area.height);
+    let plan = layout::FrameLayoutPlan::for_app(&app, area);
+
+    assert_eq!(shell_layout.target, ShellGeometryTarget::Split);
+    assert_eq!(plan.shell.x, shell_layout.content_margin_x);
+    assert_eq!(
+        plan.shell.width,
+        area.width
+            .saturating_sub(shell_layout.content_margin_x.saturating_mul(2))
+    );
+    assert!(plan.shell.width > shell_layout.centered_content_width);
+}
+
+#[cfg(test)]
+#[test]
 fn live_layout_breakpoints_choose_shell_variant() {
     let theme = Theme::default();
 
@@ -1499,6 +1595,14 @@ fn live_layout_breakpoints_choose_shell_variant() {
     assert_eq!(minimum.transcript_min_width, 28);
     assert_eq!(minimum.centered_content_width, 78);
 
+    let split = theme.live_shell_layout(96, 40);
+    assert_eq!(split.target, ShellGeometryTarget::Split);
+    assert_eq!(split.activity_drawer_width, 18);
+    assert_eq!(split.inspector_drawer_width, 24);
+    assert_eq!(split.details_sidebar_width, 32);
+    assert_eq!(split.transcript_min_width, 32);
+    assert_eq!(split.centered_content_width, 88);
+
     let primary = theme.live_shell_layout(100, 30);
     assert_eq!(primary.target, ShellGeometryTarget::Primary);
     assert_eq!(primary.activity_drawer_width, 24);
@@ -1508,9 +1612,19 @@ fn live_layout_breakpoints_choose_shell_variant() {
     assert_eq!(primary.centered_content_width, 92);
 
     assert_eq!(
+        theme.live_shell.target(89, 40),
+        ShellGeometryTarget::Minimum
+    );
+    assert_eq!(
+        theme.live_shell.target(90, 35),
+        ShellGeometryTarget::Minimum
+    );
+    assert_eq!(theme.live_shell.target(90, 36), ShellGeometryTarget::Split);
+    assert_eq!(
         theme.live_shell.target(99, 30),
         ShellGeometryTarget::Minimum
     );
+    assert_eq!(theme.live_shell.target(99, 40), ShellGeometryTarget::Split);
     assert_eq!(
         theme.live_shell.target(100, 29),
         ShellGeometryTarget::Minimum
@@ -2657,6 +2771,25 @@ fn render_live_screen(app: &app::AppState, width: u16, height: u16) -> String {
 
 #[cfg(test)]
 #[test]
+fn permission_modal_snapshot_renders_request() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.ingest_event(permission_requested_event(1, "perm_1", "tool_call_1"));
+
+    assert_live_shell_contains(
+        &app,
+        80,
+        24,
+        &[
+            "Permission Requested",
+            "FAIL CLOSED",
+            "default deny",
+            "[d] deny",
+        ],
+    );
+}
+
+#[cfg(test)]
+#[test]
 fn overlay_stack_orders_details_palette_permission() {
     let mut app = app::AppState::new_live(None, false, None);
     app.active_tab = app::Tab::Details;
@@ -2870,17 +3003,19 @@ fn live_status_strip_distinguishes_terminal_states() {
     assert!(error_debug.contains("Failure"));
     assert!(error_debug.contains("inspect transcript"));
     assert!(error_debug.contains("API rate limit exceeded"));
+    assert!(error_debug.contains("adjust the draft"));
 
     let mut permission_blocked = app::AppState::new_live(None, false, None);
     permission_blocked.ingest_event(permission_requested_event(1, "perm_blocked", "tool_call_1"));
     let permission_blocked_debug = render_live_buffer(&permission_blocked, 80, 24);
     assert!(permission_blocked_debug.contains("Permission blocked"));
-    assert!(permission_blocked_debug.contains("approve or deny the pending permission request"));
+    assert!(permission_blocked_debug.contains("Draft preserved under the permission checkpoint"));
+    assert!(permission_blocked_debug.contains("FAIL CLOSED"));
 
     permission_blocked.handle_key(key(crossterm::event::KeyCode::Char('a')));
     let permission_pending_debug = render_live_buffer(&permission_blocked, 80, 24);
     assert!(permission_pending_debug.contains("Permission pending"));
-    assert!(permission_pending_debug.contains("waiting for the permission decision to complete"));
+    assert!(permission_pending_debug.contains("awaiting confirmation"));
 
     let mut degraded = app::AppState::new_live(None, false, None);
     degraded.set_status_banner(Some(
@@ -2890,7 +3025,8 @@ fn live_status_strip_distinguishes_terminal_states() {
     assert!(degraded_debug.contains("Degraded"));
     assert!(degraded_debug.contains("replaying from seq 1"));
     assert!(degraded_debug.contains("Composer · disabled · Degraded"));
-    assert!(degraded_debug.contains("waiting for live recovery"));
+    assert!(degraded_debug.contains("Draft preserved locally"));
+    assert!(degraded_debug.contains("Sending paused"));
 
     let mut disconnected = app::AppState::new_live(None, false, None);
     disconnected.set_status_banner(Some("live event stream disconnected".to_string()));
@@ -3045,7 +3181,8 @@ fn disconnected_stream_disables_composer_with_reopen_guidance() {
     assert!(debug.contains("transcript stays visible"));
     assert!(debug.contains("Disconnected"));
     assert!(debug.contains("Composer · disabled · Disconnected"));
-    assert!(debug.contains("Reopen the TUI to reconnect"));
+    assert!(debug.contains("reopen the TUI to reconnect"));
+    assert!(debug.contains("Draft preserved locally"));
 }
 
 #[cfg(test)]
@@ -3344,6 +3481,10 @@ fn startup_session_entry(
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "test helper keeps session-history fixture fields explicit at call sites"
+)]
 fn startup_session_entry_with_details(
     run_id: &str,
     run_dir: &str,
@@ -3352,6 +3493,37 @@ fn startup_session_entry_with_details(
     last_updated_at: Option<&str>,
     profile_preset: &str,
     provider_model: &str,
+    is_resumable: bool,
+    resume_disabled_reason: Option<&str>,
+) -> app::SessionHistoryEntry {
+    startup_session_entry_with_mode_and_details(
+        run_id,
+        run_dir,
+        run_name,
+        status,
+        last_updated_at,
+        profile_preset,
+        provider_model,
+        harness_core::proj::SessionModeSource::InteractiveLive,
+        is_resumable,
+        resume_disabled_reason,
+    )
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "test helper keeps session-history fixture fields explicit at call sites"
+)]
+fn startup_session_entry_with_mode_and_details(
+    run_id: &str,
+    run_dir: &str,
+    run_name: &str,
+    status: Option<harness_core::proj::RunStatus>,
+    last_updated_at: Option<&str>,
+    profile_preset: &str,
+    provider_model: &str,
+    mode_source: harness_core::proj::SessionModeSource,
     is_resumable: bool,
     resume_disabled_reason: Option<&str>,
 ) -> app::SessionHistoryEntry {
@@ -3365,7 +3537,7 @@ fn startup_session_entry_with_details(
             workspace_root: Some("/tmp/workspace".to_string()),
             profile_preset: Some(profile_preset.to_string()),
             provider_model: Some(provider_model.to_string()),
-            mode_source: harness_core::proj::SessionModeSource::InteractiveLive,
+            mode_source,
             is_resumable,
             resume_disabled_reason: resume_disabled_reason.map(str::to_string),
         },
@@ -3631,13 +3803,21 @@ fn command_palette_includes_session_history_entry() {
 
     let rendered = render_live_lines(&app, 100, 24);
     assert!(rendered.contains("New session"));
-    assert!(rendered.contains("Resume session"));
+    assert!(rendered.contains("Continue session"));
     assert!(rendered.contains("Replay session"));
 }
 
 #[cfg(test)]
 #[test]
 fn session_history_picker_renders_resumable_and_replay_rows() {
+    let normalize_snapshot = |render: String| {
+        render
+            .lines()
+            .map(str::trim_end)
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
     let entries = vec![
         startup_session_entry_with_details(
             "run_resume",
@@ -3650,7 +3830,7 @@ fn session_history_picker_renders_resumable_and_replay_rows() {
             true,
             None,
         ),
-        startup_session_entry_with_details(
+        startup_session_entry_with_mode_and_details(
             "run_prompt_only",
             "/tmp/sessions/run_prompt_only",
             "beta-prompt",
@@ -3658,6 +3838,7 @@ fn session_history_picker_renders_resumable_and_replay_rows() {
             Some("2026-03-07T03:21:00Z"),
             "ops",
             "anthropic/claude-3.7",
+            harness_core::proj::SessionModeSource::Prompt,
             false,
             Some("prompt runs are not resumable"),
         ),
@@ -3685,97 +3866,256 @@ fn session_history_picker_renders_resumable_and_replay_rows() {
     app.handle_key(key(crossterm::event::KeyCode::Enter));
     let replay_render = render_live_lines(&app, 120, 30);
 
-    insta::assert_snapshot!(format!("RESUME\n{resume_render}\n\nREPLAY\n{replay_render}"), @r###"
+    insta::assert_snapshot!(
+        format!(
+            "RESUME\n{}\n\nREPLAY\n{}",
+            normalize_snapshot(resume_render),
+            normalize_snapshot(replay_render)
+        ),
+        @r###"
 RESUME
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-              ┌Resume session────────────────────────────────────────────────────────────────────────────┐              
-              │> █                                                                                       │              
-              │▶ resume alpha-run · updated 2026-03-08 12:34 · finished                                  │              
-              │  deep · openai/gpt-5.4 · continue ready                                                  │              
-              │! blocked beta-prompt · updated 2026-03-07 03:21 · failed                                 │              
-              │  ops · anthropic/claude-3.7 · continue blocked · prompt runs are not resumable           │              
-              │                                                                                          │              
-              │                                                                                          │              
-              │                                                                                          │              
-              │                                                                                          │              
-              └──────────────────────────────────────────────────────────────────────────────────────────┘              
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-   Ready   startup launcher ready · select new/replay/continue or type a prompt  ·  agents 0 · queued 0 · running 0     
-  ┌Composer · 1 line · 0 chars───────────────────────────────────────────────────────────────────────────────────────┐  
-  │█                                                                                                                 │  
-  └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  
-  Enter send  Shift+Enter nl  i details  2 events  3 diff  4 help  q quit                                               
+
+
+
+
+
+
+
+
+                         ┌Harness─────────────────────────────────────────────────────────────┐
+              ┌Continue session · 1 match────────────────────────────────────────────────────────────────┐
+              │> █                                                                                       │
+              │Interactive histories · 1 ready · filter by run/profile/model                             │
+              │▶ continue alpha-run · continue ready · finished · deep/openai/gpt-5.4                    │
+              │                                                                                          │
+              │                                                                                          │
+              │                                                                                          │
+              │                                                                                          │
+              │                                                                                          │
+              │                                                                                          │
+              └──────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+
+
+
+   Ready   startup launcher ready · choose New/Continue/Replay or type to quick-start  ·  agents 0 · queued 0
+  ┌Composer · 1 line · 0 chars───────────────────────────────────────────────────────────────────────────────────────┐
+  │Type to quick-start a new session while the lifecycle actions stay available.                                     │
+  └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+  ↑ prev  ↓ next  Enter select  Tab composer  Ctrl+p palette  q quit
 
 REPLAY
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-              ┌Replay session────────────────────────────────────────────────────────────────────────────┐              
-              │> █                                                                                       │              
-              │↺ replay alpha-run · updated 2026-03-08 12:34 · finished                                  │              
-              │  deep · openai/gpt-5.4 · continue ready                                                  │              
-              │↺ replay beta-prompt · updated 2026-03-07 03:21 · failed                                  │              
-              │  ops · anthropic/claude-3.7 · continue blocked · prompt runs are not resumable           │              
-              │                                                                                          │              
-              │                                                                                          │              
-              │                                                                                          │              
-              │                                                                                          │              
-              └──────────────────────────────────────────────────────────────────────────────────────────┘              
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-   Ready   startup launcher ready · select new/replay/continue or type a prompt  ·  agents 0 · queued 0 · running 0     
-  ┌Composer · 1 line · 0 chars───────────────────────────────────────────────────────────────────────────────────────┐  
-  │█                                                                                                                 │  
-  └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  
-  Enter send  Shift+Enter nl  i details  2 events  3 diff  4 help  q quit                                               
+
+
+
+
+
+
+
+
+                         ┌Harness─────────────────────────────────────────────────────────────┐
+              ┌Replay session · 2 matches────────────────────────────────────────────────────────────────┐
+              │> █                                                                                       │
+              │Read-only replays · 2 matching · 1 prompt-only still visible                              │
+              │↺ replay alpha-run · replay ready · continue ready · finished · deep/openai/gpt-5.4       │
+              │↺ replay beta-prompt · prompt-only replay ready · failed · ops/anthropic/claude-3.7       │
+              │                                                                                          │
+              │                                                                                          │
+              │                                                                                          │
+              │                                                                                          │
+              │                                                                                          │
+              └──────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+
+
+
+   Ready   startup launcher ready · choose New/Continue/Replay or type to quick-start  ·  agents 0 · queued 0
+  ┌Composer · 1 line · 0 chars───────────────────────────────────────────────────────────────────────────────────────┐
+  │Type to quick-start a new session while the lifecycle actions stay available.                                     │
+  └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+  ↑ prev  ↓ next  Enter select  Tab composer  Ctrl+p palette  q quit
 "###);
 }
 
 #[cfg(test)]
 #[test]
-fn session_history_picker_prefix_filters_results() {
+fn session_history_filter_uses_case_insensitive_substrings() {
+    fn open_continue_picker() -> app::AppState {
+        let mut app = app::AppState::new_startup(
+            vec![
+                startup_session_entry_with_mode_and_details(
+                    "RUN-ABC123",
+                    "/tmp/sessions/RUN-ABC123",
+                    "Alpha Runner",
+                    Some(harness_core::proj::RunStatus::Finished),
+                    Some("2026-03-08T12:34:56Z"),
+                    "DeepOps",
+                    "OpenAI/GPT-5.4",
+                    harness_core::proj::SessionModeSource::InteractiveLive,
+                    false,
+                    Some("run is still active"),
+                ),
+                startup_session_entry_with_details(
+                    "run_other",
+                    "/tmp/sessions/run_other",
+                    "beta-run",
+                    Some(harness_core::proj::RunStatus::Running),
+                    Some("2026-03-08T08:00:00Z"),
+                    "ops",
+                    "anthropic/claude-3.7",
+                    true,
+                    None,
+                ),
+            ],
+            None,
+        );
+
+        app.handle_key(key_with_modifiers(
+            crossterm::event::KeyCode::Char('p'),
+            crossterm::event::KeyModifiers::CONTROL,
+        ));
+        for ch in "resume".chars() {
+            app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+        }
+        app.handle_key(key(crossterm::event::KeyCode::Enter));
+        app
+    }
+
+    let mut by_run_id = open_continue_picker();
+    for ch in "bc12".chars() {
+        by_run_id.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert_eq!(by_run_id.palette_input, "bc12");
+    assert_eq!(by_run_id.session_history_filtered, vec![0]);
+
+    let mut by_run_name = open_continue_picker();
+    for ch in "runner".chars() {
+        by_run_name.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert_eq!(by_run_name.session_history_filtered, vec![0]);
+
+    let mut by_status = open_continue_picker();
+    for ch in "finish".chars() {
+        by_status.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert_eq!(by_status.session_history_filtered, vec![0]);
+
+    let mut by_timestamp = open_continue_picker();
+    for ch in "12:34".chars() {
+        by_timestamp.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert_eq!(by_timestamp.session_history_filtered, vec![0]);
+
+    let mut by_profile = open_continue_picker();
+    for ch in "ops".chars() {
+        by_profile.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert_eq!(by_profile.session_history_filtered, vec![1, 0]);
+
+    let mut by_provider = open_continue_picker();
+    for ch in "gpt-5".chars() {
+        by_provider.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert_eq!(by_provider.session_history_filtered, vec![0]);
+
+    let mut by_resumability = open_continue_picker();
+    for ch in "still active".chars() {
+        by_resumability.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert_eq!(by_resumability.session_history_filtered, vec![0]);
+
+    let mut no_match = open_continue_picker();
+    for ch in "missing".chars() {
+        no_match.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    no_match.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    assert!(no_match.session_history_filtered.is_empty());
+    assert_eq!(
+        no_match.continue_disabled_banner.as_deref(),
+        Some("no sessions match the current filter")
+    );
+    let rendered = render_live_lines(&no_match, 120, 30);
+    assert!(rendered.contains("no sessions match the current filter"));
+    assert!(rendered.contains("No saved runs match this filter."));
+}
+
+#[cfg(test)]
+#[test]
+fn continue_picker_filters_to_interactive_sessions() {
     let mut app = app::AppState::new_startup(
         vec![
-            startup_session_entry_with_details(
-                "run_alpha",
-                "/tmp/sessions/run_alpha",
-                "alpha-run",
+            startup_session_entry_with_mode_and_details(
+                "run_blocked",
+                "/tmp/sessions/run_blocked",
+                "blocked-interactive",
+                Some(harness_core::proj::RunStatus::Running),
+                Some("2026-03-08T09:00:00Z"),
+                "ops",
+                "openai/gpt-5.4",
+                harness_core::proj::SessionModeSource::InteractiveLive,
+                false,
+                Some("run is still active"),
+            ),
+            startup_session_entry_with_mode_and_details(
+                "run_prompt",
+                "/tmp/sessions/run_prompt",
+                "prompt-only",
                 Some(harness_core::proj::RunStatus::Finished),
-                Some("2026-03-08T12:34:56Z"),
+                Some("2026-03-08T08:00:00Z"),
+                "ops",
+                "openai/gpt-5.3-codex",
+                harness_core::proj::SessionModeSource::Prompt,
+                false,
+                Some("prompt runs are not resumable"),
+            ),
+            startup_session_entry_with_mode_and_details(
+                "run_ready_live",
+                "/tmp/sessions/run_ready_live",
+                "ready-live",
+                Some(harness_core::proj::RunStatus::Finished),
+                Some("2026-03-08T07:00:00Z"),
                 "deep",
                 "openai/gpt-5.4",
+                harness_core::proj::SessionModeSource::InteractiveLive,
                 true,
                 None,
             ),
-            startup_session_entry_with_details(
-                "run_beta",
-                "/tmp/sessions/run_beta",
-                "beta-run",
-                Some(harness_core::proj::RunStatus::Running),
-                Some("2026-03-08T08:00:00Z"),
-                "ops",
-                "anthropic/claude-3.7",
+            startup_session_entry_with_mode_and_details(
+                "run_scenario",
+                "/tmp/sessions/run_scenario",
+                "scenario-fixture",
+                Some(harness_core::proj::RunStatus::Finished),
+                Some("2026-03-08T06:00:00Z"),
+                "default",
+                "mock/mock-1",
+                harness_core::proj::SessionModeSource::ScenarioFixture,
+                false,
+                Some("scenario fixture runs are excluded from resume"),
+            ),
+            startup_session_entry_with_mode_and_details(
+                "run_replay_only",
+                "/tmp/sessions/run_replay_only",
+                "replay-only",
+                Some(harness_core::proj::RunStatus::Finished),
+                Some("2026-03-08T05:00:00Z"),
+                "default",
+                "openai/gpt-5.4",
+                harness_core::proj::SessionModeSource::ReplayOnly,
+                false,
+                Some("replay-only launches are not resumable"),
+            ),
+            startup_session_entry_with_mode_and_details(
+                "run_ready_mock",
+                "/tmp/sessions/run_ready_mock",
+                "ready-mock",
+                Some(harness_core::proj::RunStatus::Finished),
+                Some("2026-03-08T04:00:00Z"),
+                "mock",
+                "mock/mock-1",
+                harness_core::proj::SessionModeSource::InteractiveMock,
                 true,
                 None,
             ),
@@ -3791,67 +4131,113 @@ fn session_history_picker_prefix_filters_results() {
         app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
-    for ch in "beta".chars() {
-        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
-    }
 
-    assert_eq!(app.palette_input, "beta");
-    assert_eq!(app.session_history_filtered, vec![1]);
+    assert!(app.session_history_visible);
     assert_eq!(
-        app.selected_session_history_entry()
-            .expect("filtered entry exists")
-            .catalog
-            .run_id,
-        "run_beta"
+        app.session_history_filtered
+            .iter()
+            .map(|index| app.session_history_entries[*index].catalog.run_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["run_ready_live", "run_ready_mock", "run_blocked"]
     );
+    assert_eq!(
+        app.session_history_entries[*app
+            .session_history_filtered
+            .last()
+            .expect("blocked interactive entry present")]
+        .catalog
+        .resume_disabled_reason
+        .as_deref(),
+        Some("run is still active")
+    );
+    let rendered = render_live_lines(&app, 120, 30);
+    assert!(rendered.contains("Continue session"));
+    assert!(rendered.contains("run is still active"));
+    assert!(!rendered.contains("prompt-only"));
+    assert!(!rendered.contains("scenario-fixture"));
+    assert!(!rendered.contains("replay-only"));
 }
 
 #[cfg(test)]
 #[test]
-fn session_history_picker_surfaces_continue_disabled_reason() {
-    let intents = Arc::new(std::sync::Mutex::new(Vec::<UiIntent>::new()));
-    let intent_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
-        let intents = Arc::clone(&intents);
-        Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
-        })
-    };
+fn replay_picker_keeps_prompt_runs_visible() {
     let mut app = app::AppState::new_startup(
-        vec![startup_session_entry_with_details(
-            "run_prompt_only",
-            "/tmp/sessions/run_prompt_only",
-            "prompt-only",
-            Some(harness_core::proj::RunStatus::Finished),
-            Some("2026-03-08T12:34:56Z"),
-            "ops",
-            "openai/gpt-5.3-codex",
-            false,
-            Some("prompt runs are not resumable"),
-        )],
-        Some(intent_sink),
+        vec![
+            startup_session_entry_with_mode_and_details(
+                "run_ready_live",
+                "/tmp/sessions/run_ready_live",
+                "ready-live",
+                Some(harness_core::proj::RunStatus::Finished),
+                Some("2026-03-08T07:00:00Z"),
+                "deep",
+                "openai/gpt-5.4",
+                harness_core::proj::SessionModeSource::InteractiveLive,
+                true,
+                None,
+            ),
+            startup_session_entry_with_mode_and_details(
+                "run_prompt",
+                "/tmp/sessions/run_prompt",
+                "prompt-only",
+                Some(harness_core::proj::RunStatus::Failed),
+                Some("2026-03-08T06:00:00Z"),
+                "ops",
+                "openai/gpt-5.3-codex",
+                harness_core::proj::SessionModeSource::Prompt,
+                false,
+                Some("prompt runs are not resumable"),
+            ),
+            startup_session_entry_with_mode_and_details(
+                "run_scenario",
+                "/tmp/sessions/run_scenario",
+                "scenario-fixture",
+                Some(harness_core::proj::RunStatus::Finished),
+                Some("2026-03-08T05:00:00Z"),
+                "default",
+                "mock/mock-1",
+                harness_core::proj::SessionModeSource::ScenarioFixture,
+                false,
+                Some("scenario fixture runs are excluded from resume"),
+            ),
+            startup_session_entry_with_mode_and_details(
+                "run_replay_only",
+                "/tmp/sessions/run_replay_only",
+                "replay-only",
+                Some(harness_core::proj::RunStatus::Finished),
+                Some("2026-03-08T04:00:00Z"),
+                "default",
+                "openai/gpt-5.4",
+                harness_core::proj::SessionModeSource::ReplayOnly,
+                false,
+                Some("replay-only launches are not resumable"),
+            ),
+        ],
+        None,
     );
 
     app.handle_key(key_with_modifiers(
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "resume".chars() {
+    for ch in "replay".chars() {
         app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
-    app.handle_key(key(crossterm::event::KeyCode::Enter));
-
-    let intents = intents.lock().expect("lock intents");
-    assert!(intents.is_empty());
-    drop(intents);
 
     assert!(app.session_history_visible);
     assert_eq!(
-        app.continue_disabled_banner.as_deref(),
-        Some("continue unavailable: prompt runs are not resumable")
+        app.session_history_filtered
+            .iter()
+            .map(|index| app.session_history_entries[*index].catalog.run_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["run_ready_live", "run_prompt"]
     );
-    assert!(render_live_lines(&app, 120, 30)
-        .contains("continue unavailable: prompt runs are not resumable"));
+    let rendered = render_live_lines(&app, 120, 30);
+    assert!(rendered.contains("Replay session"));
+    assert!(rendered.contains("prompt-only"));
+    assert!(rendered.contains("prompt-only replay ready"));
+    assert!(!rendered.contains("scenario-fixture"));
+    assert!(!rendered.contains("replay-only"));
 }
 
 #[cfg(test)]
@@ -3987,13 +4373,13 @@ fn permission_modal_preempts_prompt_submission() {
 
 #[cfg(test)]
 #[test]
-fn startup_palette_emits_new_replay_continue_intents() {
-    let intents = Arc::new(std::sync::Mutex::new(Vec::<UiIntent>::new()));
-    let intent_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
-        let intents = Arc::clone(&intents);
-        Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
-        })
+fn startup_surface_renders_primary_actions() {
+    let normalize_snapshot = |render: String| {
+        render
+            .lines()
+            .map(str::trim_end)
+            .collect::<Vec<_>>()
+            .join("\n")
     };
 
     let mut app = app::AppState::new_startup(
@@ -4003,53 +4389,592 @@ fn startup_palette_emits_new_replay_continue_intents() {
             true,
             None,
         )],
-        Some(intent_sink),
+        None,
     );
+    app.set_launch_metadata(
+        app::LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo"),
+    );
+
+    let rendered = render_live_lines(&app, 100, 24);
+    assert_eq!(app.focus, app::Focus::List);
+
+    let new_idx = rendered.find("New session").expect("new session label");
+    let continue_idx = rendered
+        .find("Continue session")
+        .expect("continue session label");
+    let replay_idx = rendered
+        .find("Replay session")
+        .expect("replay session label");
+
+    assert!(new_idx < continue_idx);
+    assert!(continue_idx < replay_idx);
+    insta::assert_snapshot!(normalize_snapshot(rendered), @r###"
+
+
+
+
+
+    ┌Harness─────────────────────────────────────────────────────────────┐
+    │                 Preset worker · mock/model-1 · Demo                │
+    │   Dispatch a new run, reopen live work, or inspect saved history.  │
+    │ + New session · dispatch a fresh run from the draft below          │
+    │ ▶ Continue session · reopen interactive work · 1 ready             │
+    │ ↺ Replay session · inspect saved runs read-only · 1 available      │
+    │            1 saved run ready across Continue and Replay            │
+    │    Type to quick-start a fresh run · Ctrl+P opens session tools    │
+    └────────────────────────────────────────────────────────────────────┘
+
+
+
+
+
+ Ready   startup launcher ready · choose New/Continue/Replay or type to quick-
+┌Composer · 1 line · 0 chars─────────────────────────────────────────────────┐
+│Type to quick-start a new session while the lifecycle actions stay          │
+└────────────────────────────────────────────────────────────────────────────┘
+↑ prev  ↓ next  Enter select  Tab composer  Ctrl+p palette  q quit
+"###);
+}
+
+#[cfg(test)]
+#[test]
+fn startup_typing_moves_to_quick_start_prompt() {
+    let mut app = app::AppState::new_startup(Vec::new(), None);
+
+    assert_eq!(app.focus, app::Focus::List);
+    assert!(app.prompt_buffer.is_empty());
+
+    app.handle_key(key(crossterm::event::KeyCode::Char('x')));
+
+    assert_eq!(app.focus, app::Focus::Prompt);
+    assert_eq!(app.prompt_buffer, "x");
+    assert_eq!(app.prompt_cursor, 1);
+
+    let rendered = render_live_lines(&app, 100, 24);
+    assert!(rendered.contains("New session"));
+    assert!(rendered.contains("Continue session"));
+    assert!(rendered.contains("Replay session"));
+    assert!(rendered.contains("x█"));
+}
+
+#[cfg(test)]
+#[test]
+fn startup_palette_remains_secondary_and_draft_safe() {
+    let mut app = app::AppState::new_startup(
+        vec![startup_session_entry(
+            "run_resume",
+            "/tmp/sessions/run_resume",
+            true,
+            None,
+        )],
+        None,
+    );
+
+    for ch in "keep this draft".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+
+    let rendered = render_live_lines(&app, 100, 24);
+    assert!(rendered.contains("New session"));
+    assert!(rendered.contains("Continue session"));
+    assert!(rendered.contains("Replay session"));
+    assert_eq!(app.prompt_buffer, "keep this draft");
+    assert_eq!(app.focus, app::Focus::Prompt);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+
+    assert!(app.palette_visible);
+    insta::assert_snapshot!(render_live_lines(&app, 100, 24), @r###"
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+    ┌Harness─────────────────────────────────────────────────────────────┐               
+┌Command palette─────────────────────────────────────────────────────────────┐           
+│> █                                                                         │           
+│New session  Start a fresh live session                                     │           
+│Continue session  Continue a prior session when resumable                   │           
+│Replay session  Replay a previous session as read-only                      │           
+│Help  Open Help surface                                                     │           
+│Run  Return to conversation surface                                         │           
+│Details  Toggle live details drawer                                         │           
+│Events  Open Events surface                                                 │           
+│Diff  Open Diff surface                                                     │           
+└────────────────────────────────────────────────────────────────────────────┘           
+                                                                                         
+                                                                                         
+ Ready   startup launcher ready · choose New/Continue/Replay or type to quick-           
+┌Composer · 1 line · 15 chars────────────────────────────────────────────────┐           
+│keep this draft█                                                            │           
+└────────────────────────────────────────────────────────────────────────────┘           
+Enter send  Shift+Enter nl  i details  2 events  3 diff  4 help  q quit
+"###);
+
+    app.handle_key(key(crossterm::event::KeyCode::Esc));
+
+    assert!(!app.palette_visible);
+    assert_eq!(app.prompt_buffer, "keep this draft");
+    assert_eq!(app.prompt_cursor, "keep this draft".chars().count());
+    assert_eq!(app.focus, app::Focus::Prompt);
+}
+
+#[cfg(test)]
+#[test]
+fn post_run_handoff_renders_next_actions() {
+    let mut app = app::AppState::new_live(
+        Some(PathBuf::from("/tmp/sessions/run_fixture")),
+        false,
+        None,
+    );
+    app.active_tab = app::Tab::Events;
+    app.focus = app::Focus::Prompt;
     app.prompt_buffer = "keep this draft".to_string();
     app.prompt_cursor = app.prompt_buffer.chars().count();
 
-    app.handle_key(key_with_modifiers(
-        crossterm::event::KeyCode::Char('p'),
-        crossterm::event::KeyModifiers::CONTROL,
+    app.ingest_event(envelope(
+        1,
+        None,
+        harness_core::event::EventV1::RunFinished(harness_core::event::RunFinishedEvent {
+            summary: "all tasks complete".to_string(),
+        }),
     ));
+
+    assert_eq!(app.active_tab, app::Tab::Run);
+    assert_eq!(app.focus, app::Focus::List);
+    assert!(app.post_run_handoff_visible());
+    assert!(app.runtime_state().composer_disabled);
+
+    let rendered = render_live_lines(&app, 100, 24);
+    let continue_idx = rendered
+        .find("Continue this session")
+        .expect("continue action");
+    let replay_idx = rendered.find("Replay this run").expect("replay action");
+    let new_idx = rendered
+        .find("Start another session")
+        .expect("new session action");
+    let quit_idx = rendered.find("Quit").expect("quit action");
+
+    assert!(continue_idx < replay_idx);
+    assert!(replay_idx < new_idx);
+    assert!(new_idx < quit_idx);
+    assert!(rendered.contains("Next action"));
+    assert!(rendered.contains("Continue available"));
+    assert!(rendered.contains("› ▶ Continue this session"));
+    assert!(rendered.contains("resume this run live from the composer"));
+    assert!(!rendered.contains("Composer"));
+    assert!(rendered.contains("↑ prev"));
+    assert!(rendered.contains("↓ next"));
+    assert!(rendered.contains("Enter select"));
+    assert!(rendered.contains("2 events"));
+    assert!(rendered.contains("3 diff"));
+    assert!(rendered.contains("4 help"));
+    assert!(!rendered.contains(" send"));
+    assert!(!rendered.contains(" nl"));
+}
+
+#[cfg(test)]
+#[test]
+fn post_run_failure_handoff_renders_recovery_actions() {
+    let mut app = app::AppState::new_live(
+        Some(PathBuf::from("/tmp/sessions/run_fixture")),
+        false,
+        None,
+    );
+
+    app.ingest_event(envelope(
+        1,
+        None,
+        harness_core::event::EventV1::RunFailed(harness_core::event::RunFailedEvent {
+            error: "tool execution failed".to_string(),
+        }),
+    ));
+
+    assert!(matches!(
+        app.runtime_state().kind,
+        app::RuntimeStateKind::Failure
+    ));
+    assert_eq!(app.focus, app::Focus::List);
+
+    let rendered = render_live_lines(&app, 100, 24);
+    let continue_idx = rendered
+        .find("Continue this session")
+        .expect("continue action");
+    let replay_idx = rendered.find("Replay this run").expect("replay action");
+    let new_idx = rendered
+        .find("Start another session")
+        .expect("new session action");
+    let quit_idx = rendered.find("Quit").expect("quit action");
+
+    assert!(continue_idx < replay_idx);
+    assert!(replay_idx < new_idx);
+    assert!(new_idx < quit_idx);
+    assert!(rendered.contains("Next action"));
+    assert!(rendered.contains("Recovery available"));
+    assert!(rendered.contains("› ▶ Continue this session"));
+    assert!(rendered.contains("run failed · choose what to do next"));
+    assert!(!rendered.contains("current run cannot be reopened"));
+    assert!(!rendered.contains("Composer"));
+}
+
+#[cfg(test)]
+#[test]
+fn post_run_handoff_disables_prompt_submission() {
+    let intents = Arc::new(std::sync::Mutex::new(Vec::<UiIntent>::new()));
+    let intent_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+    let mut app = app::AppState::new_live(None, false, Some(intent_sink));
+    app.prompt_buffer = "blocked prompt".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
+
+    app.ingest_event(envelope(
+        1,
+        None,
+        harness_core::event::EventV1::RunFinished(harness_core::event::RunFinishedEvent {
+            summary: "done".to_string(),
+        }),
+    ));
+
+    let rendered = render_live_lines(&app, 100, 24);
+    assert!(rendered.contains("Next action"));
+    assert!(rendered.contains("current run cannot be reopened"));
+    assert!(rendered.contains("Recovery only"));
+    assert!(rendered.contains("› + Start another session"));
+    assert!(rendered.contains("  × Quit"));
+    assert!(!rendered.contains("Continue this session"));
+    assert!(!rendered.contains("Replay this run"));
+    assert!(!rendered.contains("Composer"));
+
+    app.focus = app::Focus::Prompt;
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+    assert_eq!(app.prompt_buffer, "blocked prompt");
+    assert!(intents.lock().expect("lock intents").is_empty());
+
+    app.focus = app::Focus::List;
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
-    app.replay_mode = false;
-    app.handle_key(key_with_modifiers(
-        crossterm::event::KeyCode::Char('p'),
-        crossterm::event::KeyModifiers::CONTROL,
+    let intents = intents.lock().expect("lock intents");
+    assert_eq!(&*intents, &[UiIntent::NewSession]);
+    assert!(app.should_quit);
+}
+
+#[cfg(test)]
+#[test]
+fn continued_quiescent_bootstrap_shows_handoff_before_reopening_live_conversation() {
+    app::set_pending_live_launch_metadata(
+        app::LaunchMetadata::from_model_ref("worker", "default:model-1")
+            .with_mode_label("Continued"),
+    );
+    let mut app = app::AppState::new_live(
+        Some(PathBuf::from("/tmp/sessions/run_resume_quiescent")),
+        false,
+        Some(Arc::new(|_| {})),
+    );
+
+    app.ingest_historical_event(envelope(
+        1,
+        Some("req_resume_terminal"),
+        harness_core::event::EventV1::RunFinished(harness_core::event::RunFinishedEvent {
+            summary: "all tasks complete".to_string(),
+        }),
     ));
-    for ch in "replay".chars() {
-        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+
+    let handoff_render = render_live_lines(&app, 100, 24);
+    assert!(handoff_render.contains("Next action"));
+    assert!(handoff_render.contains("› ▶ Continue this session"));
+    assert!(!handoff_render.contains("Continued · run run_resume_quiescent"));
+    assert!(!handoff_render.contains("Composer"));
+
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    let resumed_render = render_live_lines(&app, 100, 24);
+    assert!(!resumed_render.contains("Next action"));
+    assert!(resumed_render.contains("Continued live run"));
+    assert!(resumed_render.contains("Same run reopened live"));
+    assert!(resumed_render.contains("Composer"));
+}
+
+#[cfg(test)]
+#[test]
+fn lifecycle_shell_state_transitions() {
+    let mut startup = app::AppState::new_startup(Vec::new(), None);
+    startup.prompt_buffer = "draft prompt".to_string();
+    startup.prompt_cursor = startup.prompt_buffer.chars().count();
+
+    assert_eq!(
+        startup.lifecycle_shell_state(),
+        app::LifecycleShellState::Startup
+    );
+    assert!(startup.startup_shell_visible());
+    assert!(!startup.post_run_handoff_visible());
+    assert!(!startup.composer_disabled());
+
+    let mut post_run = app::AppState::new_live(
+        Some(PathBuf::from("/tmp/sessions/run_fixture")),
+        false,
+        None,
+    );
+    post_run.ingest_event(envelope(
+        1,
+        Some("req_state_transition"),
+        harness_core::event::EventV1::RunFinished(harness_core::event::RunFinishedEvent {
+            summary: "all tasks complete".to_string(),
+        }),
+    ));
+
+    assert_eq!(
+        post_run.lifecycle_shell_state(),
+        app::LifecycleShellState::PostRun
+    );
+    assert!(!post_run.startup_shell_visible());
+    assert!(post_run.post_run_handoff_visible());
+    assert!(post_run.composer_disabled());
+    assert_eq!(
+        post_run.selected_post_run_handoff_action(),
+        app::PostRunHandoffAction::ContinueSession
+    );
+
+    let fallback_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = Arc::new(|_| {});
+    let mut missing_session_path = app::AppState::new_live(None, false, Some(fallback_sink));
+    missing_session_path.ingest_event(envelope(
+        1,
+        Some("req_state_transition_missing_path"),
+        harness_core::event::EventV1::RunFinished(harness_core::event::RunFinishedEvent {
+            summary: "all tasks complete".to_string(),
+        }),
+    ));
+
+    assert_eq!(
+        missing_session_path.lifecycle_shell_state(),
+        app::LifecycleShellState::PostRun
+    );
+    assert_eq!(
+        missing_session_path.post_run_handoff_notice(),
+        Some("current run cannot be reopened")
+    );
+    assert_eq!(
+        missing_session_path.selected_post_run_handoff_action(),
+        app::PostRunHandoffAction::StartAnotherSession
+    );
+
+    let replay = app::AppState::new_replay(
+        PathBuf::from("/tmp/replay-session"),
+        vec![envelope(
+            1,
+            Some("req_replay_state_transition"),
+            harness_core::event::EventV1::RunFinished(harness_core::event::RunFinishedEvent {
+                summary: "done".to_string(),
+            }),
+        )],
+    );
+
+    assert_eq!(
+        replay.lifecycle_shell_state(),
+        app::LifecycleShellState::None
+    );
+    assert!(!replay.startup_shell_visible());
+    assert!(!replay.post_run_handoff_visible());
+    assert!(replay.composer_disabled());
+}
+
+#[cfg(test)]
+#[test]
+fn lifecycle_shell_snapshots() {
+    let normalize_snapshot = |render: String| {
+        render
+            .lines()
+            .map(str::trim_end)
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let mut startup = app::AppState::new_startup(
+        vec![startup_session_entry(
+            "run_resume",
+            "/tmp/sessions/run_resume",
+            true,
+            None,
+        )],
+        None,
+    );
+    startup.set_launch_metadata(
+        app::LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo"),
+    );
+
+    let startup_render = render_live_lines(&startup, 100, 24);
+    let new_idx = startup_render
+        .find("New session")
+        .expect("new session label");
+    let continue_idx = startup_render
+        .find("Continue session")
+        .expect("continue session label");
+    let replay_idx = startup_render
+        .find("Replay session")
+        .expect("replay session label");
+    assert!(new_idx < continue_idx);
+    assert!(continue_idx < replay_idx);
+    assert!(startup_render.contains("Type to quick-start"));
+    insta::assert_snapshot!(
+        "lifecycle_shell_startup_surface",
+        normalize_snapshot(startup_render)
+    );
+
+    let entries = vec![
+        startup_session_entry_with_details(
+            "run_resume",
+            "/tmp/sessions/run_resume",
+            "alpha-run",
+            Some(harness_core::proj::RunStatus::Finished),
+            Some("2026-03-08T12:34:56Z"),
+            "deep",
+            "openai/gpt-5.4",
+            true,
+            None,
+        ),
+        startup_session_entry_with_mode_and_details(
+            "run_prompt_only",
+            "/tmp/sessions/run_prompt_only",
+            "beta-prompt",
+            Some(harness_core::proj::RunStatus::Failed),
+            Some("2026-03-07T03:21:00Z"),
+            "ops",
+            "anthropic/claude-3.7",
+            harness_core::proj::SessionModeSource::Prompt,
+            false,
+            Some("prompt runs are not resumable"),
+        ),
+        startup_session_entry_with_mode_and_details(
+            "run_blocked",
+            "/tmp/sessions/run_blocked",
+            "blocked-interactive",
+            Some(harness_core::proj::RunStatus::Running),
+            Some("2026-03-06T09:15:00Z"),
+            "ops",
+            "openai/gpt-5.4",
+            harness_core::proj::SessionModeSource::InteractiveLive,
+            false,
+            Some("run is still active"),
+        ),
+    ];
+    let mut picker = app::AppState::new_startup(entries, None);
+    for ch in "keep this draft".chars() {
+        picker.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
-    app.handle_key(key(crossterm::event::KeyCode::Enter));
-    app.handle_key(key(crossterm::event::KeyCode::Enter));
+    assert_eq!(picker.prompt_buffer, "keep this draft");
+    assert_eq!(picker.focus, app::Focus::Prompt);
 
-    app.replay_mode = false;
-    app.handle_key(key_with_modifiers(
+    picker.handle_key(key_with_modifiers(
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
     for ch in "resume".chars() {
-        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+        picker.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
-    app.handle_key(key(crossterm::event::KeyCode::Enter));
-    app.handle_key(key(crossterm::event::KeyCode::Enter));
+    picker.handle_key(key(crossterm::event::KeyCode::Enter));
 
-    let intents = intents.lock().expect("lock intents");
-    assert_eq!(
-        intents.as_slice(),
-        &[
-            UiIntent::NewSession,
-            UiIntent::ReplaySession {
-                run_id: "run_resume".to_string(),
-                run_dir: PathBuf::from("/tmp/sessions/run_resume"),
-            },
-            UiIntent::ContinueSession {
-                run_id: "run_resume".to_string(),
-                run_dir: PathBuf::from("/tmp/sessions/run_resume"),
-            },
-        ]
+    let continue_render = render_live_lines(&picker, 120, 30);
+    assert!(picker.session_history_visible);
+    assert_eq!(picker.prompt_buffer, "keep this draft");
+    assert!(continue_render.contains("Continue session"));
+    assert!(continue_render.contains("continue ready"));
+    assert!(continue_render.contains("run is still active"));
+    assert!(!continue_render.contains("beta-prompt"));
+
+    picker.handle_key(key(crossterm::event::KeyCode::Esc));
+    picker.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "replay".chars() {
+        picker.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    picker.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    let replay_render = render_live_lines(&picker, 120, 30);
+    assert!(picker.session_history_visible);
+    assert_eq!(picker.prompt_buffer, "keep this draft");
+    assert!(replay_render.contains("Replay session"));
+    assert!(replay_render.contains("beta-prompt"));
+    assert!(replay_render.contains("prompt-only replay ready"));
+    insta::assert_snapshot!(
+        "lifecycle_shell_session_picker",
+        format!(
+            "CONTINUE\n{}\n\nREPLAY\n{}",
+            normalize_snapshot(continue_render),
+            normalize_snapshot(replay_render)
+        )
+    );
+
+    let mut post_run = app::AppState::new_live(
+        Some(PathBuf::from("/tmp/sessions/run_fixture")),
+        false,
+        None,
+    );
+    post_run.active_tab = app::Tab::Events;
+    post_run.focus = app::Focus::Prompt;
+    post_run.prompt_buffer = "keep this draft".to_string();
+    post_run.prompt_cursor = post_run.prompt_buffer.chars().count();
+    post_run.ingest_event(envelope(
+        1,
+        Some("req_post_run"),
+        harness_core::event::EventV1::RunFinished(harness_core::event::RunFinishedEvent {
+            summary: "all tasks complete".to_string(),
+        }),
+    ));
+
+    let post_run_render = render_live_lines(&post_run, 100, 24);
+    let continue_idx = post_run_render
+        .find("Continue this session")
+        .expect("continue action");
+    let replay_idx = post_run_render
+        .find("Replay this run")
+        .expect("replay action");
+    let new_idx = post_run_render
+        .find("Start another session")
+        .expect("new session action");
+    let quit_idx = post_run_render.find("Quit").expect("quit action");
+    assert!(continue_idx < replay_idx);
+    assert!(replay_idx < new_idx);
+    assert!(new_idx < quit_idx);
+    assert!(post_run_render.contains("Next action"));
+    assert!(post_run_render.contains("Continue available"));
+    assert!(post_run_render.contains("› ▶ Continue this session"));
+    assert!(post_run_render.contains("run finished · choose what to do next"));
+    assert!(!post_run_render.contains("Composer"));
+    insta::assert_snapshot!(
+        "lifecycle_shell_post_run_surface",
+        normalize_snapshot(post_run_render)
+    );
+
+    let fallback_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = Arc::new(|_| {});
+    let mut fallback = app::AppState::new_live(None, false, Some(fallback_sink));
+    fallback.ingest_event(envelope(
+        1,
+        Some("req_post_run_missing_session_path"),
+        harness_core::event::EventV1::RunFinished(harness_core::event::RunFinishedEvent {
+            summary: "all tasks complete".to_string(),
+        }),
+    ));
+
+    let fallback_render = render_live_lines(&fallback, 100, 24);
+    assert!(fallback_render.contains("Next action"));
+    assert!(fallback_render.contains("current run cannot be reopened"));
+    assert!(fallback_render.contains("Recovery only"));
+    assert!(fallback_render.contains("› + Start another session"));
+    assert!(fallback_render.contains("  × Quit"));
+    assert!(!fallback_render.contains("Continue this session"));
+    assert!(!fallback_render.contains("Replay this run"));
+    assert!(!fallback_render.contains("Composer"));
+    insta::assert_snapshot!(
+        "lifecycle_shell_post_run_fallback_surface",
+        normalize_snapshot(fallback_render)
     );
 }
 
@@ -4555,7 +5480,98 @@ fn startup_shell_shows_profile_provider_and_model_chrome() {
     let rendered = render_live_lines(&app, 100, 24);
     assert!(rendered.contains("Harness"));
     assert!(rendered.contains("Preset deep · proxy/gpt-5.4 · Demo"));
-    assert!(rendered.contains("Start a conversation to begin"));
+    assert!(rendered.contains("Dispatch a new run"));
+    assert!(rendered.contains("New session"));
+    assert!(rendered.contains("Continue session"));
+    assert!(rendered.contains("Replay session"));
+}
+
+#[cfg(test)]
+#[test]
+fn lifecycle_shell_narrow_layout_renders_primary_cta() {
+    let app = app::AppState::new_startup(Vec::new(), None);
+
+    let rendered = render_live_lines(&app, 80, 24);
+    assert_live_shell_frame_invariants(&rendered, 80, 24);
+
+    let lines = rendered.lines().collect::<Vec<_>>();
+    let new_session_row = find_line_containing(&lines, "New session").expect("primary CTA row");
+    let continue_row = find_line_containing(&lines, "Continue session").expect("secondary CTA row");
+    let replay_row = find_line_containing(&lines, "Replay session").expect("replay CTA row");
+    let hint_row =
+        find_line_containing(&lines, "Type to quick-start").expect("quick-start hint row");
+    let footer_row = find_line_containing(&lines, "q quit").expect("footer row");
+
+    assert!(new_session_row < continue_row);
+    assert!(continue_row < replay_row);
+    assert!(replay_row < hint_row);
+    assert!(hint_row < footer_row);
+}
+
+#[cfg(test)]
+#[test]
+fn startup_card_uses_lifecycle_geometry_contract() {
+    let theme = Theme::default();
+    let minimum_area = ratatui::layout::Rect::new(0, 0, 80, 24);
+    let primary_area = ratatui::layout::Rect::new(0, 0, 100, 30);
+
+    let minimum_layout = theme.lifecycle_surface_layout(minimum_area.width, minimum_area.height);
+    let primary_layout = theme.lifecycle_surface_layout(primary_area.width, primary_area.height);
+
+    let minimum_startup = layout::startup_shell_area(minimum_area, &theme);
+    let primary_startup = layout::startup_shell_area(primary_area, &theme);
+
+    assert_eq!(
+        minimum_startup,
+        layout::lifecycle_card_area(minimum_area, &theme, minimum_layout.startup_card)
+    );
+    assert_eq!(
+        primary_startup,
+        layout::lifecycle_card_area(primary_area, &theme, primary_layout.startup_card)
+    );
+    assert_eq!(minimum_startup, ratatui::layout::Rect::new(5, 7, 70, 9));
+    assert_eq!(primary_startup, ratatui::layout::Rect::new(13, 10, 74, 9));
+    assert_ne!(
+        minimum_startup,
+        layout::live_empty_state_area(minimum_area, &theme)
+    );
+    assert_ne!(
+        primary_startup,
+        layout::live_empty_state_area(primary_area, &theme)
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn post_run_card_uses_lifecycle_geometry_contract() {
+    let theme = Theme::default();
+    let minimum_area = ratatui::layout::Rect::new(0, 0, 80, 24);
+    let primary_area = ratatui::layout::Rect::new(0, 0, 100, 30);
+
+    let minimum_layout = theme.lifecycle_surface_layout(minimum_area.width, minimum_area.height);
+    let primary_layout = theme.lifecycle_surface_layout(primary_area.width, primary_area.height);
+
+    let minimum_post_run =
+        layout::lifecycle_card_area(minimum_area, &theme, minimum_layout.post_run_card);
+    let primary_post_run =
+        layout::lifecycle_card_area(primary_area, &theme, primary_layout.post_run_card);
+
+    assert_eq!(minimum_post_run, ratatui::layout::Rect::new(4, 7, 72, 10));
+    assert_eq!(primary_post_run, ratatui::layout::Rect::new(12, 10, 76, 10));
+    assert!(minimum_post_run.height > minimum_layout.startup_card.height);
+    assert!(primary_post_run.width > primary_layout.startup_card.width);
+    assert_eq!(
+        minimum_post_run
+            .x
+            .saturating_add(minimum_post_run.width / 2),
+        minimum_area.width / 2
+    );
+    assert_eq!(
+        primary_post_run
+            .x
+            .saturating_add(primary_post_run.width / 2),
+        primary_area.width / 2
+    );
 }
 
 #[cfg(test)]
@@ -4639,11 +5655,11 @@ fn live_status_strip_orchestration_summary_truncates_warning_last() {
     let app = orchestration_status_strip_fixture();
 
     let wide = live_status_strip_row(&app, 160, 30, "ready for first turn");
-    assert!(wide.contains("agents 2 · queued 1 · running 1 · stale 1"));
+    assert!(wide.contains("orch 2a 1q 1r 1s"));
     assert!(wide.contains("· warn stale for 3001 ms"));
 
     let counts_only = live_status_strip_row(&app, 77, 24, "ready for first turn");
-    assert!(counts_only.contains("agents 2 · queued 1 · running 1 · stale 1"));
+    assert!(counts_only.contains("orch 2a 1q 1r 1s"));
     assert!(!counts_only.contains("warn"));
 }
 
@@ -4653,7 +5669,7 @@ fn live_status_strip_renders_zero_state_orchestration_counts() {
     let app = app::AppState::new_live(None, false, None);
 
     let status_row = live_status_strip_row(&app, 80, 24, "ready for first turn");
-    assert!(status_row.contains("agents 0 · queued 0 · running 0 · stale 0"));
+    assert!(status_row.contains("orch 0a 0q 0r 0s"));
     assert!(!status_row.contains("warn"));
 }
 
@@ -4719,7 +5735,11 @@ fn live_shell_shift_enter_keeps_draft_multiline() {
         &app,
         80,
         24,
-        &["first line", "second line", "Composer · 2 lines · 22 chars"],
+        &[
+            "first line",
+            "second line",
+            "Composer · draft · 2 lines · 22 chars",
+        ],
     );
 }
 
@@ -4797,7 +5817,7 @@ fn live_shell_inline_tool_state_snapshot() {
             "Permission Requested",
             "Read the file",
             "demo.txt",
-            "[a]llow  [d]eny  [esc]dismiss",
+            "[d] deny",
         ],
     );
 }
@@ -4825,7 +5845,8 @@ fn live_shell_permission_preserves_draft_snapshot() {
         &[
             "Permission blocked",
             "Composer · disabled · Permission blocked",
-            "[a]llow  [d]eny  [esc]dismiss",
+            "FAIL CLOSED",
+            "[d] deny",
         ],
     );
 }
@@ -4837,6 +5858,7 @@ fn live_shell_degraded_bootstrap_snapshot() {
     app.set_status_banner(Some(
         "live stream lagged by 2; replaying from seq 1".to_string(),
     ));
+    println!("{}", render_live_lines(&app, 80, 24));
 
     assert_live_shell_contains(
         &app,
@@ -4846,6 +5868,7 @@ fn live_shell_degraded_bootstrap_snapshot() {
             "Degraded",
             "Composer · disabled · Degraded",
             "replaying from seq 1",
+            "Sending paused",
         ],
     );
 }
@@ -4855,6 +5878,7 @@ fn live_shell_degraded_bootstrap_snapshot() {
 fn live_shell_disconnected_stream_snapshot() {
     let mut app = app::AppState::new_live(None, false, None);
     app.set_status_banner(Some("live event stream disconnected".to_string()));
+    println!("{}", render_live_lines(&app, 80, 24));
 
     assert_live_shell_contains(
         &app,
@@ -4864,6 +5888,7 @@ fn live_shell_disconnected_stream_snapshot() {
             "Disconnected",
             "reopen the TUI",
             "Composer · disabled · Disconnected",
+            "Draft preserved locally",
         ],
     );
 }
@@ -4881,8 +5906,8 @@ fn live_shell_details_drawer_orchestration_snapshot() {
 
     println!("{card_body}");
     insta::assert_snapshot!(card_body, @r###"
-agents 1 · queued 2 · running 1 · stale 1
-warn: stale for 3001 ms
+overview · 1 active agents · 2 queued · 1 running · 1 stale
+watch · stale for 3001 ms
  stale  task_stale · w1/deep · scan
  running  task_run · supervisor/n/a · queue:none
  queued  task_queue · system/n/a · tool:read
@@ -4899,8 +5924,8 @@ fn live_shell_details_drawer_orchestration_primary_snapshot() {
     let rendered = render_live_lines(&app, 100, 30);
     println!("{rendered}");
     assert!(rendered.contains("○ Orchestration"));
-    assert!(rendered.contains("agents 1 · queued 2 · running 1"));
-    assert!(rendered.contains("warn: stale for 3001 ms"));
+    assert!(rendered.contains("○ Orchestration · 5 tracked · 1 active"));
+    assert!(rendered.contains("watch · stale for 3001 ms"));
     assert!(rendered.contains("completed  task_done · w2/scout"));
     assert!(rendered.contains("● Details"));
 }
@@ -4913,8 +5938,8 @@ fn live_shell_details_drawer_orchestration_overflow_snapshot() {
 
     println!("{card_body}");
     insta::assert_snapshot!(card_body, @r###"
-agents 1 · queued 2 · running 1 · stale 1
-warn: stale for 3001 ms
+overview · 1 active agents · 2 queued · 1 running · 1 stale
+watch · stale for 3001 ms
  stale  task_stale · w1/deep · scan
  running  task_run · supervisor/n/a · queue:none
  queued  task_queue · system/n/a · tool:read
@@ -4934,8 +5959,8 @@ fn live_details_drawer_orchestration_warning_fallback() {
     app.handle_key(key(crossterm::event::KeyCode::Char('i')));
 
     let card_body = orchestration_details_drawer_card_body(&app, 7, 76);
-    assert!(card_body.contains("warn: none"));
-    assert!(card_body.contains("agents 0 · queued 1 · running 0 · stale 0"));
+    assert!(card_body.contains("watch · none"));
+    assert!(card_body.contains("overview · 0 active agents · 1 queued · 0 running · 0 stale"));
 }
 
 #[cfg(test)]
@@ -5003,7 +6028,7 @@ fn assert_live_shell_geometry(width: u16, height: u16) {
     let lines = rendered.lines().collect::<Vec<_>>();
     let status_row = find_line_containing(&lines, "Success").expect("status strip");
     let composer_top = find_line_containing(&lines, "Composer").expect("composer frame title");
-    let composer_bottom = find_line_containing_from(&lines, composer_top + 1, "└")
+    let composer_bottom = find_line_containing_from(&lines, composer_top + 1, "─")
         .expect("composer frame bottom border");
     let footer_row = find_line_containing(&lines, "Enter send").expect("footer legend");
 
@@ -5143,7 +6168,7 @@ fn replay_and_diff_surfaces_remain_secondary_but_reachable() {
     assert_eq!(live.active_tab, app::Tab::Events);
     assert!(!live.details_drawer_open());
     let live_events_debug = render_live_buffer(&live, 80, 24);
-    assert!(live_events_debug.contains("Events"));
+    assert!(live_events_debug.contains("Event log"));
     assert!(live_events_debug.contains("Event details"));
 
     live.handle_key(key(crossterm::event::KeyCode::Char('3')));
@@ -5169,7 +6194,7 @@ fn replay_and_diff_surfaces_remain_secondary_but_reachable() {
     assert_eq!(replay.active_tab, app::Tab::Events);
     let replay_events_debug = render_live_buffer(&replay, 80, 24);
     assert!(replay_events_debug.contains("Tabs"));
-    assert!(replay_events_debug.contains("Event details"));
+    assert!(replay_events_debug.contains("Selected event"));
 
     replay.handle_key(key(crossterm::event::KeyCode::Char('3')));
     assert_eq!(replay.active_tab, app::Tab::Diff);

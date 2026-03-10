@@ -601,7 +601,7 @@ fn command_palette_includes_task5_session_actions() {
     );
     assert!(
         palette_surface.contains("new_session:start a fresh live session")
-            && palette_surface.contains("resume_session:resume a prior session when resumable")
+            && palette_surface.contains("resume_session:continue a prior session when resumable")
             && palette_surface.contains("replay_session:replay a previous session as read-only"),
         "expected task-5 ctrl-p surface to include session actions, got:\n{palette_surface}"
     );
