@@ -4,21 +4,21 @@
 
 
 
-      ┌ Degraded   Live recovery in progress─────────────────────────────┐
-      │recovery in progress · live stream lagged by 2; replaying from se…│
+
+        ┌──────────────────────────────────────────────────────────────┐
+      ┌ Degraded   Recovery in progress──────────────────────────────────┐
+      │Live updates are catching up before sending resumes.              │
       │live stream lagged by 2; replaying from seq 1                     │
-      │Draft preserved locally — Harness is replaying live state before …│
-      │                                                                  │
-      │Sending paused · keep drafting locally until catch-up completes   │
+      │Draft locally until recovery completes.                           │
       └──────────────────────────────────────────────────────────────────┘
+        └──────────────────────────────────────────────────────────────┘
 
 
 
 
 
 
-  Degraded   recovery in progress · live stream lagged by 2; replaying from seq
- Composer · disabled · Degraded────────────────────────────────────────────────
- Draft preserved locally — Harness is replaying live state before it will send
+  Degraded   recovery in progress · Sending paused · live stream lagged by 2; r
  ──────────────────────────────────────────────────────────────────────────────
- i details  2 events  3 diff  4 help  q quit
+ ▎ Draft preserved locally while recovery completes.
+ Ctrl+p commands  ? shortcuts  q quit

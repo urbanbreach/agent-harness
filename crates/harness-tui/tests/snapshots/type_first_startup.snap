@@ -1,30 +1,30 @@
-  run unknown · unknown/unknown · -
-   Waiting for first turn…
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+   Waiting for first turn…                                      │Live · run unknown
+                                                                │unknown/unknown/-
+                                                                │0 active todos · 0 modified files
+                                                                │
+                                                                │No operator activity yet
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │workspace · v0.1.0
    Ready   ready for first turn  ·  orch 0a 0q 0r 0s
-  Composer · draft · 1 line · 14 chars────────────────────────────────────────────────────────────
-   › Hello from PTY█
   ────────────────────────────────────────────────────────────────────────────────────────────────
-   prompt   Enter send  Shift+Enter nl  i details  2 events  3 diff  4 help  q quit
+  ▎ Hello from PTY█
+    shift+enter newline
+  Enter send  Shift+Enter nl  Ctrl+p commands  ? shortcuts  q quit

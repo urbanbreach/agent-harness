@@ -4,13 +4,14 @@
 
 
 
+
+        ┌──────────────────────────────────────────────────────────────┐
       ┌ Disconnected   Connection lost───────────────────────────────────┐
-      │connection lost · reopen the TUI to establish the live stream     │
+      │Transcript stays visible, but sending is paused.                  │
       │live event stream disconnected                                    │
-      │Draft preserved locally — reopen the TUI to reconnect before send…│
-      │                                                                  │
-      │Reconnect required · reopen the TUI, then continue from the visib…│
+      │Reopen the TUI, then continue from the transcript.                │
       └──────────────────────────────────────────────────────────────────┘
+        └──────────────────────────────────────────────────────────────┘
 
 
 
@@ -18,7 +19,6 @@
 
 
   Disconnected   connection lost · reopen the TUI to establish the live stream
- Composer · disabled · Disconnected────────────────────────────────────────────
- Draft preserved locally — reopen the TUI to reconnect before sending another
  ──────────────────────────────────────────────────────────────────────────────
- i details  2 events  3 diff  4 help  q quit
+ ▎ Draft preserved locally — reopen the TUI to reconnect.
+ Ctrl+p commands  ? shortcuts  q quit

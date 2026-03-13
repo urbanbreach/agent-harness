@@ -15,15 +15,10 @@
 
 
 
-     ┌Harness─────────────────────────────────────────────────────────────┐
-     │                 Preset worker · mock/model-1 · Demo                │
-     │   Dispatch a new run, reopen live work, or inspect saved history.  │
-     │ + New session · dispatch a fresh run from the draft below          │
-     │ ▶ Continue session · reopen interactive work · 1 ready · 1 blocked │
-     │ ↺ Replay session · inspect saved runs read-only · 2 available      │
-     │               1 blocked run stay visible with reasons              │
-     │    Type to quick-start a fresh run · Ctrl+P opens session tools    │
-     └────────────────────────────────────────────────────────────────────┘
+
+
+                                     Harness
+                       Preset worker · mock/model-1 · Demo
 
 
 
@@ -41,8 +36,13 @@
 
 
 
-  Ready   startup launcher ready · choose New/Continue/Replay or type to quick-
- ┌Composer · 1 line · 0 chars─────────────────────────────────────────────────┐
- │Type to quick-start a new session while the lifecycle actions stay          │
- └────────────────────────────────────────────────────────────────────────────┘
+
+
+
+
+
+
+  Ready   startup ready · type below or use Ctrl+P for saved runs
+ ──────────────────────────────────────────────────────────────────────────────
+ ▎ Type to start a new session.
  ↑ prev  ↓ next  Enter select  Tab composer  Ctrl+p palette  q quit

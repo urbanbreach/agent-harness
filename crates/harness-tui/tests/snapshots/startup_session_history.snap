@@ -6,7 +6,7 @@
 
 
 
-               ┌Harness─────────────────────────────────────────────────────────────┐
+
     ┌Continue session · 2 matches · 1 blocked──────────────────────────────────────────────────┐
     │> █                                                                                       │
     │Interactive histories · 1 ready · 1 blocked · blocked rows stay visible                   │
@@ -23,8 +23,8 @@
 
 
 
-   Ready   startup launcher ready · choose New/Continue/Replay or type to quick-start
-  ┌Composer · 1 line · 0 chars───────────────────────────────────────────────────────────────────┐
-  │Type to quick-start a new session while the lifecycle actions stay available.                 │
-  └──────────────────────────────────────────────────────────────────────────────────────────────┘
+   Ready   startup ready · type below or use Ctrl+P for saved runs
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  ▎ Type to start a new session.
+    shift+enter newline
   ↑ prev  ↓ next  Enter select  Tab composer  Ctrl+p palette  q quit

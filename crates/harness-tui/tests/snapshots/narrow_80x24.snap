@@ -1,4 +1,4 @@
- run unknown · unknown/unknown · -
+ run unknown · unknown/-
   Waiting for first turn…
 
 
@@ -17,8 +17,8 @@
 
 
 
+
   Ready   ready for first turn  ·  orch 0a 0q 0r 0s
- Composer · draft · 1 line · 14 chars──────────────────────────────────────────
-  › Hello from PTY█
  ──────────────────────────────────────────────────────────────────────────────
- Enter send  Shift+Enter nl  i details  2 events  3 diff  4 help  q quit
+ ▎ Hello from PTY█
+ Enter send  Shift+Enter nl  Ctrl+p commands  q quit

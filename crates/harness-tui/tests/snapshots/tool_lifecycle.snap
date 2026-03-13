@@ -1,30 +1,30 @@
-  run run_fixture · unknown/mock · model-1
-   › user · req_tool_lifecycle
-     │ Inspect tool activity
-   ●  done  assistant · mock/model-1 · current
-     │ Tool summaries are now easier to scan.
-     ╭─ tool fs.read  succeeded
-     │ args   limit=24, path=src/ui.rs, start_line=1
-     │ result 24 lines read from src/ui.rs
-     └ ● call tc_read
-     ╭─ tool shell.run  failed
-     │ args   cmd=cargo test -p harness-tui, cwd=/workspace
-     │ error  exit code: 1 stderr: snapshot mismatch
-     └ ✗ call tc_shell
-
-
-
-
-
-
-
-
-
-
-
-
-   Success   turn 1/1 · req_tool_lifecycle · mock/model-1 · ready for next turn
-  Composer · ready · 1 line · 0 chars─────────────────────────────────────────────────────────────
-   › █
+   run run_fixture                           unknown/mock/model-1                            live
   ────────────────────────────────────────────────────────────────────────────────────────────────
-   prompt   Enter send  Shift+Enter nl  i details  2 events  3 diff  4 help  q quit
+   ╭─ › user (req_tool_lifecycle)                               │Live · run run_fixture
+   │  Inspect tool activity                                     │unknown/mock/model-1
+   ╰─                                                           │0 active todos · 0 modified files
+                                                                │
+   ╭─ ● assistant (done · current · mock/model-1)               │No operator activity yet
+   │    ● tool fs.read (succeeded) · 24 lines read from         │
+   src/ui.rs                                                    │
+   │    ✗ tool shell.run (failed)                               │
+   │    args · cmd=cargo test -p harness-tui, cwd=/workspace    │
+   │    error · exit code: 1 stderr: snapshot mismatch          │
+   │  Tool summaries are now easier to scan.                    │
+   ╰─                                                           │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │workspace · v0.1.0
+   Success   turn 1 · ready for next turn
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  ▎ Ask Harness to inspect, edit, or explain…
+    shift+enter newline
+  Enter send  Shift+Enter nl  Ctrl+p commands  ? shortcuts  q quit

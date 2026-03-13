@@ -29,7 +29,7 @@ const STABLE_WINDOW: Duration = Duration::from_millis(180);
 const STABLE_TIMEOUT: Duration = Duration::from_secs(2);
 const ORCHESTRATION_EVENT_DELAY: Duration = Duration::from_millis(250);
 const PRESERVED_DRAFT_TEXT: &str = "keep this draft";
-const STARTUP_LAUNCHER_READY_MARKER: &str = "startup launcher ready";
+const STARTUP_LAUNCHER_READY_MARKER: &str = "Preset worker";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PtyGeometry {
@@ -72,7 +72,7 @@ struct PromptFixture {
 
 impl PromptFixture {
     const LIVE_COMPOSER: Self = Self {
-        ready_marker: "Composer",
+        ready_marker: "Enter send",
     };
 }
 
@@ -196,14 +196,26 @@ fn startup_shell_renders_bottom_composer_snapshot() {
     assert_or_update_snapshot("type_first_startup", &startup);
 
     let lines = startup.lines().collect::<Vec<_>>();
-    let composer_top = find_line_containing(&lines, "Composer").expect("composer title row");
-    let composer_bottom =
-        find_line_containing_from(&lines, composer_top + 1, "─").expect("composer bottom row");
-    let footer_row = find_line_containing_from(&lines, composer_bottom + 1, "Enter send")
+    let status_row =
+        find_line_containing(&lines, "ready for first turn").expect("status strip row");
+    let divider_row =
+        find_line_containing_from(&lines, status_row + 1, "─").expect("quiet divider row");
+    let composer_input =
+        find_line_containing_from(&lines, divider_row + 1, "▎").expect("composer input row");
+    let composer_disclosure = find_line_containing_from(&lines, composer_input + 1, "shift+enter")
+        .expect("composer disclosure row");
+    let footer_row = find_line_containing_from(&lines, composer_disclosure + 1, "Shift+Enter nl")
         .expect("footer legend");
 
-    assert!(composer_top < composer_bottom);
-    assert_eq!(composer_bottom + 1, footer_row);
+    assert!(status_row < divider_row);
+    assert_eq!(divider_row + 1, composer_input);
+    assert_eq!(composer_input + 1, composer_disclosure);
+    assert_eq!(composer_disclosure + 1, footer_row);
+    assert!(
+        find_line_containing_in_range(&lines, status_row + 1, composer_input, "Composer ·")
+            .is_none(),
+        "legacy metadata headline row should stay removed\n{startup}"
+    );
 }
 
 #[test]
@@ -228,6 +240,9 @@ fn pty_e2e_snapshots_are_stable() {
     let streamed_response = capture_streamed_response_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
     assert_or_update_snapshot("streamed_response", &streamed_response);
 
+    let wide_streamed_response = capture_streamed_response_snapshot(PtyGeometry::WIDE_SIGNOFF);
+    assert_or_update_snapshot("wide_streamed_response", &wide_streamed_response);
+
     let tool_lifecycle = capture_tool_lifecycle_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
     assert_or_update_snapshot("tool_lifecycle", &tool_lifecycle);
 
@@ -249,14 +264,6 @@ fn pty_e2e_snapshots_are_stable() {
 
     let six_window_startup_shell = capture_startup_shell_snapshot(PtyGeometry::SIX_WINDOW_DENSE);
     assert_or_update_snapshot("six_window_startup_shell", &six_window_startup_shell);
-
-    let split_tall_details_drawer =
-        capture_live_details_drawer_snapshot(PtyGeometry::HALF_SCREEN_SPLIT);
-    assert_or_update_snapshot("split_tall_details_drawer", &split_tall_details_drawer);
-
-    let six_window_details_drawer =
-        capture_live_details_drawer_snapshot(PtyGeometry::SIX_WINDOW_DENSE);
-    assert_or_update_snapshot("six_window_details_drawer", &six_window_details_drawer);
 
     let narrow_events_surface = capture_events_tab_snapshot(PtyGeometry::MINIMUM_SIGNOFF);
     assert_or_update_snapshot("narrow_events_surface", &narrow_events_surface);
@@ -287,6 +294,7 @@ fn snapshot_files_exist_and_are_secret_clean() {
         snapshot_dir.join("startup_palette.snap"),
         snapshot_dir.join("startup_session_history.snap"),
         snapshot_dir.join("streamed_response.snap"),
+        snapshot_dir.join("wide_streamed_response.snap"),
         snapshot_dir.join("tool_lifecycle.snap"),
         snapshot_dir.join("permission_with_draft.snap"),
         snapshot_dir.join("narrow_80x24.snap"),
@@ -294,15 +302,28 @@ fn snapshot_files_exist_and_are_secret_clean() {
         snapshot_dir.join("split_tier_startup_shell.snap"),
         snapshot_dir.join("quarter_tile_startup_shell.snap"),
         snapshot_dir.join("six_window_startup_shell.snap"),
-        snapshot_dir.join("split_tall_details_drawer.snap"),
-        snapshot_dir.join("six_window_details_drawer.snap"),
         snapshot_dir.join("narrow_events_surface.snap"),
         snapshot_dir.join("degraded_bootstrap.snap"),
         snapshot_dir.join("disconnected_stream.snap"),
     ];
+    let retired = [
+        snapshot_dir.join("startup.snap"),
+        snapshot_dir.join("after_prompt.snap"),
+        snapshot_dir.join("after_tool_call.snap"),
+        snapshot_dir.join("split_tall_details_drawer.snap"),
+        snapshot_dir.join("six_window_details_drawer.snap"),
+    ];
 
     for path in expected {
         assert!(path.exists(), "missing snapshot file: {}", path.display());
+    }
+
+    for path in retired {
+        assert!(
+            !path.exists(),
+            "retired snapshot file should be removed: {}",
+            path.display()
+        );
     }
 
     assert_snapshot_secrets_clean();
@@ -316,6 +337,7 @@ fn pty_helpers_support_primary_and_minimum_geometries() {
         (PtyGeometry::SPLIT_TIER_WINDOW, 96, 40),
         (PtyGeometry::SIX_WINDOW_DENSE, 60, 18),
         (PtyGeometry::PRIMARY_SIGNOFF, 100, 30),
+        (PtyGeometry::WIDE_SIGNOFF, 160, 30),
     ] {
         let size = geometry.pty_size();
         assert_eq!(size.cols, expected_cols);
@@ -418,21 +440,38 @@ fn pty_live_details_drawer_remains_reachable() {
             LIVE_STATE_FIXTURES.prompt.ready_marker,
             STARTUP_TIMEOUT,
         )
-        .expect("wait for startup before details drawer flow");
+        .expect("wait for startup before operator sidebar flow");
 
-        send_key(helper.writer.as_mut(), b'\t').expect("focus transcript before opening details");
-        send_key(helper.writer.as_mut(), b'i').expect("open details drawer");
+        send_key(helper.writer.as_mut(), b'\t')
+            .expect("focus transcript before opening operator sidebar");
+        send_key(helper.writer.as_mut(), b'i').expect("open operator sidebar");
 
-        let screen = wait_for_screen_contains(
-            &mut helper.parser,
-            &helper.output_rx,
-            "Request ID:",
-            MARKER_TIMEOUT,
-        )
-        .expect("wait for details drawer markers");
+        if geometry == PtyGeometry::SIX_WINDOW_DENSE {
+            let screen = wait_for_screen_contains(
+                &mut helper.parser,
+                &helper.output_rx,
+                "q quit",
+                MARKER_TIMEOUT,
+            )
+            .expect("wait for dense session shell after sidebar toggle");
 
-        assert!(screen.contains("req_details_drawer"));
-        assert!(screen.contains("gpt-5-codex"));
+            assert!(!screen.contains("Context"));
+            assert!(screen.contains("Enter send"));
+        } else {
+            let screen = wait_for_screen_contains(
+                &mut helper.parser,
+                &helper.output_rx,
+                "No operator activity yet",
+                MARKER_TIMEOUT,
+            )
+            .expect("wait for operator sidebar markers");
+
+            assert!(
+                screen.contains("Live · run run_fixture") || screen.contains("Live · run unknown")
+            );
+            assert!(screen.contains("No operator activity yet"));
+            assert!(!screen.contains("Context"));
+        }
 
         terminate_child(helper.child);
     }
@@ -449,55 +488,43 @@ fn pty_live_orchestration_drawer_and_status() {
         PtyGeometry::WIDE_SIGNOFF,
     );
     wait_for_live_startup(&mut helper);
-    open_live_details_drawer(&mut helper);
+    show_live_operator_sidebar(&mut helper);
 
     let queued_screen = wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
-        "queued  task_live_cycle",
+        "orch 1a 1q 0r 0s",
         MARKER_TIMEOUT,
     )
     .expect("wait for queued orchestration state");
     assert_screen_contains_all(
         &queued_screen,
-        &[
-            "○ Orchestration · 1 tracked · 1 active",
-            "overview · 1 active agents",
-            "queued  task_live_cycle · w1/deep",
-            "ready for next turn  ·  orch 1a 1q 0r 0s",
-        ],
+        &["Todo · 1", "ready for next turn  ·  orch 1a 1q 0r 0s"],
     );
 
     let started_screen = wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
-        "running  task_live_cycle",
+        "orch 1a 0q 1r 0s",
         MARKER_TIMEOUT,
     )
     .expect("wait for started orchestration state");
     assert_screen_contains_all(
         &started_screen,
-        &[
-            "○ Orchestration · 1 tracked · 1 active",
-            "overview · 1 active agents",
-            "running  task_live_cycle · w1/deep",
-            "ready for next turn  ·  orch 1a 0q 1r 0s",
-        ],
+        &["Todo · 1", "ready for next turn  ·  orch 1a 0q 1r 0s"],
     );
 
     let completed_screen = wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
-        "completed  task_live_cycle",
+        "orch 0a 0q 0r 0s",
         MARKER_TIMEOUT,
     )
     .expect("wait for completed orchestration state");
     assert_screen_contains_all(
         &completed_screen,
         &[
-            "○ Orchestration · 1 tracked · 0 active",
-            "overview · 0 active agents",
-            "completed  task_live_cycle",
+            "No operator activity yet",
             "ready for next turn  ·  orch 0a 0q 0r 0s",
         ],
     );
@@ -516,46 +543,21 @@ fn pty_live_orchestration_stale_late_result_flow() {
         PtyGeometry::WIDE_SIGNOFF,
     );
     wait_for_live_startup(&mut helper);
-    open_live_details_drawer(&mut helper);
-
-    let stale_screen = wait_for_screen_contains(
-        &mut helper.parser,
-        &helper.output_rx,
-        "watch · stale for 3001 ms",
-        MARKER_TIMEOUT,
-    )
-    .expect("wait for stale orchestration warning");
-    assert_screen_contains_all(
-        &stale_screen,
-        &[
-            "○ Orchestration · 1 tracked · 1 active",
-            "overview · 1 active agents",
-            "watch · stale for 3001 ms",
-            "stale  task_stale · w1/deep",
-            "ready for next turn  ·  orch 1a 0q 0r 1s · warn stale for 3001 ms",
-        ],
-    );
+    show_live_operator_sidebar(&mut helper);
 
     let late_result_screen = wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
-        "late-result  task_stale",
+        "warn late result after stale cancellation",
         MARKER_TIMEOUT,
     )
     .expect("wait for late result orchestration row");
     assert_screen_contains_all(
         &late_result_screen,
         &[
-            "○ Orchestration · 1 tracked · 0 active",
-            "overview · 0 active agents",
-            "watch · late result after stale",
-            "late-result  task_stale · w1/deep",
+            "No operator activity yet",
             "ready for next turn  ·  orch 0a 0q 0r 0s · warn late result after stale cancellation",
         ],
-    );
-    assert!(
-        !late_result_screen.contains("stale  task_stale · w1/deep"),
-        "late result screen still shows stale row\n{late_result_screen}"
     );
 
     terminate_child(helper.child);
@@ -600,12 +602,16 @@ fn replay_mode_never_emits_submit_prompt_intent() {
         "expected replay status to stay visible after submit attempt\n{stable}"
     );
     assert!(
-        stable.contains("Replay archive · read-only"),
+        stable.contains("Replay · read-only"),
         "expected replay composer to render a read-only title\n{stable}"
     );
     assert!(
         stable.contains("Replay is read-only"),
         "expected replay composer body to explain read-only behavior\n{stable}"
+    );
+    assert!(
+        !stable.contains("Enter send"),
+        "replay surface unexpectedly exposed a send-capable dock\n{stable}"
     );
     assert!(
         !stable.contains("blocked in replay"),
@@ -633,9 +639,13 @@ fn startup_shell_displays_meaningful_mock_launch_metadata() {
         PtyGeometry::SIX_WINDOW_DENSE,
     ] {
         let startup_shell = capture_startup_shell_snapshot(geometry);
-        assert!(startup_shell.contains("Preset worker · mock/model-1 · Demo"));
-        assert!(!startup_shell.contains("Preset unknown · unknown/-"));
-        assert!(startup_shell.contains("Harness"));
+        assert!(startup_shell.contains("Preset worker"));
+        assert!(startup_shell.contains("mock/model-1"));
+        assert!(startup_shell.contains("Type to start a new session."));
+        assert!(!startup_shell.contains("Dispatch a new run"));
+        assert!(!startup_shell.contains("Actions:"));
+        assert!(!startup_shell.contains("provider unknown"));
+        assert!(startup_shell.contains("Harness") || startup_shell.contains("HARNESS"));
     }
 }
 
@@ -703,7 +713,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
                 for event in details_drawer_events() {
                     details_tx
                         .send(LiveUpdate::Event(Box::new(event)))
-                        .expect("send details drawer events");
+                        .expect("send operator sidebar events");
                 }
                 thread::park();
             });
@@ -1011,7 +1021,7 @@ fn details_drawer_events() -> Vec<EventEnvelopeV1> {
             Some(request_id),
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
                 request_id: request_id.to_string(),
-                text: "Inspect the details drawer".to_string(),
+                text: "Inspect the operator sidebar".to_string(),
             }),
         ),
         envelope(
@@ -1021,7 +1031,7 @@ fn details_drawer_events() -> Vec<EventEnvelopeV1> {
                 request_id: request_id.to_string(),
                 provider_id: "mock".to_string(),
                 model_id: "gpt-5-codex".to_string(),
-                prompt_summary: "Inspect the details drawer".to_string(),
+                prompt_summary: "Inspect the operator sidebar".to_string(),
                 request_digest: "digest-details-drawer".to_string(),
             }),
         ),
@@ -1403,32 +1413,25 @@ fn capture_permission_with_draft_snapshot(geometry: PtyGeometry) -> String {
     normalize_snapshot(&screen)
 }
 
-fn capture_live_details_drawer_snapshot(geometry: PtyGeometry) -> String {
-    let mut helper = spawn_helper_pty(HelperScenario::DetailsDrawer, geometry);
-    wait_for_live_startup(&mut helper);
-    open_live_details_drawer(&mut helper);
-
-    let screen = wait_for_screen_contains(
-        &mut helper.parser,
-        &helper.output_rx,
-        "Request ID:",
-        MARKER_TIMEOUT,
-    )
-    .expect("wait for live details drawer markers");
-
-    assert_screen_contains_all(
-        &screen,
-        &["Request ID:", "Provider:", "Model:", "Prompt summary:"],
-    );
-    terminate_child(helper.child);
-    normalize_snapshot(&screen)
-}
-
 fn capture_events_tab_snapshot(geometry: PtyGeometry) -> String {
     let mut helper = spawn_helper_pty(HelperScenario::ToolLifecycle, geometry);
     wait_for_live_startup(&mut helper);
-    send_key(helper.writer.as_mut(), b'\t').expect("move focus away from prompt before Events tab");
-    send_key(helper.writer.as_mut(), b'2').expect("open Events tab");
+    send_key(helper.writer.as_mut(), b'\t')
+        .expect("move review helper off prompt before opening palette");
+    send_key(helper.writer.as_mut(), 0x10).expect("open command palette before event log review");
+    wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "Command palette",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for command palette before filtering event log review");
+    helper
+        .writer
+        .write_all(b"event")
+        .expect("filter event log command");
+    helper.writer.flush().expect("flush event log command");
+    send_key(helper.writer.as_mut(), b'\r').expect("open event log review surface");
 
     let screen = wait_for_screen_contains(
         &mut helper.parser,
@@ -1470,9 +1473,10 @@ fn wait_for_live_startup(helper: &mut SpawnedHelper) {
     .expect("wait for live helper startup render");
 }
 
-fn open_live_details_drawer(helper: &mut SpawnedHelper) {
-    send_key(helper.writer.as_mut(), b'\t').expect("focus transcript before opening details");
-    send_key(helper.writer.as_mut(), b'i').expect("open details drawer");
+fn show_live_operator_sidebar(helper: &mut SpawnedHelper) {
+    send_key(helper.writer.as_mut(), b'\t')
+        .expect("focus transcript before opening operator sidebar");
+    send_key(helper.writer.as_mut(), b'i').expect("open operator sidebar");
 }
 
 fn assert_screen_contains_all(screen: &str, markers: &[&str]) {
@@ -1829,5 +1833,19 @@ fn find_line_containing_from(lines: &[&str], start: usize, needle: &str) -> Opti
         .iter()
         .enumerate()
         .skip(start)
+        .find_map(|(index, line)| line.contains(needle).then_some(index))
+}
+
+fn find_line_containing_in_range(
+    lines: &[&str],
+    start: usize,
+    end_exclusive: usize,
+    needle: &str,
+) -> Option<usize> {
+    lines
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(end_exclusive.saturating_sub(start))
         .find_map(|(index, line)| line.contains(needle).then_some(index))
 }

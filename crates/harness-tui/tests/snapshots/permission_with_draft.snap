@@ -1,6 +1,6 @@
-  run run_fixture · unknown/unknown · -
-   ◷  requested  permission
-     Apply hashline edit to demo.txt
+
+
+
 
 
 
@@ -9,22 +9,11 @@
 
 
                  ┌◷ Permission Requested──────────────────────────────────────────┐
-                 │ FAIL CLOSED    EDIT FS                                         │
+                 │ FAIL CLOSED    SESSION PAUSED    EDIT FS                       │
                  │Apply hashline edit to demo.txt                                 │
-                 │default deny · timeout 30s                                      │
                  │tool call tool_call_pty · digest digest-perm-pty                │
-                 │Review the request before granting access. Deny keeps the run f…│
-                 │                                                                │
-                 │            [d] deny   [esc] dismiss   [a] allow once           │
+                 │default deny · timeout 30s · draft preserved                    │
+                 │Draft preserved · keep this draft                               │
+                 │Allow once continues the run; deny keeps it fail-closed.        │
+                 │           Ctrl+n deny   Esc later   Ctrl+y allow once          │
                  └────────────────────────────────────────────────────────────────┘
-
-
-
-
-
-
-   Permission blocked   decision required · Apply hashline edit to demo.txt
-  ┌Composer · disabled · Permission blocked──────────────────────────────────────────────────────┐
-  │keep this draft                                                                               │
-  └──────────────────────────────────────────────────────────────────────────────────────────────┘
-  i details  2 events  3 diff  4 help  q quit

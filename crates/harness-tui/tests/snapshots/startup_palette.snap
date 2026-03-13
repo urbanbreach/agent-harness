@@ -6,25 +6,25 @@
 
 
 
-               ┌Harness─────────────────────────────────────────────────────────────┐
+
     ┌Command palette───────────────────────────────────────────────────────────────────────────┐
     │> █                                                                                       │
     │New session  Start a fresh live session                                                   │
     │Continue session  Continue a prior session when resumable                                 │
     │Replay session  Replay a previous session as read-only                                    │
-    │Help  Open Help surface                                                                   │
-    │Run  Return to conversation surface                                                       │
-    │Details  Toggle live details drawer                                                       │
-    │Events  Open Events surface                                                               │
-    │Diff  Open Diff surface                                                                   │
+    │Quit  Quit the application                                                                │
+    │                                                                                          │
+    │                                                                                          │
+    │                                                                                          │
+    │                                                                                          │
     └──────────────────────────────────────────────────────────────────────────────────────────┘
 
 
 
 
 
-   Ready   startup launcher ready · choose New/Continue/Replay or type to quick-start
-  ┌Composer · 1 line · 0 chars───────────────────────────────────────────────────────────────────┐
-  │Type to quick-start a new session while the lifecycle actions stay available.                 │
-  └──────────────────────────────────────────────────────────────────────────────────────────────┘
+   Ready   startup ready · type below or use Ctrl+P for saved runs
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  ▎ Type to start a new session.
+    shift+enter newline
   ↑ prev  ↓ next  Enter select  Tab composer  Ctrl+p palette  q quit
