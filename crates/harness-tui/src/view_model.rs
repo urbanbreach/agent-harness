@@ -1,14 +1,15 @@
 use harness_core::event::EventV1;
 
 use crate::app::{
-    ActivityEntry, ActivityStatus, Focus, LifecycleShellState, RuntimeState, RuntimeStateKind, Tab,
+    ActivityEntry, ActivityStatus, Focus, LifecycleShellState, RuntimeState, RuntimeStateKind,
     ToolCallDisplayStatus,
 };
 use crate::Action;
 
-const CONTINUED_LIVE_RUN_PREFIX: &str = "continued live run";
 const POST_RUN_COMPOSER_HINT: &str =
-    "Post-run handoff active — select the next action instead of sending another prompt.";
+    "Session shell preserved — use commands for replay, new, or quit after review.";
+const POST_RUN_FAILURE_COMPOSER_HINT: &str =
+    "Session shell preserved — inspect transcript, then use commands to recover, replay, or quit.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PermissionRuntimeInput {
@@ -33,12 +34,6 @@ pub(crate) struct StartupCardViewModel {
     pub metadata: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PostRunCardViewModel {
-    pub summary: String,
-    pub warning: bool,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FooterHint {
     pub action: Action,
@@ -53,35 +48,118 @@ pub(crate) struct FooterHintsViewModel {
 
 pub(crate) struct FooterHintsInput {
     pub replay_mode: bool,
-    pub post_run_handoff_visible: bool,
-    pub active_tab: Tab,
+    pub review_surface_active: bool,
     pub startup_shell_visible: bool,
     pub focus: Focus,
-    pub details_drawer_open: bool,
     pub composer_disabled: bool,
+    pub completed_session_shell_active: bool,
     pub continued_live_run: bool,
 }
 
-pub(crate) fn lifecycle_shell_state(
-    replay_mode: bool,
-    startup_mode: bool,
-    run_terminal_seen: bool,
-    continued_post_run_handoff_active: bool,
-    post_run_handoff_enabled: bool,
-) -> LifecycleShellState {
-    if replay_mode {
-        return LifecycleShellState::None;
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ControlDockVariant {
+    Live,
+    ReplayReadOnly,
+}
 
-    if startup_mode {
-        return LifecycleShellState::Startup;
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ControlDockSummarySegmentKind {
+    Orchestration,
+    Tool,
+}
 
-    if (run_terminal_seen || continued_post_run_handoff_active) && post_run_handoff_enabled {
-        return LifecycleShellState::PostRun;
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ControlDockSummaryTone {
+    Secondary,
+    Accent,
+    Success,
+    Warning,
+    Error,
+}
 
-    LifecycleShellState::None
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ControlDockSummarySegment {
+    pub kind: ControlDockSummarySegmentKind,
+    pub text: String,
+    pub tone: ControlDockSummaryTone,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ControlDockViewModel {
+    pub variant: ControlDockVariant,
+    pub runtime_context: Option<String>,
+    pub runtime_badge: String,
+    pub runtime_kind: RuntimeStateKind,
+    pub primary_summary: String,
+    pub summary_segment: Option<ControlDockSummarySegment>,
+    pub composer_body: String,
+    pub composer_disclosure: String,
+    pub composer_focused: bool,
+    pub composer_disabled: bool,
+}
+
+pub(crate) enum ControlDockInput {
+    Live {
+        runtime_context: Option<String>,
+        runtime_state: RuntimeState,
+        primary_summary: String,
+        summary_segment: Option<ControlDockSummarySegment>,
+        composer_body: String,
+        composer_disclosure: String,
+        composer_focused: bool,
+    },
+    ReplayReadOnly {
+        runtime_context: Option<String>,
+        runtime_state: RuntimeState,
+        primary_summary: String,
+        composer_body: String,
+        composer_disclosure: String,
+        composer_focused: bool,
+    },
+}
+
+pub(crate) fn control_dock_view_model(input: ControlDockInput) -> ControlDockViewModel {
+    match input {
+        ControlDockInput::Live {
+            runtime_context,
+            runtime_state,
+            primary_summary,
+            summary_segment,
+            composer_body,
+            composer_disclosure,
+            composer_focused,
+        } => ControlDockViewModel {
+            variant: ControlDockVariant::Live,
+            runtime_context,
+            runtime_badge: runtime_state.kind.label().to_string(),
+            runtime_kind: runtime_state.kind,
+            primary_summary,
+            summary_segment,
+            composer_body,
+            composer_disclosure,
+            composer_focused,
+            composer_disabled: runtime_state.composer_disabled,
+        },
+        ControlDockInput::ReplayReadOnly {
+            runtime_context,
+            runtime_state,
+            primary_summary,
+            composer_body,
+            composer_disclosure,
+            composer_focused,
+        } => ControlDockViewModel {
+            variant: ControlDockVariant::ReplayReadOnly,
+            runtime_context,
+            runtime_badge: runtime_state.kind.label().to_string(),
+            runtime_kind: runtime_state.kind,
+            primary_summary,
+            summary_segment: None,
+            composer_body,
+            composer_disclosure,
+            composer_focused,
+            composer_disabled: true,
+        },
+    }
 }
 
 pub(crate) fn runtime_state(input: RuntimeStateInput<'_>) -> RuntimeState {
@@ -106,7 +184,12 @@ pub(crate) fn runtime_state(input: RuntimeStateInput<'_>) -> RuntimeState {
                     (!cancelled.reason.trim().is_empty()).then(|| cancelled.reason.clone());
                 let summary = detail
                     .as_deref()
-                    .map(|reason| format!("last turn cancelled · {reason}"))
+                    .map(|reason| {
+                        format!(
+                            "last turn cancelled · {}",
+                            sanitize_runtime_summary_fragment(reason)
+                        )
+                    })
                     .unwrap_or_else(|| "last turn cancelled · ready to try again".to_string());
                 return RuntimeState {
                     kind: RuntimeStateKind::Cancelled,
@@ -150,10 +233,10 @@ pub(crate) fn runtime_state(input: RuntimeStateInput<'_>) -> RuntimeState {
                     },
                     ActivityStatus::Error => RuntimeState {
                         kind: RuntimeStateKind::Failure,
-                        summary: format!("{summary} · inspect transcript and retry when ready"),
+                        summary: format!("{summary} · inspect transcript, then retry or continue"),
                         detail: activity.error_message.clone(),
                         composer_disabled: false,
-                        composer_hint: "Type a prompt to retry or continue from the failure…"
+                        composer_hint: "After review, adjust the draft, then retry or continue."
                             .to_string(),
                     },
                 };
@@ -194,49 +277,17 @@ pub(crate) fn startup_card_view_model(
     }
 }
 
-pub(crate) fn post_run_card_view_model(
-    post_run_notice: Option<&'static str>,
-    runtime_summary: &str,
-) -> PostRunCardViewModel {
-    PostRunCardViewModel {
-        summary: post_run_notice
-            .map(str::to_string)
-            .unwrap_or_else(|| runtime_summary.to_string()),
-        warning: post_run_notice.is_some(),
-    }
-}
-
 pub(crate) fn footer_hints_view_model(input: FooterHintsInput) -> FooterHintsViewModel {
-    let details_hint = FooterHint {
-        action: Action::ToggleDetailsDrawer,
-        label: if input.details_drawer_open {
-            "close"
-        } else {
-            "details"
-        },
-    };
-
+    let _ = input.continued_live_run;
     let hints = if input.replay_mode {
         vec![
             FooterHint {
+                action: Action::Help,
+                label: "shortcuts",
+            },
+            FooterHint {
                 action: Action::FocusNext,
-                label: "nav",
-            },
-            FooterHint {
-                action: Action::TabRun,
-                label: "convo",
-            },
-            FooterHint {
-                action: Action::TabEvents,
-                label: "events",
-            },
-            FooterHint {
-                action: Action::TabDiff,
-                label: "diff",
-            },
-            FooterHint {
-                action: Action::TabHelp,
-                label: "help",
+                label: "focus",
             },
             FooterHint {
                 action: Action::Reload,
@@ -247,60 +298,19 @@ pub(crate) fn footer_hints_view_model(input: FooterHintsInput) -> FooterHintsVie
                 label: "quit",
             },
         ]
-    } else if input.post_run_handoff_visible && input.active_tab == Tab::Run {
+    } else if !input.replay_mode && input.review_surface_active {
         vec![
             FooterHint {
-                action: Action::HistoryUp,
-                label: "prev",
-            },
-            FooterHint {
-                action: Action::HistoryDown,
-                label: "next",
-            },
-            FooterHint {
-                action: Action::SubmitPrompt,
-                label: "select",
-            },
-            FooterHint {
-                action: Action::TabEvents,
-                label: "events",
-            },
-            FooterHint {
-                action: Action::TabDiff,
-                label: "diff",
-            },
-            FooterHint {
-                action: Action::TabHelp,
-                label: "help",
-            },
-            FooterHint {
-                action: Action::Quit,
-                label: "quit",
-            },
-        ]
-    } else if !input.replay_mode && matches!(input.active_tab, Tab::Events | Tab::Diff | Tab::Help)
-    {
-        vec![
-            FooterHint {
-                action: Action::TabRun,
+                action: Action::CloseReviewSurface,
                 label: "convo",
             },
-            details_hint,
             FooterHint {
-                action: Action::TabEvents,
-                label: "events",
+                action: Action::Palette,
+                label: "commands",
             },
             FooterHint {
-                action: Action::TabDiff,
-                label: "diff",
-            },
-            FooterHint {
-                action: Action::TabHelp,
-                label: "help",
-            },
-            FooterHint {
-                action: Action::FocusNext,
-                label: "focus",
+                action: Action::Help,
+                label: "shortcuts",
             },
             FooterHint {
                 action: Action::Quit,
@@ -334,26 +344,10 @@ pub(crate) fn footer_hints_view_model(input: FooterHintsInput) -> FooterHintsVie
                 label: "quit",
             },
         ]
+    } else if input.completed_session_shell_active {
+        completed_live_shell_footer_hints()
     } else if input.composer_disabled {
-        vec![
-            details_hint,
-            FooterHint {
-                action: Action::TabEvents,
-                label: "events",
-            },
-            FooterHint {
-                action: Action::TabDiff,
-                label: "diff",
-            },
-            FooterHint {
-                action: Action::TabHelp,
-                label: "help",
-            },
-            FooterHint {
-                action: Action::Quit,
-                label: "quit",
-            },
-        ]
+        disabled_live_shell_footer_hints()
     } else {
         vec![
             FooterHint {
@@ -364,18 +358,13 @@ pub(crate) fn footer_hints_view_model(input: FooterHintsInput) -> FooterHintsVie
                 action: Action::InsertNewline,
                 label: "nl",
             },
-            details_hint,
             FooterHint {
-                action: Action::TabEvents,
-                label: "events",
+                action: Action::Palette,
+                label: "commands",
             },
             FooterHint {
-                action: Action::TabDiff,
-                label: "diff",
-            },
-            FooterHint {
-                action: Action::TabHelp,
-                label: "help",
+                action: Action::Help,
+                label: "shortcuts",
             },
             FooterHint {
                 action: Action::Quit,
@@ -385,30 +374,73 @@ pub(crate) fn footer_hints_view_model(input: FooterHintsInput) -> FooterHintsVie
     };
 
     FooterHintsViewModel {
-        prefix: input
-            .continued_live_run
-            .then_some(CONTINUED_LIVE_RUN_PREFIX),
+        prefix: None,
         hints,
     }
+}
+
+fn disabled_live_shell_footer_hints() -> Vec<FooterHint> {
+    vec![
+        FooterHint {
+            action: Action::Palette,
+            label: "commands",
+        },
+        FooterHint {
+            action: Action::Help,
+            label: "shortcuts",
+        },
+        FooterHint {
+            action: Action::Quit,
+            label: "quit",
+        },
+    ]
+}
+
+fn completed_live_shell_footer_hints() -> Vec<FooterHint> {
+    vec![
+        FooterHint {
+            action: Action::FocusNext,
+            label: "focus",
+        },
+        FooterHint {
+            action: Action::Help,
+            label: "shortcuts",
+        },
+        FooterHint {
+            action: Action::Quit,
+            label: "quit",
+        },
+    ]
 }
 
 fn startup_runtime_state(continue_disabled_banner: Option<&str>) -> RuntimeState {
     let detail = continue_disabled_banner.map(str::to_string);
     let summary = detail
         .as_deref()
-        .map(|reason| format!("startup launcher ready · {reason}"))
-        .unwrap_or_else(|| {
-            "startup launcher ready · choose New/Continue/Replay or type to quick-start".to_string()
-        });
+        .map(|reason| format!("startup ready · {reason}"))
+        .unwrap_or_else(|| "startup ready · type below or use Ctrl+P for saved runs".to_string());
 
     RuntimeState {
         kind: RuntimeStateKind::Ready,
         summary,
         detail,
         composer_disabled: false,
-        composer_hint:
-            "Type to quick-start a new session while the lifecycle actions stay available."
-                .to_string(),
+        composer_hint: "Type to start a new session.".to_string(),
+    }
+}
+
+fn startup_mode_label(startup_mode: bool, launch_mode_label: Option<&str>) -> Option<&'static str> {
+    if !startup_mode {
+        return None;
+    }
+
+    let mode = launch_mode_label?.trim();
+    if mode.eq_ignore_ascii_case("demo") {
+        Some("Demo")
+    } else if mode.eq_ignore_ascii_case("mock") {
+        Some("Mock")
+    } else {
+        None
     }
 }
 
@@ -416,21 +448,21 @@ fn post_run_runtime_state(last_event: Option<&EventV1>) -> RuntimeState {
     match last_event {
         Some(EventV1::RunFailed(data)) => RuntimeState {
             kind: RuntimeStateKind::Failure,
-            summary: "run failed · choose what to do next".to_string(),
+            summary: "run failed · inspect transcript · session shell preserved".to_string(),
             detail: (!data.error.trim().is_empty()).then(|| data.error.clone()),
             composer_disabled: true,
-            composer_hint: POST_RUN_COMPOSER_HINT.to_string(),
+            composer_hint: POST_RUN_FAILURE_COMPOSER_HINT.to_string(),
         },
         Some(EventV1::RunFinished(data)) => RuntimeState {
             kind: RuntimeStateKind::Success,
-            summary: "run finished · choose what to do next".to_string(),
+            summary: "run finished · session shell preserved".to_string(),
             detail: (!data.summary.trim().is_empty()).then(|| data.summary.clone()),
             composer_disabled: true,
             composer_hint: POST_RUN_COMPOSER_HINT.to_string(),
         },
         _ => RuntimeState {
             kind: RuntimeStateKind::Ready,
-            summary: "run complete · choose what to do next".to_string(),
+            summary: "run complete · session shell preserved".to_string(),
             detail: None,
             composer_disabled: true,
             composer_hint: POST_RUN_COMPOSER_HINT.to_string(),
@@ -456,7 +488,7 @@ fn status_banner_runtime_state(
             },
             detail: Some(banner.to_string()),
             composer_disabled: true,
-            composer_hint: "Composer disabled — live stream disconnected. Reopen the TUI to reconnect, then continue from the visible transcript.".to_string(),
+            composer_hint: "Draft preserved locally — reopen the TUI to reconnect.".to_string(),
         });
     }
 
@@ -466,23 +498,32 @@ fn status_banner_runtime_state(
             summary: format!("{banner} · sending paused until recovery"),
             detail: Some(banner.to_string()),
             composer_disabled: true,
-            composer_hint:
-                "Composer disabled — waiting for live recovery before sending the next turn."
-                    .to_string(),
+            composer_hint: "Draft preserved locally while recovery completes.".to_string(),
         });
     }
 
-    if lower.contains("failed") || lower.contains("error") || lower.contains("no session path") {
+    if lower.contains("failed")
+        || lower.contains("error")
+        || lower.contains("no session path")
+        || lower.contains("request_digest=")
+    {
+        let detail = if lower.contains("request_digest=") {
+            Some(sanitized_runtime_guidance().to_string())
+        } else {
+            Some(banner.to_string())
+        };
         return Some(RuntimeState {
             kind: RuntimeStateKind::Failure,
-            summary: if replay_mode {
-                "reload failed · inspect details".to_string()
+            summary: if lower.contains("request_digest=") {
+                format!("runtime failure · {}", sanitized_runtime_guidance())
+            } else if replay_mode {
+                "reload failed · inspect events or diff".to_string()
             } else {
-                "runtime failure · inspect transcript and retry when ready".to_string()
+                "runtime failure · inspect transcript, then retry or continue".to_string()
             },
-            detail: Some(banner.to_string()),
+            detail,
             composer_disabled: false,
-            composer_hint: "Type a prompt to retry or continue after the failure…".to_string(),
+            composer_hint: "After review, adjust the draft, then retry or continue.".to_string(),
         });
     }
 
@@ -510,36 +551,28 @@ fn permission_runtime_state(permission: &PermissionRuntimeInput) -> RuntimeState
             kind: RuntimeStateKind::PermissionBlocked,
             summary: format!("permission required · {}", permission.summary),
             detail: Some(permission.summary.clone()),
-            composer_disabled: true,
+            composer_disabled: false,
             composer_hint:
-                "Composer disabled — approve or deny the pending permission request to continue."
+                "Keep drafting locally while the permission request waits for a decision."
                     .to_string(),
         }
     }
 }
 
-fn activity_status_summary(activity: &ActivityEntry, turn_count: usize) -> String {
-    let provider = if activity.provider_id.is_empty() {
-        "-"
-    } else {
-        activity.provider_id.as_str()
-    };
-    let model = if activity.model_id.is_empty() {
-        "-"
-    } else {
-        activity.model_id.as_str()
-    };
+fn activity_status_summary(_activity: &ActivityEntry, turn_count: usize) -> String {
+    format!("turn {turn_count}")
+}
 
-    [
-        format!("turn {turn_count}/{turn_count}"),
-        if activity.request_id.is_empty() {
-            "pending turn".to_string()
-        } else {
-            activity.request_id.clone()
-        },
-        format!("{provider}/{model}"),
-    ]
-    .join(" · ")
+fn sanitize_runtime_summary_fragment(detail: &str) -> String {
+    if detail.to_ascii_lowercase().contains("request_digest=") {
+        sanitized_runtime_guidance().to_string()
+    } else {
+        detail.to_string()
+    }
+}
+
+fn sanitized_runtime_guidance() -> &'static str {
+    "check transcript for details"
 }
 
 fn tool_runtime_state(activity: &ActivityEntry) -> Option<RuntimeState> {
@@ -582,23 +615,142 @@ fn tool_runtime_state(activity: &ActivityEntry) -> Option<RuntimeState> {
             summary: format!("tool failed · {}", tool_call.tool_id),
             detail: tool_call.output_summary.clone(),
             composer_disabled: false,
-            composer_hint: "Inspect the tool failure, then retry or continue with a new prompt…"
-                .to_string(),
+            composer_hint: "After review, adjust the draft, then retry or continue.".to_string(),
         }),
     }
 }
 
-fn startup_mode_label(startup_mode: bool, launch_mode_label: Option<&str>) -> Option<&'static str> {
-    if !startup_mode {
-        return None;
+#[cfg(test)]
+fn control_dock_runtime_fixture(
+    kind: RuntimeStateKind,
+    summary: &str,
+    composer_disabled: bool,
+    composer_hint: &str,
+) -> RuntimeState {
+    RuntimeState {
+        kind,
+        summary: summary.to_string(),
+        detail: None,
+        composer_disabled,
+        composer_hint: composer_hint.to_string(),
     }
+}
 
-    let mode = launch_mode_label?.trim();
-    if mode.eq_ignore_ascii_case("demo") {
-        Some("Demo")
-    } else if mode.eq_ignore_ascii_case("mock") {
-        Some("Mock")
-    } else {
-        None
-    }
+#[cfg(test)]
+pub(crate) fn exact_test_control_dock_view_model_handles_live_runtime_variants() {
+    let streaming = control_dock_view_model(ControlDockInput::Live {
+        runtime_context: Some("live".to_string()),
+        runtime_state: control_dock_runtime_fixture(
+            RuntimeStateKind::Streaming,
+            "turn 3 · receiving output",
+            false,
+            "Draft the next prompt while output continues…",
+        ),
+        primary_summary: "turn 3 · receiving output".to_string(),
+        summary_segment: Some(ControlDockSummarySegment {
+            kind: ControlDockSummarySegmentKind::Tool,
+            text: "tool bash running".to_string(),
+            tone: ControlDockSummaryTone::Accent,
+        }),
+        composer_body: "Queue the next turn while this one finishes…".to_string(),
+        composer_disclosure: "shift+enter newline".to_string(),
+        composer_focused: true,
+    });
+
+    assert_eq!(streaming.variant, ControlDockVariant::Live);
+    assert_eq!(streaming.runtime_context.as_deref(), Some("live"));
+    assert_eq!(streaming.runtime_badge, "Streaming");
+    assert_eq!(streaming.runtime_kind, RuntimeStateKind::Streaming);
+    assert_eq!(streaming.primary_summary, "turn 3 · receiving output");
+    assert_eq!(
+        streaming.summary_segment,
+        Some(ControlDockSummarySegment {
+            kind: ControlDockSummarySegmentKind::Tool,
+            text: "tool bash running".to_string(),
+            tone: ControlDockSummaryTone::Accent,
+        })
+    );
+    assert_eq!(
+        streaming.composer_body,
+        "Queue the next turn while this one finishes…"
+    );
+    assert_eq!(streaming.composer_disclosure, "shift+enter newline");
+    assert!(streaming.composer_focused);
+    assert!(!streaming.composer_disabled);
+
+    let failed = control_dock_view_model(ControlDockInput::Live {
+        runtime_context: Some("recovery".to_string()),
+        runtime_state: control_dock_runtime_fixture(
+            RuntimeStateKind::Failure,
+            "turn failed · inspect transcript, then retry or continue",
+            true,
+            "After review, adjust the draft, then retry or continue.",
+        ),
+        primary_summary: "run failed · inspect transcript · session shell preserved".to_string(),
+        summary_segment: Some(ControlDockSummarySegment {
+            kind: ControlDockSummarySegmentKind::Orchestration,
+            text: "orch 0a 1q 0r 0s".to_string(),
+            tone: ControlDockSummaryTone::Secondary,
+        }),
+        composer_body: "After review, adjust the draft, then retry or continue.".to_string(),
+        composer_disclosure: "ctrl+p commands".to_string(),
+        composer_focused: false,
+    });
+
+    assert_eq!(failed.variant, ControlDockVariant::Live);
+    assert_eq!(failed.runtime_context.as_deref(), Some("recovery"));
+    assert_eq!(failed.runtime_badge, "Failure");
+    assert_eq!(failed.runtime_kind, RuntimeStateKind::Failure);
+    assert_eq!(
+        failed.primary_summary,
+        "run failed · inspect transcript · session shell preserved"
+    );
+    assert_eq!(
+        failed.summary_segment,
+        Some(ControlDockSummarySegment {
+            kind: ControlDockSummarySegmentKind::Orchestration,
+            text: "orch 0a 1q 0r 0s".to_string(),
+            tone: ControlDockSummaryTone::Secondary,
+        })
+    );
+    assert_eq!(
+        failed.composer_body,
+        "After review, adjust the draft, then retry or continue."
+    );
+    assert_eq!(failed.composer_disclosure, "ctrl+p commands");
+    assert!(!failed.composer_focused);
+    assert!(failed.composer_disabled);
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_control_dock_view_model_preserves_replay_read_only_variant() {
+    let replay = control_dock_view_model(ControlDockInput::ReplayReadOnly {
+        runtime_context: Some("replay".to_string()),
+        runtime_state: control_dock_runtime_fixture(
+            RuntimeStateKind::Ready,
+            "12 events loaded",
+            false,
+            "Type a prompt for the next turn…",
+        ),
+        primary_summary: "12 events loaded".to_string(),
+        composer_body: "Replay is read-only.".to_string(),
+        composer_disclosure: "? shortcuts  ·  tab focus  ·  r reload  ·  q quit".to_string(),
+        composer_focused: false,
+    });
+
+    assert_eq!(replay.variant, ControlDockVariant::ReplayReadOnly);
+    assert_eq!(replay.runtime_context.as_deref(), Some("replay"));
+    assert_eq!(replay.runtime_badge, "Ready");
+    assert_eq!(replay.runtime_kind, RuntimeStateKind::Ready);
+    assert_eq!(replay.primary_summary, "12 events loaded");
+    assert_eq!(replay.summary_segment, None);
+    assert_eq!(replay.composer_body, "Replay is read-only.");
+    assert_eq!(
+        replay.composer_disclosure,
+        "? shortcuts  ·  tab focus  ·  r reload  ·  q quit"
+    );
+    assert!(!replay.composer_focused);
+    assert!(replay.composer_disabled);
+    assert!(!replay.composer_disclosure.contains("send"));
+    assert!(!replay.composer_disclosure.contains("newline"));
 }

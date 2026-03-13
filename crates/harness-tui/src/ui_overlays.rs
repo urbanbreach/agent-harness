@@ -15,7 +15,7 @@ pub(super) fn render_overlays(
             OverlayKind::PermissionModal => {
                 if let Some(permission) = app.active_permission_view() {
                     if let Some(modal) = plan.permission_modal {
-                        render_permission_modal(frame, &permission, theme, modal);
+                        render_permission_modal(frame, app, &permission, theme, plan.root, modal);
                     }
                 }
             }
@@ -33,30 +33,16 @@ fn render_command_palette_overlay(
         return;
     };
 
-    frame.render_widget(Clear, overlay);
-    let card_surface = theme.surface.panel_elevated;
     let title = if app.session_history_visible {
         session_history_overlay_title(app)
     } else {
         "Command palette".to_string()
     };
-    let block = elevated_card_block(
-        Line::from(Span::styled(
-            title,
-            Style::default()
-                .fg(theme.text.accent)
-                .add_modifier(Modifier::BOLD),
-        )),
-        card_surface,
-        theme.border.focus,
-        theme.text.accent,
-    );
-    let inner = block.inner(overlay);
-    frame.render_widget(block, overlay);
-
-    if inner.width == 0 || inner.height == 0 {
+    let Some(inner) = render_overlay_surface(frame, theme, overlay, &title) else {
         return;
-    }
+    };
+
+    let card_surface = theme.surface.panel_elevated;
 
     if app.session_history_visible {
         render_session_history_overlay(frame, app, theme, inner, card_surface);
@@ -548,30 +534,36 @@ fn palette_command_description(command: &str) -> &'static str {
 
 fn render_permission_modal(
     frame: &mut Frame,
+    app: &AppState,
     permission: &crate::app::ActivePermissionView,
     theme: &Theme,
+    root: Rect,
     popup_rect: Rect,
 ) {
+    render_overlay_backdrop(frame, root, theme.surface.canvas);
     frame.render_widget(Clear, popup_rect);
-    let surface = theme.surface.overlay;
+    let surface = ui_chrome::elevated_card_surface(theme);
+    let title = permission_modal_title(permission);
+    let submission_pending = app.permission_submission_pending(&permission.permission_id);
     let metadata_style = Style::default().fg(theme.text.secondary).bg(surface);
     let summary_style = Style::default().fg(theme.text.primary).bg(surface);
-    let block = elevated_card_block(
+    let block = ui_chrome::interruptive_modal_block(
+        theme,
         Line::from(vec![
             Span::styled(
                 format!("{} ", theme.live_shell.glyphs.pending_permission),
                 Style::default().fg(theme.status.warning),
             ),
             Span::styled(
-                "Permission Requested",
+                title,
                 Style::default()
                     .fg(theme.text.accent)
                     .add_modifier(Modifier::BOLD),
             ),
         ]),
-        surface,
         theme.status.warning,
         theme.text.accent,
+        ui_chrome::ChromeFrame::Frame,
     );
     let inner = block.inner(popup_rect);
     frame.render_widget(block, popup_rect);
@@ -593,9 +585,11 @@ fn render_permission_modal(
         Paragraph::new(Line::from(vec![
             status_badge("FAIL CLOSED", theme.status.error, theme),
             Span::styled("  ", metadata_style),
+            status_badge("SESSION PAUSED", theme.status.warning, theme),
+            Span::styled("  ", metadata_style),
             status_badge(
                 permission.kind.replace('_', " ").to_uppercase(),
-                theme.status.warning,
+                theme.border.focus,
                 theme,
             ),
         ]))
@@ -606,16 +600,11 @@ fn render_permission_modal(
     frame.render_widget(
         Paragraph::new(Text::from(vec![
             Line::from(vec![Span::styled(
-                truncate_plain_text(&permission.summary, usize::from(sections[1].width)),
-                summary_style.add_modifier(Modifier::BOLD),
-            )]),
-            Line::from(vec![Span::styled(
-                format!(
-                    "default {} · timeout {}s",
-                    permission_default_label(permission.default_decision),
-                    permission.timeout_ms / 1_000
+                truncate_plain_text(
+                    &permission_modal_summary_line(permission, submission_pending),
+                    usize::from(sections[1].width),
                 ),
-                metadata_style,
+                summary_style.add_modifier(Modifier::BOLD),
             )]),
             Line::from(vec![Span::styled(
                 truncate_plain_text(
@@ -626,7 +615,30 @@ fn render_permission_modal(
             )]),
             Line::from(vec![Span::styled(
                 truncate_plain_text(
-                    "Review the request before granting access. Deny keeps the run fail-closed.",
+                    &format!(
+                        "default {} · timeout {}s · {}",
+                        permission_default_label(permission.default_decision),
+                        permission.timeout_ms / 1_000,
+                        if submission_pending {
+                            "awaiting confirmation"
+                        } else {
+                            "draft preserved"
+                        }
+                    ),
+                    usize::from(sections[1].width),
+                ),
+                metadata_style,
+            )]),
+            Line::from(vec![Span::styled(
+                truncate_plain_text(
+                    &permission_modal_draft_line(app.prompt_buffer.as_str()),
+                    usize::from(sections[1].width),
+                ),
+                metadata_style,
+            )]),
+            Line::from(vec![Span::styled(
+                truncate_plain_text(
+                    permission_modal_guidance(permission, submission_pending),
                     usize::from(sections[1].width),
                 ),
                 metadata_style,
@@ -638,19 +650,13 @@ fn render_permission_modal(
     );
 
     frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            status_badge("[d] deny", theme.status.error, theme),
-            Span::styled("  ", metadata_style),
-            Span::styled("[esc] dismiss", metadata_style),
-            Span::styled("  ", metadata_style),
-            status_badge("[a] allow once", theme.border.focus, theme),
-        ]))
-        .style(
-            Style::default()
-                .fg(theme.text.secondary)
-                .bg(theme.surface.panel_elevated)
-                .add_modifier(Modifier::BOLD),
-        )
+        Paragraph::new(permission_modal_actions_line(
+            app,
+            theme,
+            metadata_style,
+            submission_pending,
+        ))
+        .style(Style::default().fg(theme.text.secondary).bg(surface))
         .alignment(Alignment::Center),
         sections[2],
     );
@@ -676,4 +682,143 @@ fn permission_identity_line(permission: &crate::app::ActivePermissionView) -> St
         })
         .unwrap_or_else(|| format!("permission {}", permission.permission_id));
     format!("{tool} · digest {}", permission.request_digest)
+}
+
+fn render_overlay_surface(
+    frame: &mut Frame,
+    theme: &Theme,
+    overlay: Rect,
+    title: &str,
+) -> Option<Rect> {
+    if overlay.width == 0 || overlay.height == 0 {
+        return None;
+    }
+
+    let block = ui_chrome::elevated_card_block(
+        Line::from(Span::styled(
+            title.to_string(),
+            Style::default()
+                .fg(theme.text.accent)
+                .add_modifier(Modifier::BOLD),
+        )),
+        ui_chrome::elevated_card_surface(theme),
+        theme.border.focus,
+        theme.text.accent,
+    );
+    let content = block.inner(overlay);
+
+    frame.render_widget(Clear, overlay);
+    frame.render_widget(block, overlay);
+
+    if content.width == 0 || content.height == 0 {
+        return None;
+    }
+
+    Some(content)
+}
+
+fn permission_modal_title(permission: &crate::app::ActivePermissionView) -> &'static str {
+    if permission.kind.eq_ignore_ascii_case("question")
+        || permission.kind.eq_ignore_ascii_case("ask")
+        || permission.kind.eq_ignore_ascii_case("ask_user")
+    {
+        "Question Requested"
+    } else {
+        "Permission Requested"
+    }
+}
+
+fn permission_modal_guidance(
+    permission: &crate::app::ActivePermissionView,
+    submission_pending: bool,
+) -> &'static str {
+    if submission_pending {
+        "Harness is recording the decision; wait for confirmation."
+    } else if permission.kind.eq_ignore_ascii_case("question")
+        || permission.kind.eq_ignore_ascii_case("ask")
+        || permission.kind.eq_ignore_ascii_case("ask_user")
+    {
+        "Answer after review, or deny to keep the run fail-closed."
+    } else {
+        "Allow once continues the run; deny keeps it fail-closed."
+    }
+}
+
+fn permission_modal_summary_line(
+    permission: &crate::app::ActivePermissionView,
+    submission_pending: bool,
+) -> String {
+    if submission_pending {
+        return "Decision submitted — awaiting confirmation.".to_string();
+    }
+
+    permission
+        .tool_label
+        .as_deref()
+        .map(|tool| format!("Tool {tool} is paused pending approval."))
+        .unwrap_or_else(|| {
+            if permission.summary.chars().count() > 48 {
+                format!(
+                    "{} request is paused pending approval.",
+                    permission.kind.replace('_', " ")
+                )
+            } else {
+                permission.summary.clone()
+            }
+        })
+}
+
+fn permission_modal_draft_line(prompt_buffer: &str) -> String {
+    let draft = prompt_buffer.trim();
+    if draft.is_empty() {
+        "Draft preserved beneath this checkpoint.".to_string()
+    } else {
+        format!("Draft preserved · {draft}")
+    }
+}
+
+fn render_overlay_backdrop(frame: &mut Frame, area: Rect, background: Color) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(background)),
+        area,
+    );
+}
+
+fn permission_modal_actions_line(
+    app: &AppState,
+    theme: &Theme,
+    metadata_style: Style,
+    submission_pending: bool,
+) -> Line<'static> {
+    if submission_pending {
+        return Line::from(vec![
+            status_badge("decision sent", theme.status.info, theme),
+            Span::styled("  waiting for confirmation", metadata_style),
+        ]);
+    }
+
+    Line::from(vec![
+        status_badge(
+            app.keymap.get_binding_label(Action::DenyPermission, "deny"),
+            theme.status.error,
+            theme,
+        ),
+        Span::styled("  ", metadata_style),
+        Span::styled(
+            app.keymap.get_binding_label(Action::DismissModal, "later"),
+            metadata_style,
+        ),
+        Span::styled("  ", metadata_style),
+        status_badge(
+            app.keymap
+                .get_binding_label(Action::AllowPermission, "allow once"),
+            theme.border.focus,
+            theme,
+        ),
+    ])
 }

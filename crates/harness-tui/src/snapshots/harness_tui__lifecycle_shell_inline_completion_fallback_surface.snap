@@ -1,0 +1,30 @@
+---
+source: crates/harness-tui/src/lib.rs
+assertion_line: 8087
+expression: "fallback_render.lines().map(str::trim_end).collect::<Vec<_>>().join(\"\\n\")"
+---
+
+
+
+
+
+
+
+
+                  ┌──────────────────────────────────────────────────────────────┐
+                  │                            Harness                           │
+                  │                  Preset unknown · unknown/-                  │
+                  │                                                              │
+                  │                 Start a conversation to begin                │
+                  │        Enter send · Shift+Enter newline · ↑/↓ history        │
+                  └──────────────────────────────────────────────────────────────┘
+
+
+
+
+
+
+            Ready   run finished · session shell preserved  ·  orch 0a 0q 0r 0s
+           ──────────────────────────────────────────────────────────────────────────────
+           ▎ Run complete — use ctrl+p commands for replay/new/quit, or ask Harness for……
+           Tab focus  ? shortcuts  q quit

@@ -1,12 +1,16 @@
 ---
 source: crates/harness-tui/src/lib.rs
+assertion_line: 8850
 expression: "render_live_lines(&app, 80, 24)"
 ---
- run unknown · unknown/unknown · -                                              
-  › user · pending turn                                                         
-    │ ship it                                                                   
-  ◐  streaming…  assistant · current                                            
-    │ Waiting for response…                                                     
+ run unknown · unknown/-                                                        
+  ╭─ › user (pending turn)                                                      
+  │  ship it                                                                    
+  ╰─                                                                            
+                                                                                
+  ╭─ ◐ assistant (streaming… · current)                                         
+  │  Waiting for response…                                                      
+  ╰─                                                                            
                                                                                 
                                                                                 
                                                                                 
@@ -19,10 +23,7 @@ expression: "render_live_lines(&app, 80, 24)"
                                                                                 
                                                                                 
                                                                                 
-                                                                                
-                                                                                
-  Sending   turn 1/1 · pending turn · -/- · waiting for first tokens            
- Composer · ready · 1 line · 0 chars─────────────────────────────────────────── 
-  › █                                                                           
+  Sending   turn 1 · waiting for first tokens  ·  orch 0a 0q 0r 0s              
  ────────────────────────────────────────────────────────────────────────────── 
- Enter send  Shift+Enter nl  i details  2 events  3 diff  4 help  q quit
+ ▎ Queue the next turn while this one finishes…                                 
+ Enter send  Shift+Enter nl  Ctrl+p commands  q quit

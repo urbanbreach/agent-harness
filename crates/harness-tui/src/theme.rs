@@ -1,5 +1,7 @@
 use ratatui::style::Color;
 
+pub const DIFF_SIDE_BY_SIDE_MIN_WIDTH: u16 = 96;
+
 const fn rgb(red: u8, green: u8, blue: u8) -> Color {
     Color::Rgb(red, green, blue)
 }
@@ -304,6 +306,118 @@ impl LiveShellTokens {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChromeMode {
+    Chromeless,
+    Divided,
+    Card,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DividerIntensity {
+    None,
+    Subtle,
+    Strong,
+    Focus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpacingDensity {
+    Compact,
+    Standard,
+    Roomy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DividerTokens {
+    pub intensity: DividerIntensity,
+    pub color: Option<Color>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChromeTokens {
+    pub mode: ChromeMode,
+    pub surface: Color,
+    pub border: DividerTokens,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChromeTokenFamilies {
+    pub chromeless: ChromeTokens,
+    pub divided: ChromeTokens,
+    pub card: ChromeTokens,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DividerTokenFamilies {
+    pub none: DividerTokens,
+    pub subtle: DividerTokens,
+    pub strong: DividerTokens,
+    pub focus: DividerTokens,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DensitySpacingTokens {
+    pub target: ShellGeometryTarget,
+    pub density: SpacingDensity,
+    pub content_margin_x: u16,
+    pub heights: ShellHeights,
+    pub rhythm: ShellRhythm,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DensitySpacingTokenFamilies {
+    pub minimum: DensitySpacingTokens,
+    pub split: DensitySpacingTokens,
+    pub primary: DensitySpacingTokens,
+}
+
+impl DensitySpacingTokenFamilies {
+    pub const fn select(self, target: ShellGeometryTarget) -> DensitySpacingTokens {
+        match target {
+            ShellGeometryTarget::Minimum => self.minimum,
+            ShellGeometryTarget::Split => self.split,
+            ShellGeometryTarget::Primary => self.primary,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ComposerPresentationTokens {
+    pub target: ShellGeometryTarget,
+    pub chrome: ChromeMode,
+    pub divider: DividerIntensity,
+    pub density: SpacingDensity,
+    pub surface: Color,
+    pub border: Option<Color>,
+    pub padding_x: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ComposerTokenFamilies {
+    pub minimum: ComposerPresentationTokens,
+    pub split: ComposerPresentationTokens,
+    pub primary: ComposerPresentationTokens,
+}
+
+impl ComposerTokenFamilies {
+    pub const fn select(self, target: ShellGeometryTarget) -> ComposerPresentationTokens {
+        match target {
+            ShellGeometryTarget::Minimum => self.minimum,
+            ShellGeometryTarget::Split => self.split,
+            ShellGeometryTarget::Primary => self.primary,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SemanticThemeTokenFamilies {
+    pub chrome: ChromeTokenFamilies,
+    pub dividers: DividerTokenFamilies,
+    pub density: DensitySpacingTokenFamilies,
+    pub composer: ComposerTokenFamilies,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SurfaceColors {
     pub canvas: Color,
     pub shell: Color,
@@ -347,6 +461,7 @@ pub struct ThemePalette {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThemeTokenFamilies {
+    pub semantic: SemanticThemeTokenFamilies,
     pub palette: ThemePalette,
     pub live_shell: LiveShellTokenFamilies,
 }
@@ -523,6 +638,104 @@ impl Theme {
 
     pub const fn token_families(self) -> ThemeTokenFamilies {
         ThemeTokenFamilies {
+            semantic: SemanticThemeTokenFamilies {
+                chrome: ChromeTokenFamilies {
+                    chromeless: ChromeTokens {
+                        mode: ChromeMode::Chromeless,
+                        surface: self.surface.shell,
+                        border: DividerTokens {
+                            intensity: DividerIntensity::None,
+                            color: None,
+                        },
+                    },
+                    divided: ChromeTokens {
+                        mode: ChromeMode::Divided,
+                        surface: self.surface.panel,
+                        border: DividerTokens {
+                            intensity: DividerIntensity::Subtle,
+                            color: Some(self.border.subtle),
+                        },
+                    },
+                    card: ChromeTokens {
+                        mode: ChromeMode::Card,
+                        surface: self.surface.panel_elevated,
+                        border: DividerTokens {
+                            intensity: DividerIntensity::Subtle,
+                            color: Some(self.border.subtle),
+                        },
+                    },
+                },
+                dividers: DividerTokenFamilies {
+                    none: DividerTokens {
+                        intensity: DividerIntensity::None,
+                        color: None,
+                    },
+                    subtle: DividerTokens {
+                        intensity: DividerIntensity::Subtle,
+                        color: Some(self.border.subtle),
+                    },
+                    strong: DividerTokens {
+                        intensity: DividerIntensity::Strong,
+                        color: Some(self.border.strong),
+                    },
+                    focus: DividerTokens {
+                        intensity: DividerIntensity::Focus,
+                        color: Some(self.border.focus),
+                    },
+                },
+                density: DensitySpacingTokenFamilies {
+                    minimum: DensitySpacingTokens {
+                        target: ShellGeometryTarget::Minimum,
+                        density: SpacingDensity::Compact,
+                        content_margin_x: self.live_shell.minimum.content_margin_x,
+                        heights: self.live_shell.heights,
+                        rhythm: self.live_shell.rhythm,
+                    },
+                    split: DensitySpacingTokens {
+                        target: ShellGeometryTarget::Split,
+                        density: SpacingDensity::Standard,
+                        content_margin_x: self.live_shell.split.content_margin_x,
+                        heights: self.live_shell.heights,
+                        rhythm: self.live_shell.rhythm,
+                    },
+                    primary: DensitySpacingTokens {
+                        target: ShellGeometryTarget::Primary,
+                        density: SpacingDensity::Roomy,
+                        content_margin_x: self.live_shell.primary.content_margin_x,
+                        heights: self.live_shell.heights,
+                        rhythm: self.live_shell.rhythm,
+                    },
+                },
+                composer: ComposerTokenFamilies {
+                    minimum: ComposerPresentationTokens {
+                        target: ShellGeometryTarget::Minimum,
+                        chrome: ChromeMode::Card,
+                        divider: DividerIntensity::Subtle,
+                        density: SpacingDensity::Compact,
+                        surface: self.surface.panel_elevated,
+                        border: Some(self.border.subtle),
+                        padding_x: self.live_shell.rhythm.composer_padding_x,
+                    },
+                    split: ComposerPresentationTokens {
+                        target: ShellGeometryTarget::Split,
+                        chrome: ChromeMode::Divided,
+                        divider: DividerIntensity::Subtle,
+                        density: SpacingDensity::Standard,
+                        surface: self.surface.panel,
+                        border: Some(self.border.subtle),
+                        padding_x: self.live_shell.rhythm.composer_padding_x,
+                    },
+                    primary: ComposerPresentationTokens {
+                        target: ShellGeometryTarget::Primary,
+                        chrome: ChromeMode::Chromeless,
+                        divider: DividerIntensity::None,
+                        density: SpacingDensity::Roomy,
+                        surface: self.surface.shell,
+                        border: None,
+                        padding_x: self.live_shell.rhythm.composer_padding_x,
+                    },
+                },
+            },
             palette: ThemePalette {
                 surfaces: self.surface,
                 borders: self.border,
@@ -533,72 +746,36 @@ impl Theme {
         }
     }
 
-    pub fn mono() -> Self {
+    pub fn opencode_dark() -> Self {
         Self {
             surface: SurfaceColors {
-                canvas: Color::Black,
-                shell: rgb(0x14, 0x10, 0x02),
-                panel: rgb(0x18, 0x12, 0x04),
-                panel_elevated: rgb(0x21, 0x18, 0x05),
-                overlay: rgb(0x2B, 0x1F, 0x07),
+                canvas: rgb(0x05, 0x05, 0x05),
+                shell: rgb(0x0B, 0x0C, 0x0D),
+                panel: rgb(0x10, 0x11, 0x13),
+                panel_elevated: rgb(0x17, 0x18, 0x1A),
+                overlay: rgb(0x17, 0x18, 0x1A),
             },
             border: BorderColors {
-                subtle: rgb(0x88, 0x70, 0x30),
-                strong: rgb(0xCC, 0x90, 0x00),
-                focus: rgb(0xFF, 0xD0, 0x40),
+                subtle: rgb(0x8C, 0x88, 0x83),
+                strong: rgb(0xD4, 0x8B, 0x17),
+                focus: rgb(0xD4, 0x8B, 0x17),
             },
             text: TextColors {
-                primary: rgb(0xFF, 0xB0, 0x00),
-                secondary: rgb(0xCC, 0x90, 0x00),
-                tertiary: rgb(0x88, 0x70, 0x30),
-                accent: rgb(0xFF, 0xD0, 0x40),
-                inverse: Color::Black,
+                primary: rgb(0xE7, 0xE3, 0xDE),
+                secondary: rgb(0x8C, 0x88, 0x83),
+                tertiary: rgb(0x8C, 0x88, 0x83),
+                accent: rgb(0xD4, 0x8B, 0x17),
+                inverse: rgb(0x05, 0x05, 0x05),
             },
             status: StatusColors {
-                success: rgb(0x50, 0xD0, 0x50),
-                warning: rgb(0xD0, 0xA0, 0x30),
-                error: rgb(0xD0, 0x50, 0x50),
-                info: rgb(0x80, 0xB8, 0xFF),
-                disabled: rgb(0x88, 0x70, 0x30),
+                success: rgb(0x73, 0xC0, 0x6B),
+                warning: rgb(0xC9, 0xA2, 0x27),
+                error: rgb(0xD9, 0x6A, 0x6A),
+                info: rgb(0xD4, 0x8B, 0x17),
+                disabled: rgb(0x8C, 0x88, 0x83),
             },
             live_shell: Self::OPENCODE_SHELL,
         }
-    }
-
-    pub fn harness_app_dark() -> Self {
-        Self {
-            surface: SurfaceColors {
-                canvas: rgb(0x07, 0x0B, 0x12),
-                shell: rgb(0x0D, 0x15, 0x22),
-                panel: rgb(0x10, 0x1A, 0x29),
-                panel_elevated: rgb(0x15, 0x22, 0x35),
-                overlay: rgb(0x18, 0x27, 0x3B),
-            },
-            border: BorderColors {
-                subtle: rgb(0x24, 0x35, 0x4B),
-                strong: rgb(0x31, 0x47, 0x60),
-                focus: rgb(0x6E, 0xA8, 0xFE),
-            },
-            text: TextColors {
-                primary: rgb(0xE7, 0xEE, 0xF7),
-                secondary: rgb(0xA3, 0xB1, 0xC2),
-                tertiary: rgb(0x72, 0x83, 0x99),
-                accent: rgb(0x6E, 0xA8, 0xFE),
-                inverse: rgb(0x07, 0x10, 0x1A),
-            },
-            status: StatusColors {
-                success: rgb(0x5A, 0xC0, 0x8E),
-                warning: rgb(0xD6, 0xA5, 0x5A),
-                error: rgb(0xE3, 0x6D, 0x6D),
-                info: rgb(0x7C, 0xB7, 0xFF),
-                disabled: rgb(0x5F, 0x70, 0x85),
-            },
-            live_shell: Self::OPENCODE_SHELL,
-        }
-    }
-
-    pub fn default_theme() -> Self {
-        Self::harness_app_dark()
     }
 
     pub const fn live_shell_layout(self, width: u16, height: u16) -> LiveShellLayout {
@@ -612,7 +789,7 @@ impl Theme {
 
 impl Default for Theme {
     fn default() -> Self {
-        Self::default_theme()
+        Self::opencode_dark()
     }
 }
 
@@ -621,33 +798,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mono_theme_has_valid_colors() {
-        let theme = Theme::mono();
-        assert_eq!(theme.surface.canvas, Color::Black);
-        assert_eq!(theme.text.primary, Color::Rgb(0xFF, 0xB0, 0x00));
-    }
-
-    #[test]
-    fn harness_app_dark_theme_has_exact_palette() {
-        let theme = Theme::harness_app_dark();
-        assert_eq!(theme.surface.canvas, rgb(0x07, 0x0B, 0x12));
-        assert_eq!(theme.surface.shell, rgb(0x0D, 0x15, 0x22));
-        assert_eq!(theme.surface.panel, rgb(0x10, 0x1A, 0x29));
-        assert_eq!(theme.surface.panel_elevated, rgb(0x15, 0x22, 0x35));
-        assert_eq!(theme.surface.overlay, rgb(0x18, 0x27, 0x3B));
-        assert_eq!(theme.border.subtle, rgb(0x24, 0x35, 0x4B));
-        assert_eq!(theme.border.strong, rgb(0x31, 0x47, 0x60));
-        assert_eq!(theme.border.focus, rgb(0x6E, 0xA8, 0xFE));
-        assert_eq!(theme.text.primary, rgb(0xE7, 0xEE, 0xF7));
-        assert_eq!(theme.text.secondary, rgb(0xA3, 0xB1, 0xC2));
-        assert_eq!(theme.text.tertiary, rgb(0x72, 0x83, 0x99));
-        assert_eq!(theme.text.accent, rgb(0x6E, 0xA8, 0xFE));
-        assert_eq!(theme.text.inverse, rgb(0x07, 0x10, 0x1A));
-        assert_eq!(theme.status.success, rgb(0x5A, 0xC0, 0x8E));
-        assert_eq!(theme.status.warning, rgb(0xD6, 0xA5, 0x5A));
-        assert_eq!(theme.status.error, rgb(0xE3, 0x6D, 0x6D));
-        assert_eq!(theme.status.info, rgb(0x7C, 0xB7, 0xFF));
-        assert_eq!(theme.status.disabled, rgb(0x5F, 0x70, 0x85));
+    fn opencode_dark_theme_matches_palette_contract() {
+        let theme = Theme::opencode_dark();
+        assert_eq!(theme.surface.canvas, rgb(0x05, 0x05, 0x05));
+        assert_eq!(theme.surface.shell, rgb(0x0B, 0x0C, 0x0D));
+        assert_eq!(theme.surface.panel, rgb(0x10, 0x11, 0x13));
+        assert_eq!(theme.surface.panel_elevated, rgb(0x17, 0x18, 0x1A));
+        assert_eq!(theme.surface.overlay, rgb(0x17, 0x18, 0x1A));
+        assert_eq!(theme.border.subtle, rgb(0x8C, 0x88, 0x83));
+        assert_eq!(theme.border.strong, rgb(0xD4, 0x8B, 0x17));
+        assert_eq!(theme.border.focus, rgb(0xD4, 0x8B, 0x17));
+        assert_eq!(theme.text.primary, rgb(0xE7, 0xE3, 0xDE));
+        assert_eq!(theme.text.secondary, rgb(0x8C, 0x88, 0x83));
+        assert_eq!(theme.text.tertiary, rgb(0x8C, 0x88, 0x83));
+        assert_eq!(theme.text.accent, rgb(0xD4, 0x8B, 0x17));
+        assert_eq!(theme.text.inverse, rgb(0x05, 0x05, 0x05));
+        assert_eq!(theme.status.success, rgb(0x73, 0xC0, 0x6B));
+        assert_eq!(theme.status.warning, rgb(0xC9, 0xA2, 0x27));
+        assert_eq!(theme.status.error, rgb(0xD9, 0x6A, 0x6A));
+        assert_eq!(theme.status.info, rgb(0xD4, 0x8B, 0x17));
+        assert_eq!(theme.status.disabled, rgb(0x8C, 0x88, 0x83));
     }
 
     #[test]
@@ -655,6 +825,46 @@ mod tests {
         let theme = Theme::default();
         let tokens = theme.token_families();
 
+        assert_eq!(
+            tokens.semantic.chrome.chromeless.surface,
+            theme.surface.shell
+        );
+        assert_eq!(tokens.semantic.chrome.divided.surface, theme.surface.panel);
+        assert_eq!(
+            tokens.semantic.chrome.card.surface,
+            theme.surface.panel_elevated
+        );
+        assert_ne!(theme.surface.shell, theme.surface.panel);
+        assert_ne!(theme.surface.panel, theme.surface.panel_elevated);
+        assert_ne!(theme.surface.shell, theme.surface.panel_elevated);
+        assert_eq!(
+            tokens.semantic.dividers.subtle.color,
+            Some(theme.border.subtle)
+        );
+        assert_eq!(
+            tokens.semantic.dividers.strong.color,
+            Some(theme.border.strong)
+        );
+        assert_eq!(
+            tokens.semantic.dividers.focus.color,
+            Some(theme.border.focus)
+        );
+        assert_eq!(
+            tokens.semantic.density.minimum.heights,
+            theme.live_shell.heights
+        );
+        assert_eq!(
+            tokens.semantic.density.split.rhythm,
+            theme.live_shell.rhythm
+        );
+        assert_eq!(
+            tokens.semantic.density.primary.content_margin_x,
+            theme.live_shell.primary.content_margin_x
+        );
+        assert_eq!(
+            tokens.semantic.composer.primary.padding_x,
+            theme.live_shell.rhythm.composer_padding_x
+        );
         assert_eq!(tokens.palette.surfaces, theme.surface);
         assert_eq!(tokens.palette.borders, theme.border);
         assert_eq!(tokens.palette.text, theme.text);
@@ -688,12 +898,160 @@ mod tests {
     }
 
     #[test]
-    fn default_theme_is_harness_app_dark() {
+    fn default_theme_matches_opencode_dark_contract() {
         let default = Theme::default();
-        let harness = Theme::harness_app_dark();
-        assert_eq!(default.surface.canvas, harness.surface.canvas);
-        assert_eq!(default.text.primary, harness.text.primary);
-        assert_eq!(default.status.info, harness.status.info);
+        let opencode_dark = Theme::opencode_dark();
+
+        assert_eq!(default, opencode_dark);
+        assert_eq!(default.token_families(), opencode_dark.token_families());
+    }
+
+    #[test]
+    fn semantic_chrome_tokens_map_to_opencode_dark_defaults() {
+        let theme = Theme::default();
+        let tokens = theme.token_families();
+
+        assert_eq!(
+            tokens.semantic.chrome.chromeless.mode,
+            ChromeMode::Chromeless
+        );
+        assert_eq!(
+            tokens.semantic.chrome.chromeless.surface,
+            theme.surface.shell
+        );
+        assert_eq!(
+            tokens.semantic.chrome.chromeless.border,
+            tokens.semantic.dividers.none
+        );
+        assert_eq!(tokens.semantic.chrome.divided.mode, ChromeMode::Divided);
+        assert_eq!(tokens.semantic.chrome.divided.surface, theme.surface.panel);
+        assert_eq!(
+            tokens.semantic.chrome.divided.border,
+            tokens.semantic.dividers.subtle
+        );
+        assert_eq!(tokens.semantic.chrome.card.mode, ChromeMode::Card);
+        assert_eq!(
+            tokens.semantic.chrome.card.surface,
+            theme.surface.panel_elevated
+        );
+        assert_eq!(
+            tokens.semantic.chrome.card.border,
+            tokens.semantic.dividers.subtle
+        );
+        assert_eq!(
+            tokens.semantic.dividers.none.intensity,
+            DividerIntensity::None
+        );
+        assert_eq!(tokens.semantic.dividers.none.color, None);
+        assert_eq!(
+            tokens.semantic.dividers.subtle.color,
+            Some(theme.border.subtle)
+        );
+        assert_eq!(
+            tokens.semantic.dividers.strong.color,
+            Some(theme.border.strong)
+        );
+        assert_eq!(
+            tokens.semantic.dividers.focus.color,
+            Some(theme.border.focus)
+        );
+    }
+
+    #[test]
+    fn semantic_composer_tokens_have_primary_split_minimum_variants() {
+        let theme = Theme::default();
+        let tokens = theme.token_families();
+
+        assert_eq!(
+            tokens.semantic.composer.minimum.target,
+            ShellGeometryTarget::Minimum
+        );
+        assert_eq!(tokens.semantic.composer.minimum.chrome, ChromeMode::Card);
+        assert_eq!(
+            tokens.semantic.composer.minimum.divider,
+            DividerIntensity::Subtle
+        );
+        assert_eq!(
+            tokens.semantic.composer.minimum.density,
+            SpacingDensity::Compact
+        );
+        assert_eq!(
+            tokens.semantic.composer.minimum.surface,
+            theme.surface.panel_elevated
+        );
+        assert_eq!(
+            tokens.semantic.composer.minimum.border,
+            Some(theme.border.subtle)
+        );
+        assert_eq!(
+            tokens.semantic.composer.split.target,
+            ShellGeometryTarget::Split
+        );
+        assert_eq!(tokens.semantic.composer.split.chrome, ChromeMode::Divided);
+        assert_eq!(
+            tokens.semantic.composer.split.divider,
+            DividerIntensity::Subtle
+        );
+        assert_eq!(
+            tokens.semantic.composer.split.density,
+            SpacingDensity::Standard
+        );
+        assert_eq!(tokens.semantic.composer.split.surface, theme.surface.panel);
+        assert_eq!(
+            tokens.semantic.composer.split.border,
+            Some(theme.border.subtle)
+        );
+        assert_eq!(
+            tokens.semantic.composer.primary.target,
+            ShellGeometryTarget::Primary
+        );
+        assert_eq!(
+            tokens.semantic.composer.primary.chrome,
+            ChromeMode::Chromeless
+        );
+        assert_eq!(
+            tokens.semantic.composer.primary.divider,
+            DividerIntensity::None
+        );
+        assert_eq!(
+            tokens.semantic.composer.primary.density,
+            SpacingDensity::Roomy
+        );
+        assert_eq!(
+            tokens.semantic.composer.primary.surface,
+            theme.surface.shell
+        );
+        assert_eq!(tokens.semantic.composer.primary.border, None);
+        assert_eq!(
+            tokens.semantic.composer.minimum.padding_x,
+            theme.live_shell.rhythm.composer_padding_x
+        );
+        assert_eq!(
+            tokens.semantic.composer.split.padding_x,
+            theme.live_shell.rhythm.composer_padding_x
+        );
+        assert_eq!(
+            tokens.semantic.composer.primary.padding_x,
+            theme.live_shell.rhythm.composer_padding_x
+        );
+        assert_eq!(
+            tokens
+                .semantic
+                .composer
+                .select(ShellGeometryTarget::Minimum),
+            tokens.semantic.composer.minimum
+        );
+        assert_eq!(
+            tokens.semantic.composer.select(ShellGeometryTarget::Split),
+            tokens.semantic.composer.split
+        );
+        assert_eq!(
+            tokens
+                .semantic
+                .composer
+                .select(ShellGeometryTarget::Primary),
+            tokens.semantic.composer.primary
+        );
     }
 
     #[test]
@@ -783,5 +1141,10 @@ mod tests {
         let split =
             crate::layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 96, 40));
         assert_eq!(split.shell.width, 94);
+    }
+
+    #[test]
+    fn diff_side_by_side_threshold_matches_geometry_contract() {
+        assert_eq!(DIFF_SIDE_BY_SIDE_MIN_WIDTH, 96);
     }
 }

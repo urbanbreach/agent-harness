@@ -27,6 +27,10 @@ use crate::view_model;
 const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS: usize = 72;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS: usize = 3;
+pub(crate) const SLASH_COMMANDS: [(&str, &str); 2] = [
+    ("new", "Return to the home shell"),
+    ("exit", "Quit Harness"),
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolCallDisplayStatus {
@@ -188,6 +192,7 @@ pub struct ActivityEntry {
     pub status: ActivityStatus,
     pub user_message: Option<UserMessageSubmittedEvent>,
     pub request_data: Option<ProviderRequestStartedEvent>,
+    pub thinking_text: String,
     pub transcript_text: String,
     pub error_message: Option<String>,
     pub permissions: Vec<PermissionEntry>,
@@ -323,82 +328,69 @@ impl Default for MemoryCaps {
 pub enum Tab {
     #[default]
     Run,
-    Details,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReviewSurface {
     Events,
     Diff,
     Help,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SurfaceRole {
-    Primary,
-    Drawer,
-    Secondary,
+impl ReviewSurface {
+    pub(crate) fn status_label(self) -> &'static str {
+        match self {
+            Self::Events => "events",
+            Self::Diff => "diff",
+            Self::Help => "shortcuts",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SurfaceDescriptor {
-    pub tab: Tab,
+pub enum ShellKind {
+    Home,
+    Session,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShellDescriptor {
+    pub kind: ShellKind,
     pub label: &'static str,
-    pub role: SurfaceRole,
+    pub read_only: bool,
 }
 
-const LIVE_SURFACE_REGISTRY: [SurfaceDescriptor; 5] = [
-    SurfaceDescriptor {
-        tab: Tab::Run,
-        label: "Conversation",
-        role: SurfaceRole::Primary,
+const LIVE_DEFAULT_SHELL_REGISTRY: [ShellDescriptor; 2] = [
+    ShellDescriptor {
+        kind: ShellKind::Home,
+        label: "Home",
+        read_only: false,
     },
-    SurfaceDescriptor {
-        tab: Tab::Details,
-        label: "Details",
-        role: SurfaceRole::Drawer,
-    },
-    SurfaceDescriptor {
-        tab: Tab::Events,
-        label: "Events",
-        role: SurfaceRole::Secondary,
-    },
-    SurfaceDescriptor {
-        tab: Tab::Diff,
-        label: "Diff",
-        role: SurfaceRole::Secondary,
-    },
-    SurfaceDescriptor {
-        tab: Tab::Help,
-        label: "Help",
-        role: SurfaceRole::Secondary,
+    ShellDescriptor {
+        kind: ShellKind::Session,
+        label: "Session",
+        read_only: false,
     },
 ];
 
-const REPLAY_SURFACE_REGISTRY: [SurfaceDescriptor; 4] = [
-    SurfaceDescriptor {
-        tab: Tab::Run,
-        label: "Conversation",
-        role: SurfaceRole::Primary,
+const REPLAY_DEFAULT_SHELL_REGISTRY: [ShellDescriptor; 2] = [
+    ShellDescriptor {
+        kind: ShellKind::Home,
+        label: "Home",
+        read_only: false,
     },
-    SurfaceDescriptor {
-        tab: Tab::Events,
-        label: "Events",
-        role: SurfaceRole::Secondary,
-    },
-    SurfaceDescriptor {
-        tab: Tab::Diff,
-        label: "Diff",
-        role: SurfaceRole::Secondary,
-    },
-    SurfaceDescriptor {
-        tab: Tab::Help,
-        label: "Help",
-        role: SurfaceRole::Secondary,
+    ShellDescriptor {
+        kind: ShellKind::Session,
+        label: "Replay",
+        read_only: true,
     },
 ];
 
-pub fn surface_registry(replay_mode: bool) -> &'static [SurfaceDescriptor] {
+pub fn default_shell_registry(replay_mode: bool) -> &'static [ShellDescriptor] {
     if replay_mode {
-        &REPLAY_SURFACE_REGISTRY
+        &REPLAY_DEFAULT_SHELL_REGISTRY
     } else {
-        &LIVE_SURFACE_REGISTRY
+        &LIVE_DEFAULT_SHELL_REGISTRY
     }
 }
 
@@ -415,6 +407,10 @@ pub enum UiIntent {
     ResolvePermission {
         permission_id: String,
         decision: PermissionDecision,
+    },
+    SwitchModel {
+        profile: String,
+        launch_metadata: LaunchMetadata,
     },
     NewSession,
     ReplaySession {
@@ -645,6 +641,7 @@ pub struct LaunchMetadata {
     provider: Option<String>,
     model: Option<String>,
     mode_label: Option<String>,
+    available_models: Vec<ModelOption>,
 }
 
 impl LaunchMetadata {
@@ -658,6 +655,7 @@ impl LaunchMetadata {
             provider: Some(provider.into()),
             model,
             mode_label: None,
+            available_models: Vec::new(),
         }
     }
 
@@ -666,8 +664,26 @@ impl LaunchMetadata {
         Self::new(profile, model_ref.provider_id, Some(model_ref.model_id))
     }
 
+    pub fn from_model_option(option: &ModelOption) -> Self {
+        Self::new(
+            option.profile.clone(),
+            option.provider.clone(),
+            Some(option.model.clone()),
+        )
+    }
+
     pub fn with_mode_label(mut self, mode_label: impl Into<String>) -> Self {
         self.mode_label = Some(mode_label.into());
+        self
+    }
+
+    pub fn without_mode_label(mut self) -> Self {
+        self.mode_label = None;
+        self
+    }
+
+    pub fn with_available_models(mut self, available_models: Vec<ModelOption>) -> Self {
+        self.available_models = available_models;
         self
     }
 
@@ -695,6 +711,55 @@ impl LaunchMetadata {
         self.mode_label
             .as_deref()
             .filter(|value| !value.trim().is_empty())
+    }
+
+    pub fn available_models(&self) -> &[ModelOption] {
+        &self.available_models
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelOption {
+    pub profile: String,
+    pub provider: String,
+    pub model: String,
+}
+
+impl ModelOption {
+    pub fn from_model_ref(profile: impl Into<String>, model_ref: &str) -> Self {
+        let profile = profile.into();
+        let model_ref = AgentModelRef::parse(model_ref);
+        Self {
+            profile,
+            provider: model_ref.provider_id,
+            model: model_ref.model_id,
+        }
+    }
+
+    fn matches(&self, input: &str) -> bool {
+        if input.is_empty() {
+            return true;
+        }
+
+        let input = input.to_lowercase();
+        self.profile.to_lowercase().contains(&input)
+            || self.provider.to_lowercase().contains(&input)
+            || self.model.to_lowercase().contains(&input)
+    }
+}
+
+impl PartialOrd for ModelOption {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ModelOption {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.provider
+            .cmp(&other.provider)
+            .then_with(|| self.model.cmp(&other.model))
+            .then_with(|| self.profile.cmp(&other.profile))
     }
 }
 
@@ -852,7 +917,8 @@ pub struct AppState {
     pub focus: Focus,
     pub follow_mode: bool,
     pub active_tab: Tab,
-    live_details_drawer_open: bool,
+    pub(crate) active_review_surface: Option<ReviewSurface>,
+    pub(crate) live_details_drawer_open: bool,
     projection: SessionProjection,
     pub should_quit: bool,
     pub replay_mode: bool,
@@ -872,15 +938,25 @@ pub struct AppState {
     pub palette_filtered: Vec<String>,
     pub palette_selected: usize,
     palette_focus_return: Option<Focus>,
+    show_transcript_thinking: bool,
+    show_successful_tool_details: bool,
     pub startup_mode: bool,
     pub startup_launcher_action: StartupLauncherAction,
     post_run_handoff_action: PostRunHandoffAction,
     continued_post_run_handoff_active: bool,
     continued_live_reopen_surface_active: bool,
     pub session_history_visible: bool,
+    pub model_switcher_visible: bool,
     pub session_history_entries: Vec<SessionHistoryEntry>,
     pub session_history_filtered: Vec<usize>,
     pub session_history_selected: usize,
+    pub model_options: Vec<ModelOption>,
+    pub model_filtered: Vec<usize>,
+    pub model_selected: usize,
+    pub slash_visible: bool,
+    pub slash_filtered: Vec<String>,
+    pub slash_selected: usize,
+    slash_draft_snapshot: Option<String>,
     pub continue_disabled_banner: Option<String>,
     pub keymap: KeyMap,
     theme: Theme,
@@ -898,6 +974,7 @@ impl Default for AppState {
             focus: Focus::default(),
             follow_mode: true,
             active_tab: Tab::default(),
+            active_review_surface: None,
             live_details_drawer_open: false,
             projection: SessionProjection::default(),
             should_quit: false,
@@ -918,15 +995,25 @@ impl Default for AppState {
             palette_filtered: Vec::new(),
             palette_selected: 0,
             palette_focus_return: None,
+            show_transcript_thinking: true,
+            show_successful_tool_details: false,
             startup_mode: false,
             startup_launcher_action: StartupLauncherAction::default(),
             post_run_handoff_action: PostRunHandoffAction::default(),
             continued_post_run_handoff_active: false,
             continued_live_reopen_surface_active: false,
             session_history_visible: false,
+            model_switcher_visible: false,
             session_history_entries: Vec::new(),
             session_history_filtered: Vec::new(),
             session_history_selected: 0,
+            model_options: Vec::new(),
+            model_filtered: Vec::new(),
+            model_selected: 0,
+            slash_visible: false,
+            slash_filtered: Vec::new(),
+            slash_selected: 0,
+            slash_draft_snapshot: None,
             continue_disabled_banner: None,
             keymap: KeyMap::default(),
             theme: Theme::default(),
@@ -1298,6 +1385,7 @@ impl SessionProjection {
                         status: ActivityStatus::Streaming,
                         user_message: Some(data.clone()),
                         request_data: None,
+                        thinking_text: String::new(),
                         transcript_text: String::new(),
                         error_message: None,
                         permissions: Vec::new(),
@@ -1329,6 +1417,7 @@ impl SessionProjection {
                         status: ActivityStatus::Streaming,
                         user_message: None,
                         request_data: Some(data.clone()),
+                        thinking_text: String::new(),
                         transcript_text: String::new(),
                         error_message: None,
                         permissions: Vec::new(),
@@ -1358,6 +1447,7 @@ impl SessionProjection {
                         status: ActivityStatus::Streaming,
                         user_message: None,
                         request_data: None,
+                        thinking_text: String::new(),
                         transcript_text: data.delta.clone(),
                         error_message: None,
                         permissions: Vec::new(),
@@ -1372,6 +1462,12 @@ impl SessionProjection {
                 if let Some(index) = self.activity_index_or_local_echo(&data.request_id, event.seq)
                 {
                     if let Some(entry) = self.activities.get_mut(index) {
+                        if entry.tool_calls.is_empty()
+                            && entry.transcript_text.is_empty()
+                            && !entry.thinking_text.is_empty()
+                        {
+                            entry.transcript_text = std::mem::take(&mut entry.thinking_text);
+                        }
                         entry.status = ActivityStatus::Done;
                         entry.last_seq = event.seq;
                     }
@@ -1449,6 +1545,12 @@ impl SessionProjection {
                 };
 
                 if let Some(entry) = entry {
+                    if entry.tool_calls.is_empty()
+                        && entry.thinking_text.is_empty()
+                        && !entry.transcript_text.is_empty()
+                    {
+                        entry.thinking_text = std::mem::take(&mut entry.transcript_text);
+                    }
                     let tool_entry = ToolCallEntry {
                         tool_call_id: data.tool_call_id.clone(),
                         tool_id: data.tool_id.clone(),
@@ -1517,20 +1619,25 @@ impl SessionProjection {
         let total_chars: usize = self
             .activities
             .iter()
-            .map(|activity| activity.transcript_text.len())
+            .map(|activity| activity.thinking_text.len() + activity.transcript_text.len())
             .sum();
         if total_chars > max_chars {
             let excess = total_chars - max_chars;
             let mut trimmed = 0;
             while trimmed < excess && !self.activities.is_empty() {
                 if let Some(first) = self.activities.front_mut() {
-                    if first.transcript_text.len() <= excess - trimmed {
-                        trimmed += first.transcript_text.len();
-                        first.transcript_text.clear();
-                    } else {
-                        let to_trim = excess - trimmed;
-                        first.transcript_text = first.transcript_text.split_off(to_trim);
-                        trimmed = excess;
+                    for chunk in [&mut first.thinking_text, &mut first.transcript_text] {
+                        if trimmed >= excess {
+                            break;
+                        }
+                        if chunk.len() <= excess - trimmed {
+                            trimmed += chunk.len();
+                            chunk.clear();
+                        } else {
+                            let to_trim = excess - trimmed;
+                            *chunk = chunk.split_off(to_trim);
+                            trimmed = excess;
+                        }
                     }
                     if trimmed >= excess {
                         break;
@@ -1558,7 +1665,7 @@ impl AppState {
         let mut state = Self::new();
         state.launch_metadata = take_pending_live_launch_metadata().unwrap_or_default();
         state.focus = Focus::Prompt;
-        state.live_details_drawer_open = state.launch_metadata.mode_label() == Some("Live");
+        state.live_details_drawer_open = false;
         state.session_path = session_path;
         state.auto_exit_on_finish = auto_exit_on_finish;
         state.on_ui_intent = on_ui_intent;
@@ -1586,6 +1693,9 @@ impl AppState {
         state.on_ui_intent = on_ui_intent;
         state.launch_metadata = take_pending_live_launch_metadata().unwrap_or_default();
         state.set_session_history_entries(session_history_entries);
+        if let Some(pending_prompt) = take_pending_live_prompt() {
+            state.replace_prompt_input(pending_prompt.text);
+        }
         state
     }
 
@@ -1597,7 +1707,8 @@ impl AppState {
         &self.theme
     }
 
-    pub fn set_theme(&mut self, theme: Theme) {
+    #[cfg(test)]
+    pub(crate) fn set_theme_for_test(&mut self, theme: Theme) {
         self.theme = theme;
     }
 
@@ -1639,20 +1750,19 @@ impl AppState {
             return;
         }
 
+        if matches!(&event.payload, EventV1::PermissionRequested(_)) {
+            self.close_palette();
+            self.session_history_visible = false;
+            self.model_switcher_visible = false;
+            self.clear_slash_menu();
+        }
+
         let terminal_event = matches!(
             &event.payload,
             EventV1::RunFinished(_) | EventV1::RunFailed(_)
         );
-        let entered_post_run_handoff = if historical {
-            terminal_event && self.launch_mode_label() == Some("Continued")
-        } else {
-            terminal_event
-        };
         if !historical {
             self.continued_live_reopen_surface_active = false;
-        }
-        if historical && entered_post_run_handoff {
-            self.continued_post_run_handoff_active = true;
         }
         self.update_transient_state_for_event(&event);
         let trimmed_events = self.projection.ingest_event(event, historical);
@@ -1672,8 +1782,12 @@ impl AppState {
             self.transcript_scroll = 0;
         }
 
-        if entered_post_run_handoff && self.post_run_handoff_enabled() {
-            self.enter_post_run_handoff();
+        if terminal_event && !historical {
+            self.close_palette();
+            self.close_review_surface();
+            if self.focus == Focus::Prompt {
+                self.focus = Focus::Details;
+            }
         }
 
         self.maybe_auto_exit();
@@ -1731,13 +1845,13 @@ impl AppState {
                 state.summary = state
                     .detail
                     .as_deref()
-                    .map(|detail| format!("recovery in progress · {detail}"))
+                    .map(|detail| format!("recovery in progress · Sending paused · {detail}"))
                     .unwrap_or_else(|| {
-                        "recovery in progress · sending paused until live state catches up"
+                        "recovery in progress · Sending paused until live state catches up"
                             .to_string()
                     });
                 state.composer_hint =
-                    "Draft preserved locally — Harness is replaying live state before it will send the next turn.".to_string();
+                    "Draft preserved locally while recovery completes.".to_string();
             }
             RuntimeStateKind::Disconnected => {
                 state.summary = if self.activities.is_empty() {
@@ -1747,7 +1861,7 @@ impl AppState {
                         .to_string()
                 };
                 state.composer_hint =
-                    "Draft preserved locally — reopen the TUI to reconnect before sending another turn.".to_string();
+                    "Draft preserved locally — reopen the TUI to reconnect.".to_string();
             }
             RuntimeStateKind::Failure => {
                 if self.status_banner.as_deref().is_some_and(|banner| {
@@ -1757,20 +1871,18 @@ impl AppState {
                         || banner.contains("no session path")
                 }) {
                     state.summary =
-                        "runtime failure · inspect transcript or details, then retry when ready"
-                            .to_string();
+                        "runtime failure · inspect transcript, then retry or continue".to_string();
                     state.composer_hint =
-                        "Composer stays available — review the failure, adjust the draft, then retry when ready.".to_string();
+                        "After review, adjust the draft, then retry or continue.".to_string();
                 } else if self
                     .activities
                     .back()
                     .is_some_and(|activity| activity.status == ActivityStatus::Error)
                 {
                     state.summary =
-                        "turn failed · inspect transcript, adjust the draft, then retry"
-                            .to_string();
+                        "turn failed · inspect transcript, then retry or continue".to_string();
                     state.composer_hint =
-                        "Composer stays available — fix the draft or continue with a recovery prompt.".to_string();
+                        "After review, adjust the draft, then retry or continue.".to_string();
                 }
             }
             _ => {}
@@ -1780,17 +1892,21 @@ impl AppState {
     }
 
     pub fn lifecycle_shell_state(&self) -> LifecycleShellState {
-        view_model::lifecycle_shell_state(
-            self.replay_mode,
-            self.startup_mode,
-            self.projection.run_terminal_seen,
-            self.continued_post_run_handoff_active,
-            self.post_run_handoff_enabled(),
-        )
+        if self.replay_mode {
+            LifecycleShellState::None
+        } else if self.startup_mode {
+            LifecycleShellState::Startup
+        } else {
+            LifecycleShellState::None
+        }
     }
 
     pub fn lifecycle_shell_actions_visible(&self) -> bool {
         self.lifecycle_shell_state() != LifecycleShellState::None
+    }
+
+    pub(crate) fn completed_session_shell_active(&self) -> bool {
+        !self.replay_mode && !self.startup_mode && self.projection.run_terminal_seen
     }
 
     pub fn startup_shell_visible(&self) -> bool {
@@ -1799,18 +1915,6 @@ impl AppState {
 
     pub fn post_run_handoff_visible(&self) -> bool {
         matches!(self.lifecycle_shell_state(), LifecycleShellState::PostRun)
-    }
-
-    pub fn continued_post_run_handoff_active(&self) -> bool {
-        self.continued_post_run_handoff_active
-    }
-
-    pub(crate) fn continued_live_reopen_surface_visible(&self) -> bool {
-        self.continued_live_reopen_surface_active && self.continued_live_run()
-    }
-
-    fn post_run_handoff_enabled(&self) -> bool {
-        self.session_path.is_some() || self.on_ui_intent.is_some()
     }
 
     pub fn post_run_handoff_notice(&self) -> Option<&'static str> {
@@ -1839,22 +1943,14 @@ impl AppState {
         )
     }
 
-    pub(crate) fn post_run_card_view_model(&self) -> view_model::PostRunCardViewModel {
-        view_model::post_run_card_view_model(
-            self.post_run_handoff_notice(),
-            &self.runtime_state().summary,
-        )
-    }
-
     pub(crate) fn footer_hints_view_model(&self) -> view_model::FooterHintsViewModel {
         view_model::footer_hints_view_model(view_model::FooterHintsInput {
             replay_mode: self.replay_mode,
-            post_run_handoff_visible: self.post_run_handoff_visible(),
-            active_tab: self.active_tab,
+            review_surface_active: self.active_review_surface.is_some(),
             startup_shell_visible: self.startup_shell_visible(),
             focus: self.focus,
-            details_drawer_open: self.details_drawer_open(),
             composer_disabled: self.composer_disabled(),
+            completed_session_shell_active: self.completed_session_shell_active(),
             continued_live_run: self.continued_live_run(),
         })
     }
@@ -1897,15 +1993,6 @@ impl AppState {
         self.post_run_handoff_action = self.default_post_run_handoff_action();
     }
 
-    fn enter_post_run_handoff(&mut self) {
-        self.close_palette();
-        self.live_details_drawer_open = false;
-        self.active_tab = Tab::Run;
-        self.focus = Focus::List;
-        self.continued_live_reopen_surface_active = false;
-        self.reset_post_run_handoff_selection();
-    }
-
     pub fn prompt_bootstrap_disabled(&self) -> bool {
         self.composer_disabled()
     }
@@ -1930,22 +2017,301 @@ impl AppState {
     }
 
     pub fn active_provider(&self) -> &str {
-        self.activities
-            .back()
-            .and_then(|activity| {
-                (!activity.provider_id.trim().is_empty()).then_some(activity.provider_id.as_str())
-            })
-            .unwrap_or_else(|| self.launch_metadata.provider())
+        let provider = self.launch_metadata.provider();
+        if provider != "unknown" {
+            provider
+        } else {
+            self.activities
+                .back()
+                .and_then(|activity| {
+                    (!activity.provider_id.trim().is_empty())
+                        .then_some(activity.provider_id.as_str())
+                })
+                .unwrap_or(provider)
+        }
     }
 
     pub fn current_model_label(&self) -> &str {
-        self.activities
-            .back()
-            .and_then(|activity| {
-                (!activity.model_id.trim().is_empty()).then_some(activity.model_id.as_str())
+        self.launch_metadata
+            .model()
+            .or_else(|| {
+                self.activities.back().and_then(|activity| {
+                    (!activity.model_id.trim().is_empty()).then_some(activity.model_id.as_str())
+                })
             })
-            .or_else(|| self.launch_metadata.model())
             .unwrap_or("-")
+    }
+
+    pub fn operator_sidebar_state_label(&self) -> String {
+        if self.replay_mode {
+            "Replay".to_string()
+        } else {
+            self.launch_mode_label().unwrap_or("Live").to_string()
+        }
+    }
+
+    pub fn operator_sidebar_run_identity(&self) -> String {
+        format!("run {}", self.run_id().unwrap_or("unknown"))
+    }
+
+    pub fn operator_sidebar_todo_lines(&self) -> Vec<String> {
+        self.orchestration_visible_rows()
+            .into_iter()
+            .filter(|row| !row.state.is_terminal())
+            .map(|row| {
+                let owner = self.orchestration_owner_labels(&row);
+                let queue = row.queue_key.unwrap_or_else(|| "queue:none".to_string());
+                format!(
+                    "{} · {} · {}/{}",
+                    row.task_id, queue, owner.label, owner.profile
+                )
+            })
+            .collect()
+    }
+
+    pub fn operator_sidebar_modified_files(&self) -> Vec<String> {
+        let mut seen = BTreeSet::new();
+        let mut files = Vec::new();
+
+        for event in self.events.iter().rev() {
+            if let EventV1::EditApplied(edit) = &event.payload {
+                if seen.insert(edit.path.clone()) {
+                    files.push(edit.path.clone());
+                }
+            }
+        }
+
+        files
+    }
+
+    pub(crate) fn is_current_model_option(&self, option: &ModelOption) -> bool {
+        option.profile == self.active_profile()
+            && option.provider == self.active_provider()
+            && option.model == self.current_model_label()
+    }
+
+    fn active_slash_query(&self) -> Option<&str> {
+        let query = self.prompt_buffer.strip_prefix('/')?;
+        (!query.chars().any(char::is_whitespace)).then_some(query)
+    }
+
+    fn clear_slash_menu(&mut self) {
+        self.slash_visible = false;
+        self.slash_filtered.clear();
+        self.slash_selected = 0;
+    }
+
+    fn slash_overlay_should_render(&self) -> bool {
+        false
+    }
+
+    fn sync_slash_overlay(&mut self) {
+        if self.focus != Focus::Prompt
+            || self.composer_disabled()
+            || self.active_slash_query().is_none()
+            || self.palette_visible
+            || self.session_history_visible
+            || self.model_switcher_visible
+            || self.active_permission().is_some()
+        {
+            if !self.prompt_buffer.starts_with('/') {
+                self.slash_draft_snapshot = None;
+            }
+            self.clear_slash_menu();
+            return;
+        }
+
+        let slash_query = self.active_slash_query().unwrap_or_default().to_lowercase();
+
+        self.slash_visible = true;
+        self.slash_filtered = SLASH_COMMANDS
+            .iter()
+            .filter(|(command, description)| {
+                slash_query.is_empty()
+                    || command.starts_with(&slash_query)
+                    || description.to_lowercase().contains(&slash_query)
+            })
+            .map(|(command, _)| (*command).to_string())
+            .collect();
+        self.slash_selected = self
+            .slash_selected
+            .min(self.slash_filtered.len().saturating_sub(1));
+    }
+
+    fn typed_slash_command(&self) -> Option<&'static str> {
+        match self.prompt_buffer.trim() {
+            "/new" => Some("new"),
+            "/exit" => Some("exit"),
+            _ => None,
+        }
+    }
+
+    fn navigate_to_home_shell(&mut self, draft: String) {
+        self.projection.reset();
+        self.selected_event_index = 0;
+        self.selected_activity_index = 0;
+        self.follow_mode = true;
+        self.active_tab = Tab::Run;
+        self.live_details_drawer_open = false;
+        self.startup_mode = true;
+        self.startup_launcher_action = StartupLauncherAction::NewSession;
+        self.status_banner = None;
+        self.details_scroll = 0;
+        self.transcript_scroll = 0;
+        self.prompt_history.clear();
+        self.prompt_history_index = None;
+        self.replay_mode = false;
+        self.session_path = None;
+        self.palette_visible = false;
+        self.palette_input.clear();
+        self.palette_cursor = 0;
+        self.palette_filtered.clear();
+        self.palette_selected = 0;
+        self.palette_focus_return = None;
+        self.session_history_visible = false;
+        self.session_history_selected = 0;
+        self.model_switcher_visible = false;
+        self.model_filtered.clear();
+        self.model_selected = 0;
+        self.continued_post_run_handoff_active = false;
+        self.continued_live_reopen_surface_active = false;
+        self.continue_disabled_banner = None;
+        self.dismissed_permissions.clear();
+        self.submitted_permission_id = None;
+        self.reload_requested = false;
+        self.should_quit = false;
+        self.focus = Focus::Prompt;
+        self.replace_prompt_input(draft);
+    }
+
+    fn execute_slash_command(&mut self, command: &str, preserved_draft: Option<String>) {
+        self.clear_slash_menu();
+        match command {
+            "new" => self.navigate_to_home_shell(preserved_draft.unwrap_or_default()),
+            "exit" => self.execute_action(Action::Quit),
+            _ => {}
+        }
+    }
+
+    fn apply_selected_slash_completion(&mut self) {
+        let Some(command) = self.slash_filtered.get(self.slash_selected).cloned() else {
+            return;
+        };
+        self.execute_slash_command(&command, self.slash_draft_snapshot.clone());
+    }
+
+    fn rebuild_model_options(&mut self) {
+        self.model_options = self.collect_model_options().into_iter().collect();
+    }
+
+    fn collect_model_options(&self) -> BTreeSet<ModelOption> {
+        let mut options = BTreeSet::new();
+
+        options.extend(self.launch_metadata.available_models().iter().cloned());
+
+        if let Some(model) = self.launch_metadata.model() {
+            options.insert(ModelOption {
+                profile: self.launch_metadata.profile().to_string(),
+                provider: self.launch_metadata.provider().to_string(),
+                model: model.to_string(),
+            });
+        }
+
+        if options.is_empty() {
+            for activity in &self.activities {
+                if !activity.provider_id.trim().is_empty() && !activity.model_id.trim().is_empty() {
+                    options.insert(ModelOption {
+                        profile: self.launch_metadata.profile().to_string(),
+                        provider: activity.provider_id.clone(),
+                        model: activity.model_id.clone(),
+                    });
+                }
+            }
+
+            for entry in &self.session_history_entries {
+                let Some(provider_model) = entry.catalog.provider_model.as_deref() else {
+                    continue;
+                };
+                let Some((provider, model)) = provider_model.split_once('/') else {
+                    continue;
+                };
+                options.insert(ModelOption {
+                    profile: session_history_profile_label(entry).to_string(),
+                    provider: provider.to_string(),
+                    model: model.to_string(),
+                });
+            }
+        }
+
+        options
+    }
+
+    fn update_model_filter(&mut self) {
+        let input = self.palette_input.to_lowercase();
+        let mut filtered = self
+            .model_options
+            .iter()
+            .enumerate()
+            .filter(|(_, option)| option.matches(&input))
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        filtered.sort_by(|left, right| {
+            let left_option = &self.model_options[*left];
+            let right_option = &self.model_options[*right];
+            self.is_current_model_option(left_option)
+                .cmp(&self.is_current_model_option(right_option))
+                .reverse()
+                .then_with(|| left_option.profile.cmp(&right_option.profile))
+                .then_with(|| left_option.provider.cmp(&right_option.provider))
+                .then_with(|| left_option.model.cmp(&right_option.model))
+        });
+        self.model_filtered = filtered;
+        self.model_selected = 0;
+    }
+
+    fn open_model_switcher(&mut self) {
+        if !self.model_switcher_visible {
+            self.palette_focus_return.get_or_insert(self.focus);
+        }
+        self.palette_visible = false;
+        self.session_history_visible = false;
+        self.model_switcher_visible = true;
+        self.palette_input.clear();
+        self.palette_cursor = 0;
+        self.rebuild_model_options();
+        self.update_model_filter();
+        self.sync_slash_overlay();
+    }
+
+    fn execute_selected_model(&mut self) {
+        let Some(selected_index) = self.model_filtered.get(self.model_selected).copied() else {
+            self.close_palette();
+            return;
+        };
+
+        if self.replay_mode {
+            self.close_palette();
+            return;
+        }
+
+        let Some(selected_model) = self.model_options.get(selected_index).cloned() else {
+            self.close_palette();
+            return;
+        };
+
+        let mut launch_metadata = LaunchMetadata::from_model_option(&selected_model)
+            .with_available_models(self.launch_metadata.available_models().to_vec());
+        if let Some(mode_label) = self.launch_metadata.mode_label().map(str::to_owned) {
+            launch_metadata = launch_metadata.with_mode_label(mode_label);
+        }
+
+        self.launch_metadata = launch_metadata.clone();
+        set_pending_live_launch_metadata(launch_metadata.clone());
+        self.emit_ui_intent(UiIntent::SwitchModel {
+            profile: selected_model.profile,
+            launch_metadata,
+        });
+        self.close_palette();
     }
 
     pub fn active_permission(&self) -> Option<(String, String)> {
@@ -1957,12 +2323,12 @@ impl AppState {
             .map(|(permission_id, pending)| (permission_id.clone(), pending.summary.clone()))
     }
 
-    pub(crate) fn transcript_first_shell_redesign_active(&self) -> bool {
-        !self.replay_mode
-            && matches!(self.active_tab, Tab::Run | Tab::Details)
-            && !self.startup_shell_visible()
-            && !self.post_run_handoff_visible()
-            && self.active_permission().is_none()
+    pub(crate) fn transcript_thinking_visible(&self) -> bool {
+        self.show_transcript_thinking
+    }
+
+    pub(crate) fn successful_tool_details_visible(&self) -> bool {
+        self.show_successful_tool_details
     }
 
     pub fn active_permission_view(&self) -> Option<ActivePermissionView> {
@@ -2034,14 +2400,16 @@ impl AppState {
             .collect()
     }
 
-    pub fn surface_registry(&self) -> &'static [SurfaceDescriptor] {
-        surface_registry(self.replay_mode)
+    pub fn default_shell_registry(&self) -> &'static [ShellDescriptor] {
+        default_shell_registry(self.replay_mode)
     }
 
     pub fn details_drawer_open(&self) -> bool {
-        !self.replay_mode
-            && matches!(self.active_tab, Tab::Run | Tab::Details)
-            && (self.live_details_drawer_open || self.active_tab == Tab::Details)
+        !self.replay_mode && self.active_tab == Tab::Run && self.live_details_drawer_open
+    }
+
+    pub fn review_surface(&self) -> Option<ReviewSurface> {
+        self.active_review_surface
     }
 
     pub fn overlay_stack(&self) -> OverlayStack {
@@ -2056,6 +2424,7 @@ impl AppState {
     pub fn set_session_history_entries(&mut self, entries: Vec<SessionHistoryEntry>) {
         self.session_history_entries = entries;
         self.update_session_history_filter();
+        self.rebuild_model_options();
         self.session_history_selected = self
             .session_history_selected
             .min(self.session_history_filtered.len().saturating_sub(1));
@@ -2100,12 +2469,16 @@ impl AppState {
         self.prompt_cursor = 0;
         self.prompt_history_index = None;
         self.continued_live_reopen_surface_active = false;
+        self.slash_draft_snapshot = None;
+        self.sync_slash_overlay();
     }
 
     fn replace_prompt_input(&mut self, prompt: String) {
         self.prompt_cursor = prompt.chars().count();
         self.prompt_buffer = prompt;
         self.continued_live_reopen_surface_active = false;
+        self.slash_draft_snapshot = None;
+        self.sync_slash_overlay();
     }
 
     fn apply_pending_live_prompt(&mut self, pending_prompt: PendingLivePrompt) {
@@ -2118,9 +2491,13 @@ impl AppState {
 
     fn insert_prompt_char(&mut self, c: char) {
         self.continued_live_reopen_surface_active = false;
+        if c == '/' && self.prompt_cursor == 0 && !self.prompt_buffer.starts_with('/') {
+            self.slash_draft_snapshot = Some(self.prompt_buffer.clone());
+        }
         let byte_idx = self.prompt_cursor_byte_index();
         self.prompt_buffer.insert(byte_idx, c);
         self.prompt_cursor += 1;
+        self.sync_slash_overlay();
     }
 
     fn backspace_prompt_char(&mut self) {
@@ -2132,6 +2509,7 @@ impl AppState {
         self.prompt_cursor -= 1;
         let byte_idx = self.prompt_cursor_byte_index();
         self.prompt_buffer.remove(byte_idx);
+        self.sync_slash_overlay();
     }
 
     fn delete_prompt_char(&mut self) {
@@ -2142,6 +2520,7 @@ impl AppState {
         self.continued_live_reopen_surface_active = false;
         let byte_idx = self.prompt_cursor_byte_index();
         self.prompt_buffer.remove(byte_idx);
+        self.sync_slash_overlay();
     }
 
     fn active_turn_in_progress(&self) -> bool {
@@ -2161,6 +2540,7 @@ impl AppState {
                 text,
             }),
             request_data: None,
+            thinking_text: String::new(),
             transcript_text: String::new(),
             error_message: None,
             permissions: Vec::new(),
@@ -2206,9 +2586,28 @@ impl AppState {
 
     pub fn handle_key(&mut self, key: KeyEvent) {
         if self.overlay_stack().top() == Some(OverlayKind::PermissionModal) {
+            if !self.composer_disabled()
+                && !key.modifiers.contains(KeyModifiers::CONTROL)
+                && !key.modifiers.contains(KeyModifiers::ALT)
+            {
+                match key.code {
+                    KeyCode::Char('/') => return,
+                    KeyCode::Char('q') => {}
+                    KeyCode::Char(c) => {
+                        self.insert_prompt_char(c);
+                        self.maybe_auto_exit();
+                        return;
+                    }
+                    _ => {}
+                }
+            }
+
             if let Some(action) = self.keymap.get_action(&key) {
                 match action {
-                    Action::AllowPermission | Action::DenyPermission | Action::DismissModal => {
+                    Action::AllowPermission
+                    | Action::DenyPermission
+                    | Action::DismissModal
+                    | Action::Quit => {
                         self.execute_action(action);
                         self.maybe_auto_exit();
                     }
@@ -2223,7 +2622,23 @@ impl AppState {
             return;
         }
 
+        if self.model_switcher_visible && self.handle_model_key(&key) {
+            self.maybe_auto_exit();
+            return;
+        }
+
         if self.palette_visible && self.handle_palette_key(&key) {
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.slash_overlay_should_render() && self.handle_slash_key(&key) {
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.active_review_surface.is_some() && key.code == KeyCode::Esc {
+            self.close_review_surface();
             self.maybe_auto_exit();
             return;
         }
@@ -2300,6 +2715,66 @@ impl AppState {
         }
     }
 
+    fn handle_model_key(&mut self, key: &KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc => {
+                self.close_palette();
+                true
+            }
+            KeyCode::Enter => {
+                self.execute_selected_model();
+                true
+            }
+            KeyCode::Up => {
+                if self.model_selected > 0 {
+                    self.model_selected -= 1;
+                }
+                true
+            }
+            KeyCode::Down => {
+                if self.model_selected + 1 < self.model_filtered.len() {
+                    self.model_selected += 1;
+                }
+                true
+            }
+            KeyCode::Backspace => {
+                self.overlay_backspace(Self::update_model_filter);
+                true
+            }
+            KeyCode::Char(c) => {
+                self.overlay_insert_char(c, Self::update_model_filter);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn handle_slash_key(&mut self, key: &KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc => {
+                self.clear_slash_menu();
+                true
+            }
+            KeyCode::Enter | KeyCode::Tab => {
+                self.apply_selected_slash_completion();
+                true
+            }
+            KeyCode::Up => {
+                if self.slash_selected > 0 {
+                    self.slash_selected -= 1;
+                }
+                true
+            }
+            KeyCode::Down => {
+                if self.slash_selected + 1 < self.slash_filtered.len() {
+                    self.slash_selected += 1;
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn handle_session_history_key(&mut self, key: &KeyEvent) -> bool {
         match key.code {
             KeyCode::Esc => {
@@ -2364,16 +2839,51 @@ impl AppState {
 
     fn update_palette_filter(&mut self) {
         let input = self.palette_input.to_lowercase();
-        self.palette_filtered = self
+        let filtered = self
             .palette_commands()
             .iter()
-            .filter(|(cmd, _)| {
-                cmd.to_lowercase().starts_with(&input)
-                    || Action::palette_command_label(cmd)
-                        .to_lowercase()
-                        .starts_with(&input)
+            .enumerate()
+            .filter_map(|palette_command| {
+                let (index, palette_command) = palette_command;
+                let label = palette_command.label.to_lowercase();
+                let id = palette_command.id.to_lowercase();
+                let description = palette_command.description.to_lowercase();
+                let section = palette_command.section.label().to_lowercase();
+                let prefix_match = input.is_empty()
+                    || label.starts_with(&input)
+                    || id.starts_with(&input)
+                    || section.starts_with(&input);
+                let contains_match = prefix_match
+                    || label.contains(&input)
+                    || id.contains(&input)
+                    || description.contains(&input)
+                    || section.contains(&input);
+                contains_match.then_some((
+                    prefix_match,
+                    palette_command.section,
+                    index,
+                    palette_command.id.to_string(),
+                ))
             })
-            .map(|(cmd, _)| cmd.to_string())
+            .collect::<Vec<_>>();
+        let has_prefix_matches = filtered.iter().any(|(prefix_match, _, _, _)| *prefix_match);
+        let mut filtered = filtered
+            .into_iter()
+            .filter(|(prefix_match, _, _, _)| !has_prefix_matches || *prefix_match)
+            .collect::<Vec<_>>();
+        filtered.sort_by(|left, right| {
+            if input.is_empty() {
+                left.1
+                    .cmp(&right.1)
+                    .then_with(|| left.2.cmp(&right.2))
+                    .then_with(|| left.3.cmp(&right.3))
+            } else {
+                left.3.cmp(&right.3)
+            }
+        });
+        self.palette_filtered = filtered
+            .into_iter()
+            .map(|(_, _, _, command)| command)
             .collect();
         self.palette_selected = 0;
     }
@@ -2395,7 +2905,24 @@ impl AppState {
                 )
             })
             .collect::<Vec<_>>();
-        filtered.sort_by_key(|(index, bucket)| (*bucket, *index));
+        filtered.sort_by(|(left_index, left_bucket), (right_index, right_bucket)| {
+            let left_entry = &self.session_history_entries[*left_index];
+            let right_entry = &self.session_history_entries[*right_index];
+            left_bucket
+                .cmp(right_bucket)
+                .then_with(|| {
+                    right_entry
+                        .catalog
+                        .last_updated_at
+                        .as_deref()
+                        .unwrap_or("")
+                        .cmp(left_entry.catalog.last_updated_at.as_deref().unwrap_or(""))
+                })
+                .then_with(|| {
+                    session_history_run_name(left_entry).cmp(session_history_run_name(right_entry))
+                })
+                .then_with(|| left_entry.catalog.run_id.cmp(&right_entry.catalog.run_id))
+        });
         self.session_history_filtered = filtered.into_iter().map(|(index, _)| index).collect();
         self.session_history_selected = 0;
     }
@@ -2417,16 +2944,21 @@ impl AppState {
             "replay_session" => {
                 self.begin_session_history_picker(StartupLauncherAction::ReplaySession);
             }
-            "help" => self.execute_action(Action::Help),
-            "details" => self.execute_action(Action::ToggleDetailsDrawer),
-            "run" => self.execute_action(Action::TabRun),
-            "events" => self.execute_action(Action::TabEvents),
-            "diff" => self.execute_action(Action::TabDiff),
+            "switch_model" => {
+                self.open_model_switcher();
+            }
+            "close_review_surface" => self.execute_action(Action::CloseReviewSurface),
+            "open_event_log" => self.execute_action(Action::OpenEventLog),
+            "open_diff_review" => self.execute_action(Action::OpenDiffReview),
             "toggle_follow" => self.execute_action(Action::ToggleFollow),
+            "show_thinking" => self.show_transcript_thinking = true,
+            "hide_thinking" => self.show_transcript_thinking = false,
+            "expand_tool_output" => self.show_successful_tool_details = true,
+            "collapse_tool_output" => self.show_successful_tool_details = false,
             "quit" => self.execute_action(Action::Quit),
             _ => {}
         }
-        if !self.session_history_visible {
+        if !self.session_history_visible && !self.model_switcher_visible {
             self.close_palette();
         }
     }
@@ -2434,15 +2966,19 @@ impl AppState {
     fn close_palette(&mut self) {
         self.palette_visible = false;
         self.session_history_visible = false;
+        self.model_switcher_visible = false;
         self.palette_input.clear();
         self.palette_cursor = 0;
         self.palette_filtered.clear();
         self.session_history_filtered.clear();
+        self.model_filtered.clear();
         self.palette_selected = 0;
         self.session_history_selected = 0;
+        self.model_selected = 0;
         if let Some(previous_focus) = self.palette_focus_return.take() {
             self.focus = previous_focus;
         }
+        self.sync_slash_overlay();
     }
 
     fn select_previous_post_run_handoff_action(&mut self) {
@@ -2501,6 +3037,7 @@ impl AppState {
                     self.reset_post_run_handoff_selection();
                     return;
                 };
+                set_pending_live_prompt_draft(Some(self.prompt_buffer.clone()));
                 self.emit_ui_intent(UiIntent::ReplaySession {
                     run_id: run_id.to_string(),
                     run_dir: run_dir.clone(),
@@ -2523,25 +3060,65 @@ impl AppState {
         }
         self.palette_visible = true;
         self.session_history_visible = false;
+        self.model_switcher_visible = false;
         self.palette_input.clear();
         self.palette_cursor = 0;
         self.palette_filtered = self
             .palette_commands()
             .iter()
-            .map(|(cmd, _)| cmd.to_string())
+            .map(|palette_command| palette_command.id.to_string())
             .collect();
         self.session_history_filtered.clear();
+        self.model_filtered.clear();
         self.palette_selected = 0;
+        self.sync_slash_overlay();
     }
 
-    fn palette_commands(&self) -> &'static [(&'static str, &'static str)] {
-        Action::palette_commands()
+    fn palette_commands(&self) -> Vec<crate::keybindings::PaletteCommand> {
+        Action::grouped_palette_commands_for_overlay()
+            .iter()
+            .copied()
+            .filter(|command| self.palette_command_available(command.id))
+            .collect()
+    }
+
+    fn palette_command_available(&self, command_id: &str) -> bool {
+        if command_id == "switch_model" {
+            return false;
+        }
+
+        if self.startup_shell_visible() {
+            matches!(command_id, "new_session" | "resume_session" | "replay_session" | "quit")
+        } else if matches!(command_id, "show_thinking" | "hide_thinking") {
+            self.active_review_surface.is_none()
+                && if command_id == "show_thinking" {
+                    !self.show_transcript_thinking
+                } else {
+                    self.show_transcript_thinking
+                }
+        } else if matches!(command_id, "expand_tool_output" | "collapse_tool_output") {
+            self.active_review_surface.is_none()
+                && if command_id == "expand_tool_output" {
+                    !self.show_successful_tool_details
+                } else {
+                    self.show_successful_tool_details
+                }
+        } else if command_id == "close_review_surface" {
+            self.active_review_surface.is_some()
+        } else if command_id == "open_event_log" {
+            self.active_review_surface != Some(ReviewSurface::Events)
+        } else if command_id == "open_diff_review" {
+            self.active_review_surface != Some(ReviewSurface::Diff)
+        } else {
+            true
+        }
     }
 
     fn begin_session_history_picker(&mut self, action: StartupLauncherAction) {
         self.startup_launcher_action = action;
         self.continue_disabled_banner = None;
         self.palette_visible = true;
+        self.model_switcher_visible = false;
         self.palette_input.clear();
         self.palette_cursor = 0;
         self.update_session_history_filter();
@@ -2557,6 +3134,7 @@ impl AppState {
             .session_history_selected
             .min(self.session_history_filtered.len().saturating_sub(1));
         self.session_history_visible = true;
+        self.sync_slash_overlay();
     }
 
     fn close_session_history(&mut self) {
@@ -2601,6 +3179,7 @@ impl AppState {
             StartupLauncherAction::ReplaySession => {
                 self.continue_disabled_banner = None;
                 self.replay_mode = true;
+                set_pending_live_prompt_draft(Some(self.prompt_buffer.clone()));
                 self.emit_ui_intent(UiIntent::ReplaySession {
                     run_id: selected_run_id,
                     run_dir: selected_run_dir,
@@ -2636,10 +3215,13 @@ impl AppState {
     }
 
     fn apply_new_session_launcher_selection(&mut self) {
-        let lifecycle_exit = self.startup_mode || self.post_run_handoff_visible();
+        let lifecycle_exit = self.startup_mode
+            || self.post_run_handoff_visible()
+            || self.completed_session_shell_active();
         let prompt_buffer = self.prompt_buffer.clone();
         let prompt_cursor = self.prompt_cursor;
         set_pending_live_prompt_draft(Some(prompt_buffer.clone()));
+        set_pending_live_launch_metadata(self.launch_metadata.clone());
 
         self.projection.reset();
         self.selected_event_index = 0;
@@ -2692,22 +3274,22 @@ impl AppState {
         }
     }
 
-    fn set_active_tab(&mut self, tab: Tab) {
-        let requested_tab = if matches!(tab, Tab::Details) {
-            Tab::Run
-        } else {
-            tab
-        };
+    fn close_review_surface(&mut self) {
+        self.active_review_surface = None;
+        self.active_tab = Tab::Run;
+        self.normalize_focus_for_active_surface();
+    }
 
+    fn open_review_surface(&mut self, surface: ReviewSurface) {
+        self.active_tab = Tab::Run;
+        self.active_review_surface = Some(surface);
         if !self.replay_mode {
             self.live_details_drawer_open = false;
         }
-
-        self.active_tab = requested_tab;
-        self.normalize_focus_for_active_tab();
+        self.normalize_focus_for_active_surface();
     }
 
-    fn normalize_focus_for_active_tab(&mut self) {
+    fn normalize_focus_for_active_surface(&mut self) {
         if self.replay_mode {
             if self.focus == Focus::Prompt {
                 self.focus = Focus::List;
@@ -2722,22 +3304,8 @@ impl AppState {
             return;
         }
 
-        match self.active_tab {
-            Tab::Run => {
-                if !self.details_drawer_open() && self.focus == Focus::List {
-                    self.focus = Focus::Details;
-                }
-            }
-            Tab::Details => {
-                if self.focus == Focus::Prompt {
-                    self.focus = Focus::Details;
-                }
-            }
-            Tab::Events | Tab::Diff | Tab::Help => {
-                if self.focus == Focus::Prompt {
-                    self.focus = Focus::List;
-                }
-            }
+        if self.active_review_surface.is_some() && self.focus == Focus::Prompt {
+            self.focus = Focus::List;
         }
     }
 
@@ -2762,18 +3330,11 @@ impl AppState {
             return;
         }
 
-        self.focus = if !self.replay_mode && self.active_tab == Tab::Run {
-            if self.details_drawer_open() {
-                match self.focus {
-                    Focus::Prompt => Focus::List,
-                    Focus::List => Focus::Details,
-                    Focus::Details => Focus::Prompt,
-                }
-            } else {
-                match self.focus {
-                    Focus::Prompt => Focus::Details,
-                    Focus::List | Focus::Details => Focus::Prompt,
-                }
+        self.focus = if self.active_review_surface.is_none() {
+            match self.focus {
+                Focus::Details => Focus::List,
+                Focus::List => Focus::Prompt,
+                Focus::Prompt => Focus::Details,
             }
         } else {
             match self.focus {
@@ -2782,6 +3343,10 @@ impl AppState {
                 Focus::Prompt => Focus::List,
             }
         };
+
+        if self.active_review_surface.is_none() {
+            self.live_details_drawer_open = self.focus == Focus::List;
+        }
     }
 
     fn cycle_focus_backward(&mut self) {
@@ -2805,18 +3370,11 @@ impl AppState {
             return;
         }
 
-        self.focus = if !self.replay_mode && self.active_tab == Tab::Run {
-            if self.details_drawer_open() {
-                match self.focus {
-                    Focus::Prompt => Focus::Details,
-                    Focus::Details => Focus::List,
-                    Focus::List => Focus::Prompt,
-                }
-            } else {
-                match self.focus {
-                    Focus::Prompt => Focus::Details,
-                    Focus::List | Focus::Details => Focus::Prompt,
-                }
+        self.focus = if self.active_review_surface.is_none() {
+            match self.focus {
+                Focus::Details => Focus::Prompt,
+                Focus::List => Focus::Details,
+                Focus::Prompt => Focus::List,
             }
         } else {
             match self.focus {
@@ -2825,10 +3383,13 @@ impl AppState {
                 Focus::Prompt => Focus::Details,
             }
         };
+
+        if self.active_review_surface.is_none() {
+            self.live_details_drawer_open = self.focus == Focus::List;
+        }
     }
 
     fn execute_action(&mut self, action: Action) {
-        // Check for modal (permission) first
         if self.active_permission().is_some() {
             match action {
                 Action::AllowPermission => {
@@ -2850,7 +3411,12 @@ impl AppState {
                     }
                     return;
                 }
-                _ => {}
+                Action::Quit => {
+                    self.should_quit = true;
+                    self.emit_ui_intent(UiIntent::QuitRequested);
+                    return;
+                }
+                _ => return,
             }
         }
 
@@ -2982,7 +3548,11 @@ impl AppState {
                 self.open_palette();
             }
             Action::Help => {
-                self.set_active_tab(Tab::Help);
+                if self.active_review_surface == Some(ReviewSurface::Help) {
+                    self.close_review_surface();
+                } else {
+                    self.open_review_surface(ReviewSurface::Help);
+                }
             }
             Action::ToggleFollow => {
                 self.follow_mode = !self.follow_mode;
@@ -2990,13 +3560,14 @@ impl AppState {
                     self.transcript_scroll = 0;
                 }
             }
-            Action::ToggleDetailsDrawer
+            Action::ToggleOperatorSidebar
                 if !self.replay_mode
                     && self.focus != Focus::Prompt
                     && !self.post_run_handoff_visible() =>
             {
-                let opening = self.active_tab != Tab::Run || !self.details_drawer_open();
+                let opening = self.active_review_surface.is_some() || !self.details_drawer_open();
                 self.active_tab = Tab::Run;
+                self.active_review_surface = None;
                 self.live_details_drawer_open = opening;
                 if (!opening && self.focus == Focus::List)
                     || (opening && self.focus == Focus::Prompt)
@@ -3004,23 +3575,20 @@ impl AppState {
                     self.focus = Focus::Details;
                 }
             }
-            Action::TabRun if self.focus != Focus::Prompt => {
-                self.set_active_tab(Tab::Run);
+            Action::CloseReviewSurface if self.focus != Focus::Prompt => {
+                self.close_review_surface();
             }
-            Action::TabEvents if self.focus != Focus::Prompt => {
-                self.set_active_tab(Tab::Events);
+            Action::OpenEventLog if self.focus != Focus::Prompt => {
+                self.open_review_surface(ReviewSurface::Events);
             }
-            Action::TabDiff if self.focus != Focus::Prompt => {
-                self.set_active_tab(Tab::Diff);
-            }
-            Action::TabHelp if self.focus != Focus::Prompt => {
-                self.set_active_tab(Tab::Help);
+            Action::OpenDiffReview if self.focus != Focus::Prompt => {
+                self.open_review_surface(ReviewSurface::Diff);
             }
             Action::Reload if self.replay_mode => {
                 self.reload_requested = true;
             }
             Action::MoveDown if self.focus != Focus::Prompt => {
-                if matches!(self.active_tab, Tab::Run | Tab::Details) && self.focus == Focus::List {
+                if self.active_review_surface.is_none() && self.focus == Focus::List {
                     self.next_activity();
                 } else if self.focus == Focus::List {
                     self.next_event();
@@ -3035,7 +3603,7 @@ impl AppState {
                 }
             }
             Action::MoveUp if self.focus != Focus::Prompt => {
-                if matches!(self.active_tab, Tab::Run | Tab::Details) && self.focus == Focus::List {
+                if self.active_review_surface.is_none() && self.focus == Focus::List {
                     self.previous_activity();
                 } else if self.focus == Focus::List {
                     self.previous_event();
@@ -3186,7 +3754,7 @@ impl AppState {
     }
 
     fn transcript_surface_active(&self) -> bool {
-        matches!(self.active_tab, Tab::Run | Tab::Details)
+        self.active_review_surface.is_none()
             && self.focus == Focus::Details
             && !self.details_drawer_open()
     }
@@ -3203,21 +3771,21 @@ impl AppState {
         }
     }
 
-    fn _handle_modal_key(&mut self, key_code: KeyCode) -> bool {
+    fn _handle_modal_key(&mut self, key: KeyEvent) -> bool {
         let Some((permission_id, _)) = self.active_permission() else {
             return false;
         };
 
-        match key_code {
-            KeyCode::Char('a') => {
+        match (key.code, key.modifiers) {
+            (KeyCode::Char('y'), KeyModifiers::CONTROL) => {
                 self.send_permission_intent(permission_id, PermissionDecision::Allow);
                 true
             }
-            KeyCode::Char('d') => {
+            (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
                 self.send_permission_intent(permission_id, PermissionDecision::Deny);
                 true
             }
-            KeyCode::Esc => {
+            (KeyCode::Esc, KeyModifiers::NONE) => {
                 self.dismissed_permissions.insert(permission_id);
                 self.maybe_auto_exit();
                 true
@@ -3239,6 +3807,13 @@ impl AppState {
     }
 
     fn submit_prompt(&mut self) {
+        if !self.replay_mode && !self.composer_disabled() {
+            if let Some(command) = self.typed_slash_command() {
+                self.execute_slash_command(command, self.slash_draft_snapshot.clone());
+                return;
+            }
+        }
+
         if self.prompt_buffer.trim().is_empty()
             || self.active_turn_in_progress()
             || self.composer_disabled()
@@ -3275,6 +3850,49 @@ impl AppState {
             self.should_quit = true;
         }
     }
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_startup_slash_commands_execute_without_menu() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+    app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+
+    assert!(!app.slash_overlay_should_render());
+    assert_eq!(app.overlay_stack().top(), None);
+    assert_eq!(
+        app.slash_filtered,
+        vec!["new".to_string(), "exit".to_string()]
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_slash_new_preserves_draft_and_returns_home() {
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    app.prompt_buffer = "/new".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.slash_draft_snapshot = Some("carry draft home".to_string());
+    app.sync_slash_overlay();
+
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert!(app.startup_shell_visible());
+    assert_eq!(app.focus, Focus::Prompt);
+    assert_eq!(app.prompt_buffer, "carry draft home");
+    assert_eq!(app.prompt_cursor, "carry draft home".chars().count());
+    assert!(!app.should_quit);
+    assert!(!app.replay_mode);
+    assert!(app.session_path.is_none());
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_replay_mode_disables_slash_workflow() {
+    let mut app = AppState::new_replay(PathBuf::from("/tmp/replay"), Vec::new());
+    app.focus = Focus::Prompt;
+    app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+
+    assert!(!app.slash_visible);
+    assert_eq!(app.overlay_stack().top(), None);
+    assert!(app.prompt_buffer.is_empty());
 }
 
 #[cfg(test)]
@@ -3316,7 +3934,7 @@ mod tests {
     #[test]
     fn overlay_stack_orders_details_palette_permission() {
         let mut app = AppState::new_live(None, false, None);
-        app.active_tab = Tab::Details;
+        app.live_details_drawer_open = true;
 
         app.handle_key(key_with_modifiers(
             KeyCode::Char('p'),
@@ -3344,6 +3962,35 @@ mod tests {
         assert_eq!(
             app.overlay_stack().ordered(),
             &[OverlayKind::DetailsDrawer, OverlayKind::PermissionModal]
+        );
+    }
+
+    #[test]
+    fn overlay_stack_orders_permission_above_commands_and_slash() {
+        let mut app = AppState::new_live(None, false, None);
+        app.handle_key(key_with_modifiers(
+            KeyCode::Char('p'),
+            KeyModifiers::CONTROL,
+        ));
+        assert_eq!(app.overlay_stack().top(), Some(OverlayKind::CommandPalette));
+
+        app.ingest_event(envelope(
+            1,
+            "req_overlay_priority",
+            EventV1::PermissionRequested(PermissionRequestedEvent {
+                permission_id: "perm_overlay_priority".to_string(),
+                kind: "edit_fs".to_string(),
+                tool_call_id: Some("tc_overlay_priority".to_string()),
+                summary: "permission summary".to_string(),
+                request_digest: "digest-overlay-priority".to_string(),
+                timeout_ms: 30_000,
+                default_decision: harness_core::event::PermissionDecision::Deny,
+            }),
+        ));
+
+        assert_eq!(
+            app.overlay_stack().top(),
+            Some(OverlayKind::PermissionModal)
         );
     }
 
@@ -3378,10 +4025,13 @@ mod tests {
             }),
         ));
 
-        app.handle_key(key(KeyCode::Char('a')));
+        app.handle_key(key_with_modifiers(
+            KeyCode::Char('y'),
+            KeyModifiers::CONTROL,
+        ));
 
-        assert!(app.palette_visible);
-        assert_eq!(app.palette_input, "d");
+        assert!(!app.palette_visible);
+        assert!(app.palette_input.is_empty());
         assert_eq!(
             app.overlay_stack().top(),
             Some(OverlayKind::PermissionModal)
@@ -3394,6 +4044,41 @@ mod tests {
                 decision: PermissionDecision::Allow,
             }]
         );
+    }
+
+    #[test]
+    fn permission_modal_routes_q_to_quit_without_buffering() {
+        let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+        let intent_sink = {
+            let intents = Arc::clone(&intents);
+            Arc::new(move |intent: UiIntent| {
+                intents.lock().expect("lock intents").push(intent);
+            })
+        };
+
+        let mut app = AppState::new_live(None, false, Some(intent_sink));
+        app.prompt_buffer = "keep this draft".to_string();
+        app.prompt_cursor = app.prompt_buffer.chars().count();
+        app.ingest_event(envelope(
+            1,
+            "req_modal_quit",
+            EventV1::PermissionRequested(PermissionRequestedEvent {
+                permission_id: "perm_modal_quit".to_string(),
+                kind: "edit_fs".to_string(),
+                tool_call_id: Some("tc_modal_quit".to_string()),
+                summary: "permission summary".to_string(),
+                request_digest: "digest-modal-quit".to_string(),
+                timeout_ms: 30_000,
+                default_decision: harness_core::event::PermissionDecision::Deny,
+            }),
+        ));
+
+        app.handle_key(key(KeyCode::Char('q')));
+
+        assert!(app.should_quit);
+        assert_eq!(app.prompt_buffer, "keep this draft");
+        let intents = intents.lock().expect("lock intents");
+        assert_eq!(intents.as_slice(), &[UiIntent::QuitRequested]);
     }
 
     #[test]
@@ -3479,7 +4164,7 @@ mod tests {
     }
 
     #[test]
-    fn config_backed_live_launch_opens_details_by_default() {
+    fn config_backed_live_launch_starts_in_session_shell_without_details_drawer() {
         set_pending_live_launch_metadata(
             LaunchMetadata::new("deep", "default", Some("gpt-5.3-codex".to_string()))
                 .with_mode_label("Live"),
@@ -3487,7 +4172,7 @@ mod tests {
 
         let app = AppState::new_live(None, false, None);
 
-        assert!(app.details_drawer_open());
+        assert!(!app.details_drawer_open());
         assert_eq!(app.focus, Focus::Prompt);
     }
 
@@ -3646,7 +4331,7 @@ mod tests {
     }
 
     #[test]
-    fn historical_terminal_events_do_not_trigger_post_run_handoff_until_live_finish() {
+    fn historical_terminal_events_stay_in_session_shell_after_live_finish() {
         let mut app = AppState::new_live(
             Some(PathBuf::from("/tmp/sessions/run_resume")),
             true,
@@ -3663,6 +4348,7 @@ mod tests {
 
         assert_eq!(app.lifecycle_shell_state(), LifecycleShellState::None);
         assert!(!app.post_run_handoff_visible());
+        assert!(!app.completed_session_shell_active());
         assert!(!app.should_quit);
         assert_eq!(app.events.len(), 1);
 
@@ -3674,13 +4360,16 @@ mod tests {
             }),
         ));
 
-        assert_eq!(app.lifecycle_shell_state(), LifecycleShellState::PostRun);
-        assert!(app.post_run_handoff_visible());
+        assert_eq!(app.lifecycle_shell_state(), LifecycleShellState::None);
+        assert!(!app.post_run_handoff_visible());
+        assert!(app.completed_session_shell_active());
+        assert_eq!(app.active_tab, Tab::Run);
+        assert_eq!(app.focus, Focus::Details);
         assert!(app.should_quit);
     }
 
     #[test]
-    fn continued_quiescent_bootstrap_requires_explicit_handoff_confirmation() {
+    fn continued_quiescent_bootstrap_stays_in_session_shell_without_handoff() {
         set_pending_live_launch_metadata(
             LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Continued"),
         );
@@ -3698,20 +4387,11 @@ mod tests {
             }),
         ));
 
-        assert_eq!(app.lifecycle_shell_state(), LifecycleShellState::PostRun);
-        assert!(app.post_run_handoff_visible());
-        assert!(app.continued_post_run_handoff_active());
-        assert_eq!(app.active_tab, Tab::Run);
-        assert_eq!(app.focus, Focus::List);
-        assert!(app.composer_disabled());
-
-        app.handle_key(key(KeyCode::Enter));
-
+        assert_eq!(app.lifecycle_shell_state(), LifecycleShellState::None);
         assert!(!app.post_run_handoff_visible());
-        assert!(!app.continued_post_run_handoff_active());
+        assert_eq!(app.active_tab, Tab::Run);
         assert_eq!(app.focus, Focus::Prompt);
         assert!(!app.composer_disabled());
-        assert!(!app.should_quit);
     }
 
     #[test]
@@ -3792,6 +4472,43 @@ mod tests {
     }
 
     #[test]
+    fn slash_menu_closes_after_whitespace() {
+        let mut app = AppState::new_startup(Vec::new(), None);
+
+        app.handle_key(key(KeyCode::Char('/')));
+        app.handle_key(key(KeyCode::Char('n')));
+        assert!(app.slash_visible);
+
+        app.handle_key(key(KeyCode::Char(' ')));
+
+        assert!(!app.slash_visible);
+        assert_eq!(app.prompt_buffer, "/n ");
+    }
+
+    #[test]
+    fn slash_exit_matches_quit_requested_behavior() {
+        let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+        let sink = {
+            let intents = Arc::clone(&intents);
+            Arc::new(move |intent: UiIntent| {
+                intents.lock().expect("lock intents").push(intent);
+            })
+        };
+
+        let mut app = AppState::new_startup(Vec::new(), Some(sink));
+        for ch in "/exit".chars() {
+            app.handle_key(key(KeyCode::Char(ch)));
+        }
+        app.handle_key(key(KeyCode::Enter));
+
+        assert!(app.should_quit);
+        assert_eq!(
+            intents.lock().expect("lock intents").as_slice(),
+            &[UiIntent::QuitRequested]
+        );
+    }
+
+    #[test]
     fn startup_mode_uses_pending_launch_metadata() {
         set_pending_live_launch_metadata(
             LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo"),
@@ -3819,7 +4536,7 @@ mod tests {
         assert!(startup.lifecycle_shell_actions_visible());
         assert_eq!(
             startup.runtime_state().summary,
-            "startup launcher ready · choose New/Continue/Replay or type to quick-start"
+            "startup ready · type below or use Ctrl+P for saved runs"
         );
 
         let live = AppState::new_live(None, false, None);
@@ -3839,23 +4556,12 @@ mod tests {
             }),
         ));
 
-        assert_eq!(
-            finished.lifecycle_shell_state(),
-            LifecycleShellState::PostRun
-        );
+        assert_eq!(finished.lifecycle_shell_state(), LifecycleShellState::None);
         assert!(!finished.startup_shell_visible());
-        assert!(finished.post_run_handoff_visible());
-        assert!(finished.lifecycle_shell_actions_visible());
-        assert_eq!(finished.post_run_handoff_notice(), None);
-        assert_eq!(
-            finished.post_run_handoff_actions(),
-            &PostRunHandoffAction::ORDERED
-        );
-        assert_eq!(
-            finished.selected_post_run_handoff_action(),
-            PostRunHandoffAction::ContinueSession
-        );
-        assert!(finished.composer_disabled());
+        assert!(!finished.post_run_handoff_visible());
+        assert!(!finished.lifecycle_shell_actions_visible());
+        assert!(finished.completed_session_shell_active());
+        assert!(!finished.composer_disabled());
 
         let mut failed = AppState::new_live(Some(PathBuf::from("/tmp/live-failed")), false, None);
         failed.ingest_event(envelope(
@@ -3866,9 +4572,10 @@ mod tests {
             }),
         ));
 
-        assert_eq!(failed.lifecycle_shell_state(), LifecycleShellState::PostRun);
-        assert!(failed.post_run_handoff_visible());
-        assert!(failed.lifecycle_shell_actions_visible());
+        assert_eq!(failed.lifecycle_shell_state(), LifecycleShellState::None);
+        assert!(!failed.post_run_handoff_visible());
+        assert!(!failed.lifecycle_shell_actions_visible());
+        assert!(failed.completed_session_shell_active());
 
         let fallback_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = Arc::new(|_| {});
         let mut missing_session_path = AppState::new_live(None, false, Some(fallback_sink));
@@ -3882,22 +4589,11 @@ mod tests {
 
         assert_eq!(
             missing_session_path.lifecycle_shell_state(),
-            LifecycleShellState::PostRun
+            LifecycleShellState::None
         );
-        assert!(missing_session_path.post_run_handoff_visible());
-        assert_eq!(
-            missing_session_path.post_run_handoff_notice(),
-            Some("current run cannot be reopened")
-        );
-        assert_eq!(
-            missing_session_path.post_run_handoff_actions(),
-            &PostRunHandoffAction::FALLBACK_ORDERED
-        );
-        assert_eq!(
-            missing_session_path.selected_post_run_handoff_action(),
-            PostRunHandoffAction::StartAnotherSession
-        );
-        assert!(missing_session_path.composer_disabled());
+        assert!(!missing_session_path.post_run_handoff_visible());
+        assert!(missing_session_path.completed_session_shell_active());
+        assert!(!missing_session_path.composer_disabled());
 
         let mut terminal_without_routing = AppState::new_live(None, false, None);
         terminal_without_routing.ingest_event(envelope(
@@ -3913,7 +4609,45 @@ mod tests {
             LifecycleShellState::None
         );
         assert!(!terminal_without_routing.post_run_handoff_visible());
+        assert!(terminal_without_routing.completed_session_shell_active());
         assert!(!terminal_without_routing.composer_disabled());
+    }
+
+    #[test]
+    fn default_shell_registry_exposes_home_and_session_shell_only() {
+        let live_registry = default_shell_registry(false);
+        assert_eq!(
+            live_registry,
+            &[
+                ShellDescriptor {
+                    kind: ShellKind::Home,
+                    label: "Home",
+                    read_only: false,
+                },
+                ShellDescriptor {
+                    kind: ShellKind::Session,
+                    label: "Session",
+                    read_only: false,
+                },
+            ]
+        );
+
+        let replay_registry = default_shell_registry(true);
+        assert_eq!(
+            replay_registry,
+            &[
+                ShellDescriptor {
+                    kind: ShellKind::Home,
+                    label: "Home",
+                    read_only: false,
+                },
+                ShellDescriptor {
+                    kind: ShellKind::Session,
+                    label: "Replay",
+                    read_only: true,
+                },
+            ]
+        );
     }
 
     #[test]

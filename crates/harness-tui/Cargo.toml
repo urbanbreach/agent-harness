@@ -11,7 +11,9 @@ crossterm = { workspace = true, features = ["event-stream"] }
 harness-core = { path = "../harness-core" }
 futures = "0.3.32"
 futures-util = "0.3.32"
+imara-diff = "0.2"
 serde_json.workspace = true
+syntect = { version = "5.3", default-features = false, features = ["default-fancy"] }
 
 [dev-dependencies]
 insta = { version = "1.39", features = ["json"] }

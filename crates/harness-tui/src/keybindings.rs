@@ -6,6 +6,34 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PaletteCommandSection {
+    Suggested,
+    Session,
+    Agent,
+    System,
+}
+
+impl PaletteCommandSection {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Suggested => "Suggested",
+            Self::Session => "Session",
+            Self::Agent => "Agent",
+            Self::System => "System",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PaletteCommand {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub description: &'static str,
+    pub shortcut: &'static str,
+    pub section: PaletteCommandSection,
+}
+
 /// Actions that can be triggered via keybindings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Action {
@@ -19,7 +47,7 @@ pub enum Action {
     Palette,
     /// Open/close the help tab
     Help,
-    ToggleDetailsDrawer,
+    ToggleOperatorSidebar,
     /// Toggle follow mode
     ToggleFollow,
     /// Submit the prompt
@@ -31,14 +59,12 @@ pub enum Action {
     ScrollUp,
     /// Scroll down in the details pane
     ScrollDown,
-    /// Switch to Run tab
-    TabRun,
-    /// Switch to Events tab
-    TabEvents,
-    /// Switch to Diff tab
-    TabDiff,
-    /// Switch to Help tab
-    TabHelp,
+    /// Return to the transcript-first session shell
+    CloseReviewSurface,
+    /// Open the event log review surface
+    OpenEventLog,
+    /// Open the diff review surface
+    OpenDiffReview,
     /// Move down in the list
     MoveDown,
     /// Move up in the list
@@ -68,6 +94,102 @@ pub enum Action {
 }
 
 impl Action {
+    fn grouped_palette_commands() -> &'static [PaletteCommand] {
+        &[
+            PaletteCommand {
+                id: "new_session",
+                label: "New session",
+                description: "Start a fresh live session",
+                shortcut: "new",
+                section: PaletteCommandSection::Suggested,
+            },
+            PaletteCommand {
+                id: "resume_session",
+                label: "Continue session",
+                description: "Continue a prior session when resumable",
+                shortcut: "resume",
+                section: PaletteCommandSection::Session,
+            },
+            PaletteCommand {
+                id: "replay_session",
+                label: "Replay session",
+                description: "Replay a previous session as read-only",
+                shortcut: "replay",
+                section: PaletteCommandSection::Session,
+            },
+            PaletteCommand {
+                id: "switch_model",
+                label: "Switch model",
+                description: "Browse available provider/model options",
+                shortcut: "model",
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "close_review_surface",
+                label: "Session shell",
+                description: "Return to the transcript-first session shell",
+                shortcut: "esc",
+                section: PaletteCommandSection::Session,
+            },
+            PaletteCommand {
+                id: "open_event_log",
+                label: "Event log",
+                description: "Open the review event log surface",
+                shortcut: "",
+                section: PaletteCommandSection::Session,
+            },
+            PaletteCommand {
+                id: "open_diff_review",
+                label: "Diff review",
+                description: "Open the structured diff review surface",
+                shortcut: "",
+                section: PaletteCommandSection::Session,
+            },
+            PaletteCommand {
+                id: "toggle_follow",
+                label: "Toggle follow",
+                description: "Toggle follow mode",
+                shortcut: "space",
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "show_thinking",
+                label: "Show thinking",
+                description: "Restore inline thinking rows in the transcript",
+                shortcut: "",
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "hide_thinking",
+                label: "Hide thinking",
+                description: "Hide inline thinking rows in the transcript",
+                shortcut: "",
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "expand_tool_output",
+                label: "Expand tool output",
+                description: "Show verbose successful tool rows in the transcript",
+                shortcut: "",
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "collapse_tool_output",
+                label: "Collapse tool output",
+                description: "Condense successful tool rows in the transcript",
+                shortcut: "",
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "quit",
+                label: "Quit",
+                description: "Quit the application",
+                shortcut: "q",
+                section: PaletteCommandSection::System,
+            },
+        ]
+    }
+
     /// Convert action to its string identifier used in config.
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -76,17 +198,16 @@ impl Action {
             Action::FocusPrev => "focus_prev",
             Action::Palette => "palette",
             Action::Help => "help",
-            Action::ToggleDetailsDrawer => "toggle_details_drawer",
+            Action::ToggleOperatorSidebar => "toggle_operator_sidebar",
             Action::ToggleFollow => "toggle_follow",
             Action::SubmitPrompt => "submit_prompt",
             Action::InsertNewline => "insert_newline",
             Action::ClearPrompt => "clear_prompt",
             Action::ScrollUp => "scroll_up",
             Action::ScrollDown => "scroll_down",
-            Action::TabRun => "tab_run",
-            Action::TabEvents => "tab_events",
-            Action::TabDiff => "tab_diff",
-            Action::TabHelp => "tab_help",
+            Action::CloseReviewSurface => "close_review_surface",
+            Action::OpenEventLog => "open_event_log",
+            Action::OpenDiffReview => "open_diff_review",
             Action::MoveDown => "move_down",
             Action::MoveUp => "move_up",
             Action::Reload => "reload",
@@ -109,30 +230,74 @@ impl Action {
             ("new_session", "Start a fresh live session"),
             ("resume_session", "Continue a prior session when resumable"),
             ("replay_session", "Replay a previous session as read-only"),
-            ("help", "Open Help surface"),
-            ("run", "Return to conversation surface"),
-            ("details", "Toggle live details drawer"),
-            ("events", "Open Events surface"),
-            ("diff", "Open Diff surface"),
+            ("switch_model", "Browse available provider/model options"),
+            (
+                "close_review_surface",
+                "Return to the transcript-first session shell",
+            ),
+            ("open_event_log", "Open the review event log surface"),
+            (
+                "open_diff_review",
+                "Open the structured diff review surface",
+            ),
             ("toggle_follow", "Toggle follow mode"),
+            (
+                "show_thinking",
+                "Restore inline thinking rows in the transcript",
+            ),
+            (
+                "hide_thinking",
+                "Hide inline thinking rows in the transcript",
+            ),
+            (
+                "expand_tool_output",
+                "Show verbose successful tool rows in the transcript",
+            ),
+            (
+                "collapse_tool_output",
+                "Condense successful tool rows in the transcript",
+            ),
             ("quit", "Quit the application"),
         ]
     }
 
     pub fn palette_command_label(command: &str) -> &'static str {
-        match command {
-            "new_session" => "New session",
-            "resume_session" => "Continue session",
-            "replay_session" => "Replay session",
-            "help" => "Help",
-            "run" => "Run",
-            "details" => "Details",
-            "events" => "Events",
-            "diff" => "Diff",
-            "toggle_follow" => "Toggle follow",
-            "quit" => "Quit",
-            _ => "",
-        }
+        Self::grouped_palette_commands()
+            .iter()
+            .find_map(|palette_command| {
+                (palette_command.id == command).then_some(palette_command.label)
+            })
+            .unwrap_or("")
+    }
+
+    pub fn palette_command_description(command: &str) -> &'static str {
+        Self::grouped_palette_commands()
+            .iter()
+            .find_map(|palette_command| {
+                (palette_command.id == command).then_some(palette_command.description)
+            })
+            .unwrap_or("")
+    }
+
+    pub fn palette_command_shortcut(command: &str) -> &'static str {
+        Self::grouped_palette_commands()
+            .iter()
+            .find_map(|palette_command| {
+                (palette_command.id == command).then_some(palette_command.shortcut)
+            })
+            .unwrap_or("")
+    }
+
+    pub fn palette_command_section(command: &str) -> Option<PaletteCommandSection> {
+        Self::grouped_palette_commands()
+            .iter()
+            .find_map(|palette_command| {
+                (palette_command.id == command).then_some(palette_command.section)
+            })
+    }
+
+    pub fn grouped_palette_commands_for_overlay() -> &'static [PaletteCommand] {
+        Self::grouped_palette_commands()
     }
 }
 
@@ -146,17 +311,16 @@ impl FromStr for Action {
             "focus_prev" => Ok(Action::FocusPrev),
             "palette" => Ok(Action::Palette),
             "help" => Ok(Action::Help),
-            "toggle_details_drawer" => Ok(Action::ToggleDetailsDrawer),
+            "toggle_operator_sidebar" => Ok(Action::ToggleOperatorSidebar),
             "toggle_follow" => Ok(Action::ToggleFollow),
             "submit_prompt" => Ok(Action::SubmitPrompt),
             "insert_newline" => Ok(Action::InsertNewline),
             "clear_prompt" => Ok(Action::ClearPrompt),
             "scroll_up" => Ok(Action::ScrollUp),
             "scroll_down" => Ok(Action::ScrollDown),
-            "tab_run" => Ok(Action::TabRun),
-            "tab_events" => Ok(Action::TabEvents),
-            "tab_diff" => Ok(Action::TabDiff),
-            "tab_help" => Ok(Action::TabHelp),
+            "close_review_surface" => Ok(Action::CloseReviewSurface),
+            "open_event_log" => Ok(Action::OpenEventLog),
+            "open_diff_review" => Ok(Action::OpenDiffReview),
             "move_down" => Ok(Action::MoveDown),
             "move_up" => Ok(Action::MoveUp),
             "reload" => Ok(Action::Reload),
@@ -313,27 +477,24 @@ impl KeyMap {
 
         keymap.bind(
             KeyBinding::new(KeyCode::Char('1'), KeyModifiers::NONE),
-            Action::TabRun,
-        );
-        keymap.bind(
-            KeyBinding::new(KeyCode::Char('i'), KeyModifiers::NONE),
-            Action::ToggleDetailsDrawer,
+            Action::CloseReviewSurface,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('2'), KeyModifiers::NONE),
-            Action::TabEvents,
+            Action::ToggleOperatorSidebar,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('3'), KeyModifiers::NONE),
-            Action::TabDiff,
+            Action::OpenEventLog,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('4'), KeyModifiers::NONE),
-            Action::TabHelp,
+            Action::OpenDiffReview,
         );
+
         keymap.bind(
-            KeyBinding::new(KeyCode::Char('h'), KeyModifiers::NONE),
-            Action::TabHelp,
+            KeyBinding::new(KeyCode::Char('i'), KeyModifiers::NONE),
+            Action::ToggleOperatorSidebar,
         );
 
         // Actions
@@ -351,6 +512,10 @@ impl KeyMap {
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('?'), KeyModifiers::NONE),
+            Action::Help,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('h'), KeyModifiers::NONE),
             Action::Help,
         );
 
@@ -400,11 +565,11 @@ impl KeyMap {
 
         // Permission modal
         keymap.bind(
-            KeyBinding::new(KeyCode::Char('a'), KeyModifiers::NONE),
+            KeyBinding::new(KeyCode::Char('y'), KeyModifiers::CONTROL),
             Action::AllowPermission,
         );
         keymap.bind(
-            KeyBinding::new(KeyCode::Char('d'), KeyModifiers::NONE),
+            KeyBinding::new(KeyCode::Char('n'), KeyModifiers::CONTROL),
             Action::DenyPermission,
         );
         keymap.bind(
@@ -601,5 +766,18 @@ mod tests {
         let keymap = KeyMap::with_defaults();
         let event = KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT);
         assert_eq!(keymap.get_action(&event), Some(Action::InsertNewline));
+    }
+
+    #[test]
+    fn keymap_uses_ctrl_y_and_ctrl_n_for_permission_decisions() {
+        let keymap = KeyMap::with_defaults();
+
+        let allow = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL);
+        let deny = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL);
+
+        assert_eq!(keymap.get_action(&allow), Some(Action::AllowPermission));
+        assert_eq!(keymap.get_action(&deny), Some(Action::DenyPermission));
+        assert_eq!(keymap.get_binding_str(Action::AllowPermission), "Ctrl+y");
+        assert_eq!(keymap.get_binding_str(Action::DenyPermission), "Ctrl+n");
     }
 }

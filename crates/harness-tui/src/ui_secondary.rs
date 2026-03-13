@@ -1,6 +1,119 @@
+use imara_diff::{Algorithm, Diff, InternedInput};
+use std::cmp::max;
+
 use super::*;
 
-pub(super) fn render_replay_secondary_column(
+use crate::theme::DIFF_SIDE_BY_SIDE_MIN_WIDTH;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedPatchFile {
+    display_path: String,
+    before_label: String,
+    after_label: String,
+    hunks: Vec<ParsedPatchHunk>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedPatchHunk {
+    header: String,
+    before_lines: Vec<String>,
+    after_lines: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StructuredDiffModel {
+    files: Vec<StructuredDiffFile>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StructuredDiffFile {
+    display_path: String,
+    additions: usize,
+    removals: usize,
+    rows: Vec<StructuredDiffDisplayRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum StructuredDiffDisplayRow {
+    FileHeader(String),
+    HunkHeader(String),
+    Context(String),
+    Changed {
+        before: Option<DiffCell>,
+        after: Option<DiffCell>,
+    },
+    Spacer,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DiffCell {
+    marker: char,
+    text: String,
+    segments: Vec<DiffSegment>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DiffSegment {
+    kind: DiffSegmentKind,
+    text: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DiffSegmentKind {
+    Unchanged,
+    Removed,
+    Added,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OperatorSidebarChrome {
+    Persistent,
+    Overlay,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OperatorRailModel {
+    pinned_summary: OperatorRailPinnedSummary,
+    body: OperatorRailBody,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OperatorRailPinnedSummary {
+    run_identity: String,
+    profile_provider_model: String,
+    state_label: String,
+    active_todo_count: usize,
+    modified_file_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OperatorRailBody {
+    sections: Vec<OperatorRailBodySection>,
+    empty_state: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum OperatorRailBodySection {
+    Todo { count: usize, items: Vec<String> },
+    ModifiedFiles { count: usize, items: Vec<String> },
+}
+
+impl OperatorRailBodySection {
+    fn heading(&self) -> String {
+        match self {
+            Self::Todo { count, .. } => format!("Todo · {count}"),
+            Self::ModifiedFiles { count, .. } => format!("Modified Files · {count}"),
+        }
+    }
+
+    fn items(&self) -> &[String] {
+        match self {
+            Self::Todo { items, .. } | Self::ModifiedFiles { items, .. } => items,
+        }
+    }
+}
+
+pub(super) fn render_operator_sidebar(
     frame: &mut Frame,
     app: &AppState,
     area: Rect,
@@ -10,106 +123,7 @@ pub(super) fn render_replay_secondary_column(
         return;
     }
 
-    let [activity_area, inspector_area] = details_drawer_areas(area);
-    frame.render_widget(
-        Block::default().style(Style::default().bg(theme.surface.panel)),
-        area,
-    );
-    render_activity_pane(frame, app, activity_area, theme);
-    render_inspector_pane(frame, app, inspector_area, theme);
-}
-
-pub(super) fn render_activity_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
-    let is_focused = app.focus == Focus::List && activity_surface_visible(app);
-
-    let title = if app.replay_mode {
-        format!(
-            "Replay index · {} turn{}",
-            app.activities.len(),
-            if app.activities.len() == 1 { "" } else { "s" }
-        )
-    } else {
-        format!(
-            "Activity (j/k active{}{})",
-            if app.follow_mode { ", follow" } else { "" },
-            if is_focused { ", focused" } else { "" }
-        )
-    };
-
-    let surface = if app.replay_mode {
-        theme.surface.panel
-    } else {
-        theme.surface.panel_elevated
-    };
-    let block = panel_block(theme, title, is_focused, surface);
-
-    if app.activities.is_empty() {
-        let empty = Paragraph::new(if app.replay_mode {
-            "No recorded turns"
-        } else {
-            "No activities yet"
-        })
-        .block(block)
-        .style(panel_style(surface, theme.text.secondary));
-        frame.render_widget(empty, area);
-        return;
-    }
-
-    let items: Vec<Line> = app
-        .activities
-        .iter()
-        .enumerate()
-        .map(|(idx, activity)| {
-            let is_selected = idx == app.selected_activity_index;
-            let prefix = if is_selected { "> " } else { "  " };
-            let status_icon = match activity.status {
-                ActivityStatus::Streaming => theme.live_shell.glyphs.streaming,
-                ActivityStatus::Done => theme.live_shell.glyphs.done,
-                ActivityStatus::Error => theme.live_shell.glyphs.error,
-            };
-            let status_text = match activity.status {
-                ActivityStatus::Streaming => "streaming…",
-                ActivityStatus::Done => "done",
-                ActivityStatus::Error => "error",
-            };
-
-            let style = if is_selected {
-                Style::default()
-                    .fg(theme.text.inverse)
-                    .bg(theme.border.focus)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                panel_style(surface, theme.text.primary)
-            };
-
-            let model_display = if activity.model_id.is_empty() {
-                "-"
-            } else {
-                &activity.model_id
-            };
-            let request_id = request_id_label(&activity.request_id);
-
-            let content = if app.replay_mode {
-                format!(
-                    "{}{} · {} · {} {}",
-                    prefix, request_id, status_text, model_display, status_icon
-                )
-            } else {
-                format!(
-                    "{}{} {} {} {}",
-                    prefix, request_id, model_display, status_text, status_icon
-                )
-            };
-            Line::from(Span::styled(content, style))
-        })
-        .collect();
-
-    let activity_list = Paragraph::new(Text::from(items))
-        .block(block)
-        .style(panel_style(surface, theme.text.primary))
-        .wrap(Wrap { trim: false });
-
-    frame.render_widget(activity_list, area);
+    render_operator_sidebar_surface(frame, app, area, theme, OperatorSidebarChrome::Persistent);
 }
 
 pub(super) fn render_live_details_overlay(
@@ -122,41 +136,17 @@ pub(super) fn render_live_details_overlay(
         return;
     };
 
-    render_details_drawer(frame, app, overlay, theme);
-}
-
-pub(super) fn render_inspector_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
-    let is_focused = app.focus == Focus::Details && activity_surface_visible(app);
-
-    let title = if app.replay_mode {
-        format!(
-            "Selection · read-only{}",
-            if is_focused { " · focus" } else { "" }
-        )
-    } else {
-        format!("Inspector{}", if is_focused { " (focused)" } else { "" })
-    };
-    let surface = theme.surface.panel_elevated;
-    let block = panel_block(theme, title, is_focused, surface);
-    let content = if app.replay_mode && app.activities.is_empty() {
-        Text::from("Replay is read-only\nPick a recorded turn or open Events / Diff.")
-    } else {
-        build_inspector_content(app, theme)
-    };
-
-    let paragraph = Paragraph::new(content)
-        .block(block)
-        .style(panel_style(surface, theme.text.primary))
-        .scroll((app.details_scroll, 0))
-        .wrap(Wrap { trim: true });
-
-    frame.render_widget(paragraph, area);
+    frame.render_widget(Clear, overlay);
+    render_operator_sidebar_surface(frame, app, overlay, theme, OperatorSidebarChrome::Overlay);
 }
 
 pub(super) fn render_events_tab(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     let body = render_secondary_surface_shell(frame, area, theme, events_summary_line(app, theme));
-    let [event_list_area, event_details_area] =
-        split_secondary_surface(body, 34, theme.live_shell.rhythm.surface_gap);
+    let [event_list_area, event_details_area] = split_secondary_surface(
+        body,
+        crate::layout::REVIEW_SURFACE_SPLIT_PERCENT,
+        theme.live_shell.rhythm.surface_gap,
+    );
 
     render_event_list(frame, app, event_list_area, theme);
     render_event_details(frame, app, event_details_area, theme);
@@ -164,8 +154,11 @@ pub(super) fn render_events_tab(frame: &mut Frame, app: &AppState, area: Rect, t
 
 pub(super) fn render_diff_tab(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     let body = render_secondary_surface_shell(frame, area, theme, diff_summary_line(app, theme));
-    let [event_list_area, diff_area] =
-        split_secondary_surface(body, 34, theme.live_shell.rhythm.surface_gap);
+    let [event_list_area, diff_area] = split_secondary_surface(
+        body,
+        crate::layout::REVIEW_SURFACE_SPLIT_PERCENT,
+        theme.live_shell.rhythm.surface_gap,
+    );
 
     render_event_list(frame, app, event_list_area, theme);
 
@@ -174,11 +167,13 @@ pub(super) fn render_diff_tab(frame: &mut Frame, app: &AppState, area: Rect, the
     let block = panel_block(theme, "Diff", is_focused, surface);
 
     let content = if let Some(path) = &app.session_path {
-        if let Some(event) = app.selected_event() {
+        if let Some((event, _)) = diff_surface_event(app) {
             if let Some(diff_content) = load_diff_for_event(path, event) {
                 diff_content
+            } else if let Some(diff_path) = diff_artifact_path(path, event) {
+                format!("diff artifact missing:\n{}", diff_path.display())
             } else {
-                format!("diff artifact missing:\n{}", path.display())
+                "Select an edit event to view diff".to_string()
             }
         } else {
             "Select an edit event to view diff".to_string()
@@ -236,6 +231,145 @@ pub(crate) fn orchestration_card_text_for_test(
     .collect()
 }
 
+#[cfg(test)]
+pub(crate) fn operator_sidebar_text_for_test(app: &AppState) -> Vec<String> {
+    build_operator_sidebar_content(app, app.theme())
+        .lines
+        .into_iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+        })
+        .collect()
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_operator_rail_section_model_builds_pinned_summary() {
+    let app = operator_rail_test_app();
+    let model = build_operator_rail_model(&app);
+
+    assert_eq!(model.pinned_summary.run_identity, "run run_fixture");
+    assert_eq!(
+        model.pinned_summary.profile_provider_model,
+        "worker/mock/model-1"
+    );
+    assert_eq!(model.pinned_summary.state_label, "Demo");
+    assert_eq!(model.pinned_summary.active_todo_count, 1);
+    assert_eq!(model.pinned_summary.modified_file_count, 1);
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_operator_rail_section_model_hides_empty_sources_but_preserves_order() {
+    let populated_model = build_operator_rail_model(&operator_rail_test_app());
+
+    assert_eq!(populated_model.body.empty_state, None);
+    assert_eq!(
+        populated_model
+            .body
+            .sections
+            .iter()
+            .map(OperatorRailBodySection::heading)
+            .collect::<Vec<_>>(),
+        vec!["Todo · 1".to_string(), "Modified Files · 1".to_string()]
+    );
+
+    let empty_model = build_operator_rail_model(&AppState::new_live(None, false, None));
+    assert!(empty_model.body.sections.is_empty());
+    assert_eq!(
+        empty_model.body.empty_state.as_deref(),
+        Some("No operator activity yet")
+    );
+}
+
+#[cfg(test)]
+fn operator_rail_test_app() -> AppState {
+    crate::app::set_pending_live_launch_metadata(
+        crate::app::LaunchMetadata::from_model_ref("worker", "mock:model-1")
+            .with_mode_label("Demo"),
+    );
+
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(operator_rail_test_event(
+        1,
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("w1".to_string()),
+        ),
+        harness_core::event::EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+            agent_id: "w1".to_string(),
+            profile: "deep".to_string(),
+            parent_agent_id: None,
+        }),
+    ));
+    app.ingest_event(operator_rail_test_event(
+        2,
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("w1".to_string()),
+        ),
+        harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
+            task_id: "task_queue".to_string(),
+            state: harness_core::event::TaskScheduleState::Queued,
+            queue_key: Some("tool:fs.read".to_string()),
+        }),
+    ));
+    app.ingest_event(operator_rail_test_event(
+        3,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
+        harness_core::event::EventV1::EditApplied(harness_core::event::EditAppliedEvent {
+            edit_id: "edit_1".to_string(),
+            path: "src/ui_secondary.rs".to_string(),
+            new_file_digest: "digest-edit-1".to_string(),
+            diff_rel_path: None,
+            diff_digest: None,
+        }),
+    ));
+    app
+}
+
+#[cfg(test)]
+fn operator_rail_test_event(
+    seq: u64,
+    actor: harness_core::event::EventActor,
+    payload: harness_core::event::EventV1,
+) -> harness_core::event::EventEnvelopeV1 {
+    harness_core::event::EventEnvelopeV1 {
+        schema_version: harness_core::event::SCHEMA_VERSION,
+        event_id: format!("evt_{seq}"),
+        seq,
+        run_id: "run_fixture".to_string(),
+        mono_ms: seq * 10,
+        ts: None,
+        actor,
+        correlation_id: None,
+        causation_id: None,
+        stream_key: Some("run:run_fixture".to_string()),
+        payload,
+    }
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+pub(crate) fn structured_diff_text_for_test(
+    diff_content: &str,
+    fallback_path: &str,
+    width: u16,
+) -> Vec<String> {
+    render_structured_diff_lines(
+        diff_content,
+        Some(fallback_path),
+        "",
+        width,
+        &Theme::default(),
+    )
+    .unwrap_or_else(|| vec![Line::from(diff_content.to_string())])
+    .into_iter()
+    .map(line_to_plain_text)
+    .collect()
+}
+
 fn help_row(app: &AppState, action: Action, label: &str) -> String {
     format!("  {:<12} {label}", app.keymap.get_binding_str(action))
 }
@@ -255,21 +389,15 @@ fn help_text(app: &AppState) -> String {
     if app.replay_mode {
         lines.extend([
             String::new(),
-            "Replay surfaces:".to_string(),
-            help_row(app, Action::TabRun, "Open conversation"),
-            help_row(app, Action::TabEvents, "Open Events surface"),
-            help_row(app, Action::TabDiff, "Open Diff surface"),
-            help_row(app, Action::TabHelp, "Open Help surface"),
+            "Replay shell:".to_string(),
+            "  Read-only transcript and review surfaces.".to_string(),
+            help_row(app, Action::Reload, "Reload session"),
         ]);
     } else {
         lines.extend([
             String::new(),
-            "Live surfaces:".to_string(),
-            help_row(app, Action::TabRun, "Return to conversation"),
-            help_row(app, Action::ToggleDetailsDrawer, "Toggle details drawer"),
-            help_row(app, Action::TabEvents, "Open Events surface"),
-            help_row(app, Action::TabDiff, "Open Diff surface"),
-            help_row(app, Action::TabHelp, "Open Help surface"),
+            "Live shell:".to_string(),
+            help_row(app, Action::CloseReviewSurface, "Return to session shell"),
             String::new(),
             "Prompt (when focused):".to_string(),
             help_row(app, Action::SubmitPrompt, "Submit prompt"),
@@ -291,98 +419,235 @@ fn help_text(app: &AppState) -> String {
         help_row(app, Action::Help, "Show this help"),
     ]);
 
-    if app.replay_mode {
-        lines.push(help_row(app, Action::Reload, "Reload session"));
-    }
-
     lines.push(help_row(app, Action::Quit, "Quit"));
     lines.join("\n")
 }
 
-fn render_details_drawer(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
-    if area.width == 0 || area.height == 0 {
+fn render_operator_sidebar_surface(
+    frame: &mut Frame,
+    app: &AppState,
+    area: Rect,
+    theme: &Theme,
+    chrome: OperatorSidebarChrome,
+) {
+    let is_focused = app.focus == Focus::List && activity_surface_visible(app);
+    let surface = match chrome {
+        OperatorSidebarChrome::Persistent => ui_chrome::chromeless_shell_surface(theme),
+        OperatorSidebarChrome::Overlay => ui_chrome::divided_shell_surface(theme),
+    };
+    let block = match chrome {
+        OperatorSidebarChrome::Persistent => {
+            ui_chrome::subtle_divider_block(theme, Borders::LEFT, surface)
+        }
+        OperatorSidebarChrome::Overlay => {
+            ui_chrome::secondary_pane_block(theme, Line::default(), is_focused, surface)
+        }
+    };
+    let inner = block.inner(area);
+
+    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
+    frame.render_widget(block, area);
+
+    if inner.width == 0 || inner.height == 0 {
         return;
     }
 
-    let drawer_chunks = details_drawer_areas(area);
+    let rail = build_operator_rail_model(app);
+    let summary_text = build_operator_rail_summary_text(&rail.pinned_summary, theme);
+    let summary_height = summary_text.lines.len().min(usize::from(u16::MAX)) as u16;
+
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(summary_height),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+    let summary_area = sections[0];
+    let body_area = sections[1];
+    let footer_area = sections[2];
 
     frame.render_widget(
-        Block::default().style(Style::default().bg(theme.surface.panel)),
-        area,
+        Paragraph::new(summary_text).style(panel_style(surface, theme.text.primary)),
+        summary_area,
     );
-    render_details_orchestration_card(frame, app, drawer_chunks[0], theme);
-    render_details_inspector_card(frame, app, drawer_chunks[1], theme);
+    frame.render_widget(
+        Paragraph::new(build_operator_rail_body_text(&rail.body, theme))
+            .style(panel_style(surface, theme.text.primary))
+            .scroll((app.details_scroll, 0))
+            .wrap(Wrap { trim: true }),
+        body_area,
+    );
+    frame.render_widget(
+        Paragraph::new(operator_sidebar_footer_line())
+            .style(panel_style(surface, theme.text.tertiary))
+            .wrap(Wrap { trim: true }),
+        footer_area,
+    );
 }
 
-fn activity_surface_visible(app: &AppState) -> bool {
-    (app.replay_mode && app.active_tab == Tab::Run) || app.details_drawer_open()
+#[allow(dead_code)]
+fn build_operator_sidebar_content(app: &AppState, theme: &Theme) -> Text<'static> {
+    let rail = build_operator_rail_model(app);
+    let mut lines = build_operator_rail_summary_text(&rail.pinned_summary, theme).lines;
+    append_operator_rail_body_lines(&mut lines, &rail.body, theme);
+
+    Text::from(lines)
 }
 
-fn orchestration_title_meta(app: &AppState) -> String {
-    let summary = app.orchestration_summary();
-    let tracked = app.orchestration_visible_rows().len();
-    let warning_count = usize::from(app.orchestration_latest_warning().is_some());
-    format!(
-        "{tracked} tracked · {} active · {warning_count} warn",
-        summary.active_agents
-    )
+fn build_operator_rail_summary_text(
+    summary: &OperatorRailPinnedSummary,
+    theme: &Theme,
+) -> Text<'static> {
+    let mut lines = build_operator_rail_summary_lines(summary, theme);
+    lines.push(Line::from(""));
+    Text::from(lines)
 }
 
-fn inspector_title_meta(app: &AppState) -> Option<String> {
-    let activity = app.activities.get(app.selected_activity_index)?;
-    Some(format!(
-        "{} · {}",
-        request_id_label(&activity.request_id),
-        if activity.tool_calls.is_empty() {
-            activity.status.to_string()
-        } else {
+fn build_operator_rail_body_text(body: &OperatorRailBody, theme: &Theme) -> Text<'static> {
+    let mut lines = Vec::new();
+    append_operator_rail_body_lines(&mut lines, body, theme);
+    Text::from(lines)
+}
+
+fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
+    let todo_lines = app.operator_sidebar_todo_lines();
+    let modified_files = app.operator_sidebar_modified_files();
+
+    let mut sections = Vec::new();
+    if !todo_lines.is_empty() {
+        sections.push(OperatorRailBodySection::Todo {
+            count: todo_lines.len(),
+            items: todo_lines.clone(),
+        });
+    }
+    if !modified_files.is_empty() {
+        sections.push(OperatorRailBodySection::ModifiedFiles {
+            count: modified_files.len(),
+            items: modified_files.clone(),
+        });
+    }
+
+    let empty_state = sections
+        .is_empty()
+        .then(|| "No operator activity yet".to_string());
+
+    OperatorRailModel {
+        pinned_summary: OperatorRailPinnedSummary {
+            run_identity: app.operator_sidebar_run_identity(),
+            profile_provider_model: format!(
+                "{}/{}/{}",
+                app.active_profile(),
+                app.active_provider(),
+                app.current_model_label()
+            ),
+            state_label: app.operator_sidebar_state_label(),
+            active_todo_count: todo_lines.len(),
+            modified_file_count: modified_files.len(),
+        },
+        body: OperatorRailBody {
+            sections,
+            empty_state,
+        },
+    }
+}
+
+fn build_operator_rail_summary_lines(
+    summary: &OperatorRailPinnedSummary,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
+    vec![
+        Line::from(Span::styled(
+            format!("{} · {}", summary.state_label, summary.run_identity),
+            Style::default()
+                .fg(theme.text.primary)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            summary.profile_provider_model.clone(),
+            Style::default().fg(theme.text.secondary),
+        )),
+        Line::from(Span::styled(
             format!(
-                "{} tool{}",
-                activity.tool_calls.len(),
-                if activity.tool_calls.len() == 1 {
+                "{} active todo{} · {} modified file{}",
+                summary.active_todo_count,
+                if summary.active_todo_count == 1 {
+                    ""
+                } else {
+                    "s"
+                },
+                summary.modified_file_count,
+                if summary.modified_file_count == 1 {
                     ""
                 } else {
                     "s"
                 }
-            )
-        }
-    ))
+            ),
+            muted_meta_style(theme),
+        )),
+    ]
 }
 
-fn render_details_orchestration_card(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
-    let is_focused = app.focus == Focus::List && activity_surface_visible(app);
-    let surface = if is_focused {
-        theme.surface.overlay
-    } else {
-        theme.surface.panel_elevated
-    };
-    let [title_area, body_area] = details_section_areas(area);
-
-    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
-    render_details_section_title(
-        frame,
-        title_area,
-        theme,
-        surface,
-        "Orchestration",
-        Some(&orchestration_title_meta(app)),
-        is_focused,
-    );
-
-    if body_area.width == 0 || body_area.height == 0 {
+fn append_operator_rail_body_lines(
+    lines: &mut Vec<Line<'static>>,
+    body: &OperatorRailBody,
+    theme: &Theme,
+) {
+    if let Some(empty_state) = &body.empty_state {
+        lines.push(Line::from(Span::styled(
+            empty_state.clone(),
+            muted_meta_style(theme),
+        )));
         return;
     }
 
-    let rows = app.orchestration_visible_rows();
-    let visible_rows =
-        orchestration_card_lines(app, &rows, theme, body_area.height, body_area.width);
-
-    frame.render_widget(
-        Paragraph::new(Text::from(visible_rows)).style(panel_style(surface, theme.text.primary)),
-        body_area,
-    );
+    for (index, section) in body.sections.iter().enumerate() {
+        if index > 0 {
+            lines.push(Line::from(""));
+        }
+        append_operator_rail_section(lines, theme, section);
+    }
 }
 
+fn append_operator_rail_section(
+    lines: &mut Vec<Line<'static>>,
+    theme: &Theme,
+    section: &OperatorRailBodySection,
+) {
+    lines.push(Line::from(Span::styled(
+        section.heading(),
+        Style::default()
+            .fg(theme.text.secondary)
+            .add_modifier(Modifier::BOLD),
+    )));
+
+    for item in section.items() {
+        append_text_block(lines, item, theme.text.primary, "  ");
+    }
+}
+fn operator_sidebar_footer_line() -> String {
+    if harness_core::clock::Determinism::enabled(false) {
+        return format!("workspace · v{}", env!("CARGO_PKG_VERSION"));
+    }
+
+    let folder = std::env::current_dir()
+        .ok()
+        .and_then(|path| {
+            path.file_name()
+                .map(|value| value.to_string_lossy().into_owned())
+        })
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| ".".to_string());
+    format!("{folder} · v{}", env!("CARGO_PKG_VERSION"))
+}
+
+fn activity_surface_visible(app: &AppState) -> bool {
+    (app.replay_mode && app.active_tab == Tab::Run)
+        || (!app.replay_mode && app.review_surface().is_none())
+}
+
+#[allow(dead_code)]
 fn orchestration_card_lines(
     app: &AppState,
     rows: &[OrchestrationTaskRow],
@@ -433,6 +698,7 @@ fn orchestration_card_lines(
     lines
 }
 
+#[allow(dead_code)]
 fn orchestration_summary_line(app: &AppState, theme: &Theme, width: u16) -> Line<'static> {
     let summary = app.orchestration_summary();
     let text = format!(
@@ -445,6 +711,7 @@ fn orchestration_summary_line(app: &AppState, theme: &Theme, width: u16) -> Line
     ))
 }
 
+#[allow(dead_code)]
 fn orchestration_warning_line(app: &AppState, theme: &Theme, width: u16) -> Line<'static> {
     let warning = app.orchestration_latest_warning().unwrap_or("none");
     let text = format!("watch · {warning}");
@@ -454,6 +721,7 @@ fn orchestration_warning_line(app: &AppState, theme: &Theme, width: u16) -> Line
     ))
 }
 
+#[allow(dead_code)]
 fn orchestration_task_line(
     app: &AppState,
     row: &OrchestrationTaskRow,
@@ -478,6 +746,7 @@ fn orchestration_task_line(
     ])
 }
 
+#[allow(dead_code)]
 fn orchestration_overflow_line(hidden_count: usize, theme: &Theme) -> Line<'static> {
     Line::from(Span::styled(
         format!("+{hidden_count} more"),
@@ -487,6 +756,7 @@ fn orchestration_overflow_line(hidden_count: usize, theme: &Theme) -> Line<'stat
     ))
 }
 
+#[allow(dead_code)]
 fn orchestration_state_tokens(
     state: OrchestrationTaskState,
     theme: &Theme,
@@ -501,497 +771,7 @@ fn orchestration_state_tokens(
     }
 }
 
-fn build_inspector_content(app: &AppState, theme: &Theme) -> Text<'static> {
-    let runtime_state = app.runtime_state();
-
-    if let Some(activity) = app.activities.get(app.selected_activity_index) {
-        let mut lines = Vec::new();
-
-        if let Some(detail) = runtime_state.detail.clone() {
-            lines.push(Line::from(vec![
-                Span::styled("Runtime ", Style::default().add_modifier(Modifier::BOLD)),
-                status_badge(
-                    runtime_state.kind.label(),
-                    runtime_state_color(runtime_state.kind, theme),
-                    theme,
-                ),
-            ]));
-            lines.push(Line::from(Span::styled(
-                detail,
-                Style::default().fg(theme.text.secondary),
-            )));
-            lines.push(Line::from(""));
-        }
-
-        append_section_header(&mut lines, "Activity metadata:", theme.text.primary);
-        append_labeled_value(
-            &mut lines,
-            "  Request ID: ",
-            request_id_label(&activity.request_id),
-            theme.text.primary,
-        );
-        append_labeled_value(
-            &mut lines,
-            "  Provider: ",
-            activity.provider_id.clone(),
-            theme.text.primary,
-        );
-        append_labeled_value(
-            &mut lines,
-            "  Model: ",
-            activity.model_id.clone(),
-            theme.text.primary,
-        );
-        append_labeled_value(
-            &mut lines,
-            "  Status: ",
-            activity.status.to_string(),
-            match activity.status {
-                crate::app::ActivityStatus::Error => theme.status.error,
-                crate::app::ActivityStatus::Done => theme.status.success,
-                _ => theme.text.primary,
-            },
-        );
-        append_labeled_value(
-            &mut lines,
-            "  Sequences: ",
-            format!("{}-{}", activity.first_seq, activity.last_seq),
-            theme.text.primary,
-        );
-
-        if let Some(req_data) = &activity.request_data {
-            lines.push(Line::from(""));
-            append_section_header(&mut lines, "Request metadata:", theme.text.primary);
-            append_detail_payload(
-                &mut lines,
-                "  Prompt summary:",
-                &req_data.prompt_summary,
-                theme.text.primary,
-            );
-            append_labeled_value(
-                &mut lines,
-                "  Request digest: ",
-                req_data.request_digest.clone(),
-                theme.text.secondary,
-            );
-            match serde_json::to_string_pretty(req_data) {
-                Ok(json) => {
-                    append_detail_payload(&mut lines, "  Raw request:", &json, theme.text.primary)
-                }
-                Err(_) => append_labeled_value(
-                    &mut lines,
-                    "  Raw request: ",
-                    "[error serializing]",
-                    theme.status.error,
-                ),
-            }
-        }
-
-        if !activity.permissions.is_empty() {
-            lines.push(Line::from(""));
-            append_section_header(&mut lines, "Permission context:", theme.text.primary);
-            append_permission_details(&mut lines, &activity.permissions, theme, "  ");
-        }
-
-        if !activity.tool_calls.is_empty() {
-            lines.push(Line::from(""));
-            append_section_header(&mut lines, "Tool calls:", theme.text.primary);
-            append_tool_call_details(&mut lines, &activity.tool_calls, theme);
-        }
-
-        if let Some(error) = &activity.error_message {
-            lines.push(Line::from(""));
-            append_section_header(&mut lines, "Runtime errors:", theme.status.error);
-            append_detail_payload(&mut lines, "  Raw error:", error, theme.status.error);
-        }
-
-        Text::from(lines)
-    } else if let Some(detail) = runtime_state.detail.clone() {
-        Text::from(vec![
-            Line::from(vec![
-                Span::styled("Runtime ", Style::default().add_modifier(Modifier::BOLD)),
-                status_badge(
-                    runtime_state.kind.label(),
-                    runtime_state_color(runtime_state.kind, theme),
-                    theme,
-                ),
-            ]),
-            Line::from(Span::styled(
-                detail,
-                Style::default().fg(theme.text.secondary),
-            )),
-        ])
-    } else {
-        Text::from("No activity selected")
-    }
-}
-
-fn build_compact_inspector_content(app: &AppState, theme: &Theme) -> Text<'static> {
-    let Some(activity) = app.activities.get(app.selected_activity_index) else {
-        return build_inspector_content(app, theme);
-    };
-
-    let mut lines = Vec::new();
-    append_labeled_value(
-        &mut lines,
-        "Request ID: ",
-        request_id_label(&activity.request_id),
-        theme.text.primary,
-    );
-    append_labeled_value(
-        &mut lines,
-        "Provider: ",
-        activity.provider_id.clone(),
-        theme.text.primary,
-    );
-    append_labeled_value(
-        &mut lines,
-        "Model: ",
-        activity.model_id.clone(),
-        theme.text.primary,
-    );
-    if let Some(req_data) = &activity.request_data {
-        append_labeled_value(
-            &mut lines,
-            "Prompt summary: ",
-            req_data.prompt_summary.clone(),
-            theme.text.primary,
-        );
-    } else {
-        append_labeled_value(
-            &mut lines,
-            "Status: ",
-            activity.status.to_string(),
-            theme.text.primary,
-        );
-    }
-    Text::from(lines)
-}
-
-fn render_details_inspector_card(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
-    let is_focused = app.focus == Focus::Details && activity_surface_visible(app);
-    let surface = if is_focused {
-        theme.surface.overlay
-    } else {
-        theme.surface.panel_elevated
-    };
-    let [title_area, body_area] = details_section_areas(area);
-
-    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
-    render_details_section_title(
-        frame,
-        title_area,
-        theme,
-        surface,
-        "Details",
-        inspector_title_meta(app).as_deref(),
-        is_focused,
-    );
-
-    frame.render_widget(
-        Paragraph::new(if body_area.height <= 6 {
-            build_compact_inspector_content(app, theme)
-        } else {
-            build_inspector_content(app, theme)
-        })
-        .style(panel_style(surface, theme.text.primary))
-        .scroll((app.details_scroll, 0))
-        .wrap(Wrap { trim: true }),
-        body_area,
-    );
-}
-
-fn details_section_areas(area: Rect) -> [Rect; 2] {
-    let inner = inset_rect(area, 1, 0);
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(0)])
-        .split(inner);
-    [chunks[0], chunks[1]]
-}
-
-fn render_details_section_title(
-    frame: &mut Frame,
-    area: Rect,
-    theme: &Theme,
-    surface: Color,
-    title: &str,
-    meta: Option<&str>,
-    is_focused: bool,
-) {
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-
-    let indicator = if is_focused { "●" } else { "○" };
-    let indicator_color = if is_focused {
-        theme.text.accent
-    } else {
-        theme.text.tertiary
-    };
-
-    let mut spans = vec![
-        Span::styled(
-            format!("{indicator} "),
-            Style::default().fg(indicator_color).bg(surface),
-        ),
-        Span::styled(
-            title.to_string(),
-            Style::default()
-                .fg(if is_focused {
-                    theme.text.primary
-                } else {
-                    theme.text.secondary
-                })
-                .bg(surface)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ];
-
-    if let Some(meta) = meta {
-        spans.push(Span::styled(
-            format!(" · {meta}"),
-            Style::default().fg(theme.text.tertiary).bg(surface),
-        ));
-    }
-
-    frame.render_widget(Paragraph::new(Line::from(spans)), area);
-}
-
-fn append_section_header<'a>(lines: &mut Vec<Line<'a>>, title: &str, color: Color) {
-    lines.push(Line::from(Span::styled(
-        title.to_string(),
-        Style::default().fg(color).add_modifier(Modifier::BOLD),
-    )));
-}
-
-fn append_labeled_value<'a>(
-    lines: &mut Vec<Line<'a>>,
-    label: &str,
-    value: impl Into<String>,
-    color: Color,
-) {
-    lines.push(Line::from(vec![
-        Span::styled(
-            label.to_string(),
-            Style::default().add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(value.into(), Style::default().fg(color)),
-    ]));
-}
-
-fn permission_decision_label(decision: harness_core::event::PermissionDecision) -> &'static str {
-    match decision {
-        harness_core::event::PermissionDecision::Allow => "allow",
-        harness_core::event::PermissionDecision::Deny => "deny",
-    }
-}
-
-fn permission_status_style(
-    permission: &crate::app::PermissionEntry,
-    theme: &Theme,
-) -> (&'static str, &'static str, Color) {
-    match permission.resolved_decision {
-        Some(harness_core::event::PermissionDecision::Allow) => (
-            "allowed",
-            theme.live_shell.glyphs.succeeded,
-            theme.status.success,
-        ),
-        Some(harness_core::event::PermissionDecision::Deny) => {
-            ("denied", theme.live_shell.glyphs.failed, theme.status.error)
-        }
-        None => (
-            "pending",
-            theme.live_shell.glyphs.pending_permission,
-            theme.status.warning,
-        ),
-    }
-}
-
-fn append_permission_details(
-    lines: &mut Vec<Line<'static>>,
-    permissions: &[crate::app::PermissionEntry],
-    theme: &Theme,
-    indent: &str,
-) {
-    for permission in permissions {
-        let (status_label, status_icon, status_color) = permission_status_style(permission, theme);
-
-        lines.push(Line::from(""));
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!("{indent}{status_icon} "),
-                Style::default().fg(status_color),
-            ),
-            Span::styled(
-                permission.permission_id.clone(),
-                Style::default()
-                    .fg(status_color)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                format!(" · {} · {}", permission.kind, status_label),
-                Style::default().fg(theme.text.secondary),
-            ),
-        ]));
-        append_labeled_value(
-            lines,
-            &format!("{indent}Summary: "),
-            permission.summary.clone(),
-            theme.text.primary,
-        );
-        if let Some(tool_call_id) = &permission.tool_call_id {
-            append_labeled_value(
-                lines,
-                &format!("{indent}Tool call: "),
-                tool_call_id.clone(),
-                theme.text.secondary,
-            );
-        }
-        append_labeled_value(
-            lines,
-            &format!("{indent}Request digest: "),
-            permission.request_digest.clone(),
-            theme.text.secondary,
-        );
-        append_labeled_value(
-            lines,
-            &format!("{indent}Timeout: "),
-            format!("{} ms", permission.timeout_ms),
-            theme.text.secondary,
-        );
-        append_labeled_value(
-            lines,
-            &format!("{indent}Default: "),
-            permission_decision_label(permission.default_decision),
-            theme.text.secondary,
-        );
-        append_labeled_value(
-            lines,
-            &format!("{indent}Sequences: "),
-            format!("{}-{}", permission.first_seq, permission.last_seq),
-            theme.text.secondary,
-        );
-        if let Some(decision) = permission.resolved_decision {
-            append_labeled_value(
-                lines,
-                &format!("{indent}Resolved: "),
-                permission_decision_label(decision),
-                status_color,
-            );
-        }
-        if let Some(reason) = &permission.resolution_reason {
-            append_detail_payload(
-                lines,
-                &format!("{indent}Reason:"),
-                reason,
-                theme.text.primary,
-            );
-        }
-    }
-}
-
-fn append_tool_call_details(
-    lines: &mut Vec<Line<'static>>,
-    tool_calls: &[crate::app::ToolCallEntry],
-    theme: &Theme,
-) {
-    for tool_call in tool_calls {
-        let (status_icon, status_color) = match tool_call.status {
-            ToolCallDisplayStatus::PendingPermission => (
-                theme.live_shell.glyphs.pending_permission,
-                theme.status.warning,
-            ),
-            ToolCallDisplayStatus::Queued => (theme.live_shell.glyphs.queued, theme.text.secondary),
-            ToolCallDisplayStatus::Running => (theme.live_shell.glyphs.running, theme.text.accent),
-            ToolCallDisplayStatus::Succeeded => {
-                (theme.live_shell.glyphs.succeeded, theme.status.success)
-            }
-            ToolCallDisplayStatus::Failed => (theme.live_shell.glyphs.failed, theme.status.error),
-        };
-
-        lines.push(Line::from(""));
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!("{} ", status_icon),
-                Style::default().fg(status_color),
-            ),
-            Span::styled("tool ", Style::default().fg(theme.text.secondary)),
-            Span::styled(
-                tool_call.tool_id.clone(),
-                Style::default()
-                    .fg(status_color)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" "),
-            tool_status_badge(tool_call.status, theme),
-        ]));
-        append_labeled_value(
-            lines,
-            "  Call ID: ",
-            tool_call.tool_call_id.clone(),
-            theme.text.secondary,
-        );
-        append_labeled_value(
-            lines,
-            "  State: ",
-            tool_call.status.to_string(),
-            status_color,
-        );
-        append_labeled_value(
-            lines,
-            "  Sequences: ",
-            format!("{}-{}", tool_call.first_seq, tool_call.last_seq),
-            theme.text.secondary,
-        );
-        append_labeled_value(
-            lines,
-            "  Args digest: ",
-            tool_call.args_digest.clone(),
-            theme.text.secondary,
-        );
-        append_detail_payload(
-            lines,
-            "  Args:",
-            &tool_call.args_summary,
-            theme.text.primary,
-        );
-
-        if !tool_call.permissions.is_empty() {
-            lines.push(Line::from(Span::styled(
-                "  Permission context:",
-                Style::default().add_modifier(Modifier::BOLD),
-            )));
-            append_permission_details(lines, &tool_call.permissions, theme, "    ");
-        }
-
-        if let Some(output) = &tool_call.output_summary {
-            if let Some(output_digest) = &tool_call.output_digest {
-                append_labeled_value(
-                    lines,
-                    "  Output digest: ",
-                    output_digest.clone(),
-                    theme.text.secondary,
-                );
-            }
-            let (label, color) = if tool_call.status == ToolCallDisplayStatus::Failed {
-                ("  Error:", theme.status.error)
-            } else {
-                ("  Result:", theme.text.primary)
-            };
-            append_detail_payload(lines, label, output, color);
-        }
-    }
-}
-
-fn append_detail_payload<'a>(lines: &mut Vec<Line<'a>>, label: &str, payload: &str, color: Color) {
-    lines.push(Line::from(Span::styled(
-        label.to_string(),
-        Style::default().add_modifier(Modifier::BOLD),
-    )));
-    append_text_block(lines, &format_detail_payload(payload), color, "    ");
-}
-
+#[allow(dead_code)]
 pub(crate) fn format_detail_payload(payload: &str) -> String {
     let trimmed = payload.trim();
     if trimmed.is_empty() {
@@ -1002,6 +782,733 @@ pub(crate) fn format_detail_payload(payload: &str) -> String {
         Ok(value) => serde_json::to_string_pretty(&value).unwrap_or_else(|_| trimmed.to_string()),
         Err(_) => trimmed.to_string(),
     }
+}
+
+pub(super) fn render_structured_diff_lines(
+    diff_content: &str,
+    fallback_path: Option<&str>,
+    prefix: &str,
+    width: u16,
+    theme: &Theme,
+) -> Option<Vec<Line<'static>>> {
+    let model = structured_diff_model_from_patch(diff_content, fallback_path)?;
+    Some(render_structured_diff_model(&model, prefix, width, theme))
+}
+
+fn structured_diff_model_from_patch(
+    diff_content: &str,
+    fallback_path: Option<&str>,
+) -> Option<StructuredDiffModel> {
+    let files = parse_unified_diff_files(diff_content, fallback_path)?;
+    Some(StructuredDiffModel {
+        files: files.into_iter().map(build_structured_diff_file).collect(),
+    })
+}
+
+fn build_structured_diff_file(file: ParsedPatchFile) -> StructuredDiffFile {
+    let mut rows = Vec::new();
+    let mut additions = 0;
+    let mut removals = 0;
+
+    for (index, hunk) in file.hunks.into_iter().enumerate() {
+        if index == 0 {
+            rows.push(StructuredDiffDisplayRow::FileHeader(
+                file.display_path.clone(),
+            ));
+        } else {
+            rows.push(StructuredDiffDisplayRow::Spacer);
+        }
+
+        let aligned = align_patch_hunk(&hunk);
+        additions += aligned.additions;
+        removals += aligned.removals;
+        rows.extend(aligned.rows);
+    }
+
+    if let Some(StructuredDiffDisplayRow::FileHeader(header)) = rows.first_mut() {
+        *header = format!("{} · +{} -{}", file.display_path, additions, removals);
+    }
+
+    StructuredDiffFile {
+        display_path: file.display_path,
+        additions,
+        removals,
+        rows,
+    }
+}
+
+struct AlignedHunk {
+    rows: Vec<StructuredDiffDisplayRow>,
+    additions: usize,
+    removals: usize,
+}
+
+fn align_patch_hunk(hunk: &ParsedPatchHunk) -> AlignedHunk {
+    let before_text = hunk.before_lines.join("\n");
+    let after_text = hunk.after_lines.join("\n");
+    let input = InternedInput::new(
+        imara_diff::sources::lines(&before_text),
+        imara_diff::sources::lines(&after_text),
+    );
+    let mut diff = Diff::compute(Algorithm::Histogram, &input);
+    diff.postprocess_lines(&input);
+
+    let mut rows = vec![StructuredDiffDisplayRow::HunkHeader(hunk.header.clone())];
+    let mut before_idx = 0usize;
+    let mut after_idx = 0usize;
+
+    for diff_hunk in diff.hunks() {
+        let next_before = usize::try_from(diff_hunk.before.start).unwrap_or(before_idx);
+        let next_after = usize::try_from(diff_hunk.after.start).unwrap_or(after_idx);
+        let unchanged = max(
+            next_before.saturating_sub(before_idx),
+            next_after.saturating_sub(after_idx),
+        );
+
+        for offset in 0..unchanged {
+            let line = hunk
+                .before_lines
+                .get(before_idx + offset)
+                .or_else(|| hunk.after_lines.get(after_idx + offset))
+                .cloned()
+                .unwrap_or_default();
+            rows.push(StructuredDiffDisplayRow::Context(line));
+        }
+        before_idx = next_before;
+        after_idx = next_after;
+
+        let removed_end = usize::try_from(diff_hunk.before.end).unwrap_or(before_idx);
+        let added_end = usize::try_from(diff_hunk.after.end).unwrap_or(after_idx);
+        let removed = &hunk.before_lines[before_idx..removed_end];
+        let added = &hunk.after_lines[after_idx..added_end];
+
+        for pair_index in 0..max(removed.len(), added.len()) {
+            match (removed.get(pair_index), added.get(pair_index)) {
+                (Some(before), Some(after)) if before == after => {
+                    rows.push(StructuredDiffDisplayRow::Context(before.clone()));
+                }
+                (Some(before), Some(after)) => {
+                    let (before_segments, after_segments) = word_diff_segments(before, after);
+                    rows.push(StructuredDiffDisplayRow::Changed {
+                        before: Some(DiffCell {
+                            marker: '-',
+                            text: before.clone(),
+                            segments: before_segments,
+                        }),
+                        after: Some(DiffCell {
+                            marker: '+',
+                            text: after.clone(),
+                            segments: after_segments,
+                        }),
+                    });
+                }
+                (Some(before), None) => rows.push(StructuredDiffDisplayRow::Changed {
+                    before: Some(DiffCell {
+                        marker: '-',
+                        text: before.clone(),
+                        segments: vec![DiffSegment {
+                            kind: DiffSegmentKind::Removed,
+                            text: before.clone(),
+                        }],
+                    }),
+                    after: None,
+                }),
+                (None, Some(after)) => rows.push(StructuredDiffDisplayRow::Changed {
+                    before: None,
+                    after: Some(DiffCell {
+                        marker: '+',
+                        text: after.clone(),
+                        segments: vec![DiffSegment {
+                            kind: DiffSegmentKind::Added,
+                            text: after.clone(),
+                        }],
+                    }),
+                }),
+                (None, None) => {}
+            }
+        }
+
+        before_idx = removed_end;
+        after_idx = added_end;
+    }
+
+    let trailing = max(
+        hunk.before_lines.len().saturating_sub(before_idx),
+        hunk.after_lines.len().saturating_sub(after_idx),
+    );
+    for offset in 0..trailing {
+        let line = hunk
+            .before_lines
+            .get(before_idx + offset)
+            .or_else(|| hunk.after_lines.get(after_idx + offset))
+            .cloned()
+            .unwrap_or_default();
+        rows.push(StructuredDiffDisplayRow::Context(line));
+    }
+
+    AlignedHunk {
+        rows,
+        additions: usize::try_from(diff.count_additions()).unwrap_or(usize::MAX),
+        removals: usize::try_from(diff.count_removals()).unwrap_or(usize::MAX),
+    }
+}
+
+fn word_diff_segments(before: &str, after: &str) -> (Vec<DiffSegment>, Vec<DiffSegment>) {
+    let before_tokens = tokenize_diff_words(before);
+    let after_tokens = tokenize_diff_words(after);
+
+    if before_tokens.is_empty() || after_tokens.is_empty() {
+        return (
+            vec![DiffSegment {
+                kind: DiffSegmentKind::Removed,
+                text: before.to_string(),
+            }],
+            vec![DiffSegment {
+                kind: DiffSegmentKind::Added,
+                text: after.to_string(),
+            }],
+        );
+    }
+
+    let mut input = InternedInput::default();
+    input.update_before(before_tokens.clone().into_iter());
+    input.update_after(after_tokens.clone().into_iter());
+    let mut diff = Diff::compute(Algorithm::Histogram, &input);
+    diff.postprocess_lines(&input);
+
+    let mut before_segments = Vec::new();
+    let mut after_segments = Vec::new();
+    let mut before_idx = 0usize;
+    let mut after_idx = 0usize;
+
+    for hunk in diff.hunks() {
+        let next_before = usize::try_from(hunk.before.start).unwrap_or(before_idx);
+        let next_after = usize::try_from(hunk.after.start).unwrap_or(after_idx);
+        push_diff_segments(
+            &mut before_segments,
+            &before_tokens[before_idx..next_before],
+            DiffSegmentKind::Unchanged,
+        );
+        push_diff_segments(
+            &mut after_segments,
+            &after_tokens[after_idx..next_after],
+            DiffSegmentKind::Unchanged,
+        );
+        push_diff_segments(
+            &mut before_segments,
+            &before_tokens[next_before..usize::try_from(hunk.before.end).unwrap_or(next_before)],
+            DiffSegmentKind::Removed,
+        );
+        push_diff_segments(
+            &mut after_segments,
+            &after_tokens[next_after..usize::try_from(hunk.after.end).unwrap_or(next_after)],
+            DiffSegmentKind::Added,
+        );
+        before_idx = usize::try_from(hunk.before.end).unwrap_or(before_idx);
+        after_idx = usize::try_from(hunk.after.end).unwrap_or(after_idx);
+    }
+
+    push_diff_segments(
+        &mut before_segments,
+        &before_tokens[before_idx..],
+        DiffSegmentKind::Unchanged,
+    );
+    push_diff_segments(
+        &mut after_segments,
+        &after_tokens[after_idx..],
+        DiffSegmentKind::Unchanged,
+    );
+
+    (before_segments, after_segments)
+}
+
+fn push_diff_segments(target: &mut Vec<DiffSegment>, tokens: &[String], kind: DiffSegmentKind) {
+    if tokens.is_empty() {
+        return;
+    }
+    let chunk = tokens.concat();
+    if let Some(previous) = target.last_mut() {
+        if previous.kind == kind {
+            previous.text.push_str(&chunk);
+            return;
+        }
+    }
+    target.push(DiffSegment { kind, text: chunk });
+}
+
+fn tokenize_diff_words(input: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut kind: Option<u8> = None;
+
+    for ch in input.chars() {
+        let next_kind = if ch.is_whitespace() {
+            0
+        } else if ch.is_alphanumeric() || ch == '_' {
+            1
+        } else {
+            2
+        };
+
+        if next_kind == 2 {
+            if !current.is_empty() {
+                tokens.push(std::mem::take(&mut current));
+            }
+            tokens.push(ch.to_string());
+            kind = None;
+            continue;
+        }
+
+        if kind.is_some_and(|existing| existing != next_kind) && !current.is_empty() {
+            tokens.push(std::mem::take(&mut current));
+        }
+        current.push(ch);
+        kind = Some(next_kind);
+    }
+
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+
+    tokens
+}
+
+fn render_structured_diff_model(
+    model: &StructuredDiffModel,
+    prefix: &str,
+    width: u16,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
+    let prefix_width = prefix.chars().count();
+    let content_width = usize::from(width).saturating_sub(prefix_width).max(1);
+    let wide = content_width >= usize::from(DIFF_SIDE_BY_SIDE_MIN_WIDTH);
+    let mut lines = Vec::new();
+
+    for (file_index, file) in model.files.iter().enumerate() {
+        if file_index > 0 {
+            lines.push(Line::from(""));
+        }
+
+        for row in &file.rows {
+            match row {
+                StructuredDiffDisplayRow::FileHeader(header) => lines.push(Line::from(vec![
+                    Span::styled(prefix.to_string(), transcript_prefix_style(theme)),
+                    Span::styled(
+                        header.clone(),
+                        Style::default()
+                            .fg(theme.text.secondary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ])),
+                StructuredDiffDisplayRow::HunkHeader(header) => lines.push(Line::from(vec![
+                    Span::styled(prefix.to_string(), transcript_prefix_style(theme)),
+                    Span::styled(header.clone(), muted_meta_style(theme)),
+                ])),
+                StructuredDiffDisplayRow::Context(text) => {
+                    if wide {
+                        lines.push(render_wide_diff_row(
+                            prefix,
+                            Some(&DiffCell {
+                                marker: ' ',
+                                text: text.clone(),
+                                segments: vec![DiffSegment {
+                                    kind: DiffSegmentKind::Unchanged,
+                                    text: text.clone(),
+                                }],
+                            }),
+                            Some(&DiffCell {
+                                marker: ' ',
+                                text: text.clone(),
+                                segments: vec![DiffSegment {
+                                    kind: DiffSegmentKind::Unchanged,
+                                    text: text.clone(),
+                                }],
+                            }),
+                            content_width,
+                            theme,
+                        ));
+                    } else {
+                        lines.push(render_stacked_diff_line(prefix, ' ', text, theme));
+                    }
+                }
+                StructuredDiffDisplayRow::Changed { before, after } => {
+                    if wide {
+                        lines.push(render_wide_diff_row(
+                            prefix,
+                            before.as_ref(),
+                            after.as_ref(),
+                            content_width,
+                            theme,
+                        ));
+                    } else {
+                        if let Some(before) = before {
+                            lines.push(render_stacked_diff_cell(prefix, before, theme));
+                        }
+                        if let Some(after) = after {
+                            lines.push(render_stacked_diff_cell(prefix, after, theme));
+                        }
+                    }
+                }
+                StructuredDiffDisplayRow::Spacer => lines.push(Line::from("")),
+            }
+        }
+    }
+
+    lines
+}
+
+fn render_wide_diff_row(
+    prefix: &str,
+    before: Option<&DiffCell>,
+    after: Option<&DiffCell>,
+    content_width: usize,
+    theme: &Theme,
+) -> Line<'static> {
+    let separator = " │ ";
+    let column_width = content_width.saturating_sub(separator.chars().count()) / 2;
+    let mut spans = vec![Span::styled(
+        prefix.to_string(),
+        transcript_prefix_style(theme),
+    )];
+    spans.extend(render_diff_cell(before, column_width, true, theme));
+    spans.push(Span::styled(separator.to_string(), muted_meta_style(theme)));
+    spans.extend(render_diff_cell(after, column_width, false, theme));
+    Line::from(spans)
+}
+
+fn render_diff_cell(
+    cell: Option<&DiffCell>,
+    width: usize,
+    is_before: bool,
+    theme: &Theme,
+) -> Vec<Span<'static>> {
+    let Some(cell) = cell else {
+        return vec![Span::raw(" ".repeat(width))];
+    };
+
+    let marker_width = 2usize;
+    let text_width = width.saturating_sub(marker_width);
+    let accent_kind = if is_before {
+        DiffSegmentKind::Removed
+    } else {
+        DiffSegmentKind::Added
+    };
+
+    let mut spans = vec![Span::styled(
+        format!("{} ", cell.marker),
+        diff_marker_style(cell.marker, theme),
+    )];
+    spans.extend(truncate_diff_segments(
+        &cell.segments,
+        text_width,
+        accent_kind,
+        theme,
+    ));
+    let used_width = spans.iter().map(Span::width).sum::<usize>();
+    if used_width < width {
+        spans.push(Span::raw(" ".repeat(width - used_width)));
+    }
+    spans
+}
+
+fn truncate_diff_segments(
+    segments: &[DiffSegment],
+    max_width: usize,
+    accent_kind: DiffSegmentKind,
+    theme: &Theme,
+) -> Vec<Span<'static>> {
+    if max_width == 0 {
+        return Vec::new();
+    }
+
+    let mut rendered = Vec::new();
+    let mut used = 0usize;
+
+    for segment in segments {
+        if used >= max_width {
+            break;
+        }
+        let remaining = max_width - used;
+        let text = truncate_plain_text(&segment.text, remaining);
+        used += text.chars().count();
+        rendered.push(Span::styled(
+            text,
+            diff_segment_style(segment.kind, accent_kind, theme),
+        ));
+    }
+
+    rendered
+}
+
+fn render_stacked_diff_line(
+    prefix: &str,
+    marker: char,
+    text: &str,
+    theme: &Theme,
+) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(prefix.to_string(), transcript_prefix_style(theme)),
+        Span::styled(format!("{marker} "), diff_marker_style(marker, theme)),
+        Span::styled(
+            text.to_string(),
+            diff_segment_style(
+                DiffSegmentKind::Unchanged,
+                DiffSegmentKind::Unchanged,
+                theme,
+            ),
+        ),
+    ])
+}
+
+fn render_stacked_diff_cell(prefix: &str, cell: &DiffCell, theme: &Theme) -> Line<'static> {
+    let accent_kind = if cell.marker == '-' {
+        DiffSegmentKind::Removed
+    } else {
+        DiffSegmentKind::Added
+    };
+    let mut spans = vec![
+        Span::styled(prefix.to_string(), transcript_prefix_style(theme)),
+        Span::styled(
+            format!("{} ", cell.marker),
+            diff_marker_style(cell.marker, theme),
+        ),
+    ];
+    spans.extend(cell.segments.iter().map(|segment| {
+        Span::styled(
+            segment.text.clone(),
+            diff_segment_style(segment.kind, accent_kind, theme),
+        )
+    }));
+    Line::from(spans)
+}
+
+fn diff_marker_style(marker: char, theme: &Theme) -> Style {
+    match marker {
+        '+' => Style::default()
+            .fg(theme.status.success)
+            .add_modifier(Modifier::BOLD),
+        '-' => Style::default()
+            .fg(theme.status.error)
+            .add_modifier(Modifier::BOLD),
+        _ => muted_meta_style(theme),
+    }
+}
+
+fn diff_segment_style(kind: DiffSegmentKind, accent_kind: DiffSegmentKind, theme: &Theme) -> Style {
+    match kind {
+        DiffSegmentKind::Unchanged => match accent_kind {
+            DiffSegmentKind::Removed => Style::default().fg(theme.text.secondary),
+            DiffSegmentKind::Added => Style::default().fg(theme.text.primary),
+            DiffSegmentKind::Unchanged => Style::default().fg(theme.text.secondary),
+        },
+        DiffSegmentKind::Removed => Style::default()
+            .fg(theme.status.error)
+            .add_modifier(Modifier::BOLD),
+        DiffSegmentKind::Added => Style::default()
+            .fg(theme.status.success)
+            .add_modifier(Modifier::BOLD),
+    }
+}
+
+fn parse_unified_diff_files(
+    diff_content: &str,
+    fallback_path: Option<&str>,
+) -> Option<Vec<ParsedPatchFile>> {
+    let lines = diff_content
+        .lines()
+        .map(normalize_diff_line)
+        .collect::<Vec<_>>();
+    if lines.is_empty() {
+        return None;
+    }
+
+    let mut files = Vec::new();
+    let mut cursor = 0usize;
+
+    while cursor < lines.len() {
+        if !lines[cursor].starts_with("--- ") {
+            cursor += 1;
+            continue;
+        }
+        let before_label = lines[cursor].trim_start_matches("--- ").to_string();
+        cursor += 1;
+        if cursor >= lines.len() || !lines[cursor].starts_with("+++ ") {
+            return None;
+        }
+        let after_label = lines[cursor].trim_start_matches("+++ ").to_string();
+        let display_path = fallback_path
+            .map(str::to_string)
+            .or_else(|| normalize_patch_label(&after_label))
+            .or_else(|| normalize_patch_label(&before_label))
+            .unwrap_or_else(|| "diff".to_string());
+        cursor += 1;
+
+        let mut hunks = Vec::new();
+        while cursor < lines.len() && !lines[cursor].starts_with("--- ") {
+            if !lines[cursor].starts_with("@@") {
+                cursor += 1;
+                continue;
+            }
+            let header = lines[cursor].to_string();
+            cursor += 1;
+            let mut before_lines = Vec::new();
+            let mut after_lines = Vec::new();
+
+            while cursor < lines.len()
+                && !lines[cursor].starts_with("@@")
+                && !lines[cursor].starts_with("--- ")
+            {
+                if lines[cursor].starts_with("\\ No newline at end of file") {
+                    cursor += 1;
+                    continue;
+                }
+                let (prefix, body) = lines[cursor].split_at(1);
+                match prefix {
+                    " " => {
+                        before_lines.push(body.to_string());
+                        after_lines.push(body.to_string());
+                    }
+                    "-" => before_lines.push(body.to_string()),
+                    "+" => after_lines.push(body.to_string()),
+                    _ => return None,
+                }
+                cursor += 1;
+            }
+
+            hunks.push(ParsedPatchHunk {
+                header,
+                before_lines,
+                after_lines,
+            });
+        }
+
+        if !hunks.is_empty() {
+            files.push(ParsedPatchFile {
+                display_path,
+                before_label,
+                after_label,
+                hunks,
+            });
+        }
+    }
+
+    if files.is_empty() {
+        parse_hunk_only_diff(&lines, fallback_path).map(|file| vec![file])
+    } else {
+        Some(files)
+    }
+}
+
+fn parse_hunk_only_diff(lines: &[&str], fallback_path: Option<&str>) -> Option<ParsedPatchFile> {
+    let mut cursor = 0usize;
+    let mut hunks = Vec::new();
+
+    while cursor < lines.len() {
+        if !lines[cursor].starts_with("@@") {
+            cursor += 1;
+            continue;
+        }
+        let header = lines[cursor].to_string();
+        cursor += 1;
+        let mut before_lines = Vec::new();
+        let mut after_lines = Vec::new();
+
+        while cursor < lines.len() && !lines[cursor].starts_with("@@") {
+            if lines[cursor].starts_with("\\ No newline at end of file") {
+                cursor += 1;
+                continue;
+            }
+            let (prefix, body) = lines[cursor].split_at(1);
+            match prefix {
+                " " => {
+                    before_lines.push(body.to_string());
+                    after_lines.push(body.to_string());
+                }
+                "-" => before_lines.push(body.to_string()),
+                "+" => after_lines.push(body.to_string()),
+                _ => return None,
+            }
+            cursor += 1;
+        }
+
+        hunks.push(ParsedPatchHunk {
+            header,
+            before_lines,
+            after_lines,
+        });
+    }
+
+    (!hunks.is_empty()).then(|| ParsedPatchFile {
+        display_path: fallback_path.unwrap_or("diff").to_string(),
+        before_label: fallback_path.unwrap_or("diff").to_string(),
+        after_label: fallback_path.unwrap_or("diff").to_string(),
+        hunks,
+    })
+}
+
+fn normalize_patch_label(label: &str) -> Option<String> {
+    let trimmed = label
+        .split_whitespace()
+        .next()
+        .unwrap_or(label)
+        .trim_start_matches("a/")
+        .trim_start_matches("b/");
+    (!trimmed.is_empty() && trimmed != "/dev/null").then(|| trimmed.to_string())
+}
+
+fn normalize_diff_line(line: &str) -> &str {
+    line.strip_suffix('\r').unwrap_or(line)
+}
+
+fn diff_surface_event(app: &AppState) -> Option<(&harness_core::event::EventEnvelopeV1, bool)> {
+    app.selected_event()
+        .filter(|event| event_has_diff_artifact(event))
+        .map(|event| (event, false))
+        .or_else(|| {
+            app.events
+                .iter()
+                .rev()
+                .find(|event| event_has_diff_artifact(event))
+                .map(|event| (event, true))
+        })
+}
+
+fn event_has_diff_artifact(event: &harness_core::event::EventEnvelopeV1) -> bool {
+    use harness_core::event::EventV1;
+
+    matches!(
+        &event.payload,
+        EventV1::EditApplied(edit)
+            if edit
+                .diff_rel_path
+                .as_ref()
+                .is_some_and(|path| !path.trim().is_empty())
+    )
+}
+
+fn diff_artifact_path(
+    session_path: &std::path::Path,
+    event: &harness_core::event::EventEnvelopeV1,
+) -> Option<std::path::PathBuf> {
+    use harness_core::event::EventV1;
+
+    match &event.payload {
+        EventV1::EditApplied(edit) => edit
+            .diff_rel_path
+            .as_ref()
+            .filter(|path| !path.trim().is_empty())
+            .map(|path| session_path.join(path)),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+fn line_to_plain_text(line: Line<'static>) -> String {
+    line.spans
+        .into_iter()
+        .map(|span| span.content.into_owned())
+        .collect()
 }
 
 fn render_event_list(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
@@ -1094,15 +1601,7 @@ fn load_diff_for_event(
     session_path: &std::path::Path,
     event: &harness_core::event::EventEnvelopeV1,
 ) -> Option<String> {
-    use harness_core::event::EventV1;
-
-    if let EventV1::EditApplied(data) = &event.payload {
-        if let Some(diff_rel_path) = &data.diff_rel_path {
-            let diff_path = session_path.join(diff_rel_path);
-            return std::fs::read_to_string(&diff_path).ok();
-        }
-    }
-    None
+    diff_artifact_path(session_path, event).and_then(|path| std::fs::read_to_string(path).ok())
 }
 
 fn render_secondary_surface_shell(
@@ -1141,10 +1640,7 @@ fn secondary_summary_line(
     Line::from(vec![
         status_badge(label, accent, theme),
         Span::styled("  ", panel_style(theme.surface.shell, theme.text.secondary)),
-        Span::styled(
-            detail.into(),
-            panel_style(theme.surface.shell, theme.text.secondary),
-        ),
+        Span::styled(detail.into(), panel_style(theme.surface.shell, theme.text.secondary)),
         Span::styled(
             if app.replay_mode {
                 "  ·  read-only"
@@ -1173,8 +1669,12 @@ fn events_summary_line(app: &AppState, theme: &Theme) -> Line<'static> {
 }
 
 fn diff_summary_line(app: &AppState, theme: &Theme) -> Line<'static> {
-    let detail = if let Some(event) = app.selected_event() {
-        format!("artifact view · seq {}", event.seq)
+    let detail = if let Some((event, fallback_to_latest_edit)) = diff_surface_event(app) {
+        if fallback_to_latest_edit {
+            format!("artifact view · latest edit seq {}", event.seq)
+        } else {
+            format!("artifact view · seq {}", event.seq)
+        }
     } else {
         "artifact view · select an edit event".to_string()
     };

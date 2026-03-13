@@ -1,0 +1,29 @@
+---
+source: crates/harness-tui/src/lib.rs
+assertion_line: 6761
+expression: "completed_shell_render.lines().map(str::trim_end).collect::<Vec<_>>().join(\"\\n\")"
+---
+           run run_fixture · unknown/unknown · -
+            Waiting for first turn…
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            Ready   run finished · session shell preserved  ·  orch 0a 0q 0r 0s
+           ──────────────────────────────────────────────────────────────────────────────
+           ▎ keep this draft
+           Tab focus  ? shortcuts  q quit

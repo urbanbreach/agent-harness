@@ -1,8 +1,9 @@
 ---
 source: crates/harness-tui/src/lib.rs
+assertion_line: 7493
 expression: "render_live_lines(&app, 80, 24)"
 ---
- run unknown · unknown/unknown · -                                              
+ run unknown · unknown/-                                                        
   Waiting for first turn…                                                       
                                                                                 
                                                                                 
@@ -21,8 +22,8 @@ expression: "render_live_lines(&app, 80, 24)"
                                                                                 
                                                                                 
                                                                                 
+                                                                                
   Ready   ready for first turn  ·  orch 0a 0q 0r 0s                             
- Composer · draft · 1 line · 12 chars────────────────────────────────────────── 
-  › draft prompt█                                                               
  ────────────────────────────────────────────────────────────────────────────── 
- Enter send  Shift+Enter nl  i details  2 events  3 diff  4 help  q quit
+ ▎ draft prompt█                                                                
+ Enter send  Shift+Enter nl  Ctrl+p commands  q quit
