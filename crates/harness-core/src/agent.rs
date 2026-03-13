@@ -111,6 +111,15 @@ pub fn default_provider() -> Arc<dyn Provider> {
 const MAX_ITERS: usize = 12;
 const MAX_TOOL_CALLS_TOTAL: usize = 25;
 
+pub struct MultiTurnStreamingRequest<'a> {
+    pub provider: Arc<dyn Provider>,
+    pub tool_registry: Arc<ToolRegistry>,
+    pub profile: &'a AgentProfile,
+    pub request_id: String,
+    pub request: AgentRequest,
+    pub prior_turns: &'a [ProviderConversationTurn],
+}
+
 pub async fn run_single_turn_streaming<F, Fut>(
     provider: Arc<dyn Provider>,
     profile: &AgentProfile,
@@ -202,12 +211,7 @@ where
 }
 
 pub async fn run_multi_turn_streaming<F, Fut, T, TFut>(
-    provider: Arc<dyn Provider>,
-    tool_registry: Arc<ToolRegistry>,
-    profile: &AgentProfile,
-    request_id: String,
-    request: AgentRequest,
-    prior_turns: &[ProviderConversationTurn],
+    request: MultiTurnStreamingRequest<'_>,
     mut call_tool_and_wait: T,
     mut emit: F,
 ) -> AgentTurnOutcome
@@ -217,6 +221,15 @@ where
     T: FnMut(String, Value) -> TFut,
     TFut: Future<Output = Result<ToolResult, String>>,
 {
+    let MultiTurnStreamingRequest {
+        provider,
+        tool_registry,
+        profile,
+        request_id,
+        request,
+        prior_turns,
+    } = request;
+
     let model = AgentModelRef::parse(&request.model_ref);
     let tool_defs = match build_provider_tool_defs(profile, tool_registry.as_ref()) {
         Ok(tool_defs) => tool_defs,
@@ -521,7 +534,7 @@ mod tests {
 
     use super::{
         build_provider_tool_defs, run_multi_turn_streaming, tool_result_to_message_content,
-        AgentProfile, AgentRequest, AgentTurnOutcome,
+        AgentProfile, AgentRequest, AgentTurnOutcome, MultiTurnStreamingRequest,
     };
     use crate::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 
@@ -600,12 +613,14 @@ mod tests {
         let seen_calls = Arc::new(Mutex::new(Vec::<(String, serde_json::Value)>::new()));
 
         let outcome = run_multi_turn_streaming(
-            provider,
-            tool_registry,
-            &profile,
-            "req_000001".to_string(),
-            request,
-            &[],
+            MultiTurnStreamingRequest {
+                provider,
+                tool_registry,
+                profile: &profile,
+                request_id: "req_000001".to_string(),
+                request,
+                prior_turns: &[],
+            },
             {
                 let seen_calls = seen_calls.clone();
                 move |tool_id, args_json| {
@@ -678,12 +693,14 @@ mod tests {
         let call_count = Arc::new(Mutex::new(0usize));
 
         let outcome = run_multi_turn_streaming(
-            provider,
-            tool_registry,
-            &profile,
-            "req_000002".to_string(),
-            request,
-            &[],
+            MultiTurnStreamingRequest {
+                provider,
+                tool_registry,
+                profile: &profile,
+                request_id: "req_000002".to_string(),
+                request,
+                prior_turns: &[],
+            },
             {
                 let call_count = call_count.clone();
                 move |_tool_id, _args_json| {
@@ -751,12 +768,14 @@ mod tests {
         let call_count = Arc::new(Mutex::new(0usize));
 
         let outcome = run_multi_turn_streaming(
-            provider,
-            tool_registry,
-            &profile,
-            "req_000003".to_string(),
-            request,
-            &[],
+            MultiTurnStreamingRequest {
+                provider,
+                tool_registry,
+                profile: &profile,
+                request_id: "req_000003".to_string(),
+                request,
+                prior_turns: &[],
+            },
             {
                 let call_count = call_count.clone();
                 move |_tool_id, _args_json| {
@@ -845,12 +864,14 @@ mod tests {
         let error = error.to_string();
 
         run_multi_turn_streaming(
-            provider,
-            tool_registry,
-            &profile,
-            "req_000004".to_string(),
-            request,
-            &[],
+            MultiTurnStreamingRequest {
+                provider,
+                tool_registry,
+                profile: &profile,
+                request_id: "req_000004".to_string(),
+                request,
+                prior_turns: &[],
+            },
             move |_tool_id, _args_json| {
                 let error = error.clone();
                 async move { Err(error) }

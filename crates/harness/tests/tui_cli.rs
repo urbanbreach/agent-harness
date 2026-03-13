@@ -595,9 +595,11 @@ fn command_palette_includes_task5_session_actions() {
         .to_ascii_lowercase();
 
     assert!(
-        palette_surface.contains("help:open help surface")
-            && palette_surface.contains("run:return to conversation surface"),
-        "expected to inspect the real ctrl-p surface, got:\n{palette_surface}"
+        palette_surface.contains("open_event_log:open the review event log surface")
+            && palette_surface.contains("open_diff_review:open the structured diff review surface")
+            && !palette_surface.contains("help:"),
+        "expected the ctrl-p surface to expose command-driven review surfaces without tab chrome, got:
+{palette_surface}"
     );
     assert!(
         palette_surface.contains("new_session:start a fresh live session")

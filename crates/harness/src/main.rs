@@ -147,3 +147,9 @@ fn main() -> ExitCode {
         },
     }
 }
+
+#[cfg(test)]
+#[test]
+fn startup_command_workflow_maps_model_and_session_intents_correctly() {
+    tui::assert_startup_command_workflow_maps_model_and_session_intents_correctly();
+}

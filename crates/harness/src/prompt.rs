@@ -269,6 +269,8 @@ fn evaluate_prompt_completion(
     events: &[EventEnvelopeV1],
     request_id: &str,
 ) -> PromptCompletionStatus {
+    let prompt_task_id = prompt_task_id(events, request_id);
+
     if let Some(run_error) = events.iter().find_map(|event| match &event.payload {
         EventV1::RunFailed(data) => Some(data.error.clone()),
         _ => None,
@@ -291,21 +293,10 @@ fn evaluate_prompt_completion(
         ));
     }
 
-    if let Some(finish_reason) = events.iter().find_map(|event| match &event.payload {
-        EventV1::ProviderRequestFinished(data) if data.request_id == request_id => {
-            Some(data.finish_reason.clone())
-        }
-        _ => None,
-    }) {
-        if finish_reason.eq_ignore_ascii_case("error") {
-            return PromptCompletionStatus::Continue;
-        }
-        return PromptCompletionStatus::Completed;
-    }
-
     if events.iter().any(|event| match &event.payload {
         EventV1::TaskCompleted(data) => {
-            event_matches_request(event, request_id) || data.task_id == request_id
+            prompt_task_id.is_some_and(|task_id| data.task_id == task_id)
+                || data.task_id == request_id
         }
         _ => false,
     }) {
@@ -313,6 +304,21 @@ fn evaluate_prompt_completion(
     }
 
     PromptCompletionStatus::Continue
+}
+
+fn prompt_task_id<'a>(events: &'a [EventEnvelopeV1], request_id: &str) -> Option<&'a str> {
+    events.iter().find_map(|event| match &event.payload {
+        EventV1::TaskScheduled(data)
+            if event_matches_request(event, request_id)
+                && data
+                    .queue_key
+                    .as_deref()
+                    .is_some_and(|queue_key| queue_key.starts_with("provider_model:")) =>
+        {
+            Some(data.task_id.as_str())
+        }
+        _ => None,
+    })
 }
 
 fn event_matches_request(event: &EventEnvelopeV1, request_id: &str) -> bool {
@@ -384,7 +390,8 @@ mod tests {
 
     use harness_core::event::{
         ActorKind, EventActor, EventEnvelopeV1, EventV1, ProviderRequestFinishedEvent,
-        RunFailedEvent, TaskCancelledEvent, TaskCompletedEvent,
+        RunFailedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskScheduleState,
+        TaskScheduledEvent,
     };
 
     use super::{
@@ -453,15 +460,53 @@ mod tests {
     }
 
     #[test]
-    fn evaluate_prompt_completion_reports_success_for_task_completed() {
-        let events = vec![event_with_correlation(
-            EventV1::TaskCompleted(TaskCompletedEvent {
-                task_id: "task_000001".to_string(),
-                result_summary: "ok".to_string(),
-                result_digest: "abc123".to_string(),
-            }),
-            Some("req_000001"),
-        )];
+    fn evaluate_prompt_completion_waits_for_prompt_task_completion_after_provider_finish() {
+        let events = vec![
+            provider_task_scheduled_event("task_000001", "req_000001"),
+            event(EventV1::ProviderRequestFinished(
+                ProviderRequestFinishedEvent {
+                    request_id: "req_000001".to_string(),
+                    finish_reason: "done".to_string(),
+                    output_digest: Some("abc123".to_string()),
+                },
+            )),
+        ];
+
+        let status = evaluate_prompt_completion(&events, "req_000001");
+        assert_eq!(status, PromptCompletionStatus::Continue);
+    }
+
+    #[test]
+    fn evaluate_prompt_completion_waits_for_tool_task_completion() {
+        let events = vec![
+            provider_task_scheduled_event("task_000001", "req_000001"),
+            event_with_correlation(
+                EventV1::TaskCompleted(TaskCompletedEvent {
+                    task_id: "task_000002".to_string(),
+                    result_summary: "tool ok".to_string(),
+                    result_digest: "def456".to_string(),
+                }),
+                Some("req_000001"),
+            ),
+        ];
+
+        let status = evaluate_prompt_completion(&events, "req_000001");
+        assert_eq!(status, PromptCompletionStatus::Continue);
+    }
+
+    #[test]
+    fn evaluate_prompt_completion_reports_success_for_prompt_task_completed() {
+        let events = vec![
+            provider_task_scheduled_event("task_000001", "req_000001"),
+            event_with_correlation(
+                EventV1::TaskCompleted(TaskCompletedEvent {
+                    task_id: "task_000001".to_string(),
+                    result_summary: "ok".to_string(),
+                    result_digest: "abc123".to_string(),
+                }),
+                Some("req_000001"),
+            ),
+        ];
 
         let status = evaluate_prompt_completion(&events, "req_000001");
         assert_eq!(status, PromptCompletionStatus::Completed);
@@ -510,6 +555,17 @@ mod tests {
 
     fn event(payload: EventV1) -> EventEnvelopeV1 {
         event_with_correlation(payload, None)
+    }
+
+    fn provider_task_scheduled_event(task_id: &str, request_id: &str) -> EventEnvelopeV1 {
+        event_with_correlation(
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: task_id.to_string(),
+                state: TaskScheduleState::Started,
+                queue_key: Some("provider_model:default:gpt-4o-mini".to_string()),
+            }),
+            Some(request_id),
+        )
     }
 
     fn event_with_correlation(payload: EventV1, correlation_id: Option<&str>) -> EventEnvelopeV1 {

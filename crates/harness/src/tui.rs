@@ -9,6 +9,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use clap::Args;
+use harness_core::agent::AgentProfile;
 use harness_core::clock::{Clock, FakeClock, RealClock};
 use harness_core::config::{
     load_config_from_file, resolve_config_path, HarnessConfig, ShellAllowlist,
@@ -24,7 +25,7 @@ use harness_core::store::{EventStore, EventStoreError};
 use harness_tools::coordinator_registry;
 use harness_tui::app::{
     set_pending_live_launch_metadata, set_pending_live_prompt_auto_submit, LaunchMetadata,
-    SessionHistoryEntry,
+    ModelOption, SessionHistoryEntry,
 };
 use harness_tui::{
     load_events_from_run_dir, run_tui_with_options, LiveUpdate, TuiMode, TuiOptions, UiIntent,
@@ -76,8 +77,8 @@ struct LiveSettings {
     deterministic: bool,
     seed: u64,
     config_digest: String,
-    default_profile: String,
     launch_metadata: LaunchMetadata,
+    launch_mode_label: String,
 }
 
 struct LiveBootstrap {
@@ -96,6 +97,14 @@ enum InteractiveWorkflow {
 
 type SelectedWorkflow = Arc<Mutex<Option<InteractiveWorkflow>>>;
 type UiIntentSink = Arc<dyn Fn(UiIntent) + Send + Sync>;
+type LaunchSelection = Arc<Mutex<LaunchMetadata>>;
+type LiveAgentTargetState = Arc<Mutex<LiveAgentTarget>>;
+
+#[derive(Debug, Clone)]
+struct LiveAgentTarget {
+    agent_id: Option<String>,
+    profile: String,
+}
 
 enum ResolvedTuiMode {
     Replay {
@@ -229,6 +238,7 @@ fn resolve_live_settings(
     let mut config_digest = "none".to_string();
     let mut config_default_profile = DEFAULT_MOCK_PROFILE.to_string();
     let mut live_config: Option<HarnessConfig> = None;
+    let mut agent_profiles = golden_path_profiles();
 
     if let Some(path) = explicit_config {
         let config =
@@ -237,6 +247,7 @@ fn resolve_live_settings(
             .map_err(|err| format!("failed to read config file {}: {err}", path.display()))?;
         config_digest = blake3::hash(&config_bytes).to_hex().to_string();
         config_default_profile = bootstrap::interactive_profile_name(&config);
+        agent_profiles = bootstrap::interactive_agent_profiles(&config)?;
         shell_allowlist = config.permissions.shell_allowlist.clone();
         config_session_dir = config.paths.session_dir.clone();
         config_deterministic = config.deterministic.enabled;
@@ -255,7 +266,13 @@ fn resolve_live_settings(
         || config_deterministic
         || matches!(std::env::var("HARNESS_DETERMINISTIC").as_deref(), Ok("1"));
     let default_profile = cmd.profile.clone().unwrap_or(config_default_profile);
-    let launch_metadata = interactive_launch_metadata(live_config.as_ref(), &default_profile);
+    let launch_mode_label = if live_config.is_some() {
+        "Live"
+    } else {
+        "Demo"
+    }
+    .to_string();
+    let launch_metadata = interactive_launch_metadata(&agent_profiles, &default_profile)?;
 
     Ok(LiveSettings {
         config: live_config,
@@ -264,17 +281,52 @@ fn resolve_live_settings(
         deterministic,
         seed: config_seed,
         config_digest,
-        default_profile,
         launch_metadata,
+        launch_mode_label,
     })
 }
 
-fn interactive_launch_metadata(config: Option<&HarnessConfig>, profile: &str) -> LaunchMetadata {
-    config
-        .and_then(|cfg| cfg.categories.get(profile))
-        .map(|category| LaunchMetadata::from_model_ref(profile.to_string(), &category.model_ref))
-        .unwrap_or_else(|| LaunchMetadata::from_model_ref(profile.to_string(), "mock:model-1"))
-        .with_mode_label(if config.is_some() { "Live" } else { "Demo" })
+fn interactive_launch_metadata(
+    agent_profiles: &BTreeMap<String, AgentProfile>,
+    profile: &str,
+) -> Result<LaunchMetadata, String> {
+    let Some(selected_profile) = agent_profiles.get(profile) else {
+        return Err(format!(
+            "interactive mode requires a configured profile/category named `{profile}`"
+        ));
+    };
+
+    Ok(
+        LaunchMetadata::from_model_ref(selected_profile.name.clone(), &selected_profile.model_ref)
+            .with_available_models(model_options_from_profiles(agent_profiles)),
+    )
+}
+
+fn model_options_from_profiles(
+    agent_profiles: &BTreeMap<String, AgentProfile>,
+) -> Vec<ModelOption> {
+    agent_profiles
+        .values()
+        .map(|profile| ModelOption::from_model_ref(profile.name.clone(), &profile.model_ref))
+        .collect()
+}
+
+fn launch_metadata_for_mode(
+    settings: &LiveSettings,
+    selection: &LaunchSelection,
+) -> LaunchMetadata {
+    selection
+        .lock()
+        .expect("interactive launch selection lock poisoned")
+        .clone()
+        .with_mode_label(settings.launch_mode_label.clone())
+}
+
+fn record_launch_selection(selection: &LaunchSelection, launch_metadata: &LaunchMetadata) {
+    *selection
+        .lock()
+        .expect("interactive launch selection lock poisoned") =
+        launch_metadata.clone().without_mode_label();
 }
 
 fn scenario_launch_metadata() -> LaunchMetadata {
@@ -289,14 +341,48 @@ async fn run_interactive_mode(
     fs::create_dir_all(&settings.session_dir)
         .map_err(|err| format!("failed to create session dir: {err}"))?;
 
+    let launch_selection = Arc::new(Mutex::new(
+        settings.launch_metadata.clone().without_mode_label(),
+    ));
+
     run_interactive_workflow_loop(
-        || {
-            set_pending_live_launch_metadata(settings.launch_metadata.clone());
-            load_startup_session_history_entries(&settings.session_dir)
+        {
+            let launch_selection = Arc::clone(&launch_selection);
+            move || {
+                set_pending_live_launch_metadata(launch_metadata_for_mode(
+                    settings,
+                    &launch_selection,
+                ));
+                load_startup_session_history_entries(&settings.session_dir)
+            }
         },
-        |session_history_entries| run_startup_launcher(cmd.exit_on_finish, session_history_entries),
-        || run_new_live_session(cmd, settings, demo_mode),
-        |run_id, run_dir| run_continue_session_bootstrap(cmd, settings, demo_mode, run_id, run_dir),
+        {
+            let launch_selection = Arc::clone(&launch_selection);
+            move |session_history_entries| {
+                run_startup_launcher(
+                    cmd.exit_on_finish,
+                    session_history_entries,
+                    Arc::clone(&launch_selection),
+                )
+            }
+        },
+        {
+            let launch_selection = Arc::clone(&launch_selection);
+            move || run_new_live_session(cmd, settings, demo_mode, Arc::clone(&launch_selection))
+        },
+        {
+            let launch_selection = Arc::clone(&launch_selection);
+            move |run_id, run_dir| {
+                run_continue_session_bootstrap(
+                    cmd,
+                    settings,
+                    demo_mode,
+                    run_id,
+                    run_dir,
+                    Arc::clone(&launch_selection),
+                )
+            }
+        },
         |run_dir| async move {
             run_replay_tui(run_dir, cmd.exit_on_finish).await?;
             Ok(InteractiveWorkflow::Startup)
@@ -372,10 +458,19 @@ fn startup_session_history_entry_visible(entry: &crate::replay::SessionInspectio
 async fn run_startup_launcher(
     exit_on_finish: bool,
     session_history_entries: Vec<SessionHistoryEntry>,
+    launch_selection: LaunchSelection,
 ) -> Result<InteractiveWorkflow, String> {
     let selected_intent = Arc::new(Mutex::new(None::<UiIntent>));
     let selected_intent_sink = Arc::clone(&selected_intent);
     let on_ui_intent = Arc::new(move |intent: UiIntent| {
+        if let UiIntent::SwitchModel {
+            launch_metadata, ..
+        } = &intent
+        {
+            record_launch_selection(&launch_selection, launch_metadata);
+            return;
+        }
+
         if !matches!(
             intent,
             UiIntent::NewSession
@@ -430,9 +525,10 @@ fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> InteractiveWorkfl
             set_pending_live_prompt_auto_submit(Some(text));
             InteractiveWorkflow::NewSession
         }
-        Some(UiIntent::QuitRequested) | None | Some(UiIntent::ResolvePermission { .. }) => {
-            InteractiveWorkflow::Quit
-        }
+        Some(UiIntent::QuitRequested)
+        | None
+        | Some(UiIntent::ResolvePermission { .. })
+        | Some(UiIntent::SwitchModel { .. }) => InteractiveWorkflow::Quit,
     }
 }
 
@@ -457,6 +553,7 @@ async fn run_continue_session_bootstrap(
     demo_mode: bool,
     run_id: String,
     run_dir: PathBuf,
+    launch_selection: LaunchSelection,
 ) -> Result<InteractiveWorkflow, String> {
     let resume_plan = inspect_resume_plan(&run_dir);
     if !resume_plan.is_resumable {
@@ -523,6 +620,13 @@ async fn run_continue_session_bootstrap(
         &historical_events,
         &resume_agent_id,
         resume_profile,
+    )
+    .with_available_models(
+        launch_selection
+            .lock()
+            .expect("interactive launch selection lock poisoned")
+            .available_models()
+            .to_vec(),
     );
 
     let (live_update_tx, live_update_rx) = std_mpsc::channel::<LiveUpdate>();
@@ -533,18 +637,23 @@ async fn run_continue_session_bootstrap(
     });
 
     let intent_coordinator = coordinator.clone();
-    let intent_resume_agent_id = resume_agent_id.clone();
+    let live_agent_target = Arc::new(Mutex::new(LiveAgentTarget {
+        agent_id: Some(resume_agent_id.clone()),
+        profile: continue_metadata.profile().to_string(),
+    }));
+    let intent_live_agent_target = Arc::clone(&live_agent_target);
     let ui_intent_task = tokio::spawn(async move {
         handle_ui_intents(
             intent_coordinator,
             intent_rx,
             user_actor(),
-            Some(intent_resume_agent_id),
+            Some(intent_live_agent_target),
         )
         .await
     });
 
-    let (selected_workflow, ui_intent_sender) = build_live_ui_intent_router(intent_tx.clone());
+    let (selected_workflow, ui_intent_sender) =
+        build_live_ui_intent_router(intent_tx.clone(), Arc::clone(&launch_selection));
 
     let exit_on_finish = cmd.exit_on_finish;
     set_pending_live_launch_metadata(continue_metadata);
@@ -603,10 +712,17 @@ fn continue_live_tui_options(
 
 fn build_live_ui_intent_router(
     intent_tx: mpsc::UnboundedSender<UiIntent>,
+    launch_selection: LaunchSelection,
 ) -> (SelectedWorkflow, UiIntentSink) {
     let selected_workflow = Arc::new(Mutex::new(None::<InteractiveWorkflow>));
     let selected_workflow_sink = Arc::clone(&selected_workflow);
     let on_ui_intent = Arc::new(move |intent: UiIntent| {
+        if let UiIntent::SwitchModel {
+            launch_metadata, ..
+        } = &intent
+        {
+            record_launch_selection(&launch_selection, launch_metadata);
+        }
         if let Some(workflow) = live_workflow_from_intent(&intent) {
             capture_first_workflow(&selected_workflow_sink, workflow);
         }
@@ -629,7 +745,9 @@ fn live_workflow_from_intent(intent: &UiIntent) -> Option<InteractiveWorkflow> {
             run_dir: run_dir.clone(),
         }),
         UiIntent::QuitRequested => Some(InteractiveWorkflow::Quit),
-        UiIntent::ResolvePermission { .. } | UiIntent::SubmitPrompt { .. } => None,
+        UiIntent::ResolvePermission { .. }
+        | UiIntent::SubmitPrompt { .. }
+        | UiIntent::SwitchModel { .. } => None,
     }
 }
 
@@ -638,6 +756,7 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
         intent,
         UiIntent::ResolvePermission { .. }
             | UiIntent::SubmitPrompt { .. }
+            | UiIntent::SwitchModel { .. }
             | UiIntent::QuitRequested
     )
 }
@@ -776,6 +895,7 @@ async fn run_new_live_session(
     cmd: &TuiCommand,
     settings: &LiveSettings,
     demo_mode: bool,
+    launch_selection: LaunchSelection,
 ) -> Result<InteractiveWorkflow, String> {
     let run_id_override = if settings.deterministic {
         deterministic_run_id(settings.seed, ScenarioName::GoldenPathInteractive)
@@ -840,8 +960,14 @@ async fn run_new_live_session(
         .await
         .map_err(|err| err.to_string())?;
 
+    let launch_metadata = launch_metadata_for_mode(settings, &launch_selection);
+
     let agent_id = coordinator
-        .spawn_agent_idle(supervisor_actor(), settings.default_profile.clone(), None)
+        .spawn_agent_idle(
+            supervisor_actor(),
+            launch_metadata.profile().to_string(),
+            None,
+        )
         .await
         .map_err(|err| err.to_string())?;
 
@@ -852,14 +978,26 @@ async fn run_new_live_session(
         tokio::spawn(async move { forward_events_to_tui(store, live_update_tx, 1).await });
 
     let intent_coordinator = coordinator.clone();
+    let live_agent_target = Arc::new(Mutex::new(LiveAgentTarget {
+        agent_id: Some(agent_id),
+        profile: launch_metadata.profile().to_string(),
+    }));
+    let intent_live_agent_target = Arc::clone(&live_agent_target);
     let ui_intent_task = tokio::spawn(async move {
-        handle_ui_intents(intent_coordinator, intent_rx, user_actor(), Some(agent_id)).await
+        handle_ui_intents(
+            intent_coordinator,
+            intent_rx,
+            user_actor(),
+            Some(intent_live_agent_target),
+        )
+        .await
     });
 
-    let (selected_workflow, ui_intent_sender) = build_live_ui_intent_router(intent_tx.clone());
+    let (selected_workflow, ui_intent_sender) =
+        build_live_ui_intent_router(intent_tx.clone(), Arc::clone(&launch_selection));
 
     let exit_on_finish = cmd.exit_on_finish;
-    set_pending_live_launch_metadata(settings.launch_metadata.clone());
+    set_pending_live_launch_metadata(launch_metadata);
 
     let tui_result = tokio::task::spawn_blocking(move || {
         run_tui_with_options(TuiOptions {
@@ -1173,7 +1311,7 @@ async fn handle_ui_intents(
     coordinator: CoordinatorHandle,
     mut intent_rx: mpsc::UnboundedReceiver<UiIntent>,
     user_actor: EventActor,
-    agent_id: Option<String>,
+    live_agent_target: Option<LiveAgentTargetState>,
 ) -> Result<(), String> {
     while let Some(intent) = intent_rx.recv().await {
         match intent {
@@ -1187,12 +1325,43 @@ async fn handle_ui_intents(
                     .map_err(|err| err.to_string())?;
             }
             UiIntent::SubmitPrompt { text } => {
-                if let Some(agent_id) = agent_id.clone() {
+                let agent_id = live_agent_target.as_ref().and_then(|target| {
+                    target
+                        .lock()
+                        .ok()
+                        .and_then(|target| target.agent_id.clone())
+                });
+
+                if let Some(agent_id) = agent_id {
                     coordinator
                         .request_agent_turn(user_actor.clone(), agent_id, text)
                         .await
                         .map_err(|err| err.to_string())?;
                 }
+            }
+            UiIntent::SwitchModel { profile, .. } => {
+                let Some(live_agent_target) = live_agent_target.as_ref() else {
+                    continue;
+                };
+
+                let already_selected = live_agent_target
+                    .lock()
+                    .map_err(|_| "live agent target lock poisoned".to_string())?
+                    .profile
+                    == profile;
+                if already_selected {
+                    continue;
+                }
+
+                let agent_id = coordinator
+                    .spawn_agent_idle(supervisor_actor(), profile.clone(), None)
+                    .await
+                    .map_err(|err| err.to_string())?;
+                let mut target = live_agent_target
+                    .lock()
+                    .map_err(|_| "live agent target lock poisoned".to_string())?;
+                target.agent_id = Some(agent_id);
+                target.profile = profile;
             }
             UiIntent::NewSession
             | UiIntent::ReplaySession { .. }
@@ -1335,6 +1504,65 @@ fn unique_interactive_run_id() -> String {
         format!("interactive:{}:{}", std::process::id(), stamp).as_bytes(),
     );
     format!("run_{}", namespace.simple())
+}
+
+#[cfg(test)]
+pub(crate) fn assert_startup_command_workflow_maps_model_and_session_intents_correctly() {
+    let launch_selection = Arc::new(Mutex::new(
+        LaunchMetadata::from_model_ref("deep", "default:gpt-5.4").with_available_models(vec![
+            ModelOption::from_model_ref("deep", "default:gpt-5.4"),
+            ModelOption::from_model_ref("ops", "anthropic:claude-3.7"),
+        ]),
+    ));
+    let switched_metadata = LaunchMetadata::from_model_ref("ops", "anthropic:claude-3.7")
+        .with_available_models(
+            launch_selection
+                .lock()
+                .expect("launch selection lock poisoned")
+                .available_models()
+                .to_vec(),
+        )
+        .with_mode_label("Live");
+
+    record_launch_selection(&launch_selection, &switched_metadata);
+
+    let recorded = launch_selection
+        .lock()
+        .expect("launch selection lock poisoned")
+        .clone();
+    assert_eq!(recorded.profile(), "ops");
+    assert_eq!(recorded.provider(), "anthropic");
+    assert_eq!(recorded.model(), Some("claude-3.7"));
+    assert_eq!(recorded.mode_label(), None);
+    assert_eq!(recorded.available_models().len(), 2);
+
+    let continue_run_dir = PathBuf::from("/tmp/sessions/run_continue");
+    assert_eq!(
+        map_startup_intent_to_workflow(Some(UiIntent::ContinueSession {
+            run_id: "run_continue".to_string(),
+            run_dir: continue_run_dir.clone(),
+        })),
+        InteractiveWorkflow::Continue {
+            run_id: "run_continue".to_string(),
+            run_dir: continue_run_dir,
+        }
+    );
+
+    let replay_run_dir = PathBuf::from("/tmp/sessions/run_replay");
+    assert_eq!(
+        live_workflow_from_intent(&UiIntent::ReplaySession {
+            run_id: "run_replay".to_string(),
+            run_dir: replay_run_dir.clone(),
+        }),
+        Some(InteractiveWorkflow::Replay {
+            run_dir: replay_run_dir,
+        })
+    );
+
+    assert!(forward_intent_to_live_run(&UiIntent::SwitchModel {
+        profile: "ops".to_string(),
+        launch_metadata: switched_metadata,
+    }));
 }
 
 #[cfg(test)]

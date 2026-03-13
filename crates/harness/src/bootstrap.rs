@@ -45,7 +45,7 @@ pub fn build_interactive_coordinator_config(
     coordinator_config.provider_model_concurrency = cfg.background_task.model_concurrency;
     coordinator_config.stale_timeout_ms = cfg.background_task.stale_timeout_ms;
     coordinator_config.provider = Arc::new(build_default_provider(cfg)?);
-    coordinator_config.agent_profiles = build_agent_profiles(cfg)?;
+    coordinator_config.agent_profiles = interactive_agent_profiles(cfg)?;
     Ok(coordinator_config)
 }
 
@@ -81,7 +81,9 @@ fn map_openai_api_mode(mode: CoreOpenAiApiMode) -> ProviderOpenAiApiMode {
     }
 }
 
-fn build_agent_profiles(cfg: &HarnessConfig) -> Result<BTreeMap<String, AgentProfile>, String> {
+pub fn interactive_agent_profiles(
+    cfg: &HarnessConfig,
+) -> Result<BTreeMap<String, AgentProfile>, String> {
     let mut profiles = BTreeMap::new();
 
     for (category_name, category_cfg) in &cfg.categories {

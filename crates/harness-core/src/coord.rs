@@ -14,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agent::{
     default_provider, run_multi_turn_streaming, AgentProfile, AgentRequest, AgentRuntimeEvent,
-    AgentTurnOutcome, ProviderConversationTurn,
+    AgentTurnOutcome, MultiTurnStreamingRequest, ProviderConversationTurn,
 };
 use crate::clock::Clock;
 use crate::edit::hashline::HashlinePatch;
@@ -1233,11 +1233,13 @@ impl Coordinator {
             self.clock.as_ref(),
             self.redactor.as_ref(),
             run_state,
-            actor.clone(),
-            &tool_call_id,
-            &tool_id,
-            &args_json,
-            request_correlation_id.as_deref(),
+            ToolCallRequestedEventArgs {
+                actor: actor.clone(),
+                tool_call_id: &tool_call_id,
+                tool_id: &tool_id,
+                args_json: &args_json,
+                request_correlation_id: request_correlation_id.as_deref(),
+            },
         )?;
 
         let Some(tool) = self.config.tool_registry.get(&tool_id) else {
@@ -1364,11 +1366,14 @@ impl Coordinator {
                     clock.as_ref(),
                     redactor.as_ref(),
                     run_state,
-                    tool_call_id.clone(),
-                    hashline_edit.as_ref(),
-                    maybe_kind.expect("permission kind exists when policy decision exists"),
-                    "policy denied request",
-                    request_correlation_id.as_deref(),
+                    PermissionDeniedArgs {
+                        tool_call_id: &tool_call_id,
+                        hashline_edit: hashline_edit.as_ref(),
+                        kind: maybe_kind
+                            .expect("permission kind exists when policy decision exists"),
+                        reason: "policy denied request",
+                        request_correlation_id: request_correlation_id.as_deref(),
+                    },
                 )?;
                 if let Some(respond_to) = respond_to {
                     let _ =
@@ -2051,11 +2056,13 @@ impl Coordinator {
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
                     run_state,
-                    &queued.task_id,
-                    &queued.agent_id,
-                    &queued.request_id,
-                    &queued.queue_key,
-                    TaskScheduleState::Started,
+                    AgentTurnTaskScheduledEventArgs {
+                        task_id: &queued.task_id,
+                        agent_id: &queued.agent_id,
+                        request_id: &queued.request_id,
+                        queue_key: &queued.queue_key,
+                        state: TaskScheduleState::Started,
+                    },
                 )?;
 
                 let Some(queued) = run_state.queued_agent_turns.remove(&task.task_id) else {
@@ -2150,6 +2157,30 @@ struct PendingPermissionState {
     actor: EventActor,
     request_correlation_id: Option<String>,
     respond_to: Option<oneshot::Sender<Result<ToolResult, String>>>,
+}
+
+struct AgentTurnTaskScheduledEventArgs<'a> {
+    task_id: &'a str,
+    agent_id: &'a str,
+    request_id: &'a str,
+    queue_key: &'a ConcurrencyKey,
+    state: TaskScheduleState,
+}
+
+struct PermissionDeniedArgs<'a> {
+    tool_call_id: &'a str,
+    hashline_edit: Option<&'a HashlineEditMetadata>,
+    kind: PermissionKind,
+    reason: &'a str,
+    request_correlation_id: Option<&'a str>,
+}
+
+struct ToolCallRequestedEventArgs<'a> {
+    actor: EventActor,
+    tool_call_id: &'a str,
+    tool_id: &'a str,
+    args_json: &'a Value,
+    request_correlation_id: Option<&'a str>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2378,11 +2409,13 @@ where
                 clock,
                 redactor,
                 run_state,
-                &task_id,
-                &agent_id,
-                &request_id,
-                &queue_key,
-                TaskScheduleState::Started,
+                AgentTurnTaskScheduledEventArgs {
+                    task_id: &task_id,
+                    agent_id: &agent_id,
+                    request_id: &request_id,
+                    queue_key: &queue_key,
+                    state: TaskScheduleState::Started,
+                },
             )?;
 
             start_agent_turn_execution(
@@ -2408,11 +2441,13 @@ where
                 clock,
                 redactor,
                 run_state,
-                &task_id,
-                &agent_id,
-                &request_id,
-                &queue_key,
-                TaskScheduleState::Queued,
+                AgentTurnTaskScheduledEventArgs {
+                    task_id: &task_id,
+                    agent_id: &agent_id,
+                    request_id: &request_id,
+                    queue_key: &queue_key,
+                    state: TaskScheduleState::Queued,
+                },
             )?;
 
             run_state.queued_agent_turns.insert(
@@ -2437,16 +2472,20 @@ fn append_agent_turn_task_scheduled_event<C, R>(
     clock: &C,
     redactor: &R,
     run_state: &mut RunState,
-    task_id: &str,
-    agent_id: &str,
-    request_id: &str,
-    queue_key: &ConcurrencyKey,
-    state: TaskScheduleState,
+    args: AgentTurnTaskScheduledEventArgs<'_>,
 ) -> Result<EventEnvelopeV1, CoordinatorError>
 where
     C: Clock + ?Sized,
     R: Redactor + ?Sized,
 {
+    let AgentTurnTaskScheduledEventArgs {
+        task_id,
+        agent_id,
+        request_id,
+        queue_key,
+        state,
+    } = args;
+
     append_payload_event_with_correlation(
         clock,
         redactor,
@@ -2505,12 +2544,14 @@ where
                 }).await;
             }
             outcome = run_multi_turn_streaming(
-                provider,
-                tool_registry,
-                &task.profile,
-                task.request_id.clone(),
-                task.request,
-                &task.prior_turns,
+                MultiTurnStreamingRequest {
+                    provider,
+                    tool_registry,
+                    profile: &task.profile,
+                    request_id: task.request_id.clone(),
+                    request: task.request,
+                    prior_turns: &task.prior_turns,
+                },
                 {
                     let job_tx = job_tx.clone();
                     let agent_id = task.agent_id.clone();
@@ -2596,16 +2637,20 @@ fn finalize_permission_denied<C, R>(
     clock: &C,
     redactor: &R,
     run_state: &mut RunState,
-    tool_call_id: String,
-    hashline_edit: Option<&HashlineEditMetadata>,
-    kind: PermissionKind,
-    reason: &str,
-    request_correlation_id: Option<&str>,
+    args: PermissionDeniedArgs<'_>,
 ) -> Result<(), CoordinatorError>
 where
     C: Clock + ?Sized,
     R: Redactor + ?Sized,
 {
+    let PermissionDeniedArgs {
+        tool_call_id,
+        hashline_edit,
+        kind,
+        reason,
+        request_correlation_id,
+    } = args;
+
     let permission_id = format!("perm_{:06}", run_state.next_permission_id);
     run_state.next_permission_id += 1;
 
@@ -2627,7 +2672,7 @@ where
             clock,
             redactor,
             run_state,
-            &tool_call_id,
+            tool_call_id,
             metadata,
             reason.to_string(),
             request_correlation_id,
@@ -2638,7 +2683,7 @@ where
         clock,
         redactor,
         run_state,
-        &tool_call_id,
+        tool_call_id,
         reason,
         request_correlation_id,
     )?;
@@ -2687,16 +2732,20 @@ fn append_tool_call_requested_event<C, R>(
     clock: &C,
     redactor: &R,
     run_state: &mut RunState,
-    actor: EventActor,
-    tool_call_id: &str,
-    tool_id: &str,
-    args_json: &Value,
-    request_correlation_id: Option<&str>,
+    args: ToolCallRequestedEventArgs<'_>,
 ) -> Result<EventEnvelopeV1, CoordinatorError>
 where
     C: Clock + ?Sized,
     R: Redactor + ?Sized,
 {
+    let ToolCallRequestedEventArgs {
+        actor,
+        tool_call_id,
+        tool_id,
+        args_json,
+        request_correlation_id,
+    } = args;
+
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
     let mut context = EventContext::new(run_state.next_event_seq, actor);
     context.correlation_id = request_correlation_id
