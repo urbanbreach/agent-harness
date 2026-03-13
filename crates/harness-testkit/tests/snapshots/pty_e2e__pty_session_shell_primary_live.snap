@@ -1,0 +1,15 @@
+---
+source: crates/harness-testkit/tests/pty_e2e.rs
+expression: "checkpoint_visual_snapshot(&live_screen,\n&[\"Context\", \"Modified Files\", \"shell parity task\", \"Enter send\"],\n&live_visual,)"
+---
+Context: true
+Modified Files: true
+shell parity task: true
+Enter send: true
+focus_marker: Context
+focus_pixels_blake3: d8948b78a4d2d7a8ff37c829897862cf3ab2d50baed4931ed78f610d8c3f1346
+focus_region_cells: row=4, col=117, height=8, width=20
+image: pty_session_shell_primary_live.png
+manifest_json: pty-manifests/live_shell/manifest.json
+manifest_jsonl: pty-manifests/live_shell/manifest.jsonl
+size_px: 2560x1440

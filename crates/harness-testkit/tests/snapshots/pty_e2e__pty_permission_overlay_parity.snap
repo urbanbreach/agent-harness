@@ -1,0 +1,15 @@
+---
+source: crates/harness-testkit/tests/pty_e2e.rs
+expression: "checkpoint_visual_snapshot(&stable_screen,\n&[LIVE_STATE_FIXTURES.permission.marker, \"FAIL CLOSED\", \"SESSION PAUSED\",\nLIVE_STATE_FIXTURES.permission.draft_text,], &permission_visual,)"
+---
+Permission Requested: true
+FAIL CLOSED: true
+SESSION PAUSED: true
+keep this draft: true
+focus_marker: Permission Requested
+focus_pixels_blake3: dcf59d1af443d699ca2ec6c1fd610c9984cfd11862668ef0c74391bb57b7f77a
+focus_region_cells: row=7, col=14, height=1, width=24
+image: pty_permission_overlay_parity.png
+manifest_json: pty-manifests/permission/manifest.json
+manifest_jsonl: pty-manifests/permission/manifest.jsonl
+size_px: 1280x720

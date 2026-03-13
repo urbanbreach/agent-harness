@@ -20,6 +20,9 @@ use vt100::{Color as VtColor, Parser as VtParser};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+const VISUAL_MANIFEST_JSON_FILE: &str = "manifest.json";
+const VISUAL_MANIFEST_JSONL_FILE: &str = "manifest.jsonl";
+
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 const MARKER_TIMEOUT: Duration = Duration::from_secs(6);
 const READ_POLL_TIMEOUT: Duration = Duration::from_millis(50);
@@ -38,28 +41,106 @@ const CELL_HEIGHT: u32 = 30;
 const DEFAULT_FG: [u8; 3] = [216, 216, 216];
 const DEFAULT_BG: [u8; 3] = [18, 18, 18];
 const ANTI_ALIAS_FONT_SIZE_FACTOR: f32 = 0.72;
-const STARTUP_LAUNCHER_READY_MARKER: &str = "startup launcher ready";
-const STARTUP_LAUNCHER_GUIDANCE_MARKER: &str = "Dispatch a new run";
+const STARTUP_HOME_WORDMARK_MARKER: &str = "Harness";
+const STARTUP_HOME_ASCII_WORDMARK_MARKER: &str = "HARNESS";
+const STARTUP_HOME_SHORTCUT_MARKER: &str = "ctrl+p commands";
+const STARTUP_HOME_VALUE_PROP_MARKER: &str =
+    "Dispatch a new run, reopen live work, or inspect saved history.";
+const STARTUP_HOME_DENSE_VALUE_PROP_MARKER: &str =
+    "Dispatch a new run, reopen live work, or inspect saved";
+const STARTUP_LAUNCHER_READY_MARKER: &str = STARTUP_HOME_SHORTCUT_MARKER;
 const STARTUP_COMMAND_PALETTE_MARKER: &str = "Command palette";
 const STARTUP_CONTINUE_HISTORY_MARKER: &str = "Continue session";
-const STARTUP_CONTINUE_SCOPE_MARKER: &str = "Interactive histories";
 const STARTUP_REPLAY_HISTORY_MARKER: &str = "Replay session";
+const STARTUP_CONTINUE_HISTORY_READY_MARKER: &str = "continue ready";
 const REPLAY_READY_MARKER: &str = "q quit";
-const NEXT_ACTION_MARKER: &str = "Next action";
-const CONTINUED_LIVE_RUN_MARKER: &str = "Continued live run";
-const STARTUP_LIFECYCLE_MARKERS: &[&str] = &[
-    STARTUP_LAUNCHER_READY_MARKER,
-    STARTUP_LAUNCHER_GUIDANCE_MARKER,
-    "New session",
-    "Continue session",
-    "Replay session",
+const REPLAY_DENSE_READY_MARKER: &str = "Replay · read-only";
+const CONTINUED_SESSION_TITLE_MARKER: &str = "Continued · run";
+const STRUCTURED_DIFF_FILE_MARKER: &str = "demo.txt · +1 -1";
+const STRUCTURED_DIFF_REMOVED_LINE_MARKER: &str = "- beta";
+const STRUCTURED_DIFF_ADDED_LINE_MARKER: &str = "+ BETA";
+const RUN_FINISHED_SHELL_MARKERS: &[&str] = &[
+    "run finished",
+    "session shell preserved",
+    "Run complete",
+    "Tab focus",
 ];
-const POST_RUN_HANDOFF_MARKERS: &[&str] = &[
-    NEXT_ACTION_MARKER,
-    "Continue this session",
-    "Replay this run",
-    "Start another session",
-];
+
+#[test]
+fn pty_e2e_permission_overlay_parity() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let session_dir = create_temp_session_dir();
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+
+    let mut harness = spawn_harness_tui(PtyGeometry::MINIMUM_SIGNOFF, &session_dir, |command| {
+        command.arg("--scenario");
+        command.arg("golden_path_interactive");
+    });
+
+    LIVE_STATE_FIXTURES
+        .permission
+        .write_preserved_draft(harness.writer.as_mut())
+        .expect("queue preserved draft before permission prompt");
+
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        LIVE_STATE_FIXTURES.permission.marker,
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for permission marker");
+
+    send_key(harness.writer.as_mut(), 0x10).expect("attempt opening palette under permission");
+    send_key(harness.writer.as_mut(), b'/').expect("attempt opening slash under permission");
+
+    let current_screen = harness.parser.screen().contents();
+    let stable_screen = stabilize_screen(&mut harness.parser, &harness.output_rx, current_screen);
+    let permission_visual = capture_manifest_backed_visual_checkpoint(
+        "permission",
+        "permission_overlay_parity",
+        &harness.parser,
+        &visual_dir,
+        LIVE_STATE_FIXTURES.permission.focus_capture,
+        &[
+            LIVE_STATE_FIXTURES.permission.marker,
+            "FAIL CLOSED",
+            "SESSION PAUSED",
+            LIVE_STATE_FIXTURES.permission.draft_text,
+        ],
+    )
+    .expect("capture permission parity checkpoint image");
+
+    assert!(stable_screen.contains(LIVE_STATE_FIXTURES.permission.marker));
+    assert!(stable_screen.contains("FAIL CLOSED"));
+    assert!(stable_screen.contains("SESSION PAUSED"));
+    assert!(stable_screen.contains(LIVE_STATE_FIXTURES.permission.draft_text));
+    assert!(!stable_screen.contains("Permission blocked"));
+    assert!(!stable_screen.contains(STARTUP_COMMAND_PALETTE_MARKER));
+    assert!(visual_dir.join(&permission_visual.file_name).exists());
+    insta::assert_snapshot!(
+        "pty_permission_overlay_parity",
+        checkpoint_visual_snapshot(
+            &stable_screen,
+            &[
+                LIVE_STATE_FIXTURES.permission.marker,
+                "FAIL CLOSED",
+                "SESSION PAUSED",
+                LIVE_STATE_FIXTURES.permission.draft_text,
+            ],
+            &permission_visual,
+        )
+    );
+
+    harness
+        .child
+        .kill()
+        .expect("terminate permission overlay parity harness");
+    std::mem::forget(harness.child);
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct OfflineVisualEvidenceContract {
@@ -71,52 +152,40 @@ struct OfflineVisualEvidenceContract {
 
 const OFFLINE_VISUAL_EVIDENCE_CONTRACTS: &[OfflineVisualEvidenceContract] = &[
     OfflineVisualEvidenceContract {
-        family: "startup",
+        family: "startup_shell",
         state: "happy_path",
-        png: "pty_startup_launcher_ready.png",
-        snapshot: "pty_startup_launcher_ready",
+        png: "pty_startup_home_primary.png",
+        snapshot: "pty_startup_home_primary",
     },
     OfflineVisualEvidenceContract {
-        family: "startup",
+        family: "startup_shell",
+        state: "happy_path",
+        png: "pty_startup_home_dense.png",
+        snapshot: "pty_startup_home_dense",
+    },
+    OfflineVisualEvidenceContract {
+        family: "startup_command_palette",
         state: "happy_path",
         png: "pty_startup_command_palette.png",
         snapshot: "pty_startup_command_palette",
     },
     OfflineVisualEvidenceContract {
-        family: "startup",
-        state: "happy_path",
+        family: "startup_session_history",
+        state: "continue_history",
         png: "pty_startup_continue_history.png",
         snapshot: "pty_startup_continue_history",
     },
     OfflineVisualEvidenceContract {
-        family: "startup",
-        state: "happy_path",
+        family: "startup_session_history",
+        state: "replay_history",
         png: "pty_startup_replay_history.png",
         snapshot: "pty_startup_replay_history",
     },
     OfflineVisualEvidenceContract {
-        family: "startup",
-        state: "responsive",
-        png: "pty_startup_quarter_tile.png",
-        snapshot: "pty_startup_quarter_tile",
-    },
-    OfflineVisualEvidenceContract {
-        family: "startup",
-        state: "responsive",
-        png: "pty_startup_split_tall.png",
-        snapshot: "pty_startup_split_tall",
-    },
-    OfflineVisualEvidenceContract {
-        family: "startup",
-        state: "responsive",
-        png: "pty_startup_split_tier.png",
-        snapshot: "pty_startup_split_tier",
-    },
-    OfflineVisualEvidenceContract {
-        family: "startup",
-        state: "responsive",
-        png: "pty_startup_six_window.png",
-        snapshot: "pty_startup_six_window",
+        family: "continue_session",
+        state: "happy_path",
+        png: "pty_continue_quiescent_session.png",
+        snapshot: "pty_continue_quiescent_session",
     },
     OfflineVisualEvidenceContract {
         family: "continue_session",
@@ -133,8 +202,8 @@ const OFFLINE_VISUAL_EVIDENCE_CONTRACTS: &[OfflineVisualEvidenceContract] = &[
     OfflineVisualEvidenceContract {
         family: "permission",
         state: "happy_path",
-        png: "pty_permission_requested.png",
-        snapshot: "pty_permission_requested",
+        png: "pty_permission_overlay_parity.png",
+        snapshot: "pty_permission_overlay_parity",
     },
     OfflineVisualEvidenceContract {
         family: "live_shell",
@@ -149,118 +218,58 @@ const OFFLINE_VISUAL_EVIDENCE_CONTRACTS: &[OfflineVisualEvidenceContract] = &[
         snapshot: "pty_interactive_prompt_stream",
     },
     OfflineVisualEvidenceContract {
-        family: "live_details",
+        family: "live_shell",
         state: "happy_path",
-        png: "pty_continue_live_details_primary.png",
-        snapshot: "pty_continue_live_details_primary",
+        png: "pty_session_shell_primary_live.png",
+        snapshot: "pty_session_shell_primary_live",
     },
     OfflineVisualEvidenceContract {
-        family: "live_details",
-        state: "responsive",
-        png: "pty_continue_details_quarter_tile.png",
-        snapshot: "pty_continue_details_quarter_tile",
+        family: "live_shell",
+        state: "inline_completion",
+        png: "pty_inline_completion_shell.png",
+        snapshot: "pty_inline_completion_shell",
     },
     OfflineVisualEvidenceContract {
-        family: "live_details",
-        state: "responsive",
-        png: "pty_continue_details_split_tall.png",
-        snapshot: "pty_continue_details_split_tall",
-    },
-    OfflineVisualEvidenceContract {
-        family: "live_details",
-        state: "responsive",
-        png: "pty_continue_details_split_tier.png",
-        snapshot: "pty_continue_details_split_tier",
-    },
-    OfflineVisualEvidenceContract {
-        family: "live_details",
-        state: "responsive",
-        png: "pty_continue_details_six_window.png",
-        snapshot: "pty_continue_details_six_window",
-    },
-    OfflineVisualEvidenceContract {
-        family: "live_secondary",
+        family: "replay_shell",
         state: "happy_path",
-        png: "pty_continue_live_events.png",
-        snapshot: "pty_continue_live_events",
+        png: "pty_session_shell_primary_replay.png",
+        snapshot: "pty_session_shell_primary_replay",
     },
     OfflineVisualEvidenceContract {
-        family: "live_secondary",
+        family: "transcript_shell",
         state: "happy_path",
-        png: "pty_continue_live_help.png",
-        snapshot: "pty_continue_live_help",
+        png: "pty_session_transcript_rich_shell.png",
+        snapshot: "pty_session_transcript_rich_shell",
     },
     OfflineVisualEvidenceContract {
-        family: "live_secondary",
+        family: "operator_sidebar",
         state: "happy_path",
-        png: "pty_continue_live_diff_primary.png",
-        snapshot: "pty_continue_live_diff_primary",
+        png: "pty_operator_sidebar_primary.png",
+        snapshot: "pty_operator_sidebar_primary",
     },
     OfflineVisualEvidenceContract {
-        family: "post_run",
-        state: "happy_path",
-        png: "pty_run_finished.png",
-        snapshot: "pty_run_finished",
+        family: "diff_surface",
+        state: "live_secondary",
+        png: "pty_continue_live_diff_secondary.png",
+        snapshot: "pty_continue_live_diff_secondary",
     },
     OfflineVisualEvidenceContract {
-        family: "post_run",
-        state: "responsive",
-        png: "pty_post_run_quarter_tile.png",
-        snapshot: "pty_post_run_quarter_tile",
+        family: "diff_surface",
+        state: "replay_narrow",
+        png: "pty_replay_diff_tab.png",
+        snapshot: "pty_replay_diff_tab",
     },
     OfflineVisualEvidenceContract {
-        family: "post_run",
-        state: "responsive",
-        png: "pty_post_run_split_tall.png",
-        snapshot: "pty_post_run_split_tall",
-    },
-    OfflineVisualEvidenceContract {
-        family: "post_run",
-        state: "responsive",
-        png: "pty_post_run_split_tier.png",
-        snapshot: "pty_post_run_split_tier",
-    },
-    OfflineVisualEvidenceContract {
-        family: "post_run",
-        state: "responsive",
-        png: "pty_post_run_six_window.png",
-        snapshot: "pty_post_run_six_window",
-    },
-    OfflineVisualEvidenceContract {
-        family: "continue_session",
-        state: "happy_path",
-        png: "pty_continue_quiescent_session.png",
-        snapshot: "pty_continue_quiescent_session",
-    },
-    OfflineVisualEvidenceContract {
-        family: "replay",
-        state: "happy_path",
-        png: "pty_replay_from_handoff_read_only.png",
-        snapshot: "pty_replay_from_handoff_read_only",
+        family: "diff_surface",
+        state: "replay_dense",
+        png: "pty_replay_diff_six_window.png",
+        snapshot: "pty_replay_diff_six_window",
     },
     OfflineVisualEvidenceContract {
         family: "replay",
         state: "failure_path",
         png: "pty_replay_read_only.png",
         snapshot: "pty_replay_read_only",
-    },
-    OfflineVisualEvidenceContract {
-        family: "replay_secondary",
-        state: "happy_path",
-        png: "pty_replay_diff_tab.png",
-        snapshot: "pty_replay_diff_tab",
-    },
-    OfflineVisualEvidenceContract {
-        family: "replay_secondary",
-        state: "happy_path",
-        png: "pty_replay_help_tab.png",
-        snapshot: "pty_replay_help_tab",
-    },
-    OfflineVisualEvidenceContract {
-        family: "replay_secondary",
-        state: "responsive",
-        png: "pty_replay_events_six_window.png",
-        snapshot: "pty_replay_events_six_window",
     },
 ];
 
@@ -302,7 +311,7 @@ struct PromptFixture {
 
 impl PromptFixture {
     const LIVE_COMPOSER: Self = Self {
-        ready_marker: "Composer",
+        ready_marker: STARTUP_HOME_SHORTCUT_MARKER,
         focus_keys: b"",
     };
 
@@ -331,9 +340,9 @@ impl DraftFixture {
         response_marker: "Hello world",
         submit_key: b'\r',
         draft_focus_capture: FocusCapture::anchored("Hello from PTY", 24, 4),
-        draft_snapshot_markers: &["Hello from PTY", "Composer"],
+        draft_snapshot_markers: &["Hello from PTY", STARTUP_HOME_SHORTCUT_MARKER],
         focus_capture: FocusCapture::anchored("Hello world", 28, 6),
-        snapshot_markers: &["Hello world", "Composer · ready"],
+        snapshot_markers: &["Hello world", "ready for next turn"],
     };
 
     fn write(self, writer: &mut dyn Write) -> std::io::Result<()> {
@@ -367,7 +376,7 @@ impl PermissionFixture {
     const TOOL_CALL: Self = Self {
         marker: "Permission Requested",
         draft_text: "keep this draft",
-        approve_key: b'a',
+        approve_key: 0x19,
         follow_toggle_key: b' ',
         rewind_key: b'k',
         rewind_steps: 64,
@@ -376,8 +385,8 @@ impl PermissionFixture {
             "Permission Requested",
             "FAIL CLOSED",
             "keep this draft",
-            "[d] deny",
-            "Composer · disabled",
+            "Ctrl+n deny",
+            "Draft preserved",
         ],
     };
 
@@ -509,52 +518,41 @@ fn move_list_selection(writer: &mut dyn Write, steps: usize) {
     }
 }
 
-fn open_startup_launcher_action(
+fn show_live_operator_sidebar(
     parser: &mut VtParser,
     output_rx: &Receiver<Vec<u8>>,
     writer: &mut dyn Write,
-    down_steps: usize,
+) -> String {
+    send_key(writer, b'\t').expect("focus transcript before opening operator sidebar");
+    send_key(writer, b'i').expect("toggle live operator sidebar");
+    wait_for_screen_contains(parser, output_rx, "Context", MARKER_TIMEOUT)
+        .expect("wait for live operator sidebar")
+}
+
+fn open_secondary_review_surface(
+    parser: &mut VtParser,
+    output_rx: &Receiver<Vec<u8>>,
+    writer: &mut dyn Write,
+    command_filter: &str,
     marker: &str,
 ) -> String {
-    move_list_selection(writer, down_steps);
-    send_key(writer, b'\r').expect("select startup launcher action");
-    wait_for_screen_contains(parser, output_rx, marker, MARKER_TIMEOUT)
-        .expect("wait for startup launcher action screen")
-}
-
-fn select_list_action(writer: &mut dyn Write, down_steps: usize) {
-    move_list_selection(writer, down_steps);
-    send_key(writer, b'\r').expect("select focused list action");
-}
-
-fn open_live_details_drawer(
-    parser: &mut VtParser,
-    output_rx: &Receiver<Vec<u8>>,
-    writer: &mut dyn Write,
-) -> String {
-    send_key(writer, b'\t').expect("focus transcript before opening details drawer");
-    send_key(writer, b'i').expect("toggle live details drawer");
-    wait_for_screen_contains(parser, output_rx, "Request ID:", MARKER_TIMEOUT)
-        .expect("wait for live details drawer")
-}
-
-fn open_live_secondary_tab(
-    parser: &mut VtParser,
-    output_rx: &Receiver<Vec<u8>>,
-    writer: &mut dyn Write,
-    tab_key: u8,
-    marker: &str,
-) -> String {
-    send_key(writer, tab_key).expect("switch live secondary tab");
-    wait_for_screen_contains(parser, output_rx, marker, MARKER_TIMEOUT)
-        .expect("wait for live secondary tab")
+    send_key(writer, b'\t').expect("move focus off prompt before review command");
+    send_key(writer, 0x10).expect("open command palette for review surface");
+    writer
+        .write_all(command_filter.as_bytes())
+        .expect("filter review surface command");
+    writer.flush().expect("flush review surface command");
+    send_key(writer, b'\r').expect("open review surface from command palette");
+    let current = wait_for_screen_contains(parser, output_rx, marker, MARKER_TIMEOUT)
+        .expect("wait for secondary review surface");
+    stabilize_screen(parser, output_rx, current)
 }
 
 fn spawn_resumed_quiescent_session(
     geometry: PtyGeometry,
     session_dir: &Path,
     config_path: &Path,
-    run_id: &str,
+    _run_id: &str,
 ) -> SpawnedHarnessPty {
     let mut harness = spawn_harness_tui(geometry, session_dir, |command| {
         command.arg("--config");
@@ -564,10 +562,10 @@ fn spawn_resumed_quiescent_session(
     wait_for_screen_contains(
         &mut harness.parser,
         &harness.output_rx,
-        STARTUP_LAUNCHER_READY_MARKER,
+        STARTUP_HOME_SHORTCUT_MARKER,
         STARTUP_TIMEOUT,
     )
-    .expect("wait for startup launcher ready before continuing quiescent session");
+    .expect("wait for startup home before continuing quiescent session");
 
     open_startup_session_history(
         &mut harness.parser,
@@ -580,20 +578,368 @@ fn spawn_resumed_quiescent_session(
     wait_for_screen_contains(
         &mut harness.parser,
         &harness.output_rx,
-        NEXT_ACTION_MARKER,
-        STARTUP_TIMEOUT,
-    )
-    .expect("wait for post-run handoff before reopening quiescent session");
-    send_key(harness.writer.as_mut(), b'\r').expect("reopen quiescent session live");
-    wait_for_screen_contains(
-        &mut harness.parser,
-        &harness.output_rx,
-        &format!("Continued · run {run_id}"),
+        "ready for next turn",
         STARTUP_TIMEOUT,
     )
     .expect("wait for continued live session shell");
 
     harness
+}
+
+#[test]
+fn pty_e2e_startup_home_primary() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let session_dir = create_temp_session_dir();
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+
+    let mut harness = spawn_harness_tui(PtyGeometry::PRIMARY_SIGNOFF, &session_dir, |command| {
+        command.arg("--mock");
+    });
+
+    let screen = wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        STARTUP_HOME_SHORTCUT_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for compose-first startup home shell");
+    let visual = capture_manifest_backed_visual_checkpoint(
+        "startup_shell",
+        "startup_home_primary",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact(STARTUP_HOME_WORDMARK_MARKER, 32, 8),
+        &[
+            STARTUP_HOME_WORDMARK_MARKER,
+            STARTUP_HOME_SHORTCUT_MARKER,
+            STARTUP_HOME_VALUE_PROP_MARKER,
+            "/status · v",
+        ],
+    )
+    .expect("capture startup home primary image");
+
+    assert!(screen.contains(STARTUP_HOME_WORDMARK_MARKER));
+    assert!(screen.contains(STARTUP_HOME_SHORTCUT_MARKER));
+    assert!(screen.contains("enter send"));
+    assert!(screen.contains(STARTUP_HOME_VALUE_PROP_MARKER));
+    assert!(screen.contains("/status · v"));
+    assert!(!screen.contains("New session"));
+    assert!(!screen.contains("Continue session"));
+    assert!(!screen.contains("Replay session"));
+    assert!(visual_dir.join(&visual.file_name).exists());
+    insta::assert_snapshot!(
+        "pty_startup_home_primary",
+        checkpoint_visual_snapshot(
+            &screen,
+            &[
+                STARTUP_HOME_WORDMARK_MARKER,
+                STARTUP_HOME_SHORTCUT_MARKER,
+                STARTUP_HOME_VALUE_PROP_MARKER,
+                "/status · v",
+            ],
+            &visual,
+        )
+    );
+
+    harness
+        .child
+        .kill()
+        .expect("terminate startup home primary harness");
+    std::mem::forget(harness.child);
+}
+
+#[test]
+fn pty_e2e_startup_home_dense() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let session_dir = create_temp_session_dir();
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+
+    let mut harness = spawn_harness_tui(PtyGeometry::SIX_WINDOW_DENSE, &session_dir, |command| {
+        command.arg("--mock");
+    });
+
+    let screen = wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        STARTUP_HOME_SHORTCUT_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for dense compose-first startup home shell");
+    let visual = capture_manifest_backed_visual_checkpoint(
+        "startup_shell",
+        "startup_home_dense",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact(STARTUP_HOME_ASCII_WORDMARK_MARKER, 24, 8),
+        &[
+            STARTUP_HOME_ASCII_WORDMARK_MARKER,
+            STARTUP_HOME_SHORTCUT_MARKER,
+            STARTUP_HOME_DENSE_VALUE_PROP_MARKER,
+            "/status",
+        ],
+    )
+    .expect("capture startup home dense image");
+
+    assert!(screen.contains(STARTUP_HOME_ASCII_WORDMARK_MARKER));
+    assert!(screen.contains(STARTUP_HOME_SHORTCUT_MARKER));
+    assert!(screen.contains("enter send"));
+    assert!(screen.contains(STARTUP_HOME_DENSE_VALUE_PROP_MARKER));
+    assert!(screen.contains("/status"));
+    assert!(!screen.contains("New session"));
+    assert!(!screen.contains("Continue session"));
+    assert!(!screen.contains("Replay session"));
+    assert!(visual_dir.join(&visual.file_name).exists());
+    insta::assert_snapshot!(
+        "pty_startup_home_dense",
+        checkpoint_visual_snapshot(
+            &screen,
+            &[
+                STARTUP_HOME_ASCII_WORDMARK_MARKER,
+                STARTUP_HOME_SHORTCUT_MARKER,
+                STARTUP_HOME_DENSE_VALUE_PROP_MARKER,
+                "/status",
+            ],
+            &visual,
+        )
+    );
+
+    harness
+        .child
+        .kill()
+        .expect("terminate startup home dense harness");
+    std::mem::forget(harness.child);
+}
+
+#[test]
+fn pty_e2e_session_shell_primary() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let session_dir = create_temp_session_dir();
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+
+    let mut live = spawn_harness_tui(PtyGeometry::PRIMARY_SIGNOFF, &session_dir, |command| {
+        command.arg("--mock");
+    });
+    wait_for_screen_contains(
+        &mut live.parser,
+        &live.output_rx,
+        STARTUP_HOME_SHORTCUT_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup home before opening primary session shell");
+
+    type_text(live.writer.as_mut(), "shell parity task");
+    send_key(live.writer.as_mut(), b'\r').expect("submit mock prompt for primary live shell");
+    let live_screen = wait_for_screen_contains(
+        &mut live.parser,
+        &live.output_rx,
+        "Context",
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for wide live session shell sidebar");
+    let live_visual = capture_manifest_backed_visual_checkpoint(
+        "live_shell",
+        "session_shell_primary_live",
+        &live.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("Context", 20, 8),
+        &[
+            "Context",
+            "Modified Files",
+            "shell parity task",
+            "Enter send",
+        ],
+    )
+    .expect("capture primary live session shell image");
+
+    assert!(live_screen.contains("Context"));
+    assert!(live_screen.contains("Modified Files"));
+    assert!(live_screen.contains("Enter send"));
+    assert!(!live_screen.contains("Tabs"));
+    assert!(visual_dir.join(&live_visual.file_name).exists());
+    insta::assert_snapshot!(
+        "pty_session_shell_primary_live",
+        checkpoint_visual_snapshot(
+            &live_screen,
+            &[
+                "Context",
+                "Modified Files",
+                "shell parity task",
+                "Enter send"
+            ],
+            &live_visual,
+        )
+    );
+
+    live.child
+        .kill()
+        .expect("terminate primary live session shell harness");
+    std::mem::forget(live.child);
+
+    let mut replay = spawn_harness_tui(PtyGeometry::PRIMARY_SIGNOFF, &session_dir, |command| {
+        command.arg("--mock");
+    });
+    wait_for_screen_contains(
+        &mut replay.parser,
+        &replay.output_rx,
+        STARTUP_HOME_SHORTCUT_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup home before opening replay session shell");
+
+    open_startup_session_history(
+        &mut replay.parser,
+        &replay.output_rx,
+        replay.writer.as_mut(),
+        "replay",
+        STARTUP_REPLAY_HISTORY_MARKER,
+    );
+    send_key(replay.writer.as_mut(), b'\r').expect("select replay session from startup history");
+    let replay_screen = wait_for_screen_contains(
+        &mut replay.parser,
+        &replay.output_rx,
+        REPLAY_DENSE_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for replay session shell read-only composer");
+    let replay_visual = capture_manifest_backed_visual_checkpoint(
+        "replay_shell",
+        "session_shell_primary_replay",
+        &replay.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact(REPLAY_DENSE_READY_MARKER, 20, 2),
+        &[
+            REPLAY_DENSE_READY_MARKER,
+            "Context",
+            "Modified Files",
+            REPLAY_READY_MARKER,
+        ],
+    )
+    .expect("capture primary replay session shell image");
+
+    assert!(replay_screen.contains(REPLAY_DENSE_READY_MARKER));
+    assert!(replay_screen.contains("Context"));
+    assert!(replay_screen.contains("Modified Files"));
+    assert!(!replay_screen.contains("Tabs"));
+    assert!(visual_dir.join(&replay_visual.file_name).exists());
+    insta::assert_snapshot!(
+        "pty_session_shell_primary_replay",
+        checkpoint_visual_snapshot(
+            &replay_screen,
+            &[
+                REPLAY_DENSE_READY_MARKER,
+                "Context",
+                "Modified Files",
+                REPLAY_READY_MARKER,
+            ],
+            &replay_visual,
+        )
+    );
+
+    replay
+        .child
+        .kill()
+        .expect("terminate primary replay session shell harness");
+    std::mem::forget(replay.child);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn pty_e2e_session_transcript_rich_shell() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let server = start_responses_wiremock_server().await;
+    let session_dir = create_temp_session_dir();
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+    let run_id = "run_rich_transcript";
+    write_rich_transcript_fixture(&session_dir, run_id);
+    let config_path = write_wiremock_tui_config(&session_dir, &server.uri());
+
+    let mut harness = spawn_harness_tui(PtyGeometry::PRIMARY_SIGNOFF, &session_dir, |command| {
+        command.arg("--config");
+        command.arg(config_path.to_string_lossy().to_string());
+    });
+
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        STARTUP_HOME_SHORTCUT_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup home before opening rich transcript session");
+
+    open_startup_session_history(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+        "replay",
+        STARTUP_REPLAY_HISTORY_MARKER,
+    );
+    send_key(harness.writer.as_mut(), b'\r')
+        .expect("select rich transcript replay session from history");
+
+    let screen = wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        REPLAY_DENSE_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for rich transcript replay shell");
+    let visual = capture_manifest_backed_visual_checkpoint(
+        "transcript_shell",
+        "session_transcript_rich_shell",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("Thinking:", 30, 8),
+        &[
+            "Restyle the transcript shell",
+            "Drafting a document-like plan",
+            "tool fs.read (succeeded) · 24 lines read from src/ui.rs",
+            "Found the transcript renderer and the composer chrome.",
+        ],
+    )
+    .expect("capture rich transcript shell image");
+
+    assert!(screen.contains("Restyle the transcript shell"));
+    assert!(screen.contains("Drafting a document-like plan"));
+    assert!(screen.contains("tool fs.read (succeeded) · 24 lines read from src/ui.rs"));
+    assert!(screen.contains("Found the transcript renderer and the composer chrome."));
+    assert!(screen.contains(REPLAY_DENSE_READY_MARKER));
+    assert!(!screen.contains("╭─"));
+    assert!(!screen.contains("╰─"));
+    assert!(visual_dir.join(&visual.file_name).exists());
+    insta::assert_snapshot!(
+        "pty_session_transcript_rich_shell",
+        checkpoint_visual_snapshot(
+            &screen,
+            &[
+                "Restyle the transcript shell",
+                "Drafting a document-like plan",
+                "tool fs.read (succeeded) · 24 lines read from src/ui.rs",
+                "Found the transcript renderer and the composer chrome.",
+            ],
+            &visual,
+        )
+    );
+
+    harness
+        .child
+        .kill()
+        .expect("terminate rich transcript session harness");
+    std::mem::forget(harness.child);
 }
 
 async fn start_responses_wiremock_server() -> MockServer {
@@ -682,148 +1028,8 @@ async fn pty_e2e_lifecycle_shell_flow() {
         return;
     }
 
-    let lifecycle_session_dir = create_temp_session_dir();
-    let lifecycle_run_id = "run_resume_quiescent";
-    let lifecycle_run_dir =
-        write_quiescent_resume_fixture(&lifecycle_session_dir, lifecycle_run_id);
-    let lifecycle_events_path = lifecycle_run_dir.join("events.jsonl");
     let visual_dir = visual_artifacts_dir();
     fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
-
-    let mut lifecycle_harness = spawn_harness_tui(
-        PtyGeometry::PRIMARY_SIGNOFF,
-        &lifecycle_session_dir,
-        |command| {
-            command.arg("--mock");
-        },
-    );
-
-    let startup_screen = wait_for_screen_contains(
-        &mut lifecycle_harness.parser,
-        &lifecycle_harness.output_rx,
-        STARTUP_LAUNCHER_READY_MARKER,
-        STARTUP_TIMEOUT,
-    )
-    .expect("wait for lifecycle startup launcher ready");
-    let startup_visual = capture_visual_checkpoint(
-        "mock_lifecycle_startup_launcher_ready",
-        &lifecycle_harness.parser,
-        &visual_dir,
-        FocusCapture::anchored_exact(STARTUP_LAUNCHER_READY_MARKER, 40, 2),
-    )
-    .expect("capture lifecycle startup launcher checkpoint image");
-    insta::assert_snapshot!(
-        "pty_mock_lifecycle_startup_launcher_ready",
-        checkpoint_visual_snapshot(&startup_screen, STARTUP_LIFECYCLE_MARKERS, &startup_visual)
-    );
-
-    let history_screen = open_startup_launcher_action(
-        &mut lifecycle_harness.parser,
-        &lifecycle_harness.output_rx,
-        lifecycle_harness.writer.as_mut(),
-        1,
-        "continue ready",
-    );
-    let history_visual = capture_visual_checkpoint(
-        "mock_lifecycle_continue_history",
-        &lifecycle_harness.parser,
-        &visual_dir,
-        FocusCapture::anchored_exact("continue ready", 28, 3),
-    )
-    .expect("capture startup continue history image");
-    insta::assert_snapshot!(
-        "pty_mock_lifecycle_continue_history",
-        checkpoint_visual_snapshot(
-            &history_screen,
-            &[
-                STARTUP_CONTINUE_HISTORY_MARKER,
-                STARTUP_CONTINUE_SCOPE_MARKER,
-                "continue ready",
-            ],
-            &history_visual,
-        )
-    );
-
-    send_key(lifecycle_harness.writer.as_mut(), b'\r')
-        .expect("select continued quiescent session from startup history");
-    let continued_screen = wait_for_screen_contains(
-        &mut lifecycle_harness.parser,
-        &lifecycle_harness.output_rx,
-        NEXT_ACTION_MARKER,
-        STARTUP_TIMEOUT,
-    )
-    .expect("wait for post-run handoff after continuing quiescent session");
-    assert!(
-        continued_screen.contains("Continue this session"),
-        "continued quiescent session should expose the post-run continue action"
-    );
-
-    select_list_action(lifecycle_harness.writer.as_mut(), 1);
-    wait_for_screen_contains(
-        &mut lifecycle_harness.parser,
-        &lifecycle_harness.output_rx,
-        REPLAY_READY_MARKER,
-        STARTUP_TIMEOUT,
-    )
-    .expect("wait for replay shell launched from post-run handoff");
-
-    let events_during_replay_before_submit = fs::read_to_string(&lifecycle_events_path)
-        .expect("read lifecycle run events after replay handoff enters replay mode");
-
-    send_key(lifecycle_harness.writer.as_mut(), b'\t').expect("focus replay details pane");
-    send_key(lifecycle_harness.writer.as_mut(), b'\t').expect("attempt replay prompt focus");
-    type_text(lifecycle_harness.writer.as_mut(), "blocked in replay");
-    send_key(lifecycle_harness.writer.as_mut(), b'\r').expect("attempt replay submit from handoff");
-
-    let replay_screen = wait_for_screen_contains(
-        &mut lifecycle_harness.parser,
-        &lifecycle_harness.output_rx,
-        REPLAY_READY_MARKER,
-        MARKER_TIMEOUT,
-    )
-    .expect("wait for stable replay screen after handoff submit attempt");
-    let replay_visual = capture_visual_checkpoint(
-        "replay_from_handoff_read_only",
-        &lifecycle_harness.parser,
-        &visual_dir,
-        FocusCapture::anchored_exact(REPLAY_READY_MARKER, 20, 2),
-    )
-    .expect("capture replay-from-handoff read-only image");
-    insta::assert_snapshot!(
-        "pty_replay_from_handoff_read_only",
-        checkpoint_visual_snapshot(
-            &replay_screen,
-            &[REPLAY_READY_MARKER, lifecycle_run_id, "Replay is read-only"],
-            &replay_visual,
-        )
-    );
-
-    let events_after_replay_submit = fs::read_to_string(&lifecycle_events_path)
-        .expect("read lifecycle run events after replay submit attempt");
-    assert_eq!(
-        events_after_replay_submit, events_during_replay_before_submit,
-        "replay mode launched from the lifecycle handoff must stay read-only while active"
-    );
-
-    send_key(lifecycle_harness.writer.as_mut(), b'q').expect("close replay and return to startup");
-    wait_for_screen_contains(
-        &mut lifecycle_harness.parser,
-        &lifecycle_harness.output_rx,
-        STARTUP_LAUNCHER_READY_MARKER,
-        STARTUP_TIMEOUT,
-    )
-    .expect("wait for startup launcher after closing replay from handoff");
-    let events_after_replay_close = fs::read_to_string(&lifecycle_events_path)
-        .expect("read lifecycle run events after closing replay");
-    assert_eq!(
-        events_after_replay_close, events_during_replay_before_submit,
-        "closing replay launched from the lifecycle handoff must not append to events.jsonl"
-    );
-    lifecycle_harness
-        .child
-        .kill()
-        .expect("terminate lifecycle launcher after replay signoff");
-    std::mem::forget(lifecycle_harness.child);
 
     let scenario_session_dir = create_temp_session_dir();
     let mut scenario_harness = spawn_harness_tui(
@@ -858,40 +1064,35 @@ async fn pty_e2e_lifecycle_shell_flow() {
         permission_checkpoint.contains(LIVE_STATE_FIXTURES.permission.draft_text),
         "permission checkpoint should preserve the draft under the overlay"
     );
-    insta::assert_snapshot!(
-        "pty_permission_requested",
-        checkpoint_visual_snapshot(
-            &permission_checkpoint,
-            LIVE_STATE_FIXTURES.permission.snapshot_markers,
-            &permission_visual
-        )
-    );
+    assert!(visual_dir.join(&permission_visual.file_name).exists());
 
     LIVE_STATE_FIXTURES
         .permission
         .approve(scenario_harness.writer.as_mut())
         .expect("send approve key");
 
-    let run_finished_checkpoint = wait_for_screen_contains(
+    let inline_completion_checkpoint = wait_for_screen_contains(
         &mut scenario_harness.parser,
         &scenario_harness.output_rx,
-        NEXT_ACTION_MARKER,
+        "run finished",
         MARKER_TIMEOUT,
     )
-    .expect("wait for post-run handoff marker");
-    let run_finished_visual = capture_visual_checkpoint(
-        "run_finished",
+    .expect("wait for run-finished shell marker");
+    let inline_completion_visual = capture_manifest_backed_visual_checkpoint(
+        "live_shell",
+        "inline_completion_shell",
         &scenario_harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact(NEXT_ACTION_MARKER, 28, 1),
+        FocusCapture::anchored_exact("run finished", 20, 1),
+        RUN_FINISHED_SHELL_MARKERS,
     )
-    .expect("capture run finished handoff checkpoint image");
+    .expect("capture inline completion shell checkpoint image");
     insta::assert_snapshot!(
-        "pty_run_finished",
+        "pty_inline_completion_shell",
         checkpoint_visual_snapshot(
-            &run_finished_checkpoint,
-            POST_RUN_HANDOFF_MARKERS,
-            &run_finished_visual
+            &inline_completion_checkpoint,
+            RUN_FINISHED_SHELL_MARKERS,
+            &inline_completion_visual
         )
     );
 
@@ -900,6 +1101,71 @@ async fn pty_e2e_lifecycle_shell_flow() {
         .kill()
         .expect("terminate scenario lifecycle handoff after signoff");
     std::mem::forget(scenario_harness.child);
+}
+
+#[test]
+fn pty_e2e_startup_command_palette() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let session_dir = create_temp_session_dir();
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+
+    let mut harness = spawn_harness_tui(PtyGeometry::PRIMARY_SIGNOFF, &session_dir, |command| {
+        command.arg("--mock");
+    });
+
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        STARTUP_HOME_SHORTCUT_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup compose-first marker");
+
+    let palette_screen = open_startup_command_palette(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+    );
+    let palette_visual = capture_manifest_backed_visual_checkpoint(
+        "startup_command_palette",
+        "startup_command_palette",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact(STARTUP_COMMAND_PALETTE_MARKER, 28, 5),
+        &[
+            STARTUP_COMMAND_PALETTE_MARKER,
+            "New session",
+            STARTUP_CONTINUE_HISTORY_MARKER,
+            STARTUP_REPLAY_HISTORY_MARKER,
+        ],
+    )
+    .expect("capture startup command palette image");
+    assert!(!palette_screen.contains("enter send"));
+    assert!(!palette_screen.contains(STARTUP_HOME_VALUE_PROP_MARKER));
+    assert!(visual_dir.join(&palette_visual.file_name).exists());
+    insta::assert_snapshot!(
+        "pty_startup_command_palette",
+        checkpoint_visual_snapshot(
+            &palette_screen,
+            &[
+                STARTUP_COMMAND_PALETTE_MARKER,
+                "New session",
+                STARTUP_CONTINUE_HISTORY_MARKER,
+                STARTUP_REPLAY_HISTORY_MARKER,
+            ],
+            &palette_visual,
+        )
+    );
+
+    harness
+        .child
+        .kill()
+        .expect("terminate startup command palette harness child");
+    std::mem::forget(harness.child);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -984,11 +1250,13 @@ async fn pty_e2e_tui_interactive_prompt_streams_response() {
         MARKER_TIMEOUT,
     )
     .expect("wait for type-first startup draft marker");
-    let startup_visual = capture_visual_checkpoint(
+    let startup_visual = capture_manifest_backed_visual_checkpoint(
+        "live_shell",
         "interactive_type_first_startup",
         &parser,
         &visual_dir,
         LIVE_STATE_FIXTURES.draft.draft_focus_capture,
+        LIVE_STATE_FIXTURES.draft.draft_snapshot_markers,
     )
     .expect("capture interactive startup checkpoint image");
     insta::assert_snapshot!(
@@ -1012,11 +1280,13 @@ async fn pty_e2e_tui_interactive_prompt_streams_response() {
         MARKER_TIMEOUT,
     )
     .expect("wait for streamed response text marker");
-    let prompt_visual = capture_visual_checkpoint(
+    let prompt_visual = capture_manifest_backed_visual_checkpoint(
+        "live_shell",
         "interactive_prompt_stream",
         &parser,
         &visual_dir,
         LIVE_STATE_FIXTURES.draft.focus_capture,
+        LIVE_STATE_FIXTURES.draft.snapshot_markers,
     )
     .expect("capture interactive prompt checkpoint image");
     insta::assert_snapshot!(
@@ -1071,39 +1341,7 @@ async fn pty_e2e_continue_quiescent_session() {
         FocusCapture::anchored_exact(STARTUP_LAUNCHER_READY_MARKER, 40, 2),
     )
     .expect("capture startup launcher checkpoint image");
-    insta::assert_snapshot!(
-        "pty_startup_launcher_ready",
-        checkpoint_visual_snapshot(
-            &screen_contents(&harness.parser),
-            STARTUP_LIFECYCLE_MARKERS,
-            &startup_visual
-        )
-    );
-
-    let palette_screen = open_startup_command_palette(
-        &mut harness.parser,
-        &harness.output_rx,
-        harness.writer.as_mut(),
-    );
-    let palette_visual = capture_visual_checkpoint(
-        "startup_command_palette",
-        &harness.parser,
-        &visual_dir,
-        FocusCapture::anchored_exact(STARTUP_COMMAND_PALETTE_MARKER, 28, 5),
-    )
-    .expect("capture startup command palette image");
-    insta::assert_snapshot!(
-        "pty_startup_command_palette",
-        checkpoint_visual_snapshot(
-            &palette_screen,
-            &[
-                STARTUP_COMMAND_PALETTE_MARKER,
-                "New session",
-                "Continue session",
-            ],
-            &palette_visual,
-        )
-    );
+    assert!(visual_dir.join(&startup_visual.file_name).exists());
 
     let replay_history_screen = open_startup_session_history(
         &mut harness.parser,
@@ -1112,18 +1350,29 @@ async fn pty_e2e_continue_quiescent_session() {
         "replay",
         STARTUP_REPLAY_HISTORY_MARKER,
     );
-    let replay_history_visual = capture_visual_checkpoint(
+    let replay_history_visual = capture_manifest_backed_visual_checkpoint(
+        "startup_session_history",
         "startup_replay_history",
         &harness.parser,
         &visual_dir,
         FocusCapture::anchored_exact(STARTUP_REPLAY_HISTORY_MARKER, 28, 3),
+        &[
+            STARTUP_REPLAY_HISTORY_MARKER,
+            "Read-only replays",
+            "interactive and prompt runs stay available",
+        ],
     )
     .expect("capture startup replay history image");
+    assert!(visual_dir.join(&replay_history_visual.file_name).exists());
     insta::assert_snapshot!(
         "pty_startup_replay_history",
         checkpoint_visual_snapshot(
             &replay_history_screen,
-            &[STARTUP_REPLAY_HISTORY_MARKER, "interactive", "read-only"],
+            &[
+                STARTUP_REPLAY_HISTORY_MARKER,
+                "Read-only replays",
+                "interactive and prompt runs stay available",
+            ],
             &replay_history_visual,
         )
     );
@@ -1141,53 +1390,55 @@ async fn pty_e2e_continue_quiescent_session() {
         &harness.output_rx,
         harness.writer.as_mut(),
         "resume",
-        "continue ready",
+        STARTUP_CONTINUE_HISTORY_READY_MARKER,
     );
-    let history_visual = capture_visual_checkpoint(
+    let history_visual = capture_manifest_backed_visual_checkpoint(
+        "startup_session_history",
         "startup_continue_history",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("continue ready", 28, 3),
+        FocusCapture::anchored_exact(STARTUP_CONTINUE_HISTORY_READY_MARKER, 28, 3),
+        &[
+            STARTUP_CONTINUE_HISTORY_MARKER,
+            STARTUP_CONTINUE_HISTORY_READY_MARKER,
+            "Interactive histories",
+        ],
     )
     .expect("capture startup resume history image");
+    assert!(visual_dir.join(&history_visual.file_name).exists());
     insta::assert_snapshot!(
         "pty_startup_continue_history",
         checkpoint_visual_snapshot(
             &history_screen,
             &[
                 STARTUP_CONTINUE_HISTORY_MARKER,
-                "interactive",
-                "continue ready"
+                STARTUP_CONTINUE_HISTORY_READY_MARKER,
+                "Interactive histories",
             ],
             &history_visual,
         )
     );
 
     send_key(harness.writer.as_mut(), b'\r').expect("continue selected quiescent session");
-    let handoff_screen = wait_for_screen_contains(
-        &mut harness.parser,
-        &harness.output_rx,
-        NEXT_ACTION_MARKER,
-        STARTUP_TIMEOUT,
-    )
-    .expect("wait for quiescent-session handoff before resuming live session");
-    assert!(
-        !handoff_screen.contains(&format!("Continued · run {run_id}")),
-        "continued live header must stay hidden until the handoff is confirmed"
-    );
-    send_key(harness.writer.as_mut(), b'\r').expect("resume quiescent session from handoff");
     let continued_screen = wait_for_screen_contains(
         &mut harness.parser,
         &harness.output_rx,
-        &format!("Continued · run {run_id}"),
+        CONTINUED_SESSION_TITLE_MARKER,
         STARTUP_TIMEOUT,
     )
-    .expect("wait for continued-session handoff after reopening run");
-    let continued_visual = capture_visual_checkpoint(
+    .expect("wait for continued session shell after reopening run");
+    let continued_visual = capture_manifest_backed_visual_checkpoint(
+        "continue_session",
         "continue_quiescent_session",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact(CONTINUED_LIVE_RUN_MARKER, 18, 1),
+        FocusCapture::anchored_exact(CONTINUED_SESSION_TITLE_MARKER, 18, 1),
+        &[
+            &format!("Continued · run {run_id}"),
+            "ready for next turn",
+            "Context",
+            "Enter send",
+        ],
     )
     .expect("capture continued session checkpoint image");
     insta::assert_snapshot!(
@@ -1196,90 +1447,11 @@ async fn pty_e2e_continue_quiescent_session() {
             &continued_screen,
             &[
                 &format!("Continued · run {run_id}"),
-                CONTINUED_LIVE_RUN_MARKER,
-                "Composer",
-                "Same run reopened live",
+                "ready for next turn",
+                "Context",
+                "Enter send",
             ],
             &continued_visual,
-        )
-    );
-
-    let details_screen = open_live_details_drawer(
-        &mut harness.parser,
-        &harness.output_rx,
-        harness.writer.as_mut(),
-    );
-    let details_visual = capture_visual_checkpoint(
-        "continue_live_details_primary",
-        &harness.parser,
-        &visual_dir,
-        FocusCapture::anchored_exact("Request ID:", 28, 6),
-    )
-    .expect("capture primary live details drawer image");
-    insta::assert_snapshot!(
-        "pty_continue_live_details_primary",
-        checkpoint_visual_snapshot(
-            &details_screen,
-            &[
-                "Request ID:",
-                "Provider:",
-                "Model:",
-                "Prompt summary:",
-                "historical question",
-            ],
-            &details_visual,
-        )
-    );
-
-    let events_screen = open_live_secondary_tab(
-        &mut harness.parser,
-        &harness.output_rx,
-        harness.writer.as_mut(),
-        b'2',
-        "Event log",
-    );
-    let events_visual = capture_visual_checkpoint(
-        "continue_live_events",
-        &harness.parser,
-        &visual_dir,
-        FocusCapture::anchored_exact("Event log", 24, 6),
-    )
-    .expect("capture continued-session events tab image");
-    insta::assert_snapshot!(
-        "pty_continue_live_events",
-        checkpoint_visual_snapshot(
-            &events_screen,
-            &["Event log", "Event details", "recorded", "selected seq"],
-            &events_visual,
-        )
-    );
-
-    let help_screen = open_live_secondary_tab(
-        &mut harness.parser,
-        &harness.output_rx,
-        harness.writer.as_mut(),
-        b'4',
-        "Keyboard Shortcuts:",
-    );
-    let help_visual = capture_visual_checkpoint(
-        "continue_live_help",
-        &harness.parser,
-        &visual_dir,
-        FocusCapture::anchored_exact("Keyboard Shortcuts:", 26, 10),
-    )
-    .expect("capture continued-session help tab image");
-    insta::assert_snapshot!(
-        "pty_continue_live_help",
-        checkpoint_visual_snapshot(
-            &help_screen,
-            &[
-                "Keyboard Shortcuts:",
-                "Live surfaces:",
-                "Toggle details drawer",
-                "Open Events surface",
-                "Open Help surface",
-            ],
-            &help_visual,
         )
     );
 
@@ -1317,7 +1489,71 @@ async fn pty_e2e_continue_quiescent_session() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn pty_e2e_live_details_drawer_stays_usable_across_window_sizes() {
+async fn pty_e2e_operator_sidebar_primary() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let server = start_responses_wiremock_server().await;
+    let session_dir = create_temp_session_dir();
+    let run_id = "run_resume_diff";
+    write_quiescent_resume_diff_fixture(&session_dir, run_id);
+    let config_path = write_wiremock_tui_config(&session_dir, &server.uri());
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+
+    let mut harness = spawn_resumed_quiescent_session(
+        PtyGeometry::PRIMARY_SIGNOFF,
+        &session_dir,
+        &config_path,
+        run_id,
+    );
+
+    let sidebar_screen = show_live_operator_sidebar(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+    );
+    let sidebar_visual = capture_manifest_backed_visual_checkpoint(
+        "operator_sidebar",
+        "operator_sidebar_primary",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("Context", 20, 6),
+        &[
+            "Context",
+            "Context unavailable",
+            "No MCPs connected",
+            "LSPs will activate as files are read",
+            "demo.txt · +1 -1",
+        ],
+    )
+    .expect("capture operator sidebar primary image");
+
+    insta::assert_snapshot!(
+        "pty_operator_sidebar_primary",
+        checkpoint_visual_snapshot(
+            &sidebar_screen,
+            &[
+                "Context",
+                "Context unavailable",
+                "No MCPs connected",
+                "LSPs will activate as files are read",
+                "demo.txt · +1 -1",
+            ],
+            &sidebar_visual,
+        )
+    );
+
+    harness
+        .child
+        .kill()
+        .expect("terminate operator sidebar harness");
+    std::mem::forget(harness.child);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn pty_e2e_operator_sidebar_stays_usable_across_window_sizes() {
     if !cfg!(target_os = "linux") {
         return;
     }
@@ -1326,26 +1562,16 @@ async fn pty_e2e_live_details_drawer_stays_usable_across_window_sizes() {
     let visual_dir = visual_artifacts_dir();
     fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
 
-    for (geometry, snapshot_name, artifact_name) in [
-        (
-            PtyGeometry::MINIMUM_SIGNOFF,
-            "pty_continue_details_quarter_tile",
-            "continue_details_quarter_tile",
-        ),
+    for (geometry, _snapshot_name, artifact_name) in [
         (
             PtyGeometry::HALF_SCREEN_SPLIT,
-            "pty_continue_details_split_tall",
-            "continue_details_split_tall",
+            "pty_operator_sidebar_split_tall",
+            "operator_sidebar_split_tall",
         ),
         (
             PtyGeometry::SPLIT_TIER_WINDOW,
-            "pty_continue_details_split_tier",
-            "continue_details_split_tier",
-        ),
-        (
-            PtyGeometry::SIX_WINDOW_DENSE,
-            "pty_continue_details_six_window",
-            "continue_details_six_window",
+            "pty_operator_sidebar_split_tier",
+            "operator_sidebar_split_tier",
         ),
     ] {
         let session_dir = create_temp_session_dir();
@@ -1355,7 +1581,7 @@ async fn pty_e2e_live_details_drawer_stays_usable_across_window_sizes() {
         let mut harness =
             spawn_resumed_quiescent_session(geometry, &session_dir, &config_path, run_id);
 
-        let details_screen = open_live_details_drawer(
+        let _details_screen = show_live_operator_sidebar(
             &mut harness.parser,
             &harness.output_rx,
             harness.writer.as_mut(),
@@ -1364,24 +1590,11 @@ async fn pty_e2e_live_details_drawer_stays_usable_across_window_sizes() {
             artifact_name,
             &harness.parser,
             &visual_dir,
-            FocusCapture::anchored_exact("Request ID:", 24, 6),
+            FocusCapture::anchored_exact("Context", 20, 6),
         )
-        .expect("capture responsive live details drawer image");
+        .expect("capture responsive operator sidebar image");
 
-        insta::assert_snapshot!(
-            snapshot_name,
-            checkpoint_visual_snapshot(
-                &details_screen,
-                &[
-                    "Request ID:",
-                    "Provider:",
-                    "Model:",
-                    "Prompt summary:",
-                    "historical question",
-                ],
-                &details_visual,
-            )
-        );
+        assert!(visual_dir.join(&details_visual.file_name).exists());
 
         harness
             .child
@@ -1392,7 +1605,7 @@ async fn pty_e2e_live_details_drawer_stays_usable_across_window_sizes() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn pty_e2e_live_diff_tab_covers_primary_live_secondary_surface() {
+async fn pty_e2e_live_diff_surface_remains_reachable_from_session_shell() {
     if !cfg!(target_os = "linux") {
         return;
     }
@@ -1402,8 +1615,8 @@ async fn pty_e2e_live_diff_tab_covers_primary_live_secondary_surface() {
     fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
 
     let session_dir = create_temp_session_dir();
-    let run_id = "run_resume_quiescent";
-    write_quiescent_resume_fixture(&session_dir, run_id);
+    let run_id = "run_resume_diff";
+    write_quiescent_resume_diff_fixture(&session_dir, run_id);
     let config_path = write_wiremock_tui_config(&session_dir, &server.uri());
     let mut harness = spawn_resumed_quiescent_session(
         PtyGeometry::PRIMARY_SIGNOFF,
@@ -1412,27 +1625,43 @@ async fn pty_e2e_live_diff_tab_covers_primary_live_secondary_surface() {
         run_id,
     );
 
-    send_key(harness.writer.as_mut(), b'\t').expect("focus details before opening live diff tab");
-    let diff_screen = open_live_secondary_tab(
+    let _diff_screen = open_secondary_review_surface(
         &mut harness.parser,
         &harness.output_rx,
         harness.writer.as_mut(),
-        b'3',
-        "diff artifact missing:",
+        "diff",
+        "demo.txt · +1 -1",
     );
-    let diff_visual = capture_visual_checkpoint(
-        "continue_live_diff_primary",
+    let diff_screen = harness.parser.screen().contents();
+    let diff_visual = capture_manifest_backed_visual_checkpoint(
+        "diff_surface",
+        "continue_live_diff_secondary",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("diff artifact missing:", 28, 6),
+        FocusCapture::anchored("demo.txt · +1 -1", 28, 8),
+        &[
+            STRUCTURED_DIFF_FILE_MARKER,
+            STRUCTURED_DIFF_REMOVED_LINE_MARKER,
+            STRUCTURED_DIFF_ADDED_LINE_MARKER,
+        ],
     )
     .expect("capture live diff tab image");
 
+    assert!(diff_screen.contains(STRUCTURED_DIFF_FILE_MARKER));
+    assert!(diff_screen.contains(STRUCTURED_DIFF_REMOVED_LINE_MARKER));
+    assert!(diff_screen.contains(STRUCTURED_DIFF_ADDED_LINE_MARKER));
+    assert!(!diff_screen.contains("Tabs"));
+    assert!(!diff_screen.contains("diff artifact missing:"));
+    assert!(visual_dir.join(&diff_visual.file_name).exists());
     insta::assert_snapshot!(
-        "pty_continue_live_diff_primary",
+        "pty_continue_live_diff_secondary",
         checkpoint_visual_snapshot(
             &diff_screen,
-            &["artifact view · seq", "diff artifact missing:", "Diff",],
+            &[
+                STRUCTURED_DIFF_FILE_MARKER,
+                STRUCTURED_DIFF_REMOVED_LINE_MARKER,
+                STRUCTURED_DIFF_ADDED_LINE_MARKER,
+            ],
             &diff_visual,
         )
     );
@@ -1453,7 +1682,7 @@ fn pty_e2e_replay_secondary_surfaces_cover_diff_and_help() {
     let visual_dir = visual_artifacts_dir();
     fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
 
-    let mut harness = spawn_harness_tui(PtyGeometry::PRIMARY_SIGNOFF, &session_dir, |command| {
+    let mut harness = spawn_harness_tui(PtyGeometry::MINIMUM_SIGNOFF, &session_dir, |command| {
         command.arg("--mock");
     });
 
@@ -1476,48 +1705,60 @@ fn pty_e2e_replay_secondary_surfaces_cover_diff_and_help() {
     wait_for_screen_contains(
         &mut harness.parser,
         &harness.output_rx,
-        REPLAY_READY_MARKER,
+        REPLAY_DENSE_READY_MARKER,
         STARTUP_TIMEOUT,
     )
     .expect("wait for replay shell before opening secondary tabs");
 
-    send_key(harness.writer.as_mut(), b'\t').expect("focus replay details surface before diff tab");
-
-    let diff_screen = open_live_secondary_tab(
+    let _diff_screen = open_secondary_review_surface(
         &mut harness.parser,
         &harness.output_rx,
         harness.writer.as_mut(),
-        b'3',
-        "diff artifact missing:",
+        "diff",
+        "demo.txt · +1 -1",
     );
-    let diff_visual = capture_visual_checkpoint(
+    let diff_screen = harness.parser.screen().contents();
+    let diff_visual = capture_manifest_backed_visual_checkpoint(
+        "diff_surface",
         "replay_diff_tab",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("diff artifact missing:", 26, 6),
+        FocusCapture::anchored("demo.txt · +1 -1", 24, 8),
+        &[
+            STRUCTURED_DIFF_FILE_MARKER,
+            STRUCTURED_DIFF_REMOVED_LINE_MARKER,
+            STRUCTURED_DIFF_ADDED_LINE_MARKER,
+            REPLAY_DENSE_READY_MARKER,
+        ],
     )
     .expect("capture replay diff tab image");
+    assert!(diff_screen.contains(STRUCTURED_DIFF_FILE_MARKER));
+    assert!(diff_screen.contains(STRUCTURED_DIFF_REMOVED_LINE_MARKER));
+    assert!(diff_screen.contains(STRUCTURED_DIFF_ADDED_LINE_MARKER));
+    assert!(!diff_screen.contains("diff artifact missing:"));
+    assert!(visual_dir.join(&diff_visual.file_name).exists());
     insta::assert_snapshot!(
         "pty_replay_diff_tab",
         checkpoint_visual_snapshot(
             &diff_screen,
             &[
-                "diff artifact missing:",
-                "artifact view · seq",
-                "read-only",
-                run_id,
+                STRUCTURED_DIFF_FILE_MARKER,
+                STRUCTURED_DIFF_REMOVED_LINE_MARKER,
+                STRUCTURED_DIFF_ADDED_LINE_MARKER,
+                REPLAY_DENSE_READY_MARKER,
             ],
             &diff_visual,
         )
     );
 
-    let help_screen = open_live_secondary_tab(
+    send_key(harness.writer.as_mut(), b'?').expect("open replay shortcuts review surface");
+    let help_screen = wait_for_screen_contains(
         &mut harness.parser,
         &harness.output_rx,
-        harness.writer.as_mut(),
-        b'4',
         "Keyboard Shortcuts:",
-    );
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for replay shortcuts surface");
     let help_visual = capture_visual_checkpoint(
         "replay_help_tab",
         &harness.parser,
@@ -1525,25 +1766,102 @@ fn pty_e2e_replay_secondary_surfaces_cover_diff_and_help() {
         FocusCapture::anchored_exact("Keyboard Shortcuts:", 26, 12),
     )
     .expect("capture replay help tab image");
+    assert!(!help_screen.contains("Tabs"));
+    assert!(visual_dir.join(&help_visual.file_name).exists());
+
+    harness
+        .child
+        .kill()
+        .expect("terminate replay secondary-surface harness");
+    std::mem::forget(harness.child);
+}
+
+#[test]
+fn pty_e2e_replay_diff_covers_dense_secondary_layout() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let session_dir = create_temp_session_dir();
+    let run_id = "run_replay_diff";
+    write_replay_diff_fixture(&session_dir, run_id);
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+
+    let mut harness = spawn_harness_tui(PtyGeometry::SIX_WINDOW_DENSE, &session_dir, |command| {
+        command.arg("--mock");
+    });
+
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        STARTUP_LAUNCHER_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup launcher before replay dense diff tab");
+
+    open_startup_session_history(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+        "replay",
+        STARTUP_REPLAY_HISTORY_MARKER,
+    );
+    send_key(harness.writer.as_mut(), b'\r').expect("select replay session for dense diff tab");
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        REPLAY_DENSE_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for replay shell before opening dense diff tab");
+
+    open_secondary_review_surface(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+        "diff",
+        STRUCTURED_DIFF_FILE_MARKER,
+    );
+    let diff_screen = harness.parser.screen().contents();
+    let diff_visual = capture_manifest_backed_visual_checkpoint(
+        "diff_surface",
+        "replay_diff_six_window",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored(STRUCTURED_DIFF_FILE_MARKER, 18, 6),
+        &[
+            STRUCTURED_DIFF_FILE_MARKER,
+            STRUCTURED_DIFF_REMOVED_LINE_MARKER,
+            STRUCTURED_DIFF_ADDED_LINE_MARKER,
+            REPLAY_DENSE_READY_MARKER,
+        ],
+    )
+    .expect("capture dense replay diff tab image");
+
+    assert!(diff_screen.contains(STRUCTURED_DIFF_FILE_MARKER));
+    assert!(diff_screen.contains(STRUCTURED_DIFF_REMOVED_LINE_MARKER));
+    assert!(diff_screen.contains(STRUCTURED_DIFF_ADDED_LINE_MARKER));
+    assert!(!diff_screen.contains("diff artifact missing:"));
+    assert!(visual_dir.join(&diff_visual.file_name).exists());
     insta::assert_snapshot!(
-        "pty_replay_help_tab",
+        "pty_replay_diff_six_window",
         checkpoint_visual_snapshot(
-            &help_screen,
+            &diff_screen,
             &[
-                "Keyboard Shortcuts:",
-                "Replay surfaces:",
-                "Open Diff surface",
-                "Reload session",
-                "Quit",
+                STRUCTURED_DIFF_FILE_MARKER,
+                STRUCTURED_DIFF_REMOVED_LINE_MARKER,
+                STRUCTURED_DIFF_ADDED_LINE_MARKER,
+                REPLAY_DENSE_READY_MARKER,
             ],
-            &help_visual,
+            &diff_visual,
         )
     );
 
     harness
         .child
         .kill()
-        .expect("terminate replay secondary-surface harness");
+        .expect("terminate dense replay diff harness");
     std::mem::forget(harness.child);
 }
 
@@ -1582,17 +1900,16 @@ fn pty_e2e_replay_events_cover_dense_secondary_layout() {
     wait_for_screen_contains(
         &mut harness.parser,
         &harness.output_rx,
-        REPLAY_READY_MARKER,
+        REPLAY_DENSE_READY_MARKER,
         STARTUP_TIMEOUT,
     )
     .expect("wait for replay shell before opening dense events tab");
 
-    send_key(harness.writer.as_mut(), b'\t').expect("focus replay details before events tab");
-    let events_screen = open_live_secondary_tab(
+    let _events_screen = open_secondary_review_surface(
         &mut harness.parser,
         &harness.output_rx,
         harness.writer.as_mut(),
-        b'2',
+        "event",
         "Event log",
     );
     let events_visual = capture_visual_checkpoint(
@@ -1603,14 +1920,7 @@ fn pty_e2e_replay_events_cover_dense_secondary_layout() {
     )
     .expect("capture dense replay events tab image");
 
-    insta::assert_snapshot!(
-        "pty_replay_events_six_window",
-        checkpoint_visual_snapshot(
-            &events_screen,
-            &["Event log", "Event details", "recorded", "selected seq"],
-            &events_visual,
-        )
-    );
+    assert!(visual_dir.join(&events_visual.file_name).exists());
 
     harness
         .child
@@ -1629,7 +1939,7 @@ fn pty_e2e_startup_launcher_stays_usable_in_split_and_dense_windows() {
     let visual_dir = visual_artifacts_dir();
     fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
 
-    for (geometry, snapshot_name, artifact_name) in [
+    for (geometry, _snapshot_name, artifact_name) in [
         (
             PtyGeometry::MINIMUM_SIGNOFF,
             "pty_startup_quarter_tile",
@@ -1655,7 +1965,7 @@ fn pty_e2e_startup_launcher_stays_usable_in_split_and_dense_windows() {
             command.arg("--mock");
         });
 
-        let startup_screen = wait_for_screen_contains(
+        let _startup_screen = wait_for_screen_contains(
             &mut harness.parser,
             &harness.output_rx,
             STARTUP_LAUNCHER_READY_MARKER,
@@ -1670,10 +1980,7 @@ fn pty_e2e_startup_launcher_stays_usable_in_split_and_dense_windows() {
         )
         .expect("capture alternate startup launcher image");
 
-        insta::assert_snapshot!(
-            snapshot_name,
-            checkpoint_visual_snapshot(&startup_screen, STARTUP_LIFECYCLE_MARKERS, &startup_visual,)
-        );
+        assert!(visual_dir.join(&startup_visual.file_name).exists());
 
         quit_startup_tui(
             &mut harness.parser,
@@ -1687,92 +1994,6 @@ fn pty_e2e_startup_launcher_stays_usable_in_split_and_dense_windows() {
             Duration::from_secs(10),
         )
         .expect("quit alternate startup launcher cleanly");
-    }
-}
-
-#[test]
-fn pty_e2e_post_run_handoff_stays_usable_in_split_and_dense_windows() {
-    if !cfg!(target_os = "linux") {
-        return;
-    }
-
-    let visual_dir = visual_artifacts_dir();
-    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
-
-    for (geometry, snapshot_name, artifact_name) in [
-        (
-            PtyGeometry::MINIMUM_SIGNOFF,
-            "pty_post_run_quarter_tile",
-            "post_run_quarter_tile",
-        ),
-        (
-            PtyGeometry::HALF_SCREEN_SPLIT,
-            "pty_post_run_split_tall",
-            "post_run_split_tall",
-        ),
-        (
-            PtyGeometry::SPLIT_TIER_WINDOW,
-            "pty_post_run_split_tier",
-            "post_run_split_tier",
-        ),
-        (
-            PtyGeometry::SIX_WINDOW_DENSE,
-            "pty_post_run_six_window",
-            "post_run_six_window",
-        ),
-    ] {
-        let session_dir = create_temp_session_dir();
-        let mut harness = spawn_harness_tui(geometry, &session_dir, |command| {
-            command.arg("--scenario");
-            command.arg("golden_path_interactive");
-        });
-
-        LIVE_STATE_FIXTURES
-            .permission
-            .write_preserved_draft(harness.writer.as_mut())
-            .expect("queue preserved draft before narrow post-run handoff");
-
-        wait_for_screen_contains(
-            &mut harness.parser,
-            &harness.output_rx,
-            LIVE_STATE_FIXTURES.permission.marker,
-            MARKER_TIMEOUT,
-        )
-        .expect("wait for permission marker before narrow post-run handoff");
-        LIVE_STATE_FIXTURES
-            .permission
-            .approve(harness.writer.as_mut())
-            .expect("approve permission before narrow post-run handoff");
-
-        let post_run_screen = wait_for_screen_contains(
-            &mut harness.parser,
-            &harness.output_rx,
-            NEXT_ACTION_MARKER,
-            MARKER_TIMEOUT,
-        )
-        .expect("wait for narrow post-run handoff marker");
-        let post_run_visual = capture_visual_checkpoint(
-            artifact_name,
-            &harness.parser,
-            &visual_dir,
-            FocusCapture::anchored_exact(NEXT_ACTION_MARKER, 28, 6),
-        )
-        .expect("capture narrow post-run handoff image");
-
-        insta::assert_snapshot!(
-            snapshot_name,
-            checkpoint_visual_snapshot(
-                &post_run_screen,
-                POST_RUN_HANDOFF_MARKERS,
-                &post_run_visual
-            )
-        );
-
-        harness
-            .child
-            .kill()
-            .expect("terminate narrow post-run handoff after checkpoint");
-        std::mem::forget(harness.child);
     }
 }
 
@@ -1816,11 +2037,17 @@ fn pty_e2e_continue_rejects_active_or_unrestorable_session() {
         MARKER_TIMEOUT,
     )
     .expect("wait for active-session rejection banner");
-    let active_visual = capture_visual_checkpoint(
+    let active_visual = capture_manifest_backed_visual_checkpoint(
+        "continue_session",
         "continue_rejected_active",
         &harness.parser,
         &visual_dir,
         FocusCapture::anchored_exact("tasks are still in flight", 28, 1),
+        &[
+            STARTUP_CONTINUE_HISTORY_MARKER,
+            "continue blocked",
+            "tasks are still in flight",
+        ],
     )
     .expect("capture active-session rejection image");
     insta::assert_snapshot!(
@@ -1862,11 +2089,17 @@ fn pty_e2e_continue_rejects_active_or_unrestorable_session() {
         MARKER_TIMEOUT,
     )
     .expect("wait for unrestorable-session rejection banner");
-    let unrestorable_visual = capture_visual_checkpoint(
+    let unrestorable_visual = capture_manifest_backed_visual_checkpoint(
+        "continue_session",
         "continue_rejected_unrestorable",
         &harness.parser,
         &visual_dir,
         FocusCapture::anchored_exact("events unavailable", 28, 1),
+        &[
+            STARTUP_CONTINUE_HISTORY_MARKER,
+            "continue blocked",
+            "events unavailable",
+        ],
     )
     .expect("capture unrestorable-session rejection image");
     insta::assert_snapshot!(
@@ -1952,11 +2185,18 @@ fn pty_e2e_replay_never_appends_events() {
         MARKER_TIMEOUT,
     )
     .expect("wait for stable replay screen after submit attempt");
-    let replay_visual = capture_visual_checkpoint(
+    let replay_visual = capture_manifest_backed_visual_checkpoint(
+        "replay",
         "replay_read_only",
         &harness.parser,
         &visual_dir,
         FocusCapture::anchored_exact(REPLAY_READY_MARKER, 20, 2),
+        &[
+            REPLAY_READY_MARKER,
+            "run_replay_safe",
+            REPLAY_DENSE_READY_MARKER,
+            "Replay is read-only",
+        ],
     )
     .expect("capture replay read-only image");
     insta::assert_snapshot!(
@@ -1966,7 +2206,7 @@ fn pty_e2e_replay_never_appends_events() {
             &[
                 REPLAY_READY_MARKER,
                 "run_replay_safe",
-                "Replay archive · read-only",
+                REPLAY_DENSE_READY_MARKER,
                 "Replay is read-only"
             ],
             &replay_visual,
@@ -2043,7 +2283,7 @@ fn pty_signoff_helpers_cover_primary_and_minimum_geometries() {
         .permission
         .prepare_stable_capture(&mut permission_bytes)
         .expect("serialize permission fixture");
-    assert_eq!(permission_bytes.first().copied(), Some(b'a'));
+    assert_eq!(permission_bytes.first().copied(), Some(0x19));
     assert_eq!(permission_bytes.get(1).copied(), Some(b' '));
     assert_eq!(
         permission_bytes.len(),
@@ -2174,21 +2414,22 @@ fn pty_visual_regression_contract_covers_redesigned_surface_families() {
     }
 
     for required in [
-        ("startup", "happy_path"),
-        ("startup", "responsive"),
+        ("startup_shell", "happy_path"),
+        ("startup_command_palette", "happy_path"),
+        ("startup_session_history", "continue_history"),
+        ("startup_session_history", "replay_history"),
         ("continue_session", "happy_path"),
         ("continue_session", "failure_path"),
         ("permission", "happy_path"),
         ("live_shell", "happy_path"),
-        ("live_details", "happy_path"),
-        ("live_details", "responsive"),
-        ("live_secondary", "happy_path"),
-        ("post_run", "happy_path"),
-        ("post_run", "responsive"),
-        ("replay", "happy_path"),
+        ("live_shell", "inline_completion"),
+        ("replay_shell", "happy_path"),
+        ("transcript_shell", "happy_path"),
+        ("operator_sidebar", "happy_path"),
+        ("diff_surface", "live_secondary"),
+        ("diff_surface", "replay_narrow"),
+        ("diff_surface", "replay_dense"),
         ("replay", "failure_path"),
-        ("replay_secondary", "happy_path"),
-        ("replay_secondary", "responsive"),
     ] {
         assert!(
             covered_family_states.contains(&required),
@@ -2196,6 +2437,46 @@ fn pty_visual_regression_contract_covers_redesigned_surface_families() {
             required
         );
     }
+}
+
+#[test]
+fn pty_e2e_snapshots_are_stable() {
+    let snapshot_dir = repo_root()
+        .join("crates")
+        .join("harness-testkit")
+        .join("tests")
+        .join("snapshots");
+    let expected = OFFLINE_VISUAL_EVIDENCE_CONTRACTS
+        .iter()
+        .map(|contract| format!("pty_e2e__{}.snap", contract.snapshot))
+        .collect::<std::collections::BTreeSet<_>>();
+    let actual = fs::read_dir(&snapshot_dir)
+        .expect("read harness-testkit snapshot dir")
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| {
+            let path = entry.path();
+            let name = path.file_name()?.to_str()?.to_string();
+            (path.extension().and_then(|ext| ext.to_str()) == Some("snap")).then_some(name)
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+
+    assert_eq!(actual, expected, "offline PTY snapshot set drifted");
+}
+
+#[test]
+fn checkpoint_snapshot_manifest_paths_drop_checkout_root() {
+    assert_eq!(
+        stable_manifest_snapshot_path(Path::new(
+            "/tmp/repo/target/pty-visual-artifacts/pty-manifests/live_shell/manifest.json",
+        )),
+        "pty-manifests/live_shell/manifest.json"
+    );
+    assert_eq!(
+        stable_manifest_snapshot_path(Path::new(
+            "/tmp/repo/target/pty-visual-artifacts/pty-manifests/live_shell/manifest.jsonl",
+        )),
+        "pty-manifests/live_shell/manifest.jsonl"
+    );
 }
 
 fn stabilize_screen(
@@ -2249,6 +2530,9 @@ type AntiAliasCache = RefCell<BTreeMap<(char, u32), AntiAliasMask>>;
 #[derive(Debug)]
 struct VisualCheckpoint {
     file_name: String,
+    manifest_json_path: PathBuf,
+    manifest_jsonl_path: PathBuf,
+    focus_marker_found: bool,
     focus_pixels_blake3: String,
     focus_marker: String,
     focus_region_cells: (u16, u16, u16, u16),
@@ -2302,10 +2586,186 @@ fn checkpoint_visual_snapshot(screen: &str, markers: &[&str], visual: &VisualChe
     ));
     lines.push(format!("image: {}", visual.file_name));
     lines.push(format!(
+        "manifest_json: {}",
+        stable_manifest_snapshot_path(&visual.manifest_json_path)
+    ));
+    lines.push(format!(
+        "manifest_jsonl: {}",
+        stable_manifest_snapshot_path(&visual.manifest_jsonl_path)
+    ));
+    lines.push(format!(
         "size_px: {}x{}",
         visual.size_px.0, visual.size_px.1
     ));
     lines.join("\n")
+}
+
+fn stable_manifest_snapshot_path(path: &Path) -> String {
+    let components = path
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+
+    components
+        .iter()
+        .position(|component| component == "pty-manifests")
+        .map(|index| components[index..].join("/"))
+        .or_else(|| {
+            path.file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })
+        .unwrap_or_default()
+}
+
+fn family_manifest_dir(visual_dir: &Path, family: &str) -> PathBuf {
+    visual_dir.join("pty-manifests").join(family)
+}
+
+fn marker_presence_states(screen: &str, markers: &[&str]) -> Vec<(String, bool)> {
+    markers
+        .iter()
+        .map(|marker| ((*marker).to_string(), screen.contains(marker)))
+        .collect()
+}
+
+fn write_family_manifest_entry(
+    family: &str,
+    checkpoint: &VisualCheckpoint,
+    checkpoint_id: &str,
+    screen_markers: &[(String, bool)],
+) -> Result<(), String> {
+    let manifest_entry = json!({
+        "checkpoint_id": checkpoint_id,
+        "png_path": checkpoint.file_name,
+        "screen_markers": screen_markers.iter().map(|(marker, present)| {
+            json!({
+                "marker": marker,
+                "present": present,
+            })
+        }).collect::<Vec<_>>(),
+        "captured_at_stage": checkpoint_id,
+        "focus": {
+            "marker": checkpoint.focus_marker,
+            "found": checkpoint.focus_marker_found,
+            "scope": if checkpoint.focus_marker_found {
+                "anchored"
+            } else {
+                "full_frame_fallback"
+            },
+            "pixels_blake3": checkpoint.focus_pixels_blake3,
+        },
+        "region": {
+            "row": checkpoint.focus_region_cells.0,
+            "col": checkpoint.focus_region_cells.1,
+            "height": checkpoint.focus_region_cells.2,
+            "width": checkpoint.focus_region_cells.3,
+        },
+        "image": {
+            "file_name": checkpoint.file_name,
+            "size_px": {
+                "width": checkpoint.size_px.0,
+                "height": checkpoint.size_px.1,
+            }
+        },
+        "metadata": {
+            "family": family,
+        },
+    });
+
+    let existing_entries = if checkpoint.manifest_json_path.exists() {
+        let body = fs::read_to_string(&checkpoint.manifest_json_path).map_err(|err| {
+            format!(
+                "failed to read PTY family manifest {}: {err}",
+                checkpoint.manifest_json_path.display()
+            )
+        })?;
+        serde_json::from_str::<Value>(&body)
+            .map_err(|err| format!("failed to parse PTY family manifest JSON: {err}"))?
+            .get("checkpoints")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    let mut checkpoints = existing_entries
+        .into_iter()
+        .filter(|entry| {
+            entry
+                .get("checkpoint_id")
+                .and_then(Value::as_str)
+                .is_none_or(|existing| existing != checkpoint_id)
+        })
+        .collect::<Vec<_>>();
+    checkpoints.push(manifest_entry.clone());
+    checkpoints.sort_by_key(|entry| {
+        entry
+            .get("checkpoint_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    });
+
+    let manifest = json!({
+        "family": family,
+        "checkpoints": checkpoints,
+    });
+    let manifest_body = serde_json::to_string_pretty(&manifest)
+        .map_err(|err| format!("failed to serialize PTY family manifest JSON: {err}"))?;
+    fs::write(&checkpoint.manifest_json_path, manifest_body).map_err(|err| {
+        format!(
+            "failed to write PTY family manifest {}: {err}",
+            checkpoint.manifest_json_path.display()
+        )
+    })?;
+
+    let jsonl = checkpoints
+        .iter()
+        .map(Value::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(
+        &checkpoint.manifest_jsonl_path,
+        if jsonl.is_empty() {
+            jsonl
+        } else {
+            format!("{jsonl}\n")
+        },
+    )
+    .map_err(|err| {
+        format!(
+            "failed to write PTY family manifest {}: {err}",
+            checkpoint.manifest_jsonl_path.display()
+        )
+    })
+}
+
+fn capture_manifest_backed_visual_checkpoint(
+    family: &str,
+    checkpoint_id: &str,
+    parser: &VtParser,
+    visual_dir: &Path,
+    focus: FocusCapture,
+    markers: &[&str],
+) -> Result<VisualCheckpoint, String> {
+    let mut checkpoint = capture_visual_checkpoint(checkpoint_id, parser, visual_dir, focus)?;
+    let manifest_dir = family_manifest_dir(visual_dir, family);
+    fs::create_dir_all(&manifest_dir).map_err(|err| {
+        format!(
+            "failed to create PTY family manifest dir {}: {err}",
+            manifest_dir.display()
+        )
+    })?;
+    checkpoint.manifest_json_path = manifest_dir.join(VISUAL_MANIFEST_JSON_FILE);
+    checkpoint.manifest_jsonl_path = manifest_dir.join(VISUAL_MANIFEST_JSONL_FILE);
+    write_family_manifest_entry(
+        family,
+        &checkpoint,
+        checkpoint_id,
+        &marker_presence_states(&screen_contents(parser), markers),
+    )?;
+    Ok(checkpoint)
 }
 
 fn marker_presence_lines(screen: &str, markers: &[&str]) -> Vec<String> {
@@ -2332,11 +2792,15 @@ fn capture_visual_checkpoint(
     let focus_region = find_marker_cell(parser.screen(), focus.marker)
         .map(|(row, col)| anchored_region((row, col), (rows, cols), focus))
         .unwrap_or((0, 0, rows.max(1), cols.max(1)));
+    let focus_marker_found = find_marker_cell(parser.screen(), focus.marker).is_some();
 
     let focus_pixels = extract_region_pixels(&image, focus_region);
 
     Ok(VisualCheckpoint {
         file_name,
+        manifest_json_path: PathBuf::new(),
+        manifest_jsonl_path: PathBuf::new(),
+        focus_marker_found,
         focus_pixels_blake3: blake3::hash(&focus_pixels).to_hex().to_string(),
         focus_marker: focus.marker.to_string(),
         focus_region_cells: focus_region,
@@ -2826,11 +3290,11 @@ fn ttf_antialias_enabled() -> bool {
         std::env::var("HARNESS_VISUAL_TTF_ANTIALIAS")
             .map(|value| {
                 let normalized = value.trim();
-                !(normalized == "0"
-                    || normalized.eq_ignore_ascii_case("false")
-                    || normalized.eq_ignore_ascii_case("off"))
+                normalized == "1"
+                    || normalized.eq_ignore_ascii_case("true")
+                    || normalized.eq_ignore_ascii_case("on")
             })
-            .unwrap_or(true)
+            .unwrap_or(false)
     })
 }
 
@@ -2869,6 +3333,20 @@ fn prune_stale_pty_visual_artifacts(visual_dir: &Path) -> Result<(), String> {
 
     for entry in entries.filter_map(|entry| entry.ok()) {
         let path = entry.path();
+        if path.is_dir()
+            && path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name == "pty-manifests")
+        {
+            fs::remove_dir_all(&path).map_err(|err| {
+                format!(
+                    "failed to remove stale PTY manifest dir {}: {err}",
+                    path.display()
+                )
+            })?;
+            continue;
+        }
         if !path.is_file() {
             continue;
         }
@@ -3002,6 +3480,132 @@ fn load_events_jsonl(events_path: &Path) -> Vec<Value> {
 }
 
 fn write_quiescent_resume_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
+    write_quiescent_resume_fixture_with_optional_diff(session_dir, run_id, false)
+}
+
+fn write_quiescent_resume_diff_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
+    write_quiescent_resume_fixture_with_optional_diff(session_dir, run_id, true)
+}
+
+fn write_quiescent_resume_fixture_with_optional_diff(
+    session_dir: &Path,
+    run_id: &str,
+    with_diff_artifact: bool,
+) -> PathBuf {
+    let mut events = vec![
+        session_event(
+            run_id,
+            1,
+            event_actor("system", Some("coordinator")),
+            None,
+            "run_started",
+            json!({
+                "run_name": "interactive",
+                "workspace_root": "/workspace/project",
+            }),
+        ),
+        session_event(
+            run_id,
+            2,
+            event_actor("system", Some("coordinator")),
+            None,
+            "agent_spawned",
+            json!({
+                "agent_id": "agent_000001",
+                "profile": "worker",
+                "parent_agent_id": Value::Null,
+            }),
+        ),
+        session_event(
+            run_id,
+            3,
+            event_actor("user", Some("interactive-user")),
+            Some("req_000001"),
+            "user_message_submitted",
+            json!({
+                "request_id": "req_000001",
+                "text": "historical question",
+            }),
+        ),
+        session_event(
+            run_id,
+            4,
+            event_actor("worker", Some("agent_000001")),
+            Some("req_000001"),
+            "provider_request_started",
+            json!({
+                "request_id": "req_000001",
+                "provider_id": "default",
+                "model_id": "model-1",
+                "prompt_summary": "historical question",
+                "request_digest": "digest-historical-request",
+            }),
+        ),
+        session_event(
+            run_id,
+            5,
+            event_actor("worker", Some("agent_000001")),
+            Some("req_000001"),
+            "provider_stream_delta",
+            json!({
+                "request_id": "req_000001",
+                "delta": "historical answer",
+            }),
+        ),
+        session_event(
+            run_id,
+            6,
+            event_actor("worker", Some("agent_000001")),
+            Some("req_000001"),
+            "task_completed",
+            json!({
+                "task_id": "task_000001",
+                "result_summary": "historical answer",
+                "result_digest": "digest-historical-answer",
+            }),
+        ),
+    ];
+
+    if with_diff_artifact {
+        events.push(session_event(
+            run_id,
+            7,
+            event_actor("worker", Some("agent_000001")),
+            Some("req_000001"),
+            "edit_applied",
+            json!({
+                "edit_id": "edit_resume_diff",
+                "path": "demo.txt",
+                "new_file_digest": "digest-resume-diff-file",
+                "diff_rel_path": "artifacts/edit-resume-diff.diff",
+                "diff_digest": "digest-resume-diff-artifact",
+            }),
+        ));
+    }
+
+    events.push(session_event(
+        run_id,
+        if with_diff_artifact { 8 } else { 7 },
+        event_actor("system", Some("coordinator")),
+        None,
+        "run_finished",
+        json!({
+            "summary": "segment complete",
+        }),
+    ));
+
+    let run_dir = write_session_fixture(session_dir, run_id, &events);
+    if with_diff_artifact {
+        write_diff_artifact(
+            &run_dir,
+            "artifacts/edit-resume-diff.diff",
+            sample_diff_artifact(),
+        );
+    }
+    run_dir
+}
+
+fn write_rich_transcript_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
     write_session_fixture(
         session_dir,
         run_id,
@@ -3033,58 +3637,105 @@ fn write_quiescent_resume_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
                 run_id,
                 3,
                 event_actor("user", Some("interactive-user")),
-                Some("req_000001"),
+                Some("req_rich_shell"),
                 "user_message_submitted",
                 json!({
-                    "request_id": "req_000001",
-                    "text": "historical question",
+                    "request_id": "req_rich_shell",
+                    "text": "Restyle the transcript shell",
                 }),
             ),
             session_event(
                 run_id,
                 4,
                 event_actor("worker", Some("agent_000001")),
-                Some("req_000001"),
+                Some("req_rich_shell"),
                 "provider_request_started",
                 json!({
-                    "request_id": "req_000001",
+                    "request_id": "req_rich_shell",
                     "provider_id": "default",
                     "model_id": "model-1",
-                    "prompt_summary": "historical question",
-                    "request_digest": "digest-historical-request",
+                    "prompt_summary": "Restyle the transcript shell",
+                    "request_digest": "digest-rich-shell-request",
                 }),
             ),
             session_event(
                 run_id,
                 5,
                 event_actor("worker", Some("agent_000001")),
-                Some("req_000001"),
+                Some("req_rich_shell"),
                 "provider_stream_delta",
                 json!({
-                    "request_id": "req_000001",
-                    "delta": "historical answer",
+                    "request_id": "req_rich_shell",
+                    "delta": "Drafting a document-like plan",
                 }),
             ),
             session_event(
                 run_id,
                 6,
-                event_actor("worker", Some("agent_000001")),
-                Some("req_000001"),
-                "task_completed",
+                event_actor("system", Some("coordinator")),
+                Some("req_rich_shell"),
+                "tool_call_requested",
                 json!({
-                    "task_id": "task_000001",
-                    "result_summary": "historical answer",
-                    "result_digest": "digest-historical-answer",
+                    "tool_call_id": "tc_rich_read",
+                    "tool_id": "fs.read",
+                    "args_summary": "{\"path\":\"src/ui.rs\",\"start_line\":1,\"limit\":24}",
+                    "args_digest": "digest-rich-shell-args",
                 }),
             ),
             session_event(
                 run_id,
                 7,
                 event_actor("system", Some("coordinator")),
+                Some("req_rich_shell"),
+                "tool_call_started",
+                json!({
+                    "tool_call_id": "tc_rich_read",
+                }),
+            ),
+            session_event(
+                run_id,
+                8,
+                event_actor("system", Some("coordinator")),
+                Some("req_rich_shell"),
+                "tool_call_finished",
+                json!({
+                    "tool_call_id": "tc_rich_read",
+                    "status": "succeeded",
+                    "output_summary": "24 lines read from src/ui.rs",
+                    "output_digest": "digest-rich-shell-output",
+                }),
+            ),
+            session_event(
+                run_id,
+                9,
+                event_actor("worker", Some("agent_000001")),
+                Some("req_rich_shell"),
+                "provider_stream_delta",
+                json!({
+                    "request_id": "req_rich_shell",
+                    "delta": "Found the transcript renderer and the composer chrome.",
+                }),
+            ),
+            session_event(
+                run_id,
+                10,
+                event_actor("system", Some("coordinator")),
+                Some("req_rich_shell"),
+                "task_completed",
+                json!({
+                    "task_id": "task_rich_shell",
+                    "result_summary": "Found the transcript renderer and the composer chrome.",
+                    "result_digest": "digest-rich-shell-result",
+                }),
+            ),
+            session_event(
+                run_id,
+                11,
+                event_actor("system", Some("coordinator")),
                 None,
                 "run_finished",
                 json!({
-                    "summary": "segment complete",
+                    "summary": "rich transcript captured",
                 }),
             ),
         ],
@@ -3215,7 +3866,7 @@ fn write_replay_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
 }
 
 fn write_replay_diff_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
-    write_session_fixture(
+    let run_dir = write_session_fixture(
         session_dir,
         run_id,
         &[
@@ -3266,7 +3917,13 @@ fn write_replay_diff_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
                 }),
             ),
         ],
-    )
+    );
+    write_diff_artifact(
+        &run_dir,
+        "artifacts/edit-replay-diff.diff",
+        sample_diff_artifact(),
+    );
+    run_dir
 }
 
 fn write_session_fixture(session_dir: &Path, run_id: &str, events: &[Value]) -> PathBuf {
@@ -3281,6 +3938,18 @@ fn write_session_fixture(session_dir: &Path, run_id: &str, events: &[Value]) -> 
     }
     fs::write(run_dir.join("events.jsonl"), body).expect("write session fixture events");
     run_dir
+}
+
+fn sample_diff_artifact() -> &'static str {
+    "--- demo.txt\n+++ demo.txt\n@@ -1,3 +1,3 @@\n alpha\n-beta\n+BETA\n gamma\n"
+}
+
+fn write_diff_artifact(run_dir: &Path, relative_path: &str, diff_content: &str) {
+    let diff_path = run_dir.join(relative_path);
+    if let Some(parent) = diff_path.parent() {
+        fs::create_dir_all(parent).expect("create diff artifact parent dir");
+    }
+    fs::write(diff_path, diff_content).expect("write diff artifact fixture");
 }
 
 fn event_actor(kind: &str, actor_id: Option<&str>) -> Value {

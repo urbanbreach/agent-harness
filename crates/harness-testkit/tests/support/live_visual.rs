@@ -18,6 +18,8 @@ pub const CHECKPOINT_DRAFT_VISIBLE: &str = "draft_visible";
 pub const CHECKPOINT_SHELL_CREATE_FINISHED: &str = "shell_create_finished";
 pub const CHECKPOINT_HASHLINE_SCAN_FINISHED: &str = "hashline_scan_finished";
 pub const CHECKPOINT_RUN_FINISHED: &str = "run_finished";
+pub const VISUAL_MANIFEST_JSON_FILE: &str = "manifest.json";
+pub const VISUAL_MANIFEST_JSONL_FILE: &str = "manifest.jsonl";
 
 const LIVE_PROXY_NAMESPACE: &str = "live-proxy";
 const DEFAULT_LIVE_VISUAL_RETENTION_RUNS: usize = 5;
@@ -397,8 +399,8 @@ impl VisualManifest {
             )
         })?;
 
-        let manifest_json_path = output_dir.join("manifest.json");
-        let manifest_jsonl_path = output_dir.join("manifest.jsonl");
+        let manifest_json_path = output_dir.join(VISUAL_MANIFEST_JSON_FILE);
+        let manifest_jsonl_path = output_dir.join(VISUAL_MANIFEST_JSONL_FILE);
         let entries = load_existing_entries(&manifest_json_path)?;
 
         Ok(Self {
@@ -1176,8 +1178,8 @@ fn prune_old_live_visual_runs(test_root: &Path, current_run_id: &str) -> Result<
                 return None;
             }
             let name = path.file_name()?.to_str()?.to_string();
-            let is_manifest_backed_run =
-                path.join("manifest.json").exists() || path.join("manifest.jsonl").exists();
+            let is_manifest_backed_run = path.join(VISUAL_MANIFEST_JSON_FILE).exists()
+                || path.join(VISUAL_MANIFEST_JSONL_FILE).exists();
             if name != current_run_id && !is_manifest_backed_run {
                 return None;
             }

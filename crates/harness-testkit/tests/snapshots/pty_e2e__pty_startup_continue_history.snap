@@ -1,13 +1,14 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-assertion_line: 917
-expression: "checkpoint_visual_snapshot(&history_screen,\n&[STARTUP_CONTINUE_HISTORY_MARKER, \"interactive\", \"continue ready\"],\n&history_visual,)"
+expression: "checkpoint_visual_snapshot(&history_screen,\n&[STARTUP_CONTINUE_HISTORY_MARKER, STARTUP_CONTINUE_HISTORY_READY_MARKER,\n\"Interactive histories\",], &history_visual,)"
 ---
 Continue session: true
-interactive: true
 continue ready: true
+Interactive histories: true
 focus_marker: continue ready
-focus_pixels_blake3: 38a0d86364626fc93fd227dcae0a2982053118374d6e167dbab3e7092593f8fc
-focus_region_cells: row=21, col=60, height=3, width=28
+focus_pixels_blake3: 3ce74b580b9aa4bbc8a2e4764f72734c4ddf4568821a716755a19d21e68ba137
+focus_region_cells: row=24, col=51, height=3, width=28
 image: pty_startup_continue_history.png
+manifest_json: pty-manifests/startup_session_history/manifest.json
+manifest_jsonl: pty-manifests/startup_session_history/manifest.jsonl
 size_px: 2560x1440

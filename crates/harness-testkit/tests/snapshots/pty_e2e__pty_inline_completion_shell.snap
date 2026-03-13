@@ -1,0 +1,15 @@
+---
+source: crates/harness-testkit/tests/pty_e2e.rs
+expression: "checkpoint_visual_snapshot(&inline_completion_checkpoint,\nRUN_FINISHED_SHELL_MARKERS, &inline_completion_visual)"
+---
+run finished: true
+session shell preserved: true
+Run complete: false
+Tab focus: true
+focus_marker: run finished
+focus_pixels_blake3: 153aba5cad6cd3d583738dda4a54038dff19a429fff35bb10a2bcad4d7a1bf68
+focus_region_cells: row=20, col=12, height=1, width=20
+image: pty_inline_completion_shell.png
+manifest_json: pty-manifests/live_shell/manifest.json
+manifest_jsonl: pty-manifests/live_shell/manifest.jsonl
+size_px: 1280x720

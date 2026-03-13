@@ -1,13 +1,15 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-expression: "checkpoint_visual_snapshot(&replay_screen,\n&[REPLAY_READY_MARKER, \"run_replay_safe\", \"Replay archive · read-only\",\n\"Replay is read-only\"], &replay_visual,)"
+expression: "checkpoint_visual_snapshot(&replay_screen,\n&[REPLAY_READY_MARKER, \"run_replay_safe\", REPLAY_DENSE_READY_MARKER,\n\"Replay is read-only\"], &replay_visual,)"
 ---
 q quit: true
 run_replay_safe: true
-Replay archive · read-only: true
+Replay · read-only: true
 Replay is read-only: true
 focus_marker: q quit
-focus_pixels_blake3: 8b461178fe84e7f8c77acd7f0909104d6192953e0d01812ce090a99260777c91
-focus_region_cells: row=47, col=54, height=1, width=20
+focus_pixels_blake3: 705dd89d72a3524ca362586666c8fce77be6c4c44e6313fca5feaadd127d436b
+focus_region_cells: row=44, col=43, height=2, width=20
 image: pty_replay_read_only.png
+manifest_json: pty-manifests/replay/manifest.json
+manifest_jsonl: pty-manifests/replay/manifest.jsonl
 size_px: 2560x1440

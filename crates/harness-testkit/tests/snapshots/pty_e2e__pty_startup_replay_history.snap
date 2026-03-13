@@ -1,12 +1,14 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-expression: "checkpoint_visual_snapshot(&replay_history_screen,\n&[STARTUP_REPLAY_HISTORY_MARKER, \"interactive\", \"read-only\"],\n&replay_history_visual,)"
+expression: "checkpoint_visual_snapshot(&replay_history_screen,\n&[STARTUP_REPLAY_HISTORY_MARKER, \"Read-only replays\",\n\"interactive and prompt runs stay available\",], &replay_history_visual,)"
 ---
 Replay session: true
-interactive: true
-read-only: true
+Read-only replays: true
+interactive and prompt runs stay available: true
 focus_marker: Replay session
-focus_pixels_blake3: 624e060ce6eaf32e7ce04e91b30a93702d2433cf2a781e08638d126595b81e73
-focus_region_cells: row=22, col=47, height=3, width=28
+focus_pixels_blake3: e31aaeaf1baddbe2a731d73f94344c92f281e8cd31bc50dd2be2e3bd01b2470f
+focus_region_cells: row=20, col=35, height=3, width=28
 image: pty_startup_replay_history.png
+manifest_json: pty-manifests/startup_session_history/manifest.json
+manifest_jsonl: pty-manifests/startup_session_history/manifest.jsonl
 size_px: 2560x1440

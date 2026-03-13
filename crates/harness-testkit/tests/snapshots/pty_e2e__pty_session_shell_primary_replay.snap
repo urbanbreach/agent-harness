@@ -1,0 +1,15 @@
+---
+source: crates/harness-testkit/tests/pty_e2e.rs
+expression: "checkpoint_visual_snapshot(&replay_screen,\n&[REPLAY_DENSE_READY_MARKER, \"Context\", \"Modified Files\",\nREPLAY_READY_MARKER,], &replay_visual,)"
+---
+Replay · read-only: true
+Context: true
+Modified Files: true
+q quit: true
+focus_marker: Replay · read-only
+focus_pixels_blake3: 5ec21b688a548146a0f059ca802119afca7055b9fbdbabfbd5d1435b13a20098
+focus_region_cells: row=0, col=0, height=2, width=20
+image: pty_session_shell_primary_replay.png
+manifest_json: pty-manifests/replay_shell/manifest.json
+manifest_jsonl: pty-manifests/replay_shell/manifest.jsonl
+size_px: 2560x1440

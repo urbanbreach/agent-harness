@@ -57,6 +57,17 @@ Recommended local root for both offline PTY and live manifest inspection:
 target/pty-visual-artifacts/
 ```
 
+Offline PTY parity evidence now keeps the frozen PNGs at the artifact root and writes
+family manifests under:
+
+```text
+target/pty-visual-artifacts/pty-manifests/<family>/manifest.json
+target/pty-visual-artifacts/pty-manifests/<family>/manifest.jsonl
+```
+
+Those PTY manifests use the same `manifest.json` / `manifest.jsonl` filenames as the live proxy
+lane so marker presence, focus hashes, and PNG paths stay machine-checkable across both oracles.
+
 Example run id:
 
 ```text

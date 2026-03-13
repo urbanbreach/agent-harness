@@ -21,12 +21,27 @@ tests/
 | Live lane setup and artifact contract | `README.live-proxy.md` | Preflight first |
 | Shared live helpers | `support/live_events.rs`, `support/live_vision.rs`, `support/live_visual.rs` | Reuse before adding new helper files |
 
+## RENDERING DEPENDENCIES
+Approved rendering stack (do not add alternatives without explicit signoff):
+- `syntect` for syntax highlighting
+- `imara-diff` for diff visualization
+
+## SHELL CONTRACT (T14+)
+The TUI implements a strict surface hierarchy that tests must respect:
+- **Compose-first home screen**: entry point is the composer, not a replay browser.
+- **Transcript-first session shell**: live sessions prioritize transcript rendering with the operator sidebar for context/tooling.
+- **Operator sidebar**: persistent right-hand surface for operator state, file context, and tool status.
+- **No default tab chrome**: surfaces are chromeless by default; tab-like chrome is opt-in per context.
+- **No debug inspector in the primary path**: debug/inspector surfaces live in secondary paths, not the main UX flow.
+
 ## CONVENTIONS
 - Treat `pty_e2e` as the default offline lane; treat `live_proxy_*` as explicit signoff.
 - Run PTY flows single-threaded.
-- Respect `HARNESS_VISUAL_ARTIFACT_DIR` for screenshot output.
+- **Screenshot-generated PTY/live-visual artifacts are the primary verification workflow**. Prefer visual parity over text assertions.
+- Key shell contract terms: compose-first, transcript-first, operator sidebar, no default tab chrome, no debug inspector in primary path.
+- Respect `HARNESS_VISUAL_ARTIFACT_DIR` for screenshot output. This env var sets the root for all visual artifacts in both PTY and live-proxy lanes.
 - Respect live env gates: `HARNESS_LIVE_PROXY`, `HARNESS_LIVE_PROXY_CONFIG`, `HARNESS_LIVE_PROXY_PROVIDER`, `HARNESS_LIVE_PROXY_MODEL`.
-- Artifact retention and viewport presets are documented here, not in crate root docs.
+- Artifact retention and viewport presets are documented in `README.live-proxy.md`, not in crate root docs.
 
 ## ANTI-PATTERNS
 - Do not run live-proxy lanes without the documented preflight.

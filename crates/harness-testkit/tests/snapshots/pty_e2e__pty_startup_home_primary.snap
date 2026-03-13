@@ -1,0 +1,15 @@
+---
+source: crates/harness-testkit/tests/pty_e2e.rs
+expression: "checkpoint_visual_snapshot(&screen,\n&[STARTUP_HOME_WORDMARK_MARKER, STARTUP_HOME_SHORTCUT_MARKER,\nSTARTUP_HOME_VALUE_PROP_MARKER, \"/status · v\",], &visual,)"
+---
+Harness: true
+ctrl+p commands: true
+Dispatch a new run, reopen live work, or inspect saved history.: true
+/status · v: true
+focus_marker: Harness
+focus_pixels_blake3: 3e0290afeb1f5b0b1111f44b62f014e75e74c722a2b6f1440c2a12e92484de8e
+focus_region_cells: row=14, col=76, height=8, width=32
+image: pty_startup_home_primary.png
+manifest_json: pty-manifests/startup_shell/manifest.json
+manifest_jsonl: pty-manifests/startup_shell/manifest.jsonl
+size_px: 2560x1440
