@@ -1,6 +1,8 @@
 use super::*;
 
-use crate::layout::{FrameLayoutPlan, SessionFooterMode, SessionHeaderMode};
+use ratatui::widgets::Padding;
+
+use crate::layout::{ControlDockLayout, FrameLayoutPlan, SessionFooterMode, SessionHeaderMode};
 use crate::theme::{ChromeMode, DividerIntensity};
 
 struct DocumentComposerRenderContext<'a> {
@@ -305,6 +307,16 @@ pub(super) fn render_status_strip(frame: &mut Frame, app: &AppState, area: Rect,
     }
 
     let dock = build_control_dock_view_model(app, theme);
+    render_control_dock_status_band(frame, app, area, theme, &dock);
+}
+
+fn render_control_dock_status_band(
+    frame: &mut Frame,
+    app: &AppState,
+    area: Rect,
+    theme: &Theme,
+    dock: &crate::view_model::ControlDockViewModel,
+) {
     let (_, context_color) = status_context(app, theme, dock.runtime_kind);
     let surface = control_dock_status_surface(theme, dock.variant);
     let base_style = Style::default().fg(theme.text.secondary).bg(surface);
@@ -443,18 +455,50 @@ pub(super) fn render_prompt_pane(frame: &mut Frame, app: &AppState, area: Rect, 
     );
 }
 
-pub(super) fn render_live_control_dock_surface(
+pub(super) fn render_unified_bottom_dock(
     frame: &mut Frame,
-    status_area: Rect,
-    composer_area: Rect,
+    app: &AppState,
+    dock_layout: ControlDockLayout,
     theme: &Theme,
 ) {
-    let dock_area = stacked_control_dock_rect(status_area, composer_area);
-    if dock_area.width == 0 || dock_area.height == 0 {
+    if dock_layout.shell.width == 0 || dock_layout.shell.height == 0 {
         return;
     }
 
-    frame.render_widget(live_control_dock_section(theme), dock_area);
+    let dock = build_control_dock_view_model(app, theme);
+    frame.render_widget(control_dock_section(theme, dock.variant), dock_layout.shell);
+    render_control_dock_top_divider(
+        frame,
+        Rect::new(
+            dock_layout.shell.x,
+            dock_layout.shell.y,
+            dock_layout.shell.width,
+            1,
+        ),
+        theme,
+        dock.variant,
+    );
+
+    if let Some(status_area) = dock_layout.status {
+        render_control_dock_status_band(frame, app, status_area, theme, &dock);
+    }
+
+    if dock.variant == crate::view_model::ControlDockVariant::ReplayReadOnly {
+        render_replay_read_only_composer_content(frame, dock_layout.composer, theme, &dock);
+        return;
+    }
+
+    let composer_lines = composer_input_height(&app.prompt_buffer, dock_layout.composer.width);
+    render_document_composer_content(
+        frame,
+        app,
+        dock_layout.composer,
+        theme,
+        DocumentComposerRenderContext {
+            dock: &dock,
+            composer_lines,
+        },
+    );
 }
 
 fn render_startup_prompt_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
@@ -548,10 +592,7 @@ fn render_startup_prompt_pane(frame: &mut Frame, app: &AppState, area: Rect, the
         frame.render_widget(
             Paragraph::new(Line::from(vec![
                 Span::styled("  ", Style::default().bg(surface)),
-                Span::styled(
-                    hint,
-                    Style::default().fg(theme.text.secondary).bg(surface),
-                ),
+                Span::styled(hint, Style::default().fg(theme.text.secondary).bg(surface)),
             ])),
             rows[1],
         );
@@ -560,6 +601,55 @@ fn render_startup_prompt_pane(frame: &mut Frame, app: &AppState, area: Rect, the
 
 pub(super) fn panel_style(surface: Color, foreground: Color) -> Style {
     Style::default().fg(foreground).bg(surface)
+}
+
+fn framed_surface_block<'a>(
+    title: impl Into<Line<'a>>,
+    surface: Color,
+    border: Color,
+    title_color: Color,
+    borders: Borders,
+) -> Block<'a> {
+    Block::default()
+        .borders(borders)
+        .border_style(Style::default().fg(border))
+        .style(Style::default().bg(surface))
+        .padding(Padding::ZERO)
+        .title(title)
+        .title_style(panel_style(surface, title_color))
+}
+
+fn modal_card_surface_block<'a>(
+    title: impl Into<Line<'a>>,
+    surface: Color,
+    border: Color,
+    title_color: Color,
+    frame: ChromeFrame,
+) -> Block<'a> {
+    framed_surface_block(
+        title,
+        surface,
+        border,
+        title_color,
+        chrome_frame_borders(frame),
+    )
+}
+
+fn divided_surface_block<'a>(
+    theme: &Theme,
+    title: impl Into<Line<'a>>,
+    divider: DividerIntensity,
+    frame: ChromeFrame,
+    surface: Color,
+    title_color: Color,
+) -> Block<'a> {
+    Block::default()
+        .borders(chrome_frame_borders(frame))
+        .border_style(Style::default().fg(divider_color(theme, divider).unwrap_or_default()))
+        .style(Style::default().bg(surface))
+        .padding(Padding::ZERO)
+        .title(title)
+        .title_style(panel_style(surface, title_color))
 }
 
 pub(super) fn live_transcript_shell_surface(theme: &Theme) -> Color {
@@ -588,7 +678,7 @@ pub(super) fn control_dock_surface(
 ) -> Color {
     match variant {
         crate::view_model::ControlDockVariant::Live => live_control_dock_surface(theme),
-        crate::view_model::ControlDockVariant::ReplayReadOnly => chromeless_shell_surface(theme),
+        crate::view_model::ControlDockVariant::ReplayReadOnly => live_control_dock_surface(theme),
     }
 }
 
@@ -596,22 +686,95 @@ pub(super) fn elevated_card_surface(theme: &Theme) -> Color {
     live_control_dock_surface(theme)
 }
 
+pub(super) fn open_canvas(theme: &Theme) -> Block<'static> {
+    Block::default().style(Style::default().bg(live_transcript_shell_surface(theme)))
+}
+
+pub(super) fn quiet_rail<'a>(
+    theme: &Theme,
+    title: impl Into<Line<'a>>,
+    is_focused: bool,
+    surface: Color,
+) -> Block<'a> {
+    divided_surface_block(
+        theme,
+        title,
+        if is_focused {
+            DividerIntensity::Focus
+        } else {
+            DividerIntensity::Subtle
+        },
+        ChromeFrame::Frame,
+        surface,
+        theme.text.secondary,
+    )
+}
+
+pub(super) fn message_surface<'a>(
+    theme: &Theme,
+    title: impl Into<Line<'a>>,
+    is_focused: bool,
+    surface: Color,
+) -> Block<'a> {
+    divided_surface_block(
+        theme,
+        title,
+        if is_focused {
+            DividerIntensity::Focus
+        } else {
+            DividerIntensity::Subtle
+        },
+        ChromeFrame::Frame,
+        surface,
+        theme.text.secondary,
+    )
+}
+
+#[allow(dead_code)]
+pub(super) fn nested_tool_surface<'a>(
+    title: impl Into<Line<'a>>,
+    surface: Color,
+    border: Color,
+    title_color: Color,
+) -> Block<'a> {
+    framed_surface_block(title, surface, border, title_color, Borders::ALL)
+}
+
+pub(super) fn unified_bottom_dock(
+    theme: &Theme,
+    variant: crate::view_model::ControlDockVariant,
+) -> Block<'static> {
+    Block::default().style(Style::default().bg(control_dock_surface(theme, variant)))
+}
+
+pub(super) fn modal_card<'a>(
+    theme: &Theme,
+    title: impl Into<Line<'a>>,
+    border: Color,
+    title_color: Color,
+    frame: ChromeFrame,
+) -> Block<'a> {
+    modal_card_surface_block(
+        title,
+        elevated_card_surface(theme),
+        border,
+        title_color,
+        frame,
+    )
+}
+
+#[allow(dead_code)]
 pub(super) fn elevated_card_block<'a>(
     title: impl Into<Line<'a>>,
     surface: Color,
     border: Color,
     title_color: Color,
 ) -> Block<'a> {
-    Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(border))
-        .style(Style::default().bg(surface))
-        .title(title)
-        .title_style(panel_style(surface, title_color))
+    modal_card_surface_block(title, surface, border, title_color, ChromeFrame::Frame)
 }
 
 pub(super) fn live_transcript_shell_section(theme: &Theme) -> Block<'static> {
-    Block::default().style(Style::default().bg(live_transcript_shell_surface(theme)))
+    open_canvas(theme)
 }
 
 #[allow(dead_code)]
@@ -623,7 +786,7 @@ pub(super) fn control_dock_section(
     theme: &Theme,
     variant: crate::view_model::ControlDockVariant,
 ) -> Block<'static> {
-    Block::default().style(Style::default().bg(control_dock_surface(theme, variant)))
+    unified_bottom_dock(theme, variant)
 }
 
 pub(super) fn control_dock_status_section(
@@ -638,30 +801,16 @@ pub(super) fn control_dock_status_surface(
     variant: crate::view_model::ControlDockVariant,
 ) -> Color {
     match variant {
-        crate::view_model::ControlDockVariant::Live => control_dock_surface(theme, variant),
-        crate::view_model::ControlDockVariant::ReplayReadOnly => chromeless_shell_surface(theme),
+        crate::view_model::ControlDockVariant::Live => theme.surface.panel,
+        crate::view_model::ControlDockVariant::ReplayReadOnly => theme.surface.canvas,
     }
-}
-
-#[allow(dead_code)]
-pub(super) fn stacked_control_dock_rect(status_area: Rect, composer_area: Rect) -> Rect {
-    let x = status_area.x.min(composer_area.x);
-    let y = status_area.y.min(composer_area.y);
-    let right = status_area
-        .x
-        .saturating_add(status_area.width)
-        .max(composer_area.x.saturating_add(composer_area.width));
-    let bottom = status_area
-        .y
-        .saturating_add(status_area.height)
-        .max(composer_area.y.saturating_add(composer_area.height));
-    Rect::new(x, y, right.saturating_sub(x), bottom.saturating_sub(y))
 }
 
 pub(super) fn chromeless_shell_section(theme: &Theme) -> Block<'static> {
     live_transcript_shell_section(theme)
 }
 
+#[allow(dead_code)]
 pub(super) fn divided_shell_section<'a>(
     theme: &Theme,
     title: impl Into<Line<'a>>,
@@ -669,12 +818,7 @@ pub(super) fn divided_shell_section<'a>(
     frame: ChromeFrame,
     surface: Color,
 ) -> Block<'a> {
-    Block::default()
-        .borders(chrome_frame_borders(frame))
-        .border_style(Style::default().fg(divider_color(theme, divider).unwrap_or_default()))
-        .style(Style::default().bg(surface))
-        .title(title)
-        .title_style(panel_style(surface, theme.text.secondary))
+    divided_surface_block(theme, title, divider, frame, surface, theme.text.secondary)
 }
 
 pub(super) fn subtle_divider_block(
@@ -696,17 +840,7 @@ pub(super) fn secondary_pane_block<'a>(
     is_focused: bool,
     surface: Color,
 ) -> Block<'a> {
-    divided_shell_section(
-        theme,
-        title,
-        if is_focused {
-            DividerIntensity::Focus
-        } else {
-            DividerIntensity::Subtle
-        },
-        ChromeFrame::Frame,
-        surface,
-    )
+    quiet_rail(theme, title, is_focused, surface)
 }
 
 pub(super) fn interruptive_modal_block<'a>(
@@ -716,13 +850,7 @@ pub(super) fn interruptive_modal_block<'a>(
     title_color: Color,
     frame: ChromeFrame,
 ) -> Block<'a> {
-    let surface = elevated_card_surface(theme);
-    Block::default()
-        .borders(chrome_frame_borders(frame))
-        .border_style(Style::default().fg(border))
-        .style(Style::default().bg(surface))
-        .title(title)
-        .title_style(panel_style(surface, title_color))
+    modal_card(theme, title, border, title_color, frame)
 }
 
 pub(super) fn panel_block<'a>(
@@ -731,7 +859,7 @@ pub(super) fn panel_block<'a>(
     is_focused: bool,
     surface: Color,
 ) -> Block<'a> {
-    secondary_pane_block(theme, title, is_focused, surface)
+    message_surface(theme, title, is_focused, surface)
 }
 
 fn semantic_surface(theme: &Theme, mode: ChromeMode) -> Color {
@@ -1160,11 +1288,26 @@ fn render_document_composer(
         return;
     }
 
-    let surface = control_dock_surface(theme, context.dock.variant);
     frame.render_widget(control_dock_section(theme, context.dock.variant), area);
 
-    let divider_area = Rect::new(area.x, area.y, area.width, 1);
-    render_control_dock_top_divider(frame, divider_area, theme, context.dock.variant);
+    render_control_dock_top_divider(
+        frame,
+        Rect::new(area.x, area.y, area.width, 1),
+        theme,
+        context.dock.variant,
+    );
+
+    render_document_composer_content(frame, app, area, theme, context);
+}
+
+fn render_document_composer_content(
+    frame: &mut Frame,
+    app: &AppState,
+    area: Rect,
+    theme: &Theme,
+    context: DocumentComposerRenderContext<'_>,
+) {
+    let surface = control_dock_surface(theme, context.dock.variant);
 
     let content_area = Rect::new(
         area.x,
@@ -1408,11 +1551,25 @@ fn render_replay_read_only_prompt_pane(
         return;
     }
 
-    let surface = control_dock_surface(theme, dock.variant);
     frame.render_widget(control_dock_section(theme, dock.variant), area);
 
-    let divider_area = Rect::new(area.x, area.y, area.width, 1);
-    render_control_dock_top_divider(frame, divider_area, theme, dock.variant);
+    render_control_dock_top_divider(
+        frame,
+        Rect::new(area.x, area.y, area.width, 1),
+        theme,
+        dock.variant,
+    );
+
+    render_replay_read_only_composer_content(frame, area, theme, dock);
+}
+
+fn render_replay_read_only_composer_content(
+    frame: &mut Frame,
+    area: Rect,
+    theme: &Theme,
+    dock: &crate::view_model::ControlDockViewModel,
+) {
+    let surface = control_dock_surface(theme, dock.variant);
 
     let content_area = Rect::new(
         area.x,
@@ -1505,8 +1662,9 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
     let height = 30;
     let area = Rect::new(0, 0, width, height);
     let plan = FrameLayoutPlan::for_app(&app, area);
-    let status = plan.status.expect("live status area");
-    let composer = plan.composer.expect("live composer area");
+    let dock = plan.dock.expect("live dock layout");
+    let status = dock.status.expect("live status area");
+    let composer = dock.composer;
 
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).expect("create live shell terminal");
@@ -1515,15 +1673,12 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
         .expect("draw live shell frame");
 
     let buffer = terminal.backend().buffer().clone();
-    let dock_area = stacked_control_dock_rect(status, composer);
-    let right_edge = dock_area
+    let right_edge = dock
+        .shell
         .x
-        .saturating_add(dock_area.width.saturating_sub(1));
+        .saturating_add(dock.shell.width.saturating_sub(1));
 
-    assert_eq!(
-        buffer[(right_edge, status.y)].bg,
-        theme.surface.panel_elevated
-    );
+    assert_eq!(buffer[(right_edge, status.y)].bg, theme.surface.panel);
     assert_eq!(
         buffer[(right_edge, composer.y)].bg,
         theme.surface.panel_elevated
@@ -1531,6 +1686,11 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
     assert_eq!(
         buffer[(right_edge, composer.y.saturating_add(1))].bg,
         theme.surface.panel_elevated
+    );
+    assert_eq!(
+        buffer[(right_edge, dock.shell.y)].symbol(),
+        "─",
+        "unified dock should draw one top divider across the shared shell"
     );
     assert_eq!(
         buffer[(

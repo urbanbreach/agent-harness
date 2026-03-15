@@ -31,7 +31,9 @@ fn chrome_helper_inventory_is_exhaustive() {
     assert!(UI_CHROME.contains("pub(super) fn interruptive_modal_block"));
 
     assert!(count_occurrences(UI_SECONDARY, "ui_chrome::secondary_pane_block(") >= 1);
-    assert!(UI_SECONDARY.contains("Block::default().style(Style::default().bg(theme.surface.shell))"));
+    assert!(
+        UI_SECONDARY.contains("Block::default().style(Style::default().bg(theme.surface.shell))")
+    );
     assert!(count_occurrences(UI_OVERLAYS, "render_overlay_surface(") >= 2);
     assert_eq!(
         count_occurrences(UI_OVERLAYS, "ui_chrome::interruptive_modal_block("),
@@ -52,16 +54,17 @@ fn chrome_helper_inventory_is_exhaustive() {
 #[test]
 fn primary_surfaces_use_semantic_chrome_helpers() {
     assert!(UI_LIFECYCLE.contains("crate::layout::startup_shell_area(area, theme)"));
-    assert!(UI_LIFECYCLE.contains("Paragraph::new(startup_card.metadata)"));
+    assert!(UI_LIFECYCLE.contains("render_lifecycle_copy_line("));
+    assert!(UI_LIFECYCLE.contains("&startup_card.metadata"));
     assert!(!UI_LIFECYCLE.contains("ui_chrome::elevated_card_block("));
     assert!(!UI_LIFECYCLE.contains("ui_chrome::divided_shell_section("));
 
     assert!(UI_SECONDARY.contains("ui_chrome::divided_shell_surface(theme)"));
     assert!(UI_SECONDARY
         .contains("ui_chrome::secondary_pane_block(theme, Line::default(), is_focused, surface)"));
-    assert!(UI_SECONDARY.contains(
-        "Block::default().style(Style::default().bg(theme.surface.shell))"
-    ));
+    assert!(
+        UI_SECONDARY.contains("Block::default().style(Style::default().bg(theme.surface.shell))")
+    );
 
     assert!(UI_RS.contains("chromeless_shell_section(theme)"));
     assert!(UI_RS.contains("let surface = elevated_card_surface(theme);"));
