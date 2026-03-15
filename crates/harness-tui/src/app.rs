@@ -1680,6 +1680,7 @@ impl AppState {
         state.replay_mode = true;
         state.session_path = Some(session_path);
         state.replace_events(events);
+        state.normalize_focus_for_active_surface();
         state
     }
 
@@ -2408,6 +2409,15 @@ impl AppState {
         !self.replay_mode && self.active_tab == Tab::Run && self.live_details_drawer_open
     }
 
+    fn operator_rail_has_sections(&self) -> bool {
+        !self.operator_sidebar_todo_lines().is_empty()
+            || !self.operator_sidebar_modified_files().is_empty()
+    }
+
+    fn session_shell_operator_rail_interactive(&self) -> bool {
+        self.details_drawer_open() || self.operator_rail_has_sections()
+    }
+
     pub fn review_surface(&self) -> Option<ReviewSurface> {
         self.active_review_surface
     }
@@ -3088,7 +3098,10 @@ impl AppState {
         }
 
         if self.startup_shell_visible() {
-            matches!(command_id, "new_session" | "resume_session" | "replay_session" | "quit")
+            matches!(
+                command_id,
+                "new_session" | "resume_session" | "replay_session" | "quit"
+            )
         } else if matches!(command_id, "show_thinking" | "hide_thinking") {
             self.active_review_surface.is_none()
                 && if command_id == "show_thinking" {
@@ -3292,7 +3305,16 @@ impl AppState {
     fn normalize_focus_for_active_surface(&mut self) {
         if self.replay_mode {
             if self.focus == Focus::Prompt {
-                self.focus = Focus::List;
+                self.focus = if self.session_shell_operator_rail_interactive() {
+                    Focus::List
+                } else {
+                    Focus::Details
+                };
+            } else if self.active_review_surface.is_none()
+                && !self.session_shell_operator_rail_interactive()
+                && self.focus == Focus::List
+            {
+                self.focus = Focus::Details;
             }
             return;
         }
@@ -3306,11 +3328,22 @@ impl AppState {
 
         if self.active_review_surface.is_some() && self.focus == Focus::Prompt {
             self.focus = Focus::List;
+        } else if self.active_review_surface.is_none()
+            && !self.startup_shell_visible()
+            && !self.session_shell_operator_rail_interactive()
+            && self.focus == Focus::List
+        {
+            self.focus = Focus::Details;
         }
     }
 
     fn cycle_focus_forward(&mut self) {
         if self.replay_mode {
+            if !self.session_shell_operator_rail_interactive() {
+                self.focus = Focus::Details;
+                return;
+            }
+
             self.focus = match self.focus {
                 Focus::List => Focus::Details,
                 Focus::Details | Focus::Prompt => Focus::List,
@@ -3327,6 +3360,18 @@ impl AppState {
                     Focus::Details => Focus::List,
                 }
             };
+            return;
+        }
+
+        if self.active_review_surface.is_none()
+            && !self.startup_shell_visible()
+            && !self.session_shell_operator_rail_interactive()
+        {
+            self.focus = match self.focus {
+                Focus::Prompt => Focus::Details,
+                Focus::Details | Focus::List => Focus::Prompt,
+            };
+            self.live_details_drawer_open = false;
             return;
         }
 
@@ -3351,6 +3396,11 @@ impl AppState {
 
     fn cycle_focus_backward(&mut self) {
         if self.replay_mode {
+            if !self.session_shell_operator_rail_interactive() {
+                self.focus = Focus::Details;
+                return;
+            }
+
             self.focus = match self.focus {
                 Focus::List | Focus::Prompt => Focus::Details,
                 Focus::Details => Focus::List,
@@ -3367,6 +3417,19 @@ impl AppState {
                     Focus::Details => Focus::List,
                 }
             };
+            return;
+        }
+
+        if self.active_review_surface.is_none()
+            && !self.startup_shell_visible()
+            && !self.session_shell_operator_rail_interactive()
+        {
+            self.focus = match self.focus {
+                Focus::Prompt => Focus::Details,
+                Focus::Details => Focus::Prompt,
+                Focus::List => Focus::Details,
+            };
+            self.live_details_drawer_open = false;
             return;
         }
 
@@ -3893,6 +3956,44 @@ pub(crate) fn exact_test_replay_mode_disables_slash_workflow() {
     assert!(!app.slash_visible);
     assert_eq!(app.overlay_stack().top(), None);
     assert!(app.prompt_buffer.is_empty());
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_compact_operator_rail_skips_focus_cycle() {
+    let mut live = AppState::new_live(None, false, None);
+
+    assert_eq!(live.focus, Focus::Prompt);
+    assert!(!live.details_drawer_open());
+
+    live.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    assert_eq!(live.focus, Focus::Details);
+    assert!(!live.details_drawer_open());
+
+    live.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    assert_eq!(live.focus, Focus::Prompt);
+    assert!(!live.details_drawer_open());
+
+    live.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE));
+    assert_eq!(live.focus, Focus::Details);
+    assert!(!live.details_drawer_open());
+
+    let mut live_overlay = AppState::new_live(None, false, None);
+    live_overlay.focus = Focus::Details;
+    live_overlay.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+    assert!(live_overlay.details_drawer_open());
+
+    live_overlay.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    assert_eq!(live_overlay.focus, Focus::List);
+    assert!(live_overlay.details_drawer_open());
+
+    let mut replay = AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new());
+    assert_eq!(replay.focus, Focus::Details);
+
+    replay.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    assert_eq!(replay.focus, Focus::Details);
+
+    replay.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE));
+    assert_eq!(replay.focus, Focus::Details);
 }
 
 #[cfg(test)]
@@ -4460,11 +4561,13 @@ mod tests {
     fn replay_mode_focus_cycle_skips_prompt_and_blocks_draft_edits() {
         let mut app = AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new());
 
+        assert_eq!(app.focus, Focus::Details);
+
         app.handle_key(key(KeyCode::Tab));
         assert_eq!(app.focus, Focus::Details);
 
         app.handle_key(key(KeyCode::Tab));
-        assert_eq!(app.focus, Focus::List);
+        assert_eq!(app.focus, Focus::Details);
 
         app.focus = Focus::Prompt;
         app.handle_key(key(KeyCode::Char('x')));
