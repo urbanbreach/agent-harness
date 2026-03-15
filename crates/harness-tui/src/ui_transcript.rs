@@ -13,6 +13,8 @@ use super::ui_secondary::render_structured_diff_lines;
 struct LabeledTextBlockStyle<'a> {
     indent: &'a str,
     label: &'a str,
+    rail_color: Color,
+    surface: Color,
     label_style: Style,
     body_style: Style,
 }
@@ -20,6 +22,65 @@ struct LabeledTextBlockStyle<'a> {
 struct SyntaxHighlightAssets {
     syntax_set: SyntaxSet,
     theme: SyntectTheme,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MeasuredTranscriptSectionKind {
+    Turn,
+    PendingPermission,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Clone)]
+struct MeasuredTranscriptSection {
+    kind: MeasuredTranscriptSectionKind,
+    top_row: usize,
+    leading_gap_height: usize,
+    content_height: usize,
+    surfaces: Vec<MeasuredTranscriptSurface>,
+    lines: Vec<Line<'static>>,
+}
+
+impl MeasuredTranscriptSection {
+    fn total_height(&self) -> usize {
+        self.leading_gap_height + self.content_height
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct MeasuredTranscriptLayout {
+    sections: Vec<MeasuredTranscriptSection>,
+    total_height: usize,
+}
+
+#[derive(Debug, Clone)]
+struct TranscriptRenderSurface {
+    rail_color: Color,
+    surface: Color,
+    lines: Vec<Line<'static>>,
+}
+
+#[derive(Debug, Clone)]
+struct MeasuredTranscriptSurface {
+    top_offset: usize,
+    height: usize,
+    rail_color: Color,
+    surface: Color,
+    lines: Vec<Line<'static>>,
+}
+
+impl MeasuredTranscriptLayout {
+    fn rendered_lines(&self) -> Vec<Line<'static>> {
+        let mut lines = Vec::new();
+        for section in &self.sections {
+            if section.leading_gap_height > 0 {
+                lines.push(Line::default());
+            }
+            lines.extend(section.lines.iter().cloned());
+        }
+        lines
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,6 +165,11 @@ enum ParsedTextBlock {
     },
 }
 
+const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 2;
+const TRANSCRIPT_SURFACE_BODY_PREFIX: &str = " ";
+const TRANSCRIPT_NESTED_INDENT: &str = "  ";
+const TRANSCRIPT_RAIL_GLYPH: &str = "▎ ";
+
 pub(super) fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     if !app.replay_mode {
         let inner_area = inset_rect(area, theme.live_shell.rhythm.transcript_gutter_x, 0);
@@ -118,17 +184,7 @@ pub(super) fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Re
             return;
         }
 
-        let lines = build_transcript_lines_for_width(app, theme, inner_area.width);
-        let transcript_scroll = transcript_scroll_offset(app, &lines, inner_area);
-        let content = Text::from(lines);
-
-        frame.render_widget(
-            Paragraph::new(content)
-                .style(panel_style(theme.surface.shell, theme.text.primary))
-                .scroll((transcript_scroll, 0))
-                .wrap(Wrap { trim: false }),
-            inner_area,
-        );
+        render_measured_transcript_pane(frame, app, inner_area, theme, theme.surface.shell);
         return;
     }
 
@@ -139,17 +195,7 @@ pub(super) fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Re
             theme.live_shell.rhythm.transcript_gutter_y,
         );
 
-        let lines = build_transcript_lines_for_width(app, theme, inner_area.width);
-        let transcript_scroll = transcript_scroll_offset(app, &lines, inner_area);
-        let content = Text::from(lines);
-
-        frame.render_widget(
-            Paragraph::new(content)
-                .style(panel_style(theme.surface.shell, theme.text.primary))
-                .scroll((transcript_scroll, 0))
-                .wrap(Wrap { trim: false }),
-            inner_area,
-        );
+        render_measured_transcript_pane(frame, app, inner_area, theme, theme.surface.panel);
         return;
     }
 
@@ -185,17 +231,32 @@ pub(super) fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Re
         return;
     }
 
-    let lines = build_transcript_lines_for_width(app, theme, inner_area.width);
-    let transcript_scroll = transcript_scroll_offset(app, &lines, inner_area);
-    let content = Text::from(lines);
+    render_measured_transcript_pane(frame, app, inner_area, theme, surface);
+}
 
-    frame.render_widget(
-        Paragraph::new(content)
-            .style(panel_style(surface, theme.text.primary))
-            .scroll((transcript_scroll, 0))
+fn render_measured_transcript_pane(
+    frame: &mut Frame,
+    app: &AppState,
+    inner_area: Rect,
+    theme: &Theme,
+    empty_surface: Color,
+) {
+    let layout = build_measured_transcript_layout_for_width(app, theme, inner_area.width);
+    if layout.sections.is_empty() {
+        frame.render_widget(
+            Paragraph::new(Text::from(vec![Line::from(Span::styled(
+                "Waiting for first turn…",
+                Style::default().fg(theme.text.secondary),
+            ))]))
+            .style(panel_style(empty_surface, theme.text.primary))
             .wrap(Wrap { trim: false }),
-        inner_area,
-    );
+            inner_area,
+        );
+        return;
+    }
+
+    let transcript_scroll = usize::from(transcript_scroll_offset(app, &layout, inner_area));
+    render_transcript_layout_surfaces(frame, &layout, inner_area, transcript_scroll, theme);
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -208,17 +269,17 @@ fn build_transcript_lines_for_width(
     theme: &Theme,
     width: u16,
 ) -> Vec<Line<'static>> {
+    let layout = build_measured_transcript_layout_for_width(app, theme, width);
+    transcript_layout_lines(&layout, theme)
+}
+
+fn build_measured_transcript_layout_for_width(
+    app: &AppState,
+    theme: &Theme,
+    width: u16,
+) -> MeasuredTranscriptLayout {
     let sections = build_transcript_sections(app);
-    let mut lines = render_transcript_sections(&sections, theme, width);
-
-    if lines.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "Waiting for first turn…",
-            Style::default().fg(theme.text.secondary),
-        )));
-    }
-
-    lines
+    measure_transcript_layout(&sections, theme, width)
 }
 
 fn build_transcript_sections(app: &AppState) -> Vec<TranscriptSection> {
@@ -344,81 +405,240 @@ fn build_tool_call_section(
     }
 }
 
-fn render_transcript_sections(
+fn measure_transcript_layout(
     sections: &[TranscriptSection],
     theme: &Theme,
     width: u16,
-) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
-    for section in sections {
-        append_transcript_section_lines(&mut lines, section, theme, width);
+) -> MeasuredTranscriptLayout {
+    let mut top_row = 0;
+    let mut measured_sections = Vec::with_capacity(sections.len());
+
+    for (index, section) in sections.iter().enumerate() {
+        let surfaces = build_transcript_render_surfaces(section, theme, width);
+        let lines = render_transcript_surface_lines(&surfaces);
+        let content_width = usize::from(transcript_surface_content_width(width));
+        let mut content_height = 0usize;
+        let mut measured_surfaces = Vec::with_capacity(surfaces.len());
+        for (surface_index, surface) in surfaces.into_iter().enumerate() {
+            let top_offset = content_height + usize::from(surface_index > 0);
+            let height = transcript_visual_rows(&surface.lines, content_width);
+            content_height = top_offset + height;
+            measured_surfaces.push(MeasuredTranscriptSurface {
+                top_offset,
+                height,
+                rail_color: surface.rail_color,
+                surface: surface.surface,
+                lines: surface.lines,
+            });
+        }
+        let leading_gap_height = usize::from(index > 0);
+        let kind = match section {
+            TranscriptSection::Turn(_) => MeasuredTranscriptSectionKind::Turn,
+            TranscriptSection::PendingPermission(_) => {
+                MeasuredTranscriptSectionKind::PendingPermission
+            }
+        };
+
+        let measured_section = MeasuredTranscriptSection {
+            kind,
+            top_row,
+            leading_gap_height,
+            content_height,
+            surfaces: measured_surfaces,
+            lines,
+        };
+        top_row += measured_section.total_height();
+        measured_sections.push(measured_section);
     }
+
+    MeasuredTranscriptLayout {
+        sections: measured_sections,
+        total_height: top_row,
+    }
+}
+
+fn transcript_layout_lines(layout: &MeasuredTranscriptLayout, theme: &Theme) -> Vec<Line<'static>> {
+    let mut lines = layout.rendered_lines();
+
+    if lines.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "Waiting for first turn…",
+            Style::default().fg(theme.text.secondary),
+        )));
+    }
+
     lines
 }
 
-fn append_transcript_section_lines(
-    lines: &mut Vec<Line<'static>>,
-    section: &TranscriptSection,
+fn render_transcript_layout_surfaces(
+    frame: &mut Frame,
+    layout: &MeasuredTranscriptLayout,
+    area: Rect,
+    scroll_top: usize,
     theme: &Theme,
-    width: u16,
 ) {
-    match section {
-        TranscriptSection::Turn(turn) => append_turn_section_lines(lines, turn, theme, width),
-        TranscriptSection::PendingPermission(section) => {
-            append_pending_permission_section_lines(lines, section, theme, width)
+    let viewport_height = usize::from(area.height);
+    if viewport_height == 0 || area.width == 0 {
+        return;
+    }
+
+    let viewport_bottom = scroll_top.saturating_add(viewport_height);
+    for section in &layout.sections {
+        let section_content_top = section.top_row.saturating_add(section.leading_gap_height);
+        for surface in &section.surfaces {
+            let surface_top = section_content_top.saturating_add(surface.top_offset);
+            let surface_bottom = surface_top.saturating_add(surface.height);
+            if surface_bottom <= scroll_top || surface_top >= viewport_bottom {
+                continue;
+            }
+
+            let visible_top = surface_top.max(scroll_top);
+            let visible_bottom = surface_bottom.min(viewport_bottom);
+            let local_scroll = visible_top.saturating_sub(surface_top);
+            let y_offset = visible_top.saturating_sub(scroll_top);
+            let visible_height = visible_bottom.saturating_sub(visible_top);
+            let surface_rect = Rect::new(
+                area.x,
+                area.y
+                    .saturating_add(u16::try_from(y_offset).unwrap_or(u16::MAX)),
+                area.width,
+                u16::try_from(visible_height).unwrap_or(u16::MAX),
+            );
+            render_transcript_surface(frame, surface, surface_rect, local_scroll, theme);
         }
     }
 }
 
-fn append_turn_section_lines(
-    lines: &mut Vec<Line<'static>>,
+fn render_transcript_surface(
+    frame: &mut Frame,
+    surface: &MeasuredTranscriptSurface,
+    area: Rect,
+    local_scroll: usize,
+    theme: &Theme,
+) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    frame.render_widget(
+        Block::default().style(Style::default().bg(surface.surface)),
+        area,
+    );
+
+    let rail_width = area.width.min(TRANSCRIPT_SURFACE_RAIL_WIDTH);
+    if rail_width > 0 {
+        let rail_rect = Rect::new(area.x, area.y, rail_width, area.height);
+        frame.render_widget(
+            Paragraph::new(transcript_surface_rail_lines(
+                surface.height,
+                surface.rail_color,
+                surface.surface,
+            ))
+            .style(Style::default().bg(surface.surface))
+            .scroll((u16::try_from(local_scroll).unwrap_or(u16::MAX), 0)),
+            rail_rect,
+        );
+    }
+
+    if area.width <= rail_width {
+        return;
+    }
+
+    let content_rect = Rect::new(
+        area.x.saturating_add(rail_width),
+        area.y,
+        area.width.saturating_sub(rail_width),
+        area.height,
+    );
+    frame.render_widget(
+        Paragraph::new(Text::from(surface.lines.clone()))
+            .style(panel_style(surface.surface, theme.text.primary))
+            .scroll((u16::try_from(local_scroll).unwrap_or(u16::MAX), 0))
+            .wrap(Wrap { trim: false }),
+        content_rect,
+    );
+}
+
+fn build_transcript_render_surfaces(
+    section: &TranscriptSection,
+    theme: &Theme,
+    width: u16,
+) -> Vec<TranscriptRenderSurface> {
+    match section {
+        TranscriptSection::Turn(turn) => build_turn_render_surfaces(turn, theme, width),
+        TranscriptSection::PendingPermission(section) => {
+            vec![build_pending_permission_render_surface(
+                section, theme, width,
+            )]
+        }
+    }
+}
+
+fn build_turn_render_surfaces(
     turn: &TranscriptTurnSection,
     theme: &Theme,
     width: u16,
-) {
+) -> Vec<TranscriptRenderSurface> {
+    let mut surfaces = Vec::with_capacity(2);
+    if let Some(user_message) = turn.user_message.as_ref() {
+        surfaces.push(build_user_render_surface(turn, user_message, theme, width));
+    }
+    surfaces.push(build_assistant_render_surface(turn, theme, width));
+    surfaces
+}
+
+fn build_user_render_surface(
+    turn: &TranscriptTurnSection,
+    user_msg: &TranscriptUserMessageSection,
+    theme: &Theme,
+    width: u16,
+) -> TranscriptRenderSurface {
+    let mut lines = Vec::new();
     let is_selected = turn.header.is_selected;
     let header_style = transcript_label_style(theme, is_selected);
     let meta_style = muted_meta_style(theme);
-    let opening_prefix = transcript_card_opening_prefix(theme);
-    let body_prefix = transcript_card_body_prefix(theme);
-    let nested_prefix = transcript_card_nested_prefix(theme);
+    let mut user_line = vec![Span::raw(TRANSCRIPT_SURFACE_BODY_PREFIX.to_string())];
+    user_line.extend([
+        Span::styled(
+            format!("{} ", theme.live_shell.transcript_glyphs.user_marker),
+            Style::default().fg(theme.text.accent),
+        ),
+        Span::styled("user", header_style),
+    ]);
+    append_parenthesized_meta(
+        &mut user_line,
+        vec![(
+            request_id_label(&user_msg.request_id).into_owned(),
+            meta_style,
+        )],
+        theme,
+    );
+    lines.push(Line::from(user_line));
+    append_rich_text_block(
+        &mut lines,
+        &user_msg.text,
+        theme.text.primary,
+        TRANSCRIPT_SURFACE_BODY_PREFIX,
+        theme,
+        transcript_surface_content_width(width),
+    );
 
-    if let Some(user_msg) = &turn.user_message {
-        append_top_level_turn_separator(lines);
-
-        let mut user_line = vec![Span::styled(
-            opening_prefix.clone(),
-            transcript_prefix_style(theme),
-        )];
-        user_line.extend([
-            Span::styled(
-                format!("{} ", theme.live_shell.transcript_glyphs.user_marker),
-                Style::default().fg(theme.text.accent),
-            ),
-            Span::styled("user", header_style),
-        ]);
-        append_parenthesized_meta(
-            &mut user_line,
-            vec![(
-                request_id_label(&user_msg.request_id).into_owned(),
-                meta_style,
-            )],
-            theme,
-        );
-        lines.push(Line::from(user_line));
-        append_rich_text_block(
-            lines,
-            &user_msg.text,
-            theme.text.primary,
-            &body_prefix,
-            theme,
-            width,
-        );
-        append_transcript_card_closing_line(lines, theme);
+    TranscriptRenderSurface {
+        rail_color: theme.text.accent,
+        surface: transcript_top_level_surface(theme),
+        lines,
     }
+}
 
-    append_top_level_turn_separator(lines);
-
+fn build_assistant_render_surface(
+    turn: &TranscriptTurnSection,
+    theme: &Theme,
+    width: u16,
+) -> TranscriptRenderSurface {
+    let mut lines = Vec::new();
+    let is_selected = turn.header.is_selected;
+    let header_style = transcript_label_style(theme, is_selected);
+    let meta_style = muted_meta_style(theme);
     let (assistant_icon, assistant_color, assistant_status) = match turn.header.status {
         ActivityStatus::Streaming => (
             theme.live_shell.glyphs.streaming,
@@ -444,13 +664,14 @@ fn append_turn_section_lines(
             }
         ));
     }
-    let mut assistant_line = vec![
+    let mut assistant_line = vec![Span::raw(TRANSCRIPT_SURFACE_BODY_PREFIX.to_string())];
+    assistant_line.extend([
         Span::styled(
             format!("{} ", assistant_icon),
             Style::default().fg(assistant_color),
         ),
         Span::styled("assistant", header_style),
-    ];
+    ]);
     let mut assistant_segments = vec![(
         assistant_status.to_string(),
         Style::default().fg(assistant_color),
@@ -465,19 +686,17 @@ fn append_turn_section_lines(
         assistant_segments.push((assistant_meta.join(" · "), meta_style));
     }
     append_parenthesized_meta(&mut assistant_line, assistant_segments, theme);
-    assistant_line.insert(
-        0,
-        Span::styled(opening_prefix, transcript_prefix_style(theme)),
-    );
     lines.push(Line::from(assistant_line));
 
     if let Some(thinking) = &turn.thinking {
         append_labeled_text_block(
-            lines,
+            &mut lines,
             &thinking.text,
             LabeledTextBlockStyle {
-                indent: &nested_prefix,
-                label: "thinking ·",
+                indent: TRANSCRIPT_NESTED_INDENT,
+                label: "thinking",
+                rail_color: theme.text.accent,
+                surface: transcript_nested_surface(theme),
                 label_style: Style::default().fg(theme.text.accent),
                 body_style: subdued_payload_style(theme),
             },
@@ -487,47 +706,66 @@ fn append_turn_section_lines(
     }
 
     for tool_call in &turn.tool_calls {
-        append_tool_call_section_lines(lines, tool_call, theme, &nested_prefix);
+        append_tool_call_section_lines(&mut lines, tool_call, theme, width);
     }
 
     for block in &turn.body_blocks {
         match block {
             TranscriptBodyBlock::RichText(text) => {
-                append_rich_text_block(lines, text, theme.text.primary, &body_prefix, theme, width);
+                append_rich_text_block(
+                    &mut lines,
+                    text,
+                    theme.text.primary,
+                    TRANSCRIPT_SURFACE_BODY_PREFIX,
+                    theme,
+                    transcript_surface_content_width(width),
+                );
             }
             TranscriptBodyBlock::WaitingResponse => {
                 append_text_block(
-                    lines,
+                    &mut lines,
                     "Waiting for response…",
                     theme.text.secondary,
-                    &body_prefix,
+                    TRANSCRIPT_SURFACE_BODY_PREFIX,
                 );
             }
         }
     }
 
     if let Some(error) = &turn.error {
-        lines.push(Line::from(vec![
-            Span::styled(nested_prefix, transcript_prefix_style(theme)),
-            Span::styled("Error: ", Style::default().fg(theme.status.error)),
-            Span::styled(error.text.clone(), Style::default().fg(theme.status.error)),
-        ]));
+        append_labeled_text_block(
+            &mut lines,
+            &error.text,
+            LabeledTextBlockStyle {
+                indent: TRANSCRIPT_NESTED_INDENT,
+                label: "error",
+                rail_color: theme.status.error,
+                surface: transcript_nested_surface(theme),
+                label_style: Style::default().fg(theme.status.error),
+                body_style: Style::default().fg(theme.status.error),
+            },
+            theme,
+            width,
+        );
     }
 
-    append_transcript_card_closing_line(lines, theme);
+    TranscriptRenderSurface {
+        rail_color: assistant_color,
+        surface: transcript_top_level_surface(theme),
+        lines,
+    }
 }
 
 fn append_tool_call_section_lines(
     lines: &mut Vec<Line<'static>>,
     tool_call: &TranscriptToolCallSection,
     theme: &Theme,
-    prefix: &str,
+    width: u16,
 ) {
     let (status_icon, status_color, status_label, _) =
         tool_status_tokens(tool_call.header.status, theme);
 
     let mut header = vec![
-        Span::styled(prefix.to_string(), transcript_prefix_style(theme)),
         Span::styled(
             format!("{} ", status_icon),
             Style::default().fg(status_color),
@@ -549,11 +787,25 @@ fn append_tool_call_section_lines(
     if let Some(summary) = &tool_call.inline_summary {
         header.push(Span::styled(" · ", muted_meta_style(theme)));
         header.push(Span::styled(summary.clone(), subdued_payload_style(theme)));
-        lines.push(Line::from(header));
+        append_nested_surface_row(
+            lines,
+            TRANSCRIPT_NESTED_INDENT,
+            status_color,
+            transcript_nested_surface(theme),
+            header,
+            transcript_surface_content_width(width),
+        );
         return;
     }
 
-    lines.push(Line::from(header));
+    append_nested_surface_row(
+        lines,
+        TRANSCRIPT_NESTED_INDENT,
+        status_color,
+        transcript_nested_surface(theme),
+        header,
+        transcript_surface_content_width(width),
+    );
 
     for detail_block in &tool_call.detail_blocks {
         let (label, value, value_style) = match detail_block {
@@ -574,29 +826,26 @@ fn append_tool_call_section_lines(
         };
         append_tool_detail_row(
             lines,
-            prefix,
+            TRANSCRIPT_NESTED_INDENT,
+            status_color,
+            transcript_nested_surface(theme),
             label,
             value,
             tool_detail_label_style(label, theme, tool_call.header.status),
             value_style,
             theme,
+            transcript_surface_content_width(width),
         );
     }
 }
 
-fn append_pending_permission_section_lines(
-    lines: &mut Vec<Line<'static>>,
+fn build_pending_permission_render_surface(
     section: &TranscriptPendingPermissionSection,
     theme: &Theme,
     width: u16,
-) {
-    append_top_level_turn_separator(lines);
-
-    lines.push(Line::from(vec![
-        Span::styled(
-            transcript_card_opening_prefix(theme),
-            transcript_prefix_style(theme),
-        ),
+) -> TranscriptRenderSurface {
+    let mut lines = vec![Line::from(vec![
+        Span::raw(TRANSCRIPT_SURFACE_BODY_PREFIX.to_string()),
         Span::styled(
             format!("{} ", theme.live_shell.glyphs.pending_permission),
             Style::default().fg(theme.status.warning),
@@ -610,16 +859,34 @@ fn append_pending_permission_section_lines(
         Span::styled(" (", muted_meta_style(theme)),
         Span::styled("requested", Style::default().fg(theme.status.warning)),
         Span::styled(")", muted_meta_style(theme)),
-    ]));
+    ])];
     append_rich_text_block(
-        lines,
+        &mut lines,
         &section.summary,
         theme.text.primary,
-        &transcript_card_body_prefix(theme),
+        TRANSCRIPT_SURFACE_BODY_PREFIX,
         theme,
-        width,
+        transcript_surface_content_width(width),
     );
-    append_transcript_card_closing_line(lines, theme);
+
+    TranscriptRenderSurface {
+        rail_color: theme.status.warning,
+        surface: transcript_top_level_surface(theme),
+        lines,
+    }
+}
+
+fn render_transcript_surface_lines(surfaces: &[TranscriptRenderSurface]) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    for (index, surface) in surfaces.iter().enumerate() {
+        if index > 0 {
+            lines.push(Line::default());
+        }
+        lines.extend(surface.lines.iter().cloned().map(|line| {
+            prepend_transcript_surface_rail(line, surface.rail_color, surface.surface)
+        }));
+    }
+    lines
 }
 
 pub(super) fn append_text_block<'a>(
@@ -896,15 +1163,17 @@ fn rect_contains(area: Rect, column: u16, row: u16) -> bool {
         && row < area.y.saturating_add(area.height)
 }
 
-fn transcript_scroll_offset(app: &AppState, lines: &[Line<'static>], inner_area: Rect) -> u16 {
+fn transcript_scroll_offset(
+    app: &AppState,
+    layout: &MeasuredTranscriptLayout,
+    inner_area: Rect,
+) -> u16 {
     let viewport_height = usize::from(inner_area.height);
-    let viewport_width = usize::from(inner_area.width.max(1));
     if viewport_height == 0 {
         return 0;
     }
 
-    let total_rows = transcript_visual_rows(lines, viewport_width);
-    let max_scroll = total_rows.saturating_sub(viewport_height);
+    let max_scroll = layout.total_height.saturating_sub(viewport_height);
     if max_scroll == 0 {
         return 0;
     }
@@ -939,50 +1208,104 @@ fn transcript_surface_focused(app: &AppState) -> bool {
         && !app.details_drawer_open()
 }
 
+fn transcript_surface_content_width(width: u16) -> u16 {
+    width.saturating_sub(TRANSCRIPT_SURFACE_RAIL_WIDTH).max(1)
+}
+
+fn transcript_top_level_surface(theme: &Theme) -> Color {
+    elevated_card_surface(theme)
+}
+
+fn transcript_nested_surface(theme: &Theme) -> Color {
+    theme.surface.panel
+}
+
+fn transcript_surface_rail_lines(
+    height: usize,
+    rail_color: Color,
+    surface: Color,
+) -> Text<'static> {
+    Text::from(
+        (0..height)
+            .map(|_| {
+                Line::from(Span::styled(
+                    TRANSCRIPT_RAIL_GLYPH,
+                    Style::default().fg(rail_color).bg(surface),
+                ))
+            })
+            .collect::<Vec<_>>(),
+    )
+}
+
+fn prepend_transcript_surface_rail(
+    line: Line<'static>,
+    rail_color: Color,
+    surface: Color,
+) -> Line<'static> {
+    let mut spans = vec![Span::styled(
+        TRANSCRIPT_RAIL_GLYPH,
+        Style::default().fg(rail_color).bg(surface),
+    )];
+    spans.extend(line.spans);
+    Line::from(spans)
+}
+
+fn surface_span(text: impl Into<String>, style: Style, surface: Color) -> Span<'static> {
+    Span::styled(text.into(), style.bg(surface))
+}
+
+fn append_nested_surface_row(
+    lines: &mut Vec<Line<'static>>,
+    indent: &str,
+    rail_color: Color,
+    surface: Color,
+    content_spans: Vec<Span<'static>>,
+    width: u16,
+) {
+    let mut spans = Vec::new();
+    if !indent.is_empty() {
+        spans.push(Span::raw(indent.to_string()));
+    }
+    spans.push(Span::styled(
+        TRANSCRIPT_RAIL_GLYPH,
+        Style::default().fg(rail_color).bg(surface),
+    ));
+    spans.push(surface_span(" ", Style::default(), surface));
+    let mut visible_width = indent.chars().count() + TRANSCRIPT_RAIL_GLYPH.chars().count() + 1;
+    for span in content_spans {
+        visible_width += span.content.chars().count();
+        spans.push(surface_span(span.content.into_owned(), span.style, surface));
+    }
+    let remaining = usize::from(width).saturating_sub(visible_width);
+    if remaining > 0 {
+        spans.push(surface_span(
+            " ".repeat(remaining),
+            Style::default(),
+            surface,
+        ));
+    }
+    lines.push(Line::from(spans));
+}
+
 fn append_tool_detail_row(
     lines: &mut Vec<Line<'static>>,
-    prefix: &str,
+    indent: &str,
+    rail_color: Color,
+    surface: Color,
     label: &str,
     value: &str,
     label_style: Style,
     value_style: Style,
     theme: &Theme,
+    width: u16,
 ) {
-    let mut spans = vec![Span::styled(
-        prefix.to_string(),
-        transcript_prefix_style(theme),
-    )];
+    let mut spans = Vec::new();
     spans.push(Span::styled(label.to_string(), label_style));
     if !value.is_empty() {
         spans.push(Span::styled(" · ", muted_meta_style(theme)));
         spans.push(Span::styled(value.to_string(), value_style));
     }
-    lines.push(Line::from(spans));
-}
-
-fn append_top_level_turn_separator(lines: &mut Vec<Line<'static>>) {
-    if !lines.is_empty() {
-        lines.push(Line::default());
-    }
-}
-
-fn append_transcript_card_closing_line(lines: &mut Vec<Line<'static>>, theme: &Theme) {
-    lines.push(Line::from(Span::styled(
-        theme.live_shell.transcript_glyphs.card_bottom.to_string(),
-        transcript_prefix_style(theme),
-    )));
-}
-
-fn transcript_card_opening_prefix(theme: &Theme) -> String {
-    format!("{} ", theme.live_shell.transcript_glyphs.card_top)
-}
-
-fn transcript_card_body_prefix(theme: &Theme) -> String {
-    format!("{}  ", theme.live_shell.transcript_glyphs.card_mid)
-}
-
-fn transcript_card_nested_prefix(theme: &Theme) -> String {
-    format!("{}    ", theme.live_shell.transcript_glyphs.card_mid)
+    append_nested_surface_row(lines, indent, rail_color, surface, spans, width);
 }
 
 fn append_parenthesized_meta(
@@ -1012,26 +1335,26 @@ fn append_labeled_text_block(
     theme: &Theme,
     width: u16,
 ) {
-    let continuation_prefix = format!(
-        "{}{} ",
-        block_style.indent,
-        " ".repeat(block_style.label.chars().count())
-    );
+    let continuation_prefix = format!("{}  ", block_style.indent);
     if text.contains("```") {
-        lines.push(Line::from(vec![
-            Span::styled(
-                block_style.indent.to_string(),
-                transcript_prefix_style(theme),
-            ),
-            Span::styled(format!("{} ", block_style.label), block_style.label_style),
-        ]));
+        append_nested_surface_row(
+            lines,
+            block_style.indent,
+            block_style.rail_color,
+            block_style.surface,
+            vec![
+                Span::styled(block_style.label.to_string(), block_style.label_style),
+                Span::styled(" · code", muted_meta_style(theme)),
+            ],
+            transcript_surface_content_width(width),
+        );
         append_rich_text_block(
             lines,
             text,
             block_style.body_style.fg.unwrap_or(theme.text.primary),
             &continuation_prefix,
             theme,
-            width,
+            transcript_surface_content_width(width),
         );
         return;
     }
@@ -1039,38 +1362,51 @@ fn append_labeled_text_block(
     let mut rows = text.split('\n');
     if let Some(first) = rows.next() {
         let mut spans = vec![Span::styled(
-            block_style.indent.to_string(),
-            transcript_prefix_style(theme),
-        )];
-        spans.push(Span::styled(
-            format!("{} ", block_style.label),
+            block_style.label.to_string(),
             block_style.label_style,
-        ));
+        )];
         if !first.is_empty() {
+            spans.push(Span::styled(" · ", muted_meta_style(theme)));
             spans.push(Span::styled(first.to_string(), block_style.body_style));
         }
-        lines.push(Line::from(spans));
+        append_nested_surface_row(
+            lines,
+            block_style.indent,
+            block_style.rail_color,
+            block_style.surface,
+            spans,
+            transcript_surface_content_width(width),
+        );
     }
 
     for row in rows {
-        let mut spans = vec![Span::styled(
-            continuation_prefix.clone(),
-            transcript_prefix_style(theme),
-        )];
-        if !row.is_empty() {
-            spans.push(Span::styled(row.to_string(), block_style.body_style));
-        }
-        lines.push(Line::from(spans));
+        let spans = if row.is_empty() {
+            Vec::new()
+        } else {
+            vec![Span::styled(row.to_string(), block_style.body_style)]
+        };
+        append_nested_surface_row(
+            lines,
+            block_style.indent,
+            block_style.rail_color,
+            block_style.surface,
+            spans,
+            transcript_surface_content_width(width),
+        );
     }
 
     if text.is_empty() {
-        lines.push(Line::from(vec![
-            Span::styled(
-                block_style.indent.to_string(),
-                transcript_prefix_style(theme),
-            ),
-            Span::styled(format!("{} ", block_style.label), block_style.label_style),
-        ]));
+        append_nested_surface_row(
+            lines,
+            block_style.indent,
+            block_style.rail_color,
+            block_style.surface,
+            vec![Span::styled(
+                block_style.label.to_string(),
+                block_style.label_style,
+            )],
+            transcript_surface_content_width(width),
+        );
     }
 }
 
@@ -1162,6 +1498,104 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
 }
 
 #[cfg(test)]
+pub(crate) fn exact_test_transcript_follow_mode_uses_measured_surface_heights() {
+    let mut app = AppState::default();
+    app.activities = std::collections::VecDeque::from(vec![
+        transcript_section_model_test_activity(
+            "request-long",
+            ActivityStatus::Done,
+            "this reply is intentionally long enough to wrap across several measured surface rows",
+        ),
+        transcript_section_model_test_activity(
+            "request-short",
+            ActivityStatus::Done,
+            "short reply",
+        ),
+    ]);
+    app.selected_activity_index = 1;
+    app.follow_mode = true;
+
+    let width = 28;
+    let viewport_height = 6;
+    let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), width);
+
+    assert_eq!(layout.sections.len(), 2);
+    assert!(
+        layout.sections[0].content_height > layout.sections[0].lines.len(),
+        "wrapped transcript section should measure taller than its raw line count"
+    );
+
+    let measured_total_height = layout
+        .sections
+        .iter()
+        .map(MeasuredTranscriptSection::total_height)
+        .sum::<usize>();
+    assert_eq!(layout.total_height, measured_total_height);
+
+    let scroll = transcript_scroll_offset(&app, &layout, Rect::new(0, 0, width, viewport_height));
+    let expected = layout
+        .total_height
+        .saturating_sub(usize::from(viewport_height));
+
+    assert_eq!(usize::from(scroll), expected);
+    assert!(
+        usize::from(scroll) > 1,
+        "follow mode should scroll by measured surface height, not just section count"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_transcript_pending_permission_stays_after_last_activity() {
+    let mut app = AppState::default();
+    app.activities =
+        std::collections::VecDeque::from(vec![transcript_section_model_test_activity(
+            "request-a",
+            ActivityStatus::Done,
+            "assistant reply",
+        )]);
+    app.ingest_event(harness_core::event::EventEnvelopeV1 {
+        schema_version: harness_core::event::SCHEMA_VERSION,
+        event_id: "evt_pending_permission_order".to_string(),
+        seq: 1,
+        run_id: "run_pending_permission_order".to_string(),
+        mono_ms: 0,
+        ts: None,
+        actor: harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Supervisor,
+            None,
+        ),
+        correlation_id: Some("tool_call_pending_permission_order".to_string()),
+        causation_id: None,
+        stream_key: Some("tool_call_pending_permission_order".to_string()),
+        payload: harness_core::event::EventV1::PermissionRequested(
+            harness_core::event::PermissionRequestedEvent {
+                permission_id: "perm_pending_permission_order".to_string(),
+                kind: "edit_fs".to_string(),
+                tool_call_id: Some("tool_call_pending_permission_order".to_string()),
+                summary: "Apply hashline edit to demo.txt".to_string(),
+                request_digest: "digest-perm-order".to_string(),
+                timeout_ms: 30_000,
+                default_decision: harness_core::event::PermissionDecision::Deny,
+            },
+        ),
+    });
+
+    let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 80);
+
+    assert_eq!(layout.sections.len(), 2);
+    assert_eq!(layout.sections[0].kind, MeasuredTranscriptSectionKind::Turn);
+    assert_eq!(
+        layout.sections[1].kind,
+        MeasuredTranscriptSectionKind::PendingPermission
+    );
+    assert!(
+        layout.sections[1].top_row
+            >= layout.sections[0].top_row + layout.sections[0].total_height(),
+        "pending permission should stay after the last activity in measured layout"
+    );
+}
+
+#[cfg(test)]
 fn transcript_section_model_test_activity(
     request_id: &str,
     status: ActivityStatus,
@@ -1212,6 +1646,16 @@ mod tests {
     }
 
     #[test]
+    fn transcript_follow_mode_uses_measured_surface_heights() {
+        exact_test_transcript_follow_mode_uses_measured_surface_heights();
+    }
+
+    #[test]
+    fn transcript_pending_permission_stays_after_last_activity() {
+        exact_test_transcript_pending_permission_stays_after_last_activity();
+    }
+
+    #[test]
     fn pending_permission_sections_render_warning_turn_container() {
         let mut app = AppState::default();
         app.ingest_event(harness_core::event::EventEnvelopeV1 {
@@ -1247,8 +1691,10 @@ mod tests {
             80,
         ));
 
-        assert_eq!(lines[0], "╭─ ◷ permission (requested)");
-        assert_eq!(lines[1], "│  Apply hashline edit to demo.txt");
-        assert_eq!(lines[2], "╰─");
+        assert_eq!(lines[0], "▎  ◷ permission (requested)");
+        assert_eq!(lines[1], "▎  Apply hashline edit to demo.txt");
+        assert!(lines
+            .iter()
+            .all(|line| !line.contains('╭') && !line.contains('╰') && !line.contains('│')));
     }
 }

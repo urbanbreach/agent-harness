@@ -74,7 +74,19 @@ fn transcript_section_model_keeps_nested_tool_and_error_blocks() {
 
 #[cfg(test)]
 #[test]
-fn transcript_turn_sections_render_lightweight_containers() {
+fn transcript_follow_mode_uses_measured_surface_heights() {
+    ui::exact_test_transcript_follow_mode_uses_measured_surface_heights();
+}
+
+#[cfg(test)]
+#[test]
+fn transcript_pending_permission_stays_after_last_activity() {
+    ui::exact_test_transcript_pending_permission_stays_after_last_activity();
+}
+
+#[cfg(test)]
+#[test]
+fn transcript_turn_sections_render_open_rail_surfaces() {
     let mut app = app::AppState::new_live(
         Some(PathBuf::from("/tmp/sessions/run_fixture")),
         false,
@@ -91,32 +103,82 @@ fn transcript_turn_sections_render_lightweight_containers() {
     app.transcript_scroll = u16::MAX;
 
     let rendered = render_live_lines(&app, 80, 24);
+    let buffer = render_live_cells(&app, 80, 24);
+    let theme = Theme::default();
     let lines = rendered.lines().collect::<Vec<_>>();
-    let user_open = find_line_containing(&lines, "╭─ › user")
-        .unwrap_or_else(|| panic!("user opening line\n{rendered}"));
-    let user_body = find_line_containing_from(&lines, user_open + 1, "│  Group these turns")
+    let user_header =
+        find_line_containing(&lines, "user").unwrap_or_else(|| panic!("user header\n{rendered}"));
+    let user_body = find_line_containing_from(&lines, user_header + 1, "Group these turns")
         .unwrap_or_else(|| panic!("user body line\n{rendered}"));
-    let user_close = find_line_containing_from(&lines, user_body + 1, "╰─")
-        .unwrap_or_else(|| panic!("user close\n{rendered}"));
-    let assistant_open = find_line_containing_from(&lines, user_close + 1, "╭─ ● assistant")
-        .unwrap_or_else(|| panic!("assistant opening line\n{rendered}"));
+    let assistant_header = find_line_containing_from(&lines, user_body + 1, "assistant")
+        .unwrap_or_else(|| panic!("assistant header\n{rendered}"));
     let assistant_body =
-        find_line_containing_from(&lines, assistant_open + 1, "│  Grouped response")
+        find_line_containing_from(&lines, assistant_header + 1, "Grouped response")
             .unwrap_or_else(|| panic!("assistant body line\n{rendered}"));
-    let assistant_close = find_line_containing_from(&lines, assistant_body + 1, "╰─")
-        .unwrap_or_else(|| panic!("assistant close\n{rendered}"));
 
-    assert!(user_open < user_body && user_body < user_close);
-    assert_eq!(
-        user_close + 2,
-        assistant_open,
-        "expected one blank separator between top-level turns\n{rendered}"
+    assert!(
+        user_header < user_body,
+        "user content should remain nested under the user turn header\n{rendered}"
     );
     assert!(
-        lines[user_close + 1].trim().is_empty(),
-        "separator row should stay blank\n{rendered}"
+        user_body < assistant_header,
+        "assistant turn should remain ordered after the user turn content\n{rendered}"
     );
-    assert!(assistant_open < assistant_body && assistant_body < assistant_close);
+    assert!(
+        assistant_header < assistant_body,
+        "assistant content should remain nested under the assistant turn header\n{rendered}"
+    );
+
+    let user_header_rail = first_non_whitespace_column(lines[user_header]);
+    let user_body_rail = first_non_whitespace_column(lines[user_body]);
+    let assistant_header_rail = first_non_whitespace_column(lines[assistant_header]);
+    let assistant_body_rail = first_non_whitespace_column(lines[assistant_body]);
+    let user_body_column = first_alphanumeric_column(lines[user_body]);
+    let assistant_body_column = first_alphanumeric_column(lines[assistant_body]);
+
+    assert_eq!(
+        user_header_rail, user_body_rail,
+        "user turn header and body should share the same open rail\n{rendered}"
+    );
+    assert_eq!(
+        assistant_header_rail, assistant_body_rail,
+        "assistant turn header and body should share the same open rail\n{rendered}"
+    );
+    assert!(
+        user_header_rail == assistant_header_rail,
+        "top-level turns should start from the same transcript rail\n{rendered}"
+    );
+    assert_eq!(
+        user_body_column, assistant_body_column,
+        "top-level turn bodies should stay on the same content rail\n{rendered}"
+    );
+    let (user_header_row, user_header_fgs, user_header_bgs) =
+        row_at(&buffer, 80, user_header).expect("user header palette row");
+    let (assistant_header_row, assistant_header_fgs, assistant_header_bgs) =
+        row_at(&buffer, 80, assistant_header).expect("assistant header palette row");
+    let user_rail_column = user_header_row.find('▎').expect("user rail");
+    let assistant_rail_column = assistant_header_row.find('▎').expect("assistant rail");
+    assert_eq!(user_header_fgs[user_rail_column], theme.text.accent);
+    assert_eq!(
+        assistant_header_fgs[assistant_rail_column],
+        theme.status.success
+    );
+    assert!(user_header_bgs[user_body_column..user_body_column + 4]
+        .iter()
+        .all(|color| *color == theme.surface.panel_elevated));
+    assert!(
+        assistant_header_bgs[assistant_body_column..assistant_body_column + 9]
+            .iter()
+            .all(|color| *color == theme.surface.panel_elevated)
+    );
+    assert_quiet_gap(
+        &lines,
+        user_body + 1,
+        assistant_header,
+        "top-level turns should keep a quiet separator between sections",
+        &rendered,
+    );
+    assert!(!rendered.contains('╭') && !rendered.contains('╰') && !rendered.contains('│'));
 
     let mut follow_app = app::AppState::new_live(None, false, None);
     follow_app.activities = std::collections::VecDeque::from(
@@ -160,6 +222,12 @@ fn transcript_turn_sections_render_lightweight_containers() {
 
 #[cfg(test)]
 #[test]
+fn transcript_turn_sections_render_open_rail_semantics() {
+    transcript_turn_sections_render_open_rail_surfaces();
+}
+
+#[cfg(test)]
+#[test]
 fn transcript_turn_sections_keep_nested_tool_details() {
     let mut app = app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new());
     app.active_tab = app::Tab::Run;
@@ -189,33 +257,50 @@ fn transcript_turn_sections_keep_nested_tool_details() {
 
     let rendered = render_live_lines(&app, 60, 18);
     let lines = rendered.lines().collect::<Vec<_>>();
-    let assistant_open = find_line_containing(&lines, "╭─ ✗ assistant")
+    let assistant_header = find_line_containing(&lines, "assistant")
         .unwrap_or_else(|| panic!("assistant turn\n{rendered}"));
     let thinking_row =
-        find_line_containing_from(&lines, assistant_open + 1, "│    thinking · tool planning")
+        find_line_containing_all_from(&lines, assistant_header + 1, &["thinking", "tool planning"])
             .unwrap_or_else(|| panic!("thinking row\n{rendered}"));
     let tool_row =
-        find_line_containing_from(&lines, thinking_row + 1, "│    ✗ tool shell (failed)")
+        find_line_containing_all_from(&lines, thinking_row + 1, &["tool shell", "failed"])
             .unwrap_or_else(|| panic!("tool row\n{rendered}"));
-    let args_row = find_line_containing_from(&lines, tool_row + 1, "│    args · cmd=false")
+    let args_row = find_line_containing_all_from(&lines, tool_row + 1, &["args", "cmd=false"])
         .unwrap_or_else(|| panic!("tool args row\n{rendered}"));
-    let error_row = find_line_containing_from(&lines, args_row + 1, "│    error · command failed")
-        .unwrap_or_else(|| panic!("tool error row\n{rendered}"));
-    let body_row = find_line_containing_from(&lines, error_row + 1, "│  Assistant body")
+    let error_row =
+        find_line_containing_all_from(&lines, args_row + 1, &["error", "command failed"])
+            .unwrap_or_else(|| panic!("tool error row\n{rendered}"));
+    let body_row = find_line_containing_from(&lines, error_row + 1, "Assistant body")
         .unwrap_or_else(|| panic!("assistant body row\n{rendered}"));
     let turn_error_row =
-        find_line_containing_from(&lines, body_row + 1, "│    Error: tool call failed")
+        find_line_containing_all_from(&lines, body_row + 1, &["error", "tool call failed"])
             .unwrap_or_else(|| panic!("assistant error row\n{rendered}"));
-    let assistant_close = find_line_containing_from(&lines, turn_error_row + 1, "╰─")
-        .unwrap_or_else(|| panic!("assistant close\n{rendered}"));
 
-    assert!(assistant_open < thinking_row);
+    assert!(assistant_header < thinking_row);
     assert!(thinking_row < tool_row);
     assert!(tool_row < args_row);
     assert!(args_row < error_row);
     assert!(error_row < body_row);
     assert!(body_row < turn_error_row);
-    assert!(turn_error_row < assistant_close);
+
+    let assistant_body_column = first_alphanumeric_column(lines[body_row]);
+    let assistant_header_rail = first_non_whitespace_column(lines[assistant_header]);
+    let assistant_body_rail = first_non_whitespace_column(lines[body_row]);
+    let nested_detail_columns = [thinking_row, tool_row, args_row, error_row, turn_error_row]
+        .into_iter()
+        .map(|row| first_alphanumeric_column(lines[row]))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        assistant_header_rail, assistant_body_rail,
+        "assistant header and body should remain on the same primary rail\n{rendered}"
+    );
+    assert!(
+        nested_detail_columns
+            .iter()
+            .all(|column| *column > assistant_body_column),
+        "nested tool details and error rows should remain deeper than the assistant body rail\n{rendered}"
+    );
 }
 
 #[cfg(test)]
@@ -235,6 +320,105 @@ fn operator_rail_section_model_hides_empty_sources_but_preserves_order() {
 fn operator_sidebar_pins_summary_and_hides_empty_sections() {
     ui::exact_test_operator_rail_section_model_builds_pinned_summary();
     ui::exact_test_operator_rail_section_model_hides_empty_sources_but_preserves_order();
+}
+
+#[cfg(test)]
+#[test]
+fn operator_sidebar_compact_empty_mode_preserves_anchor_copy() {
+    let live_empty = operator_sidebar_empty_live_app();
+    let replay_empty = app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new());
+    let live_populated = operator_sidebar_todo_live_app();
+    let replay_populated = operator_sidebar_todo_replay_app();
+
+    let live_empty_plan =
+        layout::FrameLayoutPlan::for_app(&live_empty, ratatui::layout::Rect::new(0, 0, 100, 30));
+    let replay_empty_plan =
+        layout::FrameLayoutPlan::for_app(&replay_empty, ratatui::layout::Rect::new(0, 0, 100, 30));
+    let live_populated_plan = layout::FrameLayoutPlan::for_app(
+        &live_populated,
+        ratatui::layout::Rect::new(0, 0, 100, 30),
+    );
+    let replay_populated_plan = layout::FrameLayoutPlan::for_app(
+        &replay_populated,
+        ratatui::layout::Rect::new(0, 0, 100, 30),
+    );
+
+    let live_empty_sidebar = live_empty_plan
+        .operator_sidebar
+        .expect("live compact sidebar");
+    let replay_empty_sidebar = replay_empty_plan
+        .operator_sidebar
+        .expect("replay compact sidebar");
+
+    assert!(
+        live_empty_sidebar.width
+            < live_populated_plan
+                .operator_sidebar
+                .expect("live expanded sidebar")
+                .width
+    );
+    assert!(
+        replay_empty_sidebar.width
+            < replay_populated_plan
+                .operator_sidebar
+                .expect("replay expanded sidebar")
+                .width
+    );
+    assert!(live_empty_plan.wheel_hit_areas.overlay.is_none());
+    assert!(replay_empty_plan.wheel_hit_areas.overlay.is_none());
+
+    for (label, app) in [("live", &live_empty), ("replay", &replay_empty)] {
+        let sidebar = operator_sidebar_text(app);
+
+        assert!(
+            sidebar.contains("No operator activity yet"),
+            "{label} compact rail should preserve anchor copy"
+        );
+        assert!(
+            !sidebar.contains("Todo ·") && !sidebar.contains("Modified Files ·"),
+            "{label} compact rail should omit empty body sections"
+        );
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn operator_sidebar_expands_when_todo_or_modified_files_exist() {
+    let live_empty_width = layout::FrameLayoutPlan::for_app(
+        &operator_sidebar_empty_live_app(),
+        ratatui::layout::Rect::new(0, 0, 100, 30),
+    )
+    .operator_sidebar
+    .expect("live compact sidebar")
+    .width;
+    let replay_empty_width = layout::FrameLayoutPlan::for_app(
+        &app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new()),
+        ratatui::layout::Rect::new(0, 0, 100, 30),
+    )
+    .operator_sidebar
+    .expect("replay compact sidebar")
+    .width;
+
+    assert_operator_sidebar_expanded(
+        &operator_sidebar_todo_live_app(),
+        "Todo · 1",
+        live_empty_width,
+    );
+    assert_operator_sidebar_expanded(
+        &operator_sidebar_modified_files_live_app(),
+        "Modified Files · 1",
+        live_empty_width,
+    );
+    assert_operator_sidebar_expanded(
+        &operator_sidebar_todo_replay_app(),
+        "Todo · 1",
+        replay_empty_width,
+    );
+    assert_operator_sidebar_expanded(
+        &operator_sidebar_modified_files_replay_app(),
+        "Modified Files · 1",
+        replay_empty_width,
+    );
 }
 
 #[cfg(test)]
@@ -259,6 +443,42 @@ fn live_control_dock_renders_shared_surface() {
 #[test]
 fn live_control_dock_collapses_disclosure_before_status() {
     ui::exact_test_live_control_dock_collapses_disclosure_before_status();
+}
+
+#[cfg(test)]
+#[test]
+fn unified_bottom_dock_uses_single_layout_entrypoint() {
+    ui::exact_test_unified_bottom_dock_uses_single_layout_entrypoint();
+}
+
+#[cfg(test)]
+#[test]
+fn wheel_target_hits_transcript_when_hovered() {
+    ui::exact_test_wheel_target_hits_transcript_when_hovered();
+}
+
+#[cfg(test)]
+#[test]
+fn wheel_target_hits_inspector_inside_live_overlay() {
+    ui::exact_test_wheel_target_hits_inspector_inside_live_overlay();
+}
+
+#[cfg(test)]
+#[test]
+fn wheel_target_excludes_activity_portion_of_live_overlay() {
+    ui::exact_test_wheel_target_excludes_activity_portion_of_live_overlay();
+}
+
+#[cfg(test)]
+#[test]
+fn compact_operator_rail_does_not_capture_wheel() {
+    ui::exact_test_compact_operator_rail_does_not_capture_wheel();
+}
+
+#[cfg(test)]
+#[test]
+fn compact_operator_rail_skips_focus_cycle() {
+    app::exact_test_compact_operator_rail_skips_focus_cycle();
 }
 
 #[cfg(test)]
@@ -460,13 +680,8 @@ fn live_shell_status_strip_has_single_priority_order() {
     orchestration.set_theme_for_test(theme);
 
     let orchestration_render = render_live_lines(&orchestration, 140, 40);
-    let orchestration_lines = orchestration_render.lines().collect::<Vec<_>>();
-    let orchestration_composer_row =
-        find_line_containing(&orchestration_lines, "▎ ").expect("orchestration composer row");
-    let orchestration_status_row = orchestration_lines
-        [orchestration_composer_row.saturating_sub(2)]
-    .trim_end()
-    .to_string();
+    let orchestration_status_row =
+        live_status_strip_row(&orchestration, 140, 40, "ready for first turn");
 
     assert_markers_in_order(
         &orchestration_status_row,
@@ -501,9 +716,7 @@ fn live_shell_status_strip_has_single_priority_order() {
     }
 
     let rendered = render_live_lines(&app, 140, 40);
-    let lines = rendered.lines().collect::<Vec<_>>();
-    let composer_row = find_line_containing(&lines, "▎ ").expect("composer row");
-    let status_row = lines[composer_row.saturating_sub(2)].trim_end().to_string();
+    let status_row = live_status_strip_row(&app, 140, 40, "ready for next turn");
 
     assert_markers_in_order(
         &status_row,
@@ -1055,9 +1268,9 @@ fn startup_home_screen_renders_compose_first_shell() {
     assert!(rendered.contains("Ctrl+p palette"));
     assert!(rendered.contains("Enter select"));
     assert!(rendered.contains("Type to start a new session."));
+    assert!(rendered.contains("Type to quick-start a fresh run · Ctrl+P opens session tools"));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
     assert!(!rendered.contains("Actions: New session · Continue session · Replay session"));
-    assert!(!rendered.contains("Type to quick-start a fresh run · Ctrl+P opens session tools"));
 }
 
 #[cfg(test)]
@@ -1642,13 +1855,32 @@ fn live_shell_redesign_guardrails_preserve_primary_contract() {
         replay.prompt_buffer.is_empty(),
         "replay read-only redesign guardrail must drop typed draft text after submit attempts"
     );
+    let replay_lines = replay_render.lines().collect::<Vec<_>>();
+    let replay_header_row = find_line_containing_all(&replay_lines, &["Replay", "read-only"])
+        .unwrap_or_else(|| {
+            panic!("replay read-only redesign guardrail must preserve replay identity\n{replay_render}")
+        });
+    let replay_disabled_row = find_line_containing_all_from(
+        &replay_lines,
+        replay_header_row + 1,
+        &["read-only"],
+    )
+    .filter(|row| !replay_lines[*row].contains("run "))
+    .unwrap_or_else(|| {
+        panic!("replay read-only redesign guardrail must preserve a disabled composer row\n{replay_render}")
+    });
+    let replay_shortcuts_row = find_line_containing_from(&replay_lines, replay_disabled_row + 1, "shortcuts")
+        .unwrap_or_else(|| {
+            panic!("replay read-only redesign guardrail must preserve shortcut affordances\n{replay_render}")
+        });
+
     assert!(
-        replay_render.contains("Replay · read-only"),
-        "replay read-only redesign guardrail must preserve the read-only header\n{replay_render}"
+        replay_header_row < replay_disabled_row,
+        "replay identity should stay above the disabled composer guidance\n{replay_render}"
     );
     assert!(
-        replay_render.contains("Replay is read-only"),
-        "replay read-only redesign guardrail must preserve explanatory copy\n{replay_render}"
+        replay_disabled_row < replay_shortcuts_row,
+        "shortcut guidance should remain below the disabled composer guidance\n{replay_render}"
     );
     assert!(
         !replay_render.contains("blocked in replay"),
@@ -3173,7 +3405,8 @@ fn hovered_wheel_target_uses_layout_plan() {
     let themed_target = ui::hovered_wheel_target(&themed_app, area, probe_column, probe_row);
 
     assert_ne!(default_target, themed_target);
-    assert_eq!(themed_target, Some(ui::WheelTarget::Inspector));
+    assert_eq!(default_target, Some(ui::WheelTarget::Transcript));
+    assert_eq!(themed_target, None);
 }
 
 #[cfg(test)]
@@ -3182,6 +3415,7 @@ fn layout_plan_minimum_geometry_matches_shell_contract() {
     let mut app = app::AppState::new_live(None, false, None);
     app.active_tab = app::Tab::Run;
     let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 80, 24));
+    let dock = plan.dock.expect("minimum dock layout");
 
     assert_eq!(plan.root, ratatui::layout::Rect::new(0, 0, 80, 24));
     assert_eq!(plan.header, ratatui::layout::Rect::new(0, 0, 80, 1));
@@ -3197,6 +3431,11 @@ fn layout_plan_minimum_geometry_matches_shell_contract() {
         plan.composer,
         Some(ratatui::layout::Rect::new(1, 21, 78, 2))
     );
+    assert_eq!(dock.shell, ratatui::layout::Rect::new(1, 20, 78, 3));
+    assert_eq!(dock.status, plan.status);
+    assert_eq!(dock.composer, plan.composer.expect("minimum composer"));
+    assert_eq!(dock.disclosure, None);
+    assert_eq!(plan.disclosure, None);
 }
 
 #[cfg(test)]
@@ -3204,7 +3443,11 @@ fn layout_plan_minimum_geometry_matches_shell_contract() {
 fn layout_plan_primary_geometry_matches_shell_contract() {
     let mut app = app::AppState::new_live(None, false, None);
     app.active_tab = app::Tab::Run;
+    for event in session_view_events() {
+        app.ingest_event(event);
+    }
     let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 100, 30));
+    let dock = plan.dock.expect("primary dock layout");
 
     assert_eq!(plan.root, ratatui::layout::Rect::new(0, 0, 100, 30));
     assert_eq!(plan.header, ratatui::layout::Rect::new(0, 0, 100, 0));
@@ -3224,6 +3467,56 @@ fn layout_plan_primary_geometry_matches_shell_contract() {
         plan.composer,
         Some(ratatui::layout::Rect::new(2, 26, 96, 3))
     );
+    assert_eq!(dock.shell, ratatui::layout::Rect::new(2, 25, 96, 4));
+    assert_eq!(dock.status, plan.status);
+    assert_eq!(dock.composer, plan.composer.expect("primary composer"));
+    assert_eq!(
+        dock.disclosure,
+        Some(ratatui::layout::Rect::new(2, 28, 96, 1))
+    );
+    assert_eq!(plan.disclosure, dock.disclosure);
+}
+
+#[cfg(test)]
+#[test]
+fn layout_plan_primary_empty_operator_rail_compacts_width() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.active_tab = app::Tab::Run;
+    let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 100, 30));
+
+    assert_eq!(
+        plan.transcript,
+        Some(ratatui::layout::Rect::new(2, 0, 73, 25))
+    );
+    assert_eq!(
+        plan.operator_sidebar,
+        Some(ratatui::layout::Rect::new(76, 0, 22, 25))
+    );
+    assert_eq!(plan.details_overlay, None);
+    assert_eq!(plan.wheel_hit_areas.transcript, plan.transcript);
+    assert_eq!(plan.wheel_hit_areas.overlay, None);
+    assert_eq!(plan.wheel_hit_areas.inspector, None);
+}
+
+#[cfg(test)]
+#[test]
+fn layout_plan_split_empty_operator_rail_compacts_width() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.active_tab = app::Tab::Run;
+    let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 96, 40));
+
+    assert_eq!(
+        plan.transcript,
+        Some(ratatui::layout::Rect::new(1, 0, 73, 35))
+    );
+    assert_eq!(
+        plan.operator_sidebar,
+        Some(ratatui::layout::Rect::new(75, 0, 20, 35))
+    );
+    assert_eq!(plan.details_overlay, None);
+    assert_eq!(plan.wheel_hit_areas.transcript, plan.transcript);
+    assert_eq!(plan.wheel_hit_areas.overlay, None);
+    assert_eq!(plan.wheel_hit_areas.inspector, None);
 }
 
 #[cfg(test)]
@@ -3326,6 +3619,9 @@ fn live_layout_breakpoints_choose_shell_variant() {
 fn layout_breakpoints_match_opencode_parity_contract() {
     let mut wide = app::AppState::new_live(None, false, None);
     wide.active_tab = app::Tab::Run;
+    for event in session_view_events() {
+        wide.ingest_event(event);
+    }
     let wide_plan =
         layout::FrameLayoutPlan::for_app(&wide, ratatui::layout::Rect::new(0, 0, 160, 48));
     assert_eq!(wide_plan.header.height, 0);
@@ -3336,6 +3632,9 @@ fn layout_breakpoints_match_opencode_parity_contract() {
 
     let mut primary = app::AppState::new_live(None, false, None);
     primary.active_tab = app::Tab::Run;
+    for event in session_view_events() {
+        primary.ingest_event(event);
+    }
     let primary_plan =
         layout::FrameLayoutPlan::for_app(&primary, ratatui::layout::Rect::new(0, 0, 100, 30));
     assert_eq!(primary_plan.header.height, 0);
@@ -3346,6 +3645,9 @@ fn layout_breakpoints_match_opencode_parity_contract() {
 
     let mut split = app::AppState::new_live(None, false, None);
     split.active_tab = app::Tab::Run;
+    for event in session_view_events() {
+        split.ingest_event(event);
+    }
     let split_plan =
         layout::FrameLayoutPlan::for_app(&split, ratatui::layout::Rect::new(0, 0, 96, 40));
     assert_eq!(split_plan.header.height, 0);
@@ -3935,6 +4237,7 @@ fn focus_order_cycles_transcript_sidebar_composer() {
     let mut app = app::AppState::new_live(None, false, None);
     app.focus = app::Focus::Details;
     app.active_tab = app::Tab::Run;
+    app.live_details_drawer_open = true;
 
     app.handle_key(key(crossterm::event::KeyCode::Tab));
     assert_eq!(app.focus, app::Focus::List);
@@ -5134,6 +5437,29 @@ fn row_text_and_palette(
 }
 
 #[cfg(test)]
+fn row_at(
+    buffer: &ratatui::buffer::Buffer,
+    width: u16,
+    row_index: usize,
+) -> Option<(
+    String,
+    Vec<ratatui::style::Color>,
+    Vec<ratatui::style::Color>,
+)> {
+    buffer
+        .content
+        .chunks(width as usize)
+        .nth(row_index)
+        .map(|row| {
+            (
+                row.iter().map(|cell| cell.symbol()).collect::<String>(),
+                row.iter().map(|cell| cell.fg).collect::<Vec<_>>(),
+                row.iter().map(|cell| cell.bg).collect::<Vec<_>>(),
+            )
+        })
+}
+
+#[cfg(test)]
 fn assert_selected_overlay_row_uses_highlight(
     app: &app::AppState,
     width: u16,
@@ -5203,6 +5529,41 @@ fn assert_row_segment_background(
     assert!(
         bgs[start..end].iter().all(|color| *color == expected_bg),
         "row should use the expected helper background for {needle:?}\n{row}"
+    );
+}
+
+#[cfg(test)]
+fn assert_alphanumeric_row_palette(
+    buffer: &ratatui::buffer::Buffer,
+    width: u16,
+    row_index: usize,
+    expected_fg: ratatui::style::Color,
+    expected_bg: ratatui::style::Color,
+    label: &str,
+) {
+    let (row, fgs, bgs) = row_at(buffer, width, row_index)
+        .unwrap_or_else(|| panic!("missing row {row_index} for {label}"));
+    let semantic_columns = row
+        .chars()
+        .enumerate()
+        .filter_map(|(index, ch)| ch.is_alphanumeric().then_some(index))
+        .collect::<Vec<_>>();
+
+    assert!(
+        !semantic_columns.is_empty(),
+        "{label} row should contain semantic content\n{row}"
+    );
+    assert!(
+        semantic_columns
+            .iter()
+            .all(|index| fgs[*index] == expected_fg),
+        "{label} row should use the expected foreground palette\n{row}"
+    );
+    assert!(
+        semantic_columns
+            .iter()
+            .all(|index| bgs[*index] == expected_bg),
+        "{label} row should use the expected background palette\n{row}"
     );
 }
 
@@ -5628,17 +5989,43 @@ fn module_live_shell_redesign_preserves_replay_overlay_and_permission_parity() {
     let replay_plan = FrameLayoutPlan::for_app(&replay, ratatui::layout::Rect::new(0, 0, 100, 30));
     let replay_render = render_live_lines(&replay, 100, 30);
     let replay_buffer = render_live_cells(&replay, 100, 30);
+    let replay_lines = replay_render.lines().collect::<Vec<_>>();
     assert!(replay_plan.live_anchor.is_none());
     assert!(replay_plan.operator_sidebar.is_some());
-    assert!(replay_render.contains("Replay · read-only"));
-    assert!(replay_render.contains("╭─ › user"));
-    assert!(replay_render.contains("╭─ ● assistant"));
-    assert_row_segment_palette(
+    let replay_header_row = find_line_containing_all(&replay_lines, &["Replay", "read-only"])
+        .unwrap_or_else(|| {
+            panic!("replay header should preserve replay identity\n{replay_render}")
+        });
+    let replay_disabled_row =
+        find_line_containing_all_from(&replay_lines, replay_header_row + 1, &["read-only"])
+            .filter(|row| !replay_lines[*row].contains("run "))
+            .unwrap_or_else(|| {
+                panic!("replay shell should preserve a disabled composer row\n{replay_render}")
+            });
+    let replay_shortcuts_row =
+        find_line_containing_from(&replay_lines, replay_disabled_row + 1, "shortcuts")
+            .unwrap_or_else(|| {
+                panic!("replay shell should preserve shortcut guidance\n{replay_render}")
+            });
+    let user_row = find_line_containing(&replay_lines, "user")
+        .unwrap_or_else(|| panic!("replay shell should preserve the user turn\n{replay_render}"));
+    let assistant_row = find_line_containing_from(&replay_lines, user_row + 1, "assistant")
+        .unwrap_or_else(|| {
+            panic!("replay shell should preserve the assistant turn\n{replay_render}")
+        });
+
+    assert!(replay_header_row < replay_disabled_row && replay_disabled_row < replay_shortcuts_row);
+    assert!(
+        user_row < assistant_row,
+        "replay transcript should preserve turn order\n{replay_render}"
+    );
+    assert_alphanumeric_row_palette(
         &replay_buffer,
         100,
-        "Replay is read-only",
+        replay_disabled_row,
         theme.status.disabled,
         theme.surface.panel_elevated,
+        "replay disabled composer",
     );
     assert_row_segment_palette(
         &replay_buffer,
@@ -6285,20 +6672,64 @@ fn transcript_shell_remains_scannable_without_bubble_cards() {
     let app = rich_transcript_fixture_app();
 
     let rendered = render_live_lines(&app, 120, 30);
-    assert!(rendered.contains("╭─ › user (req_rich_shell)"));
-    assert!(rendered.contains("│  Restyle the transcript shell"));
-    assert!(rendered.contains("╭─ ● assistant (done · current · mock/model-1)"));
-    assert!(rendered.contains("│    thinking · Drafting a document-like plan"));
-    assert!(rendered.contains("│    ● tool fs.read (succeeded) · 24 lines read from src/ui.rs"));
-    assert!(rendered.contains("│  Found the transcript renderer and the composer chrome."));
-    assert!(rendered.contains("╰─"));
+    let lines = rendered.lines().collect::<Vec<_>>();
+    let user_row =
+        find_line_containing_all(&lines, &["user", "req_rich_shell"]).expect("user turn row");
+    let prompt_row =
+        find_line_containing_from(&lines, user_row + 1, "Restyle the transcript shell")
+            .expect("user prompt row");
+    let assistant_row =
+        find_line_containing_all_from(&lines, prompt_row + 1, &["assistant", "mock/model-1"])
+            .expect("assistant turn row");
+    let thinking_row = find_line_containing_all_from(
+        &lines,
+        assistant_row + 1,
+        &["thinking", "Drafting a document-like plan"],
+    )
+    .expect("thinking row");
+    let tool_row = find_line_containing_all_from(
+        &lines,
+        thinking_row + 1,
+        &["tool fs.read", "24 lines read from src/ui.rs"],
+    )
+    .expect("tool row");
+    let body_row = find_line_containing_from(
+        &lines,
+        tool_row + 1,
+        "Found the transcript renderer and the composer chrome.",
+    )
+    .expect("assistant body row");
+
+    assert!(user_row < prompt_row);
+    assert!(prompt_row < assistant_row);
+    assert!(assistant_row < thinking_row);
+    assert!(thinking_row < tool_row);
+    assert!(tool_row < body_row);
+    assert_eq!(
+        first_non_whitespace_column(lines[user_row]),
+        first_non_whitespace_column(lines[prompt_row]),
+        "user header and body should stay on the same open rail\n{rendered}"
+    );
+    assert_eq!(
+        first_non_whitespace_column(lines[assistant_row]),
+        first_non_whitespace_column(lines[body_row]),
+        "assistant header and body should stay on the same open rail\n{rendered}"
+    );
+    assert!(
+        first_alphanumeric_column(lines[thinking_row]) > first_alphanumeric_column(lines[body_row]),
+        "inline thinking should remain nested deeper than the assistant body rail\n{rendered}"
+    );
+    assert!(
+        first_alphanumeric_column(lines[tool_row]) > first_alphanumeric_column(lines[body_row]),
+        "tool details should remain nested deeper than the assistant body rail\n{rendered}"
+    );
     assert!(!rendered.contains("Composer ·"));
     assert!(rendered.contains("▎ Ask Harness to inspect, edit, or explain…"));
     assert!(rendered.contains("shift+enter newline"));
     assert!(rendered.contains("Ask Harness to inspect, edit, or explain…"));
     assert!(!rendered.contains("┌"));
     assert!(!rendered.contains("└"));
-    assert!(!rendered.contains("│ Drafting a document-like plan"));
+    assert!(!rendered.contains("tool fs.read · succeeded"));
 }
 
 #[cfg(test)]
@@ -6323,35 +6754,48 @@ fn transcript_turn_spacing_collapses_without_losing_actor_boundaries() {
     let rendered = render_live_lines(&app, 120, 30);
     let lines = rendered.lines().collect::<Vec<_>>();
 
-    let first_reply_row =
-        find_line_containing(&lines, "│  The shell is transcript-first and calm.")
-            .expect("first assistant body row");
-    let first_turn_close_row =
-        find_line_containing_from(&lines, first_reply_row + 1, "╰─").expect("first turn close row");
+    let first_reply_row = find_line_containing(&lines, "The shell is transcript-first and calm.")
+        .expect("first assistant body row");
     let second_user_row =
-        find_line_containing(&lines, "╭─ › user (req_turn_two)").expect("second user row");
-    let second_prompt_row = find_line_containing(&lines, "│  Tighten the transcript spacing")
-        .expect("second prompt row");
-    let second_user_close_row = find_line_containing_from(&lines, second_prompt_row + 1, "╰─")
-        .expect("second user close row");
-    let second_assistant_row =
-        find_line_containing(&lines, "╭─ ● assistant (done · current · mock/model-1)")
-            .expect("second assistant row");
-
-    assert_eq!(
-        first_turn_close_row + 2,
-        second_user_row,
-        "top-level turns should keep one blank separator between lightweight containers\n{rendered}"
-    );
-    assert_eq!(
-        second_prompt_row,
+        find_line_containing_all(&lines, &["user", "req_turn_two"]).expect("second user row");
+    let second_prompt_row = find_line_containing_from(
+        &lines,
         second_user_row + 1,
-        "user content should remain directly attached to its opening row\n{rendered}"
+        "Tighten the transcript spacing",
+    )
+    .expect("second prompt row");
+    let second_assistant_row = find_line_containing_all_from(
+        &lines,
+        second_prompt_row + 1,
+        &["assistant", "mock/model-1"],
+    )
+    .expect("second assistant row");
+
+    assert_quiet_gap(
+        &lines,
+        first_reply_row + 1,
+        second_user_row,
+        "top-level turns should keep a quiet separator between sections",
+        &rendered,
+    );
+    assert_quiet_span(
+        &lines,
+        second_user_row + 1,
+        second_prompt_row,
+        "user content should remain directly attached to its actor row",
+        &rendered,
+    );
+    assert_quiet_gap(
+        &lines,
+        second_prompt_row + 1,
+        second_assistant_row,
+        "assistant boundary should stay explicit after the user content rail",
+        &rendered,
     );
     assert_eq!(
-        second_user_close_row + 2,
-        second_assistant_row,
-        "assistant boundary should stay explicit with one blank separator after the user turn closes\n{rendered}"
+        first_non_whitespace_column(lines[second_user_row]),
+        first_non_whitespace_column(lines[second_prompt_row]),
+        "user header and body should stay on the same open rail\n{rendered}"
     );
 }
 
@@ -7465,9 +7909,9 @@ fn startup_surface_renders_primary_actions() {
     assert!(rendered.contains("Ctrl+p palette"));
     assert!(rendered.contains("Enter select"));
     assert!(rendered.contains("Type to start a new session."));
+    assert!(rendered.contains("Type to quick-start a fresh run · Ctrl+P opens session tools"));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
     assert!(!rendered.contains("Actions:"));
-    assert!(!rendered.contains("Type to quick-start"));
 }
 
 #[cfg(test)]
@@ -7488,9 +7932,9 @@ fn startup_typing_moves_to_quick_start_prompt() {
     assert!(!rendered.contains("Composer"));
     assert!(rendered.contains("▎ x█"));
     assert!(rendered.contains("Enter send"));
+    assert!(rendered.contains("Type to quick-start a fresh run · Ctrl+P opens session tools"));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
     assert!(!rendered.contains("Actions:"));
-    assert!(!rendered.contains("Type to quick-start"));
 }
 
 #[cfg(test)]
@@ -7769,9 +8213,11 @@ fn lifecycle_shell_snapshots() {
     assert!(startup_render.contains("Ctrl+p palette"));
     assert!(startup_render.contains("Enter select"));
     assert!(startup_render.contains("Type to start a new session."));
-    assert!(!startup_render.contains("Dispatch a new run, reopen live work, or inspect saved history."));
+    assert!(startup_render.contains("Type to quick-start a fresh run · Ctrl+P opens session tools"));
+    assert!(
+        !startup_render.contains("Dispatch a new run, reopen live work, or inspect saved history.")
+    );
     assert!(!startup_render.contains("Actions:"));
-    assert!(!startup_render.contains("Type to quick-start"));
 
     let entries = vec![
         startup_session_entry_with_details(
@@ -7875,13 +8321,38 @@ fn lifecycle_shell_snapshots() {
     assert!(!completed_shell_render.contains("Composer"));
     assert!(!completed_shell_render.contains("Next action"));
     insta::assert_snapshot!(
-        "lifecycle_shell_inline_completion_surface",
-        completed_shell_render
-            .lines()
-            .map(str::trim_end)
-            .collect::<Vec<_>>()
-            .join("\n")
-    );
+                            completed_shell_render
+                                .lines()
+                                .map(str::trim_end)
+                                .collect::<Vec<_>>()
+                                .join("\n"),
+                            @r"
+           run run_fixture · unknown/unknown · -
+            Waiting for first turn…
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            Ready   run finished · session shell preserved  ·  orch 0a 0q 0r 0s──────────
+
+           ▎ keep this draft
+           Tab focus  ? shortcuts  q quit
+"
+                        );
 
     let fallback_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = Arc::new(|_| {});
     let mut fallback = app::AppState::new_live(None, false, Some(fallback_sink));
@@ -7898,13 +8369,38 @@ fn lifecycle_shell_snapshots() {
     assert!(!fallback_render.contains("Composer"));
     assert!(!fallback_render.contains("Next action"));
     insta::assert_snapshot!(
-        "lifecycle_shell_inline_completion_fallback_surface",
-        fallback_render
-            .lines()
-            .map(str::trim_end)
-            .collect::<Vec<_>>()
-            .join("\n")
-    );
+                        fallback_render
+                            .lines()
+                            .map(str::trim_end)
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                        @r"
+
+
+
+
+
+
+
+                  ┌Session───────────────────────────────────────────────────────┐
+                  │  Harness                                                     │
+                  │  Preset unknown · unknown/-                                  │
+                  │  Start a conversation to begin                               │
+                  │  Enter send · Shift+Enter newline · ↑/↓ history              │
+                  │                                                              │
+                  └──────────────────────────────────────────────────────────────┘
+
+
+
+
+
+
+            Ready   run finished · session shell preserved  ·  orch 0a 0q 0r 0s──────────
+
+           ▎ Run complete — use ctrl+p commands for replay/new/quit, or ask Harness for……
+           Tab focus  ? shortcuts  q quit
+"
+                    );
 }
 
 #[cfg(test)]
@@ -8420,9 +8916,9 @@ fn startup_shell_shows_profile_provider_and_model_chrome() {
     assert!(rendered.contains("Ctrl+p palette"));
     assert!(rendered.contains("Enter select"));
     assert!(rendered.contains("Type to start a new session."));
+    assert!(rendered.contains("Type to quick-start a fresh run · Ctrl+P opens session tools"));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
     assert!(!rendered.contains("Actions:"));
-    assert!(!rendered.contains("Type to quick-start"));
 }
 
 #[cfg(test)]
@@ -8445,7 +8941,7 @@ fn lifecycle_shell_narrow_layout_renders_primary_cta() {
 
     assert!(!rendered.contains("Actions:"));
     assert!(!rendered.contains("Dispatch a new run"));
-    assert!(!rendered.contains("Type to quick-start"));
+    assert!(rendered.contains("Type to quick-start a fresh run · Ctrl+P opens session tools"));
     assert!(title_row < metadata_row);
     assert!(metadata_row < footer_row);
 }
@@ -8527,9 +9023,28 @@ fn live_shell_primary_geometry_snapshot_renders_without_overlap() {
 #[test]
 fn live_empty_state_snapshot_renders_input_first_shell() {
     let app = app::AppState::new_live(None, false, None);
-    insta::assert_snapshot!(
-        "live_empty_state_snapshot_renders_input_first_shell",
-        render_live_lines(&app, 80, 24)
+    let rendered = render_live_lines(&app, 80, 24);
+
+    assert_live_shell_frame_invariants(&rendered, 80, 24);
+    assert!(rendered.contains("┌Session"));
+    assert!(rendered.contains("Harness"));
+    assert!(rendered.contains("Preset unknown · unknown/-"));
+    assert!(rendered.contains("Start a conversation to begin"));
+    assert!(rendered.contains("Enter send · Shift+Enter newline · ↑/↓ history"));
+    assert!(!rendered.contains("Type to start a new session."));
+
+    let status_row = live_status_strip_row(&app, 80, 24, "ready for first turn");
+    assert_markers_in_order(
+        &status_row,
+        &["Ready", "ready for first turn", "orch 0a 0q 0r 0s"],
+    );
+    assert_live_shell_document_composer_contract(
+        &app,
+        80,
+        24,
+        "ready for first turn",
+        None,
+        "q quit",
     );
 }
 
@@ -8557,7 +9072,7 @@ fn live_shell_orchestration_status_strip_snapshot() {
     let app = orchestration_status_strip_fixture();
     let status_row = live_status_strip_row(&app, 160, 30, "ready for first turn");
 
-    insta::assert_snapshot!(status_row);
+    insta::assert_snapshot!(status_row, @r"   live    Ready   ready for first turn  ·  orch 2a 1q 1r 1s · warn stale for 3001 ms─────────────────────────────────────────────────────────────────────────");
 }
 
 #[cfg(test)]
@@ -8671,11 +9186,14 @@ fn live_empty_state_uses_shared_home_surface_tokens() {
     ));
 
     let startup_render = render_live_lines(&startup, 100, 24);
+    let startup_buffer = render_live_cells(&startup, 100, 24);
     let live_render = render_live_lines(&live, 100, 24);
+    let live_buffer = render_live_cells(&live, 100, 24);
+    let theme = Theme::default();
 
     assert!(
-        !startup_render.contains("┌") && !startup_render.contains("╭"),
-        "startup should no longer use launcher card framing\n{startup_render}"
+        startup_render.contains("┌") || startup_render.contains("╭"),
+        "startup should use the shared lifecycle surface framing\n{startup_render}"
     );
     assert!(
         startup_render.contains("Type to start a new session."),
@@ -8683,10 +9201,22 @@ fn live_empty_state_uses_shared_home_surface_tokens() {
     );
     assert!(
         live_render.contains("┌") || live_render.contains("╭"),
-        "live empty should keep compatibility card framing\n{live_render}"
+        "live empty should use the shared lifecycle surface framing\n{live_render}"
     );
     assert!(live_render.contains("Harness"));
     assert!(live_render.contains("Preset worker · mock/model-1"));
+    assert_row_segment_background(
+        &startup_buffer,
+        100,
+        "Preset worker · mock/model-1",
+        theme.surface.panel_elevated,
+    );
+    assert_row_segment_background(
+        &live_buffer,
+        100,
+        "Preset worker · mock/model-1",
+        theme.surface.panel_elevated,
+    );
 }
 
 #[cfg(test)]
@@ -8735,9 +9265,20 @@ fn live_shell_type_first_input_snapshot() {
         app.handle_key(key(crossterm::event::KeyCode::Char(c)));
     }
 
-    insta::assert_snapshot!(
-        "live_shell_type_first_input",
-        render_live_lines(&app, 80, 24)
+    let rendered = render_live_lines(&app, 80, 24);
+
+    assert_live_shell_frame_invariants(&rendered, 80, 24);
+    assert!(rendered.contains("Waiting for first turn…"));
+    assert!(rendered.contains("▎ draft prompt█"));
+    assert!(!rendered.contains("┌Session"));
+    assert!(!rendered.contains("Start a conversation to begin"));
+    assert_live_shell_document_composer_contract(
+        &app,
+        80,
+        24,
+        "ready for first turn",
+        None,
+        "q quit",
     );
 }
 
@@ -8780,7 +9321,32 @@ fn live_shell_enter_submits_and_echoes_prompt_snapshot() {
         app.prompt_history.last().map(String::as_str),
         Some("ship it")
     );
-    insta::assert_snapshot!("live_shell_prompt_echo", render_live_lines(&app, 80, 24));
+    let rendered = render_live_lines(&app, 80, 24);
+
+    assert_live_shell_frame_invariants(&rendered, 80, 24);
+    assert!(rendered.contains("▎  › user (pending turn)"));
+    assert!(rendered.contains("▎  ship it"));
+    assert!(rendered.contains("▎  ◐ assistant (streaming… · current)"));
+    assert!(rendered.contains("▎  Waiting for response…"));
+    assert!(!rendered.contains('╭'));
+
+    let status_row = live_status_strip_row(&app, 80, 24, "waiting for first tokens");
+    assert_markers_in_order(
+        &status_row,
+        &[
+            "Sending",
+            "turn 1 · waiting for first tokens",
+            "orch 0a 0q 0r 0s",
+        ],
+    );
+    assert_live_shell_document_composer_contract(
+        &app,
+        80,
+        24,
+        "waiting for first tokens",
+        None,
+        "q quit",
+    );
 }
 
 #[cfg(test)]
@@ -8927,9 +9493,7 @@ fn live_status_strip_suppresses_request_digest_banner_details() {
     let rendered = render_live_lines(&app, 100, 24);
     assert!(!rendered.contains("request_digest="));
     assert!(!rendered.contains("digest-qa-crowding"));
-    let lines = rendered.lines().collect::<Vec<_>>();
-    let composer_row = find_line_containing(&lines, "▎ ").expect("composer row");
-    let status_row = lines[composer_row.saturating_sub(2)].trim_end().to_string();
+    let status_row = live_status_strip_row(&app, 100, 24, "runtime failure");
 
     assert!(status_row.contains("Failure"));
     assert!(status_row.contains("runtime failure"));
@@ -8970,6 +9534,81 @@ fn orchestration_details_drawer_card_body(app: &app::AppState, height: u16, widt
 #[cfg(test)]
 fn operator_sidebar_text(app: &app::AppState) -> String {
     ui::operator_sidebar_text_for_test(app).join("\n")
+}
+
+#[cfg(test)]
+fn operator_sidebar_edit_only_event(seq: u64) -> harness_core::event::EventEnvelopeV1 {
+    envelope(
+        seq,
+        None,
+        harness_core::event::EventV1::EditApplied(harness_core::event::EditAppliedEvent {
+            edit_id: format!("edit_{seq}"),
+            path: "src/ui_secondary.rs".to_string(),
+            new_file_digest: format!("digest-edit-{seq}"),
+            diff_rel_path: None,
+            diff_digest: None,
+        }),
+    )
+}
+
+#[cfg(test)]
+fn operator_sidebar_empty_live_app() -> app::AppState {
+    app::AppState::new_live(
+        Some(PathBuf::from("/tmp/sessions/run_fixture")),
+        false,
+        None,
+    )
+}
+
+#[cfg(test)]
+fn operator_sidebar_todo_live_app() -> app::AppState {
+    let mut app = app::AppState::new_live(None, false, None);
+    for event in session_view_events() {
+        app.ingest_event(event);
+    }
+    app
+}
+
+#[cfg(test)]
+fn operator_sidebar_modified_files_live_app() -> app::AppState {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.ingest_event(operator_sidebar_edit_only_event(1));
+    app
+}
+
+#[cfg(test)]
+fn operator_sidebar_todo_replay_app() -> app::AppState {
+    app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), session_view_events())
+}
+
+#[cfg(test)]
+fn operator_sidebar_modified_files_replay_app() -> app::AppState {
+    app::AppState::new_replay(
+        PathBuf::from("/tmp/replay-session"),
+        vec![operator_sidebar_edit_only_event(1)],
+    )
+}
+
+#[cfg(test)]
+fn assert_operator_sidebar_expanded(
+    app: &app::AppState,
+    expected_marker: &str,
+    compact_width: u16,
+) {
+    let plan = layout::FrameLayoutPlan::for_app(app, ratatui::layout::Rect::new(0, 0, 100, 30));
+    let sidebar = plan.operator_sidebar.expect("expanded operator sidebar");
+    let sidebar_text = operator_sidebar_text(app);
+    let rendered = render_live_lines(app, 100, 30);
+
+    assert!(
+        sidebar.width > compact_width,
+        "expanded operator rail should grow beyond compact width"
+    );
+    assert_eq!(plan.wheel_hit_areas.overlay, Some(sidebar));
+    assert!(sidebar_text.contains(expected_marker));
+    assert!(!sidebar_text.contains("No operator activity yet"));
+    assert!(rendered.contains(expected_marker));
+    assert!(rendered.contains("harness-tui · v0.1.0"));
 }
 
 #[cfg(test)]
@@ -9054,6 +9693,9 @@ fn live_details_drawer_orchestration_warning_fallback() {
 fn layout_plan_primary_geometry_docks_live_details_sidebar() {
     let mut app = app::AppState::new_live(None, false, None);
     app.active_tab = app::Tab::Run;
+    for event in session_view_events() {
+        app.ingest_event(event);
+    }
     app.handle_key(key(crossterm::event::KeyCode::Tab));
     app.handle_key(key(crossterm::event::KeyCode::Char('i')));
 
@@ -9328,8 +9970,10 @@ fn assert_live_shell_document_composer_contract(
         "composer input must sit below divider\n{rendered}"
     );
     assert!(
-        line_has_divider(lines[divider_row]),
-        "row before composer input should be a subtle divider\n{rendered}"
+        lines[status_row + 1..composer_first_row]
+            .iter()
+            .all(|line| !line.chars().any(char::is_alphanumeric)),
+        "rows between status and composer should stay quiet\n{rendered}"
     );
     assert!(
         find_line_containing_in_range(&lines, status_row + 1, composer_first_row, "Composer ·")
@@ -9492,6 +10136,13 @@ fn find_line_containing(lines: &[&str], needle: &str) -> Option<usize> {
 }
 
 #[cfg(test)]
+fn find_line_containing_all(lines: &[&str], needles: &[&str]) -> Option<usize> {
+    lines
+        .iter()
+        .position(|line| needles.iter().all(|needle| line.contains(needle)))
+}
+
+#[cfg(test)]
 fn find_last_line_containing(lines: &[&str], needle: &str) -> Option<usize> {
     lines.iter().rposition(|line| line.contains(needle))
 }
@@ -9511,6 +10162,20 @@ fn find_line_containing_from(lines: &[&str], start: usize, needle: &str) -> Opti
 }
 
 #[cfg(test)]
+fn find_line_containing_all_from(lines: &[&str], start: usize, needles: &[&str]) -> Option<usize> {
+    lines
+        .iter()
+        .enumerate()
+        .skip(start)
+        .find_map(|(index, line)| {
+            needles
+                .iter()
+                .all(|needle| line.contains(needle))
+                .then_some(index)
+        })
+}
+
+#[cfg(test)]
 fn find_line_containing_in_range(
     lines: &[&str],
     start: usize,
@@ -9523,6 +10188,51 @@ fn find_line_containing_in_range(
         .skip(start)
         .take(end_exclusive.saturating_sub(start))
         .find_map(|(index, line)| line.contains(needle).then_some(index))
+}
+
+#[cfg(test)]
+fn first_alphanumeric_column(line: &str) -> usize {
+    line.chars()
+        .position(char::is_alphanumeric)
+        .unwrap_or_else(|| panic!("line is missing alphanumeric content: {line:?}"))
+}
+
+#[cfg(test)]
+fn first_non_whitespace_column(line: &str) -> usize {
+    line.chars()
+        .position(|ch| !ch.is_whitespace())
+        .unwrap_or_else(|| panic!("line is missing visible content: {line:?}"))
+}
+
+#[cfg(test)]
+fn assert_quiet_gap(
+    lines: &[&str],
+    start: usize,
+    end_exclusive: usize,
+    label: &str,
+    rendered: &str,
+) {
+    assert!(
+        start < end_exclusive,
+        "{label}: expected at least one separator row\n{rendered}"
+    );
+    assert_quiet_span(lines, start, end_exclusive, label, rendered);
+}
+
+#[cfg(test)]
+fn assert_quiet_span(
+    lines: &[&str],
+    start: usize,
+    end_exclusive: usize,
+    label: &str,
+    rendered: &str,
+) {
+    assert!(
+        lines[start..end_exclusive]
+            .iter()
+            .all(|line| !line.chars().any(char::is_alphanumeric)),
+        "{label}: separator rows should stay free of competing transcript content\n{rendered}"
+    );
 }
 
 #[cfg(test)]

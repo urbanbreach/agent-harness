@@ -36,11 +36,10 @@ mod ui_transcript;
 use ui_chrome::{
     chromeless_shell_section, compact_inline_payload, elevated_card_surface,
     interruptive_modal_block, muted_meta_style, panel_block, panel_style, render_footer,
-    render_header, render_live_control_dock_surface, render_live_shell_anchor,
-    render_prompt_pane, render_status_strip, request_id_label, runtime_state_color, status_badge,
-    subdued_payload_style, subtle_divider_block, tool_detail_label_style, tool_state_summary,
-    tool_status_tokens, transcript_label_style, transcript_prefix_style, truncate_plain_text,
-    ChromeFrame,
+    render_header, render_live_shell_anchor, render_prompt_pane, render_status_strip,
+    render_unified_bottom_dock, request_id_label, runtime_state_color, status_badge,
+    subdued_payload_style, tool_detail_label_style, tool_state_summary, tool_status_tokens,
+    transcript_label_style, transcript_prefix_style, truncate_plain_text, ChromeFrame,
 };
 use ui_lifecycle::{
     live_empty_state_visible, render_live_empty_state, render_startup_lifecycle_surface,
@@ -60,6 +59,46 @@ pub(crate) use ui_chrome::{
     exact_test_live_control_dock_renders_shared_surface,
 };
 #[cfg(test)]
+pub(crate) fn exact_test_unified_bottom_dock_uses_single_layout_entrypoint() {
+    fn count_occurrences(haystack: &str, needle: &str) -> usize {
+        haystack.matches(needle).count()
+    }
+
+    let source = include_str!("ui.rs");
+    assert_eq!(
+        count_occurrences(
+            source,
+            "render_unified_bottom_dock(frame, app, dock, theme);"
+        )
+        .saturating_sub(1),
+        2,
+        "live and replay shells should each route through the unified dock renderer"
+    );
+    assert_eq!(
+        count_occurrences(source, "let Some(dock) = plan.dock else {").saturating_sub(1),
+        2,
+        "live and replay shells should consume the shared dock layout entrypoint"
+    );
+    assert_eq!(
+        count_occurrences(
+            source,
+            "render_live_control_dock_surface(frame, status_area, composer_area, theme);"
+        )
+        .saturating_sub(1),
+        0,
+        "legacy stacked live dock composition should be gone from ui.rs"
+    );
+    assert_eq!(
+        count_occurrences(
+            source,
+            "render_replay_read_only_control_dock(frame, app, composer_area, theme);"
+        )
+        .saturating_sub(1),
+        0,
+        "replay should no longer own a separate dock renderer entrypoint in ui.rs"
+    );
+}
+#[cfg(test)]
 use ui_secondary::format_detail_payload;
 #[cfg(test)]
 pub(crate) use ui_secondary::operator_sidebar_text_for_test;
@@ -74,9 +113,86 @@ pub(crate) use ui_secondary::{
 use ui_transcript::build_transcript_lines;
 #[cfg(test)]
 pub(crate) use ui_transcript::{
+    exact_test_transcript_follow_mode_uses_measured_surface_heights,
+    exact_test_transcript_pending_permission_stays_after_last_activity,
     exact_test_transcript_section_model_keeps_nested_tool_and_error_blocks,
     exact_test_transcript_section_model_preserves_activity_order,
 };
+
+#[cfg(test)]
+fn rect_center(area: Rect) -> (u16, u16) {
+    (
+        area.x.saturating_add(area.width.saturating_sub(1) / 2),
+        area.y.saturating_add(area.height.saturating_sub(1) / 2),
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_wheel_target_hits_transcript_when_hovered() {
+    let app = AppState::new_live(None, false, None);
+    let area = Rect::new(0, 0, 140, 40);
+    let hit_areas = FrameLayoutPlan::for_app(&app, area).wheel_hit_areas;
+    let transcript = hit_areas.transcript.expect("transcript area");
+    let (column, row) = rect_center(transcript);
+
+    assert_eq!(
+        hovered_wheel_target(&app, area, column, row),
+        Some(WheelTarget::Transcript)
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_wheel_target_hits_inspector_inside_live_overlay() {
+    let mut app = AppState::new_live(None, false, None);
+    app.live_details_drawer_open = true;
+
+    let area = Rect::new(0, 0, 140, 40);
+    let plan = FrameLayoutPlan::for_app(&app, area);
+    let rail = plan.operator_sidebar.expect("compact operator rail");
+    let hit_areas = plan.wheel_hit_areas;
+    let (column, row) = rect_center(rail);
+
+    assert_eq!(hit_areas.overlay, None);
+    assert_eq!(hit_areas.inspector, None);
+    assert_eq!(hovered_wheel_target(&app, area, column, row), None);
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_wheel_target_excludes_activity_portion_of_live_overlay() {
+    let mut app = AppState::new_live(None, false, None);
+    app.live_details_drawer_open = true;
+
+    let area = Rect::new(0, 0, 140, 40);
+    let plan = FrameLayoutPlan::for_app(&app, area);
+    let rail = plan.operator_sidebar.expect("compact operator rail");
+    let hit_areas = plan.wheel_hit_areas;
+
+    assert_eq!(hit_areas.overlay, None);
+    assert_eq!(hit_areas.inspector, None);
+    assert_eq!(
+        hovered_wheel_target(
+            &app,
+            area,
+            rail.x.saturating_add(1),
+            rail.y.saturating_add(1),
+        ),
+        None
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_compact_operator_rail_does_not_capture_wheel() {
+    let app = AppState::new_live(None, false, None);
+    let area = Rect::new(0, 0, 140, 40);
+    let plan = FrameLayoutPlan::for_app(&app, area);
+    let rail = plan.operator_sidebar.expect("compact operator rail");
+    let (column, row) = rect_center(rail);
+
+    assert_eq!(plan.wheel_hit_areas.overlay, None);
+    assert_eq!(plan.wheel_hit_areas.inspector, None);
+    assert_eq!(hovered_wheel_target(&app, area, column, row), None);
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WheelTarget {
     Transcript,
@@ -145,7 +261,7 @@ fn render_replay_session_surface(
     let Some(transcript_area) = plan.transcript else {
         return;
     };
-    let Some(composer_area) = plan.composer else {
+    let Some(dock) = plan.dock else {
         return;
     };
 
@@ -155,7 +271,7 @@ fn render_replay_session_surface(
         render_operator_sidebar(frame, app, operator_sidebar, theme);
     }
     render_live_details_overlay(frame, app, theme, plan.details_overlay);
-    render_replay_read_only_control_dock(frame, app, composer_area, theme);
+    render_unified_bottom_dock(frame, app, dock, theme);
 }
 
 fn render_live_session_surface(
@@ -198,7 +314,7 @@ fn render_live_run_shell(frame: &mut Frame, app: &AppState, theme: &Theme, plan:
     let Some(transcript_area) = plan.transcript else {
         return;
     };
-    let Some(status_area) = plan.status else {
+    let Some(dock) = plan.dock else {
         return;
     };
     let runtime_state = app.runtime_state();
@@ -226,13 +342,7 @@ fn render_live_run_shell(frame: &mut Frame, app: &AppState, theme: &Theme, plan:
     }
     render_runtime_state_surface(frame, app, transcript_render_area, theme);
     render_live_details_overlay(frame, app, theme, plan.details_overlay);
-    if let Some(composer_area) = plan.composer {
-        render_live_control_dock_surface(frame, status_area, composer_area, theme);
-        render_status_strip(frame, app, status_area, theme);
-        render_prompt_pane(frame, app, composer_area, theme);
-    } else {
-        render_status_strip(frame, app, status_area, theme);
-    }
+    render_unified_bottom_dock(frame, app, dock, theme);
 }
 
 fn inset_for_live_anchor(area: Rect, live_anchor: Option<Rect>) -> Rect {
@@ -250,84 +360,6 @@ fn inset_for_live_anchor(area: Rect, live_anchor: Option<Rect>) -> Rect {
         area.width,
         area.height.saturating_sub(inset),
     )
-}
-
-fn render_replay_read_only_control_dock(
-    frame: &mut Frame,
-    app: &AppState,
-    area: Rect,
-    theme: &Theme,
-) {
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-
-    let surface = theme.surface.panel_elevated;
-    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
-    frame.render_widget(subtle_divider_block(theme, Borders::TOP, surface), area);
-
-    let content_area = Rect::new(
-        area.x,
-        area.y.saturating_add(1),
-        area.width,
-        area.height.saturating_sub(1),
-    );
-    if content_area.height == 0 {
-        return;
-    }
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(0)])
-        .split(content_area);
-    let rail = "▎ ";
-    let rail_style = Style::default().fg(theme.status.disabled).bg(surface);
-    let body = truncate_plain_text(
-        "Replay is read-only.",
-        usize::from(rows[0].width).saturating_sub(rail.chars().count()),
-    );
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(rail, rail_style),
-            Span::styled(body, Style::default().fg(theme.status.disabled).bg(surface)),
-        ])),
-        rows[0],
-    );
-
-    if rows[1].height > 0 {
-        let hint_prefix = "  ";
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(hint_prefix, Style::default().bg(surface)),
-                Span::styled(
-                    truncate_plain_text(
-                        &replay_read_only_shortcut_hints(app),
-                        usize::from(rows[1].width).saturating_sub(hint_prefix.chars().count()),
-                    ),
-                    Style::default().fg(theme.text.secondary).bg(surface),
-                ),
-            ])),
-            rows[1],
-        );
-    }
-}
-
-fn replay_read_only_shortcut_hints(app: &AppState) -> String {
-    [
-        app.keymap
-            .get_binding_label(Action::Help, "shortcuts")
-            .to_ascii_lowercase(),
-        app.keymap
-            .get_binding_label(Action::FocusNext, "focus")
-            .to_ascii_lowercase(),
-        app.keymap
-            .get_binding_label(Action::Reload, "reload")
-            .to_ascii_lowercase(),
-        app.keymap
-            .get_binding_label(Action::Quit, "quit")
-            .to_ascii_lowercase(),
-    ]
-    .join("  ·  ")
 }
 
 fn render_runtime_state_surface(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
@@ -576,13 +608,6 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
-    fn rect_center(area: Rect) -> (u16, u16) {
-        (
-            area.x.saturating_add(area.width.saturating_sub(1) / 2),
-            area.y.saturating_add(area.height.saturating_sub(1) / 2),
-        )
-    }
-
     fn transcript_debug(app: &AppState) -> String {
         build_transcript_lines(app, app.theme())
             .into_iter()
@@ -611,7 +636,7 @@ mod tests {
 
         let mut default_app = AppState::new_live(None, false, None);
         default_app.live_details_drawer_open = true;
-        let default_hit_areas = FrameLayoutPlan::for_app(&default_app, area).wheel_hit_areas;
+        let default_plan = FrameLayoutPlan::for_app(&default_app, area);
 
         let mut themed_app = AppState::new_live(None, false, None);
         themed_app.live_details_drawer_open = true;
@@ -622,21 +647,25 @@ mod tests {
         custom_theme.live_shell.primary.details_sidebar_width = 36;
         themed_app.set_theme_for_test(custom_theme);
 
-        let themed_hit_areas = FrameLayoutPlan::for_app(&themed_app, area).wheel_hit_areas;
-        assert_ne!(default_hit_areas.overlay, themed_hit_areas.overlay);
-        assert_ne!(default_hit_areas.inspector, themed_hit_areas.inspector);
+        let themed_plan = FrameLayoutPlan::for_app(&themed_app, area);
+        let themed_rail = themed_plan
+            .operator_sidebar
+            .expect("themed compact operator rail");
+        let probe_column = themed_rail.x.saturating_add(2);
+        let probe_row = themed_rail.y.saturating_add(1);
 
-        let themed_inspector = themed_hit_areas.inspector.expect("themed inspector area");
-        let probe_column = themed_inspector.x.saturating_add(2);
-        let probe_row = themed_inspector.y.saturating_add(1);
+        assert_eq!(default_plan.wheel_hit_areas.overlay, None);
+        assert_eq!(default_plan.wheel_hit_areas.inspector, None);
+        assert_eq!(themed_plan.wheel_hit_areas.overlay, None);
+        assert_eq!(themed_plan.wheel_hit_areas.inspector, None);
 
         assert_eq!(
-            hovered_wheel_target(&themed_app, area, probe_column, probe_row),
-            Some(WheelTarget::Inspector)
-        );
-        assert_ne!(
             hovered_wheel_target(&default_app, area, probe_column, probe_row),
-            Some(WheelTarget::Inspector)
+            Some(WheelTarget::Transcript)
+        );
+        assert_eq!(
+            hovered_wheel_target(&themed_app, area, probe_column, probe_row),
+            None
         );
     }
 
@@ -709,15 +738,15 @@ mod tests {
             LaunchMetadata::from_model_ref("deep", "proxy:gpt-5.4").with_mode_label("Demo"),
         );
 
-    let debug = render_debug(&app, 100, 24);
-    assert!(debug.contains("Harness") || debug.contains("HARNESS"));
-    assert!(debug.contains("Preset deep · proxy/gpt-5.4 · Demo"));
-    assert!(debug.contains("Ctrl+p palette"));
-    assert!(debug.contains("Enter select"));
-    assert!(debug.contains("Type to start a new session."));
-    assert!(!debug.contains("Dispatch a new run, reopen live work, or inspect saved history."));
-    assert!(!debug.contains("Actions:"));
-}
+        let debug = render_debug(&app, 100, 24);
+        assert!(debug.contains("Harness") || debug.contains("HARNESS"));
+        assert!(debug.contains("Preset deep · proxy/gpt-5.4 · Demo"));
+        assert!(debug.contains("Ctrl+p palette"));
+        assert!(debug.contains("Enter select"));
+        assert!(debug.contains("Type to start a new session."));
+        assert!(!debug.contains("Dispatch a new run, reopen live work, or inspect saved history."));
+        assert!(!debug.contains("Actions:"));
+    }
 
     #[test]
     fn replay_prompt_pane_is_visibly_read_only() {
@@ -762,52 +791,22 @@ mod tests {
 
     #[test]
     fn wheel_target_hits_transcript_when_hovered() {
-        let app = AppState::new_live(None, false, None);
-        let area = Rect::new(0, 0, 140, 40);
-        let hit_areas = FrameLayoutPlan::for_app(&app, area).wheel_hit_areas;
-        let transcript = hit_areas.transcript.expect("transcript area");
-        let (column, row) = rect_center(transcript);
-
-        assert_eq!(
-            hovered_wheel_target(&app, area, column, row),
-            Some(WheelTarget::Transcript)
-        );
+        exact_test_wheel_target_hits_transcript_when_hovered();
     }
 
     #[test]
     fn wheel_target_hits_inspector_inside_live_overlay() {
-        let mut app = AppState::new_live(None, false, None);
-        app.live_details_drawer_open = true;
-
-        let area = Rect::new(0, 0, 140, 40);
-        let hit_areas = FrameLayoutPlan::for_app(&app, area).wheel_hit_areas;
-        let inspector = hit_areas.inspector.expect("inspector area");
-        let (column, row) = rect_center(inspector);
-
-        assert_eq!(
-            hovered_wheel_target(&app, area, column, row),
-            Some(WheelTarget::Inspector)
-        );
+        exact_test_wheel_target_hits_inspector_inside_live_overlay();
     }
 
     #[test]
     fn wheel_target_excludes_activity_portion_of_live_overlay() {
-        let mut app = AppState::new_live(None, false, None);
-        app.live_details_drawer_open = true;
+        exact_test_wheel_target_excludes_activity_portion_of_live_overlay();
+    }
 
-        let area = Rect::new(0, 0, 140, 40);
-        let hit_areas = FrameLayoutPlan::for_app(&app, area).wheel_hit_areas;
-        let overlay = hit_areas.overlay.expect("overlay area");
-
-        assert_eq!(
-            hovered_wheel_target(
-                &app,
-                area,
-                overlay.x.saturating_add(1),
-                overlay.y.saturating_add(1),
-            ),
-            Some(WheelTarget::Inspector)
-        );
+    #[test]
+    fn compact_operator_rail_does_not_capture_wheel() {
+        exact_test_compact_operator_rail_does_not_capture_wheel();
     }
 
     #[test]
@@ -866,12 +865,13 @@ mod tests {
         app.handle_key(key(KeyCode::Tab));
         app.handle_key(key(KeyCode::Char('i')));
 
-        let request_debug = render_debug(&app, 140, 40);
-        assert!(request_debug.contains("No operator activity yet"));
-        assert!(!request_debug.contains("Context"));
-        assert!(!request_debug.contains("Request metadata:"));
-        assert!(!request_debug.contains("Args:"));
-        assert!(!request_debug.contains("Result:"));
+        let sidebar_text = super::ui_secondary::operator_sidebar_text_for_test(&app).join("\n");
+        assert!(sidebar_text.contains("Live · run run_ui_tests"));
+        assert!(sidebar_text.contains("unknown/openai/gpt-5-codex"));
+        assert!(sidebar_text.contains("0 active todos · 0 modified files"));
+        assert!(sidebar_text.contains("No operator activity yet"));
+        assert!(!sidebar_text.contains("Todo ·"));
+        assert!(!sidebar_text.contains("Modified Files ·"));
     }
 
     #[test]
@@ -929,13 +929,15 @@ mod tests {
         app.handle_key(key(KeyCode::Tab));
         app.handle_key(key(KeyCode::Char('i')));
 
-        let debug = render_debug(&app, 140, 40);
-        assert!(debug.contains("No operator activity yet"));
-        assert!(!debug.contains("Context"));
-        assert!(!debug.contains("No modified files recorded"));
-        assert!(!debug.contains("Permission context:"));
-        assert!(!debug.contains("perm_permission_detail"));
-        assert!(!debug.contains("Resolved: deny"));
+        let sidebar_text = super::ui_secondary::operator_sidebar_text_for_test(&app).join("\n");
+        assert!(sidebar_text.contains("Live · run run_ui_tests"));
+        assert!(sidebar_text.contains("unknown/openai/gpt-5-codex"));
+        assert!(sidebar_text.contains("0 active todos · 0 modified files"));
+        assert!(sidebar_text.contains("No operator activity yet"));
+        assert!(!sidebar_text.contains("No modified files recorded"));
+        assert!(!sidebar_text.contains("Permission context:"));
+        assert!(!sidebar_text.contains("perm_permission_detail"));
+        assert!(!sidebar_text.contains("Resolved: deny"));
     }
 
     #[test]
