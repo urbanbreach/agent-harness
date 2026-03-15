@@ -6,6 +6,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::{Arc, OnceLock};
 use std::time::SystemTime;
 use time::{macros::format_description, OffsetDateTime};
@@ -81,7 +82,7 @@ pub fn selected_live_viewport() -> LiveViewportPreset {
 }
 
 type AntiAliasMask = Arc<Vec<u8>>;
-type AntiAliasCache = RefCell<BTreeMap<(char, u32), AntiAliasMask>>;
+type AntiAliasCache = RefCell<BTreeMap<(char, u32, bool), AntiAliasMask>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FocusCapture {
@@ -803,7 +804,8 @@ fn draw_cell(
     if cell.inverse() && !cursor_over_cell {
         std::mem::swap(&mut fg, &mut bg);
     }
-    if cell.bold() {
+    let bold = cell.bold();
+    if bold {
         fg = brighten(fg, 28);
     }
 
@@ -816,7 +818,16 @@ fn draw_cell(
         return;
     };
 
-    draw_cell_glyph(image, origin_x, origin_y, ch, fg, glyphs, raster_scale);
+    draw_cell_glyph(
+        image,
+        origin_x,
+        origin_y,
+        ch,
+        fg,
+        glyphs,
+        raster_scale,
+        bold,
+    );
     if cell.underline() {
         draw_underline(
             image,
@@ -853,6 +864,7 @@ fn draw_cell_glyph(
     color: [u8; 3],
     glyphs: &GlyphLookup,
     raster_scale: u32,
+    bold: bool,
 ) {
     if ch == ' ' {
         return;
@@ -860,7 +872,7 @@ fn draw_cell_glyph(
 
     if ttf_antialias_enabled()
         && !prefers_bitmap_terminal_glyph(ch)
-        && glyphs.draw_antialiased_glyph(image, origin_x, origin_y, ch, color, raster_scale)
+        && glyphs.draw_antialiased_glyph(image, origin_x, origin_y, ch, color, raster_scale, bold)
     {
         return;
     }
@@ -984,6 +996,7 @@ struct GlyphLookup {
     box_drawing: BoxFonts,
     block: BlockFonts,
     smooth_font: Option<Font>,
+    bold_smooth_font: Option<Font>,
     anti_alias_cache: AntiAliasCache,
 }
 
@@ -995,6 +1008,7 @@ impl GlyphLookup {
             box_drawing: BoxFonts::new(),
             block: BlockFonts::new(),
             smooth_font: load_anti_alias_font(),
+            bold_smooth_font: load_anti_alias_bold_font(),
             anti_alias_cache: RefCell::new(BTreeMap::new()),
         }
     }
@@ -1007,8 +1021,9 @@ impl GlyphLookup {
         ch: char,
         color: [u8; 3],
         raster_scale: u32,
+        bold: bool,
     ) -> bool {
-        let Some(mask) = self.anti_alias_mask_for(ch, raster_scale) else {
+        let Some(mask) = self.anti_alias_mask_for(ch, raster_scale, bold) else {
             return false;
         };
 
@@ -1037,13 +1052,24 @@ impl GlyphLookup {
         true
     }
 
-    fn anti_alias_mask_for(&self, ch: char, raster_scale: u32) -> Option<AntiAliasMask> {
-        let cache_key = (ch, raster_scale);
+    fn anti_alias_mask_for(
+        &self,
+        ch: char,
+        raster_scale: u32,
+        bold: bool,
+    ) -> Option<AntiAliasMask> {
+        let cache_key = (ch, raster_scale, bold);
         if let Some(mask) = self.anti_alias_cache.borrow().get(&cache_key) {
             return Some(mask.clone());
         }
 
-        let font = self.smooth_font.as_ref()?;
+        let font = if bold {
+            self.bold_smooth_font
+                .as_ref()
+                .or(self.smooth_font.as_ref())?
+        } else {
+            self.smooth_font.as_ref()?
+        };
         let cell_width = GLYPH_WIDTH * raster_scale;
         let cell_height = GLYPH_HEIGHT * GLYPH_VERTICAL_SCALE * raster_scale;
         let font_size = (cell_height as f32 * ANTI_ALIAS_FONT_SIZE_FACTOR).max(8.0);
@@ -1123,13 +1149,39 @@ fn load_anti_alias_font() -> Option<Font> {
         return None;
     }
 
-    let mut candidates = Vec::new();
-    if let Ok(path) = std::env::var("HARNESS_VISUAL_FONT_PATH") {
-        candidates.push(path);
-    }
-    candidates.push("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf".to_string());
-    candidates.push("/usr/share/fonts/dejavu/DejaVuSansMono.ttf".to_string());
+    load_font_from_candidates(font_candidates(
+        "HARNESS_VISUAL_FONT_PATH",
+        "monospace",
+        &[
+            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSansMono.ttf",
+        ],
+    ))
+}
 
+fn load_anti_alias_bold_font() -> Option<Font> {
+    if !ttf_antialias_enabled() {
+        return None;
+    }
+
+    let mut candidates = font_candidates(
+        "HARNESS_VISUAL_FONT_BOLD_PATH",
+        "monospace:style=Bold",
+        &[
+            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSansMono-Bold.ttf",
+        ],
+    );
+    if let Ok(path) = std::env::var("HARNESS_VISUAL_FONT_PATH") {
+        if let Some(derived) = bold_font_candidate_from_regular(&path) {
+            let insert_idx = usize::from(std::env::var("HARNESS_VISUAL_FONT_BOLD_PATH").is_ok());
+            candidates.insert(insert_idx, derived);
+        }
+    }
+    load_font_from_candidates(candidates)
+}
+
+fn load_font_from_candidates(candidates: Vec<String>) -> Option<Font> {
     for path in candidates {
         let Ok(bytes) = fs::read(&path) else {
             continue;
@@ -1141,6 +1193,52 @@ fn load_anti_alias_font() -> Option<Font> {
     }
 
     None
+}
+
+fn font_candidates(
+    env_var: &str,
+    fontconfig_pattern: &str,
+    fallback_paths: &[&str],
+) -> Vec<String> {
+    let mut candidates = Vec::new();
+    if let Ok(path) = std::env::var(env_var) {
+        candidates.push(path);
+    }
+    if let Some(path) = fontconfig_match(fontconfig_pattern) {
+        if !candidates.iter().any(|candidate| candidate == &path) {
+            candidates.push(path);
+        }
+    }
+    candidates.extend(fallback_paths.iter().map(|path| (*path).to_string()));
+    candidates
+}
+
+fn fontconfig_match(pattern: &str) -> Option<String> {
+    let output = Command::new("fc-match")
+        .args(["-f", "%{file}\n", pattern])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    String::from_utf8(output.stdout)
+        .ok()?
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn bold_font_candidate_from_regular(path: &str) -> Option<String> {
+    let path = Path::new(path);
+    let stem = path.file_stem()?.to_str()?;
+    let ext = path.extension()?.to_str()?;
+    Some(
+        path.with_file_name(format!("{stem}-Bold.{ext}"))
+            .to_string_lossy()
+            .into_owned(),
+    )
 }
 
 fn ttf_antialias_enabled() -> bool {

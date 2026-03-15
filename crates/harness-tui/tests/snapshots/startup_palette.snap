@@ -6,13 +6,13 @@
 
 
 
-
+               ┌Home────────────────────────────────────────────────────────────────┐
     ┌Command palette───────────────────────────────────────────────────────────────────────────┐
-    │> █                                                                                       │
-    │New session  Start a fresh live session                                                   │
-    │Continue session  Continue a prior session when resumable                                 │
-    │Replay session  Replay a previous session as read-only                                    │
-    │Quit  Quit the application                                                                │
+    │ > █                                                                                      │
+    │ New session  Start a fresh live session                                                  │
+    │ Continue session  Continue a prior session when resumable                                │
+    │ Replay session  Replay a previous session as read-only                                   │
+    │ Quit  Quit the application                                                               │
     │                                                                                          │
     │                                                                                          │
     │                                                                                          │

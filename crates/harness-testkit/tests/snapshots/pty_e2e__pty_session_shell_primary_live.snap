@@ -1,14 +1,17 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-expression: "checkpoint_visual_snapshot(&live_screen,\n&[\"Context\", \"Modified Files\", \"shell parity task\", \"Enter send\"],\n&live_visual,)"
+expression: "checkpoint_visual_snapshot(&live_screen,\n&[\"shell parity task\", \"Shell parity looks good.\", LIVE_OPERATOR_TODOS_MARKER,\nLIVE_OPERATOR_EMPTY_MARKER, LIVE_SUCCESS_COMPOSER_MARKER,\nLIVE_READY_NEXT_TURN_MARKER, \"Enter send\"], &live_visual,)"
 ---
-Context: true
-Modified Files: true
 shell parity task: true
+Shell parity looks good.: true
+0 active todos: true
+No operator: true
+Ask Harness to inspect, edit, or explain…: true
+ready for next turn: true
 Enter send: true
-focus_marker: Context
-focus_pixels_blake3: d8948b78a4d2d7a8ff37c829897862cf3ab2d50baed4931ed78f610d8c3f1346
-focus_region_cells: row=4, col=117, height=8, width=20
+focus_marker: 0 active todos
+focus_pixels_blake3: f7c15407859e78af0d7eb533e0b49193498c2f18ba381ed807e6eac1f5446876
+focus_region_cells: row=4, col=135, height=8, width=20
 image: pty_session_shell_primary_live.png
 manifest_json: pty-manifests/live_shell/manifest.json
 manifest_jsonl: pty-manifests/live_shell/manifest.jsonl

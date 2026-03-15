@@ -6,8 +6,8 @@ Continue session: true
 continue blocked: true
 tasks are still in flight: true
 focus_marker: tasks are still in flight
-focus_pixels_blake3: 75817674699efdbae527f69a85d80058dc6e0c93711dfcbb1fb50d09f15587ad
-focus_region_cells: row=20, col=57, height=1, width=28
+focus_pixels_blake3: bcf8bdfe8bfd2875c45fbf38842922bac4cb5f9c8f405e6222a3d2edf6bf6dad
+focus_region_cells: row=19, col=59, height=1, width=28
 image: pty_continue_rejected_active.png
 manifest_json: pty-manifests/continue_session/manifest.json
 manifest_jsonl: pty-manifests/continue_session/manifest.jsonl

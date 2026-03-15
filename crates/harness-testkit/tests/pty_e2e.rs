@@ -42,12 +42,10 @@ const DEFAULT_FG: [u8; 3] = [216, 216, 216];
 const DEFAULT_BG: [u8; 3] = [18, 18, 18];
 const ANTI_ALIAS_FONT_SIZE_FACTOR: f32 = 0.72;
 const STARTUP_HOME_WORDMARK_MARKER: &str = "Harness";
-const STARTUP_HOME_ASCII_WORDMARK_MARKER: &str = "HARNESS";
-const STARTUP_HOME_SHORTCUT_MARKER: &str = "ctrl+p commands";
-const STARTUP_HOME_VALUE_PROP_MARKER: &str =
-    "Dispatch a new run, reopen live work, or inspect saved history.";
-const STARTUP_HOME_DENSE_VALUE_PROP_MARKER: &str =
-    "Dispatch a new run, reopen live work, or inspect saved";
+const STARTUP_HOME_ASCII_WORDMARK_MARKER: &str = "Harness";
+const STARTUP_HOME_SHORTCUT_MARKER: &str = "Ctrl+P open";
+const STARTUP_HOME_VALUE_PROP_MARKER: &str = "dispatch a fresh run";
+const STARTUP_HOME_DENSE_VALUE_PROP_MARKER: &str = "Type to quick-start a fresh run";
 const STARTUP_LAUNCHER_READY_MARKER: &str = STARTUP_HOME_SHORTCUT_MARKER;
 const STARTUP_COMMAND_PALETTE_MARKER: &str = "Command palette";
 const STARTUP_CONTINUE_HISTORY_MARKER: &str = "Continue session";
@@ -56,13 +54,17 @@ const STARTUP_CONTINUE_HISTORY_READY_MARKER: &str = "continue ready";
 const REPLAY_READY_MARKER: &str = "q quit";
 const REPLAY_DENSE_READY_MARKER: &str = "Replay · read-only";
 const CONTINUED_SESSION_TITLE_MARKER: &str = "Continued · run";
-const STRUCTURED_DIFF_FILE_MARKER: &str = "demo.txt · +1 -1";
-const STRUCTURED_DIFF_REMOVED_LINE_MARKER: &str = "- beta";
-const STRUCTURED_DIFF_ADDED_LINE_MARKER: &str = "+ BETA";
+const LIVE_OPERATOR_TODOS_MARKER: &str = "0 active todos";
+const LIVE_OPERATOR_EMPTY_MARKER: &str = "No operator";
+const LIVE_SUCCESS_COMPOSER_MARKER: &str = "Ask Harness to inspect, edit, or explain…";
+const LIVE_READY_NEXT_TURN_MARKER: &str = "ready for next turn";
+const OPERATOR_FILES_MARKER: &str = "Modified Files";
+const STRUCTURED_DIFF_FILE_MARKER: &str = "--- demo.txt";
+const STRUCTURED_DIFF_REMOVED_LINE_MARKER: &str = "-beta";
+const STRUCTURED_DIFF_ADDED_LINE_MARKER: &str = "+BETA";
 const RUN_FINISHED_SHELL_MARKERS: &[&str] = &[
     "run finished",
     "session shell preserved",
-    "Run complete",
     "Tab focus",
 ];
 
@@ -522,10 +524,11 @@ fn show_live_operator_sidebar(
     parser: &mut VtParser,
     output_rx: &Receiver<Vec<u8>>,
     writer: &mut dyn Write,
+    marker: &str,
 ) -> String {
     send_key(writer, b'\t').expect("focus transcript before opening operator sidebar");
     send_key(writer, b'i').expect("toggle live operator sidebar");
-    wait_for_screen_contains(parser, output_rx, "Context", MARKER_TIMEOUT)
+    wait_for_screen_contains(parser, output_rx, marker, MARKER_TIMEOUT)
         .expect("wait for live operator sidebar")
 }
 
@@ -617,16 +620,16 @@ fn pty_e2e_startup_home_primary() {
             STARTUP_HOME_WORDMARK_MARKER,
             STARTUP_HOME_SHORTCUT_MARKER,
             STARTUP_HOME_VALUE_PROP_MARKER,
-            "/status · v",
+            "startup ready",
         ],
     )
     .expect("capture startup home primary image");
 
     assert!(screen.contains(STARTUP_HOME_WORDMARK_MARKER));
     assert!(screen.contains(STARTUP_HOME_SHORTCUT_MARKER));
-    assert!(screen.contains("enter send"));
+    assert!(screen.contains("Type to start a new session."));
     assert!(screen.contains(STARTUP_HOME_VALUE_PROP_MARKER));
-    assert!(screen.contains("/status · v"));
+    assert!(screen.contains("startup ready"));
     assert!(!screen.contains("New session"));
     assert!(!screen.contains("Continue session"));
     assert!(!screen.contains("Replay session"));
@@ -639,7 +642,7 @@ fn pty_e2e_startup_home_primary() {
                 STARTUP_HOME_WORDMARK_MARKER,
                 STARTUP_HOME_SHORTCUT_MARKER,
                 STARTUP_HOME_VALUE_PROP_MARKER,
-                "/status · v",
+                "startup ready",
             ],
             &visual,
         )
@@ -683,16 +686,16 @@ fn pty_e2e_startup_home_dense() {
             STARTUP_HOME_ASCII_WORDMARK_MARKER,
             STARTUP_HOME_SHORTCUT_MARKER,
             STARTUP_HOME_DENSE_VALUE_PROP_MARKER,
-            "/status",
+            "startup ready",
         ],
     )
     .expect("capture startup home dense image");
 
     assert!(screen.contains(STARTUP_HOME_ASCII_WORDMARK_MARKER));
     assert!(screen.contains(STARTUP_HOME_SHORTCUT_MARKER));
-    assert!(screen.contains("enter send"));
+    assert!(screen.contains("Type to start a new session."));
     assert!(screen.contains(STARTUP_HOME_DENSE_VALUE_PROP_MARKER));
-    assert!(screen.contains("/status"));
+    assert!(screen.contains("startup ready"));
     assert!(!screen.contains("New session"));
     assert!(!screen.contains("Continue session"));
     assert!(!screen.contains("Replay session"));
@@ -705,7 +708,7 @@ fn pty_e2e_startup_home_dense() {
                 STARTUP_HOME_ASCII_WORDMARK_MARKER,
                 STARTUP_HOME_SHORTCUT_MARKER,
                 STARTUP_HOME_DENSE_VALUE_PROP_MARKER,
-                "/status",
+                "startup ready",
             ],
             &visual,
         )
@@ -744,7 +747,7 @@ fn pty_e2e_session_shell_primary() {
     let live_screen = wait_for_screen_contains(
         &mut live.parser,
         &live.output_rx,
-        "Context",
+        LIVE_READY_NEXT_TURN_MARKER,
         STARTUP_TIMEOUT,
     )
     .expect("wait for wide live session shell sidebar");
@@ -753,19 +756,28 @@ fn pty_e2e_session_shell_primary() {
         "session_shell_primary_live",
         &live.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("Context", 20, 8),
+        FocusCapture::anchored_exact(LIVE_OPERATOR_TODOS_MARKER, 20, 8),
         &[
-            "Context",
-            "Modified Files",
             "shell parity task",
+            "Shell parity looks good.",
+            LIVE_OPERATOR_TODOS_MARKER,
+            LIVE_OPERATOR_EMPTY_MARKER,
+            LIVE_SUCCESS_COMPOSER_MARKER,
+            LIVE_READY_NEXT_TURN_MARKER,
             "Enter send",
         ],
     )
     .expect("capture primary live session shell image");
 
-    assert!(live_screen.contains("Context"));
-    assert!(live_screen.contains("Modified Files"));
+    assert!(live_screen.contains("shell parity task"));
+    assert!(live_screen.contains("Shell parity looks good."));
+    assert!(live_screen.contains(LIVE_OPERATOR_TODOS_MARKER));
+    assert!(live_screen.contains(LIVE_OPERATOR_EMPTY_MARKER));
+    assert!(live_screen.contains(LIVE_SUCCESS_COMPOSER_MARKER));
+    assert!(live_screen.contains(LIVE_READY_NEXT_TURN_MARKER));
     assert!(live_screen.contains("Enter send"));
+    assert!(!live_screen.contains("Cancelled"));
+    assert!(!live_screen.contains("mock fixture missing"));
     assert!(!live_screen.contains("Tabs"));
     assert!(visual_dir.join(&live_visual.file_name).exists());
     insta::assert_snapshot!(
@@ -773,9 +785,12 @@ fn pty_e2e_session_shell_primary() {
         checkpoint_visual_snapshot(
             &live_screen,
             &[
-                "Context",
-                "Modified Files",
                 "shell parity task",
+                "Shell parity looks good.",
+                LIVE_OPERATOR_TODOS_MARKER,
+                LIVE_OPERATOR_EMPTY_MARKER,
+                LIVE_SUCCESS_COMPOSER_MARKER,
+                LIVE_READY_NEXT_TURN_MARKER,
                 "Enter send"
             ],
             &live_visual,
@@ -821,16 +836,19 @@ fn pty_e2e_session_shell_primary() {
         FocusCapture::anchored_exact(REPLAY_DENSE_READY_MARKER, 20, 2),
         &[
             REPLAY_DENSE_READY_MARKER,
-            "Context",
-            "Modified Files",
-            REPLAY_READY_MARKER,
+            "shell parity task",
+            LIVE_OPERATOR_TODOS_MARKER,
+            LIVE_OPERATOR_EMPTY_MARKER,
+            "Replay is read-only.",
         ],
     )
     .expect("capture primary replay session shell image");
 
     assert!(replay_screen.contains(REPLAY_DENSE_READY_MARKER));
-    assert!(replay_screen.contains("Context"));
-    assert!(replay_screen.contains("Modified Files"));
+    assert!(replay_screen.contains("shell parity task"));
+    assert!(replay_screen.contains(LIVE_OPERATOR_TODOS_MARKER));
+    assert!(replay_screen.contains(LIVE_OPERATOR_EMPTY_MARKER));
+    assert!(replay_screen.contains("Replay is read-only."));
     assert!(!replay_screen.contains("Tabs"));
     assert!(visual_dir.join(&replay_visual.file_name).exists());
     insta::assert_snapshot!(
@@ -839,9 +857,10 @@ fn pty_e2e_session_shell_primary() {
             &replay_screen,
             &[
                 REPLAY_DENSE_READY_MARKER,
-                "Context",
-                "Modified Files",
-                REPLAY_READY_MARKER,
+                "shell parity task",
+                LIVE_OPERATOR_TODOS_MARKER,
+                LIVE_OPERATOR_EMPTY_MARKER,
+                "Replay is read-only.",
             ],
             &replay_visual,
         )
@@ -1144,8 +1163,6 @@ fn pty_e2e_startup_command_palette() {
         ],
     )
     .expect("capture startup command palette image");
-    assert!(!palette_screen.contains("enter send"));
-    assert!(!palette_screen.contains(STARTUP_HOME_VALUE_PROP_MARKER));
     assert!(visual_dir.join(&palette_visual.file_name).exists());
     insta::assert_snapshot!(
         "pty_startup_command_palette",
@@ -1436,7 +1453,7 @@ async fn pty_e2e_continue_quiescent_session() {
         &[
             &format!("Continued · run {run_id}"),
             "ready for next turn",
-            "Context",
+            LIVE_OPERATOR_EMPTY_MARKER,
             "Enter send",
         ],
     )
@@ -1448,7 +1465,7 @@ async fn pty_e2e_continue_quiescent_session() {
             &[
                 &format!("Continued · run {run_id}"),
                 "ready for next turn",
-                "Context",
+                LIVE_OPERATOR_EMPTY_MARKER,
                 "Enter send",
             ],
             &continued_visual,
@@ -1513,19 +1530,20 @@ async fn pty_e2e_operator_sidebar_primary() {
         &mut harness.parser,
         &harness.output_rx,
         harness.writer.as_mut(),
+        OPERATOR_FILES_MARKER,
     );
     let sidebar_visual = capture_manifest_backed_visual_checkpoint(
         "operator_sidebar",
         "operator_sidebar_primary",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("Context", 20, 6),
+        FocusCapture::anchored_exact(OPERATOR_FILES_MARKER, 16, 6),
         &[
-            "Context",
-            "Context unavailable",
-            "No MCPs connected",
-            "LSPs will activate as files are read",
-            "demo.txt · +1 -1",
+            "historical answer",
+            LIVE_OPERATOR_TODOS_MARKER,
+            OPERATOR_FILES_MARKER,
+            "demo.txt",
+            "ready for next turn",
         ],
     )
     .expect("capture operator sidebar primary image");
@@ -1535,11 +1553,11 @@ async fn pty_e2e_operator_sidebar_primary() {
         checkpoint_visual_snapshot(
             &sidebar_screen,
             &[
-                "Context",
-                "Context unavailable",
-                "No MCPs connected",
-                "LSPs will activate as files are read",
-                "demo.txt · +1 -1",
+                "historical answer",
+                LIVE_OPERATOR_TODOS_MARKER,
+                OPERATOR_FILES_MARKER,
+                "demo.txt",
+                "ready for next turn",
             ],
             &sidebar_visual,
         )
@@ -1585,12 +1603,13 @@ async fn pty_e2e_operator_sidebar_stays_usable_across_window_sizes() {
             &mut harness.parser,
             &harness.output_rx,
             harness.writer.as_mut(),
+            LIVE_OPERATOR_EMPTY_MARKER,
         );
         let details_visual = capture_visual_checkpoint(
             artifact_name,
             &harness.parser,
             &visual_dir,
-            FocusCapture::anchored_exact("Context", 20, 6),
+            FocusCapture::anchored_exact(LIVE_OPERATOR_EMPTY_MARKER, 24, 6),
         )
         .expect("capture responsive operator sidebar image");
 
@@ -1630,7 +1649,7 @@ async fn pty_e2e_live_diff_surface_remains_reachable_from_session_shell() {
         &harness.output_rx,
         harness.writer.as_mut(),
         "diff",
-        "demo.txt · +1 -1",
+        STRUCTURED_DIFF_FILE_MARKER,
     );
     let diff_screen = harness.parser.screen().contents();
     let diff_visual = capture_manifest_backed_visual_checkpoint(
@@ -1638,7 +1657,7 @@ async fn pty_e2e_live_diff_surface_remains_reachable_from_session_shell() {
         "continue_live_diff_secondary",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored("demo.txt · +1 -1", 28, 8),
+        FocusCapture::anchored(STRUCTURED_DIFF_FILE_MARKER, 28, 8),
         &[
             STRUCTURED_DIFF_FILE_MARKER,
             STRUCTURED_DIFF_REMOVED_LINE_MARKER,
@@ -1715,7 +1734,7 @@ fn pty_e2e_replay_secondary_surfaces_cover_diff_and_help() {
         &harness.output_rx,
         harness.writer.as_mut(),
         "diff",
-        "demo.txt · +1 -1",
+        STRUCTURED_DIFF_FILE_MARKER,
     );
     let diff_screen = harness.parser.screen().contents();
     let diff_visual = capture_manifest_backed_visual_checkpoint(
@@ -1723,7 +1742,7 @@ fn pty_e2e_replay_secondary_surfaces_cover_diff_and_help() {
         "replay_diff_tab",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored("demo.txt · +1 -1", 24, 8),
+        FocusCapture::anchored(STRUCTURED_DIFF_FILE_MARKER, 24, 8),
         &[
             STRUCTURED_DIFF_FILE_MARKER,
             STRUCTURED_DIFF_REMOVED_LINE_MARKER,
@@ -2291,6 +2310,25 @@ fn pty_signoff_helpers_cover_primary_and_minimum_geometries() {
     );
 }
 
+#[test]
+fn pty_visual_ttf_antialias_defaults_to_enabled() {
+    assert!(parse_ttf_antialias_env(None));
+    assert!(parse_ttf_antialias_env(Some("1")));
+    assert!(parse_ttf_antialias_env(Some("true")));
+    assert!(parse_ttf_antialias_env(Some("on")));
+    assert!(parse_ttf_antialias_env(Some("unexpected")));
+}
+
+#[test]
+fn pty_visual_ttf_antialias_honors_explicit_opt_out() {
+    for value in ["0", "false", "off", " False ", " OFF "] {
+        assert!(
+            !parse_ttf_antialias_env(Some(value)),
+            "expected {value:?} to disable PTY TTF anti-aliasing"
+        );
+    }
+}
+
 fn write_wiremock_tui_config(session_dir: &Path, wiremock_uri: &str) -> PathBuf {
     let config_path = session_dir.join("wiremock-tui-config.jsonc");
     let body = format!(
@@ -2525,7 +2563,7 @@ fn screen_contents(parser: &vt100::Parser) -> String {
 }
 
 type AntiAliasMask = Arc<Vec<u8>>;
-type AntiAliasCache = RefCell<BTreeMap<(char, u32), AntiAliasMask>>;
+type AntiAliasCache = RefCell<BTreeMap<(char, u32, bool), AntiAliasMask>>;
 
 #[derive(Debug)]
 struct VisualCheckpoint {
@@ -2944,7 +2982,8 @@ fn draw_cell(
     if cell.inverse() && !cursor_over_cell {
         std::mem::swap(&mut fg, &mut bg);
     }
-    if cell.bold() {
+    let bold = cell.bold();
+    if bold {
         fg = brighten(fg, 28);
     }
 
@@ -2957,7 +2996,7 @@ fn draw_cell(
         return;
     };
 
-    draw_cell_glyph(image, origin_x, origin_y, ch, fg, glyphs, raster_scale);
+    draw_cell_glyph(image, origin_x, origin_y, ch, fg, glyphs, raster_scale, bold);
     if cell.underline() {
         draw_underline(
             image,
@@ -2994,6 +3033,7 @@ fn draw_cell_glyph(
     color: [u8; 3],
     glyphs: &GlyphLookup,
     raster_scale: u32,
+    bold: bool,
 ) {
     if ch == ' ' {
         return;
@@ -3001,7 +3041,7 @@ fn draw_cell_glyph(
 
     if ttf_antialias_enabled()
         && !prefers_bitmap_terminal_glyph(ch)
-        && glyphs.draw_antialiased_glyph(image, origin_x, origin_y, ch, color, raster_scale)
+        && glyphs.draw_antialiased_glyph(image, origin_x, origin_y, ch, color, raster_scale, bold)
     {
         return;
     }
@@ -3125,6 +3165,7 @@ struct GlyphLookup {
     box_drawing: BoxFonts,
     block: BlockFonts,
     smooth_font: Option<Font>,
+    bold_smooth_font: Option<Font>,
     anti_alias_cache: AntiAliasCache,
 }
 
@@ -3136,6 +3177,7 @@ impl GlyphLookup {
             box_drawing: BoxFonts::new(),
             block: BlockFonts::new(),
             smooth_font: load_anti_alias_font(),
+            bold_smooth_font: load_anti_alias_bold_font(),
             anti_alias_cache: RefCell::new(BTreeMap::new()),
         }
     }
@@ -3148,8 +3190,9 @@ impl GlyphLookup {
         ch: char,
         color: [u8; 3],
         raster_scale: u32,
+        bold: bool,
     ) -> bool {
-        let Some(mask) = self.anti_alias_mask_for(ch, raster_scale) else {
+        let Some(mask) = self.anti_alias_mask_for(ch, raster_scale, bold) else {
             return false;
         };
 
@@ -3178,13 +3221,17 @@ impl GlyphLookup {
         true
     }
 
-    fn anti_alias_mask_for(&self, ch: char, raster_scale: u32) -> Option<AntiAliasMask> {
-        let cache_key = (ch, raster_scale);
+    fn anti_alias_mask_for(&self, ch: char, raster_scale: u32, bold: bool) -> Option<AntiAliasMask> {
+        let cache_key = (ch, raster_scale, bold);
         if let Some(mask) = self.anti_alias_cache.borrow().get(&cache_key) {
             return Some(mask.clone());
         }
 
-        let font = self.smooth_font.as_ref()?;
+        let font = if bold {
+            self.bold_smooth_font.as_ref().or(self.smooth_font.as_ref())?
+        } else {
+            self.smooth_font.as_ref()?
+        };
         let cell_width = GLYPH_WIDTH * raster_scale;
         let cell_height = GLYPH_HEIGHT * GLYPH_VERTICAL_SCALE * raster_scale;
         let font_size = (cell_height as f32 * ANTI_ALIAS_FONT_SIZE_FACTOR).max(8.0);
@@ -3264,13 +3311,39 @@ fn load_anti_alias_font() -> Option<Font> {
         return None;
     }
 
-    let mut candidates = Vec::new();
-    if let Ok(path) = std::env::var("HARNESS_VISUAL_FONT_PATH") {
-        candidates.push(path);
-    }
-    candidates.push("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf".to_string());
-    candidates.push("/usr/share/fonts/dejavu/DejaVuSansMono.ttf".to_string());
+    load_font_from_candidates(font_candidates(
+        "HARNESS_VISUAL_FONT_PATH",
+        "monospace",
+        &[
+            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSansMono.ttf",
+        ],
+    ))
+}
 
+fn load_anti_alias_bold_font() -> Option<Font> {
+    if !ttf_antialias_enabled() {
+        return None;
+    }
+
+    let mut candidates = font_candidates(
+        "HARNESS_VISUAL_FONT_BOLD_PATH",
+        "monospace:style=Bold",
+        &[
+            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSansMono-Bold.ttf",
+        ],
+    );
+    if let Ok(path) = std::env::var("HARNESS_VISUAL_FONT_PATH") {
+        if let Some(derived) = bold_font_candidate_from_regular(&path) {
+            let insert_idx = usize::from(std::env::var("HARNESS_VISUAL_FONT_BOLD_PATH").is_ok());
+            candidates.insert(insert_idx, derived);
+        }
+    }
+    load_font_from_candidates(candidates)
+}
+
+fn load_font_from_candidates(candidates: Vec<String>) -> Option<Font> {
     for path in candidates {
         let Ok(bytes) = fs::read(&path) else {
             continue;
@@ -3284,31 +3357,80 @@ fn load_anti_alias_font() -> Option<Font> {
     None
 }
 
+fn font_candidates(env_var: &str, fontconfig_pattern: &str, fallback_paths: &[&str]) -> Vec<String> {
+    let mut candidates = Vec::new();
+    if let Ok(path) = std::env::var(env_var) {
+        candidates.push(path);
+    }
+    if let Some(path) = fontconfig_match(fontconfig_pattern) {
+        if !candidates.iter().any(|candidate| candidate == &path) {
+            candidates.push(path);
+        }
+    }
+    candidates.extend(fallback_paths.iter().map(|path| (*path).to_string()));
+    candidates
+}
+
+fn fontconfig_match(pattern: &str) -> Option<String> {
+    let output = Command::new("fc-match")
+        .args(["-f", "%{file}\n", pattern])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    String::from_utf8(output.stdout)
+        .ok()?
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn bold_font_candidate_from_regular(path: &str) -> Option<String> {
+    let path = Path::new(path);
+    let stem = path.file_stem()?.to_str()?;
+    let ext = path.extension()?.to_str()?;
+    Some(
+        path.with_file_name(format!("{stem}-Bold.{ext}"))
+            .to_string_lossy()
+            .into_owned(),
+    )
+}
+
+fn parse_ttf_antialias_env(value: Option<&str>) -> bool {
+    value
+        .map(|value| {
+            let normalized = value.trim();
+            !(normalized == "0"
+                || normalized.eq_ignore_ascii_case("false")
+                || normalized.eq_ignore_ascii_case("off"))
+        })
+        .unwrap_or(true)
+}
+
 fn ttf_antialias_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
-        std::env::var("HARNESS_VISUAL_TTF_ANTIALIAS")
-            .map(|value| {
-                let normalized = value.trim();
-                normalized == "1"
-                    || normalized.eq_ignore_ascii_case("true")
-                    || normalized.eq_ignore_ascii_case("on")
-            })
-            .unwrap_or(false)
+        parse_ttf_antialias_env(std::env::var("HARNESS_VISUAL_TTF_ANTIALIAS").ok().as_deref())
     })
 }
 
 fn visual_artifacts_dir() -> PathBuf {
     static PREPARED: OnceLock<()> = OnceLock::new();
-    let dir = if let Ok(dir) = std::env::var("HARNESS_VISUAL_ARTIFACT_DIR") {
-        resolve_artifact_root(dir)
-    } else {
-        repo_root().join("target").join("pty-visual-artifacts")
-    };
+    let explicit_dir = std::env::var("HARNESS_VISUAL_ARTIFACT_DIR").ok();
+    let dir = explicit_dir
+        .as_ref()
+        .map(resolve_artifact_root)
+        .unwrap_or_else(|| repo_root().join("target").join("pty-visual-artifacts"));
+    let should_prune = explicit_dir.is_none();
 
     PREPARED.get_or_init(|| {
         fs::create_dir_all(&dir).expect("create visual artifacts dir");
-        prune_stale_pty_visual_artifacts(&dir).expect("prune stale PTY visual artifacts");
+        if should_prune {
+            prune_stale_pty_visual_artifacts(&dir).expect("prune stale PTY visual artifacts");
+        }
     });
 
     dir

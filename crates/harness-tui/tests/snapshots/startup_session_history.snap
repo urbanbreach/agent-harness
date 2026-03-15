@@ -6,12 +6,12 @@
 
 
 
-
+               ┌Home────────────────────────────────────────────────────────────────┐
     ┌Continue session · 2 matches · 1 blocked──────────────────────────────────────────────────┐
-    │> █                                                                                       │
-    │Interactive histories · 1 ready · 1 blocked · blocked rows stay visible                   │
-    │▶ continue alpha-run · continue ready · finished · deep/openai/gpt-5.4                    │
-    │! blocked beta-blocked · continue blocked · run is still active · running · ops/anthropic/│
+    │  > █                                                                                     │
+    │  Interactive histories · 1 ready · 1 blocked · blocked rows stay visible                 │
+    │  ▶ continue alpha-run · continue ready · finished · deep/openai/gpt-5.4                  │
+    │  ! blocked beta-blocked · continue blocked · run is still active · running · ops/anthro  │
     │                                                                                          │
     │                                                                                          │
     │                                                                                          │

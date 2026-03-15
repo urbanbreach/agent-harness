@@ -5,7 +5,7 @@
 
 
 
-        ┌──────────────────────────────────────────────────────────────┐
+        ┌Session───────────────────────────────────────────────────────┐
       ┌ Degraded   Recovery in progress──────────────────────────────────┐
       │Live updates are catching up before sending resumes.              │
       │live stream lagged by 2; replaying from seq 1                     │
@@ -19,6 +19,6 @@
 
 
   Degraded   recovery in progress · Sending paused · live stream lagged by 2; r
- ──────────────────────────────────────────────────────────────────────────────
+
  ▎ Draft preserved locally while recovery completes.
  Ctrl+p commands  ? shortcuts  q quit

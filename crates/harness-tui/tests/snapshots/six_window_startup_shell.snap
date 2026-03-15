@@ -1,15 +1,15 @@
 
 
 
-
-                           Harness
-             Preset worker · mock/model-1 · Demo
-
-
-
-
-
-
+    ┌Home──────────────────────────────────────────────┐
+    │  Harness                                         │
+    │  Preset worker · mock/model-1 · Demo             │
+    │  dispatch a fresh run from the draft below       │
+    │  Type to quick-start a fresh run · Ctrl+P open…  │
+    │                                                  │
+    │                                                  │
+    │                                                  │
+    └──────────────────────────────────────────────────┘
 
 
   Ready   startup ready · type below or use Ctrl+P for save

@@ -7,8 +7,8 @@ run_replay_safe: true
 Replay · read-only: true
 Replay is read-only: true
 focus_marker: q quit
-focus_pixels_blake3: 705dd89d72a3524ca362586666c8fce77be6c4c44e6313fca5feaadd127d436b
-focus_region_cells: row=44, col=43, height=2, width=20
+focus_pixels_blake3: 86f21b44198d04fdc3af20501609f736a1a9b0a045cf6c9e691c6f68d220e8db
+focus_region_cells: row=44, col=45, height=2, width=20
 image: pty_replay_read_only.png
 manifest_json: pty-manifests/replay/manifest.json
 manifest_jsonl: pty-manifests/replay/manifest.jsonl

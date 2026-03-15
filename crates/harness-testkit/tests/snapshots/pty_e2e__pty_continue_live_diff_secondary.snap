@@ -2,12 +2,12 @@
 source: crates/harness-testkit/tests/pty_e2e.rs
 expression: "checkpoint_visual_snapshot(&diff_screen,\n&[STRUCTURED_DIFF_FILE_MARKER, STRUCTURED_DIFF_REMOVED_LINE_MARKER,\nSTRUCTURED_DIFF_ADDED_LINE_MARKER,], &diff_visual,)"
 ---
-demo.txt · +1 -1: true
-- beta: true
-+ BETA: true
-focus_marker: demo.txt · +1 -1
-focus_pixels_blake3: abfa6852cb366a637c269f34466eb768fc885925128a6f983dfaf4432656493e
-focus_region_cells: row=2, col=53, height=8, width=28
+--- demo.txt: true
+-beta: true
++BETA: true
+focus_marker: --- demo.txt
+focus_pixels_blake3: b267e76cafa8fecf21ec05e3d8f8f87f590f80834f2b53e42d54874999db912e
+focus_region_cells: row=2, col=54, height=8, width=28
 image: pty_continue_live_diff_secondary.png
 manifest_json: pty-manifests/diff_surface/manifest.json
 manifest_jsonl: pty-manifests/diff_surface/manifest.jsonl

@@ -7,7 +7,7 @@ Drafting a document-like plan: true
 tool fs.read (succeeded) · 24 lines read from src/ui.rs: true
 Found the transcript renderer and the composer chrome.: true
 focus_marker: Thinking:
-focus_pixels_blake3: 0883b0a6b6ea29aebb2f58fd33c2c48e92691b086854b6cd7c875767859a0d78
+focus_pixels_blake3: 4b56b49ba08c6d170cb3a680671fd296489332d94925e8fb175c7c34f312dfcd
 focus_region_cells: row=0, col=0, height=48, width=160
 image: pty_session_transcript_rich_shell.png
 manifest_json: pty-manifests/transcript_shell/manifest.json

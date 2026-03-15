@@ -1,14 +1,14 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-expression: "checkpoint_visual_snapshot(&continued_screen,\n&[&format!(\"Continued · run {run_id}\"), \"ready for next turn\", \"Context\",\n\"Enter send\",], &continued_visual,)"
+expression: "checkpoint_visual_snapshot(&continued_screen,\n&[&format!(\"Continued · run {run_id}\"), \"ready for next turn\",\nLIVE_OPERATOR_EMPTY_MARKER, \"Enter send\",], &continued_visual,)"
 ---
-Continued · run run_resume_quiescent: true
+Continued · run run_resume_quiescent: false
 ready for next turn: true
-Context: true
+No operator: true
 Enter send: true
 focus_marker: Continued · run
-focus_pixels_blake3: 8d72d4b754d3dccbd6eca57e6b415723aad04fb5204152c5ecbce34a06e1d266
-focus_region_cells: row=1, col=117, height=1, width=18
+focus_pixels_blake3: d0e7937ef952392a54146a77f01d15bd2f52ffe49b513460c2c7852521a028b0
+focus_region_cells: row=2, col=135, height=1, width=18
 image: pty_continue_quiescent_session.png
 manifest_json: pty-manifests/continue_session/manifest.json
 manifest_jsonl: pty-manifests/continue_session/manifest.jsonl

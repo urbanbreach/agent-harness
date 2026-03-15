@@ -4,10 +4,9 @@ expression: "checkpoint_visual_snapshot(&inline_completion_checkpoint,\nRUN_FINI
 ---
 run finished: true
 session shell preserved: true
-Run complete: false
 Tab focus: true
 focus_marker: run finished
-focus_pixels_blake3: 153aba5cad6cd3d583738dda4a54038dff19a429fff35bb10a2bcad4d7a1bf68
+focus_pixels_blake3: 00fc7487ffdec82efadc2c526ef9facd0fd8481b38cc3b33b2ef1442743857ef
 focus_region_cells: row=20, col=12, height=1, width=20
 image: pty_inline_completion_shell.png
 manifest_json: pty-manifests/live_shell/manifest.json

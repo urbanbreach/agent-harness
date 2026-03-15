@@ -7,7 +7,7 @@ FAIL CLOSED: true
 SESSION PAUSED: true
 keep this draft: true
 focus_marker: Permission Requested
-focus_pixels_blake3: dcf59d1af443d699ca2ec6c1fd610c9984cfd11862668ef0c74391bb57b7f77a
+focus_pixels_blake3: 88b9159adf4667ab54fc317422d826ae10af4297f551971927b30d36055e74a6
 focus_region_cells: row=7, col=14, height=1, width=24
 image: pty_permission_overlay_parity.png
 manifest_json: pty-manifests/permission/manifest.json

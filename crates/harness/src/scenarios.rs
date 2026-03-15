@@ -11,7 +11,9 @@ use harness_core::perm::PermissionPolicy;
 use harness_providers::mock::{request_digest, MockProvider};
 use harness_providers::{
     CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, ProviderStreamEvent,
+    ToolChoice, ToolDef,
 };
+use serde_json::json;
 
 static WORKSPACE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -180,7 +182,163 @@ pub fn golden_path_provider() -> MockProvider {
         ],
     );
 
+    let shell_parity_request = CompletionRequest {
+        model_id: "model-1".to_string(),
+        messages: vec![
+            CompletionMessage {
+                role: MessageRole::System,
+                content: "worker-prompt".to_string(),
+                name: None,
+                tool_call_id: None,
+                assistant_tool_calls: None,
+            },
+            CompletionMessage {
+                role: MessageRole::User,
+                content: "shell parity task".to_string(),
+                name: None,
+                tool_call_id: None,
+                assistant_tool_calls: None,
+            },
+        ],
+        temperature: Some(0.0),
+        max_tokens: None,
+        tools: Some(vec![demo_hashline_apply_tool_def()]),
+        tool_choice: Some(ToolChoice::Auto),
+        stream: true,
+    };
+
+    scripted_events.insert(
+        request_digest(&shell_parity_request),
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("Shell parity".to_string()),
+            ProviderStreamEvent::TextDelta(" looks good.".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 10,
+                    completion_tokens: 4,
+                    total_tokens: 14,
+                },
+            },
+        ],
+    );
+
     MockProvider::new(scripted_events)
+}
+
+fn demo_hashline_apply_tool_def() -> ToolDef {
+    ToolDef {
+        tool_id: "edit.hashline_apply".to_string(),
+        function_name: "edit_hashline_apply".to_string(),
+        description: Some(
+            "Applies a hashline patch to a workspace file and writes an artifact diff.".to_string(),
+        ),
+        parameters: json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["edit_id", "path", "ops"],
+            "properties": {
+                "edit_id": { "type": "string" },
+                "path": { "type": "string" },
+                "ops": {
+                    "type": "array",
+                    "items": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": ["InsertBefore"],
+                                "properties": {
+                                    "InsertBefore": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": ["anchor", "lines"],
+                                        "properties": {
+                                            "anchor": { "$ref": "#/definitions/LineAnchor" },
+                                            "lines": {
+                                                "type": "array",
+                                                "items": { "type": "string" }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": ["InsertAfter"],
+                                "properties": {
+                                    "InsertAfter": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": ["anchor", "lines"],
+                                        "properties": {
+                                            "anchor": { "$ref": "#/definitions/LineAnchor" },
+                                            "lines": {
+                                                "type": "array",
+                                                "items": { "type": "string" }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": ["Replace"],
+                                "properties": {
+                                    "Replace": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": ["expected", "lines"],
+                                        "properties": {
+                                            "expected": {
+                                                "type": "array",
+                                                "items": { "$ref": "#/definitions/LineAnchor" }
+                                            },
+                                            "lines": {
+                                                "type": "array",
+                                                "items": { "type": "string" }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": ["Delete"],
+                                "properties": {
+                                    "Delete": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": ["expected"],
+                                        "properties": {
+                                            "expected": {
+                                                "type": "array",
+                                                "items": { "$ref": "#/definitions/LineAnchor" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            },
+            "definitions": {
+                "LineAnchor": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["line", "hash"],
+                    "properties": {
+                        "line": { "type": "integer", "minimum": 0 },
+                        "hash": { "type": "string" }
+                    }
+                }
+            }
+        }),
+    }
 }
 
 pub fn golden_path_profiles() -> BTreeMap<String, AgentProfile> {

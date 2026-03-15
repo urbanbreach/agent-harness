@@ -1,15 +1,15 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-expression: "checkpoint_visual_snapshot(&sidebar_screen,\n&[\"Context\", \"Context unavailable\", \"No MCPs connected\",\n\"LSPs will activate as files are read\", \"demo.txt · +1 -1\",],\n&sidebar_visual,)"
+expression: "checkpoint_visual_snapshot(&sidebar_screen,\n&[\"historical answer\", LIVE_OPERATOR_TODOS_MARKER, OPERATOR_FILES_MARKER,\n\"demo.txt\", \"ready for next turn\",], &sidebar_visual,)"
 ---
-Context: true
-Context unavailable: true
-No MCPs connected: true
-LSPs will activate as files are read: true
-demo.txt · +1 -1: true
-focus_marker: Context
-focus_pixels_blake3: df3d941188ddac434ea13f3b9107db33596223cac47a4c5d6b7077908d431acb
-focus_region_cells: row=3, col=117, height=6, width=20
+historical answer: true
+0 active todos: true
+Modified Files: true
+demo.txt: true
+ready for next turn: true
+focus_marker: Modified Files
+focus_pixels_blake3: 1b81464ebf2da2aae4598cf05849227170191c22aae2fd86315328e769f504c5
+focus_region_cells: row=6, col=117, height=6, width=16
 image: pty_operator_sidebar_primary.png
 manifest_json: pty-manifests/operator_sidebar/manifest.json
 manifest_jsonl: pty-manifests/operator_sidebar/manifest.jsonl
