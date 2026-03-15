@@ -454,7 +454,43 @@ fn render_operator_sidebar_surface(
 
     let rail = build_operator_rail_model(app);
     let summary_text = build_operator_rail_summary_text(&rail.pinned_summary, theme);
+    let body_text = build_operator_rail_body_text(&rail.body, theme);
+    let compact_mode = rail.body.sections.is_empty();
     let summary_height = summary_text.lines.len().min(usize::from(u16::MAX)) as u16;
+    let body_height = body_text.lines.len().min(usize::from(u16::MAX)) as u16;
+
+    if compact_mode {
+        let sections = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(summary_height),
+                Constraint::Length(body_height),
+                Constraint::Min(0),
+                Constraint::Length(1),
+            ])
+            .split(inner);
+        let summary_area = sections[0];
+        let body_area = sections[1];
+        let footer_area = sections[3];
+
+        frame.render_widget(
+            Paragraph::new(summary_text).style(panel_style(surface, theme.text.primary)),
+            summary_area,
+        );
+        frame.render_widget(
+            Paragraph::new(body_text)
+                .style(panel_style(surface, theme.text.primary))
+                .wrap(Wrap { trim: true }),
+            body_area,
+        );
+        frame.render_widget(
+            Paragraph::new(operator_sidebar_footer_line())
+                .style(panel_style(surface, theme.text.tertiary))
+                .wrap(Wrap { trim: true }),
+            footer_area,
+        );
+        return;
+    }
 
     let sections = Layout::default()
         .direction(Direction::Vertical)
@@ -473,7 +509,7 @@ fn render_operator_sidebar_surface(
         summary_area,
     );
     frame.render_widget(
-        Paragraph::new(build_operator_rail_body_text(&rail.body, theme))
+        Paragraph::new(body_text)
             .style(panel_style(surface, theme.text.primary))
             .scroll((app.details_scroll, 0))
             .wrap(Wrap { trim: true }),
@@ -1640,7 +1676,10 @@ fn secondary_summary_line(
     Line::from(vec![
         status_badge(label, accent, theme),
         Span::styled("  ", panel_style(theme.surface.shell, theme.text.secondary)),
-        Span::styled(detail.into(), panel_style(theme.surface.shell, theme.text.secondary)),
+        Span::styled(
+            detail.into(),
+            panel_style(theme.surface.shell, theme.text.secondary),
+        ),
         Span::styled(
             if app.replay_mode {
                 "  ·  read-only"

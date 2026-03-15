@@ -65,6 +65,7 @@ fn render_session_history_overlay(
     card_surface: Color,
 ) {
     let show_banner = app.continue_disabled_banner.is_some();
+    let area = inset_rect(area, 1, 0);
     let sections = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -705,7 +706,7 @@ fn render_overlay_surface(
         theme.border.focus,
         theme.text.accent,
     );
-    let content = block.inner(overlay);
+    let content = inset_rect(block.inner(overlay), 1, 0);
 
     frame.render_widget(Clear, overlay);
     frame.render_widget(block, overlay);
