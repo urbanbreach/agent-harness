@@ -10,8 +10,8 @@ Ask Harness to inspect, edit, or explain…: true
 ready for next turn: true
 Enter send: true
 focus_marker: 0 active todos
-focus_pixels_blake3: f7c15407859e78af0d7eb533e0b49193498c2f18ba381ed807e6eac1f5446876
-focus_region_cells: row=4, col=135, height=8, width=20
+focus_pixels_blake3: 48267fd2b52a91d61354a119b69612ef0ac39c16364855ad94955ad6a0dd8b74
+focus_region_cells: row=3, col=130, height=8, width=20
 image: pty_session_shell_primary_live.png
 manifest_json: pty-manifests/live_shell/manifest.json
 manifest_jsonl: pty-manifests/live_shell/manifest.jsonl

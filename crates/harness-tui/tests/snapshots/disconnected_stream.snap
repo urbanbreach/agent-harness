@@ -2,23 +2,23 @@
 
 
 
+     Session
 
 
 
-        ┌Session───────────────────────────────────────────────────────┐
-      ┌ Disconnected   Connection lost───────────────────────────────────┐
-      │Transcript stays visible, but sending is paused.                  │
-      │live event stream disconnected                                    │
-      │Reopen the TUI, then continue from the transcript.                │
-      └──────────────────────────────────────────────────────────────────┘
-        └──────────────────────────────────────────────────────────────┘
+       Disconnected   Connection lost
+
+       Transcript stays visible, but sending is paused.
+       live event stream disconnected
+       Reopen the TUI, then continue from the transcript.
+                 Enter send · Shift+Enter newline · ↑/↓ history
 
 
 
 
 
 
-  Disconnected   connection lost · reopen the TUI to establish the live stream─
+   Disconnected   connection lost · reopen the TUI to establish the live strea
 
- ▎ Draft preserved locally — reopen the TUI to reconnect.
- Ctrl+p commands  ? shortcuts  q quit
+    ▎ Draft preserved locally — reopen the TUI to reconnect.
+  Ctrl+p commands  ? shortcuts  q quit

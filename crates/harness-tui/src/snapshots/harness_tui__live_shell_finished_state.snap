@@ -1,11 +1,10 @@
 ---
 source: crates/harness-tui/src/lib.rs
-assertion_line: 6415
 expression: "render_live_lines(&app, 80, 24)"
 ---
- run run_fixture · openai/gpt-5-codex                                           
-  ▎  ● assistant (done · current · openai/gpt-5-codex)                          
-  ▎  transcript remains visible                                                 
+  run run_fixture · openai/gpt-5-codex                                          
+   ▎  ● assistant (done · current · openai/gpt-5-codex)                         
+   ▎  transcript remains visible                                                
                                                                                 
                                                                                 
                                                                                 
@@ -23,7 +22,7 @@ expression: "render_live_lines(&app, 80, 24)"
                                                                                 
                                                                                 
                                                                                 
-  Success   run finished · session shell preserved  ·  orch 0a 0q 0r 0s──────── 
+   Success   run finished · session shell preserved  ·  orch 0a 0q 0r 0s        
                                                                                 
- ▎ Run complete — use ctrl+p commands for replay/new/quit, or ask Harness for…… 
- Tab focus  ? shortcuts  q quit                                                
+    ▎ Run complete — use ctrl+p commands for replay/new/quit, or ask Harne……    
+  Tab focus  ? shortcuts  q quit

@@ -579,11 +579,11 @@ fn build_turn_render_surfaces(
     theme: &Theme,
     width: u16,
 ) -> Vec<TranscriptRenderSurface> {
-    let mut surfaces = Vec::with_capacity(2);
+    let mut surfaces = Vec::with_capacity(3);
     if let Some(user_message) = turn.user_message.as_ref() {
         surfaces.push(build_user_render_surface(turn, user_message, theme, width));
     }
-    surfaces.push(build_assistant_render_surface(turn, theme, width));
+    surfaces.extend(build_assistant_render_surfaces(turn, theme, width));
     surfaces
 }
 
@@ -630,12 +630,13 @@ fn build_user_render_surface(
     }
 }
 
-fn build_assistant_render_surface(
+fn build_assistant_render_surfaces(
     turn: &TranscriptTurnSection,
     theme: &Theme,
     width: u16,
-) -> TranscriptRenderSurface {
-    let mut lines = Vec::new();
+) -> Vec<TranscriptRenderSurface> {
+    let mut answer_lines = Vec::new();
+    let mut context_lines = Vec::new();
     let is_selected = turn.header.is_selected;
     let header_style = transcript_label_style(theme, is_selected);
     let meta_style = muted_meta_style(theme);
@@ -643,13 +644,15 @@ fn build_assistant_render_surface(
         ActivityStatus::Streaming => (
             theme.live_shell.glyphs.streaming,
             theme.status.info,
-            "streaming…",
+            "active",
         ),
         ActivityStatus::Done => (theme.live_shell.glyphs.done, theme.status.success, "done"),
         ActivityStatus::Error => (theme.live_shell.glyphs.error, theme.status.error, "error"),
     };
     let mut assistant_meta = Vec::new();
-    if !turn.header.provider_id.is_empty() || !turn.header.model_id.is_empty() {
+    if turn.header.status != ActivityStatus::Streaming
+        && (!turn.header.provider_id.is_empty() || !turn.header.model_id.is_empty())
+    {
         assistant_meta.push(format!(
             "{}/{}",
             if turn.header.provider_id.is_empty() {
@@ -686,15 +689,38 @@ fn build_assistant_render_surface(
         assistant_segments.push((assistant_meta.join(" · "), meta_style));
     }
     append_parenthesized_meta(&mut assistant_line, assistant_segments, theme);
-    lines.push(Line::from(assistant_line));
+    answer_lines.push(Line::from(assistant_line));
+
+    for block in &turn.body_blocks {
+        match block {
+            TranscriptBodyBlock::RichText(text) => {
+                append_rich_text_block(
+                    &mut answer_lines,
+                    text,
+                    theme.text.primary,
+                    TRANSCRIPT_SURFACE_BODY_PREFIX,
+                    theme,
+                    transcript_surface_content_width(width),
+                );
+            }
+            TranscriptBodyBlock::WaitingResponse => {
+                append_text_block(
+                    &mut answer_lines,
+                    "Waiting for response…",
+                    theme.text.secondary,
+                    TRANSCRIPT_SURFACE_BODY_PREFIX,
+                );
+            }
+        }
+    }
 
     if let Some(thinking) = &turn.thinking {
         append_labeled_text_block(
-            &mut lines,
+            &mut context_lines,
             &thinking.text,
             LabeledTextBlockStyle {
                 indent: TRANSCRIPT_NESTED_INDENT,
-                label: "thinking",
+                label: "Thinking:",
                 rail_color: theme.text.accent,
                 surface: transcript_nested_surface(theme),
                 label_style: Style::default().fg(theme.text.accent),
@@ -706,35 +732,12 @@ fn build_assistant_render_surface(
     }
 
     for tool_call in &turn.tool_calls {
-        append_tool_call_section_lines(&mut lines, tool_call, theme, width);
-    }
-
-    for block in &turn.body_blocks {
-        match block {
-            TranscriptBodyBlock::RichText(text) => {
-                append_rich_text_block(
-                    &mut lines,
-                    text,
-                    theme.text.primary,
-                    TRANSCRIPT_SURFACE_BODY_PREFIX,
-                    theme,
-                    transcript_surface_content_width(width),
-                );
-            }
-            TranscriptBodyBlock::WaitingResponse => {
-                append_text_block(
-                    &mut lines,
-                    "Waiting for response…",
-                    theme.text.secondary,
-                    TRANSCRIPT_SURFACE_BODY_PREFIX,
-                );
-            }
-        }
+        append_tool_call_section_lines(&mut context_lines, tool_call, theme, width);
     }
 
     if let Some(error) = &turn.error {
         append_labeled_text_block(
-            &mut lines,
+            &mut context_lines,
             &error.text,
             LabeledTextBlockStyle {
                 indent: TRANSCRIPT_NESTED_INDENT,
@@ -749,11 +752,19 @@ fn build_assistant_render_surface(
         );
     }
 
-    TranscriptRenderSurface {
+    let mut surfaces = vec![TranscriptRenderSurface {
         rail_color: assistant_color,
         surface: transcript_top_level_surface(theme),
-        lines,
+        lines: answer_lines,
+    }];
+    if !context_lines.is_empty() {
+        surfaces.push(TranscriptRenderSurface {
+            rail_color: assistant_context_rail_color(turn, theme, assistant_color),
+            surface: transcript_nested_surface(theme),
+            lines: context_lines,
+        });
     }
+    surfaces
 }
 
 fn append_tool_call_section_lines(
@@ -851,13 +862,15 @@ fn build_pending_permission_render_surface(
             Style::default().fg(theme.status.warning),
         ),
         Span::styled(
-            "permission",
+            "permission checkpoint",
             Style::default()
                 .fg(theme.status.warning)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(" (", muted_meta_style(theme)),
-        Span::styled("requested", Style::default().fg(theme.status.warning)),
+        Span::styled("fail-closed", Style::default().fg(theme.status.error)),
+        Span::styled(" · ", muted_meta_style(theme)),
+        Span::styled("review required", Style::default().fg(theme.status.warning)),
         Span::styled(")", muted_meta_style(theme)),
     ])];
     append_rich_text_block(
@@ -871,7 +884,7 @@ fn build_pending_permission_render_surface(
 
     TranscriptRenderSurface {
         rail_color: theme.status.warning,
-        surface: transcript_top_level_surface(theme),
+        surface: transcript_nested_surface(theme),
         lines,
     }
 }
@@ -1216,6 +1229,18 @@ fn transcript_top_level_surface(theme: &Theme) -> Color {
     elevated_card_surface(theme)
 }
 
+fn assistant_context_rail_color(
+    turn: &TranscriptTurnSection,
+    theme: &Theme,
+    assistant_color: Color,
+) -> Color {
+    if turn.body_blocks.is_empty() {
+        assistant_color
+    } else {
+        theme.text.secondary
+    }
+}
+
 fn transcript_nested_surface(theme: &Theme) -> Color {
     theme.surface.panel
 }
@@ -1498,6 +1523,68 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
 }
 
 #[cfg(test)]
+pub(crate) fn exact_test_transcript_answer_precedes_nested_context() {
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-answer-first",
+        ActivityStatus::Done,
+        "assistant answer",
+    );
+    entry.thinking_text = "working through the plan".to_string();
+    entry.tool_calls.push(crate::app::ToolCallEntry {
+        tool_call_id: "call-1".to_string(),
+        tool_id: "fs.read".to_string(),
+        args_summary: r#"{"path":"src/ui.rs"}"#.to_string(),
+        args_digest: "digest".to_string(),
+        status: ToolCallDisplayStatus::Succeeded,
+        output_summary: Some("24 lines read".to_string()),
+        output_digest: Some("out-digest".to_string()),
+        truncated_output: Some("24 lines read".to_string()),
+        permissions: Vec::new(),
+        first_seq: 10,
+        last_seq: 11,
+    });
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+
+    let lines = build_transcript_lines_for_width(&app, &Theme::default(), 80)
+        .into_iter()
+        .map(|line| {
+            line.spans
+                .into_iter()
+                .map(|span| span.content.into_owned())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>();
+
+    let assistant_row = lines
+        .iter()
+        .position(|line| line.contains("assistant"))
+        .expect("assistant row");
+    let answer_row = lines
+        .iter()
+        .enumerate()
+        .skip(assistant_row + 1)
+        .find_map(|(index, line)| line.contains("assistant answer").then_some(index))
+        .expect("assistant answer row");
+    let thinking_row = lines
+        .iter()
+        .enumerate()
+        .skip(answer_row + 1)
+        .find_map(|(index, line)| line.contains("Thinking:").then_some(index))
+        .expect("thinking row");
+    let tool_row = lines
+        .iter()
+        .enumerate()
+        .skip(thinking_row + 1)
+        .find_map(|(index, line)| line.contains("tool fs.read").then_some(index))
+        .expect("tool row");
+
+    assert!(assistant_row < answer_row);
+    assert!(answer_row < thinking_row);
+    assert!(thinking_row < tool_row);
+}
+
+#[cfg(test)]
 pub(crate) fn exact_test_transcript_follow_mode_uses_measured_surface_heights() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![
@@ -1645,6 +1732,12 @@ mod tests {
         exact_test_transcript_section_model_keeps_nested_tool_and_error_blocks();
     }
 
+    #[cfg(test)]
+    #[test]
+    fn transcript_answer_precedes_nested_context() {
+        exact_test_transcript_answer_precedes_nested_context();
+    }
+
     #[test]
     fn transcript_follow_mode_uses_measured_surface_heights() {
         exact_test_transcript_follow_mode_uses_measured_surface_heights();
@@ -1691,10 +1784,43 @@ mod tests {
             80,
         ));
 
-        assert_eq!(lines[0], "▎  ◷ permission (requested)");
+        assert_eq!(
+            lines[0],
+            "▎  ◷ permission checkpoint (fail-closed · review required)"
+        );
         assert_eq!(lines[1], "▎  Apply hashline edit to demo.txt");
         assert!(lines
             .iter()
             .all(|line| !line.contains('╭') && !line.contains('╰') && !line.contains('│')));
+    }
+
+    #[test]
+    fn streaming_assistant_header_uses_reserved_active_label() {
+        let mut app = AppState::default();
+        app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
+            request_id: "request-streaming-header".to_string(),
+            model_id: "gpt-5.4".to_string(),
+            provider_id: "openai".to_string(),
+            status: ActivityStatus::Streaming,
+            user_message: None,
+            request_data: None,
+            thinking_text: String::new(),
+            transcript_text: String::new(),
+            error_message: None,
+            permissions: Vec::new(),
+            tool_calls: Vec::new(),
+            first_seq: 1,
+            last_seq: 1,
+        }]);
+        app.selected_activity_index = 0;
+
+        let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+            &app,
+            &Theme::default(),
+            80,
+        ));
+
+        assert_eq!(lines[0], "▎  ◐ assistant (active · current)");
+        assert_eq!(lines[1], "▎  Waiting for response…");
     }
 }

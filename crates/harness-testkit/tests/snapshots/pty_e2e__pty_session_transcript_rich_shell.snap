@@ -1,5 +1,6 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
+assertion_line: 940
 expression: "checkpoint_visual_snapshot(&screen,\n&[\"Restyle the transcript shell\", \"Drafting a document-like plan\",\n\"tool fs.read (succeeded) · 24 lines read from src/ui.rs\",\n\"Found the transcript renderer and the composer chrome.\",], &visual,)"
 ---
 Restyle the transcript shell: true
@@ -7,8 +8,8 @@ Drafting a document-like plan: true
 tool fs.read (succeeded) · 24 lines read from src/ui.rs: true
 Found the transcript renderer and the composer chrome.: true
 focus_marker: Thinking:
-focus_pixels_blake3: 4b56b49ba08c6d170cb3a680671fd296489332d94925e8fb175c7c34f312dfcd
-focus_region_cells: row=0, col=0, height=48, width=160
+focus_pixels_blake3: 7e6a624e0d79a92ce8d6e9e1f259a6960ec09b49b81868171b4949e2e1828e75
+focus_region_cells: row=7, col=8, height=8, width=30
 image: pty_session_transcript_rich_shell.png
 manifest_json: pty-manifests/transcript_shell/manifest.json
 manifest_jsonl: pty-manifests/transcript_shell/manifest.jsonl

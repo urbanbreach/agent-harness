@@ -10,6 +10,9 @@ struct DocumentComposerRenderContext<'a> {
     composer_lines: u16,
 }
 
+const QUIET_SURFACE_PADDING_X: u16 = 1;
+const QUIET_SURFACE_PADDING_TOP: u16 = 1;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ChromeFrame {
     Frame,
@@ -131,19 +134,6 @@ pub(super) fn render_live_shell_anchor(
             .alignment(Alignment::Right),
         sections[2],
     );
-
-    if area.height > 1 {
-        let divider_area = Rect::new(
-            area.x,
-            area.y.saturating_add(area.height.saturating_sub(1)),
-            area.width,
-            1,
-        );
-        frame.render_widget(
-            subtle_divider_block(theme, Borders::BOTTOM, surface),
-            divider_area,
-        );
-    }
 }
 
 pub(super) fn render_footer(
@@ -227,7 +217,7 @@ fn header_identity_text(app: &AppState, header_mode: SessionHeaderMode) -> Strin
                 .map(|path| path.display().to_string())
                 .unwrap_or_else(|| "unknown".to_string());
             format!(
-                "Replay · {run_id} · {session_path} · {} ev",
+                "Replay · read-only · run {run_id} · {session_path} · {} ev",
                 app.events.len()
             )
         } else {
@@ -287,29 +277,6 @@ fn live_shell_anchor_metadata_text(app: &AppState, max_width: usize) -> String {
         .unwrap_or_else(|| truncate_plain_text(app.current_model_label(), max_width))
 }
 
-pub(super) fn render_status_strip(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
-    if app.startup_shell_visible() {
-        let state = app.runtime_state();
-        let base_style = Style::default()
-            .fg(theme.text.secondary)
-            .bg(theme.surface.shell);
-        let status_line = Line::from(vec![
-            status_badge(
-                state.kind.label(),
-                runtime_state_color(state.kind, theme),
-                theme,
-            ),
-            Span::styled("  ", base_style),
-            Span::styled(state.summary, base_style),
-        ]);
-        frame.render_widget(Paragraph::new(status_line).style(base_style), area);
-        return;
-    }
-
-    let dock = build_control_dock_view_model(app, theme);
-    render_control_dock_status_band(frame, app, area, theme, &dock);
-}
-
 fn render_control_dock_status_band(
     frame: &mut Frame,
     app: &AppState,
@@ -321,16 +288,24 @@ fn render_control_dock_status_band(
     let surface = control_dock_status_surface(theme, dock.variant);
     let base_style = Style::default().fg(theme.text.secondary).bg(surface);
     frame.render_widget(control_dock_status_section(theme, dock.variant), area);
-    let outcome_badge = status_badge(
+    let outcome_badge = quiet_status_badge(
         dock.runtime_badge.clone(),
         runtime_state_color(dock.runtime_kind, theme),
-        theme,
+        surface,
     );
     let mut spans: Vec<Span<'static>> = Vec::new();
 
+    if dock.variant == crate::view_model::ControlDockVariant::Startup {
+        spans.push(Span::styled("  ", base_style));
+        spans.push(Span::styled(dock.primary_summary.clone(), base_style));
+        let status_line = Line::from(spans);
+        frame.render_widget(Paragraph::new(status_line).style(base_style), area);
+        return;
+    }
+
     if area.width >= primary_shell_context_width(theme) {
         if let Some(context_label) = dock.runtime_context.as_deref() {
-            spans.push(status_badge(context_label, context_color, theme));
+            spans.push(quiet_status_badge(context_label, context_color, surface));
             spans.push(Span::styled("  ", base_style));
         }
     }
@@ -418,41 +393,18 @@ fn control_dock_summary_segment_style(
     let style = Style::default().fg(foreground).bg(surface);
     if matches!(
         segment.tone,
-        crate::view_model::ControlDockSummaryTone::Secondary
+        crate::view_model::ControlDockSummaryTone::Success
+            | crate::view_model::ControlDockSummaryTone::Warning
+            | crate::view_model::ControlDockSummaryTone::Error
     ) {
-        style
-    } else {
         style.add_modifier(Modifier::BOLD)
+    } else {
+        style
     }
 }
 
 fn status_strip_width(spans: &[Span<'_>]) -> usize {
     spans.iter().map(|span| span.content.chars().count()).sum()
-}
-
-pub(super) fn render_prompt_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
-    if app.startup_shell_visible() {
-        render_startup_prompt_pane(frame, app, area, theme);
-        return;
-    }
-
-    let dock = build_control_dock_view_model(app, theme);
-    if dock.variant == crate::view_model::ControlDockVariant::ReplayReadOnly {
-        render_replay_read_only_prompt_pane(frame, area, theme, &dock);
-        return;
-    }
-
-    let composer_lines = composer_input_height(&app.prompt_buffer, area.width);
-    render_document_composer(
-        frame,
-        app,
-        area,
-        theme,
-        DocumentComposerRenderContext {
-            dock: &dock,
-            composer_lines,
-        },
-    );
 }
 
 pub(super) fn render_unified_bottom_dock(
@@ -501,104 +453,6 @@ pub(super) fn render_unified_bottom_dock(
     );
 }
 
-fn render_startup_prompt_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-
-    let is_focused = app.focus == Focus::Prompt;
-    let runtime_state = app.runtime_state();
-    let composer_disabled = runtime_state.composer_disabled;
-    let composer_lines = composer_input_height(&app.prompt_buffer, area.width);
-    let surface = theme.surface.shell;
-
-    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
-
-    let divider_area = Rect::new(area.x, area.y, area.width, 1);
-    render_control_dock_top_divider(
-        frame,
-        divider_area,
-        theme,
-        crate::view_model::ControlDockVariant::ReplayReadOnly,
-    );
-
-    let content_area = Rect::new(
-        area.x,
-        area.y.saturating_add(1),
-        area.width,
-        area.height.saturating_sub(1),
-    );
-    if content_area.height == 0 {
-        return;
-    }
-
-    let hint_visible = content_area.height > composer_lines;
-    let input_height = composer_lines
-        .min(
-            content_area
-                .height
-                .saturating_sub(u16::from(hint_visible))
-                .max(1),
-        )
-        .max(1);
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(input_height), Constraint::Min(0)])
-        .split(content_area);
-
-    let rail = "▎ ";
-    let rail_color = if composer_disabled {
-        theme.status.disabled
-    } else if is_focused {
-        theme.text.accent
-    } else {
-        theme.border.strong
-    };
-    let body = if app.prompt_buffer.is_empty() {
-        runtime_state.composer_hint
-    } else {
-        visible_composer_text(app, is_focused && !composer_disabled)
-    };
-    let body_color = if composer_disabled {
-        theme.status.disabled
-    } else if app.prompt_buffer.is_empty() {
-        theme.text.secondary
-    } else {
-        theme.text.primary
-    };
-    let body_lines = composer_body_lines(
-        &body,
-        usize::from(rows[0].width).saturating_sub(rail.chars().count()),
-        usize::from(rows[0].height.max(1)),
-    )
-    .into_iter()
-    .map(|line| {
-        Line::from(vec![
-            Span::styled(rail, Style::default().fg(rail_color).bg(surface)),
-            Span::styled(line, Style::default().fg(body_color).bg(surface)),
-        ])
-    })
-    .collect::<Vec<_>>();
-    frame.render_widget(
-        Paragraph::new(body_lines).style(Style::default().bg(surface)),
-        rows[0],
-    );
-
-    if hint_visible && rows[1].height > 0 {
-        let hint = truncate_plain_text(
-            &composer_shortcut_hints(app, composer_disabled),
-            usize::from(rows[1].width).saturating_sub(2),
-        );
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled("  ", Style::default().bg(surface)),
-                Span::styled(hint, Style::default().fg(theme.text.secondary).bg(surface)),
-            ])),
-            rows[1],
-        );
-    }
-}
-
 pub(super) fn panel_style(surface: Color, foreground: Color) -> Style {
     Style::default().fg(foreground).bg(surface)
 }
@@ -606,15 +460,18 @@ pub(super) fn panel_style(surface: Color, foreground: Color) -> Style {
 fn framed_surface_block<'a>(
     title: impl Into<Line<'a>>,
     surface: Color,
-    border: Color,
+    _border: Color,
     title_color: Color,
-    borders: Borders,
+    _borders: Borders,
 ) -> Block<'a> {
     Block::default()
-        .borders(borders)
-        .border_style(Style::default().fg(border))
         .style(Style::default().bg(surface))
-        .padding(Padding::ZERO)
+        .padding(Padding::new(
+            QUIET_SURFACE_PADDING_X,
+            QUIET_SURFACE_PADDING_X,
+            QUIET_SURFACE_PADDING_TOP,
+            0,
+        ))
         .title(title)
         .title_style(panel_style(surface, title_color))
 }
@@ -624,30 +481,27 @@ fn modal_card_surface_block<'a>(
     surface: Color,
     border: Color,
     title_color: Color,
-    frame: ChromeFrame,
+    _frame: ChromeFrame,
 ) -> Block<'a> {
-    framed_surface_block(
-        title,
-        surface,
-        border,
-        title_color,
-        chrome_frame_borders(frame),
-    )
+    framed_surface_block(title, surface, border, title_color, Borders::NONE)
 }
 
 fn divided_surface_block<'a>(
-    theme: &Theme,
+    _theme: &Theme,
     title: impl Into<Line<'a>>,
-    divider: DividerIntensity,
-    frame: ChromeFrame,
+    _divider: DividerIntensity,
+    _frame: ChromeFrame,
     surface: Color,
     title_color: Color,
 ) -> Block<'a> {
     Block::default()
-        .borders(chrome_frame_borders(frame))
-        .border_style(Style::default().fg(divider_color(theme, divider).unwrap_or_default()))
         .style(Style::default().bg(surface))
-        .padding(Padding::ZERO)
+        .padding(Padding::new(
+            QUIET_SURFACE_PADDING_X,
+            QUIET_SURFACE_PADDING_X,
+            QUIET_SURFACE_PADDING_TOP,
+            0,
+        ))
         .title(title)
         .title_style(panel_style(surface, title_color))
 }
@@ -669,7 +523,7 @@ pub(super) fn divided_shell_surface(theme: &Theme) -> Color {
 }
 
 pub(super) fn live_control_dock_surface(theme: &Theme) -> Color {
-    theme.surface.panel_elevated
+    semantic_surface(theme, ChromeMode::Divided)
 }
 
 pub(super) fn control_dock_surface(
@@ -677,13 +531,24 @@ pub(super) fn control_dock_surface(
     variant: crate::view_model::ControlDockVariant,
 ) -> Color {
     match variant {
+        crate::view_model::ControlDockVariant::Startup => chromeless_shell_surface(theme),
         crate::view_model::ControlDockVariant::Live => live_control_dock_surface(theme),
         crate::view_model::ControlDockVariant::ReplayReadOnly => live_control_dock_surface(theme),
     }
 }
 
 pub(super) fn elevated_card_surface(theme: &Theme) -> Color {
-    live_control_dock_surface(theme)
+    semantic_surface(theme, ChromeMode::Card)
+}
+
+pub(super) fn quiet_modal_backdrop_surface(theme: &Theme) -> Color {
+    chromeless_shell_surface(theme)
+}
+
+pub(super) fn overlay_focus_row_style(theme: &Theme) -> Style {
+    Style::default()
+        .fg(theme.text.inverse)
+        .bg(theme.border.focus)
 }
 
 pub(super) fn open_canvas(theme: &Theme) -> Block<'static> {
@@ -728,16 +593,6 @@ pub(super) fn message_surface<'a>(
         surface,
         theme.text.secondary,
     )
-}
-
-#[allow(dead_code)]
-pub(super) fn nested_tool_surface<'a>(
-    title: impl Into<Line<'a>>,
-    surface: Color,
-    border: Color,
-    title_color: Color,
-) -> Block<'a> {
-    framed_surface_block(title, surface, border, title_color, Borders::ALL)
 }
 
 pub(super) fn unified_bottom_dock(
@@ -800,10 +655,7 @@ pub(super) fn control_dock_status_surface(
     theme: &Theme,
     variant: crate::view_model::ControlDockVariant,
 ) -> Color {
-    match variant {
-        crate::view_model::ControlDockVariant::Live => theme.surface.panel,
-        crate::view_model::ControlDockVariant::ReplayReadOnly => theme.surface.canvas,
-    }
+    control_dock_surface(theme, variant)
 }
 
 pub(super) fn chromeless_shell_section(theme: &Theme) -> Block<'static> {
@@ -812,26 +664,20 @@ pub(super) fn chromeless_shell_section(theme: &Theme) -> Block<'static> {
 
 #[allow(dead_code)]
 pub(super) fn divided_shell_section<'a>(
-    theme: &Theme,
+    _theme: &Theme,
     title: impl Into<Line<'a>>,
     divider: DividerIntensity,
     frame: ChromeFrame,
     surface: Color,
 ) -> Block<'a> {
-    divided_surface_block(theme, title, divider, frame, surface, theme.text.secondary)
-}
-
-pub(super) fn subtle_divider_block(
-    theme: &Theme,
-    borders: Borders,
-    surface: Color,
-) -> Block<'static> {
-    Block::default()
-        .borders(borders)
-        .border_style(
-            Style::default().fg(divider_color(theme, DividerIntensity::Subtle).unwrap_or_default()),
-        )
-        .style(Style::default().bg(surface))
+    divided_surface_block(
+        _theme,
+        title,
+        divider,
+        frame,
+        surface,
+        _theme.text.secondary,
+    )
 }
 
 pub(super) fn secondary_pane_block<'a>(
@@ -871,22 +717,6 @@ fn semantic_surface(theme: &Theme, mode: ChromeMode) -> Color {
     }
 }
 
-fn divider_color(theme: &Theme, intensity: DividerIntensity) -> Option<Color> {
-    let dividers = theme.token_families().semantic.dividers;
-    match intensity {
-        DividerIntensity::None => dividers.none.color,
-        DividerIntensity::Subtle => dividers.subtle.color,
-        DividerIntensity::Strong => dividers.strong.color,
-        DividerIntensity::Focus => dividers.focus.color,
-    }
-}
-
-fn chrome_frame_borders(frame: ChromeFrame) -> Borders {
-    match frame {
-        ChromeFrame::Frame => Borders::ALL,
-    }
-}
-
 pub(super) fn request_id_label(request_id: &str) -> Cow<'_, str> {
     if request_id.is_empty() {
         Cow::Borrowed("pending turn")
@@ -922,6 +752,16 @@ pub(super) fn status_badge(label: impl Into<String>, color: Color, theme: &Theme
         Style::default()
             .fg(theme.text.inverse)
             .bg(color)
+            .add_modifier(Modifier::BOLD),
+    )
+}
+
+fn quiet_status_badge(label: impl Into<String>, color: Color, surface: Color) -> Span<'static> {
+    Span::styled(
+        format!(" {} ", label.into()),
+        Style::default()
+            .fg(color)
+            .bg(surface)
             .add_modifier(Modifier::BOLD),
     )
 }
@@ -1192,6 +1032,27 @@ fn build_control_dock_view_model(
     let primary_summary = completed_session_status_summary(app, &runtime_state)
         .unwrap_or_else(|| runtime_state.summary.clone());
 
+    if app.startup_shell_visible() {
+        let composer_disabled = runtime_state.composer_disabled;
+        let composer_focused = app.focus == Focus::Prompt;
+        let composer_body = if app.prompt_buffer.is_empty() {
+            runtime_state.composer_hint.clone()
+        } else {
+            visible_composer_text(app, composer_focused && !composer_disabled)
+        };
+
+        return crate::view_model::control_dock_view_model(
+            crate::view_model::ControlDockInput::Startup {
+                runtime_context,
+                runtime_state,
+                primary_summary,
+                composer_body,
+                composer_disclosure: composer_shortcut_hints(app, composer_disabled),
+                composer_focused,
+            },
+        );
+    }
+
     if app.replay_mode {
         return crate::view_model::control_dock_view_model(
             crate::view_model::ControlDockInput::ReplayReadOnly {
@@ -1264,40 +1125,9 @@ fn render_control_dock_top_divider(
     theme: &Theme,
     variant: crate::view_model::ControlDockVariant,
 ) {
-    frame.render_widget(
-        Block::default()
-            .borders(Borders::TOP)
-            .border_style(
-                Style::default()
-                    .fg(divider_color(theme, DividerIntensity::Subtle)
-                        .unwrap_or(theme.border.subtle)),
-            )
-            .style(Style::default().bg(control_dock_surface(theme, variant))),
-        area,
-    );
-}
-
-fn render_document_composer(
-    frame: &mut Frame,
-    app: &AppState,
-    area: Rect,
-    theme: &Theme,
-    context: DocumentComposerRenderContext<'_>,
-) {
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-
-    frame.render_widget(control_dock_section(theme, context.dock.variant), area);
-
-    render_control_dock_top_divider(
-        frame,
-        Rect::new(area.x, area.y, area.width, 1),
-        theme,
-        context.dock.variant,
-    );
-
-    render_document_composer_content(frame, app, area, theme, context);
+    let surface = control_dock_surface(theme, variant);
+    let _ = variant;
+    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
 }
 
 fn render_document_composer_content(
@@ -1308,18 +1138,27 @@ fn render_document_composer_content(
     context: DocumentComposerRenderContext<'_>,
 ) {
     let surface = control_dock_surface(theme, context.dock.variant);
+    let composer_surface = theme.surface.panel_elevated;
+    let card_area = inset_rect(area, u16::from(area.width > 6), 0);
+    let composer_block = Block::default()
+        .style(Style::default().bg(composer_surface))
+        .padding(Padding::new(
+            theme.live_shell.rhythm.composer_padding_x,
+            theme.live_shell.rhythm.composer_padding_x,
+            0,
+            0,
+        ));
+    let content_area = composer_block.inner(card_area);
 
-    let content_area = Rect::new(
-        area.x,
-        area.y.saturating_add(1),
-        area.width,
-        area.height.saturating_sub(1),
-    );
-    if content_area.height == 0 {
+    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
+    frame.render_widget(composer_block, card_area);
+
+    if content_area.width == 0 || content_area.height == 0 {
         return;
     }
 
-    let hint_visible = content_area.height > context.composer_lines;
+    let hint_visible = content_area.height > context.composer_lines
+        && area.width > crate::theme::ShellGeometry::MINIMUM.width;
     let input_height = context
         .composer_lines
         .min(
@@ -1329,12 +1168,20 @@ fn render_document_composer_content(
                 .max(1),
         )
         .max(1);
+    let top_gap = content_area
+        .height
+        .saturating_sub(input_height)
+        .saturating_sub(u16::from(hint_visible));
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(input_height), Constraint::Min(0)])
+        .constraints([
+            Constraint::Length(top_gap),
+            Constraint::Length(input_height),
+            Constraint::Length(u16::from(hint_visible)),
+        ])
         .split(content_area);
 
-    let input_width = usize::from(rows[0].width);
+    let input_width = usize::from(rows[1].width);
     let body = context.dock.composer_body.clone();
     let body_color = if context.dock.composer_disabled {
         theme.status.disabled
@@ -1348,42 +1195,44 @@ fn render_document_composer_content(
     } else if context.dock.composer_focused {
         theme.text.accent
     } else {
-        theme.border.strong
+        theme.text.secondary
     };
     let rail = "▎ ";
     let body_lines = composer_body_lines(
         &body,
         input_width.saturating_sub(rail.chars().count()),
-        usize::from(rows[0].height.max(1)),
+        usize::from(rows[1].height.max(1)),
     )
     .into_iter()
     .map(|line| {
         Line::from(vec![
-            Span::styled(rail, Style::default().fg(rail_color).bg(surface)),
-            Span::styled(line, Style::default().fg(body_color).bg(surface)),
+            Span::styled(rail, Style::default().fg(rail_color).bg(composer_surface)),
+            Span::styled(line, Style::default().fg(body_color).bg(composer_surface)),
         ])
     })
     .collect::<Vec<_>>();
     frame.render_widget(
-        Paragraph::new(body_lines).style(Style::default().bg(surface)),
-        rows[0],
+        Paragraph::new(body_lines).style(Style::default().bg(composer_surface)),
+        rows[1],
     );
 
-    if hint_visible && rows[1].height > 0 {
+    if hint_visible && rows[2].height > 0 {
         let hint_prefix = "  ";
         let footer = truncate_plain_text(
             &context.dock.composer_disclosure,
-            usize::from(rows[1].width).saturating_sub(hint_prefix.chars().count()),
+            usize::from(rows[2].width).saturating_sub(hint_prefix.chars().count()),
         );
         frame.render_widget(
             Paragraph::new(Line::from(vec![
-                Span::styled(hint_prefix, Style::default().bg(surface)),
+                Span::styled(hint_prefix, Style::default().bg(composer_surface)),
                 Span::styled(
                     footer,
-                    Style::default().fg(theme.text.secondary).bg(surface),
+                    Style::default()
+                        .fg(theme.text.secondary)
+                        .bg(composer_surface),
                 ),
             ])),
-            rows[1],
+            rows[2],
         );
     }
 }
@@ -1518,7 +1367,7 @@ fn composer_shortcut_hints(app: &AppState, composer_disabled: bool) -> String {
 
 fn status_context(app: &AppState, theme: &Theme, state: RuntimeStateKind) -> (&'static str, Color) {
     if app.startup_shell_visible() {
-        return ("startup", theme.border.strong);
+        return ("startup", theme.text.secondary);
     }
     if app.completed_session_shell_active() {
         return match state {
@@ -1527,7 +1376,7 @@ fn status_context(app: &AppState, theme: &Theme, state: RuntimeStateKind) -> (&'
         };
     }
     if app.replay_mode {
-        return ("replay", theme.border.strong);
+        return ("replay", theme.text.secondary);
     }
     if app.details_drawer_open() {
         return ("details", theme.border.focus);
@@ -1538,29 +1387,7 @@ fn status_context(app: &AppState, theme: &Theme, state: RuntimeStateKind) -> (&'
     ) {
         return ("live", theme.text.accent);
     }
-    ("live", theme.border.strong)
-}
-
-fn render_replay_read_only_prompt_pane(
-    frame: &mut Frame,
-    area: Rect,
-    theme: &Theme,
-    dock: &crate::view_model::ControlDockViewModel,
-) {
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-
-    frame.render_widget(control_dock_section(theme, dock.variant), area);
-
-    render_control_dock_top_divider(
-        frame,
-        Rect::new(area.x, area.y, area.width, 1),
-        theme,
-        dock.variant,
-    );
-
-    render_replay_read_only_composer_content(frame, area, theme, dock);
+    ("live", theme.text.secondary)
 }
 
 fn render_replay_read_only_composer_content(
@@ -1679,18 +1506,16 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
         .saturating_add(dock.shell.width.saturating_sub(1));
 
     assert_eq!(buffer[(right_edge, status.y)].bg, theme.surface.panel);
-    assert_eq!(
-        buffer[(right_edge, composer.y)].bg,
-        theme.surface.panel_elevated
-    );
+    assert_eq!(buffer[(right_edge, composer.y)].bg, theme.surface.panel);
     assert_eq!(
         buffer[(right_edge, composer.y.saturating_add(1))].bg,
-        theme.surface.panel_elevated
+        theme.surface.panel
     );
-    assert_eq!(
+    assert_eq!(buffer[(right_edge, dock.shell.y)].bg, theme.surface.panel);
+    assert_ne!(
         buffer[(right_edge, dock.shell.y)].symbol(),
         "─",
-        "unified dock should draw one top divider across the shared shell"
+        "quiet dock chrome should rely on surface spacing instead of a hard divider"
     );
     assert_eq!(
         buffer[(
@@ -1698,7 +1523,7 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
             composer.y.saturating_add(composer.height.saturating_sub(1)),
         )]
             .bg,
-        theme.surface.panel_elevated
+        theme.surface.panel
     );
 }
 

@@ -1,30 +1,30 @@
-   run run_fixture                           unknown/mock/model-1                            live
-  ────────────────────────────────────────────────────────────────────────────────────────────────
-   ▎  › user (req_tool_lifecycle)                                           │Live · run run_fixtur
-   ▎  Inspect tool activity                                                 │unknown/mock/model-1
-                                                                            │0 active todos · 0 mo
-   ▎  ● assistant (done · current · mock/model-1)                           │
-   ▎   ▎  ● tool fs.read (succeeded) · 24 lines read from src/ui.rs         │No operator activity
-   ▎   ▎  ✗ tool shell.run (failed)                                         │
-   ▎   ▎  args · cmd=cargo test -p harness-tui, cwd=/workspace              │
-   ▎   ▎  error · exit code: 1 stderr: snapshot mismatch                    │
-   ▎  Tool summaries are now easier to scan.                                │
-                                                                            │
-                                                                            │
-                                                                            │
-                                                                            │
-                                                                            │
-                                                                            │
-                                                                            │
-                                                                            │
-                                                                            │
-                                                                            │
-                                                                            │
-                                                                            │
-                                                                            │
-                                                                            │workspace · v0.1.0
-   Success   turn 1 · ready for next turn
+ run run_fixture        unknown/mock/model-1        live
+                                                            Live · run run_fixture
+ ▎  › user (req_tool_lifecycle)                             unknown/mock/model-1
+ ▎  Inspect tool activity                                   0 active todos · 0 modified files
 
+ ▎  ● assistant (done · current · mock/model-1)
+ ▎  Tool summaries are now easier to scan.
+                                                            No operator activity now
+ ▎   ▎  ● tool fs.read (succeeded) · 24 lines read from     Approvals, tasks, and edits show here
+ ▎ src/ui.rs
+ ▎   ▎  ✗ tool shell.run (failed)
+ ▎   ▎  args · cmd=cargo test -p harness-tui,
+ ▎ cwd=/workspace
+ ▎   ▎  error · exit code: 1 stderr: snapshot mismatch
+
+
+
+
+
+
+
+
+
+
+
+
+ Success   turn 1 · ready for next turn
+                                                            harness-tui · v0.1.0
   ▎ Ask Harness to inspect, edit, or explain…
-    shift+enter newline
-  Enter send  Shift+Enter nl  Ctrl+p commands  ? shortcuts  q quit
+Enter send  Shift+Enter nl  Ctrl+p commands  ? shortcuts  q quit

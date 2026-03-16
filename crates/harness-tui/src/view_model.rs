@@ -58,6 +58,7 @@ pub(crate) struct FooterHintsInput {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ControlDockVariant {
+    Startup,
     Live,
     ReplayReadOnly,
 }
@@ -99,6 +100,14 @@ pub(crate) struct ControlDockViewModel {
 }
 
 pub(crate) enum ControlDockInput {
+    Startup {
+        runtime_context: Option<String>,
+        runtime_state: RuntimeState,
+        primary_summary: String,
+        composer_body: String,
+        composer_disclosure: String,
+        composer_focused: bool,
+    },
     Live {
         runtime_context: Option<String>,
         runtime_state: RuntimeState,
@@ -120,6 +129,25 @@ pub(crate) enum ControlDockInput {
 
 pub(crate) fn control_dock_view_model(input: ControlDockInput) -> ControlDockViewModel {
     match input {
+        ControlDockInput::Startup {
+            runtime_context,
+            runtime_state,
+            primary_summary,
+            composer_body,
+            composer_disclosure,
+            composer_focused,
+        } => ControlDockViewModel {
+            variant: ControlDockVariant::Startup,
+            runtime_context,
+            runtime_badge: runtime_state.kind.label().to_string(),
+            runtime_kind: runtime_state.kind,
+            primary_summary,
+            summary_segment: None,
+            composer_body,
+            composer_disclosure,
+            composer_focused,
+            composer_disabled: runtime_state.composer_disabled,
+        },
         ControlDockInput::Live {
             runtime_context,
             runtime_state,
@@ -210,19 +238,20 @@ pub(crate) fn runtime_state(input: RuntimeStateInput<'_>) -> RuntimeState {
                     ActivityStatus::Streaming if activity.transcript_text.is_empty() => {
                         RuntimeState {
                             kind: RuntimeStateKind::Sending,
-                            summary: format!("{summary} · waiting for first tokens"),
+                            summary: format!("{summary} · response starting"),
                             detail: None,
                             composer_disabled: false,
-                            composer_hint: "Draft the next prompt while the current turn starts…"
+                            composer_hint: "Draft the next prompt while the response starts…"
                                 .to_string(),
                         }
                     }
                     ActivityStatus::Streaming => RuntimeState {
                         kind: RuntimeStateKind::Streaming,
-                        summary: format!("{summary} · receiving output"),
+                        summary: format!("{summary} · response in progress"),
                         detail: None,
                         composer_disabled: false,
-                        composer_hint: "Draft the next prompt while output continues…".to_string(),
+                        composer_hint: "Draft the next prompt while the response continues…"
+                            .to_string(),
                     },
                     ActivityStatus::Done => RuntimeState {
                         kind: RuntimeStateKind::Success,
@@ -540,21 +569,22 @@ fn permission_runtime_state(permission: &PermissionRuntimeInput) -> RuntimeState
     if permission.submission_pending {
         RuntimeState {
             kind: RuntimeStateKind::PermissionPending,
-            summary: format!("permission response pending · {}", permission.summary),
+            summary: format!(
+                "decision submitted · awaiting confirmation · {}",
+                permission.summary
+            ),
             detail: Some(permission.summary.clone()),
             composer_disabled: true,
-            composer_hint: "Composer disabled — waiting for the permission decision to complete."
+            composer_hint: "Composer disabled — wait for confirmation on the permission decision."
                 .to_string(),
         }
     } else {
         RuntimeState {
             kind: RuntimeStateKind::PermissionBlocked,
-            summary: format!("permission required · {}", permission.summary),
+            summary: format!("decision required · {}", permission.summary),
             detail: Some(permission.summary.clone()),
             composer_disabled: false,
-            composer_hint:
-                "Keep drafting locally while the permission request waits for a decision."
-                    .to_string(),
+            composer_hint: "Keep drafting locally while the request waits for review.".to_string(),
         }
     }
 }
@@ -642,11 +672,11 @@ pub(crate) fn exact_test_control_dock_view_model_handles_live_runtime_variants()
         runtime_context: Some("live".to_string()),
         runtime_state: control_dock_runtime_fixture(
             RuntimeStateKind::Streaming,
-            "turn 3 · receiving output",
+            "turn 3 · response in progress",
             false,
-            "Draft the next prompt while output continues…",
+            "Draft the next prompt while the response continues…",
         ),
-        primary_summary: "turn 3 · receiving output".to_string(),
+        primary_summary: "turn 3 · response in progress".to_string(),
         summary_segment: Some(ControlDockSummarySegment {
             kind: ControlDockSummarySegmentKind::Tool,
             text: "tool bash running".to_string(),
@@ -661,7 +691,7 @@ pub(crate) fn exact_test_control_dock_view_model_handles_live_runtime_variants()
     assert_eq!(streaming.runtime_context.as_deref(), Some("live"));
     assert_eq!(streaming.runtime_badge, "Streaming");
     assert_eq!(streaming.runtime_kind, RuntimeStateKind::Streaming);
-    assert_eq!(streaming.primary_summary, "turn 3 · receiving output");
+    assert_eq!(streaming.primary_summary, "turn 3 · response in progress");
     assert_eq!(
         streaming.summary_segment,
         Some(ControlDockSummarySegment {

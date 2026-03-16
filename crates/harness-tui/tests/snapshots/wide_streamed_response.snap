@@ -1,30 +1,30 @@
-   run run_fixture                                                         unknown/mock/model-1                                                          live
-  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-   ▎  › user (req_pty_001)                                                                                                            │Live · run run_fixture
-   ▎  Hello from PTY                                                                                                                  │unknown/mock/model-1
-                                                                                                                                      │0 active todos · 0 modi
-   ▎  ● assistant (done · current · mock/model-1)                                                                                     │
-   ▎  Hello world                                                                                                                     │No operator activity
-                                                                                                                                      │
-                                                                                                                                      │
-                                                                                                                                      │
-                                                                                                                                      │
-                                                                                                                                      │
-                                                                                                                                      │
-                                                                                                                                      │
-                                                                                                                                      │
-                                                                                                                                      │
-                                                                                                                                      │
-                                                                                                                                      │
-                                                                                                                                      │
-                                                                                                                                      │
-                                                                                                                                      │
-                                                                                                                                      │
-                                                                                                                                      │
-                                                                                                                                      │
-                                                                                                                                      │workspace · v0.1.0
-   live    Success   turn 1 · ready for next turn
+ run run_fixture                                      unknown/mock/model-1                                      live
+                                                                                                                        Live · run run_fixture
+ ▎  › user (req_pty_001)                                                                                                unknown/mock/model-1
+ ▎  Hello from PTY                                                                                                      0 active todos · 0 modified files
 
-  ▎ Ask Harness to inspect, edit, or explain…
+ ▎  ● assistant (done · current · mock/model-1)
+ ▎  Hello world
+                                                                                                                        No operator activity now
+                                                                                                                        Approvals, tasks, and edits show here
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ live    Success   turn 1 · ready for next turn
+
+
+  ▎ Ask Harness to inspect, edit, or explain…                                                                           harness-tui · v0.1.0
     shift+enter newline
-  Enter send  Shift+Enter nl  Ctrl+p commands  ? shortcuts  q quit
+Enter send  Shift+Enter nl  Ctrl+p commands  ? shortcuts  q quit
