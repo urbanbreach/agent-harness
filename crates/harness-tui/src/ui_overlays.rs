@@ -10,7 +10,7 @@ pub(super) fn render_overlays(
         match overlay {
             OverlayKind::DetailsDrawer => {}
             OverlayKind::CommandPalette => {
-                render_command_palette_overlay(frame, app, theme, plan.palette_overlay)
+                render_command_palette_overlay(frame, app, theme, plan.root, plan.palette_overlay)
             }
             OverlayKind::PermissionModal => {
                 if let Some(permission) = app.active_permission_view() {
@@ -27,11 +27,14 @@ fn render_command_palette_overlay(
     frame: &mut Frame,
     app: &AppState,
     theme: &Theme,
+    root: Rect,
     overlay: Option<Rect>,
 ) {
     let Some(overlay) = overlay else {
         return;
     };
+
+    render_overlay_backdrop(frame, root, ui_chrome::quiet_modal_backdrop_surface(theme));
 
     let title = if app.session_history_visible {
         session_history_overlay_title(app)
@@ -42,7 +45,7 @@ fn render_command_palette_overlay(
         return;
     };
 
-    let card_surface = theme.surface.panel_elevated;
+    let card_surface = ui_chrome::elevated_card_surface(theme);
 
     if app.session_history_visible {
         render_session_history_overlay(frame, app, theme, inner, card_surface);
@@ -79,7 +82,10 @@ fn render_session_history_overlay(
     if let Some(banner) = app.continue_disabled_banner.as_deref() {
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
-                truncate_plain_text(banner, usize::from(sections[0].width)),
+                truncate_plain_text(
+                    &overlay_continue_banner_text(banner),
+                    usize::from(sections[0].width),
+                ),
                 Style::default()
                     .fg(theme.status.warning)
                     .bg(card_surface)
@@ -103,10 +109,9 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
         return;
     }
 
-    frame.render_widget(
-        Block::default().style(Style::default().bg(theme.surface.overlay)),
-        area,
-    );
+    let surface = theme.surface.overlay;
+
+    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
 
     let mut input = app.palette_input.clone();
     let cursor_byte = input
@@ -121,15 +126,10 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
             "> ",
             Style::default()
                 .fg(theme.text.accent)
-                .bg(theme.surface.overlay)
+                .bg(surface)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(
-            input,
-            Style::default()
-                .fg(theme.text.primary)
-                .bg(theme.surface.overlay),
-        ),
+        Span::styled(input, Style::default().fg(theme.text.primary).bg(surface)),
     ]);
     frame.render_widget(Paragraph::new(line), area);
 }
@@ -170,7 +170,7 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
         let is_selected = row == selected;
         if is_selected {
             frame.render_widget(
-                Block::default().style(Style::default().bg(theme.surface.overlay)),
+                Block::default().style(ui_chrome::overlay_focus_row_style(theme)),
                 row_area,
             );
         }
@@ -197,11 +197,14 @@ fn command_palette_row(
 ) -> Line<'static> {
     let row_width = usize::from(width);
     let row_style = if is_selected {
-        Style::default()
-            .fg(theme.text.inverse)
-            .bg(theme.surface.overlay)
+        ui_chrome::overlay_focus_row_style(theme)
     } else {
         Style::default()
+    };
+    let prefix_style = if is_selected {
+        row_style.add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(theme.text.secondary)
     };
     let label_style = if is_selected {
         row_style.add_modifier(Modifier::BOLD)
@@ -214,8 +217,13 @@ fn command_palette_row(
         row_style.fg(theme.text.secondary)
     };
 
-    let mut spans = vec![Span::styled(label.to_string(), label_style)];
-    let mut used_width = label.chars().count();
+    let prefix = if is_selected { "› " } else { "  " };
+    let mut spans = vec![Span::styled(prefix.to_string(), prefix_style)];
+    let mut used_width = prefix.chars().count();
+
+    let label = truncate_plain_text(label, row_width.saturating_sub(used_width));
+    used_width = used_width.saturating_add(label.chars().count());
+    spans.push(Span::styled(label, label_style));
 
     let gap_width = 2;
     let available_description = row_width.saturating_sub(used_width.saturating_add(gap_width));
@@ -285,13 +293,19 @@ fn render_session_history_list(frame: &mut Frame, app: &AppState, theme: &Theme,
         let is_selected = visible_index == selected;
         if is_selected {
             frame.render_widget(
-                Block::default().style(Style::default().bg(theme.border.focus)),
+                Block::default().style(ui_chrome::overlay_focus_row_style(theme)),
                 row_area,
             );
         }
 
         frame.render_widget(
-            Paragraph::new(session_history_row(entry, app, is_selected, theme)),
+            Paragraph::new(session_history_row(
+                entry,
+                app,
+                is_selected,
+                theme,
+                row_area.width,
+            )),
             row_area,
         );
     }
@@ -381,11 +395,10 @@ fn session_history_row(
     app: &AppState,
     is_selected: bool,
     theme: &Theme,
+    width: u16,
 ) -> Line<'static> {
     let row_style = if is_selected {
-        Style::default()
-            .fg(theme.text.inverse)
-            .bg(theme.border.focus)
+        ui_chrome::overlay_focus_row_style(theme)
     } else {
         Style::default()
     };
@@ -428,26 +441,129 @@ fn session_history_row(
         })
     };
 
-    let capability = session_history_capability_label(entry, app.startup_launcher_action);
+    let capability = overlay_session_history_capability_label(entry, app.startup_launcher_action);
     let source = format!(
         "{}/{}",
         session_history_profile_label(entry),
         session_history_provider_model_label(entry)
     );
 
-    Line::from(vec![
-        Span::styled(session_history_action_prefix(app, entry), action_style),
-        Span::styled(session_history_run_name(entry).to_string(), title_style),
-        Span::styled(" · ", meta_style),
-        Span::styled(capability, capability_style),
-        Span::styled(" · ", meta_style),
-        Span::styled(
-            session_history_status_label(entry).to_string(),
+    let row_width = usize::from(width);
+    let prefix = session_history_action_prefix(app, entry);
+    let reserved_capability_width = usize::from(row_width > 32) * 18;
+    let title_budget = row_width
+        .saturating_sub(
+            prefix
+                .chars()
+                .count()
+                .saturating_add(reserved_capability_width),
+        )
+        .max(12)
+        .min(row_width.saturating_sub(prefix.chars().count()));
+    let title = truncate_plain_text(session_history_run_name(entry), title_budget);
+
+    let mut spans = vec![
+        Span::styled(prefix.clone(), action_style),
+        Span::styled(title.clone(), title_style),
+    ];
+    let mut used_width = prefix.chars().count().saturating_add(title.chars().count());
+
+    append_session_history_segment(
+        &mut spans,
+        &mut used_width,
+        row_width,
+        &capability,
+        meta_style,
+        capability_style,
+        8,
+    );
+
+    if row_width >= 58 {
+        append_session_history_segment(
+            &mut spans,
+            &mut used_width,
+            row_width,
+            session_history_status_label(entry),
+            meta_style,
             status_style,
-        ),
-        Span::styled(" · ", meta_style),
-        Span::styled(source, meta_style),
-    ])
+            6,
+        );
+    }
+
+    if row_width >= 76 {
+        append_session_history_segment(
+            &mut spans,
+            &mut used_width,
+            row_width,
+            &source,
+            meta_style,
+            meta_style,
+            10,
+        );
+    }
+
+    if is_selected && used_width < row_width {
+        spans.push(Span::styled(" ".repeat(row_width - used_width), row_style));
+    }
+
+    Line::from(spans)
+}
+
+fn append_session_history_segment(
+    spans: &mut Vec<Span<'static>>,
+    used_width: &mut usize,
+    row_width: usize,
+    text: &str,
+    separator_style: Style,
+    text_style: Style,
+    min_text_width: usize,
+) {
+    const SEPARATOR: &str = " · ";
+
+    let separator_width = SEPARATOR.chars().count();
+    let remaining = row_width.saturating_sub(*used_width);
+    if remaining <= separator_width.saturating_add(min_text_width) {
+        return;
+    }
+
+    let text = truncate_plain_text(text, remaining.saturating_sub(separator_width));
+    if text.is_empty() {
+        return;
+    }
+
+    spans.push(Span::styled(SEPARATOR.to_string(), separator_style));
+    spans.push(Span::styled(text.clone(), text_style));
+    *used_width = used_width
+        .saturating_add(separator_width)
+        .saturating_add(text.chars().count());
+}
+
+fn overlay_continue_banner_text(banner: &str) -> String {
+    banner
+        .strip_prefix("continue unavailable: ")
+        .map(|reason| format!("blocked · {reason}"))
+        .unwrap_or_else(|| banner.to_string())
+}
+
+fn overlay_session_history_capability_label(
+    entry: &crate::app::SessionHistoryEntry,
+    action: StartupLauncherAction,
+) -> String {
+    match action {
+        StartupLauncherAction::ContinueSession | StartupLauncherAction::NewSession => {
+            if entry.catalog.is_resumable {
+                "continue ready".to_string()
+            } else {
+                entry
+                    .catalog
+                    .resume_disabled_reason
+                    .as_deref()
+                    .map(|reason| format!("blocked · {reason}"))
+                    .unwrap_or_else(|| "blocked".to_string())
+            }
+        }
+        StartupLauncherAction::ReplaySession => session_history_capability_label(entry, action),
+    }
 }
 
 fn session_history_capability_label(
@@ -548,6 +664,7 @@ fn render_permission_modal(
     let submission_pending = app.permission_submission_pending(&permission.permission_id);
     let metadata_style = Style::default().fg(theme.text.secondary).bg(surface);
     let summary_style = Style::default().fg(theme.text.primary).bg(surface);
+    let guidance_style = Style::default().fg(theme.text.primary).bg(surface);
     let block = ui_chrome::interruptive_modal_block(
         theme,
         Line::from(vec![
@@ -577,8 +694,8 @@ fn render_permission_modal(
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1),
-            Constraint::Min(0),
-            Constraint::Length(1),
+            Constraint::Length(4),
+            Constraint::Length(2),
         ])
         .split(inner);
 
@@ -586,12 +703,12 @@ fn render_permission_modal(
         Paragraph::new(Line::from(vec![
             status_badge("FAIL CLOSED", theme.status.error, theme),
             Span::styled("  ", metadata_style),
-            status_badge("SESSION PAUSED", theme.status.warning, theme),
-            Span::styled("  ", metadata_style),
-            status_badge(
-                permission.kind.replace('_', " ").to_uppercase(),
-                theme.border.focus,
-                theme,
+            Span::styled(
+                "SESSION PAUSED",
+                Style::default()
+                    .fg(theme.status.warning)
+                    .bg(surface)
+                    .add_modifier(Modifier::BOLD),
             ),
         ]))
         .style(metadata_style),
@@ -609,26 +726,10 @@ fn render_permission_modal(
             )]),
             Line::from(vec![Span::styled(
                 truncate_plain_text(
-                    &permission_identity_line(permission),
+                    permission_modal_guidance(permission, submission_pending),
                     usize::from(sections[1].width),
                 ),
-                metadata_style,
-            )]),
-            Line::from(vec![Span::styled(
-                truncate_plain_text(
-                    &format!(
-                        "default {} · timeout {}s · {}",
-                        permission_default_label(permission.default_decision),
-                        permission.timeout_ms / 1_000,
-                        if submission_pending {
-                            "awaiting confirmation"
-                        } else {
-                            "draft preserved"
-                        }
-                    ),
-                    usize::from(sections[1].width),
-                ),
-                metadata_style,
+                guidance_style,
             )]),
             Line::from(vec![Span::styled(
                 truncate_plain_text(
@@ -639,7 +740,7 @@ fn render_permission_modal(
             )]),
             Line::from(vec![Span::styled(
                 truncate_plain_text(
-                    permission_modal_guidance(permission, submission_pending),
+                    &permission_modal_metadata_line(permission),
                     usize::from(sections[1].width),
                 ),
                 metadata_style,
@@ -651,27 +752,20 @@ fn render_permission_modal(
     );
 
     frame.render_widget(
-        Paragraph::new(permission_modal_actions_line(
+        Paragraph::new(permission_modal_actions_text(
             app,
             theme,
-            metadata_style,
+            surface,
             submission_pending,
         ))
         .style(Style::default().fg(theme.text.secondary).bg(surface))
-        .alignment(Alignment::Center),
+        .wrap(Wrap { trim: true }),
         sections[2],
     );
 }
 
-fn permission_default_label(decision: harness_core::event::PermissionDecision) -> &'static str {
-    match decision {
-        harness_core::event::PermissionDecision::Allow => "allow",
-        harness_core::event::PermissionDecision::Deny => "deny",
-    }
-}
-
-fn permission_identity_line(permission: &crate::app::ActivePermissionView) -> String {
-    let tool = permission
+fn permission_modal_metadata_line(permission: &crate::app::ActivePermissionView) -> String {
+    let subject = permission
         .tool_label
         .as_deref()
         .map(|tool| format!("tool {tool}"))
@@ -679,10 +773,24 @@ fn permission_identity_line(permission: &crate::app::ActivePermissionView) -> St
             permission
                 .tool_call_id
                 .as_deref()
-                .map(|tool_call_id| format!("tool call {tool_call_id}"))
+                .map(|tool_call_id| format!("call {tool_call_id}"))
         })
-        .unwrap_or_else(|| format!("permission {}", permission.permission_id));
-    format!("{tool} · digest {}", permission.request_digest)
+        .unwrap_or_else(|| format!("perm {}", permission.permission_id));
+
+    format!(
+        "{} · dig {} · timeout {}s",
+        subject,
+        abbreviated_digest(&permission.request_digest),
+        permission.timeout_ms / 1_000,
+    )
+}
+
+fn abbreviated_digest(digest: &str) -> String {
+    let mut short = digest.chars().take(6).collect::<String>();
+    if digest.chars().count() > 6 {
+        short.push('…');
+    }
+    short
 }
 
 fn render_overlay_surface(
@@ -734,14 +842,14 @@ fn permission_modal_guidance(
     submission_pending: bool,
 ) -> &'static str {
     if submission_pending {
-        "Harness is recording the decision; wait for confirmation."
+        "Decision recorded. Wait for confirmation before sending another turn."
     } else if permission.kind.eq_ignore_ascii_case("question")
         || permission.kind.eq_ignore_ascii_case("ask")
         || permission.kind.eq_ignore_ascii_case("ask_user")
     {
-        "Answer after review, or deny to keep the run fail-closed."
+        "Safest next step: deny. Answer only after review."
     } else {
-        "Allow once continues the run; deny keeps it fail-closed."
+        "Safest next step: deny. Allow once only after review."
     }
 }
 
@@ -756,11 +864,11 @@ fn permission_modal_summary_line(
     permission
         .tool_label
         .as_deref()
-        .map(|tool| format!("Tool {tool} is paused pending approval."))
+        .map(|tool| format!("Tool {tool} is paused for review."))
         .unwrap_or_else(|| {
             if permission.summary.chars().count() > 48 {
                 format!(
-                    "{} request is paused pending approval.",
+                    "{} request is paused for review.",
                     permission.kind.replace('_', " ")
                 )
             } else {
@@ -790,36 +898,43 @@ fn render_overlay_backdrop(frame: &mut Frame, area: Rect, background: Color) {
     );
 }
 
-fn permission_modal_actions_line(
+fn permission_modal_actions_text(
     app: &AppState,
     theme: &Theme,
-    metadata_style: Style,
+    surface: Color,
     submission_pending: bool,
-) -> Line<'static> {
+) -> Text<'static> {
+    let metadata_style = Style::default().fg(theme.text.secondary).bg(surface);
+    let primary_style = Style::default().fg(theme.text.primary).bg(surface);
+
     if submission_pending {
-        return Line::from(vec![
-            status_badge("decision sent", theme.status.info, theme),
-            Span::styled("  waiting for confirmation", metadata_style),
+        return Text::from(vec![
+            Line::from(vec![
+                status_badge("decision sent", theme.status.info, theme),
+                Span::styled("  waiting for confirmation", metadata_style),
+            ]),
+            Line::from(vec![Span::styled(
+                "No new action required until confirmation returns.",
+                metadata_style,
+            )]),
         ]);
     }
 
-    Line::from(vec![
-        status_badge(
-            app.keymap.get_binding_label(Action::DenyPermission, "deny"),
-            theme.status.error,
-            theme,
-        ),
-        Span::styled("  ", metadata_style),
-        Span::styled(
-            app.keymap.get_binding_label(Action::DismissModal, "later"),
-            metadata_style,
-        ),
-        Span::styled("  ", metadata_style),
-        status_badge(
-            app.keymap
-                .get_binding_label(Action::AllowPermission, "allow once"),
-            theme.border.focus,
-            theme,
-        ),
+    let deny_label = app.keymap.get_binding_label(Action::DenyPermission, "deny");
+    let later_label = app.keymap.get_binding_label(Action::DismissModal, "later");
+    let allow_label = app
+        .keymap
+        .get_binding_label(Action::AllowPermission, "allow once");
+
+    Text::from(vec![
+        Line::from(vec![
+            status_badge(deny_label, theme.status.error, theme),
+            Span::styled("  default deny · stays fail-closed", metadata_style),
+        ]),
+        Line::from(vec![
+            Span::styled(format!("{later_label} keeps draft"), metadata_style),
+            Span::styled("  ·  ", metadata_style),
+            Span::styled(allow_label, primary_style),
+        ]),
     ])
 }

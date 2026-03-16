@@ -74,6 +74,12 @@ fn transcript_section_model_keeps_nested_tool_and_error_blocks() {
 
 #[cfg(test)]
 #[test]
+fn transcript_answer_precedes_nested_context() {
+    ui::exact_test_transcript_answer_precedes_nested_context();
+}
+
+#[cfg(test)]
+#[test]
 fn transcript_follow_mode_uses_measured_surface_heights() {
     ui::exact_test_transcript_follow_mode_uses_measured_surface_heights();
 }
@@ -259,8 +265,10 @@ fn transcript_turn_sections_keep_nested_tool_details() {
     let lines = rendered.lines().collect::<Vec<_>>();
     let assistant_header = find_line_containing(&lines, "assistant")
         .unwrap_or_else(|| panic!("assistant turn\n{rendered}"));
+    let body_row = find_line_containing_from(&lines, assistant_header + 1, "Assistant body")
+        .unwrap_or_else(|| panic!("assistant body row\n{rendered}"));
     let thinking_row =
-        find_line_containing_all_from(&lines, assistant_header + 1, &["thinking", "tool planning"])
+        find_line_containing_all_from(&lines, body_row + 1, &["Thinking:", "tool planning"])
             .unwrap_or_else(|| panic!("thinking row\n{rendered}"));
     let tool_row =
         find_line_containing_all_from(&lines, thinking_row + 1, &["tool shell", "failed"])
@@ -270,17 +278,16 @@ fn transcript_turn_sections_keep_nested_tool_details() {
     let error_row =
         find_line_containing_all_from(&lines, args_row + 1, &["error", "command failed"])
             .unwrap_or_else(|| panic!("tool error row\n{rendered}"));
-    let body_row = find_line_containing_from(&lines, error_row + 1, "Assistant body")
-        .unwrap_or_else(|| panic!("assistant body row\n{rendered}"));
     let turn_error_row =
-        find_line_containing_all_from(&lines, body_row + 1, &["error", "tool call failed"])
+        find_line_containing_all_from(&lines, error_row + 1, &["error", "tool call failed"])
             .unwrap_or_else(|| panic!("assistant error row\n{rendered}"));
 
     assert!(assistant_header < thinking_row);
+    assert!(assistant_header < body_row);
+    assert!(body_row < thinking_row);
     assert!(thinking_row < tool_row);
     assert!(tool_row < args_row);
     assert!(args_row < error_row);
-    assert!(error_row < body_row);
     assert!(body_row < turn_error_row);
 
     let assistant_body_column = first_alphanumeric_column(lines[body_row]);
@@ -318,13 +325,15 @@ fn operator_rail_section_model_hides_empty_sources_but_preserves_order() {
 #[cfg(test)]
 #[test]
 fn operator_sidebar_pins_summary_and_hides_empty_sections() {
+    ui::exact_test_operator_rail_low_activity_presentation_prefers_primary_stack();
     ui::exact_test_operator_rail_section_model_builds_pinned_summary();
     ui::exact_test_operator_rail_section_model_hides_empty_sources_but_preserves_order();
+    ui::exact_test_operator_rail_section_model_surfaces_pending_permissions_first();
 }
 
 #[cfg(test)]
 #[test]
-fn operator_sidebar_compact_empty_mode_preserves_anchor_copy() {
+fn operator_sidebar_compact_empty_mode_preserves_anchor_copy_with_fixed_width() {
     let live_empty = operator_sidebar_empty_live_app();
     let replay_empty = app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new());
     let live_populated = operator_sidebar_todo_live_app();
@@ -350,19 +359,19 @@ fn operator_sidebar_compact_empty_mode_preserves_anchor_copy() {
         .operator_sidebar
         .expect("replay compact sidebar");
 
-    assert!(
-        live_empty_sidebar.width
-            < live_populated_plan
-                .operator_sidebar
-                .expect("live expanded sidebar")
-                .width
+    assert_eq!(
+        live_empty_sidebar.width,
+        live_populated_plan
+            .operator_sidebar
+            .expect("live populated sidebar")
+            .width
     );
-    assert!(
-        replay_empty_sidebar.width
-            < replay_populated_plan
-                .operator_sidebar
-                .expect("replay expanded sidebar")
-                .width
+    assert_eq!(
+        replay_empty_sidebar.width,
+        replay_populated_plan
+            .operator_sidebar
+            .expect("replay populated sidebar")
+            .width
     );
     assert!(live_empty_plan.wheel_hit_areas.overlay.is_none());
     assert!(replay_empty_plan.wheel_hit_areas.overlay.is_none());
@@ -371,11 +380,17 @@ fn operator_sidebar_compact_empty_mode_preserves_anchor_copy() {
         let sidebar = operator_sidebar_text(app);
 
         assert!(
-            sidebar.contains("No operator activity yet"),
+            sidebar.contains(if label == "live" {
+                "No operator activity now"
+            } else {
+                "No operator activity yet"
+            }),
             "{label} compact rail should preserve anchor copy"
         );
         assert!(
-            !sidebar.contains("Todo ·") && !sidebar.contains("Modified Files ·"),
+            !sidebar.contains("Pending Permissions ·")
+                && !sidebar.contains("Todo ·")
+                && !sidebar.contains("Modified Files ·"),
             "{label} compact rail should omit empty body sections"
         );
     }
@@ -383,7 +398,7 @@ fn operator_sidebar_compact_empty_mode_preserves_anchor_copy() {
 
 #[cfg(test)]
 #[test]
-fn operator_sidebar_expands_when_todo_or_modified_files_exist() {
+fn operator_sidebar_width_stays_fixed_when_todo_or_modified_files_exist() {
     let live_empty_width = layout::FrameLayoutPlan::for_app(
         &operator_sidebar_empty_live_app(),
         ratatui::layout::Rect::new(0, 0, 100, 30),
@@ -423,6 +438,12 @@ fn operator_sidebar_expands_when_todo_or_modified_files_exist() {
 
 #[cfg(test)]
 #[test]
+fn persistent_operator_sidebar_uses_panel_gutter_instead_of_border_line() {
+    ui::exact_test_persistent_operator_sidebar_uses_panel_gutter();
+}
+
+#[cfg(test)]
+#[test]
 fn control_dock_view_model_handles_live_runtime_variants() {
     view_model::exact_test_control_dock_view_model_handles_live_runtime_variants();
 }
@@ -431,6 +452,12 @@ fn control_dock_view_model_handles_live_runtime_variants() {
 #[test]
 fn control_dock_view_model_preserves_replay_read_only_variant() {
     view_model::exact_test_control_dock_view_model_preserves_replay_read_only_variant();
+}
+
+#[cfg(test)]
+#[test]
+fn replay_prompt_pane_is_visibly_read_only() {
+    ui::exact_test_replay_prompt_pane_is_visibly_read_only();
 }
 
 #[cfg(test)]
@@ -1411,11 +1438,11 @@ fn live_shell_geometry_contract_is_rule_based() {
 
     assert_eq!(
         session_contract(95, 40).sidebar_mode,
-        layout::SessionSidebarMode::Persistent { width: 30 }
+        layout::SessionSidebarMode::Persistent { width: 34 }
     );
     assert_eq!(
         session_contract(120, 30).sidebar_mode,
-        layout::SessionSidebarMode::Persistent { width: 36 }
+        layout::SessionSidebarMode::Persistent { width: 42 }
     );
 }
 
@@ -1448,7 +1475,7 @@ fn live_shell_threshold_edges_are_stable() {
             36,
             layout::SessionHeaderMode::Hidden,
             layout::SessionFooterMode::Standard,
-            layout::SessionSidebarMode::Persistent { width: 30 },
+            layout::SessionSidebarMode::Persistent { width: 34 },
         ),
         (
             99,
@@ -1476,7 +1503,7 @@ fn live_shell_threshold_edges_are_stable() {
             30,
             layout::SessionHeaderMode::Hidden,
             layout::SessionFooterMode::Standard,
-            layout::SessionSidebarMode::Persistent { width: 34 },
+            layout::SessionSidebarMode::Persistent { width: 42 },
         ),
     ];
 
@@ -1577,7 +1604,7 @@ fn assert_live_shell_hidden_header_anchor_contract(
     );
     assert_eq!(anchor.x, plan.shell.x);
     assert_eq!(anchor.y, plan.shell.y);
-    assert_eq!(anchor.width, plan.shell.width);
+    assert_eq!(anchor.width, transcript.width);
     assert_eq!(transcript.y, plan.shell.y);
     assert!(
         anchor_row.contains(&format!("run {}", app.run_id().unwrap_or("unknown"))),
@@ -1594,10 +1621,10 @@ fn assert_live_shell_hidden_header_anchor_contract(
         "anchor row should expose runtime context {expected_context:?}\n{rendered}"
     );
     assert!(
-        line_has_divider(
+        !line_has_divider(
             lines[usize::from(anchor.y.saturating_add(anchor.height.saturating_sub(1)))]
         ),
-        "anchor band should end with a subtle divider\n{rendered}"
+        "anchor band should stay background-separated without a hard divider\n{rendered}"
     );
     if let Some(sidebar) = plan.operator_sidebar {
         assert_eq!(sidebar.y, plan.shell.y);
@@ -1756,7 +1783,7 @@ fn live_shell_redesign_guardrails_preserve_primary_contract() {
             40,
             layout::SessionHeaderMode::Hidden,
             layout::SessionFooterMode::Standard,
-            layout::SessionSidebarMode::Persistent { width: 30 },
+            layout::SessionSidebarMode::Persistent { width: 34 },
         ),
         (
             "primary 100x30 breakpoint support",
@@ -1764,7 +1791,7 @@ fn live_shell_redesign_guardrails_preserve_primary_contract() {
             30,
             layout::SessionHeaderMode::Hidden,
             layout::SessionFooterMode::Standard,
-            layout::SessionSidebarMode::Persistent { width: 34 },
+            layout::SessionSidebarMode::Persistent { width: 42 },
         ),
         (
             "wide 160x30 breakpoint support",
@@ -1908,6 +1935,12 @@ fn quiet_overlay_helper_rows_use_semantic_chrome_palette() {
 #[test]
 fn permission_modal_remains_visually_dominant_and_fail_closed() {
     module_permission_modal_remains_visually_dominant_and_fail_closed();
+}
+
+#[cfg(test)]
+#[test]
+fn overlay_stack_orders_permission_above_commands_and_slash() {
+    app::AppState::exact_test_overlay_stack_orders_permission_above_commands_and_slash();
 }
 
 #[cfg(test)]
@@ -3239,10 +3272,10 @@ fn theme_tokens_cover_live_shell_states() {
     assert_eq!(default.live_shell.heights.prompt_block(), 5);
     assert_eq!(default.live_shell.rhythm.transcript_gutter_x, 1);
     assert_eq!(default.live_shell.rhythm.status_separator, 2);
-    assert_eq!(default.live_shell.minimum.centered_content_width, 78);
+    assert_eq!(default.live_shell.minimum.centered_content_width, 76);
     assert_eq!(default.live_shell.minimum.content_margin_x, 1);
-    assert_eq!(default.live_shell.primary.centered_content_width, 92);
-    assert_eq!(default.live_shell.primary.content_margin_x, 2);
+    assert_eq!(default.live_shell.primary.centered_content_width, 90);
+    assert_eq!(default.live_shell.primary.content_margin_x, 0);
     assert_eq!(tokens.palette.surfaces, default.surface);
     assert_eq!(tokens.palette.borders, default.border);
     assert_eq!(
@@ -3381,9 +3414,11 @@ fn hovered_wheel_target_uses_layout_plan() {
 
     let mut default_app = app::AppState::new_live(None, false, None);
     default_app.live_details_drawer_open = true;
+    default_app.ingest_event(operator_sidebar_edit_only_event(1));
 
     let mut themed_app = app::AppState::new_live(None, false, None);
     themed_app.live_details_drawer_open = true;
+    themed_app.ingest_event(operator_sidebar_edit_only_event(1));
     let mut custom_theme = Theme::default();
     custom_theme.live_shell.primary.centered_content_width = 72;
     custom_theme.live_shell.primary.content_margin_x = 10;
@@ -3391,22 +3426,28 @@ fn hovered_wheel_target_uses_layout_plan() {
     custom_theme.live_shell.primary.details_sidebar_width = 36;
     themed_app.set_theme_for_test(custom_theme);
 
+    let default_plan = layout::FrameLayoutPlan::for_app(&default_app, area);
+    let default_transcript = default_plan.transcript.expect("default transcript area");
     let themed_plan = layout::FrameLayoutPlan::for_app(&themed_app, area);
-    let themed_inspector = layout::details_drawer_areas(
-        themed_plan
-            .operator_sidebar
-            .or(themed_plan.details_overlay)
-            .expect("themed details area"),
-    )[1];
-    let probe_column = themed_inspector.x.saturating_add(2);
-    let probe_row = themed_inspector.y.saturating_add(1);
+    let themed_sidebar = themed_plan
+        .operator_sidebar
+        .expect("themed operator sidebar");
+    let default_target = ui::hovered_wheel_target(
+        &default_app,
+        area,
+        default_transcript.x.saturating_add(2),
+        default_transcript.y.saturating_add(1),
+    );
+    let themed_target = ui::hovered_wheel_target(
+        &themed_app,
+        area,
+        themed_sidebar.x.saturating_add(1),
+        themed_sidebar.y.saturating_add(1),
+    );
 
-    let default_target = ui::hovered_wheel_target(&default_app, area, probe_column, probe_row);
-    let themed_target = ui::hovered_wheel_target(&themed_app, area, probe_column, probe_row);
-
-    assert_ne!(default_target, themed_target);
+    assert_ne!(default_plan.operator_sidebar, themed_plan.operator_sidebar);
     assert_eq!(default_target, Some(ui::WheelTarget::Transcript));
-    assert_eq!(themed_target, None);
+    assert_eq!(themed_target, Some(ui::WheelTarget::Inspector));
 }
 
 #[cfg(test)]
@@ -3420,18 +3461,18 @@ fn layout_plan_minimum_geometry_matches_shell_contract() {
     assert_eq!(plan.root, ratatui::layout::Rect::new(0, 0, 80, 24));
     assert_eq!(plan.header, ratatui::layout::Rect::new(0, 0, 80, 1));
     assert_eq!(plan.content, ratatui::layout::Rect::new(0, 1, 80, 22));
-    assert_eq!(plan.shell, ratatui::layout::Rect::new(1, 1, 78, 22));
+    assert_eq!(plan.shell, ratatui::layout::Rect::new(2, 1, 76, 22));
     assert_eq!(plan.footer, ratatui::layout::Rect::new(0, 23, 80, 1));
     assert_eq!(
         plan.transcript,
-        Some(ratatui::layout::Rect::new(1, 1, 78, 19))
+        Some(ratatui::layout::Rect::new(2, 1, 76, 19))
     );
-    assert_eq!(plan.status, Some(ratatui::layout::Rect::new(1, 20, 78, 1)));
+    assert_eq!(plan.status, Some(ratatui::layout::Rect::new(2, 20, 76, 1)));
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(1, 21, 78, 2))
+        Some(ratatui::layout::Rect::new(2, 21, 76, 2))
     );
-    assert_eq!(dock.shell, ratatui::layout::Rect::new(1, 20, 78, 3));
+    assert_eq!(dock.shell, ratatui::layout::Rect::new(2, 20, 76, 3));
     assert_eq!(dock.status, plan.status);
     assert_eq!(dock.composer, plan.composer.expect("minimum composer"));
     assert_eq!(dock.disclosure, None);
@@ -3452,45 +3493,42 @@ fn layout_plan_primary_geometry_matches_shell_contract() {
     assert_eq!(plan.root, ratatui::layout::Rect::new(0, 0, 100, 30));
     assert_eq!(plan.header, ratatui::layout::Rect::new(0, 0, 100, 0));
     assert_eq!(plan.content, ratatui::layout::Rect::new(0, 0, 100, 29));
-    assert_eq!(plan.shell, ratatui::layout::Rect::new(2, 0, 96, 29));
+    assert_eq!(plan.shell, ratatui::layout::Rect::new(0, 0, 100, 29));
     assert_eq!(plan.footer, ratatui::layout::Rect::new(0, 29, 100, 1));
     assert_eq!(
         plan.transcript,
-        Some(ratatui::layout::Rect::new(2, 0, 61, 25))
+        Some(ratatui::layout::Rect::new(0, 0, 57, 26))
     );
     assert_eq!(
         plan.operator_sidebar,
-        Some(ratatui::layout::Rect::new(64, 0, 34, 25))
+        Some(ratatui::layout::Rect::new(58, 0, 42, 29))
     );
-    assert_eq!(plan.status, Some(ratatui::layout::Rect::new(2, 25, 96, 1)));
+    assert_eq!(plan.status, Some(ratatui::layout::Rect::new(0, 26, 57, 1)));
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(2, 26, 96, 3))
+        Some(ratatui::layout::Rect::new(0, 27, 57, 2))
     );
-    assert_eq!(dock.shell, ratatui::layout::Rect::new(2, 25, 96, 4));
+    assert_eq!(dock.shell, ratatui::layout::Rect::new(0, 26, 57, 3));
     assert_eq!(dock.status, plan.status);
     assert_eq!(dock.composer, plan.composer.expect("primary composer"));
-    assert_eq!(
-        dock.disclosure,
-        Some(ratatui::layout::Rect::new(2, 28, 96, 1))
-    );
+    assert_eq!(dock.disclosure, None);
     assert_eq!(plan.disclosure, dock.disclosure);
 }
 
 #[cfg(test)]
 #[test]
-fn layout_plan_primary_empty_operator_rail_compacts_width() {
+fn layout_plan_primary_empty_operator_rail_keeps_fixed_width() {
     let mut app = app::AppState::new_live(None, false, None);
     app.active_tab = app::Tab::Run;
     let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 100, 30));
 
     assert_eq!(
         plan.transcript,
-        Some(ratatui::layout::Rect::new(2, 0, 73, 25))
+        Some(ratatui::layout::Rect::new(0, 0, 57, 26))
     );
     assert_eq!(
         plan.operator_sidebar,
-        Some(ratatui::layout::Rect::new(76, 0, 22, 25))
+        Some(ratatui::layout::Rect::new(58, 0, 42, 29))
     );
     assert_eq!(plan.details_overlay, None);
     assert_eq!(plan.wheel_hit_areas.transcript, plan.transcript);
@@ -3500,18 +3538,18 @@ fn layout_plan_primary_empty_operator_rail_compacts_width() {
 
 #[cfg(test)]
 #[test]
-fn layout_plan_split_empty_operator_rail_compacts_width() {
+fn layout_plan_split_empty_operator_rail_keeps_fixed_width() {
     let mut app = app::AppState::new_live(None, false, None);
     app.active_tab = app::Tab::Run;
     let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 96, 40));
 
     assert_eq!(
         plan.transcript,
-        Some(ratatui::layout::Rect::new(1, 0, 73, 35))
+        Some(ratatui::layout::Rect::new(0, 0, 61, 36))
     );
     assert_eq!(
         plan.operator_sidebar,
-        Some(ratatui::layout::Rect::new(75, 0, 20, 35))
+        Some(ratatui::layout::Rect::new(62, 0, 34, 39))
     );
     assert_eq!(plan.details_overlay, None);
     assert_eq!(plan.wheel_hit_areas.transcript, plan.transcript);
@@ -3531,12 +3569,8 @@ fn wide_primary_live_layout_uses_available_width() {
     let plan = layout::FrameLayoutPlan::for_app(&app, area);
 
     assert_eq!(shell_layout.target, ShellGeometryTarget::Primary);
-    assert_eq!(plan.shell.x, shell_layout.content_margin_x);
-    assert_eq!(
-        plan.shell.width,
-        area.width
-            .saturating_sub(shell_layout.content_margin_x.saturating_mul(2))
-    );
+    assert_eq!(plan.shell.x, 0);
+    assert_eq!(plan.shell.width, area.width);
     assert!(plan.shell.width > shell_layout.centered_content_width);
 }
 
@@ -3552,12 +3586,8 @@ fn split_window_live_layout_uses_available_width() {
     let plan = layout::FrameLayoutPlan::for_app(&app, area);
 
     assert_eq!(shell_layout.target, ShellGeometryTarget::Split);
-    assert_eq!(plan.shell.x, shell_layout.content_margin_x);
-    assert_eq!(
-        plan.shell.width,
-        area.width
-            .saturating_sub(shell_layout.content_margin_x.saturating_mul(2))
-    );
+    assert_eq!(plan.shell.x, 0);
+    assert_eq!(plan.shell.width, area.width);
     assert!(plan.shell.width > shell_layout.centered_content_width);
 }
 
@@ -3572,23 +3602,23 @@ fn live_layout_breakpoints_choose_shell_variant() {
     assert_eq!(minimum.inspector_drawer_width, 20);
     assert_eq!(minimum.details_sidebar_width, 34);
     assert_eq!(minimum.transcript_min_width, 28);
-    assert_eq!(minimum.centered_content_width, 78);
+    assert_eq!(minimum.centered_content_width, 76);
 
     let split = theme.live_shell_layout(96, 40);
     assert_eq!(split.target, ShellGeometryTarget::Split);
     assert_eq!(split.activity_drawer_width, 18);
     assert_eq!(split.inspector_drawer_width, 24);
-    assert_eq!(split.details_sidebar_width, 32);
+    assert_eq!(split.details_sidebar_width, 34);
     assert_eq!(split.transcript_min_width, 32);
-    assert_eq!(split.centered_content_width, 88);
+    assert_eq!(split.centered_content_width, 86);
 
     let primary = theme.live_shell_layout(100, 30);
     assert_eq!(primary.target, ShellGeometryTarget::Primary);
     assert_eq!(primary.activity_drawer_width, 24);
     assert_eq!(primary.inspector_drawer_width, 28);
-    assert_eq!(primary.details_sidebar_width, 40);
+    assert_eq!(primary.details_sidebar_width, 42);
     assert_eq!(primary.transcript_min_width, 40);
-    assert_eq!(primary.centered_content_width, 92);
+    assert_eq!(primary.centered_content_width, 90);
 
     assert_eq!(
         theme.live_shell.target(89, 40),
@@ -3627,7 +3657,7 @@ fn layout_breakpoints_match_opencode_parity_contract() {
     assert_eq!(wide_plan.header.height, 0);
     assert_eq!(
         wide_plan.operator_sidebar,
-        Some(ratatui::layout::Rect::new(116, 0, 42, 41))
+        Some(ratatui::layout::Rect::new(118, 0, 42, 47))
     );
 
     let mut primary = app::AppState::new_live(None, false, None);
@@ -3640,7 +3670,7 @@ fn layout_breakpoints_match_opencode_parity_contract() {
     assert_eq!(primary_plan.header.height, 0);
     assert_eq!(
         primary_plan.operator_sidebar,
-        Some(ratatui::layout::Rect::new(64, 0, 34, 25))
+        Some(ratatui::layout::Rect::new(58, 0, 42, 29))
     );
 
     let mut split = app::AppState::new_live(None, false, None);
@@ -3653,7 +3683,7 @@ fn layout_breakpoints_match_opencode_parity_contract() {
     assert_eq!(split_plan.header.height, 0);
     assert_eq!(
         split_plan.operator_sidebar,
-        Some(ratatui::layout::Rect::new(65, 0, 30, 35))
+        Some(ratatui::layout::Rect::new(62, 0, 34, 39))
     );
 
     let mut overlay = app::AppState::new_live(None, false, None);
@@ -3664,7 +3694,7 @@ fn layout_breakpoints_match_opencode_parity_contract() {
     assert!(overlay_plan.operator_sidebar.is_none());
     assert_eq!(
         overlay_plan.details_overlay,
-        Some(ratatui::layout::Rect::new(45, 1, 34, 43))
+        Some(ratatui::layout::Rect::new(44, 1, 34, 43))
     );
 
     let mut compact = app::AppState::new_live(None, false, None);
@@ -3675,7 +3705,7 @@ fn layout_breakpoints_match_opencode_parity_contract() {
     assert!(compact_plan.operator_sidebar.is_none());
     assert_eq!(
         compact_plan.details_overlay,
-        Some(ratatui::layout::Rect::new(45, 1, 34, 19))
+        Some(ratatui::layout::Rect::new(44, 1, 34, 19))
     );
 
     let mut dense = app::AppState::new_live(None, false, None);
@@ -4075,7 +4105,7 @@ fn live_shell_composer_contract_matches_opencode_parity() {
         100,
         30,
         "ready for first turn",
-        Some("shift+enter newline"),
+        None,
         "Shift+Enter nl",
     );
 
@@ -4112,7 +4142,7 @@ fn live_shell_composer_progressive_disclosure_by_width() {
         90,
         36,
         "ready for first turn",
-        Some("shift+enter newline"),
+        None,
         "Shift+Enter nl",
     );
 
@@ -4147,7 +4177,7 @@ fn live_shell_composer_disabled_states_share_same_structure() {
         100,
         30,
         "recovery in progress",
-        Some("ctrl+p commands"),
+        None,
         "Ctrl+p commands",
     );
 
@@ -4158,7 +4188,7 @@ fn live_shell_composer_disabled_states_share_same_structure() {
         100,
         30,
         "connection lost",
-        Some("ctrl+p commands"),
+        None,
         "Ctrl+p commands",
     );
 
@@ -4169,7 +4199,7 @@ fn live_shell_composer_disabled_states_share_same_structure() {
         100,
         30,
         "runtime failure",
-        Some("shift+enter newline"),
+        None,
         "Shift+Enter nl",
     );
 
@@ -4190,7 +4220,7 @@ fn live_shell_composer_disabled_states_share_same_structure() {
         100,
         30,
         "session shell preserved",
-        Some("ctrl+p commands"),
+        None,
         "Tab focus",
     );
 }
@@ -5901,7 +5931,7 @@ fn module_overlays_share_elevated_card_language() {
         width,
         height,
         "New session",
-        theme.surface.overlay,
+        theme.border.focus,
     );
 
     let mut sessions = app::AppState::new_startup(
@@ -6024,7 +6054,7 @@ fn module_live_shell_redesign_preserves_replay_overlay_and_permission_parity() {
         100,
         replay_disabled_row,
         theme.status.disabled,
-        theme.surface.panel_elevated,
+        theme.surface.panel,
         "replay disabled composer",
     );
     assert_row_segment_palette(
@@ -6032,7 +6062,7 @@ fn module_live_shell_redesign_preserves_replay_overlay_and_permission_parity() {
         100,
         "? shortcuts",
         theme.text.secondary,
-        theme.surface.panel_elevated,
+        theme.surface.panel,
     );
 
     let mut degraded = app::AppState::new_live(None, false, None);
@@ -6101,7 +6131,7 @@ fn module_permission_modal_remains_visually_dominant_and_fail_closed() {
     assert!(rendered.contains("FAIL CLOSED"));
     assert!(rendered.contains("SESSION PAUSED"));
     assert!(rendered.contains("default deny"));
-    assert!(rendered.contains("Allow once continues the run; deny keeps it fail-closed."));
+    assert!(rendered.contains("Safest next step: deny. Allow once only after review."));
     assert!(!rendered.contains("Command palette"));
     assert!(
         bgs[start..end]
@@ -6232,7 +6262,7 @@ fn live_status_strip_distinguishes_terminal_states() {
 
     let sending_debug = render_live_buffer(&sending, 80, 24);
     assert!(sending_debug.contains("Sending"));
-    assert!(sending_debug.contains("waiting for first tokens"));
+    assert!(sending_debug.contains("response starting"));
 
     sending.ingest_event(envelope(
         1,
@@ -6260,7 +6290,7 @@ fn live_status_strip_distinguishes_terminal_states() {
 
     let streaming_debug = render_live_buffer(&sending, 80, 24);
     assert!(streaming_debug.contains("Streaming"));
-    assert!(streaming_debug.contains("receiving output"));
+    assert!(streaming_debug.contains("response in progress"));
 
     sending.ingest_event(envelope(
         3,
@@ -6681,10 +6711,16 @@ fn transcript_shell_remains_scannable_without_bubble_cards() {
     let assistant_row =
         find_line_containing_all_from(&lines, prompt_row + 1, &["assistant", "mock/model-1"])
             .expect("assistant turn row");
-    let thinking_row = find_line_containing_all_from(
+    let body_row = find_line_containing_from(
         &lines,
         assistant_row + 1,
-        &["thinking", "Drafting a document-like plan"],
+        "Found the transcript renderer and the composer chrome.",
+    )
+    .expect("assistant body row");
+    let thinking_row = find_line_containing_all_from(
+        &lines,
+        body_row + 1,
+        &["Thinking:", "Drafting a document-like plan"],
     )
     .expect("thinking row");
     let tool_row = find_line_containing_all_from(
@@ -6693,18 +6729,12 @@ fn transcript_shell_remains_scannable_without_bubble_cards() {
         &["tool fs.read", "24 lines read from src/ui.rs"],
     )
     .expect("tool row");
-    let body_row = find_line_containing_from(
-        &lines,
-        tool_row + 1,
-        "Found the transcript renderer and the composer chrome.",
-    )
-    .expect("assistant body row");
 
     assert!(user_row < prompt_row);
     assert!(prompt_row < assistant_row);
-    assert!(assistant_row < thinking_row);
+    assert!(assistant_row < body_row);
+    assert!(body_row < thinking_row);
     assert!(thinking_row < tool_row);
-    assert!(tool_row < body_row);
     assert_eq!(
         first_non_whitespace_column(lines[user_row]),
         first_non_whitespace_column(lines[prompt_row]),
@@ -6725,7 +6755,7 @@ fn transcript_shell_remains_scannable_without_bubble_cards() {
     );
     assert!(!rendered.contains("Composer ·"));
     assert!(rendered.contains("▎ Ask Harness to inspect, edit, or explain…"));
-    assert!(rendered.contains("shift+enter newline"));
+    assert!(rendered.contains("Shift+Enter"));
     assert!(rendered.contains("Ask Harness to inspect, edit, or explain…"));
     assert!(!rendered.contains("┌"));
     assert!(!rendered.contains("└"));
@@ -6805,16 +6835,16 @@ fn thinking_visibility_toggle_hides_and_restores_inline_thinking_rows() {
     let mut app = rich_transcript_fixture_app();
 
     let initial = render_live_lines(&app, 120, 30);
-    assert!(initial.contains("thinking · Drafting a document-like plan"));
+    assert!(initial.contains("Thinking: · Drafting a document-like plan"));
 
     run_palette_command(&mut app, "hide thinking");
     let hidden = render_live_lines(&app, 120, 30);
-    assert!(!hidden.contains("thinking · Drafting a document-like plan"));
+    assert!(!hidden.contains("Thinking: · Drafting a document-like plan"));
     assert!(hidden.contains("Found the transcript renderer and the composer chrome."));
 
     run_palette_command(&mut app, "show thinking");
     let restored = render_live_lines(&app, 120, 30);
-    assert!(restored.contains("thinking · Drafting a document-like plan"));
+    assert!(restored.contains("Thinking: · Drafting a document-like plan"));
 }
 
 #[cfg(test)]
@@ -8321,14 +8351,14 @@ fn lifecycle_shell_snapshots() {
     assert!(!completed_shell_render.contains("Composer"));
     assert!(!completed_shell_render.contains("Next action"));
     insta::assert_snapshot!(
-                            completed_shell_render
-                                .lines()
-                                .map(str::trim_end)
-                                .collect::<Vec<_>>()
-                                .join("\n"),
-                            @r"
-           run run_fixture · unknown/unknown · -
-            Waiting for first turn…
+                        completed_shell_render
+                            .lines()
+                            .map(str::trim_end)
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                        @"
+    run run_fixture · unknown/unknown · -
+     Waiting for first turn…
 
 
 
@@ -8347,12 +8377,12 @@ fn lifecycle_shell_snapshots() {
 
 
 
-            Ready   run finished · session shell preserved  ·  orch 0a 0q 0r 0s──────────
+     Ready   run finished · session shell preserved  ·  orch 0a 0q 0r 0s
 
-           ▎ keep this draft
-           Tab focus  ? shortcuts  q quit
-"
-                        );
+      ▎ keep this draft
+    Tab focus  ? shortcuts  q quit
+    "
+    );
 
     let fallback_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = Arc::new(|_| {});
     let mut fallback = app::AppState::new_live(None, false, Some(fallback_sink));
@@ -8369,38 +8399,38 @@ fn lifecycle_shell_snapshots() {
     assert!(!fallback_render.contains("Composer"));
     assert!(!fallback_render.contains("Next action"));
     insta::assert_snapshot!(
-                        fallback_render
-                            .lines()
-                            .map(str::trim_end)
-                            .collect::<Vec<_>>()
-                            .join("\n"),
-                        @r"
+        fallback_render
+            .lines()
+            .map(str::trim_end)
+            .collect::<Vec<_>>()
+            .join("\n"),
+        @"
+
+
+
+
+       Session
+
+
+
+                                       Harness
+                             Preset unknown · unknown/-
+                            Start a conversation to begin
+            “inspect src/ui.rs” · “trace the failing test” · “review the
+                                    current diff”
+                   Enter send · Shift+Enter newline · ↑/↓ history
 
 
 
 
 
 
+     Ready   run finished · session shell preserved  ·  orch 0a 0q 0r 0s
 
-                  ┌Session───────────────────────────────────────────────────────┐
-                  │  Harness                                                     │
-                  │  Preset unknown · unknown/-                                  │
-                  │  Start a conversation to begin                               │
-                  │  Enter send · Shift+Enter newline · ↑/↓ history              │
-                  │                                                              │
-                  └──────────────────────────────────────────────────────────────┘
-
-
-
-
-
-
-            Ready   run finished · session shell preserved  ·  orch 0a 0q 0r 0s──────────
-
-           ▎ Run complete — use ctrl+p commands for replay/new/quit, or ask Harness for……
-           Tab focus  ? shortcuts  q quit
-"
-                    );
+      ▎ Run complete — use ctrl+p commands for replay/new/quit, or ask Harne……
+    Tab focus  ? shortcuts  q quit
+    "
+    );
 }
 
 #[cfg(test)]
@@ -8670,12 +8700,16 @@ fn replay_secondary_surfaces_remain_reachable_after_live_shell_refactor() {
     assert_eq!(replay.review_surface(), Some(app::ReviewSurface::Diff));
     let replay_diff_debug = render_live_buffer(&replay, 80, 24);
     assert!(!replay_diff_debug.contains("Tabs"));
+    assert!(replay_diff_debug.contains("Replay · read-only"));
+    assert!(replay_diff_debug.contains("read-only"));
     assert!(replay_diff_debug.contains("Diff"));
 
     replay.handle_key(key(crossterm::event::KeyCode::Char('?')));
     assert_eq!(replay.review_surface(), Some(app::ReviewSurface::Help));
     let replay_help_debug = render_live_buffer(&replay, 80, 24);
     assert!(!replay_help_debug.contains("Tabs"));
+    assert!(replay_help_debug.contains("Replay · read-only"));
+    assert!(replay_help_debug.contains("read-only"));
     assert!(replay_help_debug.contains("Keyboard Shortcuts:"));
 
     replay.handle_key(key(crossterm::event::KeyCode::Esc));
@@ -8967,8 +9001,8 @@ fn startup_card_uses_lifecycle_geometry_contract() {
         primary_startup,
         layout::lifecycle_card_area(primary_area, &theme, primary_layout.startup_card)
     );
-    assert_eq!(minimum_startup, ratatui::layout::Rect::new(5, 7, 70, 9));
-    assert_eq!(primary_startup, ratatui::layout::Rect::new(13, 10, 74, 9));
+    assert_eq!(minimum_startup, ratatui::layout::Rect::new(5, 7, 70, 12));
+    assert_eq!(primary_startup, ratatui::layout::Rect::new(9, 10, 82, 12));
     assert_ne!(
         minimum_startup,
         layout::live_empty_state_area(minimum_area, &theme)
@@ -8977,6 +9011,20 @@ fn startup_card_uses_lifecycle_geometry_contract() {
         primary_startup,
         layout::live_empty_state_area(primary_area, &theme)
     );
+}
+
+#[cfg(test)]
+#[test]
+fn startup_card_moves_closer_to_dock_in_tall_and_split_windows() {
+    let theme = Theme::default();
+    let tall_minimum_area = ratatui::layout::Rect::new(0, 0, 80, 48);
+    let split_area = ratatui::layout::Rect::new(0, 0, 96, 40);
+
+    let tall_minimum = layout::startup_shell_area(tall_minimum_area, &theme);
+    let split = layout::startup_shell_area(split_area, &theme);
+
+    assert_eq!(tall_minimum, ratatui::layout::Rect::new(5, 19, 70, 12));
+    assert_eq!(split, ratatui::layout::Rect::new(0, 14, 96, 13));
 }
 
 #[cfg(test)]
@@ -9026,7 +9074,8 @@ fn live_empty_state_snapshot_renders_input_first_shell() {
     let rendered = render_live_lines(&app, 80, 24);
 
     assert_live_shell_frame_invariants(&rendered, 80, 24);
-    assert!(rendered.contains("┌Session"));
+    assert!(rendered.contains("Session"));
+    assert!(!rendered.contains('┌'));
     assert!(rendered.contains("Harness"));
     assert!(rendered.contains("Preset unknown · unknown/-"));
     assert!(rendered.contains("Start a conversation to begin"));
@@ -9072,7 +9121,7 @@ fn live_shell_orchestration_status_strip_snapshot() {
     let app = orchestration_status_strip_fixture();
     let status_row = live_status_strip_row(&app, 160, 30, "ready for first turn");
 
-    insta::assert_snapshot!(status_row, @r"   live    Ready   ready for first turn  ·  orch 2a 1q 1r 1s · warn stale for 3001 ms─────────────────────────────────────────────────────────────────────────");
+    insta::assert_snapshot!(status_row, @" live    Ready   ready for first turn  ·  orch 2a 1q 1r 1s · warn stale for 3001 ms");
 }
 
 #[cfg(test)]
@@ -9192,24 +9241,22 @@ fn live_empty_state_uses_shared_home_surface_tokens() {
     let theme = Theme::default();
 
     assert!(
-        startup_render.contains("┌") || startup_render.contains("╭"),
-        "startup should use the shared lifecycle surface framing\n{startup_render}"
+        startup_render.contains("dispatch a fresh run from the draft below"),
+        "startup should keep lifecycle copy attached to the compose stack\n{startup_render}"
     );
     assert!(
         startup_render.contains("Type to start a new session."),
         "startup should keep the prompt accessible in the minimal shell\n{startup_render}"
     );
-    assert!(
-        live_render.contains("┌") || live_render.contains("╭"),
-        "live empty should use the shared lifecycle surface framing\n{live_render}"
-    );
+    assert!(live_render.contains("Session"));
+    assert!(!live_render.contains('┌') && !live_render.contains('╭'));
     assert!(live_render.contains("Harness"));
     assert!(live_render.contains("Preset worker · mock/model-1"));
     assert_row_segment_background(
         &startup_buffer,
         100,
         "Preset worker · mock/model-1",
-        theme.surface.panel_elevated,
+        theme.surface.shell,
     );
     assert_row_segment_background(
         &live_buffer,
@@ -9241,6 +9288,8 @@ fn startup_and_live_empty_share_spacing_contract() {
         .expect("startup metadata");
     let startup_status =
         find_line_containing(&startup_lines, "startup ready").expect("startup status strip");
+    let startup_keys =
+        find_line_containing(&startup_lines, "Ctrl+p palette").expect("startup key hints");
 
     let live_render = render_live_lines(&live, 100, 24);
     let live_lines = live_render.lines().collect::<Vec<_>>();
@@ -9252,6 +9301,7 @@ fn startup_and_live_empty_share_spacing_contract() {
 
     assert!(startup_title < startup_metadata);
     assert!(startup_metadata < startup_status);
+    assert!(startup_status < startup_keys);
 
     assert!(live_metadata < live_value);
     assert!(live_value < live_keys);
@@ -9326,27 +9376,16 @@ fn live_shell_enter_submits_and_echoes_prompt_snapshot() {
     assert_live_shell_frame_invariants(&rendered, 80, 24);
     assert!(rendered.contains("▎  › user (pending turn)"));
     assert!(rendered.contains("▎  ship it"));
-    assert!(rendered.contains("▎  ◐ assistant (streaming… · current)"));
+    assert!(rendered.contains("▎  ◐ assistant (active · current)"));
     assert!(rendered.contains("▎  Waiting for response…"));
     assert!(!rendered.contains('╭'));
 
-    let status_row = live_status_strip_row(&app, 80, 24, "waiting for first tokens");
+    let status_row = live_status_strip_row(&app, 80, 24, "response starting");
     assert_markers_in_order(
         &status_row,
-        &[
-            "Sending",
-            "turn 1 · waiting for first tokens",
-            "orch 0a 0q 0r 0s",
-        ],
+        &["Sending", "turn 1 · response starting", "orch 0a 0q 0r 0s"],
     );
-    assert_live_shell_document_composer_contract(
-        &app,
-        80,
-        24,
-        "waiting for first tokens",
-        None,
-        "q quit",
-    );
+    assert_live_shell_document_composer_contract(&app, 80, 24, "response starting", None, "q quit");
 }
 
 #[cfg(test)]
@@ -9403,8 +9442,8 @@ fn live_shell_inline_tool_state_snapshot() {
         24,
         &[
             "Permission Requested",
-            "Tool fs.read is paused pending approval.",
-            "digest-perm",
+            "Tool fs.read is paused for review.",
+            "tool fs.read · dig digest…",
             "Ctrl+n deny",
         ],
     );
@@ -9600,13 +9639,13 @@ fn assert_operator_sidebar_expanded(
     let sidebar_text = operator_sidebar_text(app);
     let rendered = render_live_lines(app, 100, 30);
 
-    assert!(
-        sidebar.width > compact_width,
-        "expanded operator rail should grow beyond compact width"
+    assert_eq!(
+        sidebar.width, compact_width,
+        "persistent operator rail width should stay fixed"
     );
     assert_eq!(plan.wheel_hit_areas.overlay, Some(sidebar));
     assert!(sidebar_text.contains(expected_marker));
-    assert!(!sidebar_text.contains("No operator activity yet"));
+    assert!(!sidebar_text.contains("No operator activity now"));
     assert!(rendered.contains(expected_marker));
     assert!(rendered.contains("harness-tui · v0.1.0"));
 }
@@ -9701,20 +9740,20 @@ fn layout_plan_primary_geometry_docks_live_details_sidebar() {
 
     let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 100, 30));
 
-    assert_eq!(plan.shell, ratatui::layout::Rect::new(2, 0, 96, 29));
+    assert_eq!(plan.shell, ratatui::layout::Rect::new(0, 0, 100, 29));
     assert_eq!(
         plan.transcript,
-        Some(ratatui::layout::Rect::new(2, 0, 61, 25))
+        Some(ratatui::layout::Rect::new(0, 0, 57, 26))
     );
     assert_eq!(
         plan.operator_sidebar,
-        Some(ratatui::layout::Rect::new(64, 0, 34, 25))
+        Some(ratatui::layout::Rect::new(58, 0, 42, 29))
     );
     assert_eq!(plan.details_overlay, None);
-    assert_eq!(plan.status, Some(ratatui::layout::Rect::new(2, 25, 96, 1)));
+    assert_eq!(plan.status, Some(ratatui::layout::Rect::new(0, 26, 57, 1)));
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(2, 26, 96, 3))
+        Some(ratatui::layout::Rect::new(0, 27, 57, 2))
     );
 }
 
@@ -9728,19 +9767,19 @@ fn layout_plan_minimum_geometry_stacks_live_details_drawer() {
 
     let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 80, 24));
 
-    assert_eq!(plan.shell, ratatui::layout::Rect::new(1, 1, 78, 22));
+    assert_eq!(plan.shell, ratatui::layout::Rect::new(2, 1, 76, 22));
     assert_eq!(
         plan.transcript,
-        Some(ratatui::layout::Rect::new(1, 1, 78, 19))
+        Some(ratatui::layout::Rect::new(2, 1, 76, 19))
     );
     assert_eq!(
         plan.details_overlay,
-        Some(ratatui::layout::Rect::new(45, 1, 34, 19))
+        Some(ratatui::layout::Rect::new(44, 1, 34, 19))
     );
-    assert_eq!(plan.status, Some(ratatui::layout::Rect::new(1, 20, 78, 1)));
+    assert_eq!(plan.status, Some(ratatui::layout::Rect::new(2, 20, 76, 1)));
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(1, 21, 78, 2))
+        Some(ratatui::layout::Rect::new(2, 21, 76, 2))
     );
 }
 
@@ -9856,7 +9895,7 @@ fn completed_shell_uses_disabled_quiet_composer() {
         100,
         30,
         "session shell preserved",
-        Some("ctrl+p commands"),
+        None,
         "Tab focus",
     );
 
@@ -9947,6 +9986,9 @@ fn assert_live_shell_document_composer_contract(
     let rendered = render_live_lines(app, width, height);
     assert_live_shell_frame_invariants(&rendered, width, height);
 
+    let plan =
+        layout::FrameLayoutPlan::for_app(app, ratatui::layout::Rect::new(0, 0, width, height));
+    let dock_width = usize::from(plan.dock.expect("live shell dock layout").composer.width);
     let lines = rendered.lines().collect::<Vec<_>>();
     let status_row = find_line_containing(&lines, status_marker).unwrap_or_else(|| {
         panic!("missing status marker {status_marker:?} in live shell\n{rendered}")
@@ -9972,7 +10014,7 @@ fn assert_live_shell_document_composer_contract(
     assert!(
         lines[status_row + 1..composer_first_row]
             .iter()
-            .all(|line| !line.chars().any(char::is_alphanumeric)),
+            .all(|line| !line.chars().take(dock_width).any(char::is_alphanumeric)),
         "rows between status and composer should stay quiet\n{rendered}"
     );
     assert!(
@@ -10040,8 +10082,8 @@ fn assert_replay_read_only_composer_contract(
         "replay identity should sit in header context\n{rendered}"
     );
     assert!(
-        line_has_divider(lines[divider_row]),
-        "replay composer should keep the quiet divider\n{rendered}"
+        !lines[divider_row].chars().any(char::is_alphanumeric),
+        "replay composer should keep a quiet spacer before the read-only rail\n{rendered}"
     );
     assert_eq!(
         hint_row,
@@ -10228,9 +10270,13 @@ fn assert_quiet_span(
     rendered: &str,
 ) {
     assert!(
-        lines[start..end_exclusive]
-            .iter()
-            .all(|line| !line.chars().any(char::is_alphanumeric)),
+        lines[start..end_exclusive].iter().all(|line| {
+            let transcript_lane = line
+                .find("    ")
+                .map(|index| &line[..index])
+                .unwrap_or_else(|| line.split('│').next().unwrap_or(line));
+            !transcript_lane.chars().any(char::is_alphanumeric)
+        }),
         "{label}: separator rows should stay free of competing transcript content\n{rendered}"
     );
 }
@@ -10456,10 +10502,11 @@ fn operator_sidebar_uses_secondary_quiet_chrome() {
     let start = row[..start].chars().count();
     let end = start + title.chars().count();
 
-    assert!(row[..row.find(title).expect("sidebar title bytes")].contains('│'));
+    assert!(!row[..row.find(title).expect("sidebar title bytes")].contains('│'));
+    assert!(!row[..row.find(title).expect("sidebar title bytes")].contains('┃'));
     assert!(bg[start..end]
         .iter()
-        .all(|color| *color == theme.surface.shell));
+        .all(|color| *color == theme.surface.panel));
     assert!(!rendered.contains('┌'));
     assert!(!rendered.contains('┐'));
     assert!(!rendered.contains('└'));
@@ -10473,10 +10520,10 @@ fn operator_sidebar_uses_explicit_empty_states() {
     let sidebar = operator_sidebar_text(&app);
     let lines = sidebar.lines().collect::<Vec<_>>();
 
-    assert!(lines.contains(&"No operator activity yet"));
+    assert!(lines.contains(&"No operator activity now"));
     assert!(!lines.iter().any(|line| matches!(
         *line,
-        "Context" | "MCP" | "LSP" | "Todo · 0" | "Modified Files · 0"
+        "Context" | "MCP" | "LSP" | "Pending Permissions · 0" | "Todo · 0" | "Modified Files · 0"
     )));
 }
 
@@ -10499,10 +10546,10 @@ fn operator_sidebar_preserves_section_order_and_copy() {
     assert!(sidebar.contains("tool_call_1 · tool:fs.read · system/n/a"));
 
     let empty = operator_sidebar_text(&app::AppState::new_live(None, false, None));
-    assert!(empty.contains("No operator activity yet"));
+    assert!(empty.contains("No operator activity now"));
     assert!(!empty.lines().any(|line| matches!(
         line,
-        "Context" | "MCP" | "LSP" | "Todo · 0" | "Modified Files · 0"
+        "Context" | "MCP" | "LSP" | "Pending Permissions · 0" | "Todo · 0" | "Modified Files · 0"
     )));
 
     let rendered = render_live_lines(&app, 160, 48);
@@ -10621,18 +10668,18 @@ fn review_surfaces_restore_panel_chrome() {
 
     run_palette_command(&mut live, "open_event_log");
     let events_rendered = render_live_lines(&live, 100, 30);
-    assert!(events_rendered.contains('│'));
-    assert!(events_rendered.contains('┌'));
+    assert!(!events_rendered.contains('│'));
+    assert!(!events_rendered.contains('┌'));
     assert!(events_rendered.contains("Event details"));
 
     run_palette_command(&mut live, "open_diff_review");
     let diff_rendered = render_live_lines(&live, 100, 30);
-    assert!(diff_rendered.contains('│'));
-    assert!(diff_rendered.contains('┌'));
+    assert!(!diff_rendered.contains('│'));
+    assert!(!diff_rendered.contains('┌'));
     assert!(diff_rendered.contains("Diff"));
 
     live.handle_key(key(crossterm::event::KeyCode::Char('?')));
     let help_rendered = render_live_lines(&live, 100, 30);
-    assert!(help_rendered.contains('┌'));
+    assert!(!help_rendered.contains('┌'));
     assert!(help_rendered.contains("Help"));
 }

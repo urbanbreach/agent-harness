@@ -8,7 +8,7 @@ No operator: true
 Enter send: true
 focus_marker: Continued · run
 focus_pixels_blake3: d0e7937ef952392a54146a77f01d15bd2f52ffe49b513460c2c7852521a028b0
-focus_region_cells: row=2, col=135, height=1, width=18
+focus_region_cells: row=2, col=130, height=1, width=18
 image: pty_continue_quiescent_session.png
 manifest_json: pty-manifests/continue_session/manifest.json
 manifest_jsonl: pty-manifests/continue_session/manifest.jsonl
