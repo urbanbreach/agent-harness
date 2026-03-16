@@ -8,8 +8,8 @@ Modified Files: true
 demo.txt: true
 ready for next turn: true
 focus_marker: Modified Files
-focus_pixels_blake3: 1b81464ebf2da2aae4598cf05849227170191c22aae2fd86315328e769f504c5
-focus_region_cells: row=6, col=117, height=6, width=16
+focus_pixels_blake3: a3030eaa02da878fbbd82a5aa8c648185f9bd565f69d29bf853c21f2a97a0c5b
+focus_region_cells: row=8, col=114, height=6, width=16
 image: pty_operator_sidebar_primary.png
 manifest_json: pty-manifests/operator_sidebar/manifest.json
 manifest_jsonl: pty-manifests/operator_sidebar/manifest.jsonl

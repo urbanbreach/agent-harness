@@ -1828,7 +1828,8 @@ impl AppState {
                     state.summary = format!("decision required · {}", permission.summary);
                     state.detail = Some(permission.summary);
                     state.composer_hint =
-                        "Draft preserved under the permission checkpoint — deny to stay fail-closed, or allow once after reviewing the request.".to_string();
+                        "Draft preserved under the checkpoint — deny stays fail-closed; allow once only after review."
+                            .to_string();
                 }
             }
             RuntimeStateKind::PermissionPending => {
@@ -1839,7 +1840,8 @@ impl AppState {
                     );
                     state.detail = Some(permission.summary);
                     state.composer_hint =
-                        "Draft preserved while Harness records the permission decision. Wait for confirmation before sending another turn.".to_string();
+                        "Draft preserved while Harness records the decision. Wait for confirmation before sending again."
+                            .to_string();
                 }
             }
             RuntimeStateKind::Degraded => {
@@ -2053,6 +2055,13 @@ impl AppState {
 
     pub fn operator_sidebar_run_identity(&self) -> String {
         format!("run {}", self.run_id().unwrap_or("unknown"))
+    }
+
+    pub fn operator_sidebar_pending_permission_lines(&self) -> Vec<String> {
+        self.transcript_pending_permissions()
+            .into_iter()
+            .map(|(_, summary)| summary)
+            .collect()
     }
 
     pub fn operator_sidebar_todo_lines(&self) -> Vec<String> {
@@ -2410,7 +2419,8 @@ impl AppState {
     }
 
     fn operator_rail_has_sections(&self) -> bool {
-        !self.operator_sidebar_todo_lines().is_empty()
+        !self.operator_sidebar_pending_permission_lines().is_empty()
+            || !self.operator_sidebar_todo_lines().is_empty()
             || !self.operator_sidebar_modified_files().is_empty()
     }
 
@@ -2448,6 +2458,82 @@ impl AppState {
 
     pub fn permission_submission_pending(&self, permission_id: &str) -> bool {
         self.submitted_permission_id.as_deref() == Some(permission_id)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn exact_test_overlay_stack_orders_permission_above_commands_and_slash() {
+        fn permission_event(seq: u64, permission_id: &str, tool_call_id: &str) -> EventEnvelopeV1 {
+            EventEnvelopeV1 {
+                schema_version: harness_core::event::SCHEMA_VERSION,
+                event_id: format!("evt_permission_overlay_{seq:04}"),
+                seq,
+                run_id: "run_overlay_stack_exact".to_string(),
+                mono_ms: seq,
+                ts: Some("2026-02-03T12:00:00Z".to_string()),
+                actor: harness_core::event::EventActor::new(
+                    ActorKind::System,
+                    Some("overlay-stack-exact".to_string()),
+                ),
+                correlation_id: Some(permission_id.to_string()),
+                causation_id: None,
+                stream_key: None,
+                payload: EventV1::PermissionRequested(
+                    harness_core::event::PermissionRequestedEvent {
+                        permission_id: permission_id.to_string(),
+                        kind: "edit_fs".to_string(),
+                        tool_call_id: Some(tool_call_id.to_string()),
+                        summary: "permission summary".to_string(),
+                        request_digest: format!("digest-{permission_id}"),
+                        timeout_ms: 30_000,
+                        default_decision: harness_core::event::PermissionDecision::Deny,
+                    },
+                ),
+            }
+        }
+
+        let mut palette_app = AppState::new_live(None, false, None);
+        palette_app.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
+        assert_eq!(
+            palette_app.overlay_stack().top(),
+            Some(OverlayKind::CommandPalette)
+        );
+
+        palette_app.ingest_event(permission_event(
+            1,
+            "perm_overlay_priority_palette",
+            "tc_overlay_priority_palette",
+        ));
+
+        assert_eq!(
+            palette_app.overlay_stack().top(),
+            Some(OverlayKind::PermissionModal)
+        );
+        assert!(!palette_app.palette_visible);
+
+        let mut slash_app = AppState::new_live(None, false, None);
+        slash_app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        assert!(slash_app.slash_visible);
+        assert_eq!(slash_app.overlay_stack().top(), None);
+
+        slash_app.ingest_event(permission_event(
+            1,
+            "perm_overlay_priority_slash",
+            "tc_overlay_priority_slash",
+        ));
+
+        assert!(!slash_app.slash_visible);
+        assert_eq!(
+            slash_app.overlay_stack().top(),
+            Some(OverlayKind::PermissionModal)
+        );
+
+        slash_app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        assert_eq!(slash_app.prompt_buffer, "/");
+        assert!(!slash_app.slash_visible);
+        assert_eq!(
+            slash_app.overlay_stack().top(),
+            Some(OverlayKind::PermissionModal)
+        );
     }
 
     pub fn take_reload_requested(&mut self) -> bool {
@@ -4068,31 +4154,7 @@ mod tests {
 
     #[test]
     fn overlay_stack_orders_permission_above_commands_and_slash() {
-        let mut app = AppState::new_live(None, false, None);
-        app.handle_key(key_with_modifiers(
-            KeyCode::Char('p'),
-            KeyModifiers::CONTROL,
-        ));
-        assert_eq!(app.overlay_stack().top(), Some(OverlayKind::CommandPalette));
-
-        app.ingest_event(envelope(
-            1,
-            "req_overlay_priority",
-            EventV1::PermissionRequested(PermissionRequestedEvent {
-                permission_id: "perm_overlay_priority".to_string(),
-                kind: "edit_fs".to_string(),
-                tool_call_id: Some("tc_overlay_priority".to_string()),
-                summary: "permission summary".to_string(),
-                request_digest: "digest-overlay-priority".to_string(),
-                timeout_ms: 30_000,
-                default_decision: harness_core::event::PermissionDecision::Deny,
-            }),
-        ));
-
-        assert_eq!(
-            app.overlay_stack().top(),
-            Some(OverlayKind::PermissionModal)
-        );
+        AppState::exact_test_overlay_stack_orders_permission_above_commands_and_slash();
     }
 
     #[test]
