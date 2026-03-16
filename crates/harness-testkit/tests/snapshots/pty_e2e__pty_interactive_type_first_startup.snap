@@ -5,8 +5,8 @@ expression: "checkpoint_visual_snapshot(&startup_checkpoint,\nLIVE_STATE_FIXTURE
 Hello from PTY: true
 Ctrl+P open: true
 focus_marker: Hello from PTY
-focus_pixels_blake3: 9780c173c018a33a103c58e1eca069d024eb813b4a3f139f6ba3465ec82d8566
-focus_region_cells: row=20, col=1, height=4, width=24
+focus_pixels_blake3: 1cb327032df93f7b1f592d181ac2894286c7a02be2c1727bf92bd224ece23577
+focus_region_cells: row=19, col=4, height=4, width=24
 image: pty_interactive_type_first_startup.png
 manifest_json: pty-manifests/live_shell/manifest.json
 manifest_jsonl: pty-manifests/live_shell/manifest.jsonl

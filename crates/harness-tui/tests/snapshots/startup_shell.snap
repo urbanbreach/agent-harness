@@ -6,15 +6,13 @@
 
 
 
-               ┌Home────────────────────────────────────────────────────────────────┐
-               │  Harness                                                           │
-               │  Preset worker · mock/model-1 · Demo                               │
-               │  dispatch a fresh run from the draft below                         │
-               │  Type to quick-start a fresh run · Ctrl+P opens session tools      │
-               │                                                                    │
-               │                                                                    │
-               │                                                                    │
-               └────────────────────────────────────────────────────────────────────┘
+
+
+
+                                               Harness
+                                 Preset worker · mock/model-1 · Demo
+                              dispatch a fresh run from the draft below
+                    Type to quick-start a fresh run · Ctrl+P opens session tools
 
 
 
@@ -23,8 +21,10 @@
 
 
 
-   Ready   startup ready · type below or use Ctrl+P for saved runs
-  ────────────────────────────────────────────────────────────────────────────────────────────────
-  ▎ Type to start a new session.
-    shift+enter newline
-  ↑ prev  ↓ next  Enter select  Tab composer  Ctrl+p palette  q quit
+
+       startup ready · type below or use Ctrl+P for saved runs
+
+
+       ▎ Type to start a new session.
+         shift+enter newline
+↑ prev  ↓ next  Enter select  Tab composer  Ctrl+p palette  q quit

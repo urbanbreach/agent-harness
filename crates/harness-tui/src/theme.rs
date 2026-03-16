@@ -485,72 +485,72 @@ impl Theme {
             details_sidebar_width: 34,
             transcript_min_width: 28,
             permission_modal_width: 58,
-            centered_content_width: 78,
+            centered_content_width: 76,
             content_margin_x: 1,
         },
         split: LiveShellLayout {
             target: ShellGeometryTarget::Split,
             activity_drawer_width: 18,
             inspector_drawer_width: 24,
-            details_sidebar_width: 32,
+            details_sidebar_width: 34,
             transcript_min_width: 32,
             permission_modal_width: 62,
-            centered_content_width: 88,
-            content_margin_x: 1,
+            centered_content_width: 86,
+            content_margin_x: 0,
         },
         primary: LiveShellLayout {
             target: ShellGeometryTarget::Primary,
             activity_drawer_width: 24,
             inspector_drawer_width: 28,
-            details_sidebar_width: 40,
+            details_sidebar_width: 42,
             transcript_min_width: 40,
             permission_modal_width: 66,
-            centered_content_width: 92,
-            content_margin_x: 2,
+            centered_content_width: 90,
+            content_margin_x: 0,
         },
         lifecycle: LifecycleSurfaceTokens {
             minimum: LifecycleSurfaceLayout {
                 target: ShellGeometryTarget::Minimum,
                 startup_card: LifecycleCardTokens {
                     width: 70,
-                    height: 9,
+                    height: 12,
                 },
                 post_run_card: LifecycleCardTokens {
                     width: 72,
-                    height: 10,
+                    height: 12,
                 },
                 overlay: LifecycleOverlayTokens {
-                    width: 78,
+                    width: 76,
                     height: 11,
                 },
             },
             split: LifecycleSurfaceLayout {
                 target: ShellGeometryTarget::Split,
                 startup_card: LifecycleCardTokens {
-                    width: 72,
-                    height: 9,
+                    width: 92,
+                    height: 13,
                 },
                 post_run_card: LifecycleCardTokens {
-                    width: 74,
-                    height: 10,
+                    width: 76,
+                    height: 12,
                 },
                 overlay: LifecycleOverlayTokens {
-                    width: 88,
+                    width: 86,
                     height: 11,
                 },
             },
             primary: LifecycleSurfaceLayout {
                 target: ShellGeometryTarget::Primary,
                 startup_card: LifecycleCardTokens {
-                    width: 74,
-                    height: 9,
+                    width: 82,
+                    height: 12,
                 },
                 post_run_card: LifecycleCardTokens {
-                    width: 76,
-                    height: 10,
+                    width: 78,
+                    height: 12,
                 },
                 overlay: LifecycleOverlayTokens {
-                    width: 92,
+                    width: 90,
                     height: 11,
                 },
             },
@@ -658,7 +658,7 @@ impl Theme {
                     },
                     card: ChromeTokens {
                         mode: ChromeMode::Card,
-                        surface: self.surface.panel_elevated,
+                        surface: self.surface.overlay,
                         border: DividerTokens {
                             intensity: DividerIntensity::Subtle,
                             color: Some(self.border.subtle),
@@ -712,7 +712,7 @@ impl Theme {
                         chrome: ChromeMode::Card,
                         divider: DividerIntensity::Subtle,
                         density: SpacingDensity::Compact,
-                        surface: self.surface.panel_elevated,
+                        surface: self.surface.overlay,
                         border: Some(self.border.subtle),
                         padding_x: self.live_shell.rhythm.composer_padding_x,
                     },
@@ -830,10 +830,7 @@ mod tests {
             theme.surface.shell
         );
         assert_eq!(tokens.semantic.chrome.divided.surface, theme.surface.panel);
-        assert_eq!(
-            tokens.semantic.chrome.card.surface,
-            theme.surface.panel_elevated
-        );
+        assert_eq!(tokens.semantic.chrome.card.surface, theme.surface.overlay);
         assert_ne!(theme.surface.shell, theme.surface.panel);
         assert_ne!(theme.surface.panel, theme.surface.panel_elevated);
         assert_ne!(theme.surface.shell, theme.surface.panel_elevated);
@@ -930,10 +927,7 @@ mod tests {
             tokens.semantic.dividers.subtle
         );
         assert_eq!(tokens.semantic.chrome.card.mode, ChromeMode::Card);
-        assert_eq!(
-            tokens.semantic.chrome.card.surface,
-            theme.surface.panel_elevated
-        );
+        assert_eq!(tokens.semantic.chrome.card.surface, theme.surface.overlay);
         assert_eq!(
             tokens.semantic.chrome.card.border,
             tokens.semantic.dividers.subtle
@@ -977,7 +971,7 @@ mod tests {
         );
         assert_eq!(
             tokens.semantic.composer.minimum.surface,
-            theme.surface.panel_elevated
+            theme.surface.overlay
         );
         assert_eq!(
             tokens.semantic.composer.minimum.border,
@@ -1071,28 +1065,34 @@ mod tests {
         assert_eq!(primary_lifecycle.target, ShellGeometryTarget::Primary);
         assert_eq!(split_lifecycle.target, ShellGeometryTarget::Split);
         assert_eq!(minimum_lifecycle.target, ShellGeometryTarget::Minimum);
-        assert_eq!(minimum.centered_content_width, 78);
+        assert_eq!(minimum.centered_content_width, 76);
         assert_eq!(minimum.content_margin_x, 1);
         assert_eq!(minimum.details_sidebar_width, 34);
         assert_eq!(minimum_lifecycle.startup_card.width, 70);
+        assert_eq!(minimum_lifecycle.startup_card.height, 12);
         assert_eq!(minimum_lifecycle.post_run_card.width, 72);
-        assert_eq!(minimum_lifecycle.overlay.width, 78);
+        assert_eq!(minimum_lifecycle.post_run_card.height, 12);
+        assert_eq!(minimum_lifecycle.overlay.width, 76);
         assert_eq!(theme.live_shell.rhythm.composer_padding_x, 1);
         assert_eq!(theme.live_shell.rhythm.footer_prefix_gap, 2);
         assert_eq!(minimum.permission_modal_width, 58);
-        assert_eq!(split.centered_content_width, 88);
-        assert_eq!(split.content_margin_x, 1);
-        assert_eq!(split.details_sidebar_width, 32);
-        assert_eq!(split_lifecycle.startup_card.width, 72);
-        assert_eq!(split_lifecycle.post_run_card.width, 74);
-        assert_eq!(split_lifecycle.overlay.width, 88);
+        assert_eq!(split.centered_content_width, 86);
+        assert_eq!(split.content_margin_x, 0);
+        assert_eq!(split.details_sidebar_width, 34);
+        assert_eq!(split_lifecycle.startup_card.width, 92);
+        assert_eq!(split_lifecycle.startup_card.height, 13);
+        assert_eq!(split_lifecycle.post_run_card.width, 76);
+        assert_eq!(split_lifecycle.post_run_card.height, 12);
+        assert_eq!(split_lifecycle.overlay.width, 86);
         assert_eq!(split.permission_modal_width, 62);
-        assert_eq!(primary.centered_content_width, 92);
-        assert_eq!(primary.content_margin_x, 2);
-        assert_eq!(primary.details_sidebar_width, 40);
-        assert_eq!(primary_lifecycle.startup_card.width, 74);
-        assert_eq!(primary_lifecycle.post_run_card.width, 76);
-        assert_eq!(primary_lifecycle.overlay.width, 92);
+        assert_eq!(primary.centered_content_width, 90);
+        assert_eq!(primary.content_margin_x, 0);
+        assert_eq!(primary.details_sidebar_width, 42);
+        assert_eq!(primary_lifecycle.startup_card.width, 82);
+        assert_eq!(primary_lifecycle.startup_card.height, 12);
+        assert_eq!(primary_lifecycle.post_run_card.width, 78);
+        assert_eq!(primary_lifecycle.post_run_card.height, 12);
+        assert_eq!(primary_lifecycle.overlay.width, 90);
         assert_eq!(primary.permission_modal_width, 66);
         assert_eq!(theme.live_shell.rhythm.status_separator, 2);
         assert_eq!(theme.live_shell.heights.status, 1);
@@ -1125,7 +1125,7 @@ mod tests {
                 ShellGeometry::MINIMUM.height,
             ),
         );
-        assert_eq!(minimum.shell.width, 78);
+        assert_eq!(minimum.shell.width, 76);
 
         let primary = crate::layout::FrameLayoutPlan::for_app(
             &app,
@@ -1136,11 +1136,11 @@ mod tests {
                 ShellGeometry::PRIMARY.height,
             ),
         );
-        assert_eq!(primary.shell.width, 96);
+        assert_eq!(primary.shell.width, 100);
 
         let split =
             crate::layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 96, 40));
-        assert_eq!(split.shell.width, 94);
+        assert_eq!(split.shell.width, 96);
     }
 
     #[test]

@@ -2,23 +2,23 @@
 
 
 
+     Session
 
 
 
-        ┌Session───────────────────────────────────────────────────────┐
-      ┌ Degraded   Recovery in progress──────────────────────────────────┐
-      │Live updates are catching up before sending resumes.              │
-      │live stream lagged by 2; replaying from seq 1                     │
-      │Draft locally until recovery completes.                           │
-      └──────────────────────────────────────────────────────────────────┘
-        └──────────────────────────────────────────────────────────────┘
+       Degraded   Recovery in progress
+
+       Live updates are catching up before sending resumes.
+       live stream lagged by 2; replaying from seq 1
+       Draft locally until recovery completes.
+                 Enter send · Shift+Enter newline · ↑/↓ history
 
 
 
 
 
 
-  Degraded   recovery in progress · Sending paused · live stream lagged by 2; r
+   Degraded   recovery in progress · Sending paused · live stream lagged by 2;
 
- ▎ Draft preserved locally while recovery completes.
- Ctrl+p commands  ? shortcuts  q quit
+    ▎ Draft preserved locally while recovery completes.
+  Ctrl+p commands  ? shortcuts  q quit

@@ -6,25 +6,13 @@
 
 
 
-               ┌Home────────────────────────────────────────────────────────────────┐
-    ┌Command palette───────────────────────────────────────────────────────────────────────────┐
-    │ > █                                                                                      │
-    │ New session  Start a fresh live session                                                  │
-    │ Continue session  Continue a prior session when resumable                                │
-    │ Replay session  Replay a previous session as read-only                                   │
-    │ Quit  Quit the application                                                               │
-    │                                                                                          │
-    │                                                                                          │
-    │                                                                                          │
-    │                                                                                          │
-    └──────────────────────────────────────────────────────────────────────────────────────────┘
 
 
 
+                 Command palette
 
-
-   Ready   startup ready · type below or use Ctrl+P for saved runs
-  ────────────────────────────────────────────────────────────────────────────────────────────────
-  ▎ Type to start a new session.
-    shift+enter newline
-  ↑ prev  ↓ next  Enter select  Tab composer  Ctrl+p palette  q quit
+                   > █
+                   › New session  Start a fresh live session
+                     Continue session  Continue a prior session when resumable
+                     Replay session  Replay a previous session as read-only
+                     Quit  Quit the application

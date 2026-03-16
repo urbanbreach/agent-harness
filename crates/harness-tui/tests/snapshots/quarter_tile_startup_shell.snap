@@ -4,21 +4,20 @@
 
 
 
-     ┌Home────────────────────────────────────────────────────────────────┐
-     │  Harness                                                           │
-     │  Preset worker · mock/model-1 · Demo                               │
-     │  dispatch a fresh run from the draft below                         │
-     │  Type to quick-start a fresh run · Ctrl+P opens session tools      │
-     │                                                                    │
-     │                                                                    │
-     │                                                                    │
-     └────────────────────────────────────────────────────────────────────┘
+
+
+
+                                     Harness
+                       Preset worker · mock/model-1 · Demo
+                    dispatch a fresh run from the draft below
+          Type to quick-start a fresh run · Ctrl+P opens session tools
 
 
 
 
 
-  Ready   startup ready · type below or use Ctrl+P for saved runs
- ──────────────────────────────────────────────────────────────────────────────
- ▎ Type to start a new session.
- ↑ prev  ↓ next  Enter select  q quit
+
+    startup ready · type below or use Ctrl+P for saved runs
+
+    ▎ Type to start a new session.
+  ↑ prev  ↓ next  Enter select  q quit

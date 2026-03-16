@@ -36,15 +36,13 @@ mod ui_transcript;
 use ui_chrome::{
     chromeless_shell_section, compact_inline_payload, elevated_card_surface,
     interruptive_modal_block, muted_meta_style, panel_block, panel_style, render_footer,
-    render_header, render_live_shell_anchor, render_prompt_pane, render_status_strip,
-    render_unified_bottom_dock, request_id_label, runtime_state_color, status_badge,
-    subdued_payload_style, tool_detail_label_style, tool_state_summary, tool_status_tokens,
-    transcript_label_style, transcript_prefix_style, truncate_plain_text, ChromeFrame,
+    render_header, render_live_shell_anchor, render_unified_bottom_dock, request_id_label,
+    runtime_state_color, status_badge, subdued_payload_style, tool_detail_label_style,
+    tool_state_summary, tool_status_tokens, transcript_label_style, transcript_prefix_style,
+    truncate_plain_text, ChromeFrame,
 };
-use ui_lifecycle::{
-    live_empty_state_visible, render_live_empty_state, render_startup_lifecycle_surface,
-    startup_shell_visible,
-};
+pub(super) use ui_lifecycle::render_startup_lifecycle_surface;
+use ui_lifecycle::{live_empty_state_visible, render_live_empty_state, startup_shell_visible};
 use ui_overlays::render_overlays;
 use ui_secondary::{
     render_diff_tab, render_events_tab, render_help_tab, render_live_details_overlay,
@@ -59,6 +57,23 @@ pub(crate) use ui_chrome::{
     exact_test_live_control_dock_renders_shared_surface,
 };
 #[cfg(test)]
+pub(crate) fn exact_test_replay_prompt_pane_is_visibly_read_only() {
+    use ratatui::{backend::TestBackend, Terminal};
+
+    let app = AppState::new_replay(std::path::PathBuf::from("/tmp/replay-session"), Vec::new());
+
+    let backend = TestBackend::new(100, 24);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| render_app(frame, &app))
+        .expect("draw frame");
+    let debug = format!("{:?}", terminal.backend().buffer());
+    assert!(debug.contains("Replay · read-only"));
+    assert!(debug.contains("Replay is read-only"));
+    assert!(!debug.contains("Type a prompt for the next turn"));
+}
+
+#[cfg(test)]
 pub(crate) fn exact_test_unified_bottom_dock_uses_single_layout_entrypoint() {
     fn count_occurrences(haystack: &str, needle: &str) -> usize {
         haystack.matches(needle).count()
@@ -71,13 +86,13 @@ pub(crate) fn exact_test_unified_bottom_dock_uses_single_layout_entrypoint() {
             "render_unified_bottom_dock(frame, app, dock, theme);"
         )
         .saturating_sub(1),
-        2,
-        "live and replay shells should each route through the unified dock renderer"
+        3,
+        "startup, live, and replay shells should each route through the unified dock renderer"
     );
     assert_eq!(
         count_occurrences(source, "let Some(dock) = plan.dock else {").saturating_sub(1),
-        2,
-        "live and replay shells should consume the shared dock layout entrypoint"
+        3,
+        "startup, live, and replay shells should consume the shared dock layout entrypoint"
     );
     assert_eq!(
         count_occurrences(
@@ -106,13 +121,16 @@ pub(crate) use ui_secondary::operator_sidebar_text_for_test;
 pub(crate) use ui_secondary::orchestration_card_text_for_test;
 #[cfg(test)]
 pub(crate) use ui_secondary::{
+    exact_test_operator_rail_low_activity_presentation_prefers_primary_stack,
     exact_test_operator_rail_section_model_builds_pinned_summary,
     exact_test_operator_rail_section_model_hides_empty_sources_but_preserves_order,
+    exact_test_operator_rail_section_model_surfaces_pending_permissions_first,
 };
 #[cfg(test)]
 use ui_transcript::build_transcript_lines;
 #[cfg(test)]
 pub(crate) use ui_transcript::{
+    exact_test_transcript_answer_precedes_nested_context,
     exact_test_transcript_follow_mode_uses_measured_surface_heights,
     exact_test_transcript_pending_permission_stays_after_last_activity,
     exact_test_transcript_section_model_keeps_nested_tool_and_error_blocks,
@@ -191,6 +209,70 @@ pub(crate) fn exact_test_compact_operator_rail_does_not_capture_wheel() {
     assert_eq!(plan.wheel_hit_areas.overlay, None);
     assert_eq!(plan.wheel_hit_areas.inspector, None);
     assert_eq!(hovered_wheel_target(&app, area, column, row), None);
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_persistent_operator_sidebar_uses_panel_gutter() {
+    use ratatui::{backend::TestBackend, Terminal};
+
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(harness_core::event::EventEnvelopeV1 {
+        schema_version: harness_core::event::SCHEMA_VERSION,
+        event_id: "evt_sidebar_panel".to_string(),
+        seq: 1,
+        run_id: "run_sidebar_panel".to_string(),
+        mono_ms: 1,
+        ts: None,
+        actor: harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::System,
+            Some("ui-tests".to_string()),
+        ),
+        correlation_id: None,
+        causation_id: None,
+        stream_key: Some("run:run_sidebar_panel".to_string()),
+        payload: harness_core::event::EventV1::EditApplied(harness_core::event::EditAppliedEvent {
+            edit_id: "edit_sidebar_panel".to_string(),
+            path: "demo.txt".to_string(),
+            new_file_digest: "digest-sidebar-panel".to_string(),
+            diff_rel_path: None,
+            diff_digest: None,
+        }),
+    });
+
+    let theme = Theme::default();
+    let area = Rect::new(0, 0, 100, 30);
+    let plan = FrameLayoutPlan::for_app(&app, area);
+    let sidebar = plan.operator_sidebar.expect("persistent operator sidebar");
+    let transcript = plan.transcript.expect("transcript area");
+
+    let backend = TestBackend::new(area.width, area.height);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| render_app(frame, &app))
+        .expect("draw frame");
+
+    let buffer = terminal.backend().buffer();
+    let gutter_x = transcript.x.saturating_add(transcript.width);
+    let sample_y = sidebar.y.saturating_add(1);
+
+    assert_eq!(buffer[(gutter_x, sample_y)].bg, theme.surface.shell);
+    assert_eq!(buffer[(gutter_x, sample_y)].symbol(), " ");
+    assert_eq!(buffer[(sidebar.x, sample_y)].bg, theme.surface.panel);
+    assert_eq!(buffer[(sidebar.x, sample_y)].symbol(), " ");
+    assert_eq!(
+        buffer[(sidebar.x.saturating_add(1), sample_y)].bg,
+        theme.surface.panel
+    );
+    assert_eq!(
+        buffer[(sidebar.x.saturating_add(1), sample_y)].symbol(),
+        " "
+    );
+    assert_eq!(
+        buffer[(sidebar.x.saturating_add(2), sample_y)].bg,
+        theme.surface.panel
+    );
+    assert_ne!(buffer[(sidebar.x, sample_y)].symbol(), "│");
+    assert_ne!(buffer[(sidebar.x, sample_y)].symbol(), "┃");
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -297,17 +379,13 @@ fn render_startup_session_surface(
     let Some(transcript_area) = plan.transcript else {
         return;
     };
-    let Some(status_area) = plan.status else {
-        return;
-    };
-    let Some(composer_area) = plan.composer else {
+    let Some(dock) = plan.dock else {
         return;
     };
 
     frame.render_widget(chromeless_shell_section(theme), plan.shell);
-    render_transcript_pane(frame, app, transcript_area, theme);
-    render_status_strip(frame, app, status_area, theme);
-    render_prompt_pane(frame, app, composer_area, theme);
+    render_startup_lifecycle_surface(frame, app, transcript_area, theme);
+    render_unified_bottom_dock(frame, app, dock, theme);
 }
 
 fn render_live_run_shell(frame: &mut Frame, app: &AppState, theme: &Theme, plan: &FrameLayoutPlan) {
@@ -318,24 +396,13 @@ fn render_live_run_shell(frame: &mut Frame, app: &AppState, theme: &Theme, plan:
         return;
     };
     let runtime_state = app.runtime_state();
-    let live_anchor = if matches!(runtime_state.kind, RuntimeStateKind::Ready)
-        && !app.completed_session_shell_active()
-    {
-        None
-    } else {
-        plan.live_anchor
-    };
+    let live_anchor = live_anchor_for_runtime_state(app, runtime_state.kind, plan.live_anchor);
     let transcript_render_area = inset_for_live_anchor(transcript_area, live_anchor);
 
     frame.render_widget(chromeless_shell_section(theme), plan.shell);
     render_transcript_pane(frame, app, transcript_render_area, theme);
     if let Some(operator_sidebar) = plan.operator_sidebar {
-        render_operator_sidebar(
-            frame,
-            app,
-            inset_for_live_anchor(operator_sidebar, live_anchor),
-            theme,
-        );
+        render_operator_sidebar(frame, app, operator_sidebar, theme);
     }
     if let Some(anchor_area) = live_anchor {
         render_live_shell_anchor(frame, app, anchor_area, theme);
@@ -343,6 +410,25 @@ fn render_live_run_shell(frame: &mut Frame, app: &AppState, theme: &Theme, plan:
     render_runtime_state_surface(frame, app, transcript_render_area, theme);
     render_live_details_overlay(frame, app, theme, plan.details_overlay);
     render_unified_bottom_dock(frame, app, dock, theme);
+}
+
+fn live_anchor_for_runtime_state(
+    app: &AppState,
+    runtime_kind: RuntimeStateKind,
+    planned_anchor: Option<Rect>,
+) -> Option<Rect> {
+    if app.completed_session_shell_active() {
+        return planned_anchor;
+    }
+
+    match runtime_kind {
+        RuntimeStateKind::Ready
+        | RuntimeStateKind::Sending
+        | RuntimeStateKind::Streaming
+        | RuntimeStateKind::PermissionBlocked
+        | RuntimeStateKind::PermissionPending => None,
+        _ => planned_anchor,
+    }
 }
 
 fn inset_for_live_anchor(area: Rect, live_anchor: Option<Rect>) -> Rect {
@@ -572,9 +658,9 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use harness_core::event::{
         ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
-        PermissionResolvedEvent, ProviderRequestStartedEvent, ToolCallFinishedEvent,
-        ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent,
-        SCHEMA_VERSION,
+        PermissionResolvedEvent, ProviderRequestFinishedEvent, ProviderRequestStartedEvent,
+        ProviderStreamDeltaEvent, ToolCallFinishedEvent, ToolCallRequestedEvent,
+        ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
     };
 
     fn render_debug(app: &AppState, width: u16, height: u16) -> String {
@@ -622,6 +708,169 @@ mod tests {
     }
 
     #[test]
+    fn live_anchor_stays_hidden_during_active_turn_and_permission_checkpoint_states() {
+        let planned_anchor = Some(Rect::new(0, 0, 80, 1));
+
+        let mut sending = AppState::new_live(None, false, None);
+        sending.handle_key(key(KeyCode::Char('h')));
+        sending.handle_key(key(KeyCode::Enter));
+        assert_eq!(sending.runtime_state().kind, RuntimeStateKind::Sending);
+        assert_eq!(
+            live_anchor_for_runtime_state(&sending, sending.runtime_state().kind, planned_anchor),
+            None
+        );
+
+        sending.ingest_event(envelope(
+            1,
+            "req_anchor_streaming",
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_anchor_streaming".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "hello".to_string(),
+                request_digest: "digest-anchor-streaming".to_string(),
+            }),
+        ));
+        sending.ingest_event(envelope(
+            2,
+            "req_anchor_streaming",
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: "req_anchor_streaming".to_string(),
+                delta: "hello world".to_string(),
+            }),
+        ));
+        assert_eq!(sending.runtime_state().kind, RuntimeStateKind::Streaming);
+        assert_eq!(
+            live_anchor_for_runtime_state(&sending, sending.runtime_state().kind, planned_anchor),
+            None
+        );
+
+        let mut permission = AppState::new_live(None, false, None);
+        permission.ingest_event(envelope(
+            1,
+            "req_anchor_permission",
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_anchor_permission".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "edit the file".to_string(),
+                request_digest: "digest-anchor-permission".to_string(),
+            }),
+        ));
+        permission.ingest_event(envelope(
+            2,
+            "req_anchor_permission",
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_anchor_permission".to_string(),
+                tool_id: "edit.hashline_apply".to_string(),
+                args_summary: r#"{"path":"demo.txt"}"#.to_string(),
+                args_digest: "digest-anchor-permission-args".to_string(),
+            }),
+        ));
+        permission.ingest_event(envelope(
+            3,
+            "req_anchor_permission",
+            EventV1::PermissionRequested(PermissionRequestedEvent {
+                permission_id: "perm_anchor_permission".to_string(),
+                kind: "edit_fs".to_string(),
+                tool_call_id: Some("tc_anchor_permission".to_string()),
+                summary: "Apply hashline edit to demo.txt".to_string(),
+                request_digest: "digest-anchor-permission-request".to_string(),
+                timeout_ms: 30_000,
+                default_decision: harness_core::event::PermissionDecision::Deny,
+            }),
+        ));
+        assert_eq!(
+            permission.runtime_state().kind,
+            RuntimeStateKind::PermissionBlocked
+        );
+        assert_eq!(
+            live_anchor_for_runtime_state(
+                &permission,
+                permission.runtime_state().kind,
+                planned_anchor,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn transcript_debug_places_assistant_answer_before_nested_context() {
+        let mut app = AppState::new_live(None, false, None);
+
+        app.ingest_event(envelope(
+            1,
+            "req_answer_first",
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_answer_first".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "Restyle the transcript shell".to_string(),
+                request_digest: "digest-answer-first".to_string(),
+            }),
+        ));
+        app.ingest_event(envelope(
+            2,
+            "req_answer_first",
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: "req_answer_first".to_string(),
+                delta: "Drafting a document-like plan".to_string(),
+            }),
+        ));
+        app.ingest_event(envelope(
+            3,
+            "req_answer_first",
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_answer_first".to_string(),
+                tool_id: "fs.read".to_string(),
+                args_summary: r#"{"path":"src/ui.rs"}"#.to_string(),
+                args_digest: "digest-answer-first-args".to_string(),
+            }),
+        ));
+        app.ingest_event(envelope(
+            4,
+            "req_answer_first",
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_answer_first".to_string(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("24 lines read from src/ui.rs".to_string()),
+                output_digest: Some("digest-answer-first-output".to_string()),
+            }),
+        ));
+        app.ingest_event(envelope(
+            5,
+            "req_answer_first",
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: "req_answer_first".to_string(),
+                delta: "Found the transcript renderer and the composer chrome.".to_string(),
+            }),
+        ));
+        app.ingest_event(envelope(
+            6,
+            "req_answer_first",
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: "req_answer_first".to_string(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some("digest-answer-first-finished".to_string()),
+            }),
+        ));
+
+        let transcript = transcript_debug(&app);
+        let answer_index = transcript
+            .find("Found the transcript renderer and the composer chrome.")
+            .expect("answer text");
+        let thinking_index = transcript
+            .find("Thinking: · Drafting a document-like plan")
+            .expect("thinking summary");
+        let tool_index = transcript
+            .find("tool fs.read (succeeded) · 24 lines read from src/ui.rs")
+            .expect("tool summary");
+
+        assert!(answer_index < thinking_index);
+        assert!(thinking_index < tool_index);
+    }
+
+    #[test]
     fn theme_provides_default_colors() {
         let theme = Theme::default();
         assert!(matches!(
@@ -636,10 +885,58 @@ mod tests {
 
         let mut default_app = AppState::new_live(None, false, None);
         default_app.live_details_drawer_open = true;
+        default_app.ingest_event(harness_core::event::EventEnvelopeV1 {
+            schema_version: harness_core::event::SCHEMA_VERSION,
+            event_id: "evt_theme_probe_default".to_string(),
+            seq: 1,
+            run_id: "run_theme_probe".to_string(),
+            mono_ms: 1,
+            ts: None,
+            actor: harness_core::event::EventActor::new(
+                harness_core::event::ActorKind::System,
+                Some("ui-tests".to_string()),
+            ),
+            correlation_id: None,
+            causation_id: None,
+            stream_key: Some("run:run_theme_probe".to_string()),
+            payload: harness_core::event::EventV1::EditApplied(
+                harness_core::event::EditAppliedEvent {
+                    edit_id: "edit_theme_probe_default".to_string(),
+                    path: "demo.txt".to_string(),
+                    new_file_digest: "digest-theme-probe-default".to_string(),
+                    diff_rel_path: None,
+                    diff_digest: None,
+                },
+            ),
+        });
         let default_plan = FrameLayoutPlan::for_app(&default_app, area);
 
         let mut themed_app = AppState::new_live(None, false, None);
         themed_app.live_details_drawer_open = true;
+        themed_app.ingest_event(harness_core::event::EventEnvelopeV1 {
+            schema_version: harness_core::event::SCHEMA_VERSION,
+            event_id: "evt_theme_probe_themed".to_string(),
+            seq: 1,
+            run_id: "run_theme_probe".to_string(),
+            mono_ms: 1,
+            ts: None,
+            actor: harness_core::event::EventActor::new(
+                harness_core::event::ActorKind::System,
+                Some("ui-tests".to_string()),
+            ),
+            correlation_id: None,
+            causation_id: None,
+            stream_key: Some("run:run_theme_probe".to_string()),
+            payload: harness_core::event::EventV1::EditApplied(
+                harness_core::event::EditAppliedEvent {
+                    edit_id: "edit_theme_probe_themed".to_string(),
+                    path: "demo.txt".to_string(),
+                    new_file_digest: "digest-theme-probe-themed".to_string(),
+                    diff_rel_path: None,
+                    diff_digest: None,
+                },
+            ),
+        });
         let mut custom_theme = Theme::default();
         custom_theme.live_shell.primary.centered_content_width = 72;
         custom_theme.live_shell.primary.content_margin_x = 10;
@@ -647,25 +944,44 @@ mod tests {
         custom_theme.live_shell.primary.details_sidebar_width = 36;
         themed_app.set_theme_for_test(custom_theme);
 
+        let default_transcript = default_plan.transcript.expect("default transcript area");
         let themed_plan = FrameLayoutPlan::for_app(&themed_app, area);
-        let themed_rail = themed_plan
-            .operator_sidebar
-            .expect("themed compact operator rail");
-        let probe_column = themed_rail.x.saturating_add(2);
-        let probe_row = themed_rail.y.saturating_add(1);
-
-        assert_eq!(default_plan.wheel_hit_areas.overlay, None);
-        assert_eq!(default_plan.wheel_hit_areas.inspector, None);
-        assert_eq!(themed_plan.wheel_hit_areas.overlay, None);
-        assert_eq!(themed_plan.wheel_hit_areas.inspector, None);
+        let themed_rail = themed_plan.operator_sidebar.expect("themed operator rail");
 
         assert_eq!(
-            hovered_wheel_target(&default_app, area, probe_column, probe_row),
+            default_plan.wheel_hit_areas.overlay,
+            default_plan.operator_sidebar
+        );
+        assert_eq!(
+            default_plan.wheel_hit_areas.inspector,
+            default_plan.operator_sidebar
+        );
+        assert_eq!(
+            themed_plan.wheel_hit_areas.overlay,
+            themed_plan.operator_sidebar
+        );
+        assert_eq!(
+            themed_plan.wheel_hit_areas.inspector,
+            themed_plan.operator_sidebar
+        );
+
+        assert_eq!(
+            hovered_wheel_target(
+                &default_app,
+                area,
+                default_transcript.x.saturating_add(2),
+                default_transcript.y.saturating_add(1),
+            ),
             Some(WheelTarget::Transcript)
         );
         assert_eq!(
-            hovered_wheel_target(&themed_app, area, probe_column, probe_row),
-            None
+            hovered_wheel_target(
+                &themed_app,
+                area,
+                themed_rail.x.saturating_add(1),
+                themed_rail.y.saturating_add(1),
+            ),
+            Some(WheelTarget::Inspector)
         );
     }
 
@@ -750,12 +1066,7 @@ mod tests {
 
     #[test]
     fn replay_prompt_pane_is_visibly_read_only() {
-        let app = AppState::new_replay(std::path::PathBuf::from("/tmp/replay-session"), Vec::new());
-
-        let debug = render_debug(&app, 100, 24);
-        assert!(debug.contains("Replay · read-only"));
-        assert!(debug.contains("Replay is read-only"));
-        assert!(!debug.contains("Type a prompt for the next turn"));
+        exact_test_replay_prompt_pane_is_visibly_read_only();
     }
 
     #[test]
@@ -869,7 +1180,7 @@ mod tests {
         assert!(sidebar_text.contains("Live · run run_ui_tests"));
         assert!(sidebar_text.contains("unknown/openai/gpt-5-codex"));
         assert!(sidebar_text.contains("0 active todos · 0 modified files"));
-        assert!(sidebar_text.contains("No operator activity yet"));
+        assert!(sidebar_text.contains("No operator activity now"));
         assert!(!sidebar_text.contains("Todo ·"));
         assert!(!sidebar_text.contains("Modified Files ·"));
     }
@@ -933,7 +1244,7 @@ mod tests {
         assert!(sidebar_text.contains("Live · run run_ui_tests"));
         assert!(sidebar_text.contains("unknown/openai/gpt-5-codex"));
         assert!(sidebar_text.contains("0 active todos · 0 modified files"));
-        assert!(sidebar_text.contains("No operator activity yet"));
+        assert!(sidebar_text.contains("No operator activity now"));
         assert!(!sidebar_text.contains("No modified files recorded"));
         assert!(!sidebar_text.contains("Permission context:"));
         assert!(!sidebar_text.contains("perm_permission_detail"));

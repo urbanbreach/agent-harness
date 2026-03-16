@@ -7,8 +7,8 @@ Ctrl+P open: true
 Type to quick-start a fresh run: true
 startup ready: true
 focus_marker: Harness
-focus_pixels_blake3: 98e4ad0d9595f10928bb149658f39d7085abcc77019fd429807642ba380135e0
-focus_region_cells: row=4, col=7, height=8, width=24
+focus_pixels_blake3: e4a262a74c1a82347b9219b97bba3da30e008600241e68edcdd390eab93df5dc
+focus_region_cells: row=6, col=27, height=8, width=24
 image: pty_startup_home_dense.png
 manifest_json: pty-manifests/startup_shell/manifest.json
 manifest_jsonl: pty-manifests/startup_shell/manifest.jsonl

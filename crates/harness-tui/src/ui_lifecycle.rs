@@ -1,6 +1,6 @@
 use super::*;
 
-const LIFECYCLE_COPY_INSET_X: u16 = 2;
+const LIFECYCLE_COPY_INSET_X: u16 = 3;
 
 fn lifecycle_surface_copy_area(area: Rect) -> Rect {
     inset_rect(
@@ -37,6 +37,25 @@ fn render_lifecycle_copy_line(
     );
 }
 
+fn startup_secondary_hint(content_area: Rect, theme: &Theme) -> &str {
+    if content_area.width < 60 {
+        "Type to quick-start a fresh run\nCtrl+P opens tools"
+    } else {
+        theme.live_shell.startup.secondary_hint
+    }
+}
+
+fn empty_state_examples_text(theme: &Theme) -> String {
+    theme
+        .live_shell
+        .empty_state
+        .example_prompts
+        .iter()
+        .map(|prompt| format!("“{}”", prompt.prompt))
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
 pub(super) fn live_empty_state_visible(app: &AppState) -> bool {
     !app.replay_mode
         && !app.startup_shell_visible()
@@ -49,7 +68,17 @@ pub(super) fn startup_shell_visible(app: &AppState) -> bool {
     app.startup_shell_visible()
 }
 
-pub(super) fn render_startup_lifecycle_surface(
+pub(crate) fn render_startup_lifecycle_surface(
+    frame: &mut Frame,
+    app: &AppState,
+    area: Rect,
+    theme: &Theme,
+) {
+    let shell_area = crate::layout::startup_shell_area(area, theme);
+    render_startup_lifecycle_flow(frame, app, shell_area, theme);
+}
+
+pub(crate) fn render_startup_lifecycle_flow(
     frame: &mut Frame,
     app: &AppState,
     area: Rect,
@@ -59,14 +88,17 @@ pub(super) fn render_startup_lifecycle_surface(
         return;
     }
 
-    let shell_area = crate::layout::startup_shell_area(area, theme);
+    let shell_area = area;
     let list_focused = app.focus == Focus::List;
-    let surface = theme.surface.panel_elevated;
+    let surface = theme.surface.shell;
     let startup_card = app.startup_card_view_model();
-    let block = lifecycle_surface_block(theme, "Home", list_focused);
-    let content_area = lifecycle_surface_copy_area(block.inner(shell_area));
+    let content_area = lifecycle_surface_copy_area(shell_area);
+    let hint_height = u16::from(content_area.width < 72).saturating_add(1);
 
-    frame.render_widget(block, shell_area);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(surface)),
+        shell_area,
+    );
 
     if content_area.width == 0 || content_area.height == 0 {
         return;
@@ -75,18 +107,39 @@ pub(super) fn render_startup_lifecycle_surface(
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Min(0),
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(1),
-            Constraint::Length(1),
+            Constraint::Length(hint_height),
             Constraint::Min(0),
         ])
         .split(content_area);
 
     render_lifecycle_copy_line(
         frame,
-        rows[0],
+        rows[1],
         theme.live_shell.startup.title,
+        Style::default()
+            .fg(if list_focused {
+                theme.text.accent
+            } else {
+                theme.text.primary
+            })
+            .bg(surface),
+        Alignment::Center,
+    );
+    render_lifecycle_copy_line(
+        frame,
+        rows[2],
+        &startup_card.metadata,
+        Style::default().fg(theme.text.secondary).bg(surface),
+        Alignment::Center,
+    );
+    render_lifecycle_copy_line(
+        frame,
+        rows[3],
+        theme.live_shell.startup.new_session_purpose,
         Style::default()
             .fg(if list_focused {
                 theme.text.accent
@@ -95,28 +148,14 @@ pub(super) fn render_startup_lifecycle_surface(
             })
             .bg(surface)
             .add_modifier(Modifier::BOLD),
-        Alignment::Left,
+        Alignment::Center,
     );
-    render_lifecycle_copy_line(
-        frame,
-        rows[1],
-        &startup_card.metadata,
-        Style::default().fg(theme.text.secondary).bg(surface),
-        Alignment::Left,
-    );
-    render_lifecycle_copy_line(
-        frame,
-        rows[2],
-        theme.live_shell.startup.new_session_purpose,
-        Style::default().fg(theme.text.primary).bg(surface),
-        Alignment::Left,
-    );
-    render_lifecycle_copy_line(
-        frame,
-        rows[3],
-        theme.live_shell.startup.secondary_hint,
-        Style::default().fg(theme.text.secondary).bg(surface),
-        Alignment::Left,
+    frame.render_widget(
+        Paragraph::new(startup_secondary_hint(content_area, theme))
+            .style(Style::default().fg(theme.text.secondary).bg(surface))
+            .alignment(Alignment::Center)
+            .wrap(Wrap { trim: false }),
+        rows[4],
     );
 }
 
@@ -147,6 +186,8 @@ pub(super) fn render_live_empty_state(
     let startup_card = app.startup_card_view_model();
     let block = lifecycle_surface_block(theme, "Session", false);
     let content_area = lifecycle_surface_copy_area(block.inner(shell_area));
+    let example_prompts = empty_state_examples_text(theme);
+    let examples_height = u16::from(content_area.width < 76).saturating_add(1);
 
     frame.render_widget(block, shell_area);
 
@@ -157,9 +198,11 @@ pub(super) fn render_live_empty_state(
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Min(0),
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(1),
+            Constraint::Length(examples_height),
             Constraint::Length(1),
             Constraint::Min(0),
         ])
@@ -167,36 +210,43 @@ pub(super) fn render_live_empty_state(
 
     render_lifecycle_copy_line(
         frame,
-        rows[0],
+        rows[1],
         theme.live_shell.empty_state.title,
         Style::default()
-            .fg(theme.text.primary)
+            .fg(theme.text.accent)
             .bg(surface)
             .add_modifier(Modifier::BOLD),
-        Alignment::Left,
-    );
-    render_lifecycle_copy_line(
-        frame,
-        rows[1],
-        &startup_card.metadata,
-        Style::default().fg(theme.text.secondary).bg(surface),
-        Alignment::Left,
+        Alignment::Center,
     );
     render_lifecycle_copy_line(
         frame,
         rows[2],
+        &startup_card.metadata,
+        Style::default().fg(theme.text.secondary).bg(surface),
+        Alignment::Center,
+    );
+    render_lifecycle_copy_line(
+        frame,
+        rows[3],
         theme.live_shell.empty_state.value_prop,
         Style::default()
             .fg(theme.text.primary)
             .bg(surface)
             .add_modifier(Modifier::BOLD),
-        Alignment::Left,
+        Alignment::Center,
+    );
+    frame.render_widget(
+        Paragraph::new(example_prompts)
+            .style(Style::default().fg(theme.text.primary).bg(surface))
+            .alignment(Alignment::Center)
+            .wrap(Wrap { trim: false }),
+        rows[4],
     );
     render_lifecycle_copy_line(
         frame,
-        rows[3],
+        rows[5],
         &help_row,
         Style::default().fg(theme.text.secondary).bg(surface),
-        Alignment::Left,
+        Alignment::Center,
     );
 }
