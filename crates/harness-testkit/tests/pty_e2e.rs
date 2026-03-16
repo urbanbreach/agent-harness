@@ -62,11 +62,8 @@ const OPERATOR_FILES_MARKER: &str = "Modified Files";
 const STRUCTURED_DIFF_FILE_MARKER: &str = "--- demo.txt";
 const STRUCTURED_DIFF_REMOVED_LINE_MARKER: &str = "-beta";
 const STRUCTURED_DIFF_ADDED_LINE_MARKER: &str = "+BETA";
-const RUN_FINISHED_SHELL_MARKERS: &[&str] = &[
-    "run finished",
-    "session shell preserved",
-    "Tab focus",
-];
+const RUN_FINISHED_SHELL_MARKERS: &[&str] =
+    &["run finished", "session shell preserved", "Tab focus"];
 
 #[test]
 fn pty_e2e_permission_overlay_parity() {
@@ -2996,7 +2993,16 @@ fn draw_cell(
         return;
     };
 
-    draw_cell_glyph(image, origin_x, origin_y, ch, fg, glyphs, raster_scale, bold);
+    draw_cell_glyph(
+        image,
+        origin_x,
+        origin_y,
+        ch,
+        fg,
+        glyphs,
+        raster_scale,
+        bold,
+    );
     if cell.underline() {
         draw_underline(
             image,
@@ -3221,14 +3227,21 @@ impl GlyphLookup {
         true
     }
 
-    fn anti_alias_mask_for(&self, ch: char, raster_scale: u32, bold: bool) -> Option<AntiAliasMask> {
+    fn anti_alias_mask_for(
+        &self,
+        ch: char,
+        raster_scale: u32,
+        bold: bool,
+    ) -> Option<AntiAliasMask> {
         let cache_key = (ch, raster_scale, bold);
         if let Some(mask) = self.anti_alias_cache.borrow().get(&cache_key) {
             return Some(mask.clone());
         }
 
         let font = if bold {
-            self.bold_smooth_font.as_ref().or(self.smooth_font.as_ref())?
+            self.bold_smooth_font
+                .as_ref()
+                .or(self.smooth_font.as_ref())?
         } else {
             self.smooth_font.as_ref()?
         };
@@ -3357,7 +3370,11 @@ fn load_font_from_candidates(candidates: Vec<String>) -> Option<Font> {
     None
 }
 
-fn font_candidates(env_var: &str, fontconfig_pattern: &str, fallback_paths: &[&str]) -> Vec<String> {
+fn font_candidates(
+    env_var: &str,
+    fontconfig_pattern: &str,
+    fallback_paths: &[&str],
+) -> Vec<String> {
     let mut candidates = Vec::new();
     if let Ok(path) = std::env::var(env_var) {
         candidates.push(path);
@@ -3413,7 +3430,11 @@ fn parse_ttf_antialias_env(value: Option<&str>) -> bool {
 fn ttf_antialias_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
-        parse_ttf_antialias_env(std::env::var("HARNESS_VISUAL_TTF_ANTIALIAS").ok().as_deref())
+        parse_ttf_antialias_env(
+            std::env::var("HARNESS_VISUAL_TTF_ANTIALIAS")
+                .ok()
+                .as_deref(),
+        )
     })
 }
 

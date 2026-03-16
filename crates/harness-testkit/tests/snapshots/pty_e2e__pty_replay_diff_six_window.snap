@@ -5,7 +5,7 @@ expression: "checkpoint_visual_snapshot(&diff_screen,\n&[STRUCTURED_DIFF_FILE_MA
 --- demo.txt: true
 -beta: true
 +BETA: true
-Replay · read-only: false
+Replay · read-only: true
 focus_marker: --- demo.txt
 focus_pixels_blake3: 1aa5cbf803a2c0dc5547fdc8adcabfffb75e44d28bb3b3ab6d7fa19ed617c498
 focus_region_cells: row=2, col=20, height=6, width=18
