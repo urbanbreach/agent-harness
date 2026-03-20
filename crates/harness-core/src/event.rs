@@ -225,6 +225,8 @@ pub struct ToolCallFinishedEvent {
     pub output_summary: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_json: Option<Value>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -239,6 +241,16 @@ pub struct PermissionRequestedEvent {
     pub permission_id: String,
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    pub summary: String,
+    pub request_digest: String,
+    pub timeout_ms: u64,
+    pub default_decision: PermissionDecision,
+}
+
+pub struct PermissionRequestedArgs {
+    pub permission_id: String,
+    pub kind: String,
     pub tool_call_id: Option<String>,
     pub summary: String,
     pub request_digest: String,
@@ -369,24 +381,26 @@ impl<'a, C: Clock + ?Sized, R: Redactor + ?Sized> EventBuilder<'a, C, R> {
         self.build(context, payload)
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn permission_requested(
         &self,
         context: EventContext,
-        permission_id: impl Into<String>,
-        kind: impl Into<String>,
-        tool_call_id: Option<String>,
-        summary: impl Into<String>,
-        request_digest: impl Into<String>,
-        timeout_ms: u64,
-        default_decision: PermissionDecision,
+        args: PermissionRequestedArgs,
     ) -> Result<EventEnvelopeV1, EventBuildError> {
-        let payload = EventV1::PermissionRequested(PermissionRequestedEvent {
-            permission_id: permission_id.into(),
-            kind: kind.into(),
+        let PermissionRequestedArgs {
+            permission_id,
+            kind,
             tool_call_id,
-            summary: summary.into(),
-            request_digest: request_digest.into(),
+            summary,
+            request_digest,
+            timeout_ms,
+            default_decision,
+        } = args;
+        let payload = EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id,
+            kind,
+            tool_call_id,
+            summary,
+            request_digest,
             timeout_ms,
             default_decision,
         });
@@ -467,7 +481,7 @@ fn canonicalize_json(value: &Value) -> Value {
 mod tests {
     use super::{
         ActorKind, EventActor, EventBuilder, EventContext, EventV1, PermissionDecision,
-        ToolCallRequestedEvent,
+        PermissionRequestedArgs, ToolCallRequestedEvent,
     };
     use crate::clock::FakeClock;
     use crate::redact::DefaultRedactor;
@@ -510,13 +524,15 @@ mod tests {
         let envelope = builder
             .permission_requested(
                 context,
-                "perm_001",
-                "edit",
-                Some("toolcall_001".to_string()),
-                "Apply patch to file with Bearer abc.def",
-                "req_90ac2e1e",
-                30_000,
-                PermissionDecision::Deny,
+                PermissionRequestedArgs {
+                    permission_id: "perm_001".to_string(),
+                    kind: "edit".to_string(),
+                    tool_call_id: Some("toolcall_001".to_string()),
+                    summary: "Apply patch to file with Bearer abc.def".to_string(),
+                    request_digest: "req_90ac2e1e".to_string(),
+                    timeout_ms: 30_000,
+                    default_decision: PermissionDecision::Deny,
+                },
             )
             .expect("build permission requested envelope");
 

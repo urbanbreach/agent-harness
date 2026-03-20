@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::OnceLock;
 
 use syntect::easy::HighlightLines;
@@ -8,7 +9,7 @@ use super::*;
 
 use crate::theme::DIFF_SIDE_BY_SIDE_MIN_WIDTH;
 
-use super::ui_secondary::render_structured_diff_lines;
+use super::ui_secondary::{format_detail_payload, render_structured_diff_lines};
 
 struct LabeledTextBlockStyle<'a> {
     indent: &'a str,
@@ -56,6 +57,7 @@ struct MeasuredTranscriptLayout {
 
 #[derive(Debug, Clone)]
 struct TranscriptRenderSurface {
+    show_outer_rail: bool,
     rail_color: Color,
     surface: Color,
     lines: Vec<Line<'static>>,
@@ -65,6 +67,8 @@ struct TranscriptRenderSurface {
 struct MeasuredTranscriptSurface {
     top_offset: usize,
     height: usize,
+    width: u16,
+    show_outer_rail: bool,
     rail_color: Color,
     surface: Color,
     lines: Vec<Line<'static>>,
@@ -85,8 +89,21 @@ impl MeasuredTranscriptLayout {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum TranscriptSection {
-    Turn(TranscriptTurnSection),
+    Turn(Box<TranscriptTurnSection>),
     PendingPermission(TranscriptPendingPermissionSection),
+}
+
+struct BuildTurnSectionArgs<'a> {
+    activity: &'a ActivityEntry,
+    is_selected: bool,
+    thinking_visible: bool,
+    timestamps_visible: bool,
+    show_tool_details: bool,
+    show_generic_tool_output: bool,
+    stacked_diffs: bool,
+    profile_label: &'a str,
+    session_path: Option<&'a Path>,
+    app: &'a AppState,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,16 +119,17 @@ struct TranscriptTurnSection {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TranscriptUserMessageSection {
-    request_id: String,
     text: String,
+    timestamp: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TranscriptTurnHeader {
     status: ActivityStatus,
     is_selected: bool,
-    provider_id: String,
+    profile_label: String,
     model_id: String,
+    duration_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,22 +146,42 @@ struct TranscriptLabeledTextSection {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TranscriptToolCallSection {
     header: TranscriptToolCallHeader,
-    inline_summary: Option<String>,
     detail_blocks: Vec<TranscriptToolCallDetailBlock>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TranscriptToolCallHeader {
     tool_id: String,
+    title: String,
+    icon: Option<&'static str>,
     status: ToolCallDisplayStatus,
+    visual_style: TranscriptToolCallVisualStyle,
+    struck_out: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum TranscriptToolCallDetailBlock {
-    State(String),
-    Args(String),
-    Result(String),
-    Error(String),
+    Message {
+        text: String,
+        tone: TranscriptToolCallDetailTone,
+    },
+    StructuredDiff {
+        diff_content: String,
+        fallback_path: Option<String>,
+        force_stacked: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TranscriptToolCallVisualStyle {
+    Inline,
+    Block,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TranscriptToolCallDetailTone {
+    Secondary,
+    Error,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -165,14 +203,26 @@ enum ParsedTextBlock {
     },
 }
 
-const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 2;
+const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
 const TRANSCRIPT_SURFACE_BODY_PREFIX: &str = " ";
+const TRANSCRIPT_USER_BODY_PREFIX: &str = "  ";
+const TRANSCRIPT_ASSISTANT_BODY_PREFIX: &str = "   ";
 const TRANSCRIPT_NESTED_INDENT: &str = "  ";
-const TRANSCRIPT_RAIL_GLYPH: &str = "▎ ";
+const TRANSCRIPT_OPCODE_EDIT_INDENT: &str = "    ";
+const TRANSCRIPT_RAIL_GLYPH: &str = "┃";
 
 pub(super) fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     if !app.replay_mode {
-        let inner_area = inset_rect(area, theme.live_shell.rhythm.transcript_gutter_x, 0);
+        let vertical_gutter = if app.startup_shell_visible() || live_empty_state_visible(app) {
+            0
+        } else {
+            theme.live_shell.rhythm.transcript_gutter_y
+        };
+        let inner_area = inset_rect(
+            area,
+            theme.live_shell.rhythm.transcript_gutter_x,
+            vertical_gutter,
+        );
 
         if app.startup_shell_visible() {
             render_startup_lifecycle_surface(frame, app, inner_area, theme);
@@ -241,7 +291,12 @@ fn render_measured_transcript_pane(
     theme: &Theme,
     empty_surface: Color,
 ) {
-    let layout = build_measured_transcript_layout_for_width(app, theme, inner_area.width);
+    let layout = build_measured_transcript_layout_for_width_on_surface(
+        app,
+        theme,
+        inner_area.width,
+        empty_surface,
+    );
     if layout.sections.is_empty() {
         frame.render_widget(
             Paragraph::new(Text::from(vec![Line::from(Span::styled(
@@ -278,20 +333,37 @@ fn build_measured_transcript_layout_for_width(
     theme: &Theme,
     width: u16,
 ) -> MeasuredTranscriptLayout {
+    build_measured_transcript_layout_for_width_on_surface(app, theme, width, theme.surface.shell)
+}
+
+fn build_measured_transcript_layout_for_width_on_surface(
+    app: &AppState,
+    theme: &Theme,
+    width: u16,
+    base_surface: Color,
+) -> MeasuredTranscriptLayout {
     let sections = build_transcript_sections(app);
-    measure_transcript_layout(&sections, theme, width)
+    measure_transcript_layout(&sections, theme, width, base_surface)
 }
 
 fn build_transcript_sections(app: &AppState) -> Vec<TranscriptSection> {
     let mut sections = Vec::new();
 
     for (index, activity) in app.activities.iter().enumerate() {
-        sections.push(TranscriptSection::Turn(build_turn_section(
-            activity,
-            index == app.selected_activity_index,
-            app.transcript_thinking_visible(),
-            app.successful_tool_details_visible(),
-        )));
+        sections.push(TranscriptSection::Turn(Box::new(build_turn_section(
+            BuildTurnSectionArgs {
+                activity,
+                is_selected: index == app.selected_activity_index,
+                thinking_visible: app.transcript_thinking_visible(),
+                timestamps_visible: app.transcript_timestamps_visible(),
+                show_tool_details: app.tool_details_visible(),
+                show_generic_tool_output: app.generic_tool_output_visible(),
+                stacked_diffs: app.stacked_transcript_diffs(),
+                profile_label: app.active_profile(),
+                session_path: app.session_path.as_deref(),
+                app,
+            },
+        ))));
     }
 
     for (_permission_id, summary) in app.transcript_pending_permissions() {
@@ -303,19 +375,30 @@ fn build_transcript_sections(app: &AppState) -> Vec<TranscriptSection> {
     sections
 }
 
-fn build_turn_section(
-    activity: &ActivityEntry,
-    is_selected: bool,
-    thinking_visible: bool,
-    show_successful_tool_details: bool,
-) -> TranscriptTurnSection {
+fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
+    let BuildTurnSectionArgs {
+        activity,
+        is_selected,
+        thinking_visible,
+        timestamps_visible,
+        show_tool_details,
+        show_generic_tool_output,
+        stacked_diffs,
+        profile_label,
+        session_path,
+        app,
+    } = args;
+
     let user_message =
         activity
             .user_message
             .as_ref()
             .map(|user_msg| TranscriptUserMessageSection {
-                request_id: activity.request_id.clone(),
                 text: user_msg.text.clone(),
+                timestamp: timestamps_visible
+                    .then_some(activity.user_timestamp.as_deref())
+                    .flatten()
+                    .map(format_transcript_timestamp),
             });
 
     let thinking = (thinking_visible && !activity.thinking_text.trim().is_empty()).then(|| {
@@ -339,14 +422,24 @@ fn build_turn_section(
         header: TranscriptTurnHeader {
             status: activity.status,
             is_selected,
-            provider_id: activity.provider_id.clone(),
+            profile_label: profile_label.to_string(),
             model_id: activity.model_id.clone(),
+            duration_ms: activity.duration_ms(),
         },
         body_blocks,
         tool_calls: activity
             .tool_calls
             .iter()
-            .map(|tool_call| build_tool_call_section(tool_call, show_successful_tool_details))
+            .filter_map(|tool_call| {
+                build_tool_call_section(
+                    tool_call,
+                    show_tool_details,
+                    show_generic_tool_output,
+                    app.tool_output_expanded(tool_call),
+                    stacked_diffs,
+                    session_path,
+                )
+            })
             .collect(),
         thinking,
         error: activity
@@ -358,39 +451,214 @@ fn build_turn_section(
 
 fn build_tool_call_section(
     tool_call: &crate::app::ToolCallEntry,
-    show_successful_tool_details: bool,
+    show_tool_details: bool,
+    show_generic_tool_output: bool,
+    tool_output_expanded: bool,
+    stacked_diffs: bool,
+    session_path: Option<&Path>,
+) -> Option<TranscriptToolCallSection> {
+    if tool_call.status == ToolCallDisplayStatus::Succeeded && !show_tool_details {
+        return None;
+    }
+
+    Some(build_opencode_tool_call_section(
+        tool_call,
+        show_generic_tool_output,
+        tool_output_expanded,
+        stacked_diffs,
+        session_path,
+    ))
+}
+
+fn build_opencode_tool_call_section(
+    tool_call: &crate::app::ToolCallEntry,
+    show_generic_tool_output: bool,
+    tool_output_expanded: bool,
+    stacked_diffs: bool,
+    session_path: Option<&Path>,
 ) -> TranscriptToolCallSection {
-    let collapse_success =
-        tool_call.status == ToolCallDisplayStatus::Succeeded && !show_successful_tool_details;
-    let inline_summary = collapse_success.then(|| {
-        tool_call
-            .output_summary
-            .as_deref()
-            .and_then(|output| compact_inline_payload(output, 84))
-            .or_else(|| tool_state_summary(tool_call).map(str::to_string))
-    });
-
+    let struck_out = tool_call_denied(tool_call);
     let mut detail_blocks = Vec::new();
-    if !collapse_success {
-        if let Some(state_summary) = tool_state_summary(tool_call) {
-            detail_blocks.push(TranscriptToolCallDetailBlock::State(
-                state_summary.to_string(),
-            ));
-        }
+    let expanded = show_generic_tool_output || tool_output_expanded;
 
-        if let Some(args_summary) = compact_inline_payload(&tool_call.args_summary, 96) {
-            detail_blocks.push(TranscriptToolCallDetailBlock::Args(args_summary));
-        }
-
-        if let Some(output) = tool_call
-            .truncated_output
-            .as_deref()
-            .and_then(|output| compact_inline_payload(output, 96))
-        {
-            if tool_call.status == ToolCallDisplayStatus::Failed {
-                detail_blocks.push(TranscriptToolCallDetailBlock::Error(output));
+    let (title, icon, visual_style) = match tool_call.tool_id.as_str() {
+        "fs.read" => (
+            format!(
+                "Read {}{}",
+                tool_path_display(tool_call).unwrap_or_else(|| "file".to_string()),
+                read_tool_input_suffix(tool_call),
+            ),
+            Some("→"),
+            TranscriptToolCallVisualStyle::Inline,
+        ),
+        "fs.glob" => (
+            format!(
+                "Glob \"{}\"{}{}",
+                tool_summary_string(&tool_call.args_summary, &["pattern"])
+                    .unwrap_or_else(|| "*".to_string()),
+                tool_in_path_suffix(tool_call),
+                tool_match_count_suffix(tool_call),
+            ),
+            Some("✱"),
+            TranscriptToolCallVisualStyle::Inline,
+        ),
+        "fs.grep" => (
+            format!(
+                "Grep \"{}\"{}{}",
+                tool_summary_string(&tool_call.args_summary, &["pattern"])
+                    .unwrap_or_else(|| "pattern".to_string()),
+                tool_in_path_suffix(tool_call),
+                tool_match_count_suffix(tool_call),
+            ),
+            Some("✱"),
+            TranscriptToolCallVisualStyle::Inline,
+        ),
+        "fs.ls" => (
+            format!(
+                "List {}",
+                tool_summary_string(&tool_call.args_summary, &["path"])
+                    .unwrap_or_else(|| ".".to_string()),
+            ),
+            Some("→"),
+            TranscriptToolCallVisualStyle::Inline,
+        ),
+        "shell.run" => {
+            let cmd = tool_summary_string(&tool_call.args_summary, &["cmd", "command"])
+                .unwrap_or_else(|| "Shell".to_string());
+            if tool_call.output_summary.is_some() {
+                detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+                    text: format!("$ {cmd}"),
+                    tone: TranscriptToolCallDetailTone::Secondary,
+                });
+                if let Some(output) = tool_call.output_summary.as_deref() {
+                    push_collapsible_output_block(
+                        &mut detail_blocks,
+                        output,
+                        10,
+                        expanded,
+                        if tool_call.status == ToolCallDisplayStatus::Failed {
+                            TranscriptToolCallDetailTone::Error
+                        } else {
+                            TranscriptToolCallDetailTone::Secondary
+                        },
+                    );
+                }
+                (
+                    shell_block_title(&tool_call.args_summary),
+                    None,
+                    TranscriptToolCallVisualStyle::Block,
+                )
             } else {
-                detail_blocks.push(TranscriptToolCallDetailBlock::Result(output));
+                (cmd, Some("$"), TranscriptToolCallVisualStyle::Inline)
+            }
+        }
+        "edit.hashline_apply" => {
+            let path = tool_call.edit_path_display();
+            let title = match tool_call.edit.as_ref().map(|edit| edit.status) {
+                Some(crate::app::EditDisplayStatus::Applied) => path
+                    .as_ref()
+                    .map(|path| format!("← Patched {path}"))
+                    .unwrap_or_else(|| "← Patched file".to_string()),
+                Some(crate::app::EditDisplayStatus::Rejected)
+                | Some(crate::app::EditDisplayStatus::Proposed) => path
+                    .as_ref()
+                    .map(|path| format!("← Edit {path}"))
+                    .unwrap_or_else(|| "← Preparing edit...".to_string()),
+                None => path
+                    .as_ref()
+                    .map(|path| format!("← Edit {path}"))
+                    .unwrap_or_else(|| "← Preparing edit...".to_string()),
+            };
+
+            if let Some(edit) = &tool_call.edit {
+                if edit.status == crate::app::EditDisplayStatus::Applied {
+                    if let Some(diff_rel_path) = edit.diff_rel_path.as_deref() {
+                        if let Some(session_path) = session_path {
+                            if let Ok(diff_content) =
+                                std::fs::read_to_string(session_path.join(diff_rel_path))
+                            {
+                                detail_blocks.push(TranscriptToolCallDetailBlock::StructuredDiff {
+                                    diff_content,
+                                    fallback_path: Some(edit.path.clone()),
+                                    force_stacked: stacked_diffs,
+                                });
+                            }
+                        }
+                    }
+                }
+
+                if edit.status == crate::app::EditDisplayStatus::Rejected {
+                    if let Some(reason) = edit.rejection_reason.as_deref() {
+                        detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+                            text: reason.to_string(),
+                            tone: TranscriptToolCallDetailTone::Error,
+                        });
+                    }
+                }
+            }
+
+            (title, None, TranscriptToolCallVisualStyle::Block)
+        }
+        "edit.hashline_scan" => (
+            format!(
+                "Scan {}",
+                tool_path_display(tool_call).unwrap_or_else(|| "file".to_string())
+            ),
+            Some("→"),
+            TranscriptToolCallVisualStyle::Inline,
+        ),
+        "agent.spawn" => (
+            tool_summary_string(&tool_call.args_summary, &["task", "description"])
+                .map(|task| format!("Task {task}"))
+                .unwrap_or_else(|| "Delegate task".to_string()),
+            Some("│"),
+            TranscriptToolCallVisualStyle::Inline,
+        ),
+        _ => {
+            let title = format!(
+                "{}{}",
+                generic_tool_name(&tool_call.tool_id),
+                tool_input_suffix(&tool_call.args_summary, &[]),
+            );
+            if tool_call.output_summary.is_some() {
+                push_collapsible_output_block(
+                    &mut detail_blocks,
+                    tool_call.output_summary.as_deref().unwrap_or_default(),
+                    3,
+                    expanded,
+                    TranscriptToolCallDetailTone::Secondary,
+                );
+                (title, Some("⚙"), TranscriptToolCallVisualStyle::Block)
+            } else {
+                (title, Some("⚙"), TranscriptToolCallVisualStyle::Inline)
+            }
+        }
+    };
+
+    if tool_call.tool_id == "fs.read"
+        && tool_call.status == ToolCallDisplayStatus::Succeeded
+        && detail_blocks.is_empty()
+    {
+        if let Some(path) = tool_path_display(tool_call) {
+            detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+                text: format!("↳ Loaded {path}"),
+                tone: TranscriptToolCallDetailTone::Secondary,
+            });
+        }
+    }
+
+    if detail_blocks.is_empty() {
+        if let Some(output) = tool_error_text(tool_call) {
+            detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+                text: output,
+                tone: TranscriptToolCallDetailTone::Error,
+            });
+        } else if tool_call.tool_id == "agent.spawn" {
+            if let Some(output) = tool_call.output_summary.as_deref() {
+                detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+                    text: format!("└ {}", format_detail_payload(output)),
+                    tone: TranscriptToolCallDetailTone::Secondary,
+                });
             }
         }
     }
@@ -398,40 +666,304 @@ fn build_tool_call_section(
     TranscriptToolCallSection {
         header: TranscriptToolCallHeader {
             tool_id: tool_call.tool_id.clone(),
+            title: decorate_tool_call_title(title, tool_call),
+            icon,
             status: tool_call.status,
+            visual_style,
+            struck_out,
         },
-        inline_summary: inline_summary.flatten(),
         detail_blocks,
     }
+}
+
+fn generic_tool_name(tool_id: &str) -> String {
+    tool_id.trim().to_string()
+}
+
+fn tool_path_display(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
+    tool_call
+        .edit_path_display()
+        .map(|path| collapse_inline_whitespace(&path))
+}
+
+fn tool_in_path_suffix(tool_call: &crate::app::ToolCallEntry) -> String {
+    tool_path_display(tool_call)
+        .filter(|path| path != ".")
+        .map(|path| format!(" in {path}"))
+        .unwrap_or_default()
+}
+
+fn shell_block_title(args_summary: &str) -> String {
+    let description = tool_summary_string(args_summary, &["description"]);
+    let cwd = tool_summary_string(args_summary, &["cwd", "workdir"]);
+    let command = tool_summary_string(args_summary, &["cmd", "command"]);
+    let base = description
+        .or(command)
+        .unwrap_or_else(|| "Shell".to_string());
+
+    match cwd {
+        Some(cwd) if !cwd.is_empty() && !base.contains(&cwd) => format!("# {base} in {cwd}"),
+        _ => format!("# {base}"),
+    }
+}
+
+fn tool_summary_string(args_summary: &str, keys: &[&str]) -> Option<String> {
+    let value = serde_json::from_str::<serde_json::Value>(args_summary).ok()?;
+    let object = value.as_object()?;
+    keys.iter().find_map(|key| {
+        object
+            .get(*key)
+            .and_then(serde_json::Value::as_str)
+            .map(collapse_inline_whitespace)
+            .filter(|value| !value.is_empty())
+    })
+}
+
+fn tool_input_suffix(args_summary: &str, omit_keys: &[&str]) -> String {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(args_summary) else {
+        return String::new();
+    };
+    let Some(object) = value.as_object() else {
+        return String::new();
+    };
+
+    let mut keys = object.keys().map(String::as_str).collect::<Vec<_>>();
+    keys.sort_unstable();
+
+    let mut parts = Vec::new();
+    for key in keys.into_iter().filter(|key| !omit_keys.contains(key)) {
+        if let Some(value) = object.get(key) {
+            collect_input_parts(&mut parts, key.to_string(), value, 6);
+        }
+        if parts.len() >= 6 {
+            break;
+        }
+    }
+
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!(" [{}]", parts.join(", "))
+    }
+}
+
+fn collect_input_parts(
+    parts: &mut Vec<String>,
+    path: String,
+    value: &serde_json::Value,
+    max_parts: usize,
+) {
+    if parts.len() >= max_parts {
+        return;
+    }
+
+    match value {
+        serde_json::Value::String(text) => {
+            let rendered = collapse_inline_whitespace(text);
+            if !rendered.is_empty() {
+                parts.push(format!("{path}={rendered}"));
+            }
+        }
+        serde_json::Value::Number(number) => parts.push(format!("{path}={number}")),
+        serde_json::Value::Bool(flag) => parts.push(format!("{path}={flag}")),
+        serde_json::Value::Null => parts.push(format!("{path}=null")),
+        serde_json::Value::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                collect_input_parts(parts, format!("{path}[{index}]"), item, max_parts);
+                if parts.len() >= max_parts {
+                    break;
+                }
+            }
+        }
+        serde_json::Value::Object(map) => {
+            let mut keys = map.keys().collect::<Vec<_>>();
+            keys.sort_unstable();
+            for key in keys {
+                if let Some(item) = map.get(key) {
+                    collect_input_parts(parts, format!("{path}.{key}"), item, max_parts);
+                    if parts.len() >= max_parts {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn read_tool_input_suffix(tool_call: &crate::app::ToolCallEntry) -> String {
+    let offset = tool_call
+        .output_json
+        .as_ref()
+        .and_then(|value| value.get("offset"))
+        .and_then(serde_json::Value::as_u64)
+        .or_else(|| tool_summary_number(&tool_call.args_summary, &["offset", "start_line"]));
+    let limit = tool_call
+        .output_json
+        .as_ref()
+        .and_then(|value| value.get("limit"))
+        .and_then(serde_json::Value::as_u64)
+        .or_else(|| tool_summary_number(&tool_call.args_summary, &["limit"]));
+    let mut parts = Vec::new();
+    if let Some(offset) = offset {
+        parts.push(format!("offset={offset}"));
+    }
+    if let Some(limit) = limit {
+        parts.push(format!("limit={limit}"));
+    }
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!(" [{}]", parts.join(", "))
+    }
+}
+
+fn tool_summary_number(args_summary: &str, keys: &[&str]) -> Option<u64> {
+    let value = serde_json::from_str::<serde_json::Value>(args_summary).ok()?;
+    let object = value.as_object()?;
+    keys.iter()
+        .find_map(|key| object.get(*key))
+        .and_then(serde_json::Value::as_u64)
+}
+
+fn tool_match_count_suffix(tool_call: &crate::app::ToolCallEntry) -> String {
+    let count = tool_call
+        .output_json
+        .as_ref()
+        .and_then(|value| value.get("total_count"))
+        .and_then(serde_json::Value::as_u64)
+        .or_else(|| {
+            tool_call.output_summary.as_deref().map(|output| {
+                output
+                    .lines()
+                    .filter(|line| !line.trim().is_empty())
+                    .count() as u64
+            })
+        });
+
+    count
+        .map(|count| format!(" ({count} match{})", if count == 1 { "" } else { "es" }))
+        .unwrap_or_default()
+}
+
+fn push_collapsible_output_block(
+    detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
+    output: &str,
+    max_lines: usize,
+    expanded: bool,
+    tone: TranscriptToolCallDetailTone,
+) {
+    let formatted = format_detail_payload(output);
+    let output_lines = formatted.lines().collect::<Vec<_>>();
+    if output_lines.len() > max_lines && !expanded {
+        detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+            text: output_lines[..max_lines].join("\n"),
+            tone,
+        });
+        detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+            text: format!(
+                "↳ {} more line{} hidden",
+                output_lines.len() - max_lines,
+                if output_lines.len() - max_lines == 1 {
+                    ""
+                } else {
+                    "s"
+                }
+            ),
+            tone: TranscriptToolCallDetailTone::Secondary,
+        });
+    } else {
+        detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+            text: formatted,
+            tone,
+        });
+    }
+}
+
+fn decorate_tool_call_title(title: String, tool_call: &crate::app::ToolCallEntry) -> String {
+    let mut suffixes = Vec::new();
+    match tool_call.status {
+        ToolCallDisplayStatus::PendingPermission => suffixes.push("pending permission".to_string()),
+        ToolCallDisplayStatus::Queued => suffixes.push("queued".to_string()),
+        ToolCallDisplayStatus::Running => suffixes.push("running".to_string()),
+        ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed => {
+            if let Some(duration_ms) = tool_call.duration_ms() {
+                suffixes.push(format_duration_ms(duration_ms));
+            }
+        }
+    }
+
+    if suffixes.is_empty() {
+        title
+    } else {
+        format!("{title} · {}", suffixes.join(" · "))
+    }
+}
+
+fn tool_call_denied(tool_call: &crate::app::ToolCallEntry) -> bool {
+    tool_call.permissions.iter().any(|permission| {
+        permission.resolved_decision == Some(harness_core::event::PermissionDecision::Deny)
+    })
+}
+
+fn tool_error_text(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
+    if tool_call.status != ToolCallDisplayStatus::Failed {
+        return None;
+    }
+
+    tool_call
+        .permissions
+        .iter()
+        .find_map(|permission| {
+            (permission.resolved_decision == Some(harness_core::event::PermissionDecision::Deny))
+                .then(|| permission.resolution_reason.clone())
+                .flatten()
+        })
+        .or_else(|| {
+            tool_call
+                .output_summary
+                .as_deref()
+                .map(format_detail_payload)
+        })
+}
+
+fn collapse_inline_whitespace(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn measure_transcript_layout(
     sections: &[TranscriptSection],
     theme: &Theme,
     width: u16,
+    base_surface: Color,
 ) -> MeasuredTranscriptLayout {
     let mut top_row = 0;
     let mut measured_sections = Vec::with_capacity(sections.len());
 
-    for (index, section) in sections.iter().enumerate() {
-        let surfaces = build_transcript_render_surfaces(section, theme, width);
+    for section in sections {
+        let surfaces = build_transcript_render_surfaces(section, theme, width, base_surface);
         let lines = render_transcript_surface_lines(&surfaces);
-        let content_width = usize::from(transcript_surface_content_width(width));
         let mut content_height = 0usize;
         let mut measured_surfaces = Vec::with_capacity(surfaces.len());
         for (surface_index, surface) in surfaces.into_iter().enumerate() {
             let top_offset = content_height + usize::from(surface_index > 0);
+            let render_width = transcript_surface_render_width(width, surface.show_outer_rail);
+            let content_width = usize::from(transcript_surface_content_width(
+                render_width,
+                surface.show_outer_rail,
+            ));
             let height = transcript_visual_rows(&surface.lines, content_width);
             content_height = top_offset + height;
             measured_surfaces.push(MeasuredTranscriptSurface {
                 top_offset,
                 height,
+                width: render_width,
+                show_outer_rail: surface.show_outer_rail,
                 rail_color: surface.rail_color,
                 surface: surface.surface,
                 lines: surface.lines,
             });
         }
-        let leading_gap_height = usize::from(index > 0);
+        let leading_gap_height = 0;
         let kind = match section {
             TranscriptSection::Turn(_) => MeasuredTranscriptSectionKind::Turn,
             TranscriptSection::PendingPermission(_) => {
@@ -501,7 +1033,7 @@ fn render_transcript_layout_surfaces(
                 area.x,
                 area.y
                     .saturating_add(u16::try_from(y_offset).unwrap_or(u16::MAX)),
-                area.width,
+                surface.width.min(area.width),
                 u16::try_from(visible_height).unwrap_or(u16::MAX),
             );
             render_transcript_surface(frame, surface, surface_rect, local_scroll, theme);
@@ -525,7 +1057,11 @@ fn render_transcript_surface(
         area,
     );
 
-    let rail_width = area.width.min(TRANSCRIPT_SURFACE_RAIL_WIDTH);
+    let rail_width = if surface.show_outer_rail {
+        area.width.min(TRANSCRIPT_SURFACE_RAIL_WIDTH)
+    } else {
+        0
+    };
     if rail_width > 0 {
         let rail_rect = Rect::new(area.x, area.y, rail_width, area.height);
         frame.render_widget(
@@ -550,25 +1086,32 @@ fn render_transcript_surface(
         area.width.saturating_sub(rail_width),
         area.height,
     );
-    frame.render_widget(
-        Paragraph::new(Text::from(surface.lines.clone()))
-            .style(panel_style(surface.surface, theme.text.primary))
-            .scroll((u16::try_from(local_scroll).unwrap_or(u16::MAX), 0))
-            .wrap(Wrap { trim: false }),
-        content_rect,
-    );
+    let paragraph = Paragraph::new(Text::from(surface.lines.clone()))
+        .style(panel_style(surface.surface, theme.text.primary))
+        .scroll((u16::try_from(local_scroll).unwrap_or(u16::MAX), 0));
+    if surface.show_outer_rail {
+        frame.render_widget(paragraph, content_rect);
+    } else {
+        frame.render_widget(paragraph.wrap(Wrap { trim: false }), content_rect);
+    }
 }
 
 fn build_transcript_render_surfaces(
     section: &TranscriptSection,
     theme: &Theme,
     width: u16,
+    base_surface: Color,
 ) -> Vec<TranscriptRenderSurface> {
     match section {
-        TranscriptSection::Turn(turn) => build_turn_render_surfaces(turn, theme, width),
+        TranscriptSection::Turn(turn) => {
+            build_turn_render_surfaces(turn, theme, width, base_surface)
+        }
         TranscriptSection::PendingPermission(section) => {
             vec![build_pending_permission_render_surface(
-                section, theme, width,
+                section,
+                theme,
+                width,
+                base_surface,
             )]
         }
     }
@@ -578,55 +1121,86 @@ fn build_turn_render_surfaces(
     turn: &TranscriptTurnSection,
     theme: &Theme,
     width: u16,
+    base_surface: Color,
 ) -> Vec<TranscriptRenderSurface> {
     let mut surfaces = Vec::with_capacity(3);
     if let Some(user_message) = turn.user_message.as_ref() {
-        surfaces.push(build_user_render_surface(turn, user_message, theme, width));
+        surfaces.push(build_user_render_surface(
+            turn,
+            user_message,
+            theme,
+            width,
+            base_surface,
+        ));
     }
-    surfaces.extend(build_assistant_render_surfaces(turn, theme, width));
+    surfaces.extend(build_assistant_render_surfaces(
+        turn,
+        theme,
+        width,
+        base_surface,
+    ));
     surfaces
 }
 
 fn build_user_render_surface(
-    turn: &TranscriptTurnSection,
+    _turn: &TranscriptTurnSection,
     user_msg: &TranscriptUserMessageSection,
     theme: &Theme,
     width: u16,
+    base_surface: Color,
 ) -> TranscriptRenderSurface {
-    let mut lines = Vec::new();
-    let is_selected = turn.header.is_selected;
-    let header_style = transcript_label_style(theme, is_selected);
-    let meta_style = muted_meta_style(theme);
-    let mut user_line = vec![Span::raw(TRANSCRIPT_SURFACE_BODY_PREFIX.to_string())];
-    user_line.extend([
-        Span::styled(
-            format!("{} ", theme.live_shell.transcript_glyphs.user_marker),
-            Style::default().fg(theme.text.accent),
-        ),
-        Span::styled("user", header_style),
-    ]);
-    append_parenthesized_meta(
-        &mut user_line,
-        vec![(
-            request_id_label(&user_msg.request_id).into_owned(),
-            meta_style,
-        )],
+    let surface = transcript_emphasized_surface(theme, base_surface);
+    let content_width = transcript_surface_content_width(width, true);
+    let mut lines = vec![build_user_surface_header_line(
+        user_msg,
         theme,
-    );
-    lines.push(Line::from(user_line));
-    append_rich_text_block(
+        content_width,
+        surface,
+    )];
+    append_user_surface_rich_text_block(
         &mut lines,
         &user_msg.text,
         theme.text.primary,
-        TRANSCRIPT_SURFACE_BODY_PREFIX,
+        content_width,
+        surface,
         theme,
-        transcript_surface_content_width(width),
     );
 
     TranscriptRenderSurface {
+        show_outer_rail: true,
         rail_color: theme.text.accent,
-        surface: transcript_top_level_surface(theme),
+        surface,
         lines,
+    }
+}
+
+fn append_user_surface_rich_text_block(
+    lines: &mut Vec<Line<'static>>,
+    text: &str,
+    color: ratatui::style::Color,
+    width: u16,
+    surface: Color,
+    theme: &Theme,
+) {
+    if !text.contains("```") {
+        append_user_surface_markdownish_text_block(lines, text, color, width, surface, theme);
+        return;
+    }
+
+    let Some(blocks) = parse_fenced_text_blocks(text) else {
+        append_user_surface_markdownish_text_block(lines, text, color, width, surface, theme);
+        return;
+    };
+
+    for block in blocks {
+        match block {
+            ParsedTextBlock::Plain(plain) => append_user_surface_markdownish_text_block(
+                lines, &plain, color, width, surface, theme,
+            ),
+            ParsedTextBlock::Code { raw, .. } => {
+                append_user_surface_text_block(lines, &raw, color, width, surface)
+            }
+        }
     }
 }
 
@@ -634,12 +1208,10 @@ fn build_assistant_render_surfaces(
     turn: &TranscriptTurnSection,
     theme: &Theme,
     width: u16,
+    base_surface: Color,
 ) -> Vec<TranscriptRenderSurface> {
     let mut answer_lines = Vec::new();
     let mut context_lines = Vec::new();
-    let is_selected = turn.header.is_selected;
-    let header_style = transcript_label_style(theme, is_selected);
-    let meta_style = muted_meta_style(theme);
     let (assistant_icon, assistant_color, assistant_status) = match turn.header.status {
         ActivityStatus::Streaming => (
             theme.live_shell.glyphs.streaming,
@@ -649,47 +1221,6 @@ fn build_assistant_render_surfaces(
         ActivityStatus::Done => (theme.live_shell.glyphs.done, theme.status.success, "done"),
         ActivityStatus::Error => (theme.live_shell.glyphs.error, theme.status.error, "error"),
     };
-    let mut assistant_meta = Vec::new();
-    if turn.header.status != ActivityStatus::Streaming
-        && (!turn.header.provider_id.is_empty() || !turn.header.model_id.is_empty())
-    {
-        assistant_meta.push(format!(
-            "{}/{}",
-            if turn.header.provider_id.is_empty() {
-                "-"
-            } else {
-                turn.header.provider_id.as_str()
-            },
-            if turn.header.model_id.is_empty() {
-                "-"
-            } else {
-                turn.header.model_id.as_str()
-            }
-        ));
-    }
-    let mut assistant_line = vec![Span::raw(TRANSCRIPT_SURFACE_BODY_PREFIX.to_string())];
-    assistant_line.extend([
-        Span::styled(
-            format!("{} ", assistant_icon),
-            Style::default().fg(assistant_color),
-        ),
-        Span::styled("assistant", header_style),
-    ]);
-    let mut assistant_segments = vec![(
-        assistant_status.to_string(),
-        Style::default().fg(assistant_color),
-    )];
-    if is_selected {
-        assistant_segments.push((
-            "current".to_string(),
-            Style::default().fg(theme.text.accent),
-        ));
-    }
-    if !assistant_meta.is_empty() {
-        assistant_segments.push((assistant_meta.join(" · "), meta_style));
-    }
-    append_parenthesized_meta(&mut assistant_line, assistant_segments, theme);
-    answer_lines.push(Line::from(assistant_line));
 
     for block in &turn.body_blocks {
         match block {
@@ -698,9 +1229,9 @@ fn build_assistant_render_surfaces(
                     &mut answer_lines,
                     text,
                     theme.text.primary,
-                    TRANSCRIPT_SURFACE_BODY_PREFIX,
+                    TRANSCRIPT_ASSISTANT_BODY_PREFIX,
                     theme,
-                    transcript_surface_content_width(width),
+                    transcript_surface_content_width(width, false),
                 );
             }
             TranscriptBodyBlock::WaitingResponse => {
@@ -708,10 +1239,20 @@ fn build_assistant_render_surfaces(
                     &mut answer_lines,
                     "Waiting for response…",
                     theme.text.secondary,
-                    TRANSCRIPT_SURFACE_BODY_PREFIX,
+                    TRANSCRIPT_ASSISTANT_BODY_PREFIX,
                 );
             }
         }
+    }
+
+    if !answer_lines.is_empty() {
+        answer_lines.push(build_assistant_footer_line(
+            turn,
+            assistant_icon,
+            assistant_color,
+            assistant_status,
+            theme,
+        ));
     }
 
     if let Some(thinking) = &turn.thinking {
@@ -721,9 +1262,11 @@ fn build_assistant_render_surfaces(
             LabeledTextBlockStyle {
                 indent: TRANSCRIPT_NESTED_INDENT,
                 label: "Thinking:",
-                rail_color: theme.text.accent,
-                surface: transcript_nested_surface(theme),
-                label_style: Style::default().fg(theme.text.accent),
+                rail_color: transcript_nested_rail_color(theme),
+                surface: transcript_nested_surface(theme, base_surface),
+                label_style: Style::default()
+                    .fg(theme.text.secondary)
+                    .add_modifier(Modifier::ITALIC),
                 body_style: subdued_payload_style(theme),
             },
             theme,
@@ -732,7 +1275,7 @@ fn build_assistant_render_surfaces(
     }
 
     for tool_call in &turn.tool_calls {
-        append_tool_call_section_lines(&mut context_lines, tool_call, theme, width);
+        append_tool_call_section_lines(&mut context_lines, tool_call, theme, width, base_surface);
     }
 
     if let Some(error) = &turn.error {
@@ -742,8 +1285,8 @@ fn build_assistant_render_surfaces(
             LabeledTextBlockStyle {
                 indent: TRANSCRIPT_NESTED_INDENT,
                 label: "error",
-                rail_color: theme.status.error,
-                surface: transcript_nested_surface(theme),
+                rail_color: transcript_nested_rail_color(theme),
+                surface: transcript_nested_surface(theme, base_surface),
                 label_style: Style::default().fg(theme.status.error),
                 body_style: Style::default().fg(theme.status.error),
             },
@@ -753,14 +1296,16 @@ fn build_assistant_render_surfaces(
     }
 
     let mut surfaces = vec![TranscriptRenderSurface {
-        rail_color: assistant_color,
-        surface: transcript_top_level_surface(theme),
+        show_outer_rail: false,
+        rail_color: assistant_primary_rail_color(turn, theme),
+        surface: transcript_flat_surface(base_surface),
         lines: answer_lines,
     }];
     if !context_lines.is_empty() {
         surfaces.push(TranscriptRenderSurface {
-            rail_color: assistant_context_rail_color(turn, theme, assistant_color),
-            surface: transcript_nested_surface(theme),
+            show_outer_rail: false,
+            rail_color: transcript_nested_rail_color(theme),
+            surface: transcript_nested_surface(theme, base_surface),
             lines: context_lines,
         });
     }
@@ -772,88 +1317,289 @@ fn append_tool_call_section_lines(
     tool_call: &TranscriptToolCallSection,
     theme: &Theme,
     width: u16,
+    base_surface: Color,
 ) {
-    let (status_icon, status_color, status_label, _) =
-        tool_status_tokens(tool_call.header.status, theme);
+    match tool_call.header.visual_style {
+        TranscriptToolCallVisualStyle::Inline => {
+            append_opencode_inline_tool_section_lines(lines, tool_call, theme, width, base_surface)
+        }
+        TranscriptToolCallVisualStyle::Block => {
+            append_opencode_block_tool_section_lines(lines, tool_call, theme, width, base_surface)
+        }
+    }
+}
 
-    let mut header = vec![
-        Span::styled(
-            format!("{} ", status_icon),
-            Style::default().fg(status_color),
-        ),
-        Span::styled("tool ", muted_meta_style(theme)),
-        Span::styled(
-            tool_call.header.tool_id.clone(),
-            Style::default()
-                .fg(theme.text.primary)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ];
-    append_parenthesized_meta(
-        &mut header,
-        vec![(status_label.to_string(), Style::default().fg(status_color))],
-        theme,
+fn append_opencode_inline_tool_section_lines(
+    lines: &mut Vec<Line<'static>>,
+    tool_call: &TranscriptToolCallSection,
+    theme: &Theme,
+    width: u16,
+    base_surface: Color,
+) {
+    let fg = inline_tool_color(tool_call, theme);
+    let mut style = Style::default().fg(fg);
+    if tool_call.header.struck_out {
+        style = style.add_modifier(Modifier::CROSSED_OUT);
+    }
+
+    let mut spans = Vec::new();
+    if let Some(icon) = tool_call.header.icon {
+        spans.push(Span::styled(format!("{icon} "), style));
+    }
+    spans.push(Span::styled(tool_call.header.title.clone(), style));
+
+    append_surface_row(
+        lines,
+        TRANSCRIPT_ASSISTANT_BODY_PREFIX,
+        transcript_flat_surface(base_surface),
+        spans,
+        transcript_surface_content_width(width, false),
     );
 
-    if let Some(summary) = &tool_call.inline_summary {
-        header.push(Span::styled(" · ", muted_meta_style(theme)));
-        header.push(Span::styled(summary.clone(), subdued_payload_style(theme)));
-        append_nested_surface_row(
-            lines,
-            TRANSCRIPT_NESTED_INDENT,
-            status_color,
-            transcript_nested_surface(theme),
-            header,
-            transcript_surface_content_width(width),
-        );
-        return;
+    append_tool_call_detail_blocks(lines, tool_call, theme, width, base_surface, false);
+}
+
+fn append_opencode_block_tool_section_lines(
+    lines: &mut Vec<Line<'static>>,
+    tool_call: &TranscriptToolCallSection,
+    theme: &Theme,
+    width: u16,
+    base_surface: Color,
+) {
+    let surface = transcript_emphasized_surface(theme, base_surface);
+    let rail_color = transcript_nested_rail_color(theme);
+    let mut title_style = Style::default().fg(theme.text.secondary);
+    if matches!(
+        tool_call.header.status,
+        ToolCallDisplayStatus::PendingPermission
+    ) {
+        title_style = title_style.fg(theme.status.warning);
+    }
+    if tool_call.header.struck_out {
+        title_style = title_style.add_modifier(Modifier::CROSSED_OUT);
     }
 
     append_nested_surface_row(
         lines,
-        TRANSCRIPT_NESTED_INDENT,
-        status_color,
-        transcript_nested_surface(theme),
-        header,
-        transcript_surface_content_width(width),
+        TRANSCRIPT_ASSISTANT_BODY_PREFIX,
+        rail_color,
+        surface,
+        vec![Span::styled(tool_call.header.title.clone(), title_style)],
+        transcript_surface_content_width(width, false),
     );
 
+    append_tool_call_detail_blocks(lines, tool_call, theme, width, base_surface, true);
+}
+
+fn append_tool_call_detail_blocks(
+    lines: &mut Vec<Line<'static>>,
+    tool_call: &TranscriptToolCallSection,
+    theme: &Theme,
+    width: u16,
+    base_surface: Color,
+    block_surface: bool,
+) {
     for detail_block in &tool_call.detail_blocks {
-        let (label, value, value_style) = match detail_block {
-            TranscriptToolCallDetailBlock::State(value) => {
-                ("state", value.as_str(), subdued_payload_style(theme))
+        match detail_block {
+            TranscriptToolCallDetailBlock::Message { text, tone } => {
+                append_tool_call_message_block(
+                    lines,
+                    text,
+                    *tone,
+                    theme,
+                    width,
+                    base_surface,
+                    block_surface,
+                );
             }
-            TranscriptToolCallDetailBlock::Args(value) => {
-                ("args", value.as_str(), subdued_payload_style(theme))
-            }
-            TranscriptToolCallDetailBlock::Result(value) => {
-                ("result", value.as_str(), subdued_payload_style(theme))
-            }
-            TranscriptToolCallDetailBlock::Error(value) => (
-                "error",
-                value.as_str(),
-                Style::default().fg(theme.status.error),
+            TranscriptToolCallDetailBlock::StructuredDiff {
+                diff_content,
+                fallback_path,
+                force_stacked,
+            } => append_tool_call_diff_block(
+                lines,
+                diff_content,
+                fallback_path.as_deref(),
+                *force_stacked,
+                theme,
+                width,
+                base_surface,
             ),
+        }
+    }
+}
+
+fn append_tool_call_message_block(
+    lines: &mut Vec<Line<'static>>,
+    text: &str,
+    tone: TranscriptToolCallDetailTone,
+    theme: &Theme,
+    width: u16,
+    base_surface: Color,
+    block_surface: bool,
+) {
+    let style = match tone {
+        TranscriptToolCallDetailTone::Secondary => subdued_payload_style(theme),
+        TranscriptToolCallDetailTone::Error => Style::default().fg(theme.status.error),
+    };
+
+    let indent = TRANSCRIPT_OPCODE_EDIT_INDENT;
+
+    let surface = if block_surface {
+        transcript_emphasized_surface(theme, base_surface)
+    } else {
+        transcript_flat_surface(base_surface)
+    };
+
+    for row in text.split('\n') {
+        let spans = if row.is_empty() {
+            Vec::new()
+        } else {
+            vec![Span::styled(row.to_string(), style)]
         };
-        append_tool_detail_row(
+        append_surface_row(
             lines,
-            TRANSCRIPT_NESTED_INDENT,
-            status_color,
-            transcript_nested_surface(theme),
-            label,
-            value,
-            tool_detail_label_style(label, theme, tool_call.header.status),
-            value_style,
-            theme,
-            transcript_surface_content_width(width),
+            indent,
+            surface,
+            spans,
+            transcript_surface_content_width(width, false),
         );
     }
+}
+
+fn inline_tool_color(tool_call: &TranscriptToolCallSection, theme: &Theme) -> Color {
+    match tool_call.header.status {
+        ToolCallDisplayStatus::PendingPermission => theme.status.warning,
+        ToolCallDisplayStatus::Queued
+        | ToolCallDisplayStatus::Running
+        | ToolCallDisplayStatus::Succeeded
+        | ToolCallDisplayStatus::Failed => theme.text.secondary,
+    }
+}
+
+fn append_tool_call_diff_block(
+    lines: &mut Vec<Line<'static>>,
+    diff_content: &str,
+    fallback_path: Option<&str>,
+    force_stacked: bool,
+    theme: &Theme,
+    width: u16,
+    base_surface: Color,
+) {
+    let nested_width = transcript_surface_content_width(width, false);
+    let content_width = transcript_surface_content_width(nested_width, false);
+    if let Some(diff_lines) = render_structured_diff_lines(
+        diff_content,
+        fallback_path,
+        "",
+        content_width,
+        force_stacked,
+        theme,
+    ) {
+        append_prebuilt_surface_lines(
+            lines,
+            TRANSCRIPT_OPCODE_EDIT_INDENT,
+            transcript_nested_surface(theme, base_surface),
+            diff_lines,
+            nested_width,
+        );
+    }
+}
+
+fn append_prebuilt_surface_lines(
+    lines: &mut Vec<Line<'static>>,
+    indent: &str,
+    surface: Color,
+    prebuilt: Vec<Line<'static>>,
+    width: u16,
+) {
+    let prefix = surface_prefix(indent);
+    let prefix_width = surface_prefix_width(indent);
+    for line in prebuilt {
+        lines.push(surface_line(
+            prefix.clone(),
+            prefix_width,
+            line.spans,
+            width,
+            surface,
+        ));
+    }
+}
+
+fn append_surface_row(
+    lines: &mut Vec<Line<'static>>,
+    indent: &str,
+    surface: Color,
+    content_spans: Vec<Span<'static>>,
+    width: u16,
+) {
+    let prefix = surface_prefix(indent);
+    let prefix_width = surface_prefix_width(indent);
+    let content_width = usize::from(width).saturating_sub(prefix_width).max(1);
+    let wrapped_rows = wrap_surface_spans(content_spans, content_width);
+
+    if wrapped_rows.is_empty() {
+        lines.push(surface_line(
+            prefix,
+            prefix_width,
+            Vec::new(),
+            width,
+            surface,
+        ));
+        return;
+    }
+
+    for row in wrapped_rows {
+        lines.push(surface_line(
+            prefix.clone(),
+            prefix_width,
+            row,
+            width,
+            surface,
+        ));
+    }
+}
+
+fn surface_prefix(indent: &str) -> Vec<Span<'static>> {
+    if indent.is_empty() {
+        Vec::new()
+    } else {
+        vec![Span::raw(indent.to_string())]
+    }
+}
+
+fn surface_prefix_width(indent: &str) -> usize {
+    indent.chars().count()
+}
+
+fn surface_line(
+    mut prefix: Vec<Span<'static>>,
+    prefix_width: usize,
+    content_spans: Vec<Span<'static>>,
+    width: u16,
+    surface: Color,
+) -> Line<'static> {
+    let mut visible_width = prefix_width;
+    for span in content_spans {
+        visible_width += span.content.chars().count();
+        prefix.push(surface_span(span.content.into_owned(), span.style, surface));
+    }
+    let remaining = usize::from(width).saturating_sub(visible_width);
+    if remaining > 0 {
+        prefix.push(surface_span(
+            " ".repeat(remaining),
+            Style::default(),
+            surface,
+        ));
+    }
+    Line::from(prefix)
 }
 
 fn build_pending_permission_render_surface(
     section: &TranscriptPendingPermissionSection,
     theme: &Theme,
     width: u16,
+    base_surface: Color,
 ) -> TranscriptRenderSurface {
     let mut lines = vec![Line::from(vec![
         Span::raw(TRANSCRIPT_SURFACE_BODY_PREFIX.to_string()),
@@ -879,31 +1625,33 @@ fn build_pending_permission_render_surface(
         theme.text.primary,
         TRANSCRIPT_SURFACE_BODY_PREFIX,
         theme,
-        transcript_surface_content_width(width),
+        transcript_surface_content_width(width, true),
     );
 
     TranscriptRenderSurface {
+        show_outer_rail: true,
         rail_color: theme.status.warning,
-        surface: transcript_nested_surface(theme),
+        surface: transcript_emphasized_surface(theme, base_surface),
         lines,
     }
 }
 
 fn render_transcript_surface_lines(surfaces: &[TranscriptRenderSurface]) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    for (index, surface) in surfaces.iter().enumerate() {
-        if index > 0 {
-            lines.push(Line::default());
+    for surface in surfaces {
+        if surface.show_outer_rail {
+            lines.extend(surface.lines.iter().cloned().map(|line| {
+                prepend_transcript_surface_rail(line, surface.rail_color, surface.surface)
+            }));
+        } else {
+            lines.extend(surface.lines.iter().cloned());
         }
-        lines.extend(surface.lines.iter().cloned().map(|line| {
-            prepend_transcript_surface_rail(line, surface.rail_color, surface.surface)
-        }));
     }
     lines
 }
 
-pub(super) fn append_text_block<'a>(
-    lines: &mut Vec<Line<'a>>,
+pub(super) fn append_text_block(
+    lines: &mut Vec<Line<'static>>,
     text: &str,
     color: ratatui::style::Color,
     prefix: &str,
@@ -925,6 +1673,436 @@ pub(super) fn append_text_block<'a>(
     }
 }
 
+fn append_user_surface_text_block(
+    lines: &mut Vec<Line<'static>>,
+    text: &str,
+    color: ratatui::style::Color,
+    width: u16,
+    surface: Color,
+) {
+    let base_style = Style::default().fg(color);
+    for line in text.lines() {
+        append_user_surface_wrapped_line(
+            lines,
+            if line.is_empty() {
+                Vec::new()
+            } else {
+                vec![Span::styled(line.to_string(), base_style)]
+            },
+            base_style,
+            width,
+            surface,
+        );
+    }
+
+    if text.is_empty() {
+        append_user_surface_wrapped_line(lines, Vec::new(), base_style, width, surface);
+    }
+}
+
+fn append_user_surface_markdownish_text_block(
+    lines: &mut Vec<Line<'static>>,
+    text: &str,
+    color: ratatui::style::Color,
+    width: u16,
+    surface: Color,
+    theme: &Theme,
+) {
+    let base_style = Style::default().fg(color);
+    for line in text.lines() {
+        append_user_surface_wrapped_line(
+            lines,
+            if line.is_empty() {
+                Vec::new()
+            } else {
+                parse_inline_markdown_spans(line, base_style, color, theme)
+            },
+            base_style,
+            width,
+            surface,
+        );
+    }
+
+    if text.is_empty() {
+        append_user_surface_wrapped_line(lines, Vec::new(), base_style, width, surface);
+    }
+}
+
+fn append_user_surface_wrapped_line(
+    lines: &mut Vec<Line<'static>>,
+    content_spans: Vec<Span<'static>>,
+    prefix_style: Style,
+    width: u16,
+    surface: Color,
+) {
+    let prefix_width = TRANSCRIPT_USER_BODY_PREFIX.chars().count();
+    let content_width = usize::from(width).saturating_sub(prefix_width).max(1);
+    if content_spans.is_empty() {
+        lines.push(user_surface_line(Vec::new(), prefix_style, width, surface));
+        return;
+    }
+
+    for row in wrap_surface_spans(content_spans, content_width) {
+        lines.push(user_surface_line(row, prefix_style, width, surface));
+    }
+}
+
+fn user_surface_line(
+    content_spans: Vec<Span<'static>>,
+    prefix_style: Style,
+    _width: u16,
+    surface: Color,
+) -> Line<'static> {
+    let mut spans = vec![surface_span(
+        TRANSCRIPT_USER_BODY_PREFIX,
+        prefix_style,
+        surface,
+    )];
+    for span in content_spans {
+        spans.push(surface_span(span.content.into_owned(), span.style, surface));
+    }
+    Line::from(spans)
+}
+
+fn append_markdownish_text_block(
+    lines: &mut Vec<Line<'static>>,
+    text: &str,
+    color: ratatui::style::Color,
+    prefix: &str,
+    theme: &Theme,
+    width: u16,
+) {
+    let base_style = Style::default().fg(color);
+    for line in text.lines() {
+        append_markdownish_line(lines, line, color, prefix, base_style, theme, width);
+    }
+
+    if text.is_empty() {
+        append_prefixed_wrapped_spans_line(lines, prefix, base_style, Vec::new(), width);
+    }
+}
+
+fn append_markdownish_line(
+    lines: &mut Vec<Line<'static>>,
+    line: &str,
+    color: Color,
+    prefix: &str,
+    base_style: Style,
+    theme: &Theme,
+    width: u16,
+) {
+    if line.is_empty() {
+        append_prefixed_wrapped_spans_line(lines, prefix, base_style, Vec::new(), width);
+        return;
+    }
+
+    let indent_width = line.chars().take_while(|ch| ch.is_whitespace()).count();
+    let indent = " ".repeat(indent_width);
+    let trimmed = line.trim_start();
+    let content_width = usize::from(width)
+        .saturating_sub(prefix.chars().count())
+        .max(1);
+
+    if let Some(text) = markdown_heading_text(trimmed) {
+        append_prefixed_wrapped_spans_line(
+            lines,
+            &format!("{prefix}{indent}"),
+            base_style,
+            parse_inline_markdown_spans(
+                text,
+                base_style
+                    .fg(theme.text.accent)
+                    .add_modifier(Modifier::BOLD),
+                theme.text.accent,
+                theme,
+            ),
+            width,
+        );
+        return;
+    }
+
+    if markdown_rule(trimmed) {
+        append_prefixed_wrapped_spans_line(
+            lines,
+            prefix,
+            base_style,
+            vec![Span::styled(
+                "─".repeat(content_width),
+                Style::default().fg(theme.text.secondary),
+            )],
+            width,
+        );
+        return;
+    }
+
+    if let Some(text) = trimmed.strip_prefix("> ") {
+        append_prefixed_wrapped_spans_line(
+            lines,
+            &format!("{prefix}{indent}▍ "),
+            Style::default().fg(theme.text.secondary),
+            parse_inline_markdown_spans(
+                text,
+                Style::default()
+                    .fg(theme.text.secondary)
+                    .add_modifier(Modifier::ITALIC),
+                theme.text.secondary,
+                theme,
+            ),
+            width,
+        );
+        return;
+    }
+
+    if let Some((list_prefix, text, list_style, text_style)) = markdown_list_prefix(trimmed, theme)
+    {
+        append_prefixed_wrapped_spans_line(
+            lines,
+            &format!("{prefix}{indent}{list_prefix}"),
+            list_style,
+            parse_inline_markdown_spans(text, text_style, color, theme),
+            width,
+        );
+        return;
+    }
+
+    append_prefixed_wrapped_spans_line(
+        lines,
+        prefix,
+        base_style,
+        parse_inline_markdown_spans(trimmed, base_style, color, theme),
+        width,
+    );
+}
+
+fn append_prefixed_wrapped_spans_line(
+    lines: &mut Vec<Line<'static>>,
+    prefix: &str,
+    prefix_style: Style,
+    content_spans: Vec<Span<'static>>,
+    width: u16,
+) {
+    if content_spans.is_empty() {
+        lines.push(Line::from(Span::styled(prefix.to_string(), prefix_style)));
+        return;
+    }
+
+    let prefix_width = prefix.chars().count();
+    let content_width = usize::from(width).saturating_sub(prefix_width).max(1);
+    for row in wrap_surface_spans(content_spans, content_width) {
+        let mut spans = vec![Span::styled(prefix.to_string(), prefix_style)];
+        spans.extend(row);
+        lines.push(Line::from(spans));
+    }
+}
+
+fn parse_inline_markdown_spans(
+    text: &str,
+    base_style: Style,
+    base_color: Color,
+    theme: &Theme,
+) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    let mut remaining = text;
+
+    while !remaining.is_empty() {
+        if let Some(rest) = remaining.strip_prefix('[') {
+            if let Some(label_end) = rest.find("](") {
+                let after_label = &rest[label_end + 2..];
+                if let Some(url_end) = after_label.find(')') {
+                    spans.push(Span::styled(
+                        rest[..label_end].to_string(),
+                        base_style
+                            .fg(theme.text.accent)
+                            .add_modifier(Modifier::UNDERLINED),
+                    ));
+                    remaining = &after_label[url_end + 1..];
+                    continue;
+                }
+            }
+        }
+
+        if let Some(url_end) = raw_url_length(remaining) {
+            spans.push(Span::styled(
+                remaining[..url_end].to_string(),
+                base_style
+                    .fg(theme.text.accent)
+                    .add_modifier(Modifier::UNDERLINED),
+            ));
+            remaining = &remaining[url_end..];
+            continue;
+        }
+
+        if let Some(rest) = remaining.strip_prefix("**") {
+            if let Some(end) = rest.find("**") {
+                spans.push(Span::styled(
+                    rest[..end].to_string(),
+                    base_style.fg(base_color).add_modifier(Modifier::BOLD),
+                ));
+                remaining = &rest[end + 2..];
+                continue;
+            }
+        }
+
+        if let Some(rest) = remaining.strip_prefix("~~") {
+            if let Some(end) = rest.find("~~") {
+                spans.push(Span::styled(
+                    rest[..end].to_string(),
+                    base_style
+                        .fg(theme.text.secondary)
+                        .add_modifier(Modifier::CROSSED_OUT),
+                ));
+                remaining = &rest[end + 2..];
+                continue;
+            }
+        }
+
+        if let Some(rest) = remaining.strip_prefix('`') {
+            if let Some(end) = rest.find('`') {
+                spans.push(Span::styled(
+                    rest[..end].to_string(),
+                    base_style
+                        .fg(theme.status.success)
+                        .bg(theme.surface.panel_elevated),
+                ));
+                remaining = &rest[end + 1..];
+                continue;
+            }
+        }
+
+        if let Some(rest) = remaining.strip_prefix('*') {
+            if let Some(end) = rest.find('*') {
+                spans.push(Span::styled(
+                    rest[..end].to_string(),
+                    base_style
+                        .fg(theme.status.warning)
+                        .add_modifier(Modifier::ITALIC),
+                ));
+                remaining = &rest[end + 1..];
+                continue;
+            }
+        }
+
+        if let Some(rest) = remaining.strip_prefix('_') {
+            if let Some(end) = rest.find('_') {
+                spans.push(Span::styled(
+                    rest[..end].to_string(),
+                    base_style
+                        .fg(theme.status.warning)
+                        .add_modifier(Modifier::ITALIC),
+                ));
+                remaining = &rest[end + 1..];
+                continue;
+            }
+        }
+
+        let next_marker = ["[", "http://", "https://", "**", "~~", "`", "*", "_"]
+            .into_iter()
+            .filter_map(|marker| remaining.find(marker))
+            .min()
+            .unwrap_or(remaining.len());
+        if next_marker == 0 {
+            let ch = remaining
+                .chars()
+                .next()
+                .expect("remaining text should not be empty");
+            spans.push(Span::styled(ch.to_string(), base_style.fg(base_color)));
+            remaining = &remaining[ch.len_utf8()..];
+            continue;
+        }
+        let plain = &remaining[..next_marker];
+        spans.push(Span::styled(plain.to_string(), base_style.fg(base_color)));
+        remaining = &remaining[next_marker..];
+    }
+
+    spans
+}
+
+fn markdown_heading_text(line: &str) -> Option<&str> {
+    let hashes = line.chars().take_while(|ch| *ch == '#').count();
+    if !(1..=6).contains(&hashes) {
+        return None;
+    }
+    line[hashes..].strip_prefix(' ').map(str::trim)
+}
+
+fn markdown_rule(line: &str) -> bool {
+    let stripped: String = line.chars().filter(|ch| !ch.is_whitespace()).collect();
+    matches!(stripped.as_str(), "---" | "***" | "___")
+}
+
+fn markdown_list_prefix<'a>(
+    line: &'a str,
+    theme: &Theme,
+) -> Option<(String, &'a str, Style, Style)> {
+    for marker in ["- [x] ", "* [x] ", "+ [x] "] {
+        if let Some(text) = line.strip_prefix(marker) {
+            return Some((
+                "☑ ".to_string(),
+                text,
+                Style::default()
+                    .fg(theme.status.success)
+                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(theme.text.primary),
+            ));
+        }
+    }
+
+    for marker in ["- [ ] ", "* [ ] ", "+ [ ] "] {
+        if let Some(text) = line.strip_prefix(marker) {
+            return Some((
+                "☐ ".to_string(),
+                text,
+                Style::default().fg(theme.text.secondary),
+                Style::default().fg(theme.text.primary),
+            ));
+        }
+    }
+
+    for marker in ["- ", "* ", "+ "] {
+        if let Some(text) = line.strip_prefix(marker) {
+            return Some((
+                "• ".to_string(),
+                text,
+                Style::default()
+                    .fg(theme.text.accent)
+                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(theme.text.primary),
+            ));
+        }
+    }
+
+    let digits = line.chars().take_while(|ch| ch.is_ascii_digit()).count();
+    if digits > 0 {
+        let suffix = &line[digits..];
+        if let Some(text) = suffix.strip_prefix(". ") {
+            return Some((
+                format!("{}{}", &line[..digits], ". "),
+                text,
+                Style::default()
+                    .fg(theme.text.accent)
+                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(theme.text.primary),
+            ));
+        }
+    }
+
+    None
+}
+
+fn raw_url_length(text: &str) -> Option<usize> {
+    let prefix = if text.starts_with("https://") {
+        "https://"
+    } else if text.starts_with("http://") {
+        "http://"
+    } else {
+        return None;
+    };
+
+    let tail = &text[prefix.len()..];
+    let extra = tail.find(char::is_whitespace).unwrap_or(tail.len());
+    Some(prefix.len() + extra)
+}
+
 fn append_rich_text_block(
     lines: &mut Vec<Line<'static>>,
     text: &str,
@@ -934,18 +2112,20 @@ fn append_rich_text_block(
     width: u16,
 ) {
     if !text.contains("```") {
-        append_text_block(lines, text, color, prefix);
+        append_markdownish_text_block(lines, text, color, prefix, theme, width);
         return;
     }
 
     let Some(blocks) = parse_fenced_text_blocks(text) else {
-        append_text_block(lines, text, color, prefix);
+        append_markdownish_text_block(lines, text, color, prefix, theme, width);
         return;
     };
 
     for block in blocks {
         match block {
-            ParsedTextBlock::Plain(plain) => append_text_block(lines, &plain, color, prefix),
+            ParsedTextBlock::Plain(plain) => {
+                append_markdownish_text_block(lines, &plain, color, prefix, theme, width)
+            }
             ParsedTextBlock::Code {
                 language,
                 body,
@@ -954,7 +2134,7 @@ fn append_rich_text_block(
                 if let Some(language) = language.as_deref() {
                     if matches!(language, "diff" | "patch") {
                         if let Some(diff_lines) =
-                            render_structured_diff_lines(&body, None, prefix, width, theme)
+                            render_structured_diff_lines(&body, None, prefix, width, false, theme)
                         {
                             lines.extend(diff_lines);
                             continue;
@@ -1221,28 +2401,163 @@ fn transcript_surface_focused(app: &AppState) -> bool {
         && !app.details_drawer_open()
 }
 
-fn transcript_surface_content_width(width: u16) -> u16 {
-    width.saturating_sub(TRANSCRIPT_SURFACE_RAIL_WIDTH).max(1)
-}
-
-fn transcript_top_level_surface(theme: &Theme) -> Color {
-    elevated_card_surface(theme)
-}
-
-fn assistant_context_rail_color(
-    turn: &TranscriptTurnSection,
-    theme: &Theme,
-    assistant_color: Color,
-) -> Color {
-    if turn.body_blocks.is_empty() {
-        assistant_color
+fn transcript_surface_content_width(width: u16, show_outer_rail: bool) -> u16 {
+    if show_outer_rail {
+        width.saturating_sub(TRANSCRIPT_SURFACE_RAIL_WIDTH).max(1)
     } else {
-        theme.text.secondary
+        width.max(1)
     }
 }
 
-fn transcript_nested_surface(theme: &Theme) -> Color {
-    theme.surface.panel
+fn transcript_surface_render_width(width: u16, _show_outer_rail: bool) -> u16 {
+    width.max(1)
+}
+
+fn transcript_emphasized_surface(theme: &Theme, base_surface: Color) -> Color {
+    if base_surface == theme.surface.panel {
+        elevated_card_surface(theme)
+    } else {
+        theme.surface.panel
+    }
+}
+
+fn transcript_flat_surface(base_surface: Color) -> Color {
+    base_surface
+}
+
+fn build_assistant_footer_line(
+    turn: &TranscriptTurnSection,
+    assistant_icon: &str,
+    assistant_color: Color,
+    assistant_status: &str,
+    theme: &Theme,
+) -> Line<'static> {
+    let mut spans = vec![Span::raw(TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string())];
+    spans.push(Span::styled(
+        format!("{} ", assistant_icon),
+        Style::default().fg(assistant_color),
+    ));
+    spans.push(Span::styled(
+        assistant_footer_label(&turn.header.profile_label),
+        Style::default().fg(assistant_primary_label_color(turn, theme)),
+    ));
+    if !turn.header.model_id.trim().is_empty() {
+        spans.push(Span::styled(" · ", muted_meta_style(theme)));
+        spans.push(Span::styled(
+            turn.header.model_id.clone(),
+            muted_meta_style(theme),
+        ));
+    }
+    if turn.header.status != ActivityStatus::Streaming {
+        if let Some(duration_ms) = turn.header.duration_ms {
+            spans.push(Span::styled(" · ", muted_meta_style(theme)));
+            spans.push(Span::styled(
+                format_duration_ms(duration_ms),
+                muted_meta_style(theme),
+            ));
+        }
+    }
+    if turn.header.status != ActivityStatus::Done {
+        spans.push(Span::styled(" · ", muted_meta_style(theme)));
+        spans.push(Span::styled(
+            assistant_status.to_string(),
+            Style::default().fg(assistant_color),
+        ));
+    }
+    Line::from(spans)
+}
+
+fn titlecase_label(value: &str) -> String {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return String::new();
+    };
+    format!("{}{}", first.to_uppercase(), chars.as_str())
+}
+
+fn assistant_footer_label(value: &str) -> String {
+    if value.trim().is_empty()
+        || value.eq_ignore_ascii_case("unknown")
+        || value.eq_ignore_ascii_case("default")
+    {
+        return "Assistant".to_string();
+    }
+    titlecase_label(value)
+}
+
+fn assistant_primary_label_color(turn: &TranscriptTurnSection, theme: &Theme) -> Color {
+    match turn.header.status {
+        ActivityStatus::Streaming => theme.text.accent,
+        ActivityStatus::Done => theme.status.success,
+        ActivityStatus::Error => theme.status.error,
+    }
+}
+
+fn assistant_primary_rail_color(turn: &TranscriptTurnSection, theme: &Theme) -> Color {
+    match turn.header.status {
+        ActivityStatus::Streaming => theme.text.accent,
+        ActivityStatus::Done | ActivityStatus::Error => theme.text.secondary,
+    }
+}
+
+fn transcript_nested_rail_color(theme: &Theme) -> Color {
+    theme.text.secondary
+}
+
+fn transcript_nested_surface(_theme: &Theme, base_surface: Color) -> Color {
+    transcript_flat_surface(base_surface)
+}
+
+fn build_user_surface_header_line(
+    user_msg: &TranscriptUserMessageSection,
+    theme: &Theme,
+    width: u16,
+    surface: Color,
+) -> Line<'static> {
+    let mut content = vec![Span::styled(
+        "› You",
+        Style::default()
+            .fg(theme.text.accent)
+            .bg(surface)
+            .add_modifier(Modifier::BOLD),
+    )];
+    if let Some(timestamp) = user_msg.timestamp.as_deref() {
+        content.push(Span::styled(" · ", muted_meta_style(theme).bg(surface)));
+        content.push(Span::styled(
+            timestamp.to_string(),
+            muted_meta_style(theme).bg(surface),
+        ));
+    }
+
+    user_surface_line(
+        content,
+        Style::default().fg(theme.text.accent),
+        width,
+        surface,
+    )
+}
+
+fn format_duration_ms(duration_ms: u64) -> String {
+    if duration_ms >= 60_000 {
+        format!(
+            "{}m {}s",
+            duration_ms / 60_000,
+            (duration_ms % 60_000) / 1_000
+        )
+    } else if duration_ms >= 1_000 {
+        format!("{:.1}s", duration_ms as f64 / 1_000.0)
+    } else {
+        format!("{duration_ms}ms")
+    }
+}
+
+fn format_transcript_timestamp(timestamp: &str) -> String {
+    let trimmed = timestamp.trim();
+    if trimmed.len() >= 16 && trimmed.as_bytes().get(10) == Some(&b'T') {
+        trimmed[11..16].to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 fn transcript_surface_rail_lines(
@@ -1287,6 +2602,34 @@ fn append_nested_surface_row(
     content_spans: Vec<Span<'static>>,
     width: u16,
 ) {
+    let prefix = nested_surface_prefix(indent, rail_color, surface);
+    let prefix_width = nested_surface_prefix_width(indent);
+    let content_width = usize::from(width).saturating_sub(prefix_width).max(1);
+    let wrapped_rows = wrap_surface_spans(content_spans, content_width);
+
+    if wrapped_rows.is_empty() {
+        lines.push(nested_surface_line(
+            prefix,
+            prefix_width,
+            Vec::new(),
+            width,
+            surface,
+        ));
+        return;
+    }
+
+    for row in wrapped_rows {
+        lines.push(nested_surface_line(
+            prefix.clone(),
+            prefix_width,
+            row,
+            width,
+            surface,
+        ));
+    }
+}
+
+fn nested_surface_prefix(indent: &str, rail_color: Color, surface: Color) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     if !indent.is_empty() {
         spans.push(Span::raw(indent.to_string()));
@@ -1296,61 +2639,135 @@ fn append_nested_surface_row(
         Style::default().fg(rail_color).bg(surface),
     ));
     spans.push(surface_span(" ", Style::default(), surface));
-    let mut visible_width = indent.chars().count() + TRANSCRIPT_RAIL_GLYPH.chars().count() + 1;
+    spans
+}
+
+fn nested_surface_prefix_width(indent: &str) -> usize {
+    indent.chars().count() + TRANSCRIPT_RAIL_GLYPH.chars().count() + 1
+}
+
+fn nested_surface_line(
+    mut prefix: Vec<Span<'static>>,
+    prefix_width: usize,
+    content_spans: Vec<Span<'static>>,
+    width: u16,
+    surface: Color,
+) -> Line<'static> {
+    let mut visible_width = prefix_width;
     for span in content_spans {
         visible_width += span.content.chars().count();
-        spans.push(surface_span(span.content.into_owned(), span.style, surface));
+        prefix.push(surface_span(span.content.into_owned(), span.style, surface));
     }
     let remaining = usize::from(width).saturating_sub(visible_width);
     if remaining > 0 {
-        spans.push(surface_span(
+        prefix.push(surface_span(
             " ".repeat(remaining),
             Style::default(),
             surface,
         ));
     }
-    lines.push(Line::from(spans));
+    Line::from(prefix)
 }
 
-fn append_tool_detail_row(
-    lines: &mut Vec<Line<'static>>,
-    indent: &str,
-    rail_color: Color,
-    surface: Color,
-    label: &str,
-    value: &str,
-    label_style: Style,
-    value_style: Style,
-    theme: &Theme,
-    width: u16,
-) {
-    let mut spans = Vec::new();
-    spans.push(Span::styled(label.to_string(), label_style));
-    if !value.is_empty() {
-        spans.push(Span::styled(" · ", muted_meta_style(theme)));
-        spans.push(Span::styled(value.to_string(), value_style));
-    }
-    append_nested_surface_row(lines, indent, rail_color, surface, spans, width);
-}
-
-fn append_parenthesized_meta(
-    spans: &mut Vec<Span<'static>>,
-    segments: Vec<(String, Style)>,
-    theme: &Theme,
-) {
-    if segments.is_empty() {
-        return;
+fn wrap_surface_spans(spans: Vec<Span<'static>>, width: usize) -> Vec<Vec<Span<'static>>> {
+    if spans.is_empty() {
+        return Vec::new();
     }
 
-    let separator_style = muted_meta_style(theme);
-    spans.push(Span::styled(" (", separator_style));
-    for (index, (text, style)) in segments.into_iter().enumerate() {
-        if index > 0 {
-            spans.push(Span::styled(" · ", separator_style));
+    let mut rows = Vec::new();
+    let mut current = Vec::new();
+    let mut current_width = 0;
+
+    for token in spans.into_iter().flat_map(surface_wrap_tokens) {
+        let token_text = token.content.to_string();
+        let token_width = token_text.chars().count();
+        let token_is_whitespace = token_text.chars().all(char::is_whitespace);
+
+        if token_is_whitespace && current.is_empty() {
+            continue;
         }
-        spans.push(Span::styled(text, style));
+
+        if current_width + token_width <= width {
+            current_width += token_width;
+            current.push(token);
+            continue;
+        }
+
+        if token_is_whitespace {
+            if !current.is_empty() {
+                rows.push(current);
+                current = Vec::new();
+                current_width = 0;
+            }
+            continue;
+        }
+
+        if !current.is_empty() {
+            rows.push(current);
+            current = Vec::new();
+            current_width = 0;
+        }
+
+        let mut remainder = token_text.as_str();
+        while !remainder.is_empty() {
+            let chunk = take_char_prefix(remainder, width);
+            current_width = chunk.chars().count();
+            current.push(Span::styled(chunk.to_string(), token.style));
+            remainder = &remainder[chunk.len()..];
+            if !remainder.is_empty() {
+                rows.push(current);
+                current = Vec::new();
+                current_width = 0;
+            }
+        }
     }
-    spans.push(Span::styled(")", separator_style));
+
+    if !current.is_empty() {
+        rows.push(current);
+    }
+
+    rows
+}
+
+fn surface_wrap_tokens(span: Span<'static>) -> Vec<Span<'static>> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut current_is_whitespace = None;
+
+    for ch in span.content.chars() {
+        let is_whitespace = ch.is_whitespace();
+        if current_is_whitespace == Some(is_whitespace) || current.is_empty() {
+            current.push(ch);
+            current_is_whitespace = Some(is_whitespace);
+            continue;
+        }
+
+        tokens.push(Span::styled(current.clone(), span.style));
+        current.clear();
+        current.push(ch);
+        current_is_whitespace = Some(is_whitespace);
+    }
+
+    if !current.is_empty() {
+        tokens.push(Span::styled(current, span.style));
+    }
+
+    tokens
+}
+
+fn take_char_prefix(text: &str, width: usize) -> &str {
+    if width == 0 {
+        return "";
+    }
+
+    let mut split_at = text.len();
+    for (count, (idx, _)) in text.char_indices().enumerate() {
+        if count == width {
+            split_at = idx;
+            break;
+        }
+    }
+    &text[..split_at]
 }
 
 fn append_labeled_text_block(
@@ -1371,7 +2788,7 @@ fn append_labeled_text_block(
                 Span::styled(block_style.label.to_string(), block_style.label_style),
                 Span::styled(" · code", muted_meta_style(theme)),
             ],
-            transcript_surface_content_width(width),
+            transcript_surface_content_width(width, false),
         );
         append_rich_text_block(
             lines,
@@ -1379,7 +2796,7 @@ fn append_labeled_text_block(
             block_style.body_style.fg.unwrap_or(theme.text.primary),
             &continuation_prefix,
             theme,
-            transcript_surface_content_width(width),
+            transcript_surface_content_width(width, false),
         );
         return;
     }
@@ -1400,7 +2817,7 @@ fn append_labeled_text_block(
             block_style.rail_color,
             block_style.surface,
             spans,
-            transcript_surface_content_width(width),
+            transcript_surface_content_width(width, false),
         );
     }
 
@@ -1416,7 +2833,7 @@ fn append_labeled_text_block(
             block_style.rail_color,
             block_style.surface,
             spans,
-            transcript_surface_content_width(width),
+            transcript_surface_content_width(width, false),
         );
     }
 
@@ -1430,7 +2847,7 @@ fn append_labeled_text_block(
                 block_style.label.to_string(),
                 block_style.label_style,
             )],
-            transcript_surface_content_width(width),
+            transcript_surface_content_width(width, false),
         );
     }
 }
@@ -1473,16 +2890,20 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
     entry.error_message = Some("tool call failed".to_string());
     entry.tool_calls.push(crate::app::ToolCallEntry {
         tool_call_id: "call-1".to_string(),
-        tool_id: "shell".to_string(),
+        tool_id: "shell.run".to_string(),
         args_summary: r#"{"cmd":"false"}"#.to_string(),
         args_digest: "digest".to_string(),
         status: ToolCallDisplayStatus::Failed,
         output_summary: Some("command failed".to_string()),
         output_digest: Some("out-digest".to_string()),
+        output_json: None,
         truncated_output: Some("command failed".to_string()),
+        edit: None,
         permissions: Vec::new(),
         first_seq: 10,
         last_seq: 11,
+        first_mono_ms: 10,
+        last_mono_ms: 11,
     });
     app.activities = std::collections::VecDeque::from(vec![entry]);
 
@@ -1510,13 +2931,22 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
         turn.tool_calls[0],
         TranscriptToolCallSection {
             header: TranscriptToolCallHeader {
-                tool_id: "shell".to_string(),
+                tool_id: "shell.run".to_string(),
+                title: "# false · 1ms".to_string(),
+                icon: None,
                 status: ToolCallDisplayStatus::Failed,
+                visual_style: TranscriptToolCallVisualStyle::Block,
+                struck_out: false,
             },
-            inline_summary: None,
             detail_blocks: vec![
-                TranscriptToolCallDetailBlock::Args("cmd=false".to_string()),
-                TranscriptToolCallDetailBlock::Error("command failed".to_string()),
+                TranscriptToolCallDetailBlock::Message {
+                    text: "$ false".to_string(),
+                    tone: TranscriptToolCallDetailTone::Secondary,
+                },
+                TranscriptToolCallDetailBlock::Message {
+                    text: "command failed".to_string(),
+                    tone: TranscriptToolCallDetailTone::Error,
+                },
             ],
         }
     );
@@ -1539,10 +2969,14 @@ pub(crate) fn exact_test_transcript_answer_precedes_nested_context() {
         status: ToolCallDisplayStatus::Succeeded,
         output_summary: Some("24 lines read".to_string()),
         output_digest: Some("out-digest".to_string()),
+        output_json: None,
         truncated_output: Some("24 lines read".to_string()),
+        edit: None,
         permissions: Vec::new(),
         first_seq: 10,
         last_seq: 11,
+        first_mono_ms: 10,
+        last_mono_ms: 11,
     });
     app.activities = std::collections::VecDeque::from(vec![entry]);
 
@@ -1556,15 +2990,9 @@ pub(crate) fn exact_test_transcript_answer_precedes_nested_context() {
         })
         .collect::<Vec<_>>();
 
-    let assistant_row = lines
-        .iter()
-        .position(|line| line.contains("assistant"))
-        .expect("assistant row");
     let answer_row = lines
         .iter()
-        .enumerate()
-        .skip(assistant_row + 1)
-        .find_map(|(index, line)| line.contains("assistant answer").then_some(index))
+        .position(|line| line.contains("assistant answer"))
         .expect("assistant answer row");
     let thinking_row = lines
         .iter()
@@ -1576,12 +3004,173 @@ pub(crate) fn exact_test_transcript_answer_precedes_nested_context() {
         .iter()
         .enumerate()
         .skip(thinking_row + 1)
-        .find_map(|(index, line)| line.contains("tool fs.read").then_some(index))
+        .find_map(|(index, line)| line.contains("Read src/ui.rs").then_some(index))
         .expect("tool row");
 
-    assert!(assistant_row < answer_row);
     assert!(answer_row < thinking_row);
     assert!(thinking_row < tool_row);
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_transcript_edit_tool_matches_opencode_inline_diff_shape() {
+    let run_dir = tempfile::tempdir().expect("create run dir");
+    let artifacts_dir = run_dir.path().join("artifacts");
+    std::fs::create_dir_all(&artifacts_dir).expect("create artifacts dir");
+    std::fs::write(
+        artifacts_dir.join("opencode-inline.diff"),
+        "--- crates/harness-tui/src/ui.rs\n+++ crates/harness-tui/src/ui.rs\n@@ -44,8 +44,7 @@\n use ui_secondary::{\n-    render_diff_tab, render_events_tab, render_help_tab,\n+    render_events_tab, render_help_tab, render_live_details_overlay,\n     render_operator_sidebar,\n };\n",
+    )
+    .expect("write inline diff fixture");
+
+    let mut app = AppState::new_live(Some(run_dir.path().to_path_buf()), false, None);
+    let mut entry =
+        transcript_section_model_test_activity("request-edit-inline", ActivityStatus::Done, "");
+    entry.tool_calls.push(crate::app::ToolCallEntry {
+        tool_call_id: "call-edit-1".to_string(),
+        tool_id: "edit.hashline_apply".to_string(),
+        args_summary: r#"{"path":"crates/harness-tui/src/ui.rs"}"#.to_string(),
+        args_digest: "digest-edit".to_string(),
+        status: ToolCallDisplayStatus::Succeeded,
+        output_summary: Some("Edit applied".to_string()),
+        output_digest: Some("digest-edit-output".to_string()),
+        output_json: None,
+        truncated_output: Some("Edit applied".to_string()),
+        edit: Some(crate::app::EditEntry {
+            edit_id: "edit-inline-1".to_string(),
+            path: "crates/harness-tui/src/ui.rs".to_string(),
+            status: crate::app::EditDisplayStatus::Applied,
+            summary: Some("Remove diff review surface".to_string()),
+            patch_digest: Some("digest-patch".to_string()),
+            new_file_digest: Some("digest-new-file".to_string()),
+            diff_rel_path: Some("artifacts/opencode-inline.diff".to_string()),
+            diff_digest: Some("digest-diff".to_string()),
+            rejection_reason: None,
+        }),
+        permissions: Vec::new(),
+        first_seq: 10,
+        last_seq: 11,
+        first_mono_ms: 10,
+        last_mono_ms: 11,
+    });
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+
+    let rendered = build_transcript_lines_for_width(&app, &Theme::default(), 160)
+        .into_iter()
+        .map(|line| {
+            line.spans
+                .into_iter()
+                .map(|span| span.content.into_owned())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("← Patched crates/harness-tui/src/ui.rs"));
+    assert!(rendered.contains("render_diff_tab"));
+    assert!(rendered.contains("render_live_details_overlay"));
+    assert!(rendered.lines().any(|line| {
+        line.contains("render_diff_tab")
+            && line.contains("render_live_details_overlay")
+            && line.contains('│')
+    }));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_transcript_proposed_edit_renders_opencode_header() {
+    let mut app = AppState::default();
+    let mut entry =
+        transcript_section_model_test_activity("request-edit-proposed", ActivityStatus::Done, "");
+    entry.tool_calls.push(crate::app::ToolCallEntry {
+        tool_call_id: "call-edit-proposed".to_string(),
+        tool_id: "edit.hashline_apply".to_string(),
+        args_summary: r#"{"path":"crates/harness-tui/src/ui.rs"}"#.to_string(),
+        args_digest: "digest-edit-proposed".to_string(),
+        status: ToolCallDisplayStatus::Running,
+        output_summary: None,
+        output_digest: None,
+        output_json: None,
+        truncated_output: None,
+        edit: Some(crate::app::EditEntry {
+            edit_id: "edit-proposed-1".to_string(),
+            path: "crates/harness-tui/src/ui.rs".to_string(),
+            status: crate::app::EditDisplayStatus::Proposed,
+            summary: Some("Remove diff review surface".to_string()),
+            patch_digest: Some("digest-patch".to_string()),
+            new_file_digest: None,
+            diff_rel_path: None,
+            diff_digest: None,
+            rejection_reason: None,
+        }),
+        permissions: Vec::new(),
+        first_seq: 10,
+        last_seq: 11,
+        first_mono_ms: 10,
+        last_mono_ms: 11,
+    });
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+
+    let rendered = build_transcript_lines_for_width(&app, &Theme::default(), 120)
+        .into_iter()
+        .map(|line| {
+            line.spans
+                .into_iter()
+                .map(|span| span.content.into_owned())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("← Edit crates/harness-tui/src/ui.rs"));
+    assert!(!rendered.contains("tool edit.hashline_apply"));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_transcript_rejected_edit_surfaces_reason_inline() {
+    let mut app = AppState::default();
+    let mut entry =
+        transcript_section_model_test_activity("request-edit-rejected", ActivityStatus::Error, "");
+    entry.tool_calls.push(crate::app::ToolCallEntry {
+        tool_call_id: "call-edit-rejected".to_string(),
+        tool_id: "edit.hashline_apply".to_string(),
+        args_summary: r#"{"path":"crates/harness-tui/src/ui.rs"}"#.to_string(),
+        args_digest: "digest-edit-rejected".to_string(),
+        status: ToolCallDisplayStatus::Failed,
+        output_summary: Some("ANCHOR_MISMATCH".to_string()),
+        output_digest: None,
+        output_json: None,
+        truncated_output: Some("ANCHOR_MISMATCH".to_string()),
+        edit: Some(crate::app::EditEntry {
+            edit_id: "edit-rejected-1".to_string(),
+            path: "crates/harness-tui/src/ui.rs".to_string(),
+            status: crate::app::EditDisplayStatus::Rejected,
+            summary: Some("Remove diff review surface".to_string()),
+            patch_digest: Some("digest-patch".to_string()),
+            new_file_digest: None,
+            diff_rel_path: None,
+            diff_digest: None,
+            rejection_reason: Some("ANCHOR_MISMATCH at line 45".to_string()),
+        }),
+        permissions: Vec::new(),
+        first_seq: 10,
+        last_seq: 11,
+        first_mono_ms: 10,
+        last_mono_ms: 11,
+    });
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+
+    let rendered = build_transcript_lines_for_width(&app, &Theme::default(), 120)
+        .into_iter()
+        .map(|line| {
+            line.spans
+                .into_iter()
+                .map(|span| span.content.into_owned())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("← Edit crates/harness-tui/src/ui.rs"));
+    assert!(rendered.contains("ANCHOR_MISMATCH at line 45"));
 }
 
 #[cfg(test)]
@@ -1608,8 +3197,12 @@ pub(crate) fn exact_test_transcript_follow_mode_uses_measured_surface_heights() 
 
     assert_eq!(layout.sections.len(), 2);
     assert!(
-        layout.sections[0].content_height > layout.sections[0].lines.len(),
-        "wrapped transcript section should measure taller than its raw line count"
+        layout.sections[0].content_height >= layout.sections[0].lines.len(),
+        "measured transcript height should never undercount the rendered line inventory"
+    );
+    assert!(
+        layout.sections[0].content_height > layout.sections[1].content_height,
+        "the longer wrapped section should still measure taller than the short reply"
     );
 
     let measured_total_height = layout
@@ -1694,6 +3287,7 @@ fn transcript_section_model_test_activity(
         provider_id: "openai".to_string(),
         status,
         user_message: None,
+        user_timestamp: None,
         request_data: None,
         thinking_text: String::new(),
         transcript_text: transcript_text.to_string(),
@@ -1702,6 +3296,8 @@ fn transcript_section_model_test_activity(
         tool_calls: Vec::new(),
         first_seq: 1,
         last_seq: 1,
+        first_mono_ms: 1,
+        last_mono_ms: 1,
     }
 }
 
@@ -1786,16 +3382,16 @@ mod tests {
 
         assert_eq!(
             lines[0],
-            "▎  ◷ permission checkpoint (fail-closed · review required)"
+            "┃ ◷ permission checkpoint (fail-closed · review required)"
         );
-        assert_eq!(lines[1], "▎  Apply hashline edit to demo.txt");
+        assert_eq!(lines[1], "┃ Apply hashline edit to demo.txt");
         assert!(lines
             .iter()
             .all(|line| !line.contains('╭') && !line.contains('╰') && !line.contains('│')));
     }
 
     #[test]
-    fn streaming_assistant_header_uses_reserved_active_label() {
+    fn streaming_assistant_footer_uses_reserved_active_label() {
         let mut app = AppState::default();
         app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
             request_id: "request-streaming-header".to_string(),
@@ -1803,6 +3399,7 @@ mod tests {
             provider_id: "openai".to_string(),
             status: ActivityStatus::Streaming,
             user_message: None,
+            user_timestamp: None,
             request_data: None,
             thinking_text: String::new(),
             transcript_text: String::new(),
@@ -1811,6 +3408,8 @@ mod tests {
             tool_calls: Vec::new(),
             first_seq: 1,
             last_seq: 1,
+            first_mono_ms: 1,
+            last_mono_ms: 1,
         }]);
         app.selected_activity_index = 0;
 
@@ -1820,7 +3419,58 @@ mod tests {
             80,
         ));
 
-        assert_eq!(lines[0], "▎  ◐ assistant (active · current)");
-        assert_eq!(lines[1], "▎  Waiting for response…");
+        assert_eq!(lines[0], "   Waiting for response…");
+        assert_eq!(lines[1], "   ◐ Assistant · gpt-5.4 · active");
+    }
+
+    #[test]
+    fn user_message_surface_keeps_compact_header_and_body() {
+        let mut app = AppState::default();
+        app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
+            request_id: "request-user-padding".to_string(),
+            model_id: "gpt-5.4".to_string(),
+            provider_id: "openai".to_string(),
+            status: ActivityStatus::Done,
+            user_message: Some(harness_core::event::UserMessageSubmittedEvent {
+                request_id: "request-user-padding".to_string(),
+                text: "hello".to_string(),
+            }),
+            user_timestamp: Some("2026-03-19T09:45:00Z".to_string()),
+            request_data: None,
+            thinking_text: String::new(),
+            transcript_text: "reply".to_string(),
+            error_message: None,
+            permissions: Vec::new(),
+            tool_calls: Vec::new(),
+            first_seq: 1,
+            last_seq: 1,
+            first_mono_ms: 1,
+            last_mono_ms: 1,
+        }]);
+        app.handle_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('p'),
+            crossterm::event::KeyModifiers::CONTROL,
+        ));
+        for ch in "show timestamps".chars() {
+            app.handle_key(crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char(ch),
+                crossterm::event::KeyModifiers::NONE,
+            ));
+        }
+        app.handle_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Enter,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+
+        let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+            &app,
+            &Theme::default(),
+            80,
+        ));
+
+        assert!(lines.iter().any(|line| line.contains("› You")));
+        assert!(lines.iter().any(|line| line.contains("09:45")));
+        assert!(lines.iter().any(|line| line.contains("hello")));
+        assert!(lines.iter().any(|line| line.contains("reply")));
     }
 }

@@ -1,3 +1,9 @@
+//! Built-in tool registry and tool implementations for filesystem, shell, and
+//! hashline edit operations.
+//!
+//! Runtime policy lives in `harness-core`; this crate should focus on tool
+//! argument validation, execution, and stable schema exposure.
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;

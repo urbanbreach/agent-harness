@@ -5,8 +5,8 @@ expression: "checkpoint_visual_snapshot(&prompt_checkpoint,\nLIVE_STATE_FIXTURES
 Hello world: true
 ready for next turn: true
 focus_marker: Hello world
-focus_pixels_blake3: 85e84badffcbe047d65f4a16a75209a54b2df08e4ca3dcda4fafee9bdb440485
-focus_region_cells: row=3, col=4, height=6, width=28
+focus_pixels_blake3: 8d820501bfcdc364a94f7725c9fb69077944b2506770e1553640aa276ca446ba
+focus_region_cells: row=2, col=5, height=6, width=28
 image: pty_interactive_prompt_stream.png
 manifest_json: pty-manifests/live_shell/manifest.json
 manifest_jsonl: pty-manifests/live_shell/manifest.jsonl

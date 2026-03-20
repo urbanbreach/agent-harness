@@ -100,6 +100,13 @@ type UiIntentSink = Arc<dyn Fn(UiIntent) + Send + Sync>;
 type LaunchSelection = Arc<Mutex<LaunchMetadata>>;
 type LiveAgentTargetState = Arc<Mutex<LiveAgentTarget>>;
 
+fn recover_mutex_lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
 #[derive(Debug, Clone)]
 struct LiveAgentTarget {
     agent_id: Option<String>,
@@ -315,18 +322,13 @@ fn launch_metadata_for_mode(
     settings: &LiveSettings,
     selection: &LaunchSelection,
 ) -> LaunchMetadata {
-    selection
-        .lock()
-        .expect("interactive launch selection lock poisoned")
+    recover_mutex_lock(selection)
         .clone()
         .with_mode_label(settings.launch_mode_label.clone())
 }
 
 fn record_launch_selection(selection: &LaunchSelection, launch_metadata: &LaunchMetadata) {
-    *selection
-        .lock()
-        .expect("interactive launch selection lock poisoned") =
-        launch_metadata.clone().without_mode_label();
+    *recover_mutex_lock(selection) = launch_metadata.clone().without_mode_label();
 }
 
 fn scenario_launch_metadata() -> LaunchMetadata {
@@ -481,9 +483,7 @@ async fn run_startup_launcher(
         ) {
             return;
         }
-        let mut slot = selected_intent_sink
-            .lock()
-            .expect("startup launcher intent lock poisoned");
+        let mut slot = recover_mutex_lock(&selected_intent_sink);
         if slot.is_none() {
             *slot = Some(intent);
         }
@@ -506,10 +506,7 @@ async fn run_startup_launcher(
         return Err(format!("startup launcher error: {err}"));
     }
 
-    let selected_intent = selected_intent
-        .lock()
-        .map_err(|_| "startup launcher intent lock poisoned".to_string())?
-        .clone();
+    let selected_intent = recover_mutex_lock(&selected_intent).clone();
 
     Ok(map_startup_intent_to_workflow(selected_intent))
 }
@@ -622,9 +619,7 @@ async fn run_continue_session_bootstrap(
         resume_profile,
     )
     .with_available_models(
-        launch_selection
-            .lock()
-            .expect("interactive launch selection lock poisoned")
+        recover_mutex_lock(&launch_selection)
             .available_models()
             .to_vec(),
     );
@@ -1516,9 +1511,7 @@ pub(crate) fn assert_startup_command_workflow_maps_model_and_session_intents_cor
     ));
     let switched_metadata = LaunchMetadata::from_model_ref("ops", "anthropic:claude-3.7")
         .with_available_models(
-            launch_selection
-                .lock()
-                .expect("launch selection lock poisoned")
+            recover_mutex_lock(&launch_selection)
                 .available_models()
                 .to_vec(),
         )
@@ -1526,10 +1519,7 @@ pub(crate) fn assert_startup_command_workflow_maps_model_and_session_intents_cor
 
     record_launch_selection(&launch_selection, &switched_metadata);
 
-    let recorded = launch_selection
-        .lock()
-        .expect("launch selection lock poisoned")
-        .clone();
+    let recorded = recover_mutex_lock(&launch_selection).clone();
     assert_eq!(recorded.profile(), "ops");
     assert_eq!(recorded.provider(), "anthropic");
     assert_eq!(recorded.model(), Some("claude-3.7"));

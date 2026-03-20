@@ -1,24 +1,24 @@
   events · run_fixture
 
-   events   10 recorded · selected seq 10 · follow on
-  Event log · j/k active ·  Event details
+     events   15 recorded · selected seq 15 · follow on
+    Event log · j/k active · Event details
+       ┃ ← Patched crates/harness-tui/src/ui.rs · 0ms
+         1ates/harness-tui/src{ui.rs · +1 -1
+     UserMessageSubmitted(U   "schema_version": 1,
+     serMessageSubmittedEve:{ "event_id": "evt-0015",
+     nt { request_id_diff_tab,"seq": 15,ents_tab, render_help_tab,
+         2    render_events_ta"run_id": "run_fixture",
+    rProviderRequestStartedrla"mono_ms": 15,
+     (ProviderRequestStarteor_"actor": {
+     dEvent { request_id      "kind": "system",
+         3 cargo test -p harne"agent_id": "pty-helper"ms
+     ToolCallRequested(Toolnes},tui
+     CallRequestedEvent {     "correlation_id": "req_tool_lifecycle",
+     tool_call_idnapshot misma"stream_key": "run:run_fixture",
 
-       1                     {
-   UserMessageSubmitted(Us   "schema_version": 1,
-   erMessageSubmittedEvent   "event_id": "evt-0010",
-   { request_id              "seq": 10,
-       2                     "run_id": "run_fixture",
-   ProviderRequestStarted(   "mono_ms": 10,
-   ProviderRequestStartedE   "actor": {
-   vent { request_id         "kind": "system",
-       3                     "agent_id": "pty-helper"
-   ToolCallRequested(ToolC   },
-   allRequestedEvent {       "correlation_id": "req_tool_lifecycle",
-   tool_call_id              "stream_key": "run:run_fixture",
-       4                     "payload": {
-   ToolCallStarted(ToolCal   "event_type": "provider_request_finished",
-   lStartedEvent {           "data": {
-   tool_call_id              "request_id": "req_tool_lifecycle",
-       5                     "finish_reason": "stop",
-
-  1 convo  Ctrl+p commands  ? shortcuts  q quit
+  ┃
+  ┃
+  ┃
+  ┃  default · mock/model-1
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+  Success  ·  turn 1 · ready for next turn

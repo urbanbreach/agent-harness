@@ -23,3 +23,6 @@ harness-providers = { path = "../harness-providers" }
 tempfile.workspace = true
 insta = { version = "1.42", features = ["json"] }
 proptest = "1"
+
+[lints]
+workspace = true

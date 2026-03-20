@@ -596,9 +596,9 @@ fn command_palette_includes_task5_session_actions() {
 
     assert!(
         palette_surface.contains("open_event_log:open the review event log surface")
-            && palette_surface.contains("open_diff_review:open the structured diff review surface")
+            && !palette_surface.contains("open_diff_review:")
             && !palette_surface.contains("help:"),
-        "expected the ctrl-p surface to expose command-driven review surfaces without tab chrome, got:
+        "expected the ctrl-p surface to expose the event-log review surface without stale diff-review or tab chrome commands, got:
 {palette_surface}"
     );
     assert!(

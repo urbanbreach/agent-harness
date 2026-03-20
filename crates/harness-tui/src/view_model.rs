@@ -338,10 +338,6 @@ pub(crate) fn footer_hints_view_model(input: FooterHintsInput) -> FooterHintsVie
                 label: "commands",
             },
             FooterHint {
-                action: Action::Help,
-                label: "shortcuts",
-            },
-            FooterHint {
                 action: Action::Quit,
                 label: "quit",
             },
@@ -349,24 +345,23 @@ pub(crate) fn footer_hints_view_model(input: FooterHintsInput) -> FooterHintsVie
     } else if input.startup_shell_visible && input.focus == Focus::List {
         vec![
             FooterHint {
-                action: Action::HistoryUp,
-                label: "prev",
+                action: Action::Palette,
+                label: "open",
             },
             FooterHint {
-                action: Action::HistoryDown,
-                label: "next",
+                action: Action::Quit,
+                label: "quit",
             },
+        ]
+    } else if input.startup_shell_visible {
+        vec![
             FooterHint {
                 action: Action::SubmitPrompt,
-                label: "select",
-            },
-            FooterHint {
-                action: Action::FocusNext,
-                label: "composer",
+                label: "send",
             },
             FooterHint {
                 action: Action::Palette,
-                label: "palette",
+                label: "open",
             },
             FooterHint {
                 action: Action::Quit,
@@ -384,16 +379,8 @@ pub(crate) fn footer_hints_view_model(input: FooterHintsInput) -> FooterHintsVie
                 label: "send",
             },
             FooterHint {
-                action: Action::InsertNewline,
-                label: "nl",
-            },
-            FooterHint {
                 action: Action::Palette,
                 label: "commands",
-            },
-            FooterHint {
-                action: Action::Help,
-                label: "shortcuts",
             },
             FooterHint {
                 action: Action::Quit,
@@ -415,10 +402,6 @@ fn disabled_live_shell_footer_hints() -> Vec<FooterHint> {
             label: "commands",
         },
         FooterHint {
-            action: Action::Help,
-            label: "shortcuts",
-        },
-        FooterHint {
             action: Action::Quit,
             label: "quit",
         },
@@ -432,8 +415,8 @@ fn completed_live_shell_footer_hints() -> Vec<FooterHint> {
             label: "focus",
         },
         FooterHint {
-            action: Action::Help,
-            label: "shortcuts",
+            action: Action::Palette,
+            label: "commands",
         },
         FooterHint {
             action: Action::Quit,
@@ -447,14 +430,14 @@ fn startup_runtime_state(continue_disabled_banner: Option<&str>) -> RuntimeState
     let summary = detail
         .as_deref()
         .map(|reason| format!("startup ready · {reason}"))
-        .unwrap_or_else(|| "startup ready · type below or use Ctrl+P for saved runs".to_string());
+        .unwrap_or_else(|| "startup ready".to_string());
 
     RuntimeState {
         kind: RuntimeStateKind::Ready,
         summary,
         detail,
         composer_disabled: false,
-        composer_hint: "Type to start a new session.".to_string(),
+        composer_hint: "Ask Harness anything… “inspect src/ui.rs”".to_string(),
     }
 }
 
@@ -546,7 +529,7 @@ fn status_banner_runtime_state(
             summary: if lower.contains("request_digest=") {
                 format!("runtime failure · {}", sanitized_runtime_guidance())
             } else if replay_mode {
-                "reload failed · inspect events or diff".to_string()
+                "reload failed · inspect events or transcript".to_string()
             } else {
                 "runtime failure · inspect transcript, then retry or continue".to_string()
             },
@@ -683,7 +666,7 @@ pub(crate) fn exact_test_control_dock_view_model_handles_live_runtime_variants()
             tone: ControlDockSummaryTone::Accent,
         }),
         composer_body: "Queue the next turn while this one finishes…".to_string(),
-        composer_disclosure: "shift+enter newline".to_string(),
+        composer_disclosure: "shift+enter/ctrl+j newline".to_string(),
         composer_focused: true,
     });
 
@@ -704,7 +687,7 @@ pub(crate) fn exact_test_control_dock_view_model_handles_live_runtime_variants()
         streaming.composer_body,
         "Queue the next turn while this one finishes…"
     );
-    assert_eq!(streaming.composer_disclosure, "shift+enter newline");
+    assert_eq!(streaming.composer_disclosure, "shift+enter/ctrl+j newline");
     assert!(streaming.composer_focused);
     assert!(!streaming.composer_disabled);
 

@@ -1,9 +1,7 @@
 
 
 
-
-     Session
-
+      Session
 
 
        Degraded   Recovery in progress
@@ -11,14 +9,16 @@
        Live updates are catching up before sending resumes.
        live stream lagged by 2; replaying from seq 1
        Draft locally until recovery completes.
-                 Enter send · Shift+Enter newline · ↑/↓ history
+                                  latest edit”
+              Enter send · Shift+Enter/Ctrl+j newline · ↑/↓ history
 
 
 
 
 
-
-   Degraded   recovery in progress · Sending paused · live stream lagged by 2;
-
-    ▎ Draft preserved locally while recovery completes.
-  Ctrl+p commands  ? shortcuts  q quit
+  ┃
+  ┃
+  ┃
+  ┃  default · local/-
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+  Degraded                                             Ctrl+p commands  q quit

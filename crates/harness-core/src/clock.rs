@@ -107,6 +107,7 @@ impl Determinism {
 }
 
 #[cfg(test)]
+#[allow(unsafe_code)]
 mod tests {
     use super::{Clock, ClockSource, Determinism, FakeClock, HARNESS_DETERMINISTIC_ENV};
     use std::sync::{Mutex, OnceLock};

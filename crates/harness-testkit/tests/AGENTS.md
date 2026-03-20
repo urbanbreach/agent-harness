@@ -3,6 +3,8 @@
 ## OVERVIEW
 Test-orchestration subtree for deterministic PTY E2E and env-gated live-proxy signoff. This is workflow-heavy test code, not reusable runtime logic.
 
+Read the workspace root `AGENTS.md` first for crate ownership, search exclusions, and the cross-crate verification matrix.
+
 ## STRUCTURE
 ```text
 tests/
@@ -19,7 +21,7 @@ tests/
 | Offline UI regression lane | `pty_e2e.rs` | Single-threaded, deterministic, artifact-producing |
 | Live proxy signoff lane | `live_proxy_e2e.rs` | Ignored/live; env-gated |
 | Live lane setup and artifact contract | `README.live-proxy.md` | Preflight first |
-| Shared live helpers | `support/live_events.rs`, `support/live_vision.rs`, `support/live_visual.rs` | Reuse before adding new helper files |
+| Shared test helpers | `support/` | Reuse and extend helper modules before adding more test logic to `pty_e2e.rs` |
 
 ## RENDERING DEPENDENCIES
 Approved rendering stack (do not add alternatives without explicit signoff):
@@ -37,6 +39,7 @@ The TUI implements a strict surface hierarchy that tests must respect:
 ## CONVENTIONS
 - Treat `pty_e2e` as the default offline lane; treat `live_proxy_*` as explicit signoff.
 - Run PTY flows single-threaded.
+- Prefer extracting markers, visual contracts, and repeated assertion/setup helpers into `support/` modules instead of growing `pty_e2e.rs`.
 - **Screenshot-generated PTY/live-visual artifacts are the primary verification workflow**. Prefer visual parity over text assertions.
 - Key shell contract terms: compose-first, transcript-first, operator sidebar, no default tab chrome, no debug inspector in primary path.
 - Respect `HARNESS_VISUAL_ARTIFACT_DIR` for screenshot output. This env var sets the root for all visual artifacts in both PTY and live-proxy lanes.

@@ -1,3 +1,9 @@
+//! Provider abstraction layer for deterministic mocks and OpenAI-compatible
+//! streaming backends.
+//!
+//! Keep transport/request normalization here so the coordinator and agent loop
+//! can remain provider-agnostic.
+
 use std::pin::Pin;
 
 use async_trait::async_trait;

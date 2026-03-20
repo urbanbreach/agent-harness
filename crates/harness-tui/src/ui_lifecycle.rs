@@ -1,6 +1,11 @@
 use super::*;
 
 const LIFECYCLE_COPY_INSET_X: u16 = 3;
+const STARTUP_LOGO_LINES: [(&str, &str); 3] = [
+    ("╻ ╻  ┏━┓  ┏━┓  ┏┓╻", "┏━╸  ┏━┓  ┏━┓"),
+    ("┣━┫  ┣━┫  ┣┳┛  ┃┗┫", "┣╸   ┗━┓  ┗━┓"),
+    ("╹ ╹  ╹ ╹  ╹┗╸  ╹ ╹", "┗━╸  ┗━┛  ┗━┛"),
+];
 
 fn lifecycle_surface_copy_area(area: Rect) -> Rect {
     inset_rect(
@@ -37,11 +42,40 @@ fn render_lifecycle_copy_line(
     );
 }
 
-fn startup_secondary_hint(content_area: Rect, theme: &Theme) -> &str {
-    if content_area.width < 60 {
-        "Type to quick-start a fresh run\nCtrl+P opens tools"
+fn startup_logo_lines(content_area: Rect, theme: &Theme) -> Text<'static> {
+    if content_area.width < 40 {
+        return Text::from(vec![Line::from(Span::styled(
+            theme.live_shell.startup.title,
+            Style::default()
+                .fg(theme.text.primary)
+                .add_modifier(Modifier::BOLD),
+        ))]);
+    }
+
+    Text::from(
+        STARTUP_LOGO_LINES
+            .iter()
+            .map(|(left, right)| {
+                Line::from(vec![
+                    Span::styled(*left, Style::default().fg(theme.text.secondary)),
+                    Span::raw("  "),
+                    Span::styled(
+                        *right,
+                        Style::default()
+                            .fg(theme.text.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ])
+            })
+            .collect::<Vec<_>>(),
+    )
+}
+
+fn startup_logo_height(content_area: Rect) -> u16 {
+    if content_area.width < 40 {
+        1
     } else {
-        theme.live_shell.startup.secondary_hint
+        STARTUP_LOGO_LINES.len() as u16
     }
 }
 
@@ -80,7 +114,7 @@ pub(crate) fn render_startup_lifecycle_surface(
 
 pub(crate) fn render_startup_lifecycle_flow(
     frame: &mut Frame,
-    app: &AppState,
+    _app: &AppState,
     area: Rect,
     theme: &Theme,
 ) {
@@ -89,11 +123,14 @@ pub(crate) fn render_startup_lifecycle_flow(
     }
 
     let shell_area = area;
-    let list_focused = app.focus == Focus::List;
     let surface = theme.surface.shell;
-    let startup_card = app.startup_card_view_model();
     let content_area = lifecycle_surface_copy_area(shell_area);
-    let hint_height = u16::from(content_area.width < 72).saturating_add(1);
+    let logo_height = startup_logo_height(content_area);
+    let purpose_visible = content_area.height >= logo_height.saturating_add(3);
+    let content_height = logo_height
+        .saturating_add(u16::from(purpose_visible))
+        .saturating_add(1);
+    let top_gap = content_area.height.saturating_sub(content_height) / 2;
 
     frame.render_widget(
         Block::default().style(Style::default().bg(surface)),
@@ -107,56 +144,30 @@ pub(crate) fn render_startup_lifecycle_flow(
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(0),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(hint_height),
+            Constraint::Length(top_gap),
+            Constraint::Length(logo_height),
+            Constraint::Length(u16::from(purpose_visible)),
             Constraint::Min(0),
         ])
         .split(content_area);
 
-    render_lifecycle_copy_line(
-        frame,
-        rows[1],
-        theme.live_shell.startup.title,
-        Style::default()
-            .fg(if list_focused {
-                theme.text.accent
-            } else {
-                theme.text.primary
-            })
-            .bg(surface),
-        Alignment::Center,
-    );
-    render_lifecycle_copy_line(
-        frame,
-        rows[2],
-        &startup_card.metadata,
-        Style::default().fg(theme.text.secondary).bg(surface),
-        Alignment::Center,
-    );
-    render_lifecycle_copy_line(
-        frame,
-        rows[3],
-        theme.live_shell.startup.new_session_purpose,
-        Style::default()
-            .fg(if list_focused {
-                theme.text.accent
-            } else {
-                theme.text.primary
-            })
-            .bg(surface)
-            .add_modifier(Modifier::BOLD),
-        Alignment::Center,
-    );
     frame.render_widget(
-        Paragraph::new(startup_secondary_hint(content_area, theme))
-            .style(Style::default().fg(theme.text.secondary).bg(surface))
+        Paragraph::new(startup_logo_lines(content_area, theme))
+            .style(Style::default().bg(surface))
             .alignment(Alignment::Center)
             .wrap(Wrap { trim: false }),
-        rows[4],
+        rows[1],
     );
+
+    if purpose_visible && rows[2].height > 0 {
+        render_lifecycle_copy_line(
+            frame,
+            rows[2],
+            theme.live_shell.startup.new_session_purpose,
+            Style::default().fg(theme.text.secondary).bg(surface),
+            Alignment::Center,
+        );
+    }
 }
 
 pub(super) fn render_live_empty_state(
@@ -169,10 +180,18 @@ pub(super) fn render_live_empty_state(
         return;
     }
 
+    let newline = match app
+        .keymap
+        .get_binding_strs(Action::InsertNewline)
+        .as_slice()
+    {
+        [] => "-".to_string(),
+        [binding] => binding.clone(),
+        [first, second, ..] => format!("{first}/{second}"),
+    };
     let help_row = [
         app.keymap.get_binding_label(Action::SubmitPrompt, "send"),
-        app.keymap
-            .get_binding_label(Action::InsertNewline, "newline"),
+        format!("{newline} newline"),
         format!(
             "{}/{} history",
             app.keymap.get_binding_str(Action::HistoryUp),

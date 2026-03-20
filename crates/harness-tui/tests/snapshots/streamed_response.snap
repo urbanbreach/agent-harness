@@ -1,12 +1,9 @@
- run run_fixture        unknown/mock/model-1        live
-                                                            Live · run run_fixture
- ▎  › user (req_pty_001)                                    unknown/mock/model-1
- ▎  Hello from PTY                                          0 active todos · 0 modified files
 
- ▎  ● assistant (done · current · mock/model-1)
- ▎  Hello world
-                                                            No operator activity now
-                                                            Approvals, tasks, and edits show here
+  ┃  › You
+  ┃  Hello from PTY
+
+     Hello world
+     ● Assistant · model-1 · 4ms
 
 
 
@@ -24,7 +21,10 @@
 
 
 
- Success   turn 1 · ready for next turn
-                                                            harness-tui · v0.1.0
-  ▎ Ask Harness to inspect, edit, or explain…
-Enter send  Shift+Enter nl  Ctrl+p commands  ? shortcuts  q quit
+
+┃
+┃
+┃
+┃  default · mock/model-1
+╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+Success  ·  turn 1 · ready for next turn

@@ -1,3 +1,9 @@
+//! CLI entrypoint for running, replaying, validating, and launching the
+//! interactive Agent Harness TUI.
+//!
+//! Keep subcommand wiring here and push domain invariants into `harness-core`
+//! and TUI state/rendering contracts into `harness-tui`.
+
 use std::{path::PathBuf, process::ExitCode};
 
 use clap::{Args, Parser, Subcommand};

@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -36,17 +34,14 @@ mod ui_transcript;
 use ui_chrome::{
     chromeless_shell_section, compact_inline_payload, elevated_card_surface,
     interruptive_modal_block, muted_meta_style, panel_block, panel_style, render_footer,
-    render_header, render_live_shell_anchor, render_unified_bottom_dock, request_id_label,
-    runtime_state_color, status_badge, subdued_payload_style, tool_detail_label_style,
-    tool_state_summary, tool_status_tokens, transcript_label_style, transcript_prefix_style,
-    truncate_plain_text, ChromeFrame,
+    render_header, render_unified_bottom_dock, runtime_state_color, status_badge,
+    subdued_payload_style, transcript_prefix_style, truncate_plain_text, ChromeFrame,
 };
 pub(super) use ui_lifecycle::render_startup_lifecycle_surface;
 use ui_lifecycle::{live_empty_state_visible, render_live_empty_state, startup_shell_visible};
 use ui_overlays::render_overlays;
 use ui_secondary::{
-    render_diff_tab, render_events_tab, render_help_tab, render_live_details_overlay,
-    render_operator_sidebar,
+    render_events_tab, render_help_tab, render_live_details_overlay, render_operator_sidebar,
 };
 pub use ui_transcript::hovered_wheel_target;
 use ui_transcript::{append_text_block, render_transcript_pane};
@@ -131,8 +126,11 @@ use ui_transcript::build_transcript_lines;
 #[cfg(test)]
 pub(crate) use ui_transcript::{
     exact_test_transcript_answer_precedes_nested_context,
+    exact_test_transcript_edit_tool_matches_opencode_inline_diff_shape,
     exact_test_transcript_follow_mode_uses_measured_surface_heights,
     exact_test_transcript_pending_permission_stays_after_last_activity,
+    exact_test_transcript_proposed_edit_renders_opencode_header,
+    exact_test_transcript_rejected_edit_surfaces_reason_inline,
     exact_test_transcript_section_model_keeps_nested_tool_and_error_blocks,
     exact_test_transcript_section_model_preserves_activity_order,
 };
@@ -240,7 +238,7 @@ pub(crate) fn exact_test_persistent_operator_sidebar_uses_panel_gutter() {
     });
 
     let theme = Theme::default();
-    let area = Rect::new(0, 0, 100, 30);
+    let area = Rect::new(0, 0, 160, 30);
     let plan = FrameLayoutPlan::for_app(&app, area);
     let sidebar = plan.operator_sidebar.expect("persistent operator sidebar");
     let transcript = plan.transcript.expect("transcript area");
@@ -310,16 +308,10 @@ fn render_content(
 fn render_surface(
     frame: &mut Frame,
     app: &AppState,
-    area: Rect,
+    _area: Rect,
     theme: &Theme,
     plan: &FrameLayoutPlan,
 ) {
-    let area = if app.review_surface().is_none() {
-        plan.shell
-    } else {
-        area
-    };
-
     match app.review_surface() {
         None => {
             if app.replay_mode {
@@ -328,9 +320,31 @@ fn render_surface(
                 render_live_session_surface(frame, app, theme, plan)
             }
         }
-        Some(ReviewSurface::Events) => render_events_tab(frame, app, area, theme),
-        Some(ReviewSurface::Diff) => render_diff_tab(frame, app, area, theme),
-        Some(ReviewSurface::Help) => render_help_tab(frame, app, area, theme),
+        Some(surface) => {
+            if app.replay_mode {
+                render_replay_session_surface(frame, app, theme, plan)
+            } else {
+                render_live_session_surface(frame, app, theme, plan)
+            }
+            render_review_surface(frame, app, theme, plan, surface);
+        }
+    }
+}
+
+fn render_review_surface(
+    frame: &mut Frame,
+    app: &AppState,
+    theme: &Theme,
+    plan: &FrameLayoutPlan,
+    surface: ReviewSurface,
+) {
+    let Some(transcript_area) = plan.transcript else {
+        return;
+    };
+
+    match surface {
+        ReviewSurface::Events => render_events_tab(frame, app, transcript_area, theme),
+        ReviewSurface::Help => render_help_tab(frame, app, transcript_area, theme),
     }
 }
 
@@ -395,57 +409,24 @@ fn render_live_run_shell(frame: &mut Frame, app: &AppState, theme: &Theme, plan:
     let Some(dock) = plan.dock else {
         return;
     };
-    let runtime_state = app.runtime_state();
-    let live_anchor = live_anchor_for_runtime_state(app, runtime_state.kind, plan.live_anchor);
-    let transcript_render_area = inset_for_live_anchor(transcript_area, live_anchor);
 
     frame.render_widget(chromeless_shell_section(theme), plan.shell);
-    render_transcript_pane(frame, app, transcript_render_area, theme);
+    render_transcript_pane(frame, app, transcript_area, theme);
     if let Some(operator_sidebar) = plan.operator_sidebar {
         render_operator_sidebar(frame, app, operator_sidebar, theme);
     }
-    if let Some(anchor_area) = live_anchor {
-        render_live_shell_anchor(frame, app, anchor_area, theme);
-    }
-    render_runtime_state_surface(frame, app, transcript_render_area, theme);
+    render_runtime_state_surface(frame, app, transcript_area, theme);
     render_live_details_overlay(frame, app, theme, plan.details_overlay);
     render_unified_bottom_dock(frame, app, dock, theme);
 }
 
+#[cfg(test)]
 fn live_anchor_for_runtime_state(
-    app: &AppState,
-    runtime_kind: RuntimeStateKind,
-    planned_anchor: Option<Rect>,
+    _app: &AppState,
+    _runtime_kind: RuntimeStateKind,
+    _planned_anchor: Option<Rect>,
 ) -> Option<Rect> {
-    if app.completed_session_shell_active() {
-        return planned_anchor;
-    }
-
-    match runtime_kind {
-        RuntimeStateKind::Ready
-        | RuntimeStateKind::Sending
-        | RuntimeStateKind::Streaming
-        | RuntimeStateKind::PermissionBlocked
-        | RuntimeStateKind::PermissionPending => None,
-        _ => planned_anchor,
-    }
-}
-
-fn inset_for_live_anchor(area: Rect, live_anchor: Option<Rect>) -> Rect {
-    let Some(anchor) = live_anchor else {
-        return area;
-    };
-    if area.width == 0 || area.height == 0 || area.y != anchor.y {
-        return area;
-    }
-
-    let inset = anchor.height.min(area.height);
-    Rect::new(
-        area.x,
-        area.y.saturating_add(inset),
-        area.width,
-        area.height.saturating_sub(inset),
-    )
+    None
 }
 
 fn render_runtime_state_surface(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
@@ -835,6 +816,7 @@ mod tests {
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("24 lines read from src/ui.rs".to_string()),
                 output_digest: Some("digest-answer-first-output".to_string()),
+                output_json: None,
             }),
         ));
         app.ingest_event(envelope(
@@ -862,9 +844,7 @@ mod tests {
         let thinking_index = transcript
             .find("Thinking: · Drafting a document-like plan")
             .expect("thinking summary");
-        let tool_index = transcript
-            .find("tool fs.read (succeeded) · 24 lines read from src/ui.rs")
-            .expect("tool summary");
+        let tool_index = transcript.find("Read src/ui.rs").expect("tool summary");
 
         assert!(answer_index < thinking_index);
         assert!(thinking_index < tool_index);
@@ -1015,8 +995,9 @@ mod tests {
 
         let debug = render_debug(&app, 100, 24);
         assert!(debug.contains("Ctrl+s send"));
-        assert!(debug.contains("Ctrl+j nl"));
-        assert!(debug.contains("g shortcuts"));
+        assert!(!debug.contains("Ctrl+j nl"));
+        assert!(!debug.contains("g shortcuts"));
+        assert!(debug.contains("Ctrl+p commands"));
         assert!(debug.contains("x quit"));
         assert!(!debug.contains("q quit"));
     }
@@ -1055,11 +1036,11 @@ mod tests {
         );
 
         let debug = render_debug(&app, 100, 24);
-        assert!(debug.contains("Harness") || debug.contains("HARNESS"));
+        assert!(debug.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻") || debug.contains("Harness"));
         assert!(debug.contains("Preset deep · proxy/gpt-5.4 · Demo"));
-        assert!(debug.contains("Ctrl+p palette"));
-        assert!(debug.contains("Enter select"));
-        assert!(debug.contains("Type to start a new session."));
+        assert!(debug.contains("Ctrl+p open"));
+        assert!(!debug.contains("Enter select"));
+        assert!(debug.contains("Ask Harness anything…"));
         assert!(!debug.contains("Dispatch a new run, reopen live work, or inspect saved history."));
         assert!(!debug.contains("Actions:"));
     }
@@ -1076,7 +1057,6 @@ mod tests {
         app.apply_keybindings(
             [
                 ("open_event_log".to_string(), "e".to_string()),
-                ("open_diff_review".to_string(), "f".to_string()),
                 ("help".to_string(), "g".to_string()),
                 ("toggle_follow".to_string(), "z".to_string()),
                 ("submit_prompt".to_string(), "ctrl+s".to_string()),
@@ -1170,6 +1150,7 @@ mod tests {
                     r#"{"lines":["use std::path::PathBuf;","use std::sync::Arc;"]}"#.to_string(),
                 ),
                 output_digest: Some("digest-tool-detail-output".to_string()),
+                output_json: None,
             }),
         ));
 
@@ -1178,9 +1159,9 @@ mod tests {
 
         let sidebar_text = super::ui_secondary::operator_sidebar_text_for_test(&app).join("\n");
         assert!(sidebar_text.contains("Live · run run_ui_tests"));
-        assert!(sidebar_text.contains("unknown/openai/gpt-5-codex"));
+        assert!(sidebar_text.contains("default/openai/gpt-5-codex"));
+        assert!(sidebar_text.contains("Context"));
         assert!(sidebar_text.contains("0 active todos · 0 modified files"));
-        assert!(sidebar_text.contains("No operator activity now"));
         assert!(!sidebar_text.contains("Todo ·"));
         assert!(!sidebar_text.contains("Modified Files ·"));
     }
@@ -1242,9 +1223,9 @@ mod tests {
 
         let sidebar_text = super::ui_secondary::operator_sidebar_text_for_test(&app).join("\n");
         assert!(sidebar_text.contains("Live · run run_ui_tests"));
-        assert!(sidebar_text.contains("unknown/openai/gpt-5-codex"));
+        assert!(sidebar_text.contains("default/openai/gpt-5-codex"));
+        assert!(sidebar_text.contains("Context"));
         assert!(sidebar_text.contains("0 active todos · 0 modified files"));
-        assert!(sidebar_text.contains("No operator activity now"));
         assert!(!sidebar_text.contains("No modified files recorded"));
         assert!(!sidebar_text.contains("Permission context:"));
         assert!(!sidebar_text.contains("perm_permission_detail"));
@@ -1299,14 +1280,12 @@ mod tests {
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("12 lines read".to_string()),
                 output_digest: Some("digest-tool-compact-output".to_string()),
+                output_json: None,
             }),
         ));
 
         let transcript = transcript_debug(&app);
-        assert!(transcript.contains("tool fs.read"));
-        assert!(transcript.contains("tool fs.read (succeeded) · 12 lines read"));
-        assert!(transcript.contains("12 lines read"));
-        assert!(transcript.contains("succeeded"));
+        assert!(transcript.contains("Read src/lib.rs [offset=42, limit=20]"));
         assert!(!transcript.contains(r#"{"path":"src/lib.rs","start_line":42,"limit":20}"#));
         assert!(!transcript.contains("args {"));
         assert_eq!(
@@ -1355,15 +1334,14 @@ mod tests {
                 status: ToolCallStatus::Failed,
                 output_summary: Some("exit code: 1\nstderr: permission denied".to_string()),
                 output_digest: None,
+                output_json: None,
             }),
         ));
 
         let transcript = transcript_debug(&app);
-        assert!(transcript.contains("tool shell.run"));
-        assert!(transcript.contains("args · cmd=false, cwd=/tmp/demo"));
-        assert!(transcript.contains("error · exit code: 1 stderr: permission denied"));
-        assert!(transcript.contains("exit code: 1 stderr: permission denied"));
-        assert!(transcript.contains("failed"));
+        assert!(transcript.contains("$ false"));
+        assert!(transcript.contains("exit code: 1"));
+        assert!(transcript.contains("stderr: permission denied"));
         assert!(!transcript.contains(r#"{"cmd":"false","cwd":"/tmp/demo"}"#));
         assert!(!transcript.contains("args {"));
     }
@@ -1402,7 +1380,6 @@ mod tests {
         ));
 
         let debug = render_debug(&app, 160, 30);
-        assert!(debug.contains("live"));
         assert!(debug.contains("tool shell.run running"));
         assert!(!debug.contains("orch 0a 0q 0r 0s"));
     }

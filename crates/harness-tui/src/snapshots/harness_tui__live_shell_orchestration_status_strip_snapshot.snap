@@ -1,5 +1,0 @@
----
-source: crates/harness-tui/src/lib.rs
-expression: status_row
----
-   live    Ready   ready for first turn  ·  orch 2a 1q 1r 1s · warn stale for 3001 ms

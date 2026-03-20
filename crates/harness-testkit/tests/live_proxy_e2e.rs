@@ -2,11 +2,11 @@ use std::cmp;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -14,7 +14,7 @@ use time::{macros::format_description, OffsetDateTime};
 
 mod support;
 
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use portable_pty::{CommandBuilder, PtySize};
 use serde_json::{json, Value};
 use support::live_events::{resolve_tagged_run_dir, ToolFlowEvidence};
 use support::live_vision::{self, LiveVisionProxyConfig};
@@ -24,6 +24,7 @@ use support::live_visual::{
     CHECKPOINT_HASHLINE_SCAN_FINISHED, CHECKPOINT_PERMISSION_REQUESTED, CHECKPOINT_RUN_FINISHED,
     CHECKPOINT_SHELL_CREATE_FINISHED, CHECKPOINT_STARTUP,
 };
+use support::pty_process::{spawn_pty_process, SpawnedPtyProcess};
 use vt100::Parser as VtParser;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -2545,11 +2546,6 @@ fn run_live_tui_smoke(
         },
     )?;
 
-    let pty_system = native_pty_system();
-    let pair = pty_system
-        .openpty(tui_pty_size())
-        .map_err(|err| format!("failed to open TUI PTY: {err}"))?;
-
     let mut command = CommandBuilder::new(harness_bin.to_string_lossy().as_ref());
     command.arg("tui");
     command.arg("--exit-on-finish");
@@ -2562,32 +2558,17 @@ fn run_live_tui_smoke(
     command.cwd(&run_config.workspace_root);
     configure_live_tui_env(&mut command);
 
-    let mut child = pair
-        .slave
-        .spawn_command(command)
-        .map_err(|err| format!("failed to spawn harness TUI smoke: {err}"))?;
-    drop(pair.slave);
-
-    let reader = pair
-        .master
-        .try_clone_reader()
-        .map_err(|err| format!("failed to clone TUI PTY reader: {err}"))?;
-    let mut writer = pair
-        .master
-        .take_writer()
-        .map_err(|err| format!("failed to take TUI PTY writer: {err}"))?;
-    let output_rx = spawn_pty_reader_thread(reader);
-    let mut parser = VtParser::new(tui_pty_size().rows, tui_pty_size().cols, 0);
+    let mut process = spawn_pty_process(tui_pty_size(), command, "live TUI smoke")?;
 
     wait_for_screen_contains(
-        &mut parser,
-        &output_rx,
+        &mut process.parser,
+        &process.output_rx,
         LIVE_TUI_READY_MARKER,
         LIVE_TUI_STARTUP_TIMEOUT,
     )?;
     let startup_checkpoint = live_visual.capture_checkpoint_with_metadata(
         CHECKPOINT_STARTUP,
-        &parser,
+        &process.parser,
         LIVE_VISUAL_STARTUP_MARKERS,
         &FocusCapture::anchored_exact(LIVE_TUI_READY_MARKER, 24, 3),
         Some(json!({
@@ -2596,21 +2577,23 @@ fn run_live_tui_smoke(
         })),
     )?;
 
-    writer
+    process
+        .writer
         .write_all(request.prompt_text.as_bytes())
         .map_err(|err| format!("failed to type live TUI smoke prompt: {err}"))?;
-    writer
+    process
+        .writer
         .flush()
         .map_err(|err| format!("failed to flush live TUI smoke prompt: {err}"))?;
     wait_for_screen_contains(
-        &mut parser,
-        &output_rx,
+        &mut process.parser,
+        &process.output_rx,
         &request.prompt_text,
         Duration::from_secs(5),
     )?;
     let draft_visible_checkpoint = live_visual.capture_checkpoint_with_metadata(
         CHECKPOINT_DRAFT_VISIBLE,
-        &parser,
+        &process.parser,
         &[LIVE_TUI_READY_MARKER, request.prompt_text.as_str()],
         &FocusCapture::anchored(request.prompt_text.as_str(), 28, 4),
         Some(json!({
@@ -2619,18 +2602,20 @@ fn run_live_tui_smoke(
         })),
     )?;
 
-    writer
+    process
+        .writer
         .write_all(b"\r")
         .map_err(|err| format!("failed to submit live TUI smoke prompt: {err}"))?;
-    writer
+    process
+        .writer
         .flush()
         .map_err(|err| format!("failed to flush submitted live TUI smoke prompt: {err}"))?;
 
     let events_body =
         wait_for_tui_provider_turn(&session_dir, LIVE_TUI_SESSION_NAMESPACE, timeout)?;
     wait_for_screen_state(
-        &mut parser,
-        &output_rx,
+        &mut process.parser,
+        &process.output_rx,
         &[
             LIVE_TUI_READY_MARKER,
             LIVE_TUI_STATUS_SUCCESS_MARKER,
@@ -2645,7 +2630,7 @@ fn run_live_tui_smoke(
     )?;
     let run_finished_checkpoint = live_visual.capture_checkpoint_with_metadata(
         CHECKPOINT_RUN_FINISHED,
-        &parser,
+        &process.parser,
         &[
             LIVE_TUI_READY_MARKER,
             LIVE_TUI_STATUS_SUCCESS_MARKER,
@@ -2661,14 +2646,21 @@ fn run_live_tui_smoke(
             "session_dir": run_config.session_dir.display().to_string(),
         })),
     )?;
-    writer
+    process
+        .writer
         .write_all(b"\tq")
         .map_err(|err| format!("failed to quit live TUI smoke cleanly: {err}"))?;
-    writer
+    process
+        .writer
         .flush()
         .map_err(|err| format!("failed to flush live TUI smoke quit key: {err}"))?;
 
-    wait_for_tui_process_exit(&mut child, &output_rx, &mut parser, Duration::from_secs(10))?;
+    wait_for_tui_process_exit(
+        &mut process.child,
+        &process.output_rx,
+        &mut process.parser,
+        Duration::from_secs(10),
+    )?;
 
     Ok(LivePromptSmokeResult {
         events_body,
@@ -3018,21 +3010,12 @@ fn write_live_tool_flow_summary_artifacts(
     Ok(())
 }
 
-struct LiveTuiStageProcess {
-    child: Box<dyn portable_pty::Child + Send + Sync>,
-    writer: Box<dyn Write + Send>,
-    output_rx: Receiver<Vec<u8>>,
-    parser: VtParser,
-}
+type LiveTuiStageProcess = SpawnedPtyProcess;
 
 fn spawn_live_tui_stage_process(
     run_config: &PromptRunConfig,
 ) -> Result<LiveTuiStageProcess, String> {
     let harness_bin = resolve_harness_bin();
-    let pty_system = native_pty_system();
-    let pair = pty_system
-        .openpty(tui_pty_size())
-        .map_err(|err| format!("failed to open TUI PTY: {err}"))?;
 
     let mut command = CommandBuilder::new(harness_bin.to_string_lossy().as_ref());
     command.arg("tui");
@@ -3045,27 +3028,7 @@ fn spawn_live_tui_stage_process(
     command.cwd(&run_config.workspace_root);
     configure_live_tui_env(&mut command);
 
-    let child = pair
-        .slave
-        .spawn_command(command)
-        .map_err(|err| format!("failed to spawn harness TUI tool-flow stage: {err}"))?;
-    drop(pair.slave);
-
-    let reader = pair
-        .master
-        .try_clone_reader()
-        .map_err(|err| format!("failed to clone TUI PTY reader: {err}"))?;
-    let writer = pair
-        .master
-        .take_writer()
-        .map_err(|err| format!("failed to take TUI PTY writer: {err}"))?;
-
-    Ok(LiveTuiStageProcess {
-        child,
-        writer,
-        output_rx: spawn_pty_reader_thread(reader),
-        parser: VtParser::new(tui_pty_size().rows, tui_pty_size().cols, 0),
-    })
+    spawn_pty_process(tui_pty_size(), command, "live TUI tool-flow stage")
 }
 
 fn finish_live_tui_stage_process(
@@ -3605,26 +3568,6 @@ fn configure_live_tui_env(command: &mut CommandBuilder) {
     command.env("TZ", "UTC");
 }
 
-fn spawn_pty_reader_thread(mut reader: Box<dyn Read + Send>) -> Receiver<Vec<u8>> {
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let mut buffer = [0_u8; 4096];
-        loop {
-            match reader.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(read) => {
-                    if tx.send(buffer[..read].to_vec()).is_err() {
-                        break;
-                    }
-                }
-                Err(err) if err.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(_) => break,
-            }
-        }
-    });
-    rx
-}
-
 fn wait_for_screen_contains(
     parser: &mut VtParser,
     output_rx: &Receiver<Vec<u8>>,
@@ -3760,7 +3703,7 @@ fn tui_screen_contents(parser: &VtParser) -> String {
 }
 
 fn wait_for_tui_process_exit(
-    child: &mut Box<dyn portable_pty::Child + Send + Sync>,
+    child: &mut Box<dyn portable_pty::Child + Send>,
     output_rx: &Receiver<Vec<u8>>,
     parser: &mut VtParser,
     timeout: Duration,
@@ -4329,6 +4272,7 @@ fn live_proxy_env_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
+#[allow(unsafe_code)]
 fn with_live_proxy_env<T>(vars: &[(&str, Option<&std::ffi::OsStr>)], run: impl FnOnce() -> T) -> T {
     let previous = vars
         .iter()

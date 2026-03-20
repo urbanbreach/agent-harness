@@ -1,0 +1,28 @@
+---
+source: crates/harness-tui/src/lib.rs
+expression: "completed_shell_render.lines().map(str::trim_end).collect::<Vec<_>>().join(\"\\n\")"
+---
+
+              Waiting for first turn…
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            ┃
+            ┃  keep this draft
+            ┃
+            ┃  default · local/-
+            ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+            Ready  ·  run finished · session shell preserved           Tab focus  q quit

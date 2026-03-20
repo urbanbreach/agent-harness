@@ -1,16 +1,14 @@
- run run_fixture                                      unknown/mock/model-1                                      live
-                                                                                                                        Live · run run_fixture
- ▎  › user (req_pty_001)                                                                                                unknown/mock/model-1
- ▎  Hello from PTY                                                                                                      0 active todos · 0 modified files
 
- ▎  ● assistant (done · current · mock/model-1)
- ▎  Hello world
-                                                                                                                        No operator activity now
-                                                                                                                        Approvals, tasks, and edits show here
+  ┃  › You                                                                                                              Live · run run_fixture
+  ┃  Hello from PTY                                                                                                     default/mock/model-1
+                                                                                                                        0 active todos · 0 modified files
+     Hello world
+     ● Assistant · model-1 · 4ms                                                                                        Recent context
 
+                                                                                                                        Context
+                                                                                                                        turn 1 · ready for next turn
 
-
-
+                                                                                                                        Full turn context stays in the transc…
 
 
 
@@ -22,9 +20,11 @@
 
 
 
- live    Success   turn 1 · ready for next turn
 
 
-  ▎ Ask Harness to inspect, edit, or explain…                                                                           harness-tui · v0.1.0
-    shift+enter newline
-Enter send  Shift+Enter nl  Ctrl+p commands  ? shortcuts  q quit
+┃
+┃
+┃
+┃  default · mock/model-1
+╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀   harness-tui · v0.1.0
+Success  ·  turn 1 · ready for next turn

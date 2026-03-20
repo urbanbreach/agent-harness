@@ -71,6 +71,7 @@ fn resume_plan_reconstructs_sequence_and_id_watermarks() {
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("ok".to_string()),
                     output_digest: Some("digest-tool-out".to_string()),
+                    output_json: None,
                 }),
             ),
             envelope(

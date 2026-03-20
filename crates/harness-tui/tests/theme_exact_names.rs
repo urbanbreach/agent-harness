@@ -205,7 +205,10 @@ fn semantic_composer_tokens_have_primary_split_minimum_variants() {
         tokens.semantic.composer.split.density,
         SpacingDensity::Standard
     );
-    assert_eq!(tokens.semantic.composer.split.surface, theme.surface.panel);
+    assert_eq!(
+        tokens.semantic.composer.split.surface,
+        theme.surface.panel_elevated
+    );
     assert_eq!(
         tokens.semantic.composer.split.border,
         Some(theme.border.subtle)
@@ -214,13 +217,10 @@ fn semantic_composer_tokens_have_primary_split_minimum_variants() {
         tokens.semantic.composer.primary.target,
         ShellGeometryTarget::Primary
     );
-    assert_eq!(
-        tokens.semantic.composer.primary.chrome,
-        ChromeMode::Chromeless
-    );
+    assert_eq!(tokens.semantic.composer.primary.chrome, ChromeMode::Divided);
     assert_eq!(
         tokens.semantic.composer.primary.divider,
-        DividerIntensity::None
+        DividerIntensity::Subtle
     );
     assert_eq!(
         tokens.semantic.composer.primary.density,
@@ -228,9 +228,12 @@ fn semantic_composer_tokens_have_primary_split_minimum_variants() {
     );
     assert_eq!(
         tokens.semantic.composer.primary.surface,
-        theme.surface.shell
+        theme.surface.panel_elevated
     );
-    assert_eq!(tokens.semantic.composer.primary.border, None);
+    assert_eq!(
+        tokens.semantic.composer.primary.border,
+        Some(theme.border.subtle)
+    );
     assert_eq!(
         tokens.semantic.composer.minimum.padding_x,
         theme.live_shell.rhythm.composer_padding_x

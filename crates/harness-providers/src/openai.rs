@@ -99,12 +99,13 @@ impl OpenAiCompatibleProvider {
         format!("{base}/responses")
     }
 
-    async fn send_chat_request(
+    async fn send_request<T: Serialize>(
         &self,
-        request: &OpenAiChatCompletionsRequest,
+        endpoint: String,
+        request: &T,
     ) -> Result<reqwest::Response, String> {
         self.client
-            .post(self.chat_completions_endpoint())
+            .post(endpoint)
             .headers(self.headers.clone())
             .bearer_auth(&self.api_key)
             .json(request)
@@ -113,19 +114,31 @@ impl OpenAiCompatibleProvider {
             .map_err(|_| "openai_compatible request failed before receiving response".to_string())
     }
 
+    async fn send_chat_request(
+        &self,
+        request: &OpenAiChatCompletionsRequest,
+    ) -> Result<reqwest::Response, String> {
+        self.send_request(self.chat_completions_endpoint(), request)
+            .await
+    }
+
     async fn send_responses_request(
         &self,
         request: &OpenAiResponsesRequest,
     ) -> Result<reqwest::Response, String> {
-        self.client
-            .post(self.responses_endpoint())
-            .headers(self.headers.clone())
-            .bearer_auth(&self.api_key)
-            .json(request)
-            .send()
-            .await
-            .map_err(|_| "openai_compatible request failed before receiving response".to_string())
+        self.send_request(self.responses_endpoint(), request).await
     }
+}
+
+fn map_tools<T>(tools: Option<Vec<ToolDef>>) -> Option<Vec<T>>
+where
+    T: From<ToolDef>,
+{
+    tools.map(|tools| tools.into_iter().map(Into::into).collect())
+}
+
+fn openai_role(role: &MessageRole) -> String {
+    role_to_openai(role).to_string()
 }
 
 #[async_trait]
@@ -864,7 +877,7 @@ impl From<CompletionRequest> for OpenAiChatCompletionsRequest {
             messages: messages.into_iter().map(Into::into).collect(),
             temperature,
             max_tokens,
-            tools: tools.map(|tools| tools.into_iter().map(Into::into).collect()),
+            tools: map_tools(tools),
             tool_choice,
             stream,
         }
@@ -910,7 +923,7 @@ impl From<CompletionMessage> for OpenAiChatMessage {
             });
 
         Self {
-            role: role_to_openai(&role).to_string(),
+            role: openai_role(&role),
             content,
             name,
             tool_call_id,
@@ -993,7 +1006,7 @@ impl From<CompletionRequest> for OpenAiResponsesRequest {
             input: serialize_responses_input(messages),
             temperature,
             max_output_tokens: max_tokens,
-            tools: tools.map(|tools| tools.into_iter().map(Into::into).collect()),
+            tools: map_tools(tools),
             tool_choice,
             stream,
         }
@@ -1001,11 +1014,10 @@ impl From<CompletionRequest> for OpenAiResponsesRequest {
 }
 
 fn serialize_responses_input(messages: Vec<CompletionMessage>) -> Vec<OpenAiResponsesInputItem> {
-    let mut input = Vec::new();
-    for message in messages {
-        input.extend(OpenAiResponsesInputItem::from_completion_message(message));
-    }
-    input
+    messages
+        .into_iter()
+        .flat_map(OpenAiResponsesInputItem::from_completion_message)
+        .collect()
 }
 
 #[derive(Debug, Serialize)]
@@ -1055,7 +1067,7 @@ impl OpenAiResponsesInputItem {
         };
 
         let mut items = vec![Self::Message {
-            role: role_to_openai(&role).to_string(),
+            role: openai_role(&role),
             content: vec![OpenAiResponsesContentItem {
                 item_type: item_type.to_string(),
                 text: content,

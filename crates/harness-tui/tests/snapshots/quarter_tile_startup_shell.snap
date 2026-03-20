@@ -5,19 +5,18 @@
 
 
 
-
-
-                                     Harness
-                       Preset worker · mock/model-1 · Demo
-                    dispatch a fresh run from the draft below
-          Type to quick-start a fresh run · Ctrl+P opens session tools
-
+                        ╻ ╻  ┏━┓  ┏━┓  ┏┓╻  ┏━╸  ┏━┓  ┏━┓
+                        ┣━┫  ┣━┫  ┣┳┛  ┃┗┫  ┣╸   ┗━┓  ┗━┓
+                        ╹ ╹  ╹ ╹  ╹┗╸  ╹ ╹  ┗━╸  ┗━┛  ┗━┛
+                     open a fresh session in this directory
 
 
 
 
-
-    startup ready · type below or use Ctrl+P for saved runs
-
-    ▎ Type to start a new session.
-  ↑ prev  ↓ next  Enter select  q quit
+  ┃
+  ┃  Ask Harness anything… “inspect src/ui.rs”
+  ┃
+  ┃  Preset worker · mock/model-1 · Demo
+  ┃
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                          Ctrl+p open  q quit

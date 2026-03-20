@@ -1,24 +1,44 @@
-use font8x8::unicode::{BasicFonts, BlockFonts, BoxFonts, LatinFonts, UnicodeFonts};
-use fontdue::{Font, FontSettings};
-use image::{imageops::FilterType, Rgb, RgbImage};
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use portable_pty::{CommandBuilder, PtySize};
 use serde_json::{json, Value};
-use std::cell::RefCell;
 use std::cmp;
-use std::collections::BTreeMap;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{
-    mpsc::{self, Receiver, RecvTimeoutError},
-    Arc, OnceLock,
+    mpsc::{Receiver, RecvTimeoutError},
+    OnceLock,
 };
-use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use vt100::{Color as VtColor, Parser as VtParser};
+use vt100::Parser as VtParser;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
+
+#[path = "support/markers.rs"]
+mod markers;
+#[path = "support/pty_process.rs"]
+mod pty_process;
+#[path = "support/visual_contracts.rs"]
+mod visual_contracts;
+#[path = "support/visual_renderer.rs"]
+mod visual_renderer;
+
+use markers::{
+    CONTINUED_SESSION_TITLE_MARKER, LIVE_OPERATOR_EMPTY_MARKER, LIVE_OPERATOR_TODOS_MARKER,
+    LIVE_READY_NEXT_TURN_MARKER, LIVE_SUCCESS_COMPOSER_MARKER, OPERATOR_FILES_MARKER,
+    REPLAY_DENSE_READY_MARKER, REPLAY_READY_MARKER, RUN_FINISHED_SHELL_MARKERS,
+    STARTUP_COMMAND_PALETTE_MARKER, STARTUP_CONTINUE_HISTORY_MARKER,
+    STARTUP_CONTINUE_HISTORY_READY_MARKER, STARTUP_HOME_ASCII_WORDMARK_MARKER,
+    STARTUP_HOME_DENSE_VALUE_PROP_MARKER, STARTUP_HOME_SHORTCUT_MARKER,
+    STARTUP_HOME_VALUE_PROP_MARKER, STARTUP_HOME_WORDMARK_MARKER, STARTUP_LAUNCHER_READY_MARKER,
+    STARTUP_REPLAY_HISTORY_MARKER,
+};
+use pty_process::{spawn_pty_process, SpawnedPtyProcess};
+use visual_contracts::OFFLINE_VISUAL_EVIDENCE_CONTRACTS;
+
+use visual_renderer::{
+    extract_region_pixels, parse_ttf_antialias_env, render_parser_to_image, TerminalRenderConfig,
+};
 
 const VISUAL_MANIFEST_JSON_FILE: &str = "manifest.json";
 const VISUAL_MANIFEST_JSONL_FILE: &str = "manifest.jsonl";
@@ -28,42 +48,11 @@ const MARKER_TIMEOUT: Duration = Duration::from_secs(6);
 const READ_POLL_TIMEOUT: Duration = Duration::from_millis(50);
 const STABLE_WINDOW: Duration = Duration::from_millis(180);
 const STABLE_TIMEOUT: Duration = Duration::from_secs(2);
-const GLYPH_WIDTH: u32 = 8;
-const GLYPH_HEIGHT: u32 = 8;
-const GLYPH_VERTICAL_SCALE: u32 = 2;
-const RASTER_SCALE: u32 = 4;
-const RASTER_CELL_WIDTH: u32 = GLYPH_WIDTH * RASTER_SCALE;
-const RASTER_CELL_HEIGHT: u32 = GLYPH_HEIGHT * GLYPH_VERTICAL_SCALE * RASTER_SCALE;
 const PRIMARY_SIGNOFF_COLS: u16 = 160;
 const PRIMARY_SIGNOFF_ROWS: u16 = 48;
 const CELL_WIDTH: u32 = 16;
 const CELL_HEIGHT: u32 = 30;
-const DEFAULT_FG: [u8; 3] = [216, 216, 216];
-const DEFAULT_BG: [u8; 3] = [18, 18, 18];
-const ANTI_ALIAS_FONT_SIZE_FACTOR: f32 = 0.72;
-const STARTUP_HOME_WORDMARK_MARKER: &str = "Harness";
-const STARTUP_HOME_ASCII_WORDMARK_MARKER: &str = "Harness";
-const STARTUP_HOME_SHORTCUT_MARKER: &str = "Ctrl+P open";
-const STARTUP_HOME_VALUE_PROP_MARKER: &str = "dispatch a fresh run";
-const STARTUP_HOME_DENSE_VALUE_PROP_MARKER: &str = "Type to quick-start a fresh run";
-const STARTUP_LAUNCHER_READY_MARKER: &str = STARTUP_HOME_SHORTCUT_MARKER;
-const STARTUP_COMMAND_PALETTE_MARKER: &str = "Command palette";
-const STARTUP_CONTINUE_HISTORY_MARKER: &str = "Continue session";
-const STARTUP_REPLAY_HISTORY_MARKER: &str = "Replay session";
-const STARTUP_CONTINUE_HISTORY_READY_MARKER: &str = "continue ready";
-const REPLAY_READY_MARKER: &str = "q quit";
-const REPLAY_DENSE_READY_MARKER: &str = "Replay · read-only";
-const CONTINUED_SESSION_TITLE_MARKER: &str = "Continued · run";
-const LIVE_OPERATOR_TODOS_MARKER: &str = "0 active todos";
-const LIVE_OPERATOR_EMPTY_MARKER: &str = "No operator";
-const LIVE_SUCCESS_COMPOSER_MARKER: &str = "Ask Harness to inspect, edit, or explain…";
-const LIVE_READY_NEXT_TURN_MARKER: &str = "ready for next turn";
-const OPERATOR_FILES_MARKER: &str = "Modified Files";
-const STRUCTURED_DIFF_FILE_MARKER: &str = "--- demo.txt";
-const STRUCTURED_DIFF_REMOVED_LINE_MARKER: &str = "-beta";
-const STRUCTURED_DIFF_ADDED_LINE_MARKER: &str = "+BETA";
-const RUN_FINISHED_SHELL_MARKERS: &[&str] =
-    &["run finished", "session shell preserved", "Tab focus"];
+const PTY_RENDER_CONFIG: TerminalRenderConfig = TerminalRenderConfig::new(CELL_WIDTH, CELL_HEIGHT);
 
 #[test]
 fn pty_e2e_permission_overlay_parity() {
@@ -140,137 +129,6 @@ fn pty_e2e_permission_overlay_parity() {
         .expect("terminate permission overlay parity harness");
     std::mem::forget(harness.child);
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct OfflineVisualEvidenceContract {
-    family: &'static str,
-    state: &'static str,
-    png: &'static str,
-    snapshot: &'static str,
-}
-
-const OFFLINE_VISUAL_EVIDENCE_CONTRACTS: &[OfflineVisualEvidenceContract] = &[
-    OfflineVisualEvidenceContract {
-        family: "startup_shell",
-        state: "happy_path",
-        png: "pty_startup_home_primary.png",
-        snapshot: "pty_startup_home_primary",
-    },
-    OfflineVisualEvidenceContract {
-        family: "startup_shell",
-        state: "happy_path",
-        png: "pty_startup_home_dense.png",
-        snapshot: "pty_startup_home_dense",
-    },
-    OfflineVisualEvidenceContract {
-        family: "startup_command_palette",
-        state: "happy_path",
-        png: "pty_startup_command_palette.png",
-        snapshot: "pty_startup_command_palette",
-    },
-    OfflineVisualEvidenceContract {
-        family: "startup_session_history",
-        state: "continue_history",
-        png: "pty_startup_continue_history.png",
-        snapshot: "pty_startup_continue_history",
-    },
-    OfflineVisualEvidenceContract {
-        family: "startup_session_history",
-        state: "replay_history",
-        png: "pty_startup_replay_history.png",
-        snapshot: "pty_startup_replay_history",
-    },
-    OfflineVisualEvidenceContract {
-        family: "continue_session",
-        state: "happy_path",
-        png: "pty_continue_quiescent_session.png",
-        snapshot: "pty_continue_quiescent_session",
-    },
-    OfflineVisualEvidenceContract {
-        family: "continue_session",
-        state: "failure_path",
-        png: "pty_continue_rejected_active.png",
-        snapshot: "pty_continue_rejected_active",
-    },
-    OfflineVisualEvidenceContract {
-        family: "continue_session",
-        state: "failure_path",
-        png: "pty_continue_rejected_unrestorable.png",
-        snapshot: "pty_continue_rejected_unrestorable",
-    },
-    OfflineVisualEvidenceContract {
-        family: "permission",
-        state: "happy_path",
-        png: "pty_permission_overlay_parity.png",
-        snapshot: "pty_permission_overlay_parity",
-    },
-    OfflineVisualEvidenceContract {
-        family: "live_shell",
-        state: "happy_path",
-        png: "pty_interactive_type_first_startup.png",
-        snapshot: "pty_interactive_type_first_startup",
-    },
-    OfflineVisualEvidenceContract {
-        family: "live_shell",
-        state: "happy_path",
-        png: "pty_interactive_prompt_stream.png",
-        snapshot: "pty_interactive_prompt_stream",
-    },
-    OfflineVisualEvidenceContract {
-        family: "live_shell",
-        state: "happy_path",
-        png: "pty_session_shell_primary_live.png",
-        snapshot: "pty_session_shell_primary_live",
-    },
-    OfflineVisualEvidenceContract {
-        family: "live_shell",
-        state: "inline_completion",
-        png: "pty_inline_completion_shell.png",
-        snapshot: "pty_inline_completion_shell",
-    },
-    OfflineVisualEvidenceContract {
-        family: "replay_shell",
-        state: "happy_path",
-        png: "pty_session_shell_primary_replay.png",
-        snapshot: "pty_session_shell_primary_replay",
-    },
-    OfflineVisualEvidenceContract {
-        family: "transcript_shell",
-        state: "happy_path",
-        png: "pty_session_transcript_rich_shell.png",
-        snapshot: "pty_session_transcript_rich_shell",
-    },
-    OfflineVisualEvidenceContract {
-        family: "operator_sidebar",
-        state: "happy_path",
-        png: "pty_operator_sidebar_primary.png",
-        snapshot: "pty_operator_sidebar_primary",
-    },
-    OfflineVisualEvidenceContract {
-        family: "diff_surface",
-        state: "live_secondary",
-        png: "pty_continue_live_diff_secondary.png",
-        snapshot: "pty_continue_live_diff_secondary",
-    },
-    OfflineVisualEvidenceContract {
-        family: "diff_surface",
-        state: "replay_narrow",
-        png: "pty_replay_diff_tab.png",
-        snapshot: "pty_replay_diff_tab",
-    },
-    OfflineVisualEvidenceContract {
-        family: "diff_surface",
-        state: "replay_dense",
-        png: "pty_replay_diff_six_window.png",
-        snapshot: "pty_replay_diff_six_window",
-    },
-    OfflineVisualEvidenceContract {
-        family: "replay",
-        state: "failure_path",
-        png: "pty_replay_read_only.png",
-        snapshot: "pty_replay_read_only",
-    },
-];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PtyGeometry {
@@ -429,12 +287,7 @@ const LIVE_STATE_FIXTURES: LiveStateFixtures = LiveStateFixtures {
     permission: PermissionFixture::TOOL_CALL,
 };
 
-struct SpawnedHarnessPty {
-    child: Box<dyn portable_pty::Child + Send>,
-    writer: Box<dyn Write + Send>,
-    output_rx: Receiver<Vec<u8>>,
-    parser: VtParser,
-}
+type SpawnedHarnessPty = SpawnedPtyProcess;
 
 fn spawn_harness_tui(
     geometry: PtyGeometry,
@@ -443,11 +296,6 @@ fn spawn_harness_tui(
 ) -> SpawnedHarnessPty {
     let harness_bin = resolve_harness_bin();
     let repo_root = repo_root();
-    let pty_system = native_pty_system();
-    let pair = pty_system
-        .openpty(geometry.pty_size())
-        .expect("open pty pair");
-
     let mut command = CommandBuilder::new(harness_bin.to_string_lossy().as_ref());
     command.arg("tui");
     configure(&mut command);
@@ -457,21 +305,10 @@ fn spawn_harness_tui(
     command.cwd(repo_root);
     configure_deterministic_env(&mut command);
 
-    let child = pair
-        .slave
-        .spawn_command(command)
+    let mut process = spawn_pty_process(geometry.pty_size(), command, "harness tui")
         .expect("spawn harness tui command");
-    drop(pair.slave);
-
-    let reader = pair.master.try_clone_reader().expect("clone pty reader");
-    let writer = pair.master.take_writer().expect("take pty writer");
-
-    SpawnedHarnessPty {
-        child,
-        writer,
-        output_rx: spawn_reader_thread(reader),
-        parser: geometry.parser(),
-    }
+    process.parser = geometry.parser();
+    process
 }
 
 fn open_startup_command_palette(
@@ -617,16 +454,14 @@ fn pty_e2e_startup_home_primary() {
             STARTUP_HOME_WORDMARK_MARKER,
             STARTUP_HOME_SHORTCUT_MARKER,
             STARTUP_HOME_VALUE_PROP_MARKER,
-            "startup ready",
         ],
     )
     .expect("capture startup home primary image");
 
     assert!(screen.contains(STARTUP_HOME_WORDMARK_MARKER));
     assert!(screen.contains(STARTUP_HOME_SHORTCUT_MARKER));
-    assert!(screen.contains("Type to start a new session."));
+    assert!(screen.contains("Ask Harness anything…"));
     assert!(screen.contains(STARTUP_HOME_VALUE_PROP_MARKER));
-    assert!(screen.contains("startup ready"));
     assert!(!screen.contains("New session"));
     assert!(!screen.contains("Continue session"));
     assert!(!screen.contains("Replay session"));
@@ -639,7 +474,6 @@ fn pty_e2e_startup_home_primary() {
                 STARTUP_HOME_WORDMARK_MARKER,
                 STARTUP_HOME_SHORTCUT_MARKER,
                 STARTUP_HOME_VALUE_PROP_MARKER,
-                "startup ready",
             ],
             &visual,
         )
@@ -683,16 +517,14 @@ fn pty_e2e_startup_home_dense() {
             STARTUP_HOME_ASCII_WORDMARK_MARKER,
             STARTUP_HOME_SHORTCUT_MARKER,
             STARTUP_HOME_DENSE_VALUE_PROP_MARKER,
-            "startup ready",
         ],
     )
     .expect("capture startup home dense image");
 
     assert!(screen.contains(STARTUP_HOME_ASCII_WORDMARK_MARKER));
     assert!(screen.contains(STARTUP_HOME_SHORTCUT_MARKER));
-    assert!(screen.contains("Type to start a new session."));
+    assert!(screen.contains("Ask Harness anything…"));
     assert!(screen.contains(STARTUP_HOME_DENSE_VALUE_PROP_MARKER));
-    assert!(screen.contains("startup ready"));
     assert!(!screen.contains("New session"));
     assert!(!screen.contains("Continue session"));
     assert!(!screen.contains("Replay session"));
@@ -705,7 +537,6 @@ fn pty_e2e_startup_home_dense() {
                 STARTUP_HOME_ASCII_WORDMARK_MARKER,
                 STARTUP_HOME_SHORTCUT_MARKER,
                 STARTUP_HOME_DENSE_VALUE_PROP_MARKER,
-                "startup ready",
             ],
             &visual,
         )
@@ -923,7 +754,8 @@ async fn pty_e2e_session_transcript_rich_shell() {
         &[
             "Restyle the transcript shell",
             "Drafting a document-like plan",
-            "tool fs.read (succeeded) · 24 lines read from src/ui.rs",
+            "Read src/ui.rs [offset=1, limit=24]",
+            "↳ Loaded src/ui.rs",
             "Found the transcript renderer and the composer chrome.",
         ],
     )
@@ -931,7 +763,8 @@ async fn pty_e2e_session_transcript_rich_shell() {
 
     assert!(screen.contains("Restyle the transcript shell"));
     assert!(screen.contains("Drafting a document-like plan"));
-    assert!(screen.contains("tool fs.read (succeeded) · 24 lines read from src/ui.rs"));
+    assert!(screen.contains("Read src/ui.rs [offset=1, limit=24]"));
+    assert!(screen.contains("↳ Loaded src/ui.rs"));
     assert!(screen.contains("Found the transcript renderer and the composer chrome."));
     assert!(screen.contains(REPLAY_DENSE_READY_MARKER));
     assert!(!screen.contains("╭─"));
@@ -944,7 +777,8 @@ async fn pty_e2e_session_transcript_rich_shell() {
             &[
                 "Restyle the transcript shell",
                 "Drafting a document-like plan",
-                "tool fs.read (succeeded) · 24 lines read from src/ui.rs",
+                "Read src/ui.rs [offset=1, limit=24]",
+                "↳ Loaded src/ui.rs",
                 "Found the transcript renderer and the composer chrome.",
             ],
             &visual,
@@ -1206,37 +1040,17 @@ async fn pty_e2e_tui_interactive_prompt_streams_response() {
         .mount(&server)
         .await;
 
-    let harness_bin = resolve_harness_bin();
-    let repo_root = repo_root();
     let session_dir = create_temp_session_dir();
     let config_path = write_wiremock_tui_config(&session_dir, &server.uri());
     let geometry = PtyGeometry::MINIMUM_SIGNOFF;
 
-    let pty_system = native_pty_system();
-    let pair = pty_system
-        .openpty(geometry.pty_size())
-        .expect("open pty pair");
-
-    let mut command = CommandBuilder::new(harness_bin.to_string_lossy().as_ref());
-    command.arg("tui");
-    command.arg("--config");
-    command.arg(config_path.to_string_lossy().to_string());
-    command.arg("--deterministic");
-    command.arg("--session-dir");
-    command.arg(session_dir.to_string_lossy().to_string());
-    command.cwd(repo_root);
-    configure_deterministic_env(&mut command);
-
-    let child = pair
-        .slave
-        .spawn_command(command)
-        .expect("spawn harness tui command");
-    drop(pair.slave);
-
-    let reader = pair.master.try_clone_reader().expect("clone pty reader");
-    let mut writer = pair.master.take_writer().expect("take pty writer");
-    let output_rx = spawn_reader_thread(reader);
-    let mut parser = geometry.parser();
+    let mut harness = spawn_harness_tui(geometry, &session_dir, |command| {
+        command.arg("--config");
+        command.arg(config_path.to_string_lossy().to_string());
+    });
+    let mut writer = harness.writer;
+    let output_rx = harness.output_rx;
+    let mut parser = harness.parser;
     let visual_dir = visual_artifacts_dir();
     fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
 
@@ -1314,9 +1128,11 @@ async fn pty_e2e_tui_interactive_prompt_streams_response() {
 
     drop(writer);
 
-    let mut child = child;
-    child.kill().expect("terminate interactive tui child");
-    std::mem::forget(child);
+    harness
+        .child
+        .kill()
+        .expect("terminate interactive tui child");
+    std::mem::forget(harness.child);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -1620,74 +1436,8 @@ async fn pty_e2e_operator_sidebar_stays_usable_across_window_sizes() {
     }
 }
 
-#[tokio::test(flavor = "current_thread")]
-async fn pty_e2e_live_diff_surface_remains_reachable_from_session_shell() {
-    if !cfg!(target_os = "linux") {
-        return;
-    }
-
-    let server = start_responses_wiremock_server().await;
-    let visual_dir = visual_artifacts_dir();
-    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
-
-    let session_dir = create_temp_session_dir();
-    let run_id = "run_resume_diff";
-    write_quiescent_resume_diff_fixture(&session_dir, run_id);
-    let config_path = write_wiremock_tui_config(&session_dir, &server.uri());
-    let mut harness = spawn_resumed_quiescent_session(
-        PtyGeometry::PRIMARY_SIGNOFF,
-        &session_dir,
-        &config_path,
-        run_id,
-    );
-
-    let _diff_screen = open_secondary_review_surface(
-        &mut harness.parser,
-        &harness.output_rx,
-        harness.writer.as_mut(),
-        "diff",
-        STRUCTURED_DIFF_FILE_MARKER,
-    );
-    let diff_screen = harness.parser.screen().contents();
-    let diff_visual = capture_manifest_backed_visual_checkpoint(
-        "diff_surface",
-        "continue_live_diff_secondary",
-        &harness.parser,
-        &visual_dir,
-        FocusCapture::anchored(STRUCTURED_DIFF_FILE_MARKER, 28, 8),
-        &[
-            STRUCTURED_DIFF_FILE_MARKER,
-            STRUCTURED_DIFF_REMOVED_LINE_MARKER,
-            STRUCTURED_DIFF_ADDED_LINE_MARKER,
-        ],
-    )
-    .expect("capture live diff tab image");
-
-    assert!(diff_screen.contains(STRUCTURED_DIFF_FILE_MARKER));
-    assert!(diff_screen.contains(STRUCTURED_DIFF_REMOVED_LINE_MARKER));
-    assert!(diff_screen.contains(STRUCTURED_DIFF_ADDED_LINE_MARKER));
-    assert!(!diff_screen.contains("Tabs"));
-    assert!(!diff_screen.contains("diff artifact missing:"));
-    assert!(visual_dir.join(&diff_visual.file_name).exists());
-    insta::assert_snapshot!(
-        "pty_continue_live_diff_secondary",
-        checkpoint_visual_snapshot(
-            &diff_screen,
-            &[
-                STRUCTURED_DIFF_FILE_MARKER,
-                STRUCTURED_DIFF_REMOVED_LINE_MARKER,
-                STRUCTURED_DIFF_ADDED_LINE_MARKER,
-            ],
-            &diff_visual,
-        )
-    );
-
-    harness.child.kill().expect("terminate live diff harness");
-    std::mem::forget(harness.child);
-}
-
 #[test]
-fn pty_e2e_replay_secondary_surfaces_cover_diff_and_help() {
+fn pty_e2e_replay_secondary_surfaces_cover_help() {
     if !cfg!(target_os = "linux") {
         return;
     }
@@ -1726,47 +1476,6 @@ fn pty_e2e_replay_secondary_surfaces_cover_diff_and_help() {
     )
     .expect("wait for replay shell before opening secondary tabs");
 
-    let _diff_screen = open_secondary_review_surface(
-        &mut harness.parser,
-        &harness.output_rx,
-        harness.writer.as_mut(),
-        "diff",
-        STRUCTURED_DIFF_FILE_MARKER,
-    );
-    let diff_screen = harness.parser.screen().contents();
-    let diff_visual = capture_manifest_backed_visual_checkpoint(
-        "diff_surface",
-        "replay_diff_tab",
-        &harness.parser,
-        &visual_dir,
-        FocusCapture::anchored(STRUCTURED_DIFF_FILE_MARKER, 24, 8),
-        &[
-            STRUCTURED_DIFF_FILE_MARKER,
-            STRUCTURED_DIFF_REMOVED_LINE_MARKER,
-            STRUCTURED_DIFF_ADDED_LINE_MARKER,
-            REPLAY_DENSE_READY_MARKER,
-        ],
-    )
-    .expect("capture replay diff tab image");
-    assert!(diff_screen.contains(STRUCTURED_DIFF_FILE_MARKER));
-    assert!(diff_screen.contains(STRUCTURED_DIFF_REMOVED_LINE_MARKER));
-    assert!(diff_screen.contains(STRUCTURED_DIFF_ADDED_LINE_MARKER));
-    assert!(!diff_screen.contains("diff artifact missing:"));
-    assert!(visual_dir.join(&diff_visual.file_name).exists());
-    insta::assert_snapshot!(
-        "pty_replay_diff_tab",
-        checkpoint_visual_snapshot(
-            &diff_screen,
-            &[
-                STRUCTURED_DIFF_FILE_MARKER,
-                STRUCTURED_DIFF_REMOVED_LINE_MARKER,
-                STRUCTURED_DIFF_ADDED_LINE_MARKER,
-                REPLAY_DENSE_READY_MARKER,
-            ],
-            &diff_visual,
-        )
-    );
-
     send_key(harness.writer.as_mut(), b'?').expect("open replay shortcuts review surface");
     let help_screen = wait_for_screen_contains(
         &mut harness.parser,
@@ -1789,95 +1498,6 @@ fn pty_e2e_replay_secondary_surfaces_cover_diff_and_help() {
         .child
         .kill()
         .expect("terminate replay secondary-surface harness");
-    std::mem::forget(harness.child);
-}
-
-#[test]
-fn pty_e2e_replay_diff_covers_dense_secondary_layout() {
-    if !cfg!(target_os = "linux") {
-        return;
-    }
-
-    let session_dir = create_temp_session_dir();
-    let run_id = "run_replay_diff";
-    write_replay_diff_fixture(&session_dir, run_id);
-    let visual_dir = visual_artifacts_dir();
-    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
-
-    let mut harness = spawn_harness_tui(PtyGeometry::SIX_WINDOW_DENSE, &session_dir, |command| {
-        command.arg("--mock");
-    });
-
-    wait_for_screen_contains(
-        &mut harness.parser,
-        &harness.output_rx,
-        STARTUP_LAUNCHER_READY_MARKER,
-        STARTUP_TIMEOUT,
-    )
-    .expect("wait for startup launcher before replay dense diff tab");
-
-    open_startup_session_history(
-        &mut harness.parser,
-        &harness.output_rx,
-        harness.writer.as_mut(),
-        "replay",
-        STARTUP_REPLAY_HISTORY_MARKER,
-    );
-    send_key(harness.writer.as_mut(), b'\r').expect("select replay session for dense diff tab");
-    wait_for_screen_contains(
-        &mut harness.parser,
-        &harness.output_rx,
-        REPLAY_DENSE_READY_MARKER,
-        STARTUP_TIMEOUT,
-    )
-    .expect("wait for replay shell before opening dense diff tab");
-
-    open_secondary_review_surface(
-        &mut harness.parser,
-        &harness.output_rx,
-        harness.writer.as_mut(),
-        "diff",
-        STRUCTURED_DIFF_FILE_MARKER,
-    );
-    let diff_screen = harness.parser.screen().contents();
-    let diff_visual = capture_manifest_backed_visual_checkpoint(
-        "diff_surface",
-        "replay_diff_six_window",
-        &harness.parser,
-        &visual_dir,
-        FocusCapture::anchored(STRUCTURED_DIFF_FILE_MARKER, 18, 6),
-        &[
-            STRUCTURED_DIFF_FILE_MARKER,
-            STRUCTURED_DIFF_REMOVED_LINE_MARKER,
-            STRUCTURED_DIFF_ADDED_LINE_MARKER,
-            REPLAY_DENSE_READY_MARKER,
-        ],
-    )
-    .expect("capture dense replay diff tab image");
-
-    assert!(diff_screen.contains(STRUCTURED_DIFF_FILE_MARKER));
-    assert!(diff_screen.contains(STRUCTURED_DIFF_REMOVED_LINE_MARKER));
-    assert!(diff_screen.contains(STRUCTURED_DIFF_ADDED_LINE_MARKER));
-    assert!(!diff_screen.contains("diff artifact missing:"));
-    assert!(visual_dir.join(&diff_visual.file_name).exists());
-    insta::assert_snapshot!(
-        "pty_replay_diff_six_window",
-        checkpoint_visual_snapshot(
-            &diff_screen,
-            &[
-                STRUCTURED_DIFF_FILE_MARKER,
-                STRUCTURED_DIFF_REMOVED_LINE_MARKER,
-                STRUCTURED_DIFF_ADDED_LINE_MARKER,
-                REPLAY_DENSE_READY_MARKER,
-            ],
-            &diff_visual,
-        )
-    );
-
-    harness
-        .child
-        .kill()
-        .expect("terminate dense replay diff harness");
     std::mem::forget(harness.child);
 }
 
@@ -2059,22 +1679,14 @@ fn pty_e2e_continue_rejects_active_or_unrestorable_session() {
         &harness.parser,
         &visual_dir,
         FocusCapture::anchored_exact("tasks are still in flight", 28, 1),
-        &[
-            STARTUP_CONTINUE_HISTORY_MARKER,
-            "continue blocked",
-            "tasks are still in flight",
-        ],
+        &[STARTUP_CONTINUE_HISTORY_MARKER, "tasks are still in flight"],
     )
     .expect("capture active-session rejection image");
     insta::assert_snapshot!(
         "pty_continue_rejected_active",
         checkpoint_visual_snapshot(
             &active_screen,
-            &[
-                STARTUP_CONTINUE_HISTORY_MARKER,
-                "continue blocked",
-                "tasks are still in flight",
-            ],
+            &[STARTUP_CONTINUE_HISTORY_MARKER, "tasks are still in flight",],
             &active_visual,
         )
     );
@@ -2111,22 +1723,14 @@ fn pty_e2e_continue_rejects_active_or_unrestorable_session() {
         &harness.parser,
         &visual_dir,
         FocusCapture::anchored_exact("events unavailable", 28, 1),
-        &[
-            STARTUP_CONTINUE_HISTORY_MARKER,
-            "continue blocked",
-            "events unavailable",
-        ],
+        &[STARTUP_CONTINUE_HISTORY_MARKER, "events unavailable"],
     )
     .expect("capture unrestorable-session rejection image");
     insta::assert_snapshot!(
         "pty_continue_rejected_unrestorable",
         checkpoint_visual_snapshot(
             &unrestorable_screen,
-            &[
-                STARTUP_CONTINUE_HISTORY_MARKER,
-                "continue blocked",
-                "events unavailable",
-            ],
+            &[STARTUP_CONTINUE_HISTORY_MARKER, "events unavailable",],
             &unrestorable_visual,
         )
     );
@@ -2461,9 +2065,6 @@ fn pty_visual_regression_contract_covers_redesigned_surface_families() {
         ("replay_shell", "happy_path"),
         ("transcript_shell", "happy_path"),
         ("operator_sidebar", "happy_path"),
-        ("diff_surface", "live_secondary"),
-        ("diff_surface", "replay_narrow"),
-        ("diff_surface", "replay_dense"),
         ("replay", "failure_path"),
     ] {
         assert!(
@@ -2558,9 +2159,6 @@ fn drain_output(parser: &mut vt100::Parser, output_rx: &Receiver<Vec<u8>>) {
 fn screen_contents(parser: &vt100::Parser) -> String {
     parser.screen().contents()
 }
-
-type AntiAliasMask = Arc<Vec<u8>>;
-type AntiAliasCache = RefCell<BTreeMap<(char, u32, bool), AntiAliasMask>>;
 
 #[derive(Debug)]
 struct VisualCheckpoint {
@@ -2816,7 +2414,7 @@ fn capture_visual_checkpoint(
     visual_dir: &Path,
     focus: FocusCapture,
 ) -> Result<VisualCheckpoint, String> {
-    let image = render_parser_to_image(parser);
+    let image = render_parser_to_image(parser, PTY_RENDER_CONFIG);
     let file_name = format!("pty_{name}.png");
     let path = visual_dir.join(&file_name);
     image
@@ -2829,7 +2427,7 @@ fn capture_visual_checkpoint(
         .unwrap_or((0, 0, rows.max(1), cols.max(1)));
     let focus_marker_found = find_marker_cell(parser.screen(), focus.marker).is_some();
 
-    let focus_pixels = extract_region_pixels(&image, focus_region);
+    let focus_pixels = extract_region_pixels(&image, focus_region, PTY_RENDER_CONFIG);
 
     Ok(VisualCheckpoint {
         file_name,
@@ -2887,555 +2485,6 @@ fn anchored_region(
     let width = focus.width_cells.min(max_width).max(1);
 
     (row_start, col_start, height, width)
-}
-
-fn extract_region_pixels(image: &RgbImage, region: (u16, u16, u16, u16)) -> Vec<u8> {
-    let (row_start, col_start, height_cells, width_cells) = region;
-
-    let x_start = u32::from(col_start) * CELL_WIDTH;
-    let y_start = u32::from(row_start) * CELL_HEIGHT;
-    let width_px = u32::from(width_cells) * CELL_WIDTH;
-    let height_px = u32::from(height_cells) * CELL_HEIGHT;
-
-    let mut data = Vec::with_capacity((width_px * height_px * 3) as usize);
-    for y in y_start..(y_start + height_px) {
-        for x in x_start..(x_start + width_px) {
-            let [r, g, b] = image.get_pixel(x, y).0;
-            data.push(r);
-            data.push(g);
-            data.push(b);
-        }
-    }
-
-    data
-}
-
-fn render_parser_to_image(parser: &VtParser) -> RgbImage {
-    let screen = parser.screen();
-    let (rows, cols) = screen.size();
-    let mut raster_image = RgbImage::new(
-        u32::from(cols) * RASTER_CELL_WIDTH,
-        u32::from(rows) * RASTER_CELL_HEIGHT,
-    );
-    let glyphs = GlyphLookup::new();
-    let cursor_position = None;
-
-    for row in 0..rows {
-        for col in 0..cols {
-            draw_cell(
-                &mut raster_image,
-                screen,
-                row,
-                col,
-                &glyphs,
-                cursor_position,
-                RASTER_SCALE,
-            );
-        }
-    }
-
-    let target_width = u32::from(cols) * CELL_WIDTH;
-    let target_height = u32::from(rows) * CELL_HEIGHT;
-    if raster_image.width() == target_width && raster_image.height() == target_height {
-        raster_image
-    } else {
-        image::imageops::resize(
-            &raster_image,
-            target_width,
-            target_height,
-            FilterType::Lanczos3,
-        )
-    }
-}
-
-fn draw_cell(
-    image: &mut RgbImage,
-    screen: &vt100::Screen,
-    row: u16,
-    col: u16,
-    glyphs: &GlyphLookup,
-    cursor_position: Option<(u16, u16)>,
-    raster_scale: u32,
-) {
-    let cell_width = GLYPH_WIDTH * raster_scale;
-    let cell_height = GLYPH_HEIGHT * GLYPH_VERTICAL_SCALE * raster_scale;
-    let origin_x = u32::from(col) * cell_width;
-    let origin_y = u32::from(row) * cell_height;
-    let Some(cell) = screen.cell(row, col) else {
-        fill_cell_background(
-            image,
-            origin_x,
-            origin_y,
-            DEFAULT_BG,
-            cell_width,
-            cell_height,
-        );
-        return;
-    };
-
-    let cursor_over_cell = cursor_position == Some((row, col));
-    let mut fg = terminal_color_to_rgb(cell.fgcolor(), true);
-    let mut bg = terminal_color_to_rgb(cell.bgcolor(), false);
-    if cell.inverse() && !cursor_over_cell {
-        std::mem::swap(&mut fg, &mut bg);
-    }
-    let bold = cell.bold();
-    if bold {
-        fg = brighten(fg, 28);
-    }
-
-    fill_cell_background(image, origin_x, origin_y, bg, cell_width, cell_height);
-    if cell.is_wide_continuation() {
-        return;
-    }
-
-    let Some(ch) = cell.contents().chars().next() else {
-        return;
-    };
-
-    draw_cell_glyph(
-        image,
-        origin_x,
-        origin_y,
-        ch,
-        fg,
-        glyphs,
-        raster_scale,
-        bold,
-    );
-    if cell.underline() {
-        draw_underline(
-            image,
-            origin_x,
-            origin_y,
-            fg,
-            raster_scale,
-            cell_width,
-            cell_height,
-        );
-    }
-}
-
-fn fill_cell_background(
-    image: &mut RgbImage,
-    origin_x: u32,
-    origin_y: u32,
-    color: [u8; 3],
-    cell_width: u32,
-    cell_height: u32,
-) {
-    for y in 0..cell_height {
-        for x in 0..cell_width {
-            image.put_pixel(origin_x + x, origin_y + y, Rgb(color));
-        }
-    }
-}
-
-fn draw_cell_glyph(
-    image: &mut RgbImage,
-    origin_x: u32,
-    origin_y: u32,
-    ch: char,
-    color: [u8; 3],
-    glyphs: &GlyphLookup,
-    raster_scale: u32,
-    bold: bool,
-) {
-    if ch == ' ' {
-        return;
-    }
-
-    if ttf_antialias_enabled()
-        && !prefers_bitmap_terminal_glyph(ch)
-        && glyphs.draw_antialiased_glyph(image, origin_x, origin_y, ch, color, raster_scale, bold)
-    {
-        return;
-    }
-
-    let glyph = glyphs
-        .glyph(ch)
-        .or_else(|| glyphs.glyph('?'))
-        .unwrap_or([0_u8; 8]);
-
-    for (glyph_row, row_bits) in glyph.into_iter().enumerate() {
-        let glyph_row = u32::try_from(glyph_row).expect("glyph row in u32");
-        for bit in 0_u8..8 {
-            let pixel_is_on = row_bits & (1_u8 << bit) != 0;
-            if !pixel_is_on {
-                continue;
-            }
-
-            let pixel_x = origin_x + u32::from(bit) * raster_scale;
-            let pixel_y = origin_y + glyph_row * GLYPH_VERTICAL_SCALE * raster_scale;
-            for y in 0..(GLYPH_VERTICAL_SCALE * raster_scale) {
-                for x in 0..raster_scale {
-                    image.put_pixel(pixel_x + x, pixel_y + y, Rgb(color));
-                }
-            }
-        }
-    }
-}
-
-fn prefers_bitmap_terminal_glyph(ch: char) -> bool {
-    let code = ch as u32;
-    (0x2500..=0x259F).contains(&code)
-}
-
-fn draw_underline(
-    image: &mut RgbImage,
-    origin_x: u32,
-    origin_y: u32,
-    color: [u8; 3],
-    raster_scale: u32,
-    cell_width: u32,
-    cell_height: u32,
-) {
-    let thickness = raster_scale.max(1);
-    let y_start = origin_y + cell_height.saturating_sub(thickness);
-    for y in 0..thickness {
-        for x in 0..cell_width {
-            image.put_pixel(origin_x + x, y_start + y, Rgb(color));
-        }
-    }
-}
-
-fn terminal_color_to_rgb(color: VtColor, foreground: bool) -> [u8; 3] {
-    match color {
-        VtColor::Default => {
-            if foreground {
-                DEFAULT_FG
-            } else {
-                DEFAULT_BG
-            }
-        }
-        VtColor::Idx(idx) => xterm_256_color(idx),
-        VtColor::Rgb(r, g, b) => [r, g, b],
-    }
-}
-
-fn xterm_256_color(idx: u8) -> [u8; 3] {
-    const ANSI_16: [[u8; 3]; 16] = [
-        [0, 0, 0],
-        [205, 49, 49],
-        [13, 188, 121],
-        [229, 229, 16],
-        [36, 114, 200],
-        [188, 63, 188],
-        [17, 168, 205],
-        [229, 229, 229],
-        [102, 102, 102],
-        [241, 76, 76],
-        [35, 209, 139],
-        [245, 245, 67],
-        [59, 142, 234],
-        [214, 112, 214],
-        [41, 184, 219],
-        [255, 255, 255],
-    ];
-
-    match idx {
-        0..=15 => ANSI_16[usize::from(idx)],
-        16..=231 => {
-            let value = idx - 16;
-            let r = value / 36;
-            let g = (value % 36) / 6;
-            let b = value % 6;
-            [cube_level(r), cube_level(g), cube_level(b)]
-        }
-        232..=255 => {
-            let gray = 8_u8.saturating_add((idx - 232) * 10);
-            [gray, gray, gray]
-        }
-    }
-}
-
-fn cube_level(level: u8) -> u8 {
-    if level == 0 {
-        0
-    } else {
-        level.saturating_mul(40).saturating_add(55)
-    }
-}
-
-fn brighten(color: [u8; 3], amount: u8) -> [u8; 3] {
-    [
-        color[0].saturating_add(amount),
-        color[1].saturating_add(amount),
-        color[2].saturating_add(amount),
-    ]
-}
-
-struct GlyphLookup {
-    basic: BasicFonts,
-    latin: LatinFonts,
-    box_drawing: BoxFonts,
-    block: BlockFonts,
-    smooth_font: Option<Font>,
-    bold_smooth_font: Option<Font>,
-    anti_alias_cache: AntiAliasCache,
-}
-
-impl GlyphLookup {
-    fn new() -> Self {
-        Self {
-            basic: BasicFonts::new(),
-            latin: LatinFonts::new(),
-            box_drawing: BoxFonts::new(),
-            block: BlockFonts::new(),
-            smooth_font: load_anti_alias_font(),
-            bold_smooth_font: load_anti_alias_bold_font(),
-            anti_alias_cache: RefCell::new(BTreeMap::new()),
-        }
-    }
-
-    fn draw_antialiased_glyph(
-        &self,
-        image: &mut RgbImage,
-        origin_x: u32,
-        origin_y: u32,
-        ch: char,
-        color: [u8; 3],
-        raster_scale: u32,
-        bold: bool,
-    ) -> bool {
-        let Some(mask) = self.anti_alias_mask_for(ch, raster_scale, bold) else {
-            return false;
-        };
-
-        let cell_width = GLYPH_WIDTH * raster_scale;
-        let cell_height = GLYPH_HEIGHT * GLYPH_VERTICAL_SCALE * raster_scale;
-        for y in 0..cell_height {
-            for x in 0..cell_width {
-                let idx = usize::try_from(y * cell_width + x).expect("mask index in usize");
-                let alpha = mask[idx];
-                if alpha == 0 {
-                    continue;
-                }
-
-                let pixel = image.get_pixel_mut(origin_x + x, origin_y + y);
-                let [r, g, b] = pixel.0;
-                let a = u16::from(alpha);
-                let inv = 255_u16.saturating_sub(a);
-                pixel.0 = [
-                    ((u16::from(r) * inv + u16::from(color[0]) * a + 127) / 255) as u8,
-                    ((u16::from(g) * inv + u16::from(color[1]) * a + 127) / 255) as u8,
-                    ((u16::from(b) * inv + u16::from(color[2]) * a + 127) / 255) as u8,
-                ];
-            }
-        }
-
-        true
-    }
-
-    fn anti_alias_mask_for(
-        &self,
-        ch: char,
-        raster_scale: u32,
-        bold: bool,
-    ) -> Option<AntiAliasMask> {
-        let cache_key = (ch, raster_scale, bold);
-        if let Some(mask) = self.anti_alias_cache.borrow().get(&cache_key) {
-            return Some(mask.clone());
-        }
-
-        let font = if bold {
-            self.bold_smooth_font
-                .as_ref()
-                .or(self.smooth_font.as_ref())?
-        } else {
-            self.smooth_font.as_ref()?
-        };
-        let cell_width = GLYPH_WIDTH * raster_scale;
-        let cell_height = GLYPH_HEIGHT * GLYPH_VERTICAL_SCALE * raster_scale;
-        let font_size = (cell_height as f32 * ANTI_ALIAS_FONT_SIZE_FACTOR).max(8.0);
-        let line_metrics = font.horizontal_line_metrics(font_size);
-        let reference_metrics = font.metrics('M', font_size);
-        let baseline_origin_x =
-            ((cell_width as f32 - reference_metrics.advance_width).max(0.0) * 0.5).round() as i32;
-        let baseline_y = line_metrics
-            .map(|line| {
-                let centered_top =
-                    ((cell_height as f32 - line.new_line_size).max(0.0) * 0.5).round();
-                (centered_top + line.ascent).round() as i32
-            })
-            .unwrap_or_else(|| {
-                i32::try_from(cell_height / 2).expect("cell height midpoint in i32")
-            });
-
-        let (metrics, bitmap) = font.rasterize(ch, font_size);
-        let mut mask = vec![0_u8; (cell_width * cell_height) as usize];
-        if metrics.width == 0 || metrics.height == 0 {
-            let mask = Arc::new(mask);
-            self.anti_alias_cache
-                .borrow_mut()
-                .insert(cache_key, mask.clone());
-            return Some(mask);
-        }
-
-        let glyph_width = u32::try_from(metrics.width).expect("glyph width fits u32");
-        let glyph_height = u32::try_from(metrics.height).expect("glyph height fits u32");
-        let x_offset = baseline_origin_x + metrics.xmin;
-        let y_offset =
-            baseline_y - metrics.ymin - i32::try_from(glyph_height).expect("glyph height in i32");
-
-        for y in 0..glyph_height {
-            for x in 0..glyph_width {
-                let src_idx = usize::try_from(y * glyph_width + x).expect("bitmap index in usize");
-                let alpha = bitmap[src_idx];
-                if alpha == 0 {
-                    continue;
-                }
-
-                let dx = x_offset + i32::try_from(x).expect("x fits i32");
-                let dy = y_offset + i32::try_from(y).expect("y fits i32");
-                if dx < 0 || dy < 0 {
-                    continue;
-                }
-
-                let dx = u32::try_from(dx).expect("dx non-negative");
-                let dy = u32::try_from(dy).expect("dy non-negative");
-                if dx >= cell_width || dy >= cell_height {
-                    continue;
-                }
-
-                let dst_idx = usize::try_from(dy * cell_width + dx).expect("mask index in usize");
-                mask[dst_idx] = alpha;
-            }
-        }
-
-        let mask = Arc::new(mask);
-        self.anti_alias_cache
-            .borrow_mut()
-            .insert(cache_key, mask.clone());
-        Some(mask)
-    }
-
-    fn glyph(&self, ch: char) -> Option<[u8; 8]> {
-        self.basic
-            .get(ch)
-            .or_else(|| self.latin.get(ch))
-            .or_else(|| self.box_drawing.get(ch))
-            .or_else(|| self.block.get(ch))
-    }
-}
-
-fn load_anti_alias_font() -> Option<Font> {
-    if !ttf_antialias_enabled() {
-        return None;
-    }
-
-    load_font_from_candidates(font_candidates(
-        "HARNESS_VISUAL_FONT_PATH",
-        "monospace",
-        &[
-            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
-            "/usr/share/fonts/dejavu/DejaVuSansMono.ttf",
-        ],
-    ))
-}
-
-fn load_anti_alias_bold_font() -> Option<Font> {
-    if !ttf_antialias_enabled() {
-        return None;
-    }
-
-    let mut candidates = font_candidates(
-        "HARNESS_VISUAL_FONT_BOLD_PATH",
-        "monospace:style=Bold",
-        &[
-            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
-            "/usr/share/fonts/dejavu/DejaVuSansMono-Bold.ttf",
-        ],
-    );
-    if let Ok(path) = std::env::var("HARNESS_VISUAL_FONT_PATH") {
-        if let Some(derived) = bold_font_candidate_from_regular(&path) {
-            let insert_idx = usize::from(std::env::var("HARNESS_VISUAL_FONT_BOLD_PATH").is_ok());
-            candidates.insert(insert_idx, derived);
-        }
-    }
-    load_font_from_candidates(candidates)
-}
-
-fn load_font_from_candidates(candidates: Vec<String>) -> Option<Font> {
-    for path in candidates {
-        let Ok(bytes) = fs::read(&path) else {
-            continue;
-        };
-        let Ok(font) = Font::from_bytes(bytes, FontSettings::default()) else {
-            continue;
-        };
-        return Some(font);
-    }
-
-    None
-}
-
-fn font_candidates(
-    env_var: &str,
-    fontconfig_pattern: &str,
-    fallback_paths: &[&str],
-) -> Vec<String> {
-    let mut candidates = Vec::new();
-    if let Ok(path) = std::env::var(env_var) {
-        candidates.push(path);
-    }
-    if let Some(path) = fontconfig_match(fontconfig_pattern) {
-        if !candidates.iter().any(|candidate| candidate == &path) {
-            candidates.push(path);
-        }
-    }
-    candidates.extend(fallback_paths.iter().map(|path| (*path).to_string()));
-    candidates
-}
-
-fn fontconfig_match(pattern: &str) -> Option<String> {
-    let output = Command::new("fc-match")
-        .args(["-f", "%{file}\n", pattern])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-
-    String::from_utf8(output.stdout)
-        .ok()?
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .map(ToOwned::to_owned)
-}
-
-fn bold_font_candidate_from_regular(path: &str) -> Option<String> {
-    let path = Path::new(path);
-    let stem = path.file_stem()?.to_str()?;
-    let ext = path.extension()?.to_str()?;
-    Some(
-        path.with_file_name(format!("{stem}-Bold.{ext}"))
-            .to_string_lossy()
-            .into_owned(),
-    )
-}
-
-fn parse_ttf_antialias_env(value: Option<&str>) -> bool {
-    value
-        .map(|value| {
-            let normalized = value.trim();
-            !(normalized == "0"
-                || normalized.eq_ignore_ascii_case("false")
-                || normalized.eq_ignore_ascii_case("off"))
-        })
-        .unwrap_or(true)
-}
-
-fn ttf_antialias_enabled() -> bool {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        parse_ttf_antialias_env(
-            std::env::var("HARNESS_VISUAL_TTF_ANTIALIAS")
-                .ok()
-                .as_deref(),
-        )
-    })
 }
 
 fn visual_artifacts_dir() -> PathBuf {
@@ -3523,26 +2572,6 @@ fn configure_deterministic_env(command: &mut CommandBuilder) {
 fn send_key(writer: &mut dyn Write, key: u8) -> std::io::Result<()> {
     writer.write_all(&[key])?;
     writer.flush()
-}
-
-fn spawn_reader_thread(mut reader: Box<dyn Read + Send>) -> Receiver<Vec<u8>> {
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let mut buffer = [0_u8; 4096];
-        loop {
-            match reader.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(read) => {
-                    if tx.send(buffer[..read].to_vec()).is_err() {
-                        break;
-                    }
-                }
-                Err(err) if err.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(_) => break,
-            }
-        }
-    });
-    rx
 }
 
 fn resolve_harness_bin() -> PathBuf {

@@ -3,11 +3,13 @@
 ## OVERVIEW
 Ratatui interface crate for startup, live, and replay surfaces, plus overlays, geometry contracts, transcript rendering, and snapshot-heavy verification.
 
+Read the workspace root `AGENTS.md` first for crate ownership, search exclusions, and the cross-crate verification matrix.
+
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |------|----------|-------|
 | TUI runtime loop and mode entrypoints | `src/lib.rs` | Startup/live/replay wiring and exact-name shell contract tests |
-| App state and event ingestion | `src/app.rs` | Projection-like UI state machine |
+| App state and event ingestion | `src/app.rs`, `src/app/` | Projection-like UI state machine; prefer submodule extraction over widening `app.rs` |
 | Rendering | `src/ui.rs` | Main surface, overlays, secondary surfaces, transcript |
 | Geometry contracts | `src/layout.rs` | Breakpoints and pane sizing |
 | Theme tokens | `src/theme.rs` | Shell geometry + color/token system |
@@ -30,6 +32,7 @@ Approved rendering stack (do not add alternatives without explicit signoff):
 ## CONVENTIONS
 - Keep layout math in `layout.rs` / `theme.rs`, not scattered through rendering code.
 - Preserve replay read-only behavior and live-mode event-driven updates.
+- When reducing oversized files, move `#[cfg(test)]` blocks and focused state helpers into sibling modules before redesigning runtime behavior.
 - Snapshot/PTY tests are the fast safety net for UI behavior; update them with intent, not casually.
 - Keybinding overrides already have plumbing in `src/lib.rs`; keep shipped theming pinned to `Theme::default()` unless a new contract is explicitly approved.
 - Screenshot-generated PTY/live-visual artifacts are the primary verification workflow; prefer visual parity over text assertions.

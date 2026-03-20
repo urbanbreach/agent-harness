@@ -907,9 +907,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crossterm",
+ "font8x8",
+ "fontdue",
  "futures",
  "futures-util",
  "harness-core",
+ "image",
  "imara-diff",
  "insta",
  "portable-pty",

@@ -1,0 +1,28 @@
+---
+source: crates/harness-tui/src/lib.rs
+expression: "fallback_render.lines().map(str::trim_end).collect::<Vec<_>>().join(\"\\n\")"
+---
+
+
+
+                Session
+
+
+
+                                               Harness
+                                      Preset default · local/-
+                                    Start a conversation to begin
+                    “inspect src/ui.rs” · “trace the failing test” · “review the
+                                            latest edit”
+                        Enter send · Shift+Enter/Ctrl+j newline · ↑/↓ history
+
+
+
+
+
+            ┃
+            ┃
+            ┃
+            ┃  default · local/-
+            ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+            Ready  ·  run finished · session shell preserved           Tab focus  q quit

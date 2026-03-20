@@ -10,8 +10,16 @@ struct DocumentComposerRenderContext<'a> {
     composer_lines: u16,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ComposerViewport {
+    lines: Vec<String>,
+    cursor: Option<(usize, usize)>,
+}
+
 const QUIET_SURFACE_PADDING_X: u16 = 1;
 const QUIET_SURFACE_PADDING_TOP: u16 = 1;
+const COMPOSER_RAIL_GLYPH: &str = "┃";
+const COMPOSER_RAIL_CAP_GLYPH: &str = "╹";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ChromeFrame {
@@ -51,91 +59,6 @@ pub(super) fn render_header(
     }
 }
 
-pub(super) fn render_live_shell_anchor(
-    frame: &mut Frame,
-    app: &AppState,
-    area: Rect,
-    theme: &Theme,
-) {
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-
-    let surface = theme.surface.panel;
-    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
-
-    let horizontal_inset = u16::from(area.width > 2);
-    let content_area = Rect::new(
-        area.x.saturating_add(horizontal_inset),
-        area.y,
-        area.width
-            .saturating_sub(horizontal_inset.saturating_mul(2)),
-        1,
-    );
-    if content_area.width == 0 {
-        return;
-    }
-
-    let dock = build_control_dock_view_model(app, theme);
-    let (fallback_context, context_color) = status_context(app, theme, dock.runtime_kind);
-    let run_identity = truncate_plain_text(
-        &format!("run {}", app.run_id().unwrap_or("unknown")),
-        usize::from(content_area.width),
-    );
-    let context_label = truncate_plain_text(
-        dock.runtime_context.as_deref().unwrap_or(fallback_context),
-        usize::from(content_area.width),
-    );
-    let left_width = u16::try_from(run_identity.chars().count())
-        .unwrap_or(content_area.width)
-        .min(content_area.width);
-    let right_width = u16::try_from(context_label.chars().count())
-        .unwrap_or(content_area.width)
-        .min(content_area.width.saturating_sub(left_width));
-    let sections = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Length(left_width),
-            Constraint::Min(0),
-            Constraint::Length(right_width),
-        ])
-        .split(content_area);
-
-    frame.render_widget(
-        Paragraph::new(run_identity).style(
-            Style::default()
-                .fg(theme.text.primary)
-                .bg(surface)
-                .add_modifier(Modifier::BOLD),
-        ),
-        sections[0],
-    );
-
-    if sections[1].width > 0 {
-        frame.render_widget(
-            Paragraph::new(live_shell_anchor_metadata_text(
-                app,
-                usize::from(sections[1].width),
-            ))
-            .style(Style::default().fg(theme.text.secondary).bg(surface))
-            .alignment(Alignment::Center),
-            sections[1],
-        );
-    }
-
-    frame.render_widget(
-        Paragraph::new(context_label)
-            .style(
-                Style::default()
-                    .fg(context_color)
-                    .bg(surface)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .alignment(Alignment::Right),
-        sections[2],
-    );
-}
-
 pub(super) fn render_footer(
     frame: &mut Frame,
     app: &AppState,
@@ -144,6 +67,9 @@ pub(super) fn render_footer(
 ) {
     let area = plan.footer;
     let text_area = plan.footer_text;
+    if area.height == 0 || text_area.height == 0 {
+        return;
+    }
     if app.replay_mode && app.review_surface().is_none() {
         frame.render_widget(
             Block::default().style(Style::default().bg(theme.surface.shell)),
@@ -170,7 +96,6 @@ pub(super) fn render_footer(
         .map(|hint| app.keymap.get_binding_label(hint.action, hint.label))
         .collect::<Vec<_>>()
         .join(&separator);
-
     let style = Style::default().fg(theme.text.tertiary);
     let hint_text = truncate_plain_text(&hint_text, usize::from(text_area.width));
 
@@ -179,7 +104,58 @@ pub(super) fn render_footer(
         frame.render_widget(Block::default().style(replay_style), area);
         frame.render_widget(Paragraph::new(hint_text).style(replay_style), text_area);
     } else {
-        frame.render_widget(Paragraph::new(hint_text).style(style), text_area);
+        render_live_footer_row(
+            frame,
+            text_area,
+            style,
+            live_footer_status_candidates(app, usize::from(text_area.width), theme),
+            hint_text,
+        );
+    }
+}
+
+fn render_live_footer_row(
+    frame: &mut Frame,
+    area: Rect,
+    style: Style,
+    status_candidates: Vec<String>,
+    hint_text: String,
+) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let max_width = usize::from(area.width);
+    let hint_width = hint_text.chars().count();
+    let status_gap = usize::from(hint_width > 0 && !status_candidates.is_empty()) * 2;
+    let status_width = max_width.saturating_sub(hint_width.saturating_add(status_gap));
+    let status_text = if status_width == 0 {
+        String::new()
+    } else {
+        status_candidates
+            .into_iter()
+            .find(|text| text.chars().count() <= status_width)
+            .unwrap_or_default()
+    };
+
+    let columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(u16::try_from(hint_width.min(max_width)).unwrap_or(u16::MAX)),
+        ])
+        .split(area);
+
+    if !status_text.is_empty() && columns[0].width > 0 {
+        frame.render_widget(Paragraph::new(status_text).style(style), columns[0]);
+    }
+    if !hint_text.is_empty() && columns[1].width > 0 {
+        frame.render_widget(
+            Paragraph::new(hint_text)
+                .style(style)
+                .alignment(Alignment::Right),
+            columns[1],
+        );
     }
 }
 
@@ -200,6 +176,39 @@ fn compact_footer_hints(
     }
     compact.truncate(max_hints);
     compact
+}
+
+fn live_footer_status_candidates(app: &AppState, max_width: usize, theme: &Theme) -> Vec<String> {
+    if app.replay_mode || app.startup_shell_visible() {
+        return Vec::new();
+    }
+
+    let runtime_state = app.runtime_state();
+    let runtime_summary = completed_session_status_summary(app, &runtime_state)
+        .unwrap_or_else(|| runtime_state.summary.clone());
+    let mut options = vec![
+        format!("{}  ·  {}", runtime_state.kind.label(), runtime_summary),
+        runtime_summary.clone(),
+        runtime_state.kind.label().to_string(),
+    ];
+    if let Some(segment) = control_dock_summary_segment(app) {
+        let segment_text = control_dock_summary_segment_text_for_width(
+            &segment,
+            u16::try_from(max_width).unwrap_or(u16::MAX),
+            theme,
+        );
+        options.insert(
+            0,
+            format!(
+                "{}  ·  {}  ·  {}",
+                runtime_state.kind.label(),
+                runtime_summary,
+                segment_text
+            ),
+        );
+    }
+
+    options
 }
 
 fn header_identity_text(app: &AppState, header_mode: SessionHeaderMode) -> String {
@@ -231,15 +240,10 @@ fn header_identity_text(app: &AppState, header_mode: SessionHeaderMode) -> Strin
 
     let run_identity = format!("run {run_id}");
     match header_mode {
-        SessionHeaderMode::Minimal => run_identity,
-        SessionHeaderMode::Compact => {
-            format!(
-                "{run_identity} · {}/{}",
-                app.active_provider(),
-                app.current_model_label()
-            )
-        }
-        SessionHeaderMode::Hidden | SessionHeaderMode::Standard => {
+        SessionHeaderMode::Hidden
+        | SessionHeaderMode::Standard
+        | SessionHeaderMode::Compact
+        | SessionHeaderMode::Minimal => {
             let identity = format!(
                 "{run_identity} · {}/{} · {}",
                 app.active_profile(),
@@ -255,28 +259,6 @@ fn header_identity_text(app: &AppState, header_mode: SessionHeaderMode) -> Strin
     }
 }
 
-fn live_shell_anchor_metadata_text(app: &AppState, max_width: usize) -> String {
-    if max_width == 0 {
-        return String::new();
-    }
-
-    let variants = [
-        format!(
-            "{}/{}/{}",
-            app.active_profile(),
-            app.active_provider(),
-            app.current_model_label()
-        ),
-        format!("{}/{}", app.active_provider(), app.current_model_label()),
-        app.current_model_label().to_string(),
-    ];
-
-    variants
-        .into_iter()
-        .find(|variant| variant.chars().count() <= max_width)
-        .unwrap_or_else(|| truncate_plain_text(app.current_model_label(), max_width))
-}
-
 fn render_control_dock_status_band(
     frame: &mut Frame,
     app: &AppState,
@@ -284,72 +266,27 @@ fn render_control_dock_status_band(
     theme: &Theme,
     dock: &crate::view_model::ControlDockViewModel,
 ) {
-    let (_, context_color) = status_context(app, theme, dock.runtime_kind);
     let surface = control_dock_status_surface(theme, dock.variant);
     let base_style = Style::default().fg(theme.text.secondary).bg(surface);
     frame.render_widget(control_dock_status_section(theme, dock.variant), area);
-    let outcome_badge = quiet_status_badge(
-        dock.runtime_badge.clone(),
-        runtime_state_color(dock.runtime_kind, theme),
-        surface,
-    );
-    let mut spans: Vec<Span<'static>> = Vec::new();
-
-    if dock.variant == crate::view_model::ControlDockVariant::Startup {
-        spans.push(Span::styled("  ", base_style));
-        spans.push(Span::styled(dock.primary_summary.clone(), base_style));
-        let status_line = Line::from(spans);
-        frame.render_widget(Paragraph::new(status_line).style(base_style), area);
-        return;
-    }
-
-    if area.width >= primary_shell_context_width(theme) {
-        if let Some(context_label) = dock.runtime_context.as_deref() {
-            spans.push(quiet_status_badge(context_label, context_color, surface));
-            spans.push(Span::styled("  ", base_style));
-        }
-    }
-
-    spans.push(outcome_badge);
-    spans.push(Span::styled("  ", base_style));
-
-    spans.push(Span::styled(dock.primary_summary.clone(), base_style));
-
-    append_control_dock_summary_segment(&mut spans, area.width, &dock, surface, theme);
-
-    let status_line = Line::from(spans);
-
-    frame.render_widget(Paragraph::new(status_line).style(base_style), area);
-}
-
-fn append_control_dock_summary_segment(
-    spans: &mut Vec<Span<'static>>,
-    width: u16,
-    dock: &crate::view_model::ControlDockViewModel,
-    surface: Color,
-    theme: &Theme,
-) {
-    let Some(summary_segment) = dock.summary_segment.as_ref() else {
-        return;
+    let status_candidates = if dock.variant == crate::view_model::ControlDockVariant::Startup {
+        Vec::new()
+    } else {
+        live_footer_status_candidates(app, usize::from(area.width), theme)
     };
 
-    let separator = "  ·  ";
-    let summary_text = control_dock_summary_segment_text_for_width(summary_segment, width, theme);
-    let available = usize::from(width)
-        .saturating_sub(status_strip_width(spans))
-        .saturating_sub(separator.chars().count());
-    if available <= 10 {
-        return;
-    }
-
-    spans.push(Span::styled(
-        separator,
-        Style::default().fg(theme.text.secondary).bg(surface),
-    ));
-    spans.push(Span::styled(
-        truncate_plain_text(&summary_text, available),
-        control_dock_summary_segment_style(summary_segment, surface, theme),
-    ));
+    let (status_text, hint_text) =
+        control_dock_row_content(app, usize::from(area.width), theme, status_candidates);
+    render_live_footer_row(
+        frame,
+        area,
+        base_style,
+        (!status_text.is_empty())
+            .then_some(status_text)
+            .into_iter()
+            .collect(),
+        hint_text,
+    );
 }
 
 fn control_dock_summary_segment_text_for_width(
@@ -376,35 +313,6 @@ fn control_dock_summary_segment_text_for_width(
     }
 
     segment.text.clone()
-}
-
-fn control_dock_summary_segment_style(
-    segment: &crate::view_model::ControlDockSummarySegment,
-    surface: Color,
-    theme: &Theme,
-) -> Style {
-    let foreground = match segment.tone {
-        crate::view_model::ControlDockSummaryTone::Secondary => theme.text.secondary,
-        crate::view_model::ControlDockSummaryTone::Accent => theme.text.accent,
-        crate::view_model::ControlDockSummaryTone::Success => theme.status.success,
-        crate::view_model::ControlDockSummaryTone::Warning => theme.status.warning,
-        crate::view_model::ControlDockSummaryTone::Error => theme.status.error,
-    };
-    let style = Style::default().fg(foreground).bg(surface);
-    if matches!(
-        segment.tone,
-        crate::view_model::ControlDockSummaryTone::Success
-            | crate::view_model::ControlDockSummaryTone::Warning
-            | crate::view_model::ControlDockSummaryTone::Error
-    ) {
-        style.add_modifier(Modifier::BOLD)
-    } else {
-        style
-    }
-}
-
-fn status_strip_width(spans: &[Span<'_>]) -> usize {
-    spans.iter().map(|span| span.content.chars().count()).sum()
 }
 
 pub(super) fn render_unified_bottom_dock(
@@ -438,6 +346,10 @@ pub(super) fn render_unified_bottom_dock(
     if dock.variant == crate::view_model::ControlDockVariant::ReplayReadOnly {
         render_replay_read_only_composer_content(frame, dock_layout.composer, theme, &dock);
         return;
+    }
+
+    if let Some(disclosure_area) = dock_layout.disclosure {
+        render_control_dock_disclosure(frame, disclosure_area, app, theme, &dock);
     }
 
     let composer_lines = composer_input_height(&app.prompt_buffer, dock_layout.composer.width);
@@ -523,7 +435,7 @@ pub(super) fn divided_shell_surface(theme: &Theme) -> Color {
 }
 
 pub(super) fn live_control_dock_surface(theme: &Theme) -> Color {
-    semantic_surface(theme, ChromeMode::Divided)
+    theme.surface.shell
 }
 
 pub(super) fn control_dock_surface(
@@ -717,23 +629,6 @@ fn semantic_surface(theme: &Theme, mode: ChromeMode) -> Color {
     }
 }
 
-pub(super) fn request_id_label(request_id: &str) -> Cow<'_, str> {
-    if request_id.is_empty() {
-        Cow::Borrowed("pending turn")
-    } else {
-        Cow::Borrowed(request_id)
-    }
-}
-
-pub(super) fn transcript_label_style(theme: &Theme, is_selected: bool) -> Style {
-    let color = if is_selected {
-        theme.text.accent
-    } else {
-        theme.text.primary
-    };
-    Style::default().fg(color).add_modifier(Modifier::BOLD)
-}
-
 pub(super) fn muted_meta_style(theme: &Theme) -> Style {
     Style::default().fg(theme.text.secondary)
 }
@@ -754,51 +649,6 @@ pub(super) fn status_badge(label: impl Into<String>, color: Color, theme: &Theme
             .bg(color)
             .add_modifier(Modifier::BOLD),
     )
-}
-
-fn quiet_status_badge(label: impl Into<String>, color: Color, surface: Color) -> Span<'static> {
-    Span::styled(
-        format!(" {} ", label.into()),
-        Style::default()
-            .fg(color)
-            .bg(surface)
-            .add_modifier(Modifier::BOLD),
-    )
-}
-
-pub(super) fn tool_detail_label_style(
-    label: &str,
-    theme: &Theme,
-    status: ToolCallDisplayStatus,
-) -> Style {
-    let color = match label {
-        "state" => match status {
-            ToolCallDisplayStatus::PendingPermission => theme.status.warning,
-            ToolCallDisplayStatus::Queued => theme.text.secondary,
-            ToolCallDisplayStatus::Running => theme.text.accent,
-            ToolCallDisplayStatus::Succeeded => theme.status.success,
-            ToolCallDisplayStatus::Failed => theme.status.error,
-        },
-        "result" => theme.status.success,
-        "error" => theme.status.error,
-        _ => theme.text.secondary,
-    };
-    Style::default().fg(color).add_modifier(Modifier::BOLD)
-}
-
-pub(super) fn tool_state_summary(tool_call: &crate::app::ToolCallEntry) -> Option<&'static str> {
-    match tool_call.status {
-        ToolCallDisplayStatus::PendingPermission => Some("awaiting approval before execution"),
-        ToolCallDisplayStatus::Queued => Some("waiting for execution"),
-        ToolCallDisplayStatus::Running => Some("running…"),
-        ToolCallDisplayStatus::Succeeded if tool_call.truncated_output.is_none() => {
-            Some("completed without output")
-        }
-        ToolCallDisplayStatus::Failed if tool_call.truncated_output.is_none() => {
-            Some("failed without error payload")
-        }
-        _ => None,
-    }
 }
 
 fn tool_status_summary(
@@ -1038,7 +888,7 @@ fn build_control_dock_view_model(
         let composer_body = if app.prompt_buffer.is_empty() {
             runtime_state.composer_hint.clone()
         } else {
-            visible_composer_text(app, composer_focused && !composer_disabled)
+            app.prompt_buffer.clone()
         };
 
         return crate::view_model::control_dock_view_model(
@@ -1066,16 +916,11 @@ fn build_control_dock_view_model(
         );
     }
 
-    let composer_disabled = runtime_state.composer_disabled;
     let composer_focused = app.focus == Focus::Prompt;
     let composer_body = if app.prompt_buffer.is_empty() {
-        if composer_disabled {
-            runtime_state.composer_hint.clone()
-        } else {
-            composer_placeholder_voice(app, &runtime_state)
-        }
+        String::new()
     } else {
-        visible_composer_text(app, composer_focused && !composer_disabled)
+        app.prompt_buffer.clone()
     };
 
     crate::view_model::control_dock_view_model(crate::view_model::ControlDockInput::Live {
@@ -1084,7 +929,7 @@ fn build_control_dock_view_model(
         primary_summary,
         summary_segment: control_dock_summary_segment(app),
         composer_body,
-        composer_disclosure: composer_shortcut_hints(app, composer_disabled),
+        composer_disclosure: String::new(),
         composer_focused,
     })
 }
@@ -1102,6 +947,15 @@ fn control_dock_summary_segment(
 
     let summary = app.orchestration_summary();
     let latest_warning = app.orchestration_latest_warning();
+    if latest_warning.is_none()
+        && summary.active_agents == 0
+        && summary.queued == 0
+        && summary.running == 0
+        && summary.stale == 0
+    {
+        return None;
+    }
+
     let mut text = format!(
         "orch {}a {}q {}r {}s",
         summary.active_agents, summary.queued, summary.running, summary.stale
@@ -1138,110 +992,628 @@ fn render_document_composer_content(
     context: DocumentComposerRenderContext<'_>,
 ) {
     let surface = control_dock_surface(theme, context.dock.variant);
-    let composer_surface = theme.surface.panel_elevated;
-    let card_area = inset_rect(area, u16::from(area.width > 6), 0);
-    let composer_block = Block::default()
-        .style(Style::default().bg(composer_surface))
-        .padding(Padding::new(
-            theme.live_shell.rhythm.composer_padding_x,
-            theme.live_shell.rhythm.composer_padding_x,
-            0,
-            0,
-        ));
-    let content_area = composer_block.inner(card_area);
-
+    let active_composer_surface = theme.token_families().semantic.composer.primary.surface;
+    let composer_surface = active_composer_surface;
+    let prompt_area = area;
     frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
-    frame.render_widget(composer_block, card_area);
 
-    if content_area.width == 0 || content_area.height == 0 {
+    if prompt_area.width == 0 || prompt_area.height == 0 {
         return;
     }
 
-    let hint_visible = content_area.height > context.composer_lines
-        && area.width > crate::theme::ShellGeometry::MINIMUM.width;
+    let main_columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .split(prompt_area);
+    let rail_area = main_columns[0];
+    let body_area = main_columns[1];
+
+    let shell_rows = if body_area.height > 1 {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(1)])
+            .split(body_area)
+    } else {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(0)])
+            .split(body_area)
+    };
+    let composer_body_area = shell_rows[0];
+    let composer_cap_area = shell_rows[1];
+
+    frame.render_widget(
+        Block::default().style(Style::default().bg(composer_surface)),
+        composer_body_area,
+    );
+
+    if body_area.width == 0 || body_area.height == 0 {
+        return;
+    }
+    if composer_body_area.height == 1 {
+        let body = wrap_composer_lines(
+            &context.dock.composer_body,
+            usize::from(composer_body_area.width),
+        )
+        .into_iter()
+        .take(1)
+        .map(|line| {
+            Line::from(Span::styled(
+                line,
+                Style::default()
+                    .fg(theme.text.secondary)
+                    .bg(composer_surface),
+            ))
+        })
+        .collect::<Vec<_>>();
+        frame.render_widget(
+            Paragraph::new(body).style(Style::default().bg(composer_surface)),
+            composer_body_area,
+        );
+        return;
+    }
+
+    let body_inner = inset_rect(
+        composer_body_area,
+        theme
+            .live_shell
+            .rhythm
+            .composer_padding_x
+            .min(composer_body_area.width.saturating_sub(1)),
+        0,
+    );
+    if body_inner.width == 0 || body_inner.height == 0 {
+        return;
+    }
+
+    let metadata_height = u16::from(body_inner.height >= 2);
+    let metadata_gap = u16::from(metadata_height > 0 && body_inner.height >= 3);
+    let top_padding = u16::from(
+        metadata_height > 0
+            && body_inner.height
+                >= metadata_height
+                    .saturating_add(metadata_gap)
+                    .saturating_add(2),
+    );
+    let available_input_height = body_inner
+        .height
+        .saturating_sub(metadata_height)
+        .saturating_sub(top_padding)
+        .saturating_sub(metadata_gap)
+        .max(1);
     let input_height = context
         .composer_lines
-        .min(
-            content_area
-                .height
-                .saturating_sub(u16::from(hint_visible))
-                .max(1),
-        )
+        .clamp(1, available_input_height)
         .max(1);
-    let top_gap = content_area
-        .height
-        .saturating_sub(input_height)
-        .saturating_sub(u16::from(hint_visible));
+
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(top_gap),
+            Constraint::Length(top_padding),
             Constraint::Length(input_height),
-            Constraint::Length(u16::from(hint_visible)),
+            Constraint::Length(metadata_gap),
+            Constraint::Length(metadata_height),
+            Constraint::Min(0),
         ])
-        .split(content_area);
-
-    let input_width = usize::from(rows[1].width);
-    let body = context.dock.composer_body.clone();
+        .split(body_inner);
+    let input_area = rows[1];
+    let input_width = usize::from(input_area.width);
+    let placeholder_visible = app.prompt_buffer.is_empty()
+        && matches!(
+            context.dock.variant,
+            crate::view_model::ControlDockVariant::Startup
+        );
+    let body = if placeholder_visible {
+        context.dock.composer_body.as_str()
+    } else {
+        app.prompt_buffer.as_str()
+    };
     let body_color = if context.dock.composer_disabled {
         theme.status.disabled
-    } else if app.prompt_buffer.is_empty() {
+    } else if placeholder_visible {
         theme.text.secondary
     } else {
         theme.text.primary
     };
     let rail_color = if context.dock.composer_disabled {
         theme.status.disabled
-    } else if context.dock.composer_focused {
-        theme.text.accent
     } else {
-        theme.text.secondary
+        theme.text.accent
     };
-    let rail = "▎ ";
-    let body_lines = composer_body_lines(
-        &body,
-        input_width.saturating_sub(rail.chars().count()),
-        usize::from(rows[1].height.max(1)),
-    )
-    .into_iter()
-    .map(|line| {
-        Line::from(vec![
-            Span::styled(rail, Style::default().fg(rail_color).bg(composer_surface)),
-            Span::styled(line, Style::default().fg(body_color).bg(composer_surface)),
-        ])
-    })
-    .collect::<Vec<_>>();
+
+    if rail_area.height > 0 {
+        let body_rows = usize::from(rail_area.height.saturating_sub(composer_cap_area.height));
+        let mut rail_lines = vec![
+            Line::from(Span::styled(
+                COMPOSER_RAIL_GLYPH,
+                Style::default().fg(rail_color).bg(surface),
+            ));
+            body_rows
+        ];
+        if composer_cap_area.height > 0 {
+            rail_lines.push(Line::from(Span::styled(
+                COMPOSER_RAIL_CAP_GLYPH,
+                Style::default().fg(rail_color).bg(surface),
+            )));
+        }
+        if rail_lines.is_empty() {
+            rail_lines.push(Line::from(Span::styled(
+                COMPOSER_RAIL_GLYPH,
+                Style::default().fg(rail_color).bg(surface),
+            )));
+        }
+        frame.render_widget(
+            Paragraph::new(rail_lines).style(Style::default().bg(surface)),
+            rail_area,
+        );
+    }
+    if composer_cap_area.height > 0 && composer_cap_area.width > 0 {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                "▀".repeat(usize::from(composer_cap_area.width)),
+                Style::default().fg(composer_surface).bg(surface),
+            )))
+            .style(Style::default().bg(surface)),
+            composer_cap_area,
+        );
+    }
+
+    let viewport = composer_viewport(
+        body,
+        input_width,
+        usize::from(input_area.height.max(1)),
+        (context.dock.composer_focused && !context.dock.composer_disabled).then_some(
+            if placeholder_visible {
+                0
+            } else {
+                app.prompt_cursor
+            },
+        ),
+    );
+    let body_lines = viewport
+        .lines
+        .iter()
+        .cloned()
+        .map(|line| {
+            Line::from(Span::styled(
+                line,
+                Style::default().fg(body_color).bg(composer_surface),
+            ))
+        })
+        .collect::<Vec<_>>();
     frame.render_widget(
         Paragraph::new(body_lines).style(Style::default().bg(composer_surface)),
-        rows[1],
+        input_area,
     );
 
-    if hint_visible && rows[2].height > 0 {
-        let hint_prefix = "  ";
-        let footer = truncate_plain_text(
-            &context.dock.composer_disclosure,
-            usize::from(rows[2].width).saturating_sub(hint_prefix.chars().count()),
-        );
+    if let Some((cursor_row, cursor_col)) = viewport.cursor {
+        let cursor_x = input_area
+            .x
+            .saturating_add(u16::try_from(cursor_col).unwrap_or(u16::MAX));
+        let cursor_y = input_area
+            .y
+            .saturating_add(u16::try_from(cursor_row).unwrap_or(u16::MAX));
+        frame.set_cursor_position((cursor_x, cursor_y));
+    }
+
+    if metadata_height > 0 && rows[3].width > 0 {
         frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(hint_prefix, Style::default().bg(composer_surface)),
-                Span::styled(
-                    footer,
-                    Style::default()
-                        .fg(theme.text.secondary)
-                        .bg(composer_surface),
-                ),
-            ])),
-            rows[2],
+            Paragraph::new(composer_metadata_line(
+                app,
+                context.dock,
+                usize::from(rows[3].width),
+                theme,
+                composer_surface,
+            ))
+            .style(Style::default().bg(composer_surface)),
+            rows[3],
         );
     }
 }
 
-fn composer_body_lines(text: &str, width: usize, max_lines: usize) -> Vec<String> {
-    if max_lines == 0 {
-        return Vec::new();
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComposerMetadataTone {
+    Accent,
+    Primary,
+    Secondary,
+    Tertiary,
+}
+
+fn composer_metadata_line(
+    app: &AppState,
+    dock: &crate::view_model::ControlDockViewModel,
+    max_width: usize,
+    theme: &Theme,
+    surface: Color,
+) -> Line<'static> {
+    let candidates = composer_metadata_candidates(app, dock);
+    let segments = candidates
+        .iter()
+        .find(|segments| composer_metadata_segments_width(segments) <= max_width)
+        .cloned()
+        .unwrap_or_else(|| {
+            vec![(
+                truncate_plain_text(&composer_metadata_text(app, dock, max_width), max_width),
+                ComposerMetadataTone::Secondary,
+            )]
+        });
+
+    Line::from(
+        segments
+            .into_iter()
+            .map(|(text, tone)| {
+                Span::styled(
+                    text,
+                    Style::default()
+                        .fg(composer_metadata_color(tone, theme))
+                        .bg(surface),
+                )
+            })
+            .collect::<Vec<_>>(),
+    )
+}
+
+#[allow(dead_code)]
+fn live_composer_status_line(
+    dock: &crate::view_model::ControlDockViewModel,
+    max_width: usize,
+    theme: &Theme,
+    surface: Color,
+) -> Line<'static> {
+    let candidates = live_composer_status_candidates(dock, max_width, theme);
+    let segments = candidates
+        .iter()
+        .find(|segments| composer_metadata_segments_width(segments) <= max_width)
+        .cloned()
+        .unwrap_or_else(|| {
+            vec![(
+                truncate_plain_text(
+                    &live_composer_status_text(dock, max_width, theme),
+                    max_width,
+                ),
+                ComposerMetadataTone::Secondary,
+            )]
+        });
+
+    Line::from(
+        segments
+            .into_iter()
+            .map(|(text, tone)| {
+                Span::styled(
+                    text,
+                    Style::default()
+                        .fg(composer_metadata_color(tone, theme))
+                        .bg(surface),
+                )
+            })
+            .collect::<Vec<_>>(),
+    )
+}
+
+#[allow(dead_code)]
+fn live_composer_status_candidates(
+    dock: &crate::view_model::ControlDockViewModel,
+    max_width: usize,
+    theme: &Theme,
+) -> Vec<Vec<(String, ComposerMetadataTone)>> {
+    let separator = ("  ·  ".to_string(), ComposerMetadataTone::Tertiary);
+    let badge_tone = runtime_kind_metadata_tone(dock.runtime_kind);
+    let summary_tone = dock
+        .summary_segment
+        .as_ref()
+        .map(|segment| control_dock_summary_tone_to_metadata_tone(segment.tone));
+    let summary_text = dock.summary_segment.as_ref().map(|segment| {
+        control_dock_summary_segment_text_for_width(
+            segment,
+            u16::try_from(max_width).unwrap_or(u16::MAX),
+            theme,
+        )
+    });
+
+    let mut full = Vec::new();
+    if let Some(context) = dock
+        .runtime_context
+        .as_ref()
+        .filter(|text| !text.trim().is_empty())
+    {
+        full.push((context.clone(), ComposerMetadataTone::Secondary));
+        full.push(separator.clone());
+    }
+    full.push((dock.runtime_badge.clone(), badge_tone));
+    full.push(separator.clone());
+    full.push((
+        dock.primary_summary.clone(),
+        ComposerMetadataTone::Secondary,
+    ));
+    if let Some(text) = summary_text.as_ref() {
+        full.push(separator.clone());
+        full.push((
+            text.clone(),
+            summary_tone.unwrap_or(ComposerMetadataTone::Secondary),
+        ));
     }
 
+    let mut without_context = vec![
+        (dock.runtime_badge.clone(), badge_tone),
+        separator.clone(),
+        (
+            dock.primary_summary.clone(),
+            ComposerMetadataTone::Secondary,
+        ),
+    ];
+    if let Some(text) = summary_text.as_ref() {
+        without_context.push(separator.clone());
+        without_context.push((
+            text.clone(),
+            summary_tone.unwrap_or(ComposerMetadataTone::Secondary),
+        ));
+    }
+
+    let mut summary_only = vec![(
+        dock.primary_summary.clone(),
+        ComposerMetadataTone::Secondary,
+    )];
+    if let Some(text) = summary_text.as_ref() {
+        summary_only.push(separator);
+        summary_only.push((
+            text.clone(),
+            summary_tone.unwrap_or(ComposerMetadataTone::Secondary),
+        ));
+    }
+
+    vec![
+        full,
+        without_context,
+        vec![
+            (dock.runtime_badge.clone(), badge_tone),
+            (" ".to_string(), ComposerMetadataTone::Tertiary),
+            (
+                dock.primary_summary.clone(),
+                ComposerMetadataTone::Secondary,
+            ),
+        ],
+        summary_only,
+        vec![(dock.runtime_badge.clone(), badge_tone)],
+        vec![(
+            dock.primary_summary.clone(),
+            ComposerMetadataTone::Secondary,
+        )],
+    ]
+}
+
+#[allow(dead_code)]
+fn live_composer_status_text(
+    dock: &crate::view_model::ControlDockViewModel,
+    max_width: usize,
+    theme: &Theme,
+) -> String {
+    let summary_text = dock.summary_segment.as_ref().map(|segment| {
+        control_dock_summary_segment_text_for_width(
+            segment,
+            u16::try_from(max_width).unwrap_or(u16::MAX),
+            theme,
+        )
+    });
+    let with_badge = format!("{}  ·  {}", dock.runtime_badge, dock.primary_summary);
+    let with_context = dock
+        .runtime_context
+        .as_ref()
+        .filter(|text| !text.trim().is_empty())
+        .map(|context| format!("{context}  ·  {with_badge}"));
+    let with_summary = summary_text
+        .as_ref()
+        .map(|text| format!("{with_badge}  ·  {text}"));
+    let full = with_context.as_ref().and_then(|context_text| {
+        summary_text
+            .as_ref()
+            .map(|summary| format!("{context_text}  ·  {summary}"))
+    });
+
+    best_fit_text(
+        &[
+            full,
+            with_summary,
+            with_context,
+            Some(with_badge),
+            Some(dock.primary_summary.clone()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>(),
+        max_width,
+    )
+}
+
+#[allow(dead_code)]
+fn runtime_kind_metadata_tone(kind: RuntimeStateKind) -> ComposerMetadataTone {
+    match kind {
+        RuntimeStateKind::Success => ComposerMetadataTone::Accent,
+        RuntimeStateKind::Streaming | RuntimeStateKind::Sending | RuntimeStateKind::Ready => {
+            ComposerMetadataTone::Primary
+        }
+        RuntimeStateKind::Failure
+        | RuntimeStateKind::Cancelled
+        | RuntimeStateKind::Disconnected
+        | RuntimeStateKind::PermissionBlocked => ComposerMetadataTone::Accent,
+        RuntimeStateKind::Degraded | RuntimeStateKind::PermissionPending => {
+            ComposerMetadataTone::Primary
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn control_dock_summary_tone_to_metadata_tone(
+    tone: crate::view_model::ControlDockSummaryTone,
+) -> ComposerMetadataTone {
+    match tone {
+        crate::view_model::ControlDockSummaryTone::Secondary => ComposerMetadataTone::Secondary,
+        crate::view_model::ControlDockSummaryTone::Accent => ComposerMetadataTone::Accent,
+        crate::view_model::ControlDockSummaryTone::Success => ComposerMetadataTone::Accent,
+        crate::view_model::ControlDockSummaryTone::Warning => ComposerMetadataTone::Primary,
+        crate::view_model::ControlDockSummaryTone::Error => ComposerMetadataTone::Accent,
+    }
+}
+
+fn composer_metadata_color(tone: ComposerMetadataTone, theme: &Theme) -> Color {
+    match tone {
+        ComposerMetadataTone::Accent => theme.text.accent,
+        ComposerMetadataTone::Primary => theme.text.primary,
+        ComposerMetadataTone::Secondary => theme.text.secondary,
+        ComposerMetadataTone::Tertiary => theme.text.tertiary,
+    }
+}
+
+fn composer_metadata_segments_width(segments: &[(String, ComposerMetadataTone)]) -> usize {
+    segments
+        .iter()
+        .map(|(text, _)| text.chars().count())
+        .sum::<usize>()
+}
+
+fn composer_metadata_candidates(
+    app: &AppState,
+    dock: &crate::view_model::ControlDockViewModel,
+) -> Vec<Vec<(String, ComposerMetadataTone)>> {
+    if app.startup_shell_visible() {
+        let mut full = vec![
+            (
+                format!("Preset {}", app.active_profile()),
+                ComposerMetadataTone::Accent,
+            ),
+            (" · ".to_string(), ComposerMetadataTone::Secondary),
+            (
+                format!("{}/", app.active_provider()),
+                ComposerMetadataTone::Secondary,
+            ),
+            (
+                app.current_model_label().to_string(),
+                ComposerMetadataTone::Primary,
+            ),
+        ];
+        if let Some(mode) = app
+            .launch_mode_label()
+            .filter(|mode| !mode.trim().is_empty())
+        {
+            full.push((" · ".to_string(), ComposerMetadataTone::Secondary));
+            full.push((mode.to_string(), ComposerMetadataTone::Accent));
+        }
+
+        return vec![
+            full,
+            vec![
+                (
+                    format!("Preset {}", app.active_profile()),
+                    ComposerMetadataTone::Accent,
+                ),
+                (" · ".to_string(), ComposerMetadataTone::Secondary),
+                (
+                    format!("{}/{}", app.active_provider(), app.current_model_label()),
+                    ComposerMetadataTone::Secondary,
+                ),
+            ],
+            vec![(
+                format!("Preset {}", app.active_profile()),
+                ComposerMetadataTone::Accent,
+            )],
+        ];
+    }
+
+    let identity = vec![
+        (
+            app.active_profile().to_string(),
+            ComposerMetadataTone::Accent,
+        ),
+        (" · ".to_string(), ComposerMetadataTone::Secondary),
+        (
+            format!("{}/", app.active_provider()),
+            ComposerMetadataTone::Secondary,
+        ),
+        (
+            app.current_model_label().to_string(),
+            ComposerMetadataTone::Primary,
+        ),
+    ];
+    let mut with_disclosure = identity.clone();
+    if !dock.composer_disclosure.trim().is_empty() {
+        with_disclosure.push((" · ".to_string(), ComposerMetadataTone::Secondary));
+        with_disclosure.push((
+            dock.composer_disclosure.clone(),
+            ComposerMetadataTone::Tertiary,
+        ));
+    }
+
+    vec![
+        with_disclosure,
+        identity,
+        vec![
+            (
+                app.active_profile().to_string(),
+                ComposerMetadataTone::Accent,
+            ),
+            (" · ".to_string(), ComposerMetadataTone::Secondary),
+            (
+                app.current_model_label().to_string(),
+                ComposerMetadataTone::Primary,
+            ),
+        ],
+    ]
+}
+
+fn composer_metadata_text(
+    app: &AppState,
+    dock: &crate::view_model::ControlDockViewModel,
+    max_width: usize,
+) -> String {
+    if max_width == 0 {
+        return String::new();
+    }
+
+    if app.startup_shell_visible() {
+        let metadata = app.startup_card_view_model().metadata;
+        return best_fit_text(
+            &[
+                format!("{}  ·  {}", dock.primary_summary, metadata),
+                metadata,
+                dock.primary_summary.clone(),
+            ],
+            max_width,
+        );
+    }
+
+    let identity = format!(
+        "{} · {}/{}",
+        app.active_profile(),
+        app.active_provider(),
+        app.current_model_label()
+    );
+    let with_disclosure = (!dock.composer_disclosure.trim().is_empty())
+        .then(|| format!("{}  ·  {}", identity, dock.composer_disclosure));
+
+    best_fit_text(
+        &[
+            with_disclosure,
+            Some(identity),
+            Some(dock.composer_disclosure.clone()),
+            Some(app.current_model_label().to_string()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>(),
+        max_width,
+    )
+}
+
+fn best_fit_text(options: &[String], max_width: usize) -> String {
+    options
+        .iter()
+        .find(|option| option.chars().count() <= max_width)
+        .cloned()
+        .unwrap_or_else(|| {
+            truncate_plain_text(options.first().map(String::as_str).unwrap_or(""), max_width)
+        })
+}
+
+fn wrap_composer_lines(text: &str, width: usize) -> Vec<String> {
     if width == 0 {
         return vec![String::new()];
     }
@@ -1251,37 +1623,18 @@ fn composer_body_lines(text: &str, width: usize, max_lines: usize) -> Vec<String
         .map(|line| line.chars().collect::<Vec<_>>())
         .collect::<Vec<_>>();
     let mut visual_lines = Vec::new();
-    let mut truncated = false;
 
-    'outer: for (line_index, chars) in logical_lines.iter().enumerate() {
+    for chars in &logical_lines {
         if chars.is_empty() {
             visual_lines.push(String::new());
-            if visual_lines.len() == max_lines {
-                truncated = line_index + 1 < logical_lines.len();
-                break;
-            }
             continue;
         }
 
         let mut start = 0usize;
         while start < chars.len() {
-            if visual_lines.len() == max_lines {
-                truncated = true;
-                break 'outer;
-            }
-
             let end = (start + width).min(chars.len());
             visual_lines.push(chars[start..end].iter().collect::<String>());
             start = end;
-        }
-
-        if start < chars.len() {
-            truncated = true;
-            break;
-        }
-        if visual_lines.len() == max_lines && line_index + 1 < logical_lines.len() {
-            truncated = true;
-            break;
         }
     }
 
@@ -1289,70 +1642,72 @@ fn composer_body_lines(text: &str, width: usize, max_lines: usize) -> Vec<String
         visual_lines.push(String::new());
     }
 
-    if truncated {
-        let last = visual_lines.pop().unwrap_or_default();
-        visual_lines.push(ellipsize_composer_line(&last, width));
-    }
-
     visual_lines
 }
 
-fn ellipsize_composer_line(text: &str, width: usize) -> String {
-    if width == 0 {
-        return String::new();
-    }
-    if width == 1 {
-        return "…".to_string();
-    }
-
-    format!("{}…", truncate_plain_text(text, width.saturating_sub(1)))
-}
-
-fn composer_placeholder_voice(app: &AppState, runtime_state: &crate::app::RuntimeState) -> String {
-    if app.completed_session_shell_active() {
-        if runtime_state.kind == RuntimeStateKind::Failure {
-            return format!(
-                "Run failed — inspect transcript, then adjust the draft from {} or a follow-up run…",
-                app.keymap
-                    .get_binding_label(Action::Palette, "commands")
-                    .to_ascii_lowercase()
-            );
-        }
-
-        return format!(
-            "Run complete — use {} for replay/new/quit, or ask Harness for the next step…",
-            app.keymap
-                .get_binding_label(Action::Palette, "commands")
-                .to_ascii_lowercase()
-        );
+fn composer_viewport(
+    text: &str,
+    width: usize,
+    max_lines: usize,
+    cursor_char_index: Option<usize>,
+) -> ComposerViewport {
+    if max_lines == 0 {
+        return ComposerViewport {
+            lines: Vec::new(),
+            cursor: None,
+        };
     }
 
-    match runtime_state.kind {
-        RuntimeStateKind::Sending | RuntimeStateKind::Streaming => {
-            "Queue the next turn while this one finishes…".to_string()
-        }
-        RuntimeStateKind::Failure | RuntimeStateKind::Cancelled => {
-            "Ask Harness what to retry, inspect, or fix…".to_string()
-        }
-        _ => "Ask Harness to inspect, edit, or explain…".to_string(),
-    }
-}
+    const CURSOR_MARKER: char = '\0';
 
-fn visible_composer_text(app: &AppState, show_cursor: bool) -> String {
-    let mut text = app.prompt_buffer.clone();
-    if show_cursor {
-        let cursor_byte_pos = app
-            .prompt_buffer
+    let mut raw = text.to_string();
+    if let Some(cursor_char_index) = cursor_char_index {
+        let cursor_byte_index = text
             .char_indices()
-            .nth(app.prompt_cursor)
-            .map(|(i, _)| i)
-            .unwrap_or(app.prompt_buffer.len());
-        text.insert(cursor_byte_pos, '█');
+            .nth(cursor_char_index)
+            .map(|(index, _)| index)
+            .unwrap_or(text.len());
+        raw.insert(cursor_byte_index, CURSOR_MARKER);
     }
-    text
+
+    let mut wrapped = wrap_composer_lines(&raw, width);
+    let cursor = wrapped.iter_mut().enumerate().find_map(|(row, line)| {
+        line.find(CURSOR_MARKER).map(|column| {
+            line.remove(column);
+            (row, column)
+        })
+    });
+
+    if wrapped.is_empty() {
+        wrapped.push(String::new());
+    }
+
+    let total_lines = wrapped.len();
+    let visible_count = max_lines.min(total_lines).max(1);
+    let anchor_row = cursor
+        .map(|(row, _)| row)
+        .unwrap_or(total_lines.saturating_sub(1));
+    let start_row = anchor_row
+        .saturating_add(1)
+        .saturating_sub(visible_count)
+        .min(total_lines.saturating_sub(visible_count));
+    let end_row = start_row.saturating_add(visible_count).min(total_lines);
+
+    ComposerViewport {
+        lines: wrapped[start_row..end_row].to_vec(),
+        cursor: cursor.and_then(|(row, column)| {
+            (row >= start_row && row < end_row).then_some((row - start_row, column))
+        }),
+    }
 }
 
 fn composer_shortcut_hints(app: &AppState, composer_disabled: bool) -> String {
+    let newline = composer_newline_binding_hint(app);
+    if app.startup_shell_visible() {
+        let palette = app.keymap.get_binding_str(Action::Palette);
+        return format!("{palette} opens saved sessions · {newline} adds a newline");
+    }
+
     if composer_disabled || app.completed_session_shell_active() {
         return app
             .keymap
@@ -1360,9 +1715,95 @@ fn composer_shortcut_hints(app: &AppState, composer_disabled: bool) -> String {
             .to_ascii_lowercase();
     }
 
-    app.keymap
-        .get_binding_label(Action::InsertNewline, "newline")
-        .to_ascii_lowercase()
+    format!("{newline} newline").to_ascii_lowercase()
+}
+
+fn composer_newline_binding_hint(app: &AppState) -> String {
+    let bindings = app.keymap.get_binding_strs(Action::InsertNewline);
+    match bindings.as_slice() {
+        [] => "-".to_string(),
+        [binding] => binding.clone(),
+        [first, second, ..] => format!("{first}/{second}"),
+    }
+}
+
+fn control_dock_row_content(
+    app: &AppState,
+    max_width: usize,
+    theme: &Theme,
+    status_candidates: Vec<String>,
+) -> (String, String) {
+    if max_width == 0 {
+        return (String::new(), String::new());
+    }
+
+    let hints = app.footer_hints_view_model().hints;
+    let variants = [
+        hints.clone(),
+        compact_footer_hints(&hints, 4),
+        compact_footer_hints(&hints, 2),
+        hints
+            .last()
+            .copied()
+            .map(|hint| vec![hint])
+            .unwrap_or_default(),
+    ];
+
+    let separator = " ".repeat(theme.live_shell.rhythm.status_separator as usize);
+    let candidates = variants
+        .into_iter()
+        .filter(|variant_hints| !variant_hints.is_empty())
+        .map(|variant_hints| {
+            variant_hints
+                .iter()
+                .map(|hint| app.keymap.get_binding_label(hint.action, hint.label))
+                .collect::<Vec<_>>()
+                .join(&separator)
+        })
+        .collect::<Vec<_>>();
+
+    if status_candidates.is_empty() {
+        let hint = candidates
+            .iter()
+            .find(|candidate| candidate.chars().count() <= max_width)
+            .cloned()
+            .unwrap_or_else(|| {
+                truncate_plain_text(
+                    candidates.first().map(String::as_str).unwrap_or(""),
+                    max_width,
+                )
+            });
+        return (String::new(), hint);
+    }
+
+    for status in &status_candidates {
+        let status_width = status.chars().count();
+        for hint in &candidates {
+            let hint_width = hint.chars().count();
+            let gap = usize::from(status_width > 0 && hint_width > 0) * 2;
+            if status_width.saturating_add(hint_width).saturating_add(gap) <= max_width {
+                return (status.clone(), hint.clone());
+            }
+        }
+    }
+
+    for status in &status_candidates {
+        if status.chars().count() <= max_width {
+            return (status.clone(), String::new());
+        }
+    }
+
+    let hint = candidates
+        .iter()
+        .find(|candidate| candidate.chars().count() <= max_width)
+        .cloned()
+        .unwrap_or_else(|| {
+            truncate_plain_text(
+                candidates.first().map(String::as_str).unwrap_or(""),
+                max_width,
+            )
+        });
+    (String::new(), hint)
 }
 
 fn status_context(app: &AppState, theme: &Theme, state: RuntimeStateKind) -> (&'static str, Color) {
@@ -1445,6 +1886,113 @@ fn render_replay_read_only_composer_content(
     }
 }
 
+fn render_control_dock_disclosure(
+    frame: &mut Frame,
+    area: Rect,
+    app: &AppState,
+    theme: &Theme,
+    dock: &crate::view_model::ControlDockViewModel,
+) {
+    if area.width == 0 || area.height == 0 || dock.composer_disclosure.trim().is_empty() {
+        return;
+    }
+
+    let surface = control_dock_surface(theme, dock.variant);
+    let base = Style::default().bg(surface);
+    let text = truncate_plain_text(
+        &dock.composer_disclosure,
+        usize::from(area.width).saturating_sub(2),
+    );
+
+    frame.render_widget(Block::default().style(base), area);
+    if dock.variant == crate::view_model::ControlDockVariant::Startup {
+        let palette = app.keymap.get_binding_str(Action::Palette);
+        let newline = composer_newline_binding_hint(app);
+        let candidates = startup_disclosure_candidates(theme, surface, &palette, &newline);
+        let spans = candidates
+            .into_iter()
+            .find(|candidate| startup_disclosure_width(candidate) <= usize::from(area.width))
+            .unwrap_or_else(|| {
+                vec![
+                    Span::styled("  ", base),
+                    Span::styled(
+                        "● Tip",
+                        Style::default()
+                            .fg(theme.text.accent)
+                            .bg(surface)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled("  ", base),
+                    Span::styled(
+                        truncate_plain_text(&palette, usize::from(area.width).saturating_sub(8)),
+                        Style::default()
+                            .fg(theme.text.primary)
+                            .bg(surface)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ]
+            });
+        frame.render_widget(Paragraph::new(Line::from(spans)).style(base), area);
+        return;
+    }
+
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("  ", base),
+            Span::styled(text, Style::default().fg(theme.text.secondary).bg(surface)),
+        ]))
+        .style(base),
+        area,
+    );
+}
+
+fn startup_disclosure_candidates(
+    theme: &Theme,
+    surface: Color,
+    palette: &str,
+    newline: &str,
+) -> Vec<Vec<Span<'static>>> {
+    let base = Style::default().bg(surface);
+    let tip = Style::default()
+        .fg(theme.text.accent)
+        .bg(surface)
+        .add_modifier(Modifier::BOLD);
+    let key = Style::default()
+        .fg(theme.text.primary)
+        .bg(surface)
+        .add_modifier(Modifier::BOLD);
+    let text = Style::default().fg(theme.text.secondary).bg(surface);
+
+    vec![
+        vec![
+            Span::styled("  ", base),
+            Span::styled("● Tip", tip),
+            Span::styled("  ", base),
+            Span::styled(palette.to_string(), key),
+            Span::styled(" opens saved sessions · ", text),
+            Span::styled(newline.to_string(), key),
+            Span::styled(" adds a newline", text),
+        ],
+        vec![
+            Span::styled("  ", base),
+            Span::styled("● Tip", tip),
+            Span::styled("  ", base),
+            Span::styled(palette.to_string(), key),
+            Span::styled(" opens saved sessions", text),
+        ],
+        vec![
+            Span::styled("  ", base),
+            Span::styled("● Tip", tip),
+            Span::styled("  ", base),
+            Span::styled(palette.to_string(), key),
+        ],
+    ]
+}
+
+fn startup_disclosure_width(spans: &[Span<'_>]) -> usize {
+    spans.iter().map(|span| span.content.chars().count()).sum()
+}
+
 fn replay_read_only_shortcut_hints(app: &AppState) -> String {
     [
         app.keymap
@@ -1490,8 +2038,12 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
     let area = Rect::new(0, 0, width, height);
     let plan = FrameLayoutPlan::for_app(&app, area);
     let dock = plan.dock.expect("live dock layout");
-    let status = dock.status.expect("live status area");
     let composer = dock.composer;
+
+    assert_eq!(dock.status, Some(Rect::new(0, 29, 100, 1)));
+    assert_eq!(dock.shell.height, composer.height.saturating_add(1));
+    assert_eq!(dock.shell.y, composer.y);
+    assert_eq!(dock.disclosure, None);
 
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).expect("create live shell terminal");
@@ -1505,13 +2057,22 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
         .x
         .saturating_add(dock.shell.width.saturating_sub(1));
 
-    assert_eq!(buffer[(right_edge, status.y)].bg, theme.surface.panel);
-    assert_eq!(buffer[(right_edge, composer.y)].bg, theme.surface.panel);
     assert_eq!(
-        buffer[(right_edge, composer.y.saturating_add(1))].bg,
-        theme.surface.panel
+        buffer[(right_edge, composer.y)].bg,
+        theme.surface.panel_elevated
     );
-    assert_eq!(buffer[(right_edge, dock.shell.y)].bg, theme.surface.panel);
+    assert_eq!(
+        buffer[(
+            right_edge,
+            composer.y.saturating_add(composer.height.saturating_sub(1))
+        )]
+            .bg,
+        control_dock_surface(&theme, crate::view_model::ControlDockVariant::Live)
+    );
+    assert_eq!(
+        buffer[(right_edge, dock.shell.y)].bg,
+        theme.surface.panel_elevated
+    );
     assert_ne!(
         buffer[(right_edge, dock.shell.y)].symbol(),
         "─",
@@ -1523,7 +2084,7 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
             composer.y.saturating_add(composer.height.saturating_sub(1)),
         )]
             .bg,
-        theme.surface.panel
+        control_dock_surface(&theme, crate::view_model::ControlDockVariant::Live)
     );
 }
 
@@ -1550,39 +2111,29 @@ pub(crate) fn exact_test_live_control_dock_collapses_disclosure_before_status() 
         .collect::<Vec<_>>()
         .join("\n");
     let lines = rendered.lines().collect::<Vec<_>>();
-    let status_row = lines
-        .iter()
-        .position(|line| line.contains("ready for first turn"))
-        .expect("status row");
     let composer_row = lines
         .iter()
-        .enumerate()
-        .skip(status_row + 1)
-        .find_map(|(index, line)| {
-            line.contains("▎ Ask Harness to inspect, edit, or explain…")
-                .then_some(index)
+        .position(|line| {
+            let trimmed = line.trim_start();
+            trimmed.starts_with('▎') || trimmed.starts_with('┃')
         })
         .expect("composer row");
+    let mut composer_last_row = composer_row;
+    while composer_last_row + 1 < lines.len() && {
+        let trimmed = lines[composer_last_row + 1].trim_start();
+        trimmed.starts_with('▎') || trimmed.starts_with('┃') || trimmed.starts_with('╹')
+    } {
+        composer_last_row += 1;
+    }
     let footer_row = lines
         .iter()
         .enumerate()
-        .skip(composer_row + 1)
-        .find_map(|(index, line)| line.contains("Shift+Enter nl").then_some(index))
+        .skip(composer_last_row + 1)
+        .find_map(|(index, line)| line.contains("Ctrl+p commands").then_some(index))
         .expect("footer row");
-
-    assert!(
-        status_row < composer_row,
-        "dock header should survive constrained layout\n{rendered}"
-    );
     assert_eq!(
         footer_row,
-        composer_row + 1,
-        "tight live shells should drop the dock disclosure before the dock header\n{rendered}"
-    );
-    assert!(
-        !lines
-            .iter()
-            .any(|line| line.contains("shift+enter newline")),
-        "tight live shells should collapse the local disclosure row\n{rendered}"
+        composer_last_row + 1,
+        "tight live shells should place footer hints immediately after the live composer\n{rendered}"
     );
 }

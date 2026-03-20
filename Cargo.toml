@@ -27,3 +27,10 @@ tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["rt"] }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"

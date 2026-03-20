@@ -1,14 +1,13 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-expression: "checkpoint_visual_snapshot(&screen,\n&[STARTUP_HOME_ASCII_WORDMARK_MARKER, STARTUP_HOME_SHORTCUT_MARKER,\nSTARTUP_HOME_DENSE_VALUE_PROP_MARKER, \"startup ready\",], &visual,)"
+expression: "checkpoint_visual_snapshot(&screen,\n&[STARTUP_HOME_ASCII_WORDMARK_MARKER, STARTUP_HOME_SHORTCUT_MARKER,\nSTARTUP_HOME_DENSE_VALUE_PROP_MARKER,], &visual,)"
 ---
 Harness: true
-Ctrl+P open: true
-Type to quick-start a fresh run: true
-startup ready: true
+Ctrl+p open: true
+open a fresh session in this directory: true
 focus_marker: Harness
-focus_pixels_blake3: e4a262a74c1a82347b9219b97bba3da30e008600241e68edcdd390eab93df5dc
-focus_region_cells: row=6, col=27, height=8, width=24
+focus_pixels_blake3: 6076853096abfefb101d1fc702b29e2f4504484ba81bad43465bc3faf4e0648d
+focus_region_cells: row=13, col=8, height=5, width=24
 image: pty_startup_home_dense.png
 manifest_json: pty-manifests/startup_shell/manifest.json
 manifest_jsonl: pty-manifests/startup_shell/manifest.jsonl

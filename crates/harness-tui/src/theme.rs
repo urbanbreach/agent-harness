@@ -564,10 +564,10 @@ impl Theme {
             permission_modal: 9,
         },
         rhythm: ShellRhythm {
-            composer_padding_x: 1,
+            composer_padding_x: 2,
             footer_prefix_gap: 2,
-            transcript_gutter_x: 1,
-            transcript_gutter_y: 0,
+            transcript_gutter_x: 2,
+            transcript_gutter_y: 1,
             status_separator: 2,
             modal_margin: 2,
             surface_margin_x: 2,
@@ -611,10 +611,10 @@ impl Theme {
         startup: StartupLifecycleTokens {
             title: "Harness",
             subtitle: "Dispatch a new run, reopen live work, or inspect saved history.",
-            new_session_purpose: "dispatch a fresh run from the draft below",
+            new_session_purpose: "open a fresh session in this directory",
             continue_session_purpose: "reopen interactive work",
             replay_session_purpose: "inspect saved runs read-only",
-            secondary_hint: "Type to quick-start a fresh run · Ctrl+P opens session tools",
+            secondary_hint: "Type to start immediately · Ctrl+P opens saved sessions",
         },
         empty_state: EmptyStateTokens {
             max_width: 62,
@@ -628,7 +628,7 @@ impl Theme {
                     prompt: "trace the failing test",
                 },
                 EmptyStatePrompt {
-                    prompt: "review the current diff",
+                    prompt: "review the latest edit",
                 },
             ],
             demo_mode_label: "Demo mode · mock provider",
@@ -712,7 +712,7 @@ impl Theme {
                         chrome: ChromeMode::Card,
                         divider: DividerIntensity::Subtle,
                         density: SpacingDensity::Compact,
-                        surface: self.surface.overlay,
+                        surface: self.surface.panel_elevated,
                         border: Some(self.border.subtle),
                         padding_x: self.live_shell.rhythm.composer_padding_x,
                     },
@@ -721,17 +721,17 @@ impl Theme {
                         chrome: ChromeMode::Divided,
                         divider: DividerIntensity::Subtle,
                         density: SpacingDensity::Standard,
-                        surface: self.surface.panel,
+                        surface: self.surface.panel_elevated,
                         border: Some(self.border.subtle),
                         padding_x: self.live_shell.rhythm.composer_padding_x,
                     },
                     primary: ComposerPresentationTokens {
                         target: ShellGeometryTarget::Primary,
-                        chrome: ChromeMode::Chromeless,
-                        divider: DividerIntensity::None,
+                        chrome: ChromeMode::Divided,
+                        divider: DividerIntensity::Subtle,
                         density: SpacingDensity::Roomy,
-                        surface: self.surface.shell,
-                        border: None,
+                        surface: self.surface.panel_elevated,
+                        border: Some(self.border.subtle),
                         padding_x: self.live_shell.rhythm.composer_padding_x,
                     },
                 },
@@ -749,11 +749,11 @@ impl Theme {
     pub fn opencode_dark() -> Self {
         Self {
             surface: SurfaceColors {
-                canvas: rgb(0x05, 0x05, 0x05),
-                shell: rgb(0x0B, 0x0C, 0x0D),
-                panel: rgb(0x10, 0x11, 0x13),
-                panel_elevated: rgb(0x17, 0x18, 0x1A),
-                overlay: rgb(0x17, 0x18, 0x1A),
+                canvas: rgb(0x00, 0x00, 0x00),
+                shell: rgb(0x00, 0x00, 0x00),
+                panel: rgb(0x11, 0x11, 0x11),
+                panel_elevated: rgb(0x19, 0x19, 0x19),
+                overlay: rgb(0x19, 0x19, 0x19),
             },
             border: BorderColors {
                 subtle: rgb(0x8C, 0x88, 0x83),
@@ -765,7 +765,7 @@ impl Theme {
                 secondary: rgb(0x8C, 0x88, 0x83),
                 tertiary: rgb(0x8C, 0x88, 0x83),
                 accent: rgb(0xD4, 0x8B, 0x17),
-                inverse: rgb(0x05, 0x05, 0x05),
+                inverse: rgb(0x00, 0x00, 0x00),
             },
             status: StatusColors {
                 success: rgb(0x73, 0xC0, 0x6B),
@@ -800,11 +800,11 @@ mod tests {
     #[test]
     fn opencode_dark_theme_matches_palette_contract() {
         let theme = Theme::opencode_dark();
-        assert_eq!(theme.surface.canvas, rgb(0x05, 0x05, 0x05));
-        assert_eq!(theme.surface.shell, rgb(0x0B, 0x0C, 0x0D));
-        assert_eq!(theme.surface.panel, rgb(0x10, 0x11, 0x13));
-        assert_eq!(theme.surface.panel_elevated, rgb(0x17, 0x18, 0x1A));
-        assert_eq!(theme.surface.overlay, rgb(0x17, 0x18, 0x1A));
+        assert_eq!(theme.surface.canvas, rgb(0x00, 0x00, 0x00));
+        assert_eq!(theme.surface.shell, rgb(0x00, 0x00, 0x00));
+        assert_eq!(theme.surface.panel, rgb(0x11, 0x11, 0x11));
+        assert_eq!(theme.surface.panel_elevated, rgb(0x19, 0x19, 0x19));
+        assert_eq!(theme.surface.overlay, rgb(0x19, 0x19, 0x19));
         assert_eq!(theme.border.subtle, rgb(0x8C, 0x88, 0x83));
         assert_eq!(theme.border.strong, rgb(0xD4, 0x8B, 0x17));
         assert_eq!(theme.border.focus, rgb(0xD4, 0x8B, 0x17));
@@ -812,7 +812,7 @@ mod tests {
         assert_eq!(theme.text.secondary, rgb(0x8C, 0x88, 0x83));
         assert_eq!(theme.text.tertiary, rgb(0x8C, 0x88, 0x83));
         assert_eq!(theme.text.accent, rgb(0xD4, 0x8B, 0x17));
-        assert_eq!(theme.text.inverse, rgb(0x05, 0x05, 0x05));
+        assert_eq!(theme.text.inverse, rgb(0x00, 0x00, 0x00));
         assert_eq!(theme.status.success, rgb(0x73, 0xC0, 0x6B));
         assert_eq!(theme.status.warning, rgb(0xC9, 0xA2, 0x27));
         assert_eq!(theme.status.error, rgb(0xD9, 0x6A, 0x6A));
@@ -971,7 +971,7 @@ mod tests {
         );
         assert_eq!(
             tokens.semantic.composer.minimum.surface,
-            theme.surface.overlay
+            theme.surface.panel_elevated
         );
         assert_eq!(
             tokens.semantic.composer.minimum.border,
@@ -990,7 +990,10 @@ mod tests {
             tokens.semantic.composer.split.density,
             SpacingDensity::Standard
         );
-        assert_eq!(tokens.semantic.composer.split.surface, theme.surface.panel);
+        assert_eq!(
+            tokens.semantic.composer.split.surface,
+            theme.surface.panel_elevated
+        );
         assert_eq!(
             tokens.semantic.composer.split.border,
             Some(theme.border.subtle)
@@ -999,13 +1002,10 @@ mod tests {
             tokens.semantic.composer.primary.target,
             ShellGeometryTarget::Primary
         );
-        assert_eq!(
-            tokens.semantic.composer.primary.chrome,
-            ChromeMode::Chromeless
-        );
+        assert_eq!(tokens.semantic.composer.primary.chrome, ChromeMode::Divided);
         assert_eq!(
             tokens.semantic.composer.primary.divider,
-            DividerIntensity::None
+            DividerIntensity::Subtle
         );
         assert_eq!(
             tokens.semantic.composer.primary.density,
@@ -1013,9 +1013,12 @@ mod tests {
         );
         assert_eq!(
             tokens.semantic.composer.primary.surface,
-            theme.surface.shell
+            theme.surface.panel_elevated
         );
-        assert_eq!(tokens.semantic.composer.primary.border, None);
+        assert_eq!(
+            tokens.semantic.composer.primary.border,
+            Some(theme.border.subtle)
+        );
         assert_eq!(
             tokens.semantic.composer.minimum.padding_x,
             theme.live_shell.rhythm.composer_padding_x
@@ -1073,7 +1076,7 @@ mod tests {
         assert_eq!(minimum_lifecycle.post_run_card.width, 72);
         assert_eq!(minimum_lifecycle.post_run_card.height, 12);
         assert_eq!(minimum_lifecycle.overlay.width, 76);
-        assert_eq!(theme.live_shell.rhythm.composer_padding_x, 1);
+        assert_eq!(theme.live_shell.rhythm.composer_padding_x, 2);
         assert_eq!(theme.live_shell.rhythm.footer_prefix_gap, 2);
         assert_eq!(minimum.permission_modal_width, 58);
         assert_eq!(split.centered_content_width, 86);

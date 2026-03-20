@@ -103,6 +103,7 @@ struct OperatorRailEmptyState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum OperatorRailBodySection {
+    Context { items: Vec<String> },
     PendingPermissions { count: usize, items: Vec<String> },
     Todo { count: usize, items: Vec<String> },
     ModifiedFiles { count: usize, items: Vec<String> },
@@ -125,6 +126,7 @@ enum OperatorRailBodyPresentation {
 impl OperatorRailBodySection {
     fn heading(&self) -> String {
         match self {
+            Self::Context { .. } => "Context".to_string(),
             Self::PendingPermissions { count, .. } => format!("Pending Permissions · {count}"),
             Self::Todo { count, .. } => format!("Todo · {count}"),
             Self::ModifiedFiles { count, .. } => format!("Modified Files · {count}"),
@@ -133,18 +135,21 @@ impl OperatorRailBodySection {
 
     fn heading_style(&self, theme: &Theme) -> Style {
         match self {
+            Self::Context { .. } | Self::Todo { .. } | Self::ModifiedFiles { .. } => {
+                Style::default()
+                    .fg(theme.text.primary)
+                    .add_modifier(Modifier::BOLD)
+            }
             Self::PendingPermissions { .. } => Style::default()
                 .fg(theme.status.warning)
-                .add_modifier(Modifier::BOLD),
-            Self::Todo { .. } | Self::ModifiedFiles { .. } => Style::default()
-                .fg(theme.text.secondary)
                 .add_modifier(Modifier::BOLD),
         }
     }
 
     fn items(&self) -> &[String] {
         match self {
-            Self::PendingPermissions { items, .. }
+            Self::Context { items }
+            | Self::PendingPermissions { items, .. }
             | Self::Todo { items, .. }
             | Self::ModifiedFiles { items, .. } => items,
         }
@@ -152,6 +157,7 @@ impl OperatorRailBodySection {
 
     fn preview_label(&self, width: u16) -> &'static str {
         match self {
+            Self::Context { .. } => "Context",
             Self::PendingPermissions { .. } => {
                 if width <= 28 {
                     "Approval"
@@ -208,44 +214,6 @@ pub(super) fn render_events_tab(frame: &mut Frame, app: &AppState, area: Rect, t
 
     render_event_list(frame, app, event_list_area, theme);
     render_event_details(frame, app, event_details_area, theme);
-}
-
-pub(super) fn render_diff_tab(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
-    let body = render_secondary_surface_shell(frame, area, theme, diff_summary_line(app, theme));
-    let [event_list_area, diff_area] = split_secondary_surface(
-        body,
-        crate::layout::REVIEW_SURFACE_SPLIT_PERCENT,
-        theme.live_shell.rhythm.surface_gap,
-    );
-
-    render_event_list(frame, app, event_list_area, theme);
-
-    let is_focused = app.focus == Focus::Details;
-    let surface = theme.surface.panel_elevated;
-    let block = panel_block(theme, "Diff", is_focused, surface);
-
-    let content = if let Some(path) = &app.session_path {
-        if let Some((event, _)) = diff_surface_event(app) {
-            if let Some(diff_content) = load_diff_for_event(path, event) {
-                diff_content
-            } else if let Some(diff_path) = diff_artifact_path(path, event) {
-                format!("diff artifact missing:\n{}", diff_path.display())
-            } else {
-                "Select an edit event to view diff".to_string()
-            }
-        } else {
-            "Select an edit event to view diff".to_string()
-        }
-    } else {
-        "No session loaded".to_string()
-    };
-
-    let paragraph = Paragraph::new(content)
-        .block(block)
-        .style(panel_style(surface, theme.text.primary))
-        .wrap(Wrap { trim: true });
-
-    frame.render_widget(paragraph, diff_area);
 }
 
 pub(super) fn render_help_tab(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
@@ -331,16 +299,23 @@ pub(crate) fn exact_test_operator_rail_section_model_hides_empty_sources_but_pre
             .iter()
             .map(OperatorRailBodySection::heading)
             .collect::<Vec<_>>(),
-        vec!["Todo · 1".to_string(), "Modified Files · 1".to_string()]
+        vec![
+            "Context".to_string(),
+            "Todo · 1".to_string(),
+            "Modified Files · 1".to_string(),
+        ]
     );
 
     let empty_model = build_operator_rail_model(&AppState::new_live(None, false, None));
-    assert!(empty_model.body.sections.is_empty());
+    assert_eq!(empty_model.body.empty_state, None);
     assert_eq!(
-        empty_model.body.empty_state,
-        Some(OperatorRailEmptyState {
-            headline: "No operator activity now".to_string(),
-        })
+        empty_model
+            .body
+            .sections
+            .iter()
+            .map(OperatorRailBodySection::heading)
+            .collect::<Vec<_>>(),
+        vec!["Context".to_string()]
     );
 }
 
@@ -374,6 +349,7 @@ pub(crate) fn exact_test_operator_rail_section_model_surfaces_pending_permission
             .map(OperatorRailBodySection::heading)
             .collect::<Vec<_>>(),
         vec![
+            "Context".to_string(),
             "Pending Permissions · 1".to_string(),
             "Todo · 1".to_string(),
             "Modified Files · 1".to_string(),
@@ -489,6 +465,19 @@ fn help_row(app: &AppState, action: Action, label: &str) -> String {
     format!("  {:<12} {label}", app.keymap.get_binding_str(action))
 }
 
+fn newline_help_row(app: &AppState) -> String {
+    let binding = match app
+        .keymap
+        .get_binding_strs(Action::InsertNewline)
+        .as_slice()
+    {
+        [] => "-".to_string(),
+        [binding] => binding.clone(),
+        [first, second, ..] => format!("{first}/{second}"),
+    };
+    format!("  {:<20} Insert newline", binding)
+}
+
 fn help_text(app: &AppState) -> String {
     let mut lines = vec![
         "Keyboard Shortcuts:".to_string(),
@@ -516,7 +505,7 @@ fn help_text(app: &AppState) -> String {
             String::new(),
             "Prompt (when focused):".to_string(),
             help_row(app, Action::SubmitPrompt, "Submit prompt"),
-            help_row(app, Action::InsertNewline, "Insert newline"),
+            newline_help_row(app),
             help_row(app, Action::ClearPrompt, "Clear prompt"),
             help_row(app, Action::HistoryUp, "History up"),
             help_row(app, Action::HistoryDown, "History down"),
@@ -712,8 +701,19 @@ fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
     let pending_permission_lines = app.operator_sidebar_pending_permission_lines();
     let todo_lines = app.operator_sidebar_todo_lines();
     let modified_files = app.operator_sidebar_modified_files();
+    let runtime_state = app.runtime_state();
+    let mut context_lines = vec![runtime_state.summary.clone()];
+    context_lines.push(format!(
+        "{} active todo{} · {} modified file{}",
+        todo_lines.len(),
+        if todo_lines.len() == 1 { "" } else { "s" },
+        modified_files.len(),
+        if modified_files.len() == 1 { "" } else { "s" }
+    ));
 
-    let mut sections = Vec::new();
+    let mut sections = vec![OperatorRailBodySection::Context {
+        items: context_lines,
+    }];
     if !pending_permission_lines.is_empty() {
         sections.push(OperatorRailBodySection::PendingPermissions {
             count: pending_permission_lines.len(),
@@ -733,13 +733,7 @@ fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
         });
     }
 
-    let empty_state = sections.is_empty().then(|| OperatorRailEmptyState {
-        headline: if app.replay_mode {
-            "No operator activity yet".to_string()
-        } else {
-            "No operator activity now".to_string()
-        },
-    });
+    let empty_state = None;
 
     OperatorRailModel {
         pinned_summary: OperatorRailPinnedSummary {
@@ -1020,6 +1014,7 @@ fn operator_rail_body_presentation(
 fn operator_rail_body_item_count(body: &OperatorRailBody) -> usize {
     body.sections
         .iter()
+        .filter(|section| !matches!(section, OperatorRailBodySection::Context { .. }))
         .map(|section| section.items().len())
         .sum()
 }
@@ -1261,10 +1256,17 @@ pub(super) fn render_structured_diff_lines(
     fallback_path: Option<&str>,
     prefix: &str,
     width: u16,
+    force_stacked: bool,
     theme: &Theme,
 ) -> Option<Vec<Line<'static>>> {
     let model = structured_diff_model_from_patch(diff_content, fallback_path)?;
-    Some(render_structured_diff_model(&model, prefix, width, theme))
+    Some(render_structured_diff_model(
+        &model,
+        prefix,
+        width,
+        force_stacked,
+        theme,
+    ))
 }
 
 fn structured_diff_model_from_patch(
@@ -1549,11 +1551,12 @@ fn render_structured_diff_model(
     model: &StructuredDiffModel,
     prefix: &str,
     width: u16,
+    force_stacked: bool,
     theme: &Theme,
 ) -> Vec<Line<'static>> {
     let prefix_width = prefix.chars().count();
     let content_width = usize::from(width).saturating_sub(prefix_width).max(1);
-    let wide = content_width >= usize::from(DIFF_SIDE_BY_SIDE_MIN_WIDTH);
+    let wide = !force_stacked && content_width >= usize::from(DIFF_SIDE_BY_SIDE_MIN_WIDTH);
     let mut lines = Vec::new();
 
     for (file_index, file) in model.files.iter().enumerate() {
@@ -1932,48 +1935,6 @@ fn normalize_diff_line(line: &str) -> &str {
     line.strip_suffix('\r').unwrap_or(line)
 }
 
-fn diff_surface_event(app: &AppState) -> Option<(&harness_core::event::EventEnvelopeV1, bool)> {
-    app.selected_event()
-        .filter(|event| event_has_diff_artifact(event))
-        .map(|event| (event, false))
-        .or_else(|| {
-            app.events
-                .iter()
-                .rev()
-                .find(|event| event_has_diff_artifact(event))
-                .map(|event| (event, true))
-        })
-}
-
-fn event_has_diff_artifact(event: &harness_core::event::EventEnvelopeV1) -> bool {
-    use harness_core::event::EventV1;
-
-    matches!(
-        &event.payload,
-        EventV1::EditApplied(edit)
-            if edit
-                .diff_rel_path
-                .as_ref()
-                .is_some_and(|path| !path.trim().is_empty())
-    )
-}
-
-fn diff_artifact_path(
-    session_path: &std::path::Path,
-    event: &harness_core::event::EventEnvelopeV1,
-) -> Option<std::path::PathBuf> {
-    use harness_core::event::EventV1;
-
-    match &event.payload {
-        EventV1::EditApplied(edit) => edit
-            .diff_rel_path
-            .as_ref()
-            .filter(|path| !path.trim().is_empty())
-            .map(|path| session_path.join(path)),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 #[allow(dead_code)]
 fn line_to_plain_text(line: Line<'static>) -> String {
@@ -2069,13 +2030,6 @@ fn render_event_details(frame: &mut Frame, app: &AppState, area: Rect, theme: &T
     frame.render_widget(paragraph, area);
 }
 
-fn load_diff_for_event(
-    session_path: &std::path::Path,
-    event: &harness_core::event::EventEnvelopeV1,
-) -> Option<String> {
-    diff_artifact_path(session_path, event).and_then(|path| std::fs::read_to_string(path).ok())
-}
-
 fn render_secondary_surface_shell(
     frame: &mut Frame,
     area: Rect,
@@ -2141,19 +2095,6 @@ fn events_summary_line(app: &AppState, theme: &Theme) -> Line<'static> {
         ),
         theme,
     )
-}
-
-fn diff_summary_line(app: &AppState, theme: &Theme) -> Line<'static> {
-    let detail = if let Some((event, fallback_to_latest_edit)) = diff_surface_event(app) {
-        if fallback_to_latest_edit {
-            format!("artifact view · latest edit seq {}", event.seq)
-        } else {
-            format!("artifact view · seq {}", event.seq)
-        }
-    } else {
-        "artifact view · select an edit event".to_string()
-    };
-    secondary_summary_line(app, "diff", theme.status.info, detail, theme)
 }
 
 fn help_summary_line(app: &AppState, theme: &Theme) -> Line<'static> {

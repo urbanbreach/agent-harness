@@ -3,10 +3,10 @@ source: crates/harness-testkit/tests/pty_e2e.rs
 expression: "checkpoint_visual_snapshot(&startup_checkpoint,\nLIVE_STATE_FIXTURES.draft.draft_snapshot_markers, &startup_visual)"
 ---
 Hello from PTY: true
-Ctrl+P open: true
+Ctrl+p open: true
 focus_marker: Hello from PTY
-focus_pixels_blake3: 1cb327032df93f7b1f592d181ac2894286c7a02be2c1727bf92bd224ece23577
-focus_region_cells: row=19, col=4, height=4, width=24
+focus_pixels_blake3: 2908a083235cb75f9b763c97d115089b0ca4e38d7f1dd13f8f40045a3f920a3e
+focus_region_cells: row=14, col=3, height=4, width=24
 image: pty_interactive_type_first_startup.png
 manifest_json: pty-manifests/live_shell/manifest.json
 manifest_jsonl: pty-manifests/live_shell/manifest.jsonl

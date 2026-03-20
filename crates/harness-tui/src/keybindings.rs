@@ -63,8 +63,6 @@ pub enum Action {
     CloseReviewSurface,
     /// Open the event log review surface
     OpenEventLog,
-    /// Open the diff review surface
-    OpenDiffReview,
     /// Move down in the list
     MoveDown,
     /// Move up in the list
@@ -139,13 +137,6 @@ impl Action {
                 section: PaletteCommandSection::Session,
             },
             PaletteCommand {
-                id: "open_diff_review",
-                label: "Diff review",
-                description: "Open the structured diff review surface",
-                shortcut: "",
-                section: PaletteCommandSection::Session,
-            },
-            PaletteCommand {
                 id: "toggle_follow",
                 label: "Toggle follow",
                 description: "Toggle follow mode",
@@ -167,16 +158,72 @@ impl Action {
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
-                id: "expand_tool_output",
-                label: "Expand tool output",
-                description: "Show verbose successful tool rows in the transcript",
+                id: "show_timestamps",
+                label: "Show timestamps",
+                description: "Reveal user message timestamps in the transcript",
                 shortcut: "",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
-                id: "collapse_tool_output",
-                label: "Collapse tool output",
-                description: "Condense successful tool rows in the transcript",
+                id: "hide_timestamps",
+                label: "Hide timestamps",
+                description: "Hide user message timestamps in the transcript",
+                shortcut: "",
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "show_tool_details",
+                label: "Show tool details",
+                description: "Show completed successful tools in the transcript",
+                shortcut: "",
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "hide_tool_details",
+                label: "Hide tool details",
+                description: "Hide completed successful tools in the transcript",
+                shortcut: "",
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "show_generic_tool_output",
+                label: "Show generic tool output",
+                description: "Expand generic tool payload blocks in the transcript",
+                shortcut: "",
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "hide_generic_tool_output",
+                label: "Hide generic tool output",
+                description: "Collapse generic tool payload blocks in the transcript",
+                shortcut: "",
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "expand_selected_turn_results",
+                label: "Expand turn results",
+                description: "Expand overflow tool output in the selected turn",
+                shortcut: "",
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "collapse_selected_turn_results",
+                label: "Collapse turn results",
+                description: "Collapse overflow tool output in the selected turn",
+                shortcut: "",
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "stack_transcript_diffs",
+                label: "Use stacked diffs",
+                description: "Force unified stacked transcript diffs",
+                shortcut: "",
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "split_transcript_diffs",
+                label: "Use split diffs",
+                description: "Allow side-by-side transcript diffs when wide",
                 shortcut: "",
                 section: PaletteCommandSection::Agent,
             },
@@ -207,7 +254,6 @@ impl Action {
             Action::ScrollDown => "scroll_down",
             Action::CloseReviewSurface => "close_review_surface",
             Action::OpenEventLog => "open_event_log",
-            Action::OpenDiffReview => "open_diff_review",
             Action::MoveDown => "move_down",
             Action::MoveUp => "move_up",
             Action::Reload => "reload",
@@ -236,10 +282,6 @@ impl Action {
                 "Return to the transcript-first session shell",
             ),
             ("open_event_log", "Open the review event log surface"),
-            (
-                "open_diff_review",
-                "Open the structured diff review surface",
-            ),
             ("toggle_follow", "Toggle follow mode"),
             (
                 "show_thinking",
@@ -250,12 +292,44 @@ impl Action {
                 "Hide inline thinking rows in the transcript",
             ),
             (
-                "expand_tool_output",
-                "Show verbose successful tool rows in the transcript",
+                "show_timestamps",
+                "Reveal user message timestamps in the transcript",
             ),
             (
-                "collapse_tool_output",
-                "Condense successful tool rows in the transcript",
+                "hide_timestamps",
+                "Hide user message timestamps in the transcript",
+            ),
+            (
+                "show_tool_details",
+                "Show completed successful tools in the transcript",
+            ),
+            (
+                "hide_tool_details",
+                "Hide completed successful tools in the transcript",
+            ),
+            (
+                "show_generic_tool_output",
+                "Expand generic tool payload blocks in the transcript",
+            ),
+            (
+                "hide_generic_tool_output",
+                "Collapse generic tool payload blocks in the transcript",
+            ),
+            (
+                "expand_selected_turn_results",
+                "Expand overflow tool output in the selected turn",
+            ),
+            (
+                "collapse_selected_turn_results",
+                "Collapse overflow tool output in the selected turn",
+            ),
+            (
+                "stack_transcript_diffs",
+                "Force unified stacked transcript diffs",
+            ),
+            (
+                "split_transcript_diffs",
+                "Allow side-by-side transcript diffs when wide",
             ),
             ("quit", "Quit the application"),
         ]
@@ -320,7 +394,6 @@ impl FromStr for Action {
             "scroll_down" => Ok(Action::ScrollDown),
             "close_review_surface" => Ok(Action::CloseReviewSurface),
             "open_event_log" => Ok(Action::OpenEventLog),
-            "open_diff_review" => Ok(Action::OpenDiffReview),
             "move_down" => Ok(Action::MoveDown),
             "move_up" => Ok(Action::MoveUp),
             "reload" => Ok(Action::Reload),
@@ -487,10 +560,6 @@ impl KeyMap {
             KeyBinding::new(KeyCode::Char('3'), KeyModifiers::NONE),
             Action::OpenEventLog,
         );
-        keymap.bind(
-            KeyBinding::new(KeyCode::Char('4'), KeyModifiers::NONE),
-            Action::OpenDiffReview,
-        );
 
         keymap.bind(
             KeyBinding::new(KeyCode::Char('i'), KeyModifiers::NONE),
@@ -548,6 +617,18 @@ impl KeyMap {
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Enter, KeyModifiers::SHIFT),
+            Action::InsertNewline,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('j'), KeyModifiers::CONTROL),
+            Action::InsertNewline,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Enter, KeyModifiers::CONTROL),
+            Action::InsertNewline,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Enter, KeyModifiers::ALT),
             Action::InsertNewline,
         );
         keymap.bind(
@@ -630,6 +711,13 @@ impl KeyMap {
             .first()
             .map(|b| format_key_binding(b))
             .unwrap_or_else(|| "-".to_string())
+    }
+
+    pub fn get_binding_strs(&self, action: Action) -> Vec<String> {
+        self.get_bindings(action)
+            .into_iter()
+            .map(format_key_binding)
+            .collect()
     }
 
     pub fn get_binding_label(&self, action: Action, label: &str) -> String {
@@ -765,6 +853,27 @@ mod tests {
     fn keymap_binds_shift_enter_to_insert_newline() {
         let keymap = KeyMap::with_defaults();
         let event = KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT);
+        assert_eq!(keymap.get_action(&event), Some(Action::InsertNewline));
+    }
+
+    #[test]
+    fn keymap_binds_ctrl_j_to_insert_newline() {
+        let keymap = KeyMap::with_defaults();
+        let event = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL);
+        assert_eq!(keymap.get_action(&event), Some(Action::InsertNewline));
+    }
+
+    #[test]
+    fn keymap_binds_ctrl_enter_to_insert_newline() {
+        let keymap = KeyMap::with_defaults();
+        let event = KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL);
+        assert_eq!(keymap.get_action(&event), Some(Action::InsertNewline));
+    }
+
+    #[test]
+    fn keymap_binds_alt_enter_to_insert_newline() {
+        let keymap = KeyMap::with_defaults();
+        let event = KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT);
         assert_eq!(keymap.get_action(&event), Some(Action::InsertNewline));
     }
 

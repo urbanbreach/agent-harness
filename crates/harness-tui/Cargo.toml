@@ -16,7 +16,13 @@ serde_json.workspace = true
 syntect = { version = "5.3", default-features = false, features = ["default-fancy"] }
 
 [dev-dependencies]
+font8x8 = "0.3"
+fontdue = "0.9"
+image = { version = "0.25", default-features = false, features = ["png"] }
 insta = { version = "1.39", features = ["json"] }
 tempfile.workspace = true
 portable-pty = "0.8"
 vt100 = "0.15"
+
+[lints]
+workspace = true

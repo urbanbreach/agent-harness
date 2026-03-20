@@ -2,9 +2,9 @@
 source: crates/harness-tui/src/lib.rs
 expression: "render_live_lines(&app, 80, 24)"
 ---
-  run run_fixture · openai/gpt-5-codex                                          
-   ▎  ● assistant (done · current · openai/gpt-5-codex)                         
-   ▎  transcript remains visible                                                
+                                                                                
+       transcript remains visible                                               
+       ● Assistant · gpt-5-codex · 2ms                                          
                                                                                 
                                                                                 
                                                                                 
@@ -20,9 +20,9 @@ expression: "render_live_lines(&app, 80, 24)"
                                                                                 
                                                                                 
                                                                                 
-                                                                                
-                                                                                
-   Success   run finished · session shell preserved  ·  orch 0a 0q 0r 0s        
-                                                                                
-    ▎ Run complete — use ctrl+p commands for replay/new/quit, or ask Harne……    
-  Tab focus  ? shortcuts  q quit
+  ┃                                                                             
+  ┃                                                                             
+  ┃                                                                             
+  ┃  default · openai/gpt-5-codex                                               
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  
+  Success  ·  run finished · session shell preserved         Tab focus  q quit

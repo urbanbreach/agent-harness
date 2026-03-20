@@ -1,10 +1,10 @@
 use harness_core::event::{
-    ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1, PermissionDecision,
-    PermissionRequestedEvent, ProviderRequestFinishedEvent, ProviderRequestStartedEvent,
-    ProviderStreamDeltaEvent, RunFinishedEvent, RunStartedEvent, StaleDetectedEvent,
-    TaskCompletedEvent, TaskResultLateEvent, TaskScheduleState, TaskScheduledEvent,
-    ToolCallFinishedEvent, ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus,
-    UserMessageSubmittedEvent, SCHEMA_VERSION,
+    ActorKind, AgentSpawnedEvent, EditAppliedEvent, EditProposedEvent, EventActor, EventEnvelopeV1,
+    EventV1, PermissionDecision, PermissionRequestedEvent, ProviderRequestFinishedEvent,
+    ProviderRequestStartedEvent, ProviderStreamDeltaEvent, RunFinishedEvent, RunStartedEvent,
+    StaleDetectedEvent, TaskCompletedEvent, TaskResultLateEvent, TaskScheduleState,
+    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallRequestedEvent, ToolCallStartedEvent,
+    ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
 use harness_tui::app::{set_pending_live_launch_metadata, LaunchMetadata, SessionHistoryEntry};
@@ -21,6 +21,13 @@ use std::sync::{
 use std::thread;
 use std::time::{Duration, Instant};
 use vt100::Parser;
+
+#[path = "support/visual_renderer.rs"]
+mod visual_renderer;
+
+use visual_renderer::{render_parser_to_image, TerminalRenderConfig};
+
+const PTY_RENDER_CONFIG: TerminalRenderConfig = TerminalRenderConfig::new(16, 30);
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 const MARKER_TIMEOUT: Duration = Duration::from_secs(12);
@@ -48,6 +55,10 @@ impl PtyGeometry {
     };
     const WIDE_SIGNOFF: Self = Self {
         cols: 160,
+        rows: 30,
+    };
+    const OPENCODE_EDIT_SIGNOFF: Self = Self {
+        cols: 220,
         rows: 30,
     };
 
@@ -196,34 +207,28 @@ fn startup_shell_renders_bottom_composer_snapshot() {
     assert_or_update_snapshot("type_first_startup", &startup);
 
     let lines = startup.lines().collect::<Vec<_>>();
-    let status_row =
-        find_line_containing(&lines, "ready for first turn").expect("status strip row");
-    let divider_row = if lines[status_row].contains('─') {
-        status_row
-    } else {
-        find_line_containing_from(&lines, status_row + 1, "─").unwrap_or(status_row)
-    };
     let composer_input =
-        find_line_containing_from(&lines, divider_row + 1, "▎").expect("composer input row");
-    let composer_disclosure = find_line_containing_from(&lines, composer_input + 1, "shift+enter");
-    let footer_row = find_line_containing_from(
-        &lines,
-        composer_disclosure.unwrap_or(composer_input) + 1,
-        "Shift+Enter nl",
-    )
-    .expect("footer legend");
-
-    assert!(status_row <= divider_row);
-    assert!(divider_row < composer_input);
-    if let Some(composer_disclosure) = composer_disclosure {
-        assert_eq!(composer_input + 1, composer_disclosure);
-        assert_eq!(composer_disclosure + 1, footer_row);
-    } else {
-        assert_eq!(composer_input + 1, footer_row);
+        find_line_containing(&lines, LIVE_STATE_FIXTURES.draft.text).expect("composer input row");
+    let mut composer_last_row = composer_input;
+    while composer_last_row + 1 < lines.len() && {
+        let trimmed = lines[composer_last_row + 1].trim_start();
+        trimmed.starts_with('▎') || trimmed.starts_with('┃') || trimmed.starts_with('╹')
+    } {
+        composer_last_row += 1;
     }
+    let status_row = find_line_containing_from(&lines, composer_input, "ready for first turn")
+        .expect("status metadata row");
+    let footer_row = find_line_containing_from(&lines, composer_input + 1, "Ctrl+p commands")
+        .expect("footer legend");
+
+    assert!(composer_input <= status_row);
+    assert_eq!(
+        footer_row,
+        composer_last_row + 1,
+        "composer should keep footer hints immediately after the compact shell\n{startup}"
+    );
     assert!(
-        find_line_containing_in_range(&lines, status_row + 1, composer_input, "Composer ·")
-            .is_none(),
+        find_line_containing_in_range(&lines, composer_input, footer_row, "Composer ·").is_none(),
         "legacy metadata headline row should stay removed\n{startup}"
     );
 }
@@ -236,47 +241,61 @@ fn pty_e2e_snapshots_are_stable() {
 
     let type_first_startup = capture_type_first_startup_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
     assert_or_update_snapshot("type_first_startup", &type_first_startup);
+    assert_visual_artifact_exists("type_first_startup", PtyGeometry::PRIMARY_SIGNOFF);
 
     let startup_shell = capture_startup_shell_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
     assert_or_update_snapshot("startup_shell", &startup_shell);
+    assert_visual_artifact_exists("startup_shell", PtyGeometry::PRIMARY_SIGNOFF);
 
     let startup_palette = capture_startup_palette_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
     assert_or_update_snapshot("startup_palette", &startup_palette);
+    assert_visual_artifact_exists("startup_palette", PtyGeometry::PRIMARY_SIGNOFF);
 
     let startup_session_history =
         capture_startup_session_history_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
     assert_or_update_snapshot("startup_session_history", &startup_session_history);
+    assert_visual_artifact_exists("startup_session_history", PtyGeometry::PRIMARY_SIGNOFF);
 
     let streamed_response = capture_streamed_response_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
     assert_or_update_snapshot("streamed_response", &streamed_response);
+    assert_visual_artifact_exists("streamed_response", PtyGeometry::PRIMARY_SIGNOFF);
 
     let wide_streamed_response = capture_streamed_response_snapshot(PtyGeometry::WIDE_SIGNOFF);
     assert_or_update_snapshot("wide_streamed_response", &wide_streamed_response);
+    assert_visual_artifact_exists("streamed_response", PtyGeometry::WIDE_SIGNOFF);
 
-    let tool_lifecycle = capture_tool_lifecycle_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
+    let tool_lifecycle = capture_tool_lifecycle_snapshot(PtyGeometry::OPENCODE_EDIT_SIGNOFF);
     assert_or_update_snapshot("tool_lifecycle", &tool_lifecycle);
+    assert_visual_artifact_exists("tool_lifecycle", PtyGeometry::OPENCODE_EDIT_SIGNOFF);
 
     let permission_with_draft =
         capture_permission_with_draft_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
     assert_or_update_snapshot("permission_with_draft", &permission_with_draft);
+    assert_visual_artifact_exists("permission_with_draft", PtyGeometry::PRIMARY_SIGNOFF);
 
     let narrow_80x24 = capture_type_first_startup_snapshot(PtyGeometry::MINIMUM_SIGNOFF);
     assert_or_update_snapshot("narrow_80x24", &narrow_80x24);
+    assert_visual_artifact_exists("type_first_startup", PtyGeometry::MINIMUM_SIGNOFF);
 
     let split_tall_startup_shell = capture_startup_shell_snapshot(PtyGeometry::HALF_SCREEN_SPLIT);
     assert_or_update_snapshot("split_tall_startup_shell", &split_tall_startup_shell);
+    assert_visual_artifact_exists("startup_shell", PtyGeometry::HALF_SCREEN_SPLIT);
 
     let split_tier_startup_shell = capture_startup_shell_snapshot(PtyGeometry::SPLIT_TIER_WINDOW);
     assert_or_update_snapshot("split_tier_startup_shell", &split_tier_startup_shell);
+    assert_visual_artifact_exists("startup_shell", PtyGeometry::SPLIT_TIER_WINDOW);
 
     let quarter_tile_startup_shell = capture_startup_shell_snapshot(PtyGeometry::MINIMUM_SIGNOFF);
     assert_or_update_snapshot("quarter_tile_startup_shell", &quarter_tile_startup_shell);
+    assert_visual_artifact_exists("startup_shell", PtyGeometry::MINIMUM_SIGNOFF);
 
     let six_window_startup_shell = capture_startup_shell_snapshot(PtyGeometry::SIX_WINDOW_DENSE);
     assert_or_update_snapshot("six_window_startup_shell", &six_window_startup_shell);
+    assert_visual_artifact_exists("startup_shell", PtyGeometry::SIX_WINDOW_DENSE);
 
     let narrow_events_surface = capture_events_tab_snapshot(PtyGeometry::MINIMUM_SIGNOFF);
     assert_or_update_snapshot("narrow_events_surface", &narrow_events_surface);
+    assert_visual_artifact_exists("events_tab", PtyGeometry::MINIMUM_SIGNOFF);
 
     let degraded_bootstrap = capture_helper_screen_snapshot(
         HelperScenario::DegradedBootstrap,
@@ -284,6 +303,7 @@ fn pty_e2e_snapshots_are_stable() {
         "Degraded",
     );
     assert_or_update_snapshot("degraded_bootstrap", &degraded_bootstrap);
+    assert_visual_artifact_exists("degraded_bootstrap", PtyGeometry::MINIMUM_SIGNOFF);
 
     let disconnected_stream = capture_helper_screen_snapshot(
         HelperScenario::DisconnectedStream,
@@ -291,6 +311,7 @@ fn pty_e2e_snapshots_are_stable() {
         "Disconnected",
     );
     assert_or_update_snapshot("disconnected_stream", &disconnected_stream);
+    assert_visual_artifact_exists("disconnected_stream", PtyGeometry::MINIMUM_SIGNOFF);
 
     assert_snapshot_secrets_clean();
 }
@@ -471,15 +492,14 @@ fn pty_live_details_drawer_remains_reachable() {
             let screen = wait_for_screen_contains(
                 &mut helper.parser,
                 &helper.output_rx,
-                "No operator",
+                "Context",
                 MARKER_TIMEOUT,
             )
             .expect("wait for operator sidebar markers");
 
             assert!(screen.contains("Live") || screen.contains("Live · run "));
             assert!(screen.contains("run "));
-            assert!(screen.contains("No operator"));
-            assert!(!screen.contains("Context"));
+            assert!(screen.contains("Context"));
         }
 
         terminate_child(helper.child);
@@ -506,9 +526,11 @@ fn pty_live_orchestration_drawer_and_status() {
         MARKER_TIMEOUT,
     )
     .expect("wait for queued orchestration state");
-    assert_screen_contains_all(
-        &queued_screen,
-        &["Todo · 1", "ready for next turn  ·  orch 1a 1q 0r 0s"],
+    assert_screen_contains_all(&queued_screen, &["Todo · 1"]);
+    assert!(
+        queued_screen.contains("ready for next turn  ·  orch 1a 1q 0r 0s")
+            || queued_screen.contains("ready for next turn  ·  orch 1a 0q 1r 0s"),
+        "expected queued or just-started orchestration status strip\n{queued_screen}"
     );
 
     let started_screen = wait_for_screen_contains(
@@ -526,17 +548,12 @@ fn pty_live_orchestration_drawer_and_status() {
     let completed_screen = wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
-        "orch 0a 0q 0r 0s",
+        "Recent context",
         MARKER_TIMEOUT,
     )
     .expect("wait for completed orchestration state");
-    assert_screen_contains_all(
-        &completed_screen,
-        &[
-            "No operator activity",
-            "ready for next turn  ·  orch 0a 0q 0r 0s",
-        ],
-    );
+    assert_screen_contains_all(&completed_screen, &["Context", "ready for next turn"]);
+    assert!(!completed_screen.contains("orch 0a 0q 0r 0s"));
 
     terminate_child(helper.child);
 }
@@ -564,7 +581,7 @@ fn pty_live_orchestration_stale_late_result_flow() {
     assert_screen_contains_all(
         &late_result_screen,
         &[
-            "No operator activity",
+            "Context",
             "ready for next turn  ·  orch 0a 0q 0r 0s · warn late result after stale",
         ],
     );
@@ -650,11 +667,11 @@ fn startup_shell_displays_meaningful_mock_launch_metadata() {
         let startup_shell = capture_startup_shell_snapshot(geometry);
         assert!(startup_shell.contains("Preset worker"));
         assert!(startup_shell.contains("mock/model-1"));
-        assert!(startup_shell.contains("Type to start a new session."));
+        assert!(startup_shell.contains("Ask Harness anything…"));
         assert!(!startup_shell.contains("Dispatch a new run"));
         assert!(!startup_shell.contains("Actions:"));
         assert!(!startup_shell.contains("provider unknown"));
-        assert!(startup_shell.contains("Harness") || startup_shell.contains("HARNESS"));
+        assert!(startup_shell.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻") || startup_shell.contains("Harness"));
     }
 }
 
@@ -692,6 +709,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
         }
         HelperScenario::TypeFirstStartup | HelperScenario::StreamedResponse => {}
         HelperScenario::ToolLifecycle => {
+            write_tool_lifecycle_diff_fixture(run_dir.path());
             let tool_tx = tx.clone();
             thread::spawn(move || {
                 for event in tool_lifecycle_events() {
@@ -972,10 +990,60 @@ fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("24 lines read from src/ui.rs".to_string()),
                 output_digest: Some("digest-tool-lifecycle-read-output".to_string()),
+                output_json: None,
             }),
         ),
         envelope(
             6,
+            Some(request_id),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_edit".to_string(),
+                tool_id: "edit.hashline_apply".to_string(),
+                args_summary: r#"{"path":"crates/harness-tui/src/ui.rs"}"#.to_string(),
+                args_digest: "digest-tool-lifecycle-edit-args".to_string(),
+            }),
+        ),
+        envelope(
+            7,
+            Some(request_id),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tc_edit".to_string(),
+            }),
+        ),
+        envelope(
+            8,
+            Some("tc_edit"),
+            EventV1::EditProposed(EditProposedEvent {
+                edit_id: "edit_tool_lifecycle".to_string(),
+                path: "crates/harness-tui/src/ui.rs".to_string(),
+                summary: "Remove diff review surface".to_string(),
+                patch_digest: "digest-tool-lifecycle-edit-patch".to_string(),
+            }),
+        ),
+        envelope(
+            9,
+            Some("tc_edit"),
+            EventV1::EditApplied(EditAppliedEvent {
+                edit_id: "edit_tool_lifecycle".to_string(),
+                path: "crates/harness-tui/src/ui.rs".to_string(),
+                new_file_digest: "digest-tool-lifecycle-edit-file".to_string(),
+                diff_rel_path: Some("artifacts/tool-lifecycle-inline.diff".to_string()),
+                diff_digest: Some("digest-tool-lifecycle-edit-diff".to_string()),
+            }),
+        ),
+        envelope(
+            10,
+            Some(request_id),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_edit".to_string(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("Patched crates/harness-tui/src/ui.rs".to_string()),
+                output_digest: Some("digest-tool-lifecycle-edit-output".to_string()),
+                output_json: None,
+            }),
+        ),
+        envelope(
+            11,
             Some(request_id),
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
                 tool_call_id: "tc_shell".to_string(),
@@ -986,32 +1054,33 @@ fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
             }),
         ),
         envelope(
-            7,
+            12,
             Some(request_id),
             EventV1::ToolCallStarted(ToolCallStartedEvent {
                 tool_call_id: "tc_shell".to_string(),
             }),
         ),
         envelope(
-            8,
+            13,
             Some(request_id),
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
                 tool_call_id: "tc_shell".to_string(),
                 status: ToolCallStatus::Failed,
                 output_summary: Some("exit code: 1\nstderr: snapshot mismatch".to_string()),
                 output_digest: None,
+                output_json: None,
             }),
         ),
         envelope(
-            9,
+            14,
             Some(request_id),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
                 request_id: request_id.to_string(),
-                delta: "Tool summaries are now easier to scan.".to_string(),
+                delta: "Tool summaries are now easier to scan, and edits stay inline.".to_string(),
             }),
         ),
         envelope(
-            10,
+            15,
             Some(request_id),
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
                 request_id: request_id.to_string(),
@@ -1020,6 +1089,16 @@ fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
             }),
         ),
     ]
+}
+
+fn write_tool_lifecycle_diff_fixture(run_dir: &Path) {
+    let artifacts_dir = run_dir.join("artifacts");
+    fs::create_dir_all(&artifacts_dir).expect("create tool lifecycle artifacts dir");
+    fs::write(
+        artifacts_dir.join("tool-lifecycle-inline.diff"),
+        "--- crates/harness-tui/src/ui.rs\n+++ crates/harness-tui/src/ui.rs\n@@ -44,8 +44,7 @@\n use ui_secondary::{\n-    render_diff_tab, render_events_tab, render_help_tab,\n+    render_events_tab, render_help_tab, render_live_details_overlay,\n     render_operator_sidebar,\n };\n",
+    )
+    .expect("write tool lifecycle diff fixture");
 }
 
 fn details_drawer_events() -> Vec<EventEnvelopeV1> {
@@ -1267,6 +1346,7 @@ fn capture_type_first_startup_snapshot(geometry: PtyGeometry) -> String {
     )
     .expect("wait for typed startup draft");
 
+    write_visual_artifact("type_first_startup", geometry, &helper.parser);
     terminate_child(helper.child);
     normalize_snapshot(&screen)
 }
@@ -1281,6 +1361,7 @@ fn capture_startup_shell_snapshot(geometry: PtyGeometry) -> String {
     )
     .expect("wait for startup launcher shell render");
 
+    write_visual_artifact("startup_shell", geometry, &helper.parser);
     terminate_child(helper.child);
     normalize_snapshot(&screen)
 }
@@ -1305,6 +1386,7 @@ fn capture_startup_palette_snapshot(geometry: PtyGeometry) -> String {
     )
     .expect("wait for startup command palette");
 
+    write_visual_artifact("startup_palette", geometry, &helper.parser);
     terminate_child(helper.child);
     normalize_snapshot(&screen)
 }
@@ -1345,6 +1427,7 @@ fn capture_startup_session_history_snapshot(geometry: PtyGeometry) -> String {
     )
     .expect("wait for startup session history picker");
 
+    write_visual_artifact("startup_session_history", geometry, &helper.parser);
     terminate_child(helper.child);
     normalize_snapshot(&screen)
 }
@@ -1372,6 +1455,7 @@ fn capture_streamed_response_snapshot(geometry: PtyGeometry) -> String {
     )
     .expect("wait for streamed response marker");
 
+    write_visual_artifact("streamed_response", geometry, &helper.parser);
     terminate_child(helper.child);
     normalize_snapshot(&screen)
 }
@@ -1381,11 +1465,12 @@ fn capture_tool_lifecycle_snapshot(geometry: PtyGeometry) -> String {
     let screen = wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
-        "tool shell.run (failed)",
+        "← Patched crates/harness-tui/src/ui.rs",
         MARKER_TIMEOUT,
     )
     .expect("wait for tool lifecycle marker");
 
+    write_visual_artifact("tool_lifecycle", geometry, &helper.parser);
     terminate_child(helper.child);
     normalize_snapshot(&screen)
 }
@@ -1418,6 +1503,7 @@ fn capture_permission_with_draft_snapshot(geometry: PtyGeometry) -> String {
         screen.contains(PRESERVED_DRAFT_TEXT),
         "permission snapshot lost draft"
     );
+    write_visual_artifact("permission_with_draft", geometry, &helper.parser);
     terminate_child(helper.child);
     normalize_snapshot(&screen)
 }
@@ -1451,6 +1537,7 @@ fn capture_events_tab_snapshot(geometry: PtyGeometry) -> String {
     .expect("wait for Events surface in narrow geometry");
 
     assert_screen_contains_all(&screen, &["Event log", "Event details"]);
+    write_visual_artifact("events_tab", geometry, &helper.parser);
     terminate_child(helper.child);
     normalize_snapshot(&screen)
 }
@@ -1468,6 +1555,7 @@ fn capture_helper_screen_snapshot(
         STARTUP_TIMEOUT,
     )
     .expect("wait for helper status marker");
+    write_visual_artifact(scenario.env_value(), geometry, &helper.parser);
     terminate_child(helper.child);
     normalize_snapshot(&screen)
 }
@@ -1796,6 +1884,95 @@ fn snapshot_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("snapshots")
+}
+
+fn visual_artifact_root() -> PathBuf {
+    if let Ok(dir) = std::env::var("HARNESS_VISUAL_ARTIFACT_DIR") {
+        let path = PathBuf::from(dir);
+        if path.is_absolute() {
+            return path;
+        }
+        return repo_root().join(path);
+    }
+
+    repo_root().join("target").join("pty-visual-artifacts")
+}
+
+fn visual_artifact_path(name: &str, geometry: PtyGeometry) -> PathBuf {
+    visual_artifact_root().join(format!(
+        "pty_harness_tui_{}_{}x{}.png",
+        name, geometry.cols, geometry.rows
+    ))
+}
+
+fn write_visual_artifact(name: &str, geometry: PtyGeometry, parser: &Parser) {
+    let dir = visual_artifact_root();
+    fs::create_dir_all(&dir).expect("create PTY visual artifact directory");
+    prune_stale_harness_tui_visual_artifacts(&dir).expect("prune stale harness-tui PTY artifacts");
+    let image = render_parser_to_image(parser, PTY_RENDER_CONFIG);
+    let path = visual_artifact_path(name, geometry);
+    image
+        .save(&path)
+        .unwrap_or_else(|err| panic!("save PTY visual artifact {}: {err}", path.display()));
+}
+
+fn assert_visual_artifact_exists(name: &str, geometry: PtyGeometry) {
+    let path = visual_artifact_path(name, geometry);
+    assert!(
+        path.exists(),
+        "missing PTY visual artifact: {}",
+        path.display()
+    );
+}
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+        .expect("harness-tui should live under <repo>/crates/harness-tui")
+}
+
+fn prune_stale_harness_tui_visual_artifacts(visual_dir: &Path) -> Result<(), String> {
+    use std::sync::OnceLock;
+
+    static PREPARED: OnceLock<()> = OnceLock::new();
+    PREPARED.get_or_init(|| {
+        let legacy_dir = visual_dir.join("harness-tui");
+        if legacy_dir.exists() {
+            fs::remove_dir_all(&legacy_dir).unwrap_or_else(|err| {
+                panic!(
+                    "remove legacy harness-tui PTY artifact dir {}: {err}",
+                    legacy_dir.display()
+                )
+            });
+        }
+
+        for entry in fs::read_dir(visual_dir).unwrap_or_else(|err| {
+            panic!(
+                "read PTY visual artifacts dir {}: {err}",
+                visual_dir.display()
+            )
+        }) {
+            let path = entry.expect("PTY visual artifact dir entry").path();
+            if !path.is_file() {
+                continue;
+            }
+            let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if file_name.starts_with("pty_harness_tui_") && file_name.ends_with(".png") {
+                fs::remove_file(&path).unwrap_or_else(|err| {
+                    panic!(
+                        "remove stale harness-tui PTY artifact {}: {err}",
+                        path.display()
+                    )
+                });
+            }
+        }
+    });
+
+    Ok(())
 }
 
 fn startup_session_history_entries() -> Vec<SessionHistoryEntry> {
