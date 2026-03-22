@@ -6,8 +6,9 @@ use harness_core::agent::{AgentModelRef, AgentProfile};
 use harness_core::config::{
     load_config_from_file, HarnessConfig, OpenAiApiMode as CoreOpenAiApiMode, ProviderConfig,
 };
-use harness_core::coord::CoordinatorConfig;
+use harness_core::coord::{CoordinatorConfig, PlanProfileConfig};
 use harness_core::perm::PermissionPolicy;
+use harness_core::tool::resolve_tool_ids_for_surface;
 use harness_providers::openai::{
     OpenAiApiMode as ProviderOpenAiApiMode, OpenAiCompatibleProvider,
     OpenAiCompatibleProviderConfig,
@@ -46,6 +47,7 @@ pub fn build_interactive_coordinator_config(
     coordinator_config.stale_timeout_ms = cfg.background_task.stale_timeout_ms;
     coordinator_config.provider = Arc::new(build_default_provider(cfg)?);
     coordinator_config.agent_profiles = interactive_agent_profiles(cfg)?;
+    coordinator_config.plan_profiles = interactive_plan_profiles(cfg);
     Ok(coordinator_config)
 }
 
@@ -105,10 +107,29 @@ pub fn interactive_agent_profiles(
                     "You are the {category_name} agent. {}",
                     category_cfg.description
                 ),
-                toolset: category_cfg.tools.clone(),
+                tool_surface: category_cfg.tool_surface,
+                toolset: resolve_tool_ids_for_surface(
+                    category_cfg.tools.iter().map(String::as_str),
+                    category_cfg.tool_surface,
+                ),
             },
         );
     }
 
     Ok(profiles)
+}
+
+fn interactive_plan_profiles(cfg: &HarnessConfig) -> BTreeMap<String, PlanProfileConfig> {
+    cfg.categories
+        .iter()
+        .map(|(name, category)| {
+            (
+                name.clone(),
+                PlanProfileConfig {
+                    plan_mode: category.plan_mode,
+                    exit_target_profile: category.exit_target_profile.clone(),
+                },
+            )
+        })
+        .collect()
 }

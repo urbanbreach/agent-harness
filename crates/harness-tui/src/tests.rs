@@ -111,6 +111,36 @@ fn permission_modal_snapshot_renders_request() {
 }
 
 #[test]
+fn question_permission_modal_renders_questions_and_answer_input() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        Some("req_question_modal"),
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_question_modal".to_string(),
+            kind: "question".to_string(),
+            tool_call_id: Some("tool_call_question".to_string()),
+            summary: serde_json::json!({
+                "questions": [{
+                    "question": "Pick one",
+                    "header": "Choice",
+                    "options": [{"label": "A", "description": "Option A"}],
+                }]
+            })
+            .to_string(),
+            request_digest: "digest-question-modal".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    let debug = render_live_buffer(&app, 100, 28);
+    assert!(debug.contains("Question Requested"));
+    assert!(debug.contains("Pick one"));
+    assert!(debug.contains("FAIL CLOSED"));
+}
+
+#[test]
 fn permission_modal_ctrl_y_emits_resolve_intent_and_closes_on_resolved() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let intent_sink = {
@@ -135,6 +165,7 @@ fn permission_modal_ctrl_y_emits_resolve_intent_and_closes_on_resolved() {
         UiIntent::ResolvePermission {
             permission_id: "perm_1".to_string(),
             decision: PermissionDecision::Allow,
+            reason: None,
         }
     );
     drop(intents);
@@ -568,6 +599,7 @@ fn tool_call_requested_renders_pending_status() {
             tool_id: "fs.read".to_string(),
             args_summary: r#"{"path":"test.txt"}"#.to_string(),
             args_digest: "digest-args".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -610,6 +642,7 @@ fn tool_call_started_renders_running_status() {
             tool_id: "fs.read".to_string(),
             args_summary: r#"{"path":"test.txt"}"#.to_string(),
             args_digest: "digest-args".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -660,6 +693,7 @@ fn tool_call_finished_renders_truncated_output() {
             tool_id: "fs.read".to_string(),
             args_summary: r#"{"path":"test.txt"}"#.to_string(),
             args_digest: "digest-args".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -681,6 +715,7 @@ fn tool_call_finished_renders_truncated_output() {
             output_summary: Some(long_output.clone()),
             output_digest: Some("digest-output".to_string()),
             output_json: None,
+            metadata: None,
         }),
     ));
 
@@ -727,6 +762,7 @@ fn tool_call_failed_renders_error() {
             tool_id: "shell.run".to_string(),
             args_summary: r#"{"cmd":"false"}"#.to_string(),
             args_digest: "digest-args".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -747,6 +783,7 @@ fn tool_call_failed_renders_error() {
             output_summary: Some("exit code: 1".to_string()),
             output_digest: None,
             output_json: None,
+            metadata: None,
         }),
     ));
 
@@ -850,6 +887,7 @@ fn block_style_tool_rows_render_titles_and_argument_blocks() {
             tool_id: "shell.run".to_string(),
             args_summary: r#"{"cmd":"cargo test -p harness-tui","cwd":"/tmp/demo"}"#.to_string(),
             args_digest: "digest-shell-args".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -868,6 +906,7 @@ fn block_style_tool_rows_render_titles_and_argument_blocks() {
             output_summary: Some("exit code: 1\nstderr: snapshot mismatch".to_string()),
             output_digest: None,
             output_json: None,
+            metadata: None,
         }),
     ));
 
@@ -917,21 +956,20 @@ fn generic_tool_output_toggle_reveals_block_payload() {
             tool_id: "background.cancel".to_string(),
             args_summary: r#"{"taskId":"bg_123"}"#.to_string(),
             args_digest: "digest-generic-tool-args".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
         3,
         Some("req_generic_tool"),
-        EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tc_generic_tool".to_string(),
-            status: ToolCallStatus::Succeeded,
-            output_summary: Some(
-                "cancelled background task\nstatus: complete\ntask: bg_123\nsource: palette\nresult: ok"
-                    .to_string(),
-            ),
-            output_digest: Some("digest-generic-tool-output".to_string()),
-            output_json: None,
-        }),
+        EventV1::ToolCallFinished(ToolCallFinishedEvent { tool_call_id: "tc_generic_tool".to_string(),
+        status: ToolCallStatus::Succeeded,
+        output_summary: Some(
+            "cancelled background task\nstatus: complete\ntask: bg_123\nsource: palette\nresult: ok"
+                .to_string(),
+        ),
+        output_digest: Some("digest-generic-tool-output".to_string()),
+        output_json: None, metadata: None }),
     ));
 
     app.active_tab = app::Tab::Run;
@@ -990,6 +1028,7 @@ fn task_scheduled_queued_does_not_reuse_tool_call_id_as_task_id() {
             tool_id: "fs.read".to_string(),
             args_summary: r#"{"path":"test.txt"}"#.to_string(),
             args_digest: "digest-args".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -1234,6 +1273,7 @@ fn write_diff_fixture(with_diff_file: bool) -> TempDir {
                 tool_id: "edit.hashline_apply".to_string(),
                 args_summary: r#"{"path":"demo.txt"}"#.to_string(),
                 args_digest: "digest-inline-diff-tool".to_string(),
+                metadata: None,
             }),
         ),
         envelope(
@@ -1273,6 +1313,7 @@ fn write_diff_fixture(with_diff_file: bool) -> TempDir {
                 output_summary: Some("Edit applied".to_string()),
                 output_digest: Some("digest-inline-diff-output".to_string()),
                 output_json: None,
+                metadata: None,
             }),
         ),
         envelope(

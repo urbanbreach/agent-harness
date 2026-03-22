@@ -56,6 +56,7 @@ fn resume_plan_reconstructs_sequence_and_id_watermarks() {
                     tool_id: "shell.run".to_string(),
                     args_summary: "{\"cmd\":\"true\"}".to_string(),
                     args_digest: "digest-tool-args".to_string(),
+                    metadata: None,
                 }),
             ),
             envelope(
@@ -72,6 +73,7 @@ fn resume_plan_reconstructs_sequence_and_id_watermarks() {
                     output_summary: Some("ok".to_string()),
                     output_digest: Some("digest-tool-out".to_string()),
                     output_json: None,
+                    metadata: None,
                 }),
             ),
             envelope(
@@ -108,6 +110,7 @@ fn resume_plan_reconstructs_sequence_and_id_watermarks() {
                     task_id: "task_000004".to_string(),
                     result_summary: "done".to_string(),
                     result_digest: "digest-task".to_string(),
+                    metadata: None,
                 }),
             ),
             envelope(

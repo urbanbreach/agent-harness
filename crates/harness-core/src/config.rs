@@ -8,6 +8,8 @@ use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::tool::ToolSurface;
+
 const CLIPROXY_LOOPBACK_DEFAULT_API_KEY: &str = "sk-zerolimit";
 
 #[derive(Debug, Error)]
@@ -209,6 +211,12 @@ pub struct CategoryConfig {
     pub temperature: Option<f32>,
     #[serde(default)]
     pub permissions: Option<CategoryPermissions>,
+    #[serde(default, alias = "toolSurface")]
+    pub tool_surface: ToolSurface,
+    #[serde(default, alias = "planMode")]
+    pub plan_mode: bool,
+    #[serde(default, alias = "exitTargetProfile")]
+    pub exit_target_profile: Option<String>,
     #[serde(default)]
     pub tools: Vec<String>,
 }
@@ -221,9 +229,21 @@ pub struct CategoryPermissions {
     pub shell: Option<PermissionMode>,
     #[serde(default)]
     pub network: Option<PermissionMode>,
+    #[serde(default)]
+    pub question: Option<PermissionMode>,
+    #[serde(default)]
+    pub task: Option<PermissionMode>,
+    #[serde(default, alias = "webFetch")]
+    pub webfetch: Option<PermissionMode>,
+    #[serde(default, alias = "webSearch")]
+    pub websearch: Option<PermissionMode>,
+    #[serde(default, alias = "codeSearch")]
+    pub codesearch: Option<PermissionMode>,
+    #[serde(default, alias = "codeLsp")]
+    pub lsp: Option<PermissionMode>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum PermissionMode {
     Allow,
@@ -236,6 +256,18 @@ pub struct PermissionsConfig {
     pub edit: PermissionMode,
     pub shell: PermissionMode,
     pub network: PermissionMode,
+    #[serde(default)]
+    pub question: Option<PermissionMode>,
+    #[serde(default)]
+    pub task: Option<PermissionMode>,
+    #[serde(default, alias = "webFetch")]
+    pub webfetch: Option<PermissionMode>,
+    #[serde(default, alias = "webSearch")]
+    pub websearch: Option<PermissionMode>,
+    #[serde(default, alias = "codeSearch")]
+    pub codesearch: Option<PermissionMode>,
+    #[serde(default, alias = "codeLsp")]
+    pub lsp: Option<PermissionMode>,
     #[serde(rename = "shell_allowlist", alias = "shellAllowlist", default)]
     pub shell_allowlist: ShellAllowlist,
 }
@@ -397,6 +429,17 @@ mod tests {
 
         assert!(parsed.providers.contains_key("default"));
         assert!(parsed.categories.contains_key("deep"));
+        assert_eq!(parsed.categories["deep"].tool_surface, ToolSurface::Native);
+        assert_eq!(
+            parsed.categories["deep_compat"].tool_surface,
+            ToolSurface::Compat
+        );
+        assert_eq!(parsed.permissions.question, Some(PermissionMode::Ask));
+        assert_eq!(parsed.permissions.task, Some(PermissionMode::Ask));
+        assert_eq!(parsed.permissions.webfetch, Some(PermissionMode::Deny));
+        assert_eq!(parsed.permissions.websearch, Some(PermissionMode::Deny));
+        assert_eq!(parsed.permissions.codesearch, Some(PermissionMode::Deny));
+        assert_eq!(parsed.permissions.lsp, Some(PermissionMode::Allow));
         assert_eq!(
             parsed.paths.session_dir,
             PathBuf::from(".agent-harness/sessions")
@@ -547,6 +590,96 @@ mod tests {
 
         let parsed = load_config_from_str(cfg).expect("config without ui section must parse");
         assert_eq!(parsed.ui.default_profile, None);
+    }
+
+    #[test]
+    fn category_tool_surface_defaults_to_native_when_omitted() {
+        let cfg = r#"
+        {
+          backgroundTask: {
+            defaultConcurrency: 2,
+            providerConcurrency: 2,
+            modelConcurrency: 2,
+            staleTimeoutMs: 15000,
+            messageStalenessTimeoutMs: 5000,
+          },
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              api_mode: "responses",
+              timeout_ms: 60000,
+              models: {
+                "gpt-4o-mini": {
+                  display_name: "GPT-4o mini",
+                },
+              },
+            },
+          },
+          categories: {
+            deep: {
+              description: "Deep work",
+              model_ref: "default:gpt-4o-mini",
+              tools: ["fs.read"],
+            },
+          },
+          permissions: {
+            edit: "ask",
+            shell: "ask",
+            network: "deny",
+          },
+        }
+        "#;
+
+        let parsed =
+            load_config_from_str(cfg).expect("config with default tool surface must parse");
+        assert_eq!(parsed.categories["deep"].tool_surface, ToolSurface::Native);
+    }
+
+    #[test]
+    fn category_tool_surface_parses_compat_explicitly() {
+        let cfg = r#"
+        {
+          backgroundTask: {
+            defaultConcurrency: 2,
+            providerConcurrency: 2,
+            modelConcurrency: 2,
+            staleTimeoutMs: 15000,
+            messageStalenessTimeoutMs: 5000,
+          },
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              api_mode: "responses",
+              timeout_ms: 60000,
+              models: {
+                "gpt-4o-mini": {
+                  display_name: "GPT-4o mini",
+                },
+              },
+            },
+          },
+          categories: {
+            deep: {
+              description: "Deep work",
+              model_ref: "default:gpt-4o-mini",
+              tool_surface: "compat",
+              tools: ["read"],
+            },
+          },
+          permissions: {
+            edit: "ask",
+            shell: "ask",
+            network: "deny",
+          },
+        }
+        "#;
+
+        let parsed = load_config_from_str(cfg).expect("config with compat tool surface must parse");
+        assert_eq!(parsed.categories["deep"].tool_surface, ToolSurface::Compat);
     }
 
     #[test]

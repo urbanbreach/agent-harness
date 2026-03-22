@@ -3,9 +3,13 @@ use std::fs;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use thiserror::Error;
 
-use crate::event::{EventEnvelopeV1, EventV1};
+use crate::event::{
+    EventArtifactRef, EventEnvelopeV1, EventV1, TaskCompletionMetadata, ToolCallMetadata,
+    ToolCallStatus,
+};
 
 const EVENTS_FILE_NAME: &str = "events.jsonl";
 const REQUEST_ID_PREFIX: &str = "req_";
@@ -94,6 +98,28 @@ pub struct ResumeIdWatermarks {
     pub max_permission_id: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ResumeToolCallSnapshot {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<ToolCallStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_json: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ToolCallMetadata>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ResumeTaskSnapshot {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<TaskCompletionMetadata>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResumePlan {
     pub run_id: String,
@@ -104,6 +130,10 @@ pub struct ResumePlan {
     pub known_profiles: BTreeSet<String>,
     pub pending_permissions: BTreeSet<String>,
     pub tasks_in_flight: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tool_calls: BTreeMap<String, ResumeToolCallSnapshot>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub completed_tasks: BTreeMap<String, ResumeTaskSnapshot>,
     pub workspace_root: Option<String>,
     pub provider_model: Option<String>,
     pub is_resumable: bool,
@@ -125,6 +155,8 @@ impl ResumePlan {
             known_profiles: BTreeSet::new(),
             pending_permissions: BTreeSet::new(),
             tasks_in_flight: BTreeSet::new(),
+            tool_calls: BTreeMap::new(),
+            completed_tasks: BTreeMap::new(),
             workspace_root: None,
             provider_model: None,
             is_resumable: false,
@@ -259,6 +291,8 @@ pub fn project_resume_plan<'a>(
     let mut known_profiles = BTreeSet::new();
     let mut pending_permissions = BTreeSet::new();
     let mut tasks_in_flight = BTreeSet::new();
+    let mut tool_calls = BTreeMap::new();
+    let mut completed_tasks = BTreeMap::new();
     let mut workspace_root = None;
     let mut provider_model = None;
     let mut run_id: Option<String> = None;
@@ -294,6 +328,8 @@ pub fn project_resume_plan<'a>(
                 known_profiles.clear();
                 pending_permissions.clear();
                 tasks_in_flight.clear();
+                tool_calls.clear();
+                completed_tasks.clear();
             }
             EventV1::RunFinished(_) => {
                 if latest_lifecycle_status != LifecycleSegmentStatus::Missing {
@@ -335,6 +371,13 @@ pub fn project_resume_plan<'a>(
                     "task",
                 )?;
                 tasks_in_flight.remove(&payload.task_id);
+                completed_tasks.insert(
+                    payload.task_id.clone(),
+                    ResumeTaskSnapshot {
+                        result_digest: Some(payload.result_digest.clone()),
+                        metadata: payload.metadata.clone(),
+                    },
+                );
             }
             EventV1::TaskResultLate(payload) => {
                 update_id_watermark(
@@ -377,6 +420,13 @@ pub fn project_resume_plan<'a>(
                     TOOL_CALL_ID_PREFIX,
                     "tool call",
                 )?;
+                let tool_call = tool_calls
+                    .entry(payload.tool_call_id.clone())
+                    .or_insert_with(ResumeToolCallSnapshot::default);
+                tool_call.tool_id = Some(payload.tool_id.clone());
+                if let Some(metadata) = payload.metadata.clone() {
+                    merge_tool_call_metadata(tool_call, metadata);
+                }
             }
             EventV1::ToolCallStarted(payload) => {
                 update_id_watermark(
@@ -393,6 +443,41 @@ pub fn project_resume_plan<'a>(
                     TOOL_CALL_ID_PREFIX,
                     "tool call",
                 )?;
+                let tool_call = tool_calls
+                    .entry(payload.tool_call_id.clone())
+                    .or_insert_with(ResumeToolCallSnapshot::default);
+                tool_call.status = Some(payload.status);
+                tool_call.output_digest = payload.output_digest.clone();
+                tool_call.output_json = payload.output_json.clone();
+                if let Some(metadata) = payload.metadata.clone() {
+                    merge_tool_call_metadata(tool_call, metadata);
+                }
+            }
+            EventV1::ArtifactWritten(payload) => {
+                if let Some(tool_call_id) = payload.tool_call_id.as_ref() {
+                    let tool_call = tool_calls
+                        .entry(tool_call_id.clone())
+                        .or_insert_with(ResumeToolCallSnapshot::default);
+                    let metadata = tool_call
+                        .metadata
+                        .get_or_insert_with(ToolCallMetadata::default);
+                    if let Some(tool_metadata) = payload.tool_metadata.as_ref() {
+                        if metadata.canonical_tool_id.is_none() {
+                            metadata.canonical_tool_id = tool_metadata.canonical_tool_id.clone();
+                        }
+                        if metadata.alias_source_tool_id.is_none() {
+                            metadata.alias_source_tool_id =
+                                tool_metadata.alias_source_tool_id.clone();
+                        }
+                    }
+                    merge_artifact_ref(
+                        &mut metadata.artifact_refs,
+                        EventArtifactRef {
+                            path: payload.path.clone(),
+                            digest: Some(payload.digest.clone()),
+                        },
+                    );
+                }
             }
             EventV1::PermissionRequested(payload) => {
                 update_id_watermark(
@@ -444,11 +529,50 @@ pub fn project_resume_plan<'a>(
         known_profiles,
         pending_permissions,
         tasks_in_flight,
+        tool_calls,
+        completed_tasks,
         workspace_root,
         provider_model,
         is_resumable: resume_disabled_reason.is_none(),
         resume_disabled_reason,
     })
+}
+
+fn merge_tool_call_metadata(snapshot: &mut ResumeToolCallSnapshot, incoming: ToolCallMetadata) {
+    let metadata = snapshot
+        .metadata
+        .get_or_insert_with(ToolCallMetadata::default);
+    if metadata.canonical_tool_id.is_none() {
+        metadata.canonical_tool_id = incoming.canonical_tool_id;
+    }
+    if metadata.alias_source_tool_id.is_none() {
+        metadata.alias_source_tool_id = incoming.alias_source_tool_id;
+    }
+    if metadata.lineage.is_none() {
+        metadata.lineage = incoming.lineage;
+    }
+    if metadata.timing.is_none() {
+        metadata.timing = incoming.timing;
+    }
+    for artifact_ref in incoming.artifact_refs {
+        merge_artifact_ref(&mut metadata.artifact_refs, artifact_ref);
+    }
+}
+
+fn merge_artifact_ref(existing: &mut Vec<EventArtifactRef>, candidate: EventArtifactRef) {
+    if existing
+        .iter()
+        .any(|current| current.path == candidate.path && current.digest == candidate.digest)
+    {
+        return;
+    }
+
+    existing.push(candidate);
+    existing.sort_by(|left, right| {
+        left.path
+            .cmp(&right.path)
+            .then_with(|| left.digest.cmp(&right.digest))
+    });
 }
 
 fn read_events_for_resume_inspection(run_dir: &Path) -> Result<Vec<EventEnvelopeV1>, String> {
@@ -836,6 +960,7 @@ mod tests {
                     tool_id: "shell.run".to_string(),
                     args_summary: "{\"cmd\":\"touch /tmp/should_not_run\"}".to_string(),
                     args_digest: "digest123456".to_string(),
+                    metadata: None,
                 }),
             ),
             envelope(
@@ -876,6 +1001,7 @@ mod tests {
                     task_id: "task_1".to_string(),
                     result_summary: "done".to_string(),
                     result_digest: "resultdigest".to_string(),
+                    metadata: None,
                 }),
             ),
             envelope(

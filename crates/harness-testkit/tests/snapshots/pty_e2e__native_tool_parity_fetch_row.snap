@@ -1,0 +1,15 @@
+---
+source: crates/harness-testkit/tests/pty_e2e.rs
+expression: "checkpoint_visual_snapshot(&screen,\n&[\"Fetch https://example.test/report.pdf · 14:37 · 2.4s\",\n\"Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact\",\n\"exit code: 1\", \"stderr: snapshot mismatch\",], &fetch_visual,)"
+---
+Fetch https://example.test/report.pdf · 14:37 · 2.4s: true
+Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact: true
+exit code: 1: true
+stderr: snapshot mismatch: true
+focus_marker: Fetch https://example.test/report.pdf
+focus_pixels_blake3: b6fe36710f364c1cebeb6f850618ae8ad87cfd32ac9760181ec8ef3792d68cb0
+focus_region_cells: row=21, col=9, height=7, width=42
+image: pty_native_tool_parity_fetch_row.png
+manifest_json: pty-manifests/transcript_shell/manifest.json
+manifest_jsonl: pty-manifests/transcript_shell/manifest.jsonl
+size_px: 2560x1440

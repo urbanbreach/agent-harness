@@ -125,6 +125,7 @@ pub(crate) use ui_secondary::{
 use ui_transcript::build_transcript_lines;
 #[cfg(test)]
 pub(crate) use ui_transcript::{
+    exact_test_native_tool_transcript_rows_show_disclosure_timestamps_and_task_metadata,
     exact_test_transcript_answer_precedes_nested_context,
     exact_test_transcript_edit_tool_matches_opencode_inline_diff_shape,
     exact_test_transcript_follow_mode_uses_measured_surface_heights,
@@ -746,6 +747,7 @@ mod tests {
                 tool_id: "edit.hashline_apply".to_string(),
                 args_summary: r#"{"path":"demo.txt"}"#.to_string(),
                 args_digest: "digest-anchor-permission-args".to_string(),
+                metadata: None,
             }),
         ));
         permission.ingest_event(envelope(
@@ -806,6 +808,7 @@ mod tests {
                 tool_id: "fs.read".to_string(),
                 args_summary: r#"{"path":"src/ui.rs"}"#.to_string(),
                 args_digest: "digest-answer-first-args".to_string(),
+                metadata: None,
             }),
         ));
         app.ingest_event(envelope(
@@ -817,6 +820,7 @@ mod tests {
                 output_summary: Some("24 lines read from src/ui.rs".to_string()),
                 output_digest: Some("digest-answer-first-output".to_string()),
                 output_json: None,
+                metadata: None,
             }),
         ));
         app.ingest_event(envelope(
@@ -1131,6 +1135,7 @@ mod tests {
                 tool_id: "fs.read".to_string(),
                 args_summary: r#"{"path":"src/lib.rs","start_line":1,"limit":20}"#.to_string(),
                 args_digest: "digest-tool-detail-args".to_string(),
+                metadata: None,
             }),
         ));
         app.ingest_event(envelope(
@@ -1151,6 +1156,7 @@ mod tests {
                 ),
                 output_digest: Some("digest-tool-detail-output".to_string()),
                 output_json: None,
+                metadata: None,
             }),
         ));
 
@@ -1189,6 +1195,7 @@ mod tests {
                 tool_id: "edit.hashline_apply".to_string(),
                 args_summary: r#"{"path":"demo.txt","ops":[{"Replace":{"line":2}}]}"#.to_string(),
                 args_digest: "digest-permission-detail-args".to_string(),
+                metadata: None,
             }),
         ));
         app.ingest_event(envelope(
@@ -1263,6 +1270,7 @@ mod tests {
                 tool_id: "fs.read".to_string(),
                 args_summary: r#"{"path":"src/lib.rs","start_line":42,"limit":20}"#.to_string(),
                 args_digest: "digest-tool-compact-args".to_string(),
+                metadata: None,
             }),
         ));
         app.ingest_event(envelope(
@@ -1281,6 +1289,7 @@ mod tests {
                 output_summary: Some("12 lines read".to_string()),
                 output_digest: Some("digest-tool-compact-output".to_string()),
                 output_json: None,
+                metadata: None,
             }),
         ));
 
@@ -1317,6 +1326,7 @@ mod tests {
                 tool_id: "shell.run".to_string(),
                 args_summary: r#"{"cmd":"false","cwd":"/tmp/demo"}"#.to_string(),
                 args_digest: "digest-tool-error-args".to_string(),
+                metadata: None,
             }),
         ));
         app.ingest_event(envelope(
@@ -1335,6 +1345,7 @@ mod tests {
                 output_summary: Some("exit code: 1\nstderr: permission denied".to_string()),
                 output_digest: None,
                 output_json: None,
+                metadata: None,
             }),
         ));
 
@@ -1369,6 +1380,7 @@ mod tests {
                 tool_id: "shell.run".to_string(),
                 args_summary: r#"{"cmd":"false"}"#.to_string(),
                 args_digest: "digest-tool-status-args".to_string(),
+                metadata: None,
             }),
         ));
         app.ingest_event(envelope(

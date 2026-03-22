@@ -366,22 +366,29 @@ fn show_live_operator_sidebar(
         .expect("wait for live operator sidebar")
 }
 
-fn open_secondary_review_surface(
+fn run_session_palette_command(
     parser: &mut VtParser,
     output_rx: &Receiver<Vec<u8>>,
     writer: &mut dyn Write,
     command_filter: &str,
     marker: &str,
 ) -> String {
-    send_key(writer, b'\t').expect("move focus off prompt before review command");
-    send_key(writer, 0x10).expect("open command palette for review surface");
+    send_key(writer, b'\t').expect("move focus off prompt before palette command");
+    send_key(writer, 0x10).expect("open command palette for session command");
+    wait_for_screen_contains(
+        parser,
+        output_rx,
+        STARTUP_COMMAND_PALETTE_MARKER,
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for session command palette");
     writer
         .write_all(command_filter.as_bytes())
-        .expect("filter review surface command");
-    writer.flush().expect("flush review surface command");
-    send_key(writer, b'\r').expect("open review surface from command palette");
+        .expect("filter session palette command");
+    writer.flush().expect("flush session palette command");
+    send_key(writer, b'\r').expect("run session palette command");
     let current = wait_for_screen_contains(parser, output_rx, marker, MARKER_TIMEOUT)
-        .expect("wait for secondary review surface");
+        .expect("wait for session palette command marker");
     stabilize_screen(parser, output_rx, current)
 }
 
@@ -701,23 +708,20 @@ fn pty_e2e_session_shell_primary() {
     std::mem::forget(replay.child);
 }
 
-#[tokio::test(flavor = "current_thread")]
-async fn pty_e2e_session_transcript_rich_shell() {
+#[test]
+fn native_tool_parity_pty_lane() {
     if !cfg!(target_os = "linux") {
         return;
     }
 
-    let server = start_responses_wiremock_server().await;
     let session_dir = create_temp_session_dir();
     let visual_dir = visual_artifacts_dir();
     fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
-    let run_id = "run_rich_transcript";
-    write_rich_transcript_fixture(&session_dir, run_id);
-    let config_path = write_wiremock_tui_config(&session_dir, &server.uri());
+    let run_id = "run_native_tool_parity";
+    write_native_tool_parity_fixture(&session_dir, run_id);
 
     let mut harness = spawn_harness_tui(PtyGeometry::PRIMARY_SIGNOFF, &session_dir, |command| {
-        command.arg("--config");
-        command.arg(config_path.to_string_lossy().to_string());
+        command.arg("--mock");
     });
 
     wait_for_screen_contains(
@@ -736,59 +740,105 @@ async fn pty_e2e_session_transcript_rich_shell() {
         STARTUP_REPLAY_HISTORY_MARKER,
     );
     send_key(harness.writer.as_mut(), b'\r')
-        .expect("select rich transcript replay session from history");
+        .expect("select native tool parity replay session from history");
 
-    let screen = wait_for_screen_contains(
+    wait_for_screen_contains(
         &mut harness.parser,
         &harness.output_rx,
         REPLAY_DENSE_READY_MARKER,
         STARTUP_TIMEOUT,
     )
-    .expect("wait for rich transcript replay shell");
-    let visual = capture_manifest_backed_visual_checkpoint(
+    .expect("wait for native tool parity replay shell");
+
+    let screen = run_session_palette_command(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+        "show timestamps",
+        "14:37",
+    );
+
+    let task_visual = capture_manifest_backed_visual_checkpoint(
         "transcript_shell",
-        "session_transcript_rich_shell",
+        "native_tool_parity_task_row",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("Thinking:", 30, 8),
+        FocusCapture::anchored_exact("Spawn researcher", 34, 6),
         &[
-            "Restyle the transcript shell",
-            "Drafting a document-like plan",
-            "Read src/ui.rs [offset=1, limit=24]",
-            "↳ Loaded src/ui.rs",
-            "Found the transcript renderer and the composer chrome.",
+            "Bring native tool parity inline",
+            "Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s",
+            "Spawn researcher · audit transcript parity · 14:36 · 1.6s",
+            "Session agent_worker · Request req_child",
+            "foreground · completed · 3 child tool calls",
         ],
     )
-    .expect("capture rich transcript shell image");
+    .expect("capture native tool parity task-row image");
+    let fetch_visual = capture_manifest_backed_visual_checkpoint(
+        "transcript_shell",
+        "native_tool_parity_fetch_row",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("Fetch https://example.test/report.pdf", 42, 7),
+        &[
+            "Fetch https://example.test/report.pdf · 14:37 · 2.4s",
+            "Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact",
+            "exit code: 1",
+            "stderr: snapshot mismatch",
+        ],
+    )
+    .expect("capture native tool parity fetch-row image");
 
-    assert!(screen.contains("Restyle the transcript shell"));
-    assert!(screen.contains("Drafting a document-like plan"));
-    assert!(screen.contains("Read src/ui.rs [offset=1, limit=24]"));
-    assert!(screen.contains("↳ Loaded src/ui.rs"));
-    assert!(screen.contains("Found the transcript renderer and the composer chrome."));
+    assert!(screen.contains("Bring native tool parity inline"));
+    assert!(screen.contains("Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s"));
+    assert!(screen.contains("Compat alias · read → fs.read"));
+    assert!(screen.contains("Spawn researcher · audit transcript parity · 14:36 · 1.6s"));
+    assert!(screen.contains("Session agent_worker · Request req_child"));
+    assert!(screen.contains("foreground · completed · 3 child tool calls"));
+    assert!(screen.contains("Compat alias · task → agent.spawn"));
+    assert!(screen.contains("Fetch https://example.test/report.pdf · 14:37 · 2.4s"));
+    assert!(screen.contains(
+        "Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact"
+    ));
+    assert!(screen.contains("Compat alias · webfetch → web.fetch"));
+    assert!(screen.contains("exit code: 1"));
+    assert!(screen.contains("stderr: snapshot mismatch"));
     assert!(screen.contains(REPLAY_DENSE_READY_MARKER));
-    assert!(!screen.contains("╭─"));
-    assert!(!screen.contains("╰─"));
-    assert!(visual_dir.join(&visual.file_name).exists());
+    assert!(!screen.contains("Event log"));
+    assert!(!screen.contains("Keyboard Shortcuts:"));
+    assert!(visual_dir.join(&task_visual.file_name).exists());
+    assert!(visual_dir.join(&fetch_visual.file_name).exists());
     insta::assert_snapshot!(
-        "pty_session_transcript_rich_shell",
+        "native_tool_parity_task_row",
         checkpoint_visual_snapshot(
             &screen,
             &[
-                "Restyle the transcript shell",
-                "Drafting a document-like plan",
-                "Read src/ui.rs [offset=1, limit=24]",
-                "↳ Loaded src/ui.rs",
-                "Found the transcript renderer and the composer chrome.",
+                "Bring native tool parity inline",
+                "Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s",
+                "Spawn researcher · audit transcript parity · 14:36 · 1.6s",
+                "Session agent_worker · Request req_child",
+                "foreground · completed · 3 child tool calls",
             ],
-            &visual,
+            &task_visual,
+        )
+    );
+    insta::assert_snapshot!(
+        "native_tool_parity_fetch_row",
+        checkpoint_visual_snapshot(
+            &screen,
+            &[
+                "Fetch https://example.test/report.pdf · 14:37 · 2.4s",
+                "Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact",
+                "exit code: 1",
+                "stderr: snapshot mismatch",
+            ],
+            &fetch_visual,
         )
     );
 
     harness
         .child
         .kill()
-        .expect("terminate rich transcript session harness");
+        .expect("terminate native tool parity session harness");
     std::mem::forget(harness.child);
 }
 
@@ -1437,79 +1487,14 @@ async fn pty_e2e_operator_sidebar_stays_usable_across_window_sizes() {
 }
 
 #[test]
-fn pty_e2e_replay_secondary_surfaces_cover_help() {
+fn pty_e2e_replay_transcript_parity_stays_visible_in_dense_layout() {
     if !cfg!(target_os = "linux") {
         return;
     }
 
     let session_dir = create_temp_session_dir();
-    let run_id = "run_replay_diff";
-    write_replay_diff_fixture(&session_dir, run_id);
-    let visual_dir = visual_artifacts_dir();
-    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
-
-    let mut harness = spawn_harness_tui(PtyGeometry::MINIMUM_SIGNOFF, &session_dir, |command| {
-        command.arg("--mock");
-    });
-
-    wait_for_screen_contains(
-        &mut harness.parser,
-        &harness.output_rx,
-        STARTUP_LAUNCHER_READY_MARKER,
-        STARTUP_TIMEOUT,
-    )
-    .expect("wait for startup launcher before opening replay secondary surfaces");
-
-    open_startup_session_history(
-        &mut harness.parser,
-        &harness.output_rx,
-        harness.writer.as_mut(),
-        "replay",
-        STARTUP_REPLAY_HISTORY_MARKER,
-    );
-    send_key(harness.writer.as_mut(), b'\r').expect("select replay diff fixture session");
-    wait_for_screen_contains(
-        &mut harness.parser,
-        &harness.output_rx,
-        REPLAY_DENSE_READY_MARKER,
-        STARTUP_TIMEOUT,
-    )
-    .expect("wait for replay shell before opening secondary tabs");
-
-    send_key(harness.writer.as_mut(), b'?').expect("open replay shortcuts review surface");
-    let help_screen = wait_for_screen_contains(
-        &mut harness.parser,
-        &harness.output_rx,
-        "Keyboard Shortcuts:",
-        MARKER_TIMEOUT,
-    )
-    .expect("wait for replay shortcuts surface");
-    let help_visual = capture_visual_checkpoint(
-        "replay_help_tab",
-        &harness.parser,
-        &visual_dir,
-        FocusCapture::anchored_exact("Keyboard Shortcuts:", 26, 12),
-    )
-    .expect("capture replay help tab image");
-    assert!(!help_screen.contains("Tabs"));
-    assert!(visual_dir.join(&help_visual.file_name).exists());
-
-    harness
-        .child
-        .kill()
-        .expect("terminate replay secondary-surface harness");
-    std::mem::forget(harness.child);
-}
-
-#[test]
-fn pty_e2e_replay_events_cover_dense_secondary_layout() {
-    if !cfg!(target_os = "linux") {
-        return;
-    }
-
-    let session_dir = create_temp_session_dir();
-    let run_id = "run_replay_diff";
-    write_replay_diff_fixture(&session_dir, run_id);
+    let run_id = "run_native_tool_parity_dense";
+    write_native_tool_parity_fixture(&session_dir, run_id);
     let visual_dir = visual_artifacts_dir();
     fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
 
@@ -1523,7 +1508,7 @@ fn pty_e2e_replay_events_cover_dense_secondary_layout() {
         STARTUP_LAUNCHER_READY_MARKER,
         STARTUP_TIMEOUT,
     )
-    .expect("wait for startup launcher before replay events tab");
+    .expect("wait for startup launcher before dense parity replay");
 
     open_startup_session_history(
         &mut harness.parser,
@@ -1532,36 +1517,64 @@ fn pty_e2e_replay_events_cover_dense_secondary_layout() {
         "replay",
         STARTUP_REPLAY_HISTORY_MARKER,
     );
-    send_key(harness.writer.as_mut(), b'\r').expect("select replay session for dense events tab");
+    send_key(harness.writer.as_mut(), b'\r').expect("select dense parity replay session");
     wait_for_screen_contains(
         &mut harness.parser,
         &harness.output_rx,
         REPLAY_DENSE_READY_MARKER,
         STARTUP_TIMEOUT,
     )
-    .expect("wait for replay shell before opening dense events tab");
+    .expect("wait for dense parity replay shell");
 
-    let _events_screen = open_secondary_review_surface(
+    let screen = run_session_palette_command(
         &mut harness.parser,
         &harness.output_rx,
         harness.writer.as_mut(),
-        "event",
-        "Event log",
+        "show timestamps",
+        "14:37",
     );
-    let events_visual = capture_visual_checkpoint(
-        "replay_events_six_window",
+    let parity_visual = capture_manifest_backed_visual_checkpoint(
+        "transcript_shell",
+        "native_tool_parity_dense",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("Event log", 20, 6),
+        FocusCapture::anchored_exact("Compat alias · webfetch → web.fetch", 30, 6),
+        &[
+            "Compat alias · webfetch → web.fetch",
+            "artifacts/toolcalls/tc-fetch/web.fetch.pdf",
+            "cargo test -p harness-tui",
+            "14:37",
+            REPLAY_DENSE_READY_MARKER,
+        ],
     )
-    .expect("capture dense replay events tab image");
+    .expect("capture dense replay transcript parity image");
 
-    assert!(visual_dir.join(&events_visual.file_name).exists());
+    assert!(screen.contains("Compat alias · webfetch → web.fetch"));
+    assert!(screen.contains("artifacts/toolcalls/tc-fetch/web.fetch.pdf"));
+    assert!(screen.contains("cargo test -p harness-tui"));
+    assert!(screen.contains("14:37"));
+    assert!(!screen.contains("Event log"));
+    assert!(!screen.contains("Keyboard Shortcuts:"));
+    assert!(visual_dir.join(&parity_visual.file_name).exists());
+    insta::assert_snapshot!(
+        "native_tool_parity_dense",
+        checkpoint_visual_snapshot(
+            &screen,
+            &[
+                "Compat alias · webfetch → web.fetch",
+                "artifacts/toolcalls/tc-fetch/web.fetch.pdf",
+                "cargo test -p harness-tui",
+                "14:37",
+                REPLAY_DENSE_READY_MARKER,
+            ],
+            &parity_visual,
+        )
+    );
 
     harness
         .child
         .kill()
-        .expect("terminate dense replay events harness");
+        .expect("terminate dense replay parity harness");
     std::mem::forget(harness.child);
 }
 
@@ -2036,7 +2049,8 @@ fn pty_visual_regression_contract_covers_redesigned_surface_families() {
             "offline evidence PNG must stay under the pty_* naming contract: {contract:?}"
         );
         assert!(
-            contract.snapshot.starts_with("pty_"),
+            contract.snapshot.starts_with("pty_")
+                || contract.snapshot.starts_with("native_tool_parity_"),
             "offline evidence snapshot must stay under the pty_* naming contract: {contract:?}"
         );
         assert!(
@@ -2777,14 +2791,15 @@ fn write_quiescent_resume_fixture_with_optional_diff(
     run_dir
 }
 
-fn write_rich_transcript_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
+fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
     write_session_fixture(
         session_dir,
         run_id,
         &[
-            session_event(
+            session_event_with_ts(
                 run_id,
                 1,
+                Some("2026-03-22T14:35:00Z"),
                 event_actor("system", Some("coordinator")),
                 None,
                 "run_started",
@@ -2793,9 +2808,10 @@ fn write_rich_transcript_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
                     "workspace_root": "/workspace/project",
                 }),
             ),
-            session_event(
+            session_event_with_ts(
                 run_id,
                 2,
+                Some("2026-03-22T14:35:01Z"),
                 event_actor("system", Some("coordinator")),
                 None,
                 "agent_spawned",
@@ -2805,109 +2821,303 @@ fn write_rich_transcript_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
                     "parent_agent_id": Value::Null,
                 }),
             ),
-            session_event(
+            session_event_with_ts(
                 run_id,
                 3,
+                Some("2026-03-22T14:35:12Z"),
                 event_actor("user", Some("interactive-user")),
-                Some("req_rich_shell"),
+                Some("req_native_tool_parity"),
                 "user_message_submitted",
                 json!({
-                    "request_id": "req_rich_shell",
-                    "text": "Restyle the transcript shell",
+                    "request_id": "req_native_tool_parity",
+                    "text": "Bring native tool parity inline",
                 }),
             ),
-            session_event(
+            session_event_with_ts(
                 run_id,
                 4,
+                Some("2026-03-22T14:35:13Z"),
                 event_actor("worker", Some("agent_000001")),
-                Some("req_rich_shell"),
+                Some("req_native_tool_parity"),
                 "provider_request_started",
                 json!({
-                    "request_id": "req_rich_shell",
+                    "request_id": "req_native_tool_parity",
                     "provider_id": "default",
                     "model_id": "model-1",
-                    "prompt_summary": "Restyle the transcript shell",
-                    "request_digest": "digest-rich-shell-request",
+                    "prompt_summary": "Bring native tool parity inline",
+                    "request_digest": "digest-native-tool-parity-request",
                 }),
             ),
-            session_event(
+            session_event_with_ts(
                 run_id,
                 5,
+                Some("2026-03-22T14:35:14Z"),
                 event_actor("worker", Some("agent_000001")),
-                Some("req_rich_shell"),
+                Some("req_native_tool_parity"),
                 "provider_stream_delta",
                 json!({
-                    "request_id": "req_rich_shell",
-                    "delta": "Drafting a document-like plan",
+                    "request_id": "req_native_tool_parity",
+                    "delta": "Drafting the inline parity pass.",
                 }),
             ),
-            session_event(
+            session_event_with_ts(
                 run_id,
                 6,
+                Some("2026-03-22T14:35:20Z"),
                 event_actor("system", Some("coordinator")),
-                Some("req_rich_shell"),
+                Some("req_native_tool_parity"),
                 "tool_call_requested",
                 json!({
-                    "tool_call_id": "tc_rich_read",
+                    "tool_call_id": "tc_native_read",
                     "tool_id": "fs.read",
-                    "args_summary": "{\"path\":\"src/ui.rs\",\"start_line\":1,\"limit\":24}",
-                    "args_digest": "digest-rich-shell-args",
+                    "args_summary": "{\"path\":\"src/ui.rs\",\"offset\":12,\"limit\":24}",
+                    "args_digest": "digest-native-read-args",
+                    "metadata": {
+                        "canonical_tool_id": "fs.read",
+                    }
                 }),
             ),
-            session_event(
+            session_event_with_ts(
                 run_id,
                 7,
+                Some("2026-03-22T14:35:21Z"),
                 event_actor("system", Some("coordinator")),
-                Some("req_rich_shell"),
-                "tool_call_started",
-                json!({
-                    "tool_call_id": "tc_rich_read",
-                }),
-            ),
-            session_event(
-                run_id,
-                8,
-                event_actor("system", Some("coordinator")),
-                Some("req_rich_shell"),
+                Some("req_native_tool_parity"),
                 "tool_call_finished",
                 json!({
-                    "tool_call_id": "tc_rich_read",
+                    "tool_call_id": "tc_native_read",
                     "status": "succeeded",
                     "output_summary": "24 lines read from src/ui.rs",
-                    "output_digest": "digest-rich-shell-output",
+                    "output_digest": "digest-native-read-output",
+                    "output_json": Value::Null,
+                    "metadata": {
+                        "canonical_tool_id": "fs.read",
+                        "timing": {
+                            "elapsed_ms": 1250,
+                        }
+                    }
                 }),
             ),
-            session_event(
+            session_event_with_ts(
+                run_id,
+                8,
+                Some("2026-03-22T14:35:27Z"),
+                event_actor("system", Some("coordinator")),
+                Some("req_native_tool_parity"),
+                "tool_call_requested",
+                json!({
+                    "tool_call_id": "tc_alias_read",
+                    "tool_id": "read",
+                    "args_summary": "{\"path\":\"src/ui.rs\",\"offset\":12,\"limit\":24}",
+                    "args_digest": "digest-alias-read-args",
+                    "metadata": {
+                        "canonical_tool_id": "fs.read",
+                        "alias_source_tool_id": "read",
+                    }
+                }),
+            ),
+            session_event_with_ts(
                 run_id,
                 9,
-                event_actor("worker", Some("agent_000001")),
-                Some("req_rich_shell"),
-                "provider_stream_delta",
+                Some("2026-03-22T14:35:28Z"),
+                event_actor("system", Some("coordinator")),
+                Some("req_native_tool_parity"),
+                "tool_call_finished",
                 json!({
-                    "request_id": "req_rich_shell",
-                    "delta": "Found the transcript renderer and the composer chrome.",
+                    "tool_call_id": "tc_alias_read",
+                    "status": "succeeded",
+                    "output_summary": "24 lines read from src/ui.rs",
+                    "output_digest": "digest-alias-read-output",
+                    "output_json": Value::Null,
+                    "metadata": {
+                        "canonical_tool_id": "fs.read",
+                        "alias_source_tool_id": "read",
+                        "timing": {
+                            "elapsed_ms": 1250,
+                        }
+                    }
                 }),
             ),
-            session_event(
+            session_event_with_ts(
                 run_id,
                 10,
+                Some("2026-03-22T14:36:01Z"),
                 event_actor("system", Some("coordinator")),
-                Some("req_rich_shell"),
-                "task_completed",
+                Some("req_native_tool_parity"),
+                "tool_call_requested",
                 json!({
-                    "task_id": "task_rich_shell",
-                    "result_summary": "Found the transcript renderer and the composer chrome.",
-                    "result_digest": "digest-rich-shell-result",
+                    "tool_call_id": "tc_task_alias",
+                    "tool_id": "task",
+                    "args_summary": "{\"description\":\"audit transcript parity\",\"subagent_type\":\"researcher\"}",
+                    "args_digest": "digest-task-alias-args",
+                    "metadata": {
+                        "canonical_tool_id": "agent.spawn",
+                        "alias_source_tool_id": "task",
+                        "lineage": {
+                            "parent_tool_call_id": "tc_task_alias",
+                            "parent_request_id": "req_native_tool_parity",
+                            "child_session_id": "agent_worker",
+                            "child_request_id": "req_child",
+                        }
+                    }
                 }),
             ),
-            session_event(
+            session_event_with_ts(
                 run_id,
                 11,
+                Some("2026-03-22T14:36:02Z"),
+                event_actor("system", Some("coordinator")),
+                Some("req_native_tool_parity"),
+                "tool_call_finished",
+                json!({
+                    "tool_call_id": "tc_task_alias",
+                    "status": "succeeded",
+                    "output_summary": "task_id: agent_worker\nrequest_id: req_child",
+                    "output_digest": "digest-task-alias-output",
+                    "output_json": {
+                        "description": "audit transcript parity",
+                        "profile": "researcher",
+                        "mode": "foreground",
+                        "status": "completed",
+                        "duration_ms": 1600,
+                        "result_summary": "Found the inline transcript path.",
+                        "child_tool_call_count": 3,
+                        "child_session_id": "agent_worker",
+                        "child_request_id": "req_child",
+                    },
+                    "metadata": {
+                        "canonical_tool_id": "agent.spawn",
+                        "alias_source_tool_id": "task",
+                        "lineage": {
+                            "parent_tool_call_id": "tc_task_alias",
+                            "parent_request_id": "req_native_tool_parity",
+                            "child_session_id": "agent_worker",
+                            "child_request_id": "req_child",
+                        },
+                        "timing": {
+                            "elapsed_ms": 1600,
+                        }
+                    }
+                }),
+            ),
+            session_event_with_ts(
+                run_id,
+                12,
+                Some("2026-03-22T14:37:10Z"),
+                event_actor("system", Some("coordinator")),
+                Some("req_native_tool_parity"),
+                "tool_call_requested",
+                json!({
+                    "tool_call_id": "tc_fetch",
+                    "tool_id": "webfetch",
+                    "args_summary": "{\"url\":\"https://example.test/report.pdf\",\"format\":\"markdown\"}",
+                    "args_digest": "digest-fetch-args",
+                    "metadata": {
+                        "canonical_tool_id": "web.fetch",
+                        "alias_source_tool_id": "webfetch",
+                    }
+                }),
+            ),
+            session_event_with_ts(
+                run_id,
+                13,
+                Some("2026-03-22T14:37:12Z"),
+                event_actor("system", Some("coordinator")),
+                Some("req_native_tool_parity"),
+                "tool_call_finished",
+                json!({
+                    "tool_call_id": "tc_fetch",
+                    "status": "succeeded",
+                    "output_summary": "report ready\npage count: 2\nformat: pdf\nstored inline artifact",
+                    "output_digest": "digest-fetch-output",
+                    "output_json": Value::Null,
+                    "metadata": {
+                        "canonical_tool_id": "web.fetch",
+                        "alias_source_tool_id": "webfetch",
+                        "artifact_refs": [
+                            {
+                                "path": "artifacts/toolcalls/tc-fetch/web.fetch.pdf",
+                                "digest": "digest-fetch-artifact",
+                            }
+                        ],
+                        "timing": {
+                            "elapsed_ms": 2400,
+                        }
+                    }
+                }),
+            ),
+            session_event_with_ts(
+                run_id,
+                14,
+                Some("2026-03-22T14:37:30Z"),
+                event_actor("system", Some("coordinator")),
+                Some("req_native_tool_parity"),
+                "tool_call_requested",
+                json!({
+                    "tool_call_id": "tc_shell_fail",
+                    "tool_id": "shell.run",
+                    "args_summary": "{\"cmd\":\"cargo test -p harness-tui\",\"cwd\":\"/workspace\"}",
+                    "args_digest": "digest-shell-fail-args",
+                    "metadata": {
+                        "canonical_tool_id": "shell.run",
+                    }
+                }),
+            ),
+            session_event_with_ts(
+                run_id,
+                15,
+                Some("2026-03-22T14:37:31Z"),
+                event_actor("system", Some("coordinator")),
+                Some("req_native_tool_parity"),
+                "tool_call_finished",
+                json!({
+                    "tool_call_id": "tc_shell_fail",
+                    "status": "failed",
+                    "output_summary": "exit code: 1\nstderr: snapshot mismatch",
+                    "output_digest": Value::Null,
+                    "output_json": Value::Null,
+                    "metadata": {
+                        "canonical_tool_id": "shell.run",
+                        "timing": {
+                            "elapsed_ms": 900,
+                        }
+                    }
+                }),
+            ),
+            session_event_with_ts(
+                run_id,
+                16,
+                Some("2026-03-22T14:37:40Z"),
+                event_actor("worker", Some("agent_000001")),
+                Some("req_native_tool_parity"),
+                "provider_stream_delta",
+                json!({
+                    "request_id": "req_native_tool_parity",
+                    "delta": "Inline transcript parity is easier to scan now.",
+                }),
+            ),
+            session_event_with_ts(
+                run_id,
+                17,
+                Some("2026-03-22T14:37:41Z"),
+                event_actor("system", Some("coordinator")),
+                Some("req_native_tool_parity"),
+                "provider_request_finished",
+                json!({
+                    "request_id": "req_native_tool_parity",
+                    "finish_reason": "stop",
+                    "output_digest": "digest-native-tool-parity-response",
+                }),
+            ),
+            session_event_with_ts(
+                run_id,
+                18,
+                Some("2026-03-22T14:37:42Z"),
                 event_actor("system", Some("coordinator")),
                 None,
                 "run_finished",
                 json!({
-                    "summary": "rich transcript captured",
+                    "summary": "native tool parity captured",
                 }),
             ),
         ],
@@ -3037,67 +3247,6 @@ fn write_replay_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
     )
 }
 
-fn write_replay_diff_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
-    let run_dir = write_session_fixture(
-        session_dir,
-        run_id,
-        &[
-            session_event(
-                run_id,
-                1,
-                event_actor("system", Some("coordinator")),
-                None,
-                "run_started",
-                json!({
-                    "run_name": "interactive",
-                    "workspace_root": "/workspace/project",
-                }),
-            ),
-            session_event(
-                run_id,
-                2,
-                event_actor("user", Some("interactive-user")),
-                Some("req_replay_diff"),
-                "user_message_submitted",
-                json!({
-                    "request_id": "req_replay_diff",
-                    "text": "Show the generated diff",
-                }),
-            ),
-            session_event(
-                run_id,
-                3,
-                event_actor("worker", Some("agent_000001")),
-                Some("req_replay_diff"),
-                "edit_applied",
-                json!({
-                    "edit_id": "edit_replay_diff",
-                    "path": "demo.txt",
-                    "new_file_digest": "digest-replay-diff-file",
-                    "diff_rel_path": "artifacts/edit-replay-diff.diff",
-                    "diff_digest": "digest-replay-diff-artifact",
-                }),
-            ),
-            session_event(
-                run_id,
-                4,
-                event_actor("system", Some("coordinator")),
-                None,
-                "run_finished",
-                json!({
-                    "summary": "diff ready",
-                }),
-            ),
-        ],
-    );
-    write_diff_artifact(
-        &run_dir,
-        "artifacts/edit-replay-diff.diff",
-        sample_diff_artifact(),
-    );
-    run_dir
-}
-
 fn write_session_fixture(session_dir: &Path, run_id: &str, events: &[Value]) -> PathBuf {
     let run_dir = session_dir.join(run_id);
     fs::create_dir_all(run_dir.join("artifacts")).expect("create session fixture artifacts dir");
@@ -3139,13 +3288,25 @@ fn session_event(
     event_type: &str,
     data: Value,
 ) -> Value {
+    session_event_with_ts(run_id, seq, None, actor, correlation_id, event_type, data)
+}
+
+fn session_event_with_ts(
+    run_id: &str,
+    seq: u64,
+    ts: Option<&str>,
+    actor: Value,
+    correlation_id: Option<&str>,
+    event_type: &str,
+    data: Value,
+) -> Value {
     json!({
         "schema_version": 1,
         "event_id": format!("evt-{seq:04}"),
         "seq": seq,
         "run_id": run_id,
         "mono_ms": seq,
-        "ts": Value::Null,
+        "ts": ts,
         "actor": actor,
         "correlation_id": correlation_id,
         "causation_id": Value::Null,

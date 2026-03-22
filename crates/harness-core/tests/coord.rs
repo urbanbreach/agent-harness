@@ -23,6 +23,7 @@ use harness_core::perm::{PermissionDecision as RuntimePermissionDecision, Permis
 use harness_core::proj::{inspect_resume_plan, LifecycleSegmentStatus};
 use harness_core::redact::DefaultRedactor;
 use harness_core::store::EventStoreError;
+use harness_core::tool::ToolSurface;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 use harness_providers::mock::{request_digest, MockProvider};
 use harness_providers::{
@@ -771,6 +772,7 @@ async fn resume_existing_run_restores_sequence_and_ids() {
                     tool_id: "shell.run".to_string(),
                     args_summary: "{\"cmd\":\"true\"}".to_string(),
                     args_digest: "digest-tool".to_string(),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event(
@@ -811,6 +813,7 @@ async fn resume_existing_run_restores_sequence_and_ids() {
                     task_id: "task_000009".to_string(),
                     result_summary: "done".to_string(),
                     result_digest: "digest-task".to_string(),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event(
@@ -873,7 +876,7 @@ async fn resume_existing_run_restores_sequence_and_ids() {
     assert_eq!(tool_call_id, "toolcall_000006");
 
     coordinator
-        .resolve_permission("perm_000005", RuntimePermissionDecision::Allow)
+        .resolve_permission("perm_000005", RuntimePermissionDecision::Allow, None)
         .await
         .expect("resolve resumed permission");
 
@@ -1582,6 +1585,7 @@ async fn resume_rejects_missing_user_message_when_prompt_summary_is_truncated() 
                     task_id: "task_000001".to_string(),
                     result_summary: "first answer".to_string(),
                     result_digest: "digest-task-1".to_string(),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event(
@@ -2027,6 +2031,7 @@ fn write_resumable_history_fixture(session_dir: &Path, run_id: &str) {
                 task_id: "task_000001".to_string(),
                 result_summary: "first answer".to_string(),
                 result_digest: "digest-task-1".to_string(),
+                metadata: None,
             }),
         ),
         resume_fixture_event(
@@ -2136,6 +2141,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
                 task_id: "task_000001".to_string(),
                 result_summary: "first final answer".to_string(),
                 result_digest: "digest-task-1".to_string(),
+                metadata: None,
             }),
         ),
         resume_fixture_event(
@@ -2206,6 +2212,7 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             system_prompt: "alpha-prompt".to_string(),
+            tool_surface: ToolSurface::Native,
             toolset: vec![],
         },
     );
@@ -2216,6 +2223,7 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             system_prompt: "beta-prompt".to_string(),
+            tool_surface: ToolSurface::Native,
             toolset: vec![],
         },
     );

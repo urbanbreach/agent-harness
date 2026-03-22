@@ -5,7 +5,7 @@ use crossterm::event::MouseEvent;
 use harness_core::event::{
     ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
     ProviderRequestStartedEvent, RunFailedEvent, RunFinishedEvent, TaskCompletedEvent,
-    UserMessageSubmittedEvent, SCHEMA_VERSION,
+    ToolCallFinishedEvent, ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 
 fn envelope(seq: u64, request_id: &str, payload: EventV1) -> EventEnvelopeV1 {
@@ -119,6 +119,7 @@ fn permission_modal_preempts_palette() {
         &[UiIntent::ResolvePermission {
             permission_id: "perm_overlay_preempt".to_string(),
             decision: PermissionDecision::Allow,
+            reason: None,
         }]
     );
 }
@@ -156,6 +157,54 @@ fn permission_modal_routes_q_to_quit_without_buffering() {
     assert_eq!(app.prompt_buffer, "keep this draft");
     let intents = intents.lock().expect("lock intents");
     assert_eq!(intents.as_slice(), &[UiIntent::QuitRequested]);
+}
+
+#[test]
+fn question_permission_modal_collects_answers_and_emits_reason_payload() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let intent_sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(intent_sink));
+    app.ingest_event(envelope(
+        1,
+        "req_question_modal",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_question_modal".to_string(),
+            kind: "question".to_string(),
+            tool_call_id: Some("tc_question_modal".to_string()),
+            summary: serde_json::json!({
+                "questions": [{
+                    "question": "Pick one",
+                    "header": "Choice",
+                    "options": [{"label": "A", "description": "Option A"}],
+                }]
+            })
+            .to_string(),
+            request_digest: "digest-question-modal".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    app.handle_key(key(KeyCode::Char('A')));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('y'),
+        KeyModifiers::CONTROL,
+    ));
+
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::ResolvePermission {
+            permission_id: "perm_question_modal".to_string(),
+            decision: PermissionDecision::Allow,
+            reason: Some("[[\"A\"]]".to_string()),
+        }]
+    );
 }
 
 #[test]
@@ -388,6 +437,7 @@ fn historical_task_completed_marks_turn_done_and_unblocks_first_resumed_submit()
             task_id: "task_000123".to_string(),
             result_summary: "previous answer".to_string(),
             result_digest: "digest-task-123".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -576,6 +626,66 @@ fn live_bootstrap_auto_submit_echoes_and_emits_first_prompt() {
             text: "boot prompt".to_string(),
         }]
     );
+}
+
+#[test]
+fn tool_call_finished_plan_exit_handoff_emits_switch_model_then_submit_prompt() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(sink));
+    let expected_launch_metadata = LaunchMetadata::from_model_ref("build", "mock:model-2")
+        .with_available_models(vec![
+            ModelOption::from_model_ref("plan", "mock:model-1"),
+            ModelOption::from_model_ref("build", "mock:model-2"),
+        ])
+        .with_mode_label("Demo");
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_ref("plan", "mock:model-1")
+            .with_available_models(expected_launch_metadata.available_models().to_vec())
+            .with_mode_label("Demo"),
+    );
+
+    app.ingest_event(envelope(
+        1,
+        "req_plan_exit_handoff",
+        EventV1::ToolCallFinished(ToolCallFinishedEvent {
+            tool_call_id: "tc_plan_exit_handoff".to_string(),
+            status: ToolCallStatus::Succeeded,
+            output_summary: Some("plan exit handoff ready".to_string()),
+            output_digest: Some("digest-plan-exit".to_string()),
+            output_json: Some(serde_json::json!({
+                "plan_exit_handoff": {
+                    "source_profile": "plan",
+                    "target_profile": "build",
+                    "prompt": "The plan has been approved, you can now edit files. Execute the plan."
+                }
+            })),
+            metadata: None,
+        }),
+    ));
+
+    assert_eq!(app.active_profile(), "build");
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[
+            UiIntent::SwitchModel {
+                profile: "build".to_string(),
+                launch_metadata: expected_launch_metadata,
+            },
+            UiIntent::SubmitPrompt {
+                text: "The plan has been approved, you can now edit files. Execute the plan."
+                    .to_string(),
+            },
+        ]
+    );
+
+    let _ = take_pending_live_launch_metadata();
 }
 
 #[test]
@@ -799,6 +909,7 @@ fn post_run_handoff_ignores_completed_turns_without_terminal_event() {
             task_id: "task_completed_turn".to_string(),
             result_summary: "all done".to_string(),
             result_digest: "digest-task-completed-turn".to_string(),
+            metadata: None,
         }),
     ));
 

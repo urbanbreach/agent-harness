@@ -9,11 +9,13 @@ use std::sync::Mutex;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use harness_core::agent::AgentModelRef;
 use harness_core::event::{
-    ActorKind, EventEnvelopeV1, EventV1, PermissionDecision as EventPermissionDecision,
-    ProviderRequestStartedEvent, ToolCallStatus, UserMessageSubmittedEvent,
+    ActorKind, EventArtifactRef, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
+    PermissionDecision as EventPermissionDecision, ProviderRequestStartedEvent,
+    TaskLineageMetadata, ToolCallMetadata, ToolCallStatus, UserMessageSubmittedEvent,
 };
 use harness_core::perm::PermissionDecision;
 use harness_core::proj::{SessionCatalogEntry, SessionModeSource};
+use serde::Deserialize;
 
 use crate::keybindings::{Action, KeyMap};
 use crate::overlay::{OverlayKind, OverlayStack, OverlayState};
@@ -73,6 +75,8 @@ impl std::fmt::Display for ToolCallDisplayStatus {
 pub struct ToolCallEntry {
     pub tool_call_id: String,
     pub tool_id: String,
+    pub canonical_tool_id: Option<String>,
+    pub alias_source_tool_id: Option<String>,
     pub args_summary: String,
     pub args_digest: String,
     pub status: ToolCallDisplayStatus,
@@ -81,11 +85,43 @@ pub struct ToolCallEntry {
     pub output_json: Option<serde_json::Value>,
     pub truncated_output: Option<String>,
     pub edit: Option<EditEntry>,
+    pub lineage: Option<TaskLineageEntry>,
+    pub artifact_refs: Vec<ToolArtifactEntry>,
+    pub timing_elapsed_ms: Option<u64>,
     pub permissions: Vec<PermissionEntry>,
     pub first_seq: u64,
     pub last_seq: u64,
     pub first_mono_ms: u64,
     pub last_mono_ms: u64,
+    pub first_timestamp: Option<String>,
+    pub last_timestamp: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskLineageEntry {
+    pub parent_tool_call_id: Option<String>,
+    pub parent_task_id: Option<String>,
+    pub parent_request_id: Option<String>,
+    pub child_session_id: Option<String>,
+    pub child_request_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolArtifactEntry {
+    pub path: String,
+    pub digest: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct PlanExitHandoffEnvelope {
+    plan_exit_handoff: PlanExitHandoff,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct PlanExitHandoff {
+    source_profile: String,
+    target_profile: String,
+    prompt: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,8 +161,20 @@ pub struct PermissionEntry {
 
 impl ToolCallEntry {
     pub fn duration_ms(&self) -> Option<u64> {
-        (self.last_mono_ms >= self.first_mono_ms)
-            .then_some(self.last_mono_ms.saturating_sub(self.first_mono_ms))
+        self.timing_elapsed_ms.or_else(|| {
+            (self.last_mono_ms >= self.first_mono_ms)
+                .then_some(self.last_mono_ms.saturating_sub(self.first_mono_ms))
+        })
+    }
+
+    pub fn canonical_tool_id(&self) -> &str {
+        self.canonical_tool_id.as_deref().unwrap_or(&self.tool_id)
+    }
+
+    pub fn transcript_timestamp(&self) -> Option<&str> {
+        self.last_timestamp
+            .as_deref()
+            .or(self.first_timestamp.as_deref())
     }
 
     pub fn transcript_summary(&self) -> Option<String> {
@@ -257,6 +305,70 @@ fn truncate_for_transcript(text: &str) -> String {
         .take(TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS.saturating_sub(1))
         .collect();
     format!("{truncated}…")
+}
+
+fn task_lineage_entry_from_metadata(metadata: &TaskLineageMetadata) -> TaskLineageEntry {
+    TaskLineageEntry {
+        parent_tool_call_id: metadata.parent_tool_call_id.clone(),
+        parent_task_id: metadata.parent_task_id.clone(),
+        parent_request_id: metadata.parent_request_id.clone(),
+        child_session_id: metadata.child_session_id.clone(),
+        child_request_id: metadata.child_request_id.clone(),
+    }
+}
+
+fn tool_artifact_entry_from_metadata(artifact: &EventArtifactRef) -> ToolArtifactEntry {
+    ToolArtifactEntry {
+        path: artifact.path.clone(),
+        digest: artifact.digest.clone(),
+    }
+}
+
+fn merge_tool_call_metadata(entry: &mut ToolCallEntry, metadata: Option<&ToolCallMetadata>) {
+    let Some(metadata) = metadata else {
+        return;
+    };
+
+    if entry.canonical_tool_id.is_none() {
+        entry.canonical_tool_id = metadata.canonical_tool_id.clone();
+    }
+    if entry.alias_source_tool_id.is_none() {
+        entry.alias_source_tool_id = metadata.alias_source_tool_id.clone();
+    }
+    if entry.lineage.is_none() {
+        entry.lineage = metadata
+            .lineage
+            .as_ref()
+            .map(task_lineage_entry_from_metadata);
+    }
+    if entry.timing_elapsed_ms.is_none() {
+        entry.timing_elapsed_ms = metadata
+            .timing
+            .as_ref()
+            .and_then(execution_timing_elapsed_ms);
+    }
+
+    for artifact in &metadata.artifact_refs {
+        let artifact = tool_artifact_entry_from_metadata(artifact);
+        if !entry
+            .artifact_refs
+            .iter()
+            .any(|existing| existing.path == artifact.path && existing.digest == artifact.digest)
+        {
+            entry.artifact_refs.push(artifact);
+        }
+    }
+}
+
+fn execution_timing_elapsed_ms(timing: &ExecutionTimingMetadata) -> Option<u64> {
+    timing
+        .elapsed_ms
+        .or_else(|| match (timing.started_mono_ms, timing.finished_mono_ms) {
+            (Some(started), Some(finished)) if finished >= started => {
+                Some(finished.saturating_sub(started))
+            }
+            _ => None,
+        })
 }
 
 pub struct ActivityEntry {
@@ -544,6 +656,7 @@ pub enum UiIntent {
     ResolvePermission {
         permission_id: String,
         decision: PermissionDecision,
+        reason: Option<String>,
     },
     SwitchModel {
         profile: String,
@@ -770,6 +883,21 @@ pub struct ActivePermissionView {
     pub default_decision: EventPermissionDecision,
     pub tool_call_id: Option<String>,
     pub tool_label: Option<String>,
+    pub question_prompts: Option<Vec<QuestionPromptView>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuestionPromptView {
+    pub question: String,
+    pub header: String,
+    pub options: Vec<QuestionOptionView>,
+    pub multiple: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuestionOptionView {
+    pub label: String,
+    pub description: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -969,6 +1097,10 @@ pub struct AppState {
     launch_metadata: LaunchMetadata,
     dismissed_permissions: BTreeSet<String>,
     submitted_permission_id: Option<String>,
+    question_answer_permission_id: Option<String>,
+    question_answer_buffer: String,
+    question_answer_cursor: usize,
+    question_answer_error: Option<String>,
     reload_requested: bool,
     on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
 }
@@ -1030,6 +1162,10 @@ impl Default for AppState {
             launch_metadata: LaunchMetadata::default(),
             dismissed_permissions: BTreeSet::new(),
             submitted_permission_id: None,
+            question_answer_permission_id: None,
+            question_answer_buffer: String::new(),
+            question_answer_cursor: 0,
+            question_answer_error: None,
             reload_requested: false,
             on_ui_intent: None,
         }
@@ -1549,6 +1685,8 @@ impl SessionProjection {
                     let tool_entry = ToolCallEntry {
                         tool_call_id: data.tool_call_id.clone(),
                         tool_id: data.tool_id.clone(),
+                        canonical_tool_id: None,
+                        alias_source_tool_id: None,
                         args_summary: data.args_summary.clone(),
                         args_digest: data.args_digest.clone(),
                         status: ToolCallDisplayStatus::PendingPermission,
@@ -1557,12 +1695,19 @@ impl SessionProjection {
                         output_json: None,
                         truncated_output: None,
                         edit: None,
+                        lineage: None,
+                        artifact_refs: Vec::new(),
+                        timing_elapsed_ms: None,
                         permissions: Vec::new(),
                         first_seq: event.seq,
                         last_seq: event.seq,
                         first_mono_ms: event.mono_ms,
                         last_mono_ms: event.mono_ms,
+                        first_timestamp: event.ts.clone(),
+                        last_timestamp: event.ts.clone(),
                     };
+                    let mut tool_entry = tool_entry;
+                    merge_tool_call_metadata(&mut tool_entry, data.metadata.as_ref());
                     entry.tool_calls.push(tool_entry);
                     entry.last_seq = event.seq;
                 }
@@ -1571,6 +1716,8 @@ impl SessionProjection {
                 if let Some(tool_entry) = self.find_tool_call_mut(&data.tool_call_id) {
                     tool_entry.status = ToolCallDisplayStatus::Running;
                     tool_entry.last_seq = event.seq;
+                    tool_entry.last_mono_ms = event.mono_ms;
+                    tool_entry.last_timestamp = event.ts.clone();
                 }
             }
             EventV1::ToolCallFinished(data) => {
@@ -1595,7 +1742,10 @@ impl SessionProjection {
                             };
                         tool_entry.truncated_output = Some(display_text);
                     }
+                    merge_tool_call_metadata(tool_entry, data.metadata.as_ref());
                     tool_entry.last_seq = event.seq;
+                    tool_entry.last_mono_ms = event.mono_ms;
+                    tool_entry.last_timestamp = event.ts.clone();
                 }
             }
             EventV1::EditProposed(data) => {
@@ -1842,8 +1992,15 @@ impl AppState {
         if !historical {
             self.continued_live_reopen_surface_active = false;
         }
+        let plan_exit_output_json = match &event.payload {
+            EventV1::ToolCallFinished(data) if data.status == ToolCallStatus::Succeeded => {
+                data.output_json.clone()
+            }
+            _ => None,
+        };
         self.update_transient_state_for_event(&event);
         let trimmed_events = self.projection.ingest_event(event, historical);
+        self.maybe_apply_plan_exit_handoff(plan_exit_output_json.as_ref(), historical);
 
         if trimmed_events > 0 {
             if self.selected_event_index >= trimmed_events {
@@ -1902,8 +2059,9 @@ impl AppState {
         match state.kind {
             RuntimeStateKind::PermissionBlocked => {
                 if let Some(permission) = self.active_permission_view() {
-                    state.summary = format!("decision required · {}", permission.summary);
-                    state.detail = Some(permission.summary);
+                    let summary = permission_display_summary(&permission);
+                    state.summary = format!("decision required · {summary}");
+                    state.detail = Some(summary);
                     state.composer_hint =
                         "Draft preserved under the checkpoint — deny stays fail-closed; allow once only after review."
                             .to_string();
@@ -1911,11 +2069,10 @@ impl AppState {
             }
             RuntimeStateKind::PermissionPending => {
                 if let Some(permission) = self.active_permission_view() {
-                    state.summary = format!(
-                        "decision submitted · awaiting confirmation · {}",
-                        permission.summary
-                    );
-                    state.detail = Some(permission.summary);
+                    let summary = permission_display_summary(&permission);
+                    state.summary =
+                        format!("decision submitted · awaiting confirmation · {}", summary);
+                    state.detail = Some(summary);
                     state.composer_hint =
                         "Draft preserved while Harness records the decision. Wait for confirmation before sending again."
                             .to_string();
@@ -2444,6 +2601,55 @@ impl AppState {
         self.close_palette();
     }
 
+    fn maybe_apply_plan_exit_handoff(
+        &mut self,
+        output_json: Option<&serde_json::Value>,
+        historical: bool,
+    ) {
+        if historical || self.replay_mode || self.on_ui_intent.is_none() {
+            return;
+        }
+        let Some(output_json) = output_json else {
+            return;
+        };
+        let Ok(envelope) = serde_json::from_value::<PlanExitHandoffEnvelope>(output_json.clone())
+        else {
+            return;
+        };
+        if envelope.plan_exit_handoff.source_profile != self.active_profile() {
+            return;
+        }
+
+        let handoff = envelope.plan_exit_handoff;
+        let mut launch_metadata = self
+            .launch_metadata
+            .available_models()
+            .iter()
+            .find(|option| option.profile == handoff.target_profile)
+            .map(LaunchMetadata::from_model_option)
+            .unwrap_or_else(|| {
+                LaunchMetadata::new(
+                    handoff.target_profile.clone(),
+                    self.launch_metadata.provider().to_string(),
+                    self.launch_metadata.model().map(str::to_owned),
+                )
+            })
+            .with_available_models(self.launch_metadata.available_models().to_vec());
+        if let Some(mode_label) = self.launch_metadata.mode_label().map(str::to_owned) {
+            launch_metadata = launch_metadata.with_mode_label(mode_label);
+        }
+
+        self.launch_metadata = launch_metadata.clone();
+        set_pending_live_launch_metadata(launch_metadata.clone());
+        self.emit_ui_intent(UiIntent::SwitchModel {
+            profile: handoff.target_profile,
+            launch_metadata,
+        });
+        self.emit_ui_intent(UiIntent::SubmitPrompt {
+            text: handoff.prompt,
+        });
+    }
+
     pub fn active_permission(&self) -> Option<(String, String)> {
         self.projection
             .pending_permissions
@@ -2516,6 +2722,7 @@ impl AppState {
                     .tool_call_id
                     .as_deref()
                     .and_then(|tool_call_id| self.tool_label_for_call(tool_call_id)),
+                question_prompts: parse_question_prompts(&pending.kind, &pending.summary),
             })
     }
 
@@ -2553,11 +2760,12 @@ impl AppState {
             .iter()
             .filter(|(permission_id, _)| !self.dismissed_permissions.contains(*permission_id))
             .map(|(permission_id, permission)| {
-                (
-                    permission.seq,
-                    permission_id.clone(),
-                    permission.summary.clone(),
-                )
+                let summary = if permission.kind.eq_ignore_ascii_case("question") {
+                    "Question requested".to_string()
+                } else {
+                    permission.summary.clone()
+                };
+                (permission.seq, permission_id.clone(), summary)
             })
             .collect::<Vec<_>>();
         pending.sort_by_key(|(seq, _, _)| *seq);
@@ -3002,6 +3210,16 @@ impl AppState {
     }
 
     fn handle_permission_modal_key(&mut self, key: KeyEvent) {
+        if self
+            .active_permission_view()
+            .as_ref()
+            .and_then(|permission| permission.question_prompts.as_ref())
+            .is_some()
+        {
+            self.handle_question_permission_modal_key(key);
+            return;
+        }
+
         if !self.composer_disabled()
             && !key.modifiers.contains(KeyModifiers::CONTROL)
             && !key.modifiers.contains(KeyModifiers::ALT)
@@ -3012,6 +3230,75 @@ impl AppState {
                 KeyCode::Char(c) => {
                     self.insert_prompt_char(c);
                     self.maybe_auto_exit();
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(action) = self.keymap.get_action(&key) {
+            if matches!(
+                action,
+                Action::AllowPermission
+                    | Action::DenyPermission
+                    | Action::DismissModal
+                    | Action::Quit
+            ) {
+                self.execute_action(action);
+                self.maybe_auto_exit();
+            }
+        }
+    }
+
+    fn handle_question_permission_modal_key(&mut self, key: KeyEvent) {
+        let Some(permission) = self.active_permission_view() else {
+            return;
+        };
+        self.ensure_question_answer_state(&permission.permission_id);
+
+        if !self.composer_disabled()
+            && !key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::ALT)
+        {
+            match key.code {
+                KeyCode::Char('q') => {}
+                KeyCode::Char(c) => {
+                    self.insert_question_answer_char(c);
+                    self.maybe_auto_exit();
+                    return;
+                }
+                KeyCode::Enter => {
+                    self.insert_question_answer_char('\n');
+                    self.maybe_auto_exit();
+                    return;
+                }
+                KeyCode::Backspace => {
+                    self.backspace_question_answer_char();
+                    self.maybe_auto_exit();
+                    return;
+                }
+                KeyCode::Delete => {
+                    self.delete_question_answer_char();
+                    self.maybe_auto_exit();
+                    return;
+                }
+                KeyCode::Left => {
+                    self.question_answer_cursor = self.question_answer_cursor.saturating_sub(1);
+                    return;
+                }
+                KeyCode::Right => {
+                    self.question_answer_cursor = self
+                        .question_answer_cursor
+                        .saturating_add(1)
+                        .min(self.question_answer_char_count());
+                    return;
+                }
+                KeyCode::Home => {
+                    self.question_answer_cursor = 0;
+                    return;
+                }
+                KeyCode::End => {
+                    self.question_answer_cursor = self.question_answer_char_count();
                     return;
                 }
                 _ => {}
@@ -4058,11 +4345,19 @@ impl AppState {
 
         match action {
             Action::AllowPermission => {
-                self.send_permission_intent(permission_id, PermissionDecision::Allow);
+                let reason = self
+                    .active_permission_view()
+                    .and_then(|permission| self.build_question_permission_reason(&permission));
+                if self.active_permission_view().is_some_and(|permission| {
+                    permission.question_prompts.is_some() && reason.is_none()
+                }) {
+                    return true;
+                }
+                self.send_permission_intent(permission_id, PermissionDecision::Allow, reason);
                 true
             }
             Action::DenyPermission => {
-                self.send_permission_intent(permission_id, PermissionDecision::Deny);
+                self.send_permission_intent(permission_id, PermissionDecision::Deny, None);
                 true
             }
             Action::DismissModal => {
@@ -4230,11 +4525,11 @@ impl AppState {
 
         match (key.code, key.modifiers) {
             (KeyCode::Char('y'), KeyModifiers::CONTROL) => {
-                self.send_permission_intent(permission_id, PermissionDecision::Allow);
+                self.send_permission_intent(permission_id, PermissionDecision::Allow, None);
                 true
             }
             (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
-                self.send_permission_intent(permission_id, PermissionDecision::Deny);
+                self.send_permission_intent(permission_id, PermissionDecision::Deny, None);
                 true
             }
             (KeyCode::Esc, KeyModifiers::NONE) => {
@@ -4246,7 +4541,112 @@ impl AppState {
         }
     }
 
-    fn send_permission_intent(&mut self, permission_id: String, decision: PermissionDecision) {
+    fn ensure_question_answer_state(&mut self, permission_id: &str) {
+        if self.question_answer_permission_id.as_deref() == Some(permission_id) {
+            return;
+        }
+
+        self.question_answer_permission_id = Some(permission_id.to_string());
+        self.question_answer_buffer.clear();
+        self.question_answer_cursor = 0;
+        self.question_answer_error = None;
+    }
+
+    fn question_answer_char_count(&self) -> usize {
+        self.question_answer_buffer.chars().count()
+    }
+
+    fn question_answer_cursor_byte_index(&self) -> usize {
+        self.question_answer_buffer
+            .char_indices()
+            .nth(self.question_answer_cursor)
+            .map(|(index, _)| index)
+            .unwrap_or(self.question_answer_buffer.len())
+    }
+
+    fn insert_question_answer_char(&mut self, c: char) {
+        let byte_idx = self.question_answer_cursor_byte_index();
+        self.question_answer_buffer.insert(byte_idx, c);
+        self.question_answer_cursor += 1;
+        self.question_answer_error = None;
+    }
+
+    fn backspace_question_answer_char(&mut self) {
+        if self.question_answer_cursor == 0 {
+            return;
+        }
+
+        self.question_answer_cursor -= 1;
+        let byte_idx = self.question_answer_cursor_byte_index();
+        self.question_answer_buffer.remove(byte_idx);
+        self.question_answer_error = None;
+    }
+
+    fn delete_question_answer_char(&mut self) {
+        if self.question_answer_cursor >= self.question_answer_char_count() {
+            return;
+        }
+
+        let byte_idx = self.question_answer_cursor_byte_index();
+        self.question_answer_buffer.remove(byte_idx);
+        self.question_answer_error = None;
+    }
+
+    fn build_question_permission_reason(
+        &mut self,
+        permission: &ActivePermissionView,
+    ) -> Option<String> {
+        let prompts = permission.question_prompts.as_ref()?;
+        match parse_question_answers_from_draft(prompts, &self.question_answer_buffer) {
+            Ok(answers) => {
+                self.question_answer_error = None;
+                serde_json::to_string(&answers).ok()
+            }
+            Err(err) => {
+                self.question_answer_error = Some(err);
+                None
+            }
+        }
+    }
+
+    pub(crate) fn question_answer_preview(&self, permission_id: &str) -> String {
+        if self.question_answer_permission_id.as_deref() != Some(permission_id) {
+            return "█".to_string();
+        }
+
+        let mut preview = self.question_answer_buffer.clone();
+        let byte_idx = preview
+            .char_indices()
+            .nth(self.question_answer_cursor)
+            .map(|(index, _)| index)
+            .unwrap_or(preview.len());
+        preview.insert(byte_idx, '█');
+        preview
+    }
+
+    pub(crate) fn question_answer_error(&self, permission_id: &str) -> Option<&str> {
+        (self.question_answer_permission_id.as_deref() == Some(permission_id))
+            .then_some(self.question_answer_error.as_deref())
+            .flatten()
+    }
+
+    fn clear_question_answer_state(&mut self, permission_id: &str) {
+        if self.question_answer_permission_id.as_deref() != Some(permission_id) {
+            return;
+        }
+
+        self.question_answer_permission_id = None;
+        self.question_answer_buffer.clear();
+        self.question_answer_cursor = 0;
+        self.question_answer_error = None;
+    }
+
+    fn send_permission_intent(
+        &mut self,
+        permission_id: String,
+        decision: PermissionDecision,
+        reason: Option<String>,
+    ) {
         if self.submitted_permission_id.as_deref() == Some(permission_id.as_str()) {
             return;
         }
@@ -4254,6 +4654,7 @@ impl AppState {
         self.emit_ui_intent(UiIntent::ResolvePermission {
             permission_id: permission_id.clone(),
             decision,
+            reason,
         });
         self.submitted_permission_id = Some(permission_id);
     }
@@ -4291,6 +4692,7 @@ impl AppState {
             if self.submitted_permission_id.as_deref() == Some(data.permission_id.as_str()) {
                 self.submitted_permission_id = None;
             }
+            self.clear_question_answer_state(&data.permission_id);
         }
     }
 
@@ -4304,18 +4706,125 @@ impl AppState {
     }
 }
 
+fn parse_question_prompts(kind: &str, summary: &str) -> Option<Vec<QuestionPromptView>> {
+    if !kind.eq_ignore_ascii_case("question")
+        && !kind.eq_ignore_ascii_case("ask")
+        && !kind.eq_ignore_ascii_case("ask_user")
+    {
+        return None;
+    }
+
+    let value = serde_json::from_str::<serde_json::Value>(summary).ok()?;
+    let questions = value.get("questions")?.as_array()?;
+    let prompts = questions
+        .iter()
+        .map(|question| {
+            Some(QuestionPromptView {
+                question: question.get("question")?.as_str()?.to_string(),
+                header: question.get("header")?.as_str()?.to_string(),
+                options: question
+                    .get("options")?
+                    .as_array()?
+                    .iter()
+                    .map(|option| {
+                        Some(QuestionOptionView {
+                            label: option.get("label")?.as_str()?.to_string(),
+                            description: option.get("description")?.as_str()?.to_string(),
+                        })
+                    })
+                    .collect::<Option<Vec<_>>>()?,
+                multiple: question
+                    .get("multiple")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false),
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+
+    Some(prompts)
+}
+
+fn parse_question_answers_from_draft(
+    prompts: &[QuestionPromptView],
+    draft: &str,
+) -> Result<Vec<Vec<String>>, String> {
+    let lines = draft.lines().collect::<Vec<_>>();
+    let mut answers = Vec::with_capacity(prompts.len());
+
+    for (index, prompt) in prompts.iter().enumerate() {
+        let line = lines.get(index).copied().unwrap_or_default().trim();
+        if line.is_empty() {
+            return Err(format!(
+                "Answer question {} ({}) before continuing.",
+                index + 1,
+                prompt.header
+            ));
+        }
+
+        let values = if prompt.multiple {
+            line.split(',')
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .collect::<Vec<_>>()
+        } else {
+            if line.contains(',') {
+                return Err(format!(
+                    "Question {} ({}) accepts only one answer.",
+                    index + 1,
+                    prompt.header
+                ));
+            }
+            vec![line]
+        };
+
+        if values.is_empty() {
+            return Err(format!(
+                "Answer question {} ({}) before continuing.",
+                index + 1,
+                prompt.header
+            ));
+        }
+
+        answers.push(
+            values
+                .into_iter()
+                .map(|value| {
+                    prompt
+                        .options
+                        .iter()
+                        .find(|option| option.label.eq_ignore_ascii_case(value))
+                        .map(|option| option.label.clone())
+                        .unwrap_or_else(|| value.to_string())
+                })
+                .collect(),
+        );
+    }
+
+    Ok(answers)
+}
+
+fn permission_display_summary(permission: &ActivePermissionView) -> String {
+    if permission.question_prompts.is_some() {
+        "Question requested".to_string()
+    } else {
+        permission.summary.clone()
+    }
+}
+
 fn tool_call_has_expandable_output(tool_call: &ToolCallEntry) -> bool {
     let output = tool_call.output_summary.as_deref().unwrap_or_default();
     let line_count = output.lines().count();
-    match tool_call.tool_id.as_str() {
-        "shell.run" => line_count > 10,
-        "edit.hashline_apply" => tool_call
-            .edit
-            .as_ref()
-            .and_then(|edit| edit.diff_rel_path.as_ref())
-            .is_some(),
-        _ => !output.trim().is_empty() && line_count > 3,
-    }
+    !tool_call.artifact_refs.is_empty()
+        || match tool_call.canonical_tool_id() {
+            "shell.run" => line_count > 10,
+            "edit.hashline_apply" => tool_call
+                .edit
+                .as_ref()
+                .and_then(|edit| edit.diff_rel_path.as_ref())
+                .is_some(),
+            "agent.spawn" => true,
+            _ => !output.trim().is_empty() && line_count > 3,
+        }
 }
 
 #[cfg(test)]

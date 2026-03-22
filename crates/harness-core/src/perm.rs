@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::config::{CategoryPermissions, HarnessConfig, PermissionMode};
-use crate::tool::ToolCapability;
+use crate::tool::{canonical_tool_id_for, ToolCapability};
 
 const DEFAULT_ASK_TIMEOUT_MS: u64 = 30_000;
 
@@ -10,6 +10,12 @@ pub enum PermissionKind {
     EditFs,
     Shell,
     Network,
+    Question,
+    Task,
+    WebFetch,
+    WebSearch,
+    CodeSearch,
+    Lsp,
 }
 
 impl PermissionKind {
@@ -18,6 +24,12 @@ impl PermissionKind {
             Self::EditFs => "edit_fs",
             Self::Shell => "shell",
             Self::Network => "network",
+            Self::Question => "question",
+            Self::Task => "task",
+            Self::WebFetch => "webfetch",
+            Self::WebSearch => "websearch",
+            Self::CodeSearch => "codesearch",
+            Self::Lsp => "lsp",
         }
     }
 }
@@ -50,6 +62,72 @@ struct DefaultPermissionModes {
     edit: PermissionMode,
     shell: PermissionMode,
     network: PermissionMode,
+    question: PermissionMode,
+    task: PermissionMode,
+    webfetch: PermissionMode,
+    websearch: PermissionMode,
+    codesearch: PermissionMode,
+    lsp: PermissionMode,
+}
+
+impl DefaultPermissionModes {
+    fn from_config(config: &HarnessConfig) -> Self {
+        let legacy_network = config.permissions.network.clone();
+
+        Self {
+            edit: config.permissions.edit.clone(),
+            shell: config.permissions.shell.clone(),
+            network: legacy_network.clone(),
+            question: config
+                .permissions
+                .question
+                .clone()
+                .unwrap_or(PermissionMode::Ask),
+            task: config
+                .permissions
+                .task
+                .clone()
+                .unwrap_or(PermissionMode::Allow),
+            webfetch: config
+                .permissions
+                .webfetch
+                .clone()
+                .unwrap_or_else(|| legacy_network.clone()),
+            websearch: config
+                .permissions
+                .websearch
+                .clone()
+                .unwrap_or_else(|| legacy_network.clone()),
+            codesearch: config
+                .permissions
+                .codesearch
+                .clone()
+                .unwrap_or_else(|| legacy_network.clone()),
+            lsp: config
+                .permissions
+                .lsp
+                .clone()
+                .unwrap_or(PermissionMode::Allow),
+        }
+    }
+
+    fn from_legacy_defaults(
+        edit: PermissionMode,
+        shell: PermissionMode,
+        network: PermissionMode,
+    ) -> Self {
+        Self {
+            edit,
+            shell,
+            network: network.clone(),
+            question: PermissionMode::Ask,
+            task: PermissionMode::Allow,
+            webfetch: network.clone(),
+            websearch: network.clone(),
+            codesearch: network,
+            lsp: PermissionMode::Allow,
+        }
+    }
 }
 
 impl PermissionPolicy {
@@ -66,11 +144,7 @@ impl PermissionPolicy {
             .collect();
 
         Self {
-            defaults: DefaultPermissionModes {
-                edit: config.permissions.edit.clone(),
-                shell: config.permissions.shell.clone(),
-                network: config.permissions.network.clone(),
-            },
+            defaults: DefaultPermissionModes::from_config(config),
             category_overrides,
             ask_timeout_ms: DEFAULT_ASK_TIMEOUT_MS,
         }
@@ -78,11 +152,7 @@ impl PermissionPolicy {
 
     pub fn new(edit: PermissionMode, shell: PermissionMode, network: PermissionMode) -> Self {
         Self {
-            defaults: DefaultPermissionModes {
-                edit,
-                shell,
-                network,
-            },
+            defaults: DefaultPermissionModes::from_legacy_defaults(edit, shell, network),
             category_overrides: BTreeMap::new(),
             ask_timeout_ms: DEFAULT_ASK_TIMEOUT_MS,
         }
@@ -123,6 +193,12 @@ impl PermissionPolicy {
             PermissionKind::EditFs => &self.defaults.edit,
             PermissionKind::Shell => &self.defaults.shell,
             PermissionKind::Network => &self.defaults.network,
+            PermissionKind::Question => &self.defaults.question,
+            PermissionKind::Task => &self.defaults.task,
+            PermissionKind::WebFetch => &self.defaults.webfetch,
+            PermissionKind::WebSearch => &self.defaults.websearch,
+            PermissionKind::CodeSearch => &self.defaults.codesearch,
+            PermissionKind::Lsp => &self.defaults.lsp,
         }
     }
 }
@@ -138,19 +214,30 @@ impl Default for PermissionPolicy {
 }
 
 pub fn permission_kind_for_tool(tool_id: &str) -> Option<PermissionKind> {
-    if tool_id.starts_with("edit.") {
-        return Some(PermissionKind::EditFs);
-    }
+    let canonical_tool_id = canonical_tool_id_for(tool_id).unwrap_or(tool_id);
 
-    if tool_id.starts_with("shell.") {
-        return Some(PermissionKind::Shell);
+    match canonical_tool_id {
+        "user.question" => Some(PermissionKind::Question),
+        "agent.spawn" => Some(PermissionKind::Task),
+        "web.fetch" => Some(PermissionKind::WebFetch),
+        "search.web" => Some(PermissionKind::WebSearch),
+        "search.code" => Some(PermissionKind::CodeSearch),
+        "code.lsp" => Some(PermissionKind::Lsp),
+        "fs.write" => Some(PermissionKind::EditFs),
+        _ if canonical_tool_id.starts_with("edit.") => Some(PermissionKind::EditFs),
+        _ if canonical_tool_id.starts_with("shell.") => Some(PermissionKind::Shell),
+        _ if canonical_tool_id.starts_with("network.") || canonical_tool_id.starts_with("net.") => {
+            Some(PermissionKind::Network)
+        }
+        _ => None,
     }
+}
 
-    if tool_id.starts_with("network.") || tool_id.starts_with("net.") {
-        return Some(PermissionKind::Network);
-    }
-
-    None
+pub fn permission_kind_for_tool_call(
+    tool_id: &str,
+    capability: ToolCapability,
+) -> Option<PermissionKind> {
+    permission_kind_for_tool(tool_id).or_else(|| permission_kind_for_capability(capability))
 }
 
 pub fn permission_kind_for_capability(capability: ToolCapability) -> Option<PermissionKind> {
@@ -158,7 +245,8 @@ pub fn permission_kind_for_capability(capability: ToolCapability) -> Option<Perm
         ToolCapability::EditFs => Some(PermissionKind::EditFs),
         ToolCapability::Shell => Some(PermissionKind::Shell),
         ToolCapability::Network => Some(PermissionKind::Network),
-        ToolCapability::ReadFs | ToolCapability::SpawnAgent => None,
+        ToolCapability::SpawnAgent => Some(PermissionKind::Task),
+        ToolCapability::ReadFs => None,
     }
 }
 
@@ -170,13 +258,32 @@ fn mode_for_kind(
         PermissionKind::EditFs => permissions.edit.as_ref(),
         PermissionKind::Shell => permissions.shell.as_ref(),
         PermissionKind::Network => permissions.network.as_ref(),
+        PermissionKind::Question => permissions.question.as_ref(),
+        PermissionKind::Task => permissions.task.as_ref(),
+        PermissionKind::WebFetch => permissions
+            .webfetch
+            .as_ref()
+            .or(permissions.network.as_ref()),
+        PermissionKind::WebSearch => permissions
+            .websearch
+            .as_ref()
+            .or(permissions.network.as_ref()),
+        PermissionKind::CodeSearch => permissions
+            .codesearch
+            .as_ref()
+            .or(permissions.network.as_ref()),
+        PermissionKind::Lsp => permissions.lsp.as_ref(),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{PermissionDecision, PermissionKind, PermissionPolicy, PolicyDecision};
+    use super::{
+        permission_kind_for_capability, permission_kind_for_tool, PermissionDecision,
+        PermissionKind, PermissionPolicy, PolicyDecision,
+    };
     use crate::config::{CategoryPermissions, PermissionMode};
+    use crate::tool::ToolCapability;
 
     #[test]
     fn evaluate_uses_global_defaults() {
@@ -217,6 +324,7 @@ mod tests {
                 edit: Some(PermissionMode::Allow),
                 shell: Some(PermissionMode::Ask),
                 network: None,
+                ..CategoryPermissions::default()
             },
         )
         .with_ask_timeout_ms(55);
@@ -235,6 +343,126 @@ mod tests {
         assert_eq!(
             policy.evaluate(Some("deep"), PermissionKind::Network),
             PolicyDecision::Deny
+        );
+    }
+
+    #[test]
+    fn native_permission_kinds_follow_explicit_and_migration_defaults() {
+        let policy = PermissionPolicy::new(
+            PermissionMode::Ask,
+            PermissionMode::Deny,
+            PermissionMode::Allow,
+        )
+        .with_category_override(
+            "deep",
+            CategoryPermissions {
+                question: Some(PermissionMode::Deny),
+                task: Some(PermissionMode::Ask),
+                websearch: Some(PermissionMode::Deny),
+                lsp: Some(PermissionMode::Ask),
+                ..CategoryPermissions::default()
+            },
+        )
+        .with_ask_timeout_ms(77);
+
+        assert_eq!(
+            policy.evaluate(None, PermissionKind::Question),
+            PolicyDecision::Ask {
+                timeout_ms: 77,
+                default_decision: PermissionDecision::Deny,
+            }
+        );
+        assert_eq!(
+            policy.evaluate(None, PermissionKind::Task),
+            PolicyDecision::Allow
+        );
+        assert_eq!(
+            policy.evaluate(None, PermissionKind::WebFetch),
+            PolicyDecision::Allow
+        );
+        assert_eq!(
+            policy.evaluate(None, PermissionKind::Lsp),
+            PolicyDecision::Allow
+        );
+        assert_eq!(
+            policy.evaluate(Some("deep"), PermissionKind::Question),
+            PolicyDecision::Deny
+        );
+        assert_eq!(
+            policy.evaluate(Some("deep"), PermissionKind::Task),
+            PolicyDecision::Ask {
+                timeout_ms: 77,
+                default_decision: PermissionDecision::Deny,
+            }
+        );
+        assert_eq!(
+            policy.evaluate(Some("deep"), PermissionKind::WebSearch),
+            PolicyDecision::Deny
+        );
+        assert_eq!(
+            policy.evaluate(Some("deep"), PermissionKind::CodeSearch),
+            PolicyDecision::Allow
+        );
+        assert_eq!(
+            policy.evaluate(Some("deep"), PermissionKind::Lsp),
+            PolicyDecision::Ask {
+                timeout_ms: 77,
+                default_decision: PermissionDecision::Deny,
+            }
+        );
+    }
+
+    #[test]
+    fn native_tool_ids_and_aliases_resolve_to_shared_permission_kinds() {
+        assert_eq!(
+            permission_kind_for_tool("user.question"),
+            Some(PermissionKind::Question)
+        );
+        assert_eq!(
+            permission_kind_for_tool("question"),
+            Some(PermissionKind::Question)
+        );
+        assert_eq!(
+            permission_kind_for_tool("agent.spawn"),
+            Some(PermissionKind::Task)
+        );
+        assert_eq!(permission_kind_for_tool("task"), Some(PermissionKind::Task));
+        assert_eq!(
+            permission_kind_for_tool("web.fetch"),
+            Some(PermissionKind::WebFetch)
+        );
+        assert_eq!(
+            permission_kind_for_tool("webfetch"),
+            Some(PermissionKind::WebFetch)
+        );
+        assert_eq!(
+            permission_kind_for_tool("search.web"),
+            Some(PermissionKind::WebSearch)
+        );
+        assert_eq!(
+            permission_kind_for_tool("websearch"),
+            Some(PermissionKind::WebSearch)
+        );
+        assert_eq!(
+            permission_kind_for_tool("search.code"),
+            Some(PermissionKind::CodeSearch)
+        );
+        assert_eq!(
+            permission_kind_for_tool("codesearch"),
+            Some(PermissionKind::CodeSearch)
+        );
+        assert_eq!(
+            permission_kind_for_tool("code.lsp"),
+            Some(PermissionKind::Lsp)
+        );
+        assert_eq!(permission_kind_for_tool("lsp"), Some(PermissionKind::Lsp));
+        assert_eq!(permission_kind_for_tool("tool.batch"), None);
+        assert_eq!(permission_kind_for_tool("batch"), None);
+        assert_eq!(permission_kind_for_tool("todo.write"), None);
+        assert_eq!(permission_kind_for_tool("invalid"), None);
+        assert_eq!(
+            permission_kind_for_capability(ToolCapability::SpawnAgent),
+            Some(PermissionKind::Task)
         );
     }
 }

@@ -11,6 +11,7 @@ use harness_core::edit::hashline::{compute_line_hash, HashlineOp, HashlinePatch,
 use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1, ToolCallStatus};
 use harness_core::perm::{PermissionDecision, PermissionPolicy};
 use harness_core::redact::DefaultRedactor;
+use harness_core::tool::ToolSurface;
 use harness_tools::coordinator_registry;
 
 #[tokio::test]
@@ -252,7 +253,7 @@ async fn hashline_apply_permission_ask_blocks_until_resolved() {
         .expect("permission id");
 
     handle
-        .resolve_permission(permission_id, PermissionDecision::Allow)
+        .resolve_permission(permission_id, PermissionDecision::Allow, None)
         .await
         .expect("resolve permission");
 
@@ -318,6 +319,7 @@ fn test_coordinator(session_dir: &Path, permission_policy: PermissionPolicy) -> 
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             system_prompt: "worker-prompt".to_string(),
+            tool_surface: ToolSurface::Native,
             toolset: vec!["edit.hashline_apply".to_string()],
         },
     );

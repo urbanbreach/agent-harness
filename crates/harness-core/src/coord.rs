@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde::Serialize;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use thiserror::Error;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::MissedTickBehavior;
@@ -20,16 +20,18 @@ use crate::clock::Clock;
 use crate::edit::hashline::HashlinePatch;
 use crate::event::{
     ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, EditAppliedEvent, EditProposedEvent,
-    EditRejectedEvent, EventActor, EventBuildError, EventBuilder, EventContext, EventEnvelopeV1,
-    EventV1, PermissionDecision as EventPermissionDecision, PermissionRequestedArgs,
+    EditRejectedEvent, EventActor, EventArtifactRef, EventBuildError, EventBuilder, EventContext,
+    EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
+    PermissionDecision as EventPermissionDecision, PermissionRequestedArgs,
     PermissionResolvedEvent, PolicyViolationDetectedEvent, RunFinishedEvent, RunStartedEvent,
-    StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskResultLateEvent,
-    TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent, ToolCallStartedEvent,
-    ToolCallStatus, UserMessageSubmittedEvent,
+    StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata,
+    TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState, TaskScheduledEvent,
+    ToolCallFinishedEvent, ToolCallMetadata, ToolCallStartedEvent, ToolCallStatus,
+    ToolIdentityMetadata, UserMessageSubmittedEvent,
 };
 use crate::perm::{
-    permission_kind_for_capability, PermissionDecision, PermissionKind, PermissionPolicy,
-    PolicyDecision,
+    permission_kind_for_tool, permission_kind_for_tool_call, PermissionDecision, PermissionKind,
+    PermissionPolicy, PolicyDecision,
 };
 use crate::proj::inspect_resume_plan;
 use crate::redact::Redactor;
@@ -37,7 +39,7 @@ use crate::sched::{
     ConcurrencyKey, ScheduleDecision, Scheduler, SchedulerLimits, TaskProgressSnapshot,
 };
 use crate::store::{EventEnvelopeWithoutSeqV1, EventStore, EventStoreError, JsonlFileEventStore};
-use crate::tool::{ToolContext, ToolRegistry, ToolResult};
+use crate::tool::{canonical_tool_id_for, ToolContext, ToolRegistry, ToolResult};
 use harness_providers::Provider;
 
 const DEFAULT_COMMAND_BUFFER: usize = 64;
@@ -46,6 +48,7 @@ const DEFAULT_PROVIDER_MODEL_CONCURRENCY: usize = 1;
 const DEFAULT_STALE_TIMEOUT_MS: u64 = 15_000;
 const DEFAULT_WATCHDOG_TICK_MS: u64 = 100;
 const DEFAULT_SIMULATED_JOB_DURATION_MS: u64 = 10;
+const DEFAULT_QUESTION_TIMEOUT_MS: u64 = 300_000;
 const COORDINATOR_AGENT_ID: &str = "coordinator";
 const HASHLINE_APPLY_TOOL_ID: &str = "edit.hashline_apply";
 
@@ -67,8 +70,15 @@ pub struct CoordinatorConfig {
     pub tool_registry: Arc<ToolRegistry>,
     pub provider: Arc<dyn Provider>,
     pub agent_profiles: BTreeMap<String, AgentProfile>,
+    pub plan_profiles: BTreeMap<String, PlanProfileConfig>,
     pub config_digest: String,
     pub harness_version: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PlanProfileConfig {
+    pub plan_mode: bool,
+    pub exit_target_profile: Option<String>,
 }
 
 impl CoordinatorConfig {
@@ -87,6 +97,7 @@ impl CoordinatorConfig {
             tool_registry: Arc::new(ToolRegistry::new()),
             provider: default_provider(),
             agent_profiles: BTreeMap::new(),
+            plan_profiles: BTreeMap::new(),
             config_digest: "none".to_string(),
             harness_version: env!("CARGO_PKG_VERSION").to_string(),
         }
@@ -177,9 +188,16 @@ pub enum Command {
         args_json: Value,
         respond_to: oneshot::Sender<Result<ToolResult, String>>,
     },
+    RequestQuestion {
+        actor: EventActor,
+        tool_call_id: String,
+        request_json: Value,
+        respond_to: oneshot::Sender<Result<Vec<Vec<String>>, String>>,
+    },
     ResolvePermission {
         permission_id: String,
         decision: PermissionDecision,
+        reason: Option<String>,
         respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
     },
     PermissionTimedOut {
@@ -280,7 +298,7 @@ pub enum CoordinatorError {
     ResumeRestoreFailed { run_id: String, reason: String },
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct CoordinatorHandle {
     tx: mpsc::Sender<Command>,
 }
@@ -420,6 +438,30 @@ impl CoordinatorHandle {
             .map_err(|_| CoordinatorError::ResponseChannelClosed)?
     }
 
+    pub async fn execute_agent_tool_call(
+        &self,
+        actor: EventActor,
+        category: Option<String>,
+        tool_id: impl Into<String>,
+        args_json: Value,
+    ) -> Result<ToolResult, String> {
+        let (respond_to, response_rx) = oneshot::channel();
+        self.tx
+            .send(Command::ExecuteAgentToolCall {
+                actor,
+                category,
+                tool_id: tool_id.into(),
+                args_json,
+                respond_to,
+            })
+            .await
+            .map_err(|_| CoordinatorError::CommandChannelClosed.to_string())?;
+
+        response_rx
+            .await
+            .map_err(|_| CoordinatorError::ResponseChannelClosed.to_string())?
+    }
+
     pub async fn request_agent_turn(
         &self,
         actor: EventActor,
@@ -446,12 +488,14 @@ impl CoordinatorHandle {
         &self,
         permission_id: impl Into<String>,
         decision: PermissionDecision,
+        reason: Option<String>,
     ) -> Result<(), CoordinatorError> {
         let (respond_to, response_rx) = oneshot::channel();
         self.tx
             .send(Command::ResolvePermission {
                 permission_id: permission_id.into(),
                 decision,
+                reason,
                 respond_to,
             })
             .await
@@ -460,6 +504,28 @@ impl CoordinatorHandle {
         response_rx
             .await
             .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+    }
+
+    pub async fn request_question(
+        &self,
+        actor: EventActor,
+        tool_call_id: impl Into<String>,
+        request_json: Value,
+    ) -> Result<Vec<Vec<String>>, String> {
+        let (respond_to, response_rx) = oneshot::channel();
+        self.tx
+            .send(Command::RequestQuestion {
+                actor,
+                tool_call_id: tool_call_id.into(),
+                request_json,
+                respond_to,
+            })
+            .await
+            .map_err(|_| CoordinatorError::CommandChannelClosed.to_string())?;
+
+        response_rx
+            .await
+            .map_err(|_| CoordinatorError::ResponseChannelClosed.to_string())?
     }
 
     pub async fn job_progress(
@@ -673,12 +739,22 @@ impl Coordinator {
                     Some(respond_to),
                 );
             }
+            Command::RequestQuestion {
+                actor,
+                tool_call_id,
+                request_json,
+                respond_to,
+            } => {
+                let _ =
+                    self.request_question_internal(actor, tool_call_id, request_json, respond_to);
+            }
             Command::ResolvePermission {
                 permission_id,
                 decision,
+                reason,
                 respond_to,
             } => {
-                let result = self.resolve_permission_internal(permission_id, decision);
+                let result = self.resolve_permission_internal(permission_id, decision, reason);
                 let _ = respond_to.send(result);
             }
             Command::PermissionTimedOut { permission_id } => {
@@ -1236,6 +1312,7 @@ impl Coordinator {
         run_state.next_tool_call_id += 1;
 
         let request_correlation_id = tool_request_correlation_id(run_state, &actor);
+        let tool_metadata = requested_tool_call_metadata(&tool_id);
 
         append_tool_call_requested_event(
             self.clock.as_ref(),
@@ -1246,6 +1323,7 @@ impl Coordinator {
                 tool_call_id: &tool_call_id,
                 tool_id: &tool_id,
                 args_json: &args_json,
+                tool_metadata,
                 request_correlation_id: request_correlation_id.as_deref(),
             },
         )?;
@@ -1355,18 +1433,29 @@ impl Coordinator {
                 )));
             }
 
-            Some(worker_profile.category.as_str())
+            Some(worker_profile.category.clone())
         } else {
-            category.as_deref()
+            category.clone()
         };
+        let (plan_mode, plan_exit_target_profile) = resolve_plan_profile_context(
+            effective_category.as_deref(),
+            &self.config.plan_profiles,
+            &self.config.agent_profiles,
+        );
 
-        let maybe_kind = permission_kind_for_capability(capability);
+        let skip_outer_question_permission =
+            canonical_tool_id_for(&tool_id) == Some("user.question");
+        let maybe_kind = if skip_outer_question_permission {
+            None
+        } else {
+            permission_kind_for_tool_call(&tool_id, capability)
+        };
         let decision = maybe_kind.map(|kind| {
             self.config
                 .permission_policy
-                .evaluate(effective_category, kind)
+                .evaluate(effective_category.as_deref(), kind)
         });
-        let hashline_edit = hashline_edit_metadata(&tool_id, &args_json);
+        let hashline_edit = hashline_edit_metadata(&tool_id, &args_json, &tool_call_id);
 
         match decision {
             Some(PolicyDecision::Deny) => {
@@ -1375,6 +1464,7 @@ impl Coordinator {
                     redactor.as_ref(),
                     run_state,
                     PermissionDeniedArgs {
+                        tool_id: &tool_id,
                         tool_call_id: &tool_call_id,
                         hashline_edit: hashline_edit.as_ref(),
                         kind: maybe_kind
@@ -1420,11 +1510,16 @@ impl Coordinator {
                     permission_id.clone(),
                     PendingPermissionState {
                         tool_call_id: tool_call_id.clone(),
-                        tool_id,
-                        args_json,
-                        actor,
                         request_correlation_id,
-                        respond_to,
+                        resolution: PendingPermissionResolution::ToolCall {
+                            tool_id,
+                            args_json,
+                            actor,
+                            category: effective_category.clone(),
+                            plan_mode,
+                            plan_exit_target_profile,
+                            respond_to,
+                        },
                     },
                 );
 
@@ -1446,6 +1541,9 @@ impl Coordinator {
                         tool_id,
                         args_json,
                         actor,
+                        category: effective_category.clone(),
+                        plan_mode,
+                        plan_exit_target_profile,
                         tool_registry: self.config.tool_registry.clone(),
                         request_correlation_id,
                         respond_to,
@@ -1461,6 +1559,7 @@ impl Coordinator {
         &mut self,
         permission_id: String,
         decision: PermissionDecision,
+        reason: Option<String>,
     ) -> Result<(), CoordinatorError> {
         let clock = self.clock.clone();
         let redactor = self.redactor.clone();
@@ -1471,9 +1570,26 @@ impl Coordinator {
             .as_mut()
             .ok_or(CoordinatorError::RunNotStarted)?;
 
-        let Some(pending) = run_state.pending_permissions.remove(&permission_id) else {
+        let Some(existing) = run_state.pending_permissions.get(&permission_id) else {
             return Err(CoordinatorError::UnknownPermission(permission_id));
         };
+
+        let validated_question_answers = if decision == PermissionDecision::Allow {
+            match &existing.resolution {
+                PendingPermissionResolution::Question { prompts, .. } => Some(
+                    validate_question_answers_reason(reason.as_deref(), prompts)
+                        .map_err(CoordinatorError::PolicyViolation)?,
+                ),
+                PendingPermissionResolution::ToolCall { .. } => None,
+            }
+        } else {
+            None
+        };
+
+        let pending = run_state
+            .pending_permissions
+            .remove(&permission_id)
+            .expect("pending permission exists after validation");
 
         append_permission_resolved_event(
             self.clock.as_ref(),
@@ -1481,36 +1597,79 @@ impl Coordinator {
             run_state,
             permission_id,
             event_permission_decision(decision),
-            None,
+            reason.clone(),
         )?;
 
-        match decision {
-            PermissionDecision::Allow => {
-                start_tool_call_execution(
-                    clock.as_ref(),
-                    redactor.as_ref(),
-                    job_tx,
-                    run_state,
-                    ToolCallExecutionArgs {
-                        tool_call_id: pending.tool_call_id,
-                        tool_id: pending.tool_id,
-                        args_json: pending.args_json,
-                        actor: pending.actor,
-                        tool_registry: self.config.tool_registry.clone(),
-                        request_correlation_id: pending.request_correlation_id,
-                        respond_to: pending.respond_to,
+        match pending {
+            PendingPermissionState {
+                tool_call_id,
+                request_correlation_id,
+                resolution:
+                    PendingPermissionResolution::ToolCall {
+                        tool_id,
+                        args_json,
+                        actor,
+                        category,
+                        plan_mode,
+                        plan_exit_target_profile,
+                        respond_to,
                     },
-                )?;
+            } => {
+                if decision == PermissionDecision::Allow {
+                    start_tool_call_execution(
+                        clock.as_ref(),
+                        redactor.as_ref(),
+                        job_tx,
+                        run_state,
+                        ToolCallExecutionArgs {
+                            tool_call_id,
+                            tool_id,
+                            args_json,
+                            actor,
+                            category,
+                            plan_mode,
+                            plan_exit_target_profile,
+                            tool_registry: self.config.tool_registry.clone(),
+                            request_correlation_id,
+                            respond_to,
+                        },
+                    )?;
+                } else {
+                    reject_pending_permission(
+                        self.clock.as_ref(),
+                        self.redactor.as_ref(),
+                        run_state,
+                        "permission denied",
+                        "tool call denied: permission denied",
+                        PendingPermissionState {
+                            tool_call_id,
+                            request_correlation_id,
+                            resolution: PendingPermissionResolution::ToolCall {
+                                tool_id,
+                                args_json,
+                                actor,
+                                category,
+                                plan_mode,
+                                plan_exit_target_profile,
+                                respond_to,
+                            },
+                        },
+                    )?;
+                }
             }
-            PermissionDecision::Deny => {
-                reject_pending_permission(
-                    self.clock.as_ref(),
-                    self.redactor.as_ref(),
-                    run_state,
-                    "permission denied",
-                    "tool call denied: permission denied",
-                    pending,
-                )?;
+            PendingPermissionState {
+                resolution: PendingPermissionResolution::Question { respond_to, .. },
+                ..
+            } => {
+                if decision == PermissionDecision::Allow {
+                    let answers = validated_question_answers
+                        .expect("validated answers exist for allowed question resolution");
+                    let _ = respond_to.send(Ok(answers));
+                } else {
+                    let _ = respond_to.send(Err(
+                        reason.unwrap_or_else(|| "question rejected by user".to_string())
+                    ));
+                }
             }
         }
 
@@ -1535,14 +1694,107 @@ impl Coordinator {
             Some("permission request timed out".to_string()),
         );
 
-        let _ = reject_pending_permission(
-            self.clock.as_ref(),
-            self.redactor.as_ref(),
-            run_state,
-            "permission denied by timeout",
-            "tool call timed out: permission request timed out",
-            pending,
-        );
+        let _ = match pending {
+            PendingPermissionState {
+                resolution: PendingPermissionResolution::ToolCall { .. },
+                ..
+            } => reject_pending_permission(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                run_state,
+                "permission denied by timeout",
+                "tool call timed out: permission request timed out",
+                pending,
+            ),
+            PendingPermissionState {
+                resolution: PendingPermissionResolution::Question { respond_to, .. },
+                ..
+            } => {
+                let _ = respond_to.send(Err("question timed out awaiting user input".to_string()));
+                Ok(())
+            }
+        };
+    }
+
+    fn request_question_internal(
+        &mut self,
+        actor: EventActor,
+        tool_call_id: String,
+        request_json: Value,
+        respond_to: oneshot::Sender<Result<Vec<Vec<String>>, String>>,
+    ) -> Result<(), CoordinatorError> {
+        let mut respond_to = Some(respond_to);
+        let result = (|| -> Result<(), CoordinatorError> {
+            let run_state = self
+                .run_state
+                .as_mut()
+                .ok_or(CoordinatorError::RunNotStarted)?;
+            let prompts = parse_question_request_prompts(&request_json)
+                .map_err(CoordinatorError::PolicyViolation)?;
+
+            let permission_id = format!("perm_{:06}", run_state.next_permission_id);
+            run_state.next_permission_id += 1;
+            let request_correlation_id = tool_request_correlation_id(run_state, &actor);
+            let kind = permission_kind_for_tool("user.question")
+                .expect("user.question must resolve to a formal permission kind");
+            let timeout_ms = question_request_timeout_ms(&self.config.permission_policy);
+
+            let builder = EventBuilder::new(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                run_state.info.run_id.clone(),
+            );
+            let mut context = EventContext::new(run_state.next_event_seq, system_actor());
+            context.correlation_id = request_correlation_id
+                .clone()
+                .or_else(|| Some(tool_call_id.clone()));
+            context.stream_key = Some(format!("permission:{permission_id}"));
+
+            let envelope = builder.permission_requested(
+                context,
+                PermissionRequestedArgs {
+                    permission_id: permission_id.clone(),
+                    kind: kind.as_str().to_string(),
+                    tool_call_id: Some(tool_call_id.clone()),
+                    summary: serde_json::to_string(&request_json)?,
+                    request_digest: permission_request_digest(kind.as_str(), &request_json),
+                    timeout_ms,
+                    default_decision: EventPermissionDecision::Deny,
+                },
+            )?;
+            append_built_event(run_state, envelope)?;
+
+            run_state.pending_permissions.insert(
+                permission_id.clone(),
+                PendingPermissionState {
+                    tool_call_id,
+                    request_correlation_id,
+                    resolution: PendingPermissionResolution::Question {
+                        prompts,
+                        respond_to: respond_to
+                            .take()
+                            .expect("question responder is available before storing"),
+                    },
+                },
+            );
+
+            let job_tx = self.job_tx.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(timeout_ms)).await;
+                let _ = job_tx
+                    .send(Command::PermissionTimedOut { permission_id })
+                    .await;
+            });
+
+            Ok(())
+        })();
+
+        if let Err(err) = &result {
+            if let Some(respond_to) = respond_to {
+                let _ = respond_to.send(Err(err.to_string()));
+            }
+        }
+        result
     }
 
     fn job_progress_internal(&mut self, task_id: String, kind: JobProgressKind) {
@@ -1711,6 +1963,8 @@ impl Coordinator {
 
         let _ = run_state.scheduler.complete(&task.queue_key);
         let request_correlation_id = task.request_correlation_id.clone();
+        let finished_mono_ms = self.clock.mono_ms();
+        let timing = execution_timing_metadata(task.started_mono_ms, finished_mono_ms);
 
         match outcome {
             JobOutcome::Succeeded { result } => {
@@ -1748,6 +2002,9 @@ impl Coordinator {
                 }
 
                 let result_summary = result.display_text;
+                let artifact_refs = event_artifact_refs(&result.artifacts);
+                let lineage =
+                    tool_task_lineage_metadata(&task, result_for_response.structured_json.as_ref());
                 for artifact in &result.artifacts {
                     append_artifact_written_event(
                         self.clock.as_ref(),
@@ -1756,6 +2013,7 @@ impl Coordinator {
                         &task.tool_call_id,
                         artifact,
                         request_correlation_id.as_deref(),
+                        task.tool_metadata.as_ref(),
                     )?;
                 }
                 append_payload_event_with_correlation(
@@ -1769,8 +2027,20 @@ impl Coordinator {
                         task_id,
                         result_digest: digest12(result_summary.as_bytes()),
                         result_summary: result_summary.clone(),
+                        metadata: Some(TaskCompletionMetadata {
+                            lineage: Some(lineage.clone()),
+                            timing: Some(timing.clone()),
+                        }),
                     }),
                 )?;
+
+                let output_json = Some(stable_tool_output_json(
+                    result_for_response.structured_json.clone(),
+                    &result_summary,
+                    &artifact_refs,
+                    &lineage,
+                    &timing,
+                ));
 
                 append_tool_call_finished_event(
                     self.clock.as_ref(),
@@ -1780,7 +2050,13 @@ impl Coordinator {
                         tool_call_id: &task.tool_call_id,
                         status: ToolCallStatus::Succeeded,
                         output_summary: Some(result_summary),
-                        output_json: result_for_response.structured_json.clone(),
+                        output_json,
+                        metadata: tool_call_metadata(
+                            task.tool_metadata.as_ref(),
+                            Some(lineage),
+                            artifact_refs,
+                            Some(timing.clone()),
+                        ),
                         request_correlation_id: request_correlation_id.as_deref(),
                     },
                 )?;
@@ -1822,6 +2098,12 @@ impl Coordinator {
                     &task.tool_call_id,
                     "tool execution failed",
                     request_correlation_id.as_deref(),
+                    tool_call_metadata(
+                        task.tool_metadata.as_ref(),
+                        Some(tool_task_lineage_metadata(&task, None)),
+                        Vec::new(),
+                        Some(timing.clone()),
+                    ),
                 )?;
                 if let Some(respond_to) = task.respond_to {
                     let _ = respond_to
@@ -1859,6 +2141,12 @@ impl Coordinator {
                     &task.tool_call_id,
                     "tool execution cancelled",
                     request_correlation_id.as_deref(),
+                    tool_call_metadata(
+                        task.tool_metadata.as_ref(),
+                        Some(tool_task_lineage_metadata(&task, None)),
+                        Vec::new(),
+                        Some(timing),
+                    ),
                 )?;
                 if let Some(respond_to) = task.respond_to {
                     let _ =
@@ -1991,6 +2279,7 @@ impl Coordinator {
 
         let was_cancelled = run_state.cancelled_running_tasks.remove(&task_id);
         let dequeued = run_state.scheduler.complete(&running.queue_key);
+        let finished_mono_ms = self.clock.mono_ms();
 
         if !was_cancelled {
             match outcome {
@@ -2014,6 +2303,13 @@ impl Coordinator {
                             task_id,
                             result_digest: digest12(output.as_bytes()),
                             result_summary: output,
+                            metadata: Some(TaskCompletionMetadata {
+                                lineage: None,
+                                timing: Some(execution_timing_metadata(
+                                    running.started_mono_ms,
+                                    finished_mono_ms,
+                                )),
+                            }),
                         }),
                     )?;
                 }
@@ -2103,6 +2399,7 @@ struct RunningAgentTurn {
     request_prompt: String,
     queue_key: ConcurrencyKey,
     cancellation_token: CancellationToken,
+    started_mono_ms: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2120,11 +2417,13 @@ struct HashlineEditMetadata {
 
 struct TaskState {
     tool_call_id: String,
+    tool_metadata: Option<ToolIdentityMetadata>,
     owner_actor: EventActor,
     request_correlation_id: Option<String>,
     queue_key: ConcurrencyKey,
     state: TaskExecutionState,
     cancellation_token: CancellationToken,
+    started_mono_ms: u64,
     last_progress_mono_ms: u64,
     last_progress_kind: JobProgressKind,
     hashline_edit: Option<HashlineEditMetadata>,
@@ -2133,11 +2432,46 @@ struct TaskState {
 
 struct PendingPermissionState {
     tool_call_id: String,
-    tool_id: String,
-    args_json: Value,
-    actor: EventActor,
     request_correlation_id: Option<String>,
-    respond_to: Option<oneshot::Sender<Result<ToolResult, String>>>,
+    resolution: PendingPermissionResolution,
+}
+
+enum PendingPermissionResolution {
+    ToolCall {
+        tool_id: String,
+        args_json: Value,
+        actor: EventActor,
+        category: Option<String>,
+        plan_mode: bool,
+        plan_exit_target_profile: Option<String>,
+        respond_to: Option<oneshot::Sender<Result<ToolResult, String>>>,
+    },
+    Question {
+        prompts: Vec<QuestionPromptSpec>,
+        respond_to: oneshot::Sender<Result<Vec<Vec<String>>, String>>,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct QuestionRequestSpec {
+    questions: Vec<QuestionPromptSpec>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct QuestionPromptSpec {
+    #[serde(rename = "question")]
+    _question: String,
+    header: String,
+    options: Vec<QuestionOptionSpec>,
+    #[serde(default)]
+    multiple: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct QuestionOptionSpec {
+    label: String,
+    #[serde(rename = "description")]
+    _description: String,
 }
 
 struct AgentTurnTaskScheduledEventArgs<'a> {
@@ -2149,6 +2483,7 @@ struct AgentTurnTaskScheduledEventArgs<'a> {
 }
 
 struct PermissionDeniedArgs<'a> {
+    tool_id: &'a str,
     tool_call_id: &'a str,
     hashline_edit: Option<&'a HashlineEditMetadata>,
     kind: PermissionKind,
@@ -2161,6 +2496,7 @@ struct ToolCallRequestedEventArgs<'a> {
     tool_call_id: &'a str,
     tool_id: &'a str,
     args_json: &'a Value,
+    tool_metadata: Option<ToolCallMetadata>,
     request_correlation_id: Option<&'a str>,
 }
 
@@ -2179,6 +2515,9 @@ struct ToolCallExecutionArgs {
     tool_id: String,
     args_json: Value,
     actor: EventActor,
+    category: Option<String>,
+    plan_mode: bool,
+    plan_exit_target_profile: Option<String>,
     tool_registry: Arc<ToolRegistry>,
     request_correlation_id: Option<String>,
     respond_to: Option<oneshot::Sender<Result<ToolResult, String>>>,
@@ -2200,6 +2539,7 @@ struct ToolCallFinishedEventArgs<'a> {
     status: ToolCallStatus,
     output_summary: Option<String>,
     output_json: Option<Value>,
+    metadata: Option<ToolCallMetadata>,
     request_correlation_id: Option<&'a str>,
 }
 
@@ -2220,6 +2560,36 @@ struct ScheduleAgentTurnArgs {
     request_id: String,
 }
 
+fn resolve_plan_profile_context(
+    category: Option<&str>,
+    plan_profiles: &BTreeMap<String, PlanProfileConfig>,
+    agent_profiles: &BTreeMap<String, AgentProfile>,
+) -> (bool, Option<String>) {
+    let Some(category) = category else {
+        return (false, None);
+    };
+    let Some(profile) = plan_profiles.get(category) else {
+        return (false, None);
+    };
+    if !profile.plan_mode {
+        return (false, None);
+    }
+    if let Some(target) = profile
+        .exit_target_profile
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let target = target.to_string();
+        let resolved = agent_profiles.contains_key(&target).then_some(target);
+        return (true, resolved);
+    }
+    let fallback = agent_profiles
+        .contains_key("build")
+        .then(|| "build".to_string());
+    (true, fallback)
+}
+
 fn start_tool_call_execution<C, R>(
     clock: &C,
     redactor: &R,
@@ -2236,10 +2606,15 @@ where
         tool_id,
         args_json,
         actor,
+        category,
+        plan_mode,
+        plan_exit_target_profile,
         tool_registry,
         request_correlation_id,
         respond_to,
     } = args;
+    let tool_metadata = tool_identity_metadata(&tool_id);
+
     let Some(tool) = tool_registry.get(&tool_id) else {
         append_payload_event(
             clock,
@@ -2260,6 +2635,7 @@ where
             &tool_call_id,
             "unknown tool",
             request_correlation_id.as_deref(),
+            requested_tool_call_metadata(&tool_id),
         )?;
         return Err(CoordinatorError::PolicyViolation(format!(
             "tool `{tool_id}` is not registered"
@@ -2292,13 +2668,14 @@ where
             &tool_call_id,
             "capability forbidden",
             request_correlation_id.as_deref(),
+            requested_tool_call_metadata(&tool_id),
         )?;
         return Err(CoordinatorError::PolicyViolation(
             "tool capability forbidden for actor".to_string(),
         ));
     }
 
-    let hashline_edit = hashline_edit_metadata(&tool_id, &args_json);
+    let hashline_edit = hashline_edit_metadata(&tool_id, &args_json, &tool_call_id);
 
     append_tool_call_started_event(
         clock,
@@ -2344,15 +2721,18 @@ where
     let run_id = run_state.info.run_id.clone();
     let workspace_root = run_state.info.workspace_root.clone();
     let artifacts_dir = run_state.info.artifacts_dir.clone();
+    let coordinator = CoordinatorHandle { tx: job_tx.clone() };
     run_state.tasks.insert(
         task_id.clone(),
         TaskState {
             tool_call_id: tool_call_id.clone(),
+            tool_metadata,
             owner_actor: actor.clone(),
             request_correlation_id,
             queue_key,
             state: TaskExecutionState::Running,
             cancellation_token: cancellation_token.clone(),
+            started_mono_ms: clock.mono_ms(),
             last_progress_mono_ms: clock.mono_ms(),
             last_progress_kind: JobProgressKind::Heartbeat,
             hashline_edit,
@@ -2373,7 +2753,11 @@ where
             workspace_root,
             artifacts_dir,
             actor,
+            category,
+            plan_mode,
+            plan_exit_target_profile,
             tool_call_id: tool_call_id.clone(),
+            coordinator,
         };
 
         tokio::select! {
@@ -2543,7 +2927,7 @@ where
 }
 
 fn start_agent_turn_execution<C, R>(
-    _clock: &C,
+    clock: &C,
     _redactor: &R,
     job_tx: mpsc::Sender<Command>,
     run_state: &mut RunState,
@@ -2565,6 +2949,7 @@ where
             request_prompt: task.request.prompt.clone(),
             queue_key: task.queue_key.clone(),
             cancellation_token: cancellation_token.clone(),
+            started_mono_ms: clock.mono_ms(),
         },
     );
 
@@ -2685,6 +3070,7 @@ where
     R: Redactor + ?Sized,
 {
     let PermissionDeniedArgs {
+        tool_id,
         tool_call_id,
         hashline_edit,
         kind,
@@ -2704,16 +3090,29 @@ where
         Some(format!("{} ({})", reason, kind.as_str())),
     )?;
 
+    let tool_metadata = tool_identity_metadata(tool_id);
+
     append_tool_call_rejection(
         clock,
         redactor,
         run_state,
-        tool_call_id,
-        hashline_edit,
-        reason,
-        request_correlation_id,
+        ToolCallRejectionArgs {
+            tool_call_id,
+            hashline_edit,
+            tool_metadata: tool_metadata.as_ref(),
+            reason,
+            request_correlation_id,
+        },
     )?;
     Ok(())
+}
+
+struct ToolCallRejectionArgs<'a> {
+    tool_call_id: &'a str,
+    hashline_edit: Option<&'a HashlineEditMetadata>,
+    tool_metadata: Option<&'a ToolIdentityMetadata>,
+    reason: &'a str,
+    request_correlation_id: Option<&'a str>,
 }
 
 fn append_permission_resolved_event<C, R>(
@@ -2746,15 +3145,20 @@ fn append_tool_call_rejection<C, R>(
     clock: &C,
     redactor: &R,
     run_state: &mut RunState,
-    tool_call_id: &str,
-    hashline_edit: Option<&HashlineEditMetadata>,
-    reason: &str,
-    request_correlation_id: Option<&str>,
+    args: ToolCallRejectionArgs<'_>,
 ) -> Result<(), CoordinatorError>
 where
     C: Clock + ?Sized,
     R: Redactor + ?Sized,
 {
+    let ToolCallRejectionArgs {
+        tool_call_id,
+        hashline_edit,
+        tool_metadata,
+        reason,
+        request_correlation_id,
+    } = args;
+
     if let Some(metadata) = hashline_edit {
         append_edit_rejected_event(
             clock,
@@ -2774,6 +3178,7 @@ where
         tool_call_id,
         reason,
         request_correlation_id,
+        tool_call_metadata(tool_metadata, None, Vec::new(), None),
     )?;
 
     Ok(())
@@ -2791,22 +3196,134 @@ where
     C: Clock + ?Sized,
     R: Redactor + ?Sized,
 {
-    let hashline_edit = hashline_edit_metadata(&pending.tool_id, &pending.args_json);
+    let PendingPermissionResolution::ToolCall {
+        tool_id,
+        args_json,
+        respond_to,
+        ..
+    } = pending.resolution
+    else {
+        return Ok(());
+    };
+
+    let hashline_edit = hashline_edit_metadata(&tool_id, &args_json, &pending.tool_call_id);
+    let tool_metadata = tool_identity_metadata(&tool_id);
     append_tool_call_rejection(
         clock,
         redactor,
         run_state,
-        &pending.tool_call_id,
-        hashline_edit.as_ref(),
-        reason,
-        pending.request_correlation_id.as_deref(),
+        ToolCallRejectionArgs {
+            tool_call_id: &pending.tool_call_id,
+            hashline_edit: hashline_edit.as_ref(),
+            tool_metadata: tool_metadata.as_ref(),
+            reason,
+            request_correlation_id: pending.request_correlation_id.as_deref(),
+        },
     )?;
 
-    if let Some(respond_to) = pending.respond_to {
+    if let Some(respond_to) = respond_to {
         let _ = respond_to.send(Err(response_message.to_string()));
     }
 
     Ok(())
+}
+
+fn parse_question_answers_reason(reason: Option<&str>) -> Result<Vec<Vec<String>>, String> {
+    let Some(reason) = reason.map(str::trim).filter(|reason| !reason.is_empty()) else {
+        return Err("question answers were not provided".to_string());
+    };
+
+    serde_json::from_str::<Vec<Vec<String>>>(reason)
+        .map_err(|err| format!("invalid question answer payload: {err}"))
+}
+
+fn validate_question_answers_reason(
+    reason: Option<&str>,
+    prompts: &[QuestionPromptSpec],
+) -> Result<Vec<Vec<String>>, String> {
+    let answers = parse_question_answers_reason(reason)?;
+    validate_question_answers(prompts, answers)
+}
+
+fn parse_question_request_prompts(request_json: &Value) -> Result<Vec<QuestionPromptSpec>, String> {
+    let request = serde_json::from_value::<QuestionRequestSpec>(request_json.clone())
+        .map_err(|err| format!("invalid question request payload: {err}"))?;
+    validate_question_prompts(request.questions)
+}
+
+fn validate_question_prompts(
+    prompts: Vec<QuestionPromptSpec>,
+) -> Result<Vec<QuestionPromptSpec>, String> {
+    if prompts.is_empty() {
+        return Err("at least one question is required".to_string());
+    }
+
+    Ok(prompts)
+}
+
+fn validate_question_answers(
+    prompts: &[QuestionPromptSpec],
+    answers: Vec<Vec<String>>,
+) -> Result<Vec<Vec<String>>, String> {
+    if answers.len() != prompts.len() {
+        return Err(format!(
+            "Expected {} answer group(s) for {} question(s); received {}.",
+            prompts.len(),
+            prompts.len(),
+            answers.len()
+        ));
+    }
+
+    prompts
+        .iter()
+        .zip(answers)
+        .enumerate()
+        .map(|(index, (prompt, answers))| normalize_question_answers(index, prompt, answers))
+        .collect()
+}
+
+fn normalize_question_answers(
+    index: usize,
+    prompt: &QuestionPromptSpec,
+    answers: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let answers = answers
+        .into_iter()
+        .map(|answer| answer.trim().to_string())
+        .filter(|answer| !answer.is_empty())
+        .collect::<Vec<_>>();
+    if answers.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    if !prompt.multiple.unwrap_or(false) && answers.len() != 1 {
+        return Err(format!(
+            "Question {} ({}) accepts only one answer.",
+            index + 1,
+            prompt.header
+        ));
+    }
+
+    Ok(answers
+        .into_iter()
+        .map(|answer| canonicalize_question_answer(prompt, answer))
+        .collect())
+}
+
+fn canonicalize_question_answer(prompt: &QuestionPromptSpec, answer: String) -> String {
+    prompt
+        .options
+        .iter()
+        .find(|option| option.label.eq_ignore_ascii_case(&answer))
+        .map(|option| option.label.clone())
+        .unwrap_or(answer)
+}
+
+fn question_request_timeout_ms(permission_policy: &PermissionPolicy) -> u64 {
+    match permission_policy.evaluate(None, PermissionKind::Question) {
+        PolicyDecision::Ask { timeout_ms, .. } => timeout_ms,
+        PolicyDecision::Allow | PolicyDecision::Deny => DEFAULT_QUESTION_TIMEOUT_MS,
+    }
 }
 
 fn append_payload_event<C, R>(
@@ -2862,6 +3379,7 @@ where
         tool_call_id,
         tool_id,
         args_json,
+        tool_metadata,
         request_correlation_id,
     } = args;
 
@@ -2871,7 +3389,8 @@ where
         .map(ToOwned::to_owned)
         .or_else(|| Some(tool_call_id.to_string()));
     context.stream_key = Some(format!("tool_call:{tool_call_id}"));
-    let envelope = builder.tool_call_requested(context, tool_call_id, tool_id, args_json)?;
+    let envelope =
+        builder.tool_call_requested(context, tool_call_id, tool_id, args_json, tool_metadata)?;
     append_built_event(run_state, envelope)
 }
 
@@ -2959,6 +3478,7 @@ where
         status,
         output_summary,
         output_json,
+        metadata,
         request_correlation_id,
     } = args;
     let output_digest = output_summary.as_ref().map(|s| digest12(s.as_bytes()));
@@ -2976,6 +3496,7 @@ where
             output_summary,
             output_digest,
             output_json,
+            metadata,
         }),
     )?;
     append_built_event(run_state, envelope)
@@ -3091,6 +3612,7 @@ fn append_failed_tool_call_finished_event<C, R>(
     tool_call_id: &str,
     reason: &str,
     request_correlation_id: Option<&str>,
+    metadata: Option<ToolCallMetadata>,
 ) -> Result<EventEnvelopeV1, CoordinatorError>
 where
     C: Clock + ?Sized,
@@ -3104,7 +3626,8 @@ where
             tool_call_id,
             status: ToolCallStatus::Failed,
             output_summary: Some(reason.to_string()),
-            output_json: None,
+            output_json: Some(failed_tool_output_json(reason)),
+            metadata,
             request_correlation_id,
         },
     )
@@ -3117,6 +3640,7 @@ fn append_artifact_written_event<C, R>(
     tool_call_id: &str,
     artifact: &crate::tool::ArtifactRef,
     request_correlation_id: Option<&str>,
+    tool_metadata: Option<&ToolIdentityMetadata>,
 ) -> Result<EventEnvelopeV1, CoordinatorError>
 where
     C: Clock + ?Sized,
@@ -3130,6 +3654,19 @@ where
         .digest
         .clone()
         .unwrap_or_else(|| digest12(artifact.path.as_bytes()));
+    let mut metadata = BTreeMap::new();
+    metadata.insert("tool_call_id".to_string(), tool_call_id.to_string());
+    if let Some(tool_metadata) = tool_metadata {
+        if let Some(canonical_tool_id) = tool_metadata.canonical_tool_id.as_ref() {
+            metadata.insert("canonical_tool_id".to_string(), canonical_tool_id.clone());
+        }
+        if let Some(alias_source_tool_id) = tool_metadata.alias_source_tool_id.as_ref() {
+            metadata.insert(
+                "alias_source_tool_id".to_string(),
+                alias_source_tool_id.clone(),
+            );
+        }
+    }
 
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
     let mut context = EventContext::new(run_state.next_event_seq, system_actor());
@@ -3143,7 +3680,9 @@ where
             path: artifact.path.clone(),
             digest,
             bytes,
-            metadata: BTreeMap::new(),
+            tool_call_id: Some(tool_call_id.to_string()),
+            tool_metadata: tool_metadata.cloned(),
+            metadata,
         }),
     )?;
 
@@ -3223,9 +3762,28 @@ fn tool_request_correlation_id(run_state: &RunState, actor: &EventActor) -> Opti
         .map(|turn| turn.request_id.clone())
 }
 
-fn hashline_edit_metadata(tool_id: &str, args_json: &Value) -> Option<HashlineEditMetadata> {
+fn hashline_edit_metadata(
+    tool_id: &str,
+    args_json: &Value,
+    tool_call_id: &str,
+) -> Option<HashlineEditMetadata> {
     if tool_id != HASHLINE_APPLY_TOOL_ID {
-        return None;
+        if canonical_tool_id_for(tool_id) != Some("fs.write") {
+            return None;
+        }
+
+        let path = args_json
+            .get("path")
+            .or_else(|| args_json.get("filePath"))
+            .and_then(Value::as_str)?;
+        let canonical_request = serde_json::to_vec(args_json).unwrap_or_else(|_| b"null".to_vec());
+
+        return Some(HashlineEditMetadata {
+            edit_id: format!("fs-write-{tool_call_id}"),
+            path: path.to_string(),
+            summary: "rewrite file through hashline workspace op".to_string(),
+            patch_digest: digest12(&canonical_request),
+        });
     }
 
     let patch: HashlinePatch = serde_json::from_value(args_json.clone()).ok()?;
@@ -3265,6 +3823,155 @@ fn hashline_diff_refs(result: &ToolResult) -> (Option<String>, Option<String>) {
         structured_path.or(artifact_path),
         structured_digest.or(artifact_digest),
     )
+}
+
+fn requested_tool_call_metadata(tool_id: &str) -> Option<ToolCallMetadata> {
+    let tool_identity = tool_identity_metadata(tool_id);
+    tool_call_metadata(tool_identity.as_ref(), None, Vec::new(), None)
+}
+
+fn tool_identity_metadata(tool_id: &str) -> Option<ToolIdentityMetadata> {
+    let canonical_tool_id = canonical_tool_id_for(tool_id).map(ToOwned::to_owned)?;
+    let alias_source_tool_id = (canonical_tool_id != tool_id).then(|| tool_id.to_string());
+
+    Some(ToolIdentityMetadata {
+        canonical_tool_id: Some(canonical_tool_id),
+        alias_source_tool_id,
+    })
+}
+
+fn tool_call_metadata(
+    tool_identity: Option<&ToolIdentityMetadata>,
+    lineage: Option<TaskLineageMetadata>,
+    artifact_refs: Vec<EventArtifactRef>,
+    timing: Option<ExecutionTimingMetadata>,
+) -> Option<ToolCallMetadata> {
+    let canonical_tool_id = tool_identity.and_then(|value| value.canonical_tool_id.clone());
+    let alias_source_tool_id = tool_identity.and_then(|value| value.alias_source_tool_id.clone());
+
+    if canonical_tool_id.is_none()
+        && alias_source_tool_id.is_none()
+        && lineage.is_none()
+        && artifact_refs.is_empty()
+        && timing.is_none()
+    {
+        return None;
+    }
+
+    Some(ToolCallMetadata {
+        canonical_tool_id,
+        alias_source_tool_id,
+        lineage,
+        artifact_refs,
+        timing,
+    })
+}
+
+fn tool_task_lineage_metadata(
+    task: &TaskState,
+    output_json: Option<&Value>,
+) -> TaskLineageMetadata {
+    TaskLineageMetadata {
+        parent_tool_call_id: Some(task.tool_call_id.clone()),
+        parent_task_id: None,
+        parent_request_id: task.request_correlation_id.clone(),
+        child_session_id: extract_lineage_value(
+            output_json,
+            &["child_session_id", "session_id", "task_id"],
+        ),
+        child_request_id: extract_lineage_value(output_json, &["child_request_id", "request_id"]),
+    }
+}
+
+fn extract_lineage_value(output_json: Option<&Value>, candidate_keys: &[&str]) -> Option<String> {
+    let root = output_json?.as_object()?;
+    for key in candidate_keys {
+        if let Some(value) = root
+            .get(*key)
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+        {
+            return Some(value);
+        }
+    }
+
+    let nested = root.get("lineage").and_then(Value::as_object)?;
+    for key in candidate_keys {
+        if let Some(value) = nested
+            .get(*key)
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+        {
+            return Some(value);
+        }
+    }
+
+    None
+}
+
+fn event_artifact_refs(artifacts: &[crate::tool::ArtifactRef]) -> Vec<EventArtifactRef> {
+    let mut refs = artifacts
+        .iter()
+        .map(|artifact| EventArtifactRef {
+            path: artifact.path.clone(),
+            digest: artifact.digest.clone(),
+        })
+        .collect::<Vec<_>>();
+    refs.sort_by(|left, right| {
+        left.path
+            .cmp(&right.path)
+            .then_with(|| left.digest.cmp(&right.digest))
+    });
+    refs
+}
+
+fn execution_timing_metadata(
+    started_mono_ms: u64,
+    finished_mono_ms: u64,
+) -> ExecutionTimingMetadata {
+    ExecutionTimingMetadata {
+        started_mono_ms: Some(started_mono_ms),
+        finished_mono_ms: Some(finished_mono_ms),
+        elapsed_ms: Some(finished_mono_ms.saturating_sub(started_mono_ms)),
+    }
+}
+
+fn stable_tool_output_json(
+    structured_output: Option<Value>,
+    output_summary: &str,
+    artifact_refs: &[EventArtifactRef],
+    lineage: &TaskLineageMetadata,
+    timing: &ExecutionTimingMetadata,
+) -> Value {
+    let harness_metadata = json!({
+        "output_summary": output_summary,
+        "artifact_refs": artifact_refs,
+        "lineage": lineage,
+        "timing": timing,
+    });
+
+    match structured_output {
+        Some(Value::Object(mut value)) => {
+            value.insert("_harness".to_string(), harness_metadata);
+            Value::Object(value)
+        }
+        Some(value) => json!({
+            "_harness": harness_metadata,
+            "structured_output": value,
+        }),
+        None => json!({
+            "_harness": harness_metadata,
+        }),
+    }
+}
+
+fn failed_tool_output_json(reason: &str) -> Value {
+    json!({
+        "_harness": {
+            "status": "failed",
+            "error": reason,
+        }
+    })
 }
 
 fn workspace_file_digest(workspace_root: &Path, relative_path: &str) -> Result<String, String> {

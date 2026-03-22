@@ -973,6 +973,7 @@ fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
                 tool_id: "fs.read".to_string(),
                 args_summary: r#"{"path":"src/ui.rs","start_line":1,"limit":24}"#.to_string(),
                 args_digest: "digest-tool-lifecycle-read-args".to_string(),
+                metadata: None,
             }),
         ),
         envelope(
@@ -991,6 +992,7 @@ fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
                 output_summary: Some("24 lines read from src/ui.rs".to_string()),
                 output_digest: Some("digest-tool-lifecycle-read-output".to_string()),
                 output_json: None,
+                metadata: None,
             }),
         ),
         envelope(
@@ -1001,6 +1003,7 @@ fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
                 tool_id: "edit.hashline_apply".to_string(),
                 args_summary: r#"{"path":"crates/harness-tui/src/ui.rs"}"#.to_string(),
                 args_digest: "digest-tool-lifecycle-edit-args".to_string(),
+                metadata: None,
             }),
         ),
         envelope(
@@ -1040,6 +1043,7 @@ fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
                 output_summary: Some("Patched crates/harness-tui/src/ui.rs".to_string()),
                 output_digest: Some("digest-tool-lifecycle-edit-output".to_string()),
                 output_json: None,
+                metadata: None,
             }),
         ),
         envelope(
@@ -1051,6 +1055,7 @@ fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
                 args_summary: r#"{"cmd":"cargo test -p harness-tui","cwd":"/workspace"}"#
                     .to_string(),
                 args_digest: "digest-tool-lifecycle-shell-args".to_string(),
+                metadata: None,
             }),
         ),
         envelope(
@@ -1069,6 +1074,7 @@ fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
                 output_summary: Some("exit code: 1\nstderr: snapshot mismatch".to_string()),
                 output_digest: None,
                 output_json: None,
+                metadata: None,
             }),
         ),
         envelope(
@@ -1214,6 +1220,7 @@ fn orchestration_lifecycle_completed_events() -> Vec<EventEnvelopeV1> {
             task_id: "task_live_cycle".to_string(),
             result_summary: "done".to_string(),
             result_digest: "digest-live-cycle".to_string(),
+            metadata: None,
         }),
     )]
 }

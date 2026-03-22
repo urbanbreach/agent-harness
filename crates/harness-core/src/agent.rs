@@ -11,7 +11,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio_stream::StreamExt;
 
-use crate::tool::{build_tool_function_name_mapping, ToolRegistry, ToolResult};
+use crate::tool::{
+    build_tool_function_name_mapping, resolve_tool_ids_for_surface, ToolRegistry, ToolResult,
+    ToolSurface,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentProfile {
@@ -19,6 +22,8 @@ pub struct AgentProfile {
     pub category: String,
     pub model_ref: String,
     pub system_prompt: String,
+    #[serde(default)]
+    pub tool_surface: ToolSurface,
     pub toolset: Vec<String>,
 }
 
@@ -29,6 +34,7 @@ impl AgentProfile {
             category: name.clone(),
             model_ref: "default:default".to_string(),
             system_prompt: String::new(),
+            tool_surface: ToolSurface::Native,
             toolset: Vec::new(),
             name,
         }
@@ -462,11 +468,15 @@ struct CollectedToolCall {
     arguments_json: String,
 }
 
-fn build_provider_tool_defs(
+pub fn build_provider_tool_defs(
     profile: &AgentProfile,
     tool_registry: &ToolRegistry,
 ) -> Result<Vec<ToolDef>, String> {
-    let mapping = build_tool_function_name_mapping(profile.toolset.iter().map(String::as_str));
+    let resolved_tool_ids = resolve_tool_ids_for_surface(
+        profile.toolset.iter().map(String::as_str),
+        profile.tool_surface,
+    );
+    let mapping = build_tool_function_name_mapping(resolved_tool_ids.iter().map(String::as_str));
     let mut tools = Vec::new();
 
     for (tool_id, function_name) in mapping.tool_id_to_function_name() {
@@ -536,7 +546,9 @@ mod tests {
         build_provider_tool_defs, run_multi_turn_streaming, tool_result_to_message_content,
         AgentProfile, AgentRequest, AgentTurnOutcome, MultiTurnStreamingRequest,
     };
-    use crate::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
+    use crate::tool::{
+        Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult, ToolSurface,
+    };
 
     #[tokio::test]
     async fn multi_turn_runner_executes_tool_then_completes() {
@@ -896,6 +908,7 @@ mod tests {
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             system_prompt: "sys".to_string(),
+            tool_surface: ToolSurface::Native,
             toolset: vec!["fs.read".to_string()],
         }
     }

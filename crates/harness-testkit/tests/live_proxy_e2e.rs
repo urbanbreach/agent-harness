@@ -1,4 +1,5 @@
 use std::cmp;
+use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
@@ -31,11 +32,11 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const DEFAULT_LIVE_PROXY_PROVIDER: &str = "default";
 const DEFAULT_LIVE_PROXY_PROFILE: &str = "live_proxy_smoke";
-const LIVE_PROXY_TOOL_FLOW_CREATE_PROFILE: &str = "live_proxy_tool_flow_create";
-const LIVE_PROXY_TOOL_FLOW_READ_PROFILE: &str = "live_proxy_tool_flow_read";
-const LIVE_PROXY_TOOL_FLOW_SCAN_PROFILE: &str = "live_proxy_tool_flow_scan";
-const LIVE_PROXY_TOOL_FLOW_APPLY_PROFILE: &str = "live_proxy_tool_flow_apply";
-const LIVE_PROXY_TOOL_FLOW_FINAL_READ_PROFILE: &str = "live_proxy_tool_flow_final_read";
+const LIVE_PROXY_TOOL_FLOW_PROFILE: &str = "live_proxy_tool_flow";
+const LIVE_PROXY_CHAT_TODO_FLOW_PROFILE: &str = "live_proxy_chat_todo_flow";
+const LIVE_PROXY_CHAT_QUESTION_PROFILE: &str = "live_proxy_chat_question";
+const LIVE_PROXY_CHAT_SKILL_PROFILE: &str = "live_proxy_chat_skill";
+const LIVE_PROXY_COMPAT_EDIT_PROFILE: &str = "live_proxy_compat_edit";
 const LIVE_PROXY_VISION_VERIFIER_PROFILE: &str = "live_proxy_vision_verifier";
 const LIVE_TUI_SESSION_NAMESPACE: &str = "live-proxy-tui-session";
 const TOOL_FLOW_SESSION_NAMESPACE: &str = "tool-flow-session";
@@ -66,9 +67,63 @@ const LIVE_TOOL_FLOW_DRAFT_MARKER: &str =
     "You must use tools only. Use exactly tmp/live_tool_flow.md.";
 const LIVE_TOOL_FLOW_FINAL_CONTENT: &str = "alpha\nBETA\ngamma\n";
 const LIVE_TOOL_FLOW_APPLY_EDIT_ID: &str = "live-tool-flow-apply";
+const LIVE_CHAT_TODO_CONTENT: &str = "live chat todo item";
+const LIVE_CHAT_TODO_FLOW_PROMPT: &str = concat!(
+    "Use tools before the final answer. ",
+    "First call todowrite with exactly one todo item: ",
+    r#"[{\"content\":\"live chat todo item\",\"status\":\"pending\",\"priority\":\"high\"}]"#,
+    ". After the tool call, reply with exactly LIVE_CHAT_TODO_CONFIRMED and nothing else."
+);
+const LIVE_CHAT_QUESTION_ANSWERS: &str = r#"[["Yes"]]"#;
+const LIVE_CHAT_QUESTION_PROMPT: &str = concat!(
+    "Call user.question with exactly one question using header=Choice and options Yes/No. ",
+    "Use this exact payload shape: ",
+    r#"[{\"question\":\"Pick one\",\"header\":\"Choice\",\"options\":[{\"label\":\"Yes\",\"description\":\"Choose yes\"},{\"label\":\"No\",\"description\":\"Choose no\"}]}]"#,
+    ". After the tool call, reply with exactly LIVE_CHAT_QUESTION_CONFIRMED and nothing else."
+);
+const LIVE_CHAT_SKILL_PROMPT: &str = concat!(
+    "Call skill with name=rust-best-practices. ",
+    "After the tool call, reply with exactly LIVE_CHAT_SKILL_CONFIRMED and nothing else."
+);
+const LIVE_COMPAT_EDIT_RELATIVE_PATH: &str = "tmp/live_compat_edit.md";
+const LIVE_COMPAT_EDIT_INITIAL_CONTENT: &str = "alpha\nbeta\ngamma\n";
+const LIVE_COMPAT_EDIT_PATCHED_CONTENT: &str = "alpha\nBETA\ngamma\n";
+const LIVE_COMPAT_EDIT_PATCH_TEXT: &str = "*** Begin Patch\n*** Update File: tmp/live_compat_edit.md\n@@\n-alpha\n-beta\n-gamma\n+alpha\n+BETA\n+gamma\n*** End Patch";
+const LIVE_COMPAT_EDIT_DELETE_PATCH_TEXT: &str =
+    "*** Begin Patch\n*** Delete File: tmp/live_compat_edit.md\n*** End Patch";
+const LIVE_COMPAT_EDIT_WRITE_PROMPT: &str = concat!(
+    "Use tools before the final answer. ",
+    "Call write with this exact payload shape: ",
+    r#"{"filePath":"tmp/live_compat_edit.md","content":"alpha\nbeta\ngamma\n"}"#,
+    ". After the tool call, reply with exactly LIVE_COMPAT_EDIT_WRITE_CONFIRMED and nothing else."
+);
+const LIVE_COMPAT_EDIT_INITIAL_READ_PROMPT: &str = concat!(
+    "Use tools before the final answer. ",
+    "Call read with this exact payload shape: ",
+    r#"{"filePath":"tmp/live_compat_edit.md"}"#,
+    ". After the tool call, reply with exactly LIVE_COMPAT_EDIT_INITIAL_READ_CONFIRMED and nothing else."
+);
+const LIVE_COMPAT_EDIT_PATCH_PROMPT: &str = concat!(
+    "Use tools before the final answer. ",
+    "Call apply_patch with this exact payload shape: ",
+    r#"{"patchText":"*** Begin Patch\n*** Update File: tmp/live_compat_edit.md\n@@\n-alpha\n-beta\n-gamma\n+alpha\n+BETA\n+gamma\n*** End Patch"}"#,
+    ". After the tool call, reply with exactly LIVE_COMPAT_EDIT_PATCH_CONFIRMED and nothing else."
+);
+const LIVE_COMPAT_EDIT_FINAL_READ_PROMPT: &str = concat!(
+    "Use tools before the final answer. ",
+    "Call read with this exact payload shape: ",
+    r#"{"filePath":"tmp/live_compat_edit.md"}"#,
+    ". After the tool call, reply with exactly LIVE_COMPAT_EDIT_FINAL_READ_CONFIRMED and nothing else."
+);
+const LIVE_COMPAT_EDIT_DELETE_PROMPT: &str = concat!(
+    "Use tools before the final answer. ",
+    "Call apply_patch with this exact payload shape: ",
+    r#"{"patchText":"*** Begin Patch\n*** Delete File: tmp/live_compat_edit.md\n*** End Patch"}"#,
+    ". After the tool call, reply with exactly LIVE_COMPAT_EDIT_DELETE_CONFIRMED and nothing else."
+);
 const LIVE_TOOL_FLOW_CREATE_PROMPT: &str = concat!(
     "You must use tools only. Use exactly tmp/live_tool_flow.md. ",
-    "Now perform only step 1: call shell.run with cmd=sh and args=[-lc, \"printf 'alpha\\nbeta\\ngamma\\n' > tmp/live_tool_flow.md\"] to create the file. ",
+    "Now perform only step 1: call shell.run with cmd=sh and args=[-lc, \"mkdir -p tmp && printf 'alpha\\nbeta\\ngamma\\n' > tmp/live_tool_flow.md\"] to create the file. ",
     "Return exactly one tool call and zero prose. Do not call any other tool."
 );
 const LIVE_TOOL_FLOW_READ_PROMPT: &str = concat!(
@@ -86,8 +141,7 @@ const LIVE_TOOL_FLOW_FINAL_READ_PROMPT: &str = concat!(
 const DEFAULT_LIVE_PROXY_PROMPT: &str = "Say hello in exactly five words.";
 const DEFAULT_LIVE_PROXY_WAIT_TIMEOUT_MS: &str = "120000";
 const RESPONSES_ENDPOINT_PATH: &str = "/v1/responses";
-const LIVE_TUI_READY_MARKER: &str = "Composer";
-const LIVE_TUI_STATUS_READY_MARKER: &str = "Ready";
+const LIVE_TUI_READY_MARKER: &str = "Ask Harness anything…";
 const LIVE_TUI_STATUS_SUCCESS_MARKER: &str = "Success";
 const LIVE_TUI_FINISHED_MARKER: &str = "ready for next turn";
 const LIVE_TUI_ASSISTANT_DONE_MARKER: &str = "assistant · done";
@@ -152,14 +206,27 @@ struct LivePromptSmokeResult {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LiveToolFlowRunConfig {
-    create: PromptRunConfig,
-    first_read: PromptRunConfig,
-    scan: PromptRunConfig,
-    apply: PromptRunConfig,
-    final_read: PromptRunConfig,
+    tool_flow: PromptRunConfig,
     vision_verifier: PromptRunConfig,
     canonical_relative_path: PathBuf,
     namespaces: LiveToolFlowNamespaces,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LivePromptChatToolRunConfig {
+    todo_flow: PromptRunConfig,
+    question: PromptRunConfig,
+    skill: PromptRunConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LivePromptCompatEditRunConfig {
+    write: PromptRunConfig,
+    first_read: PromptRunConfig,
+    patch: PromptRunConfig,
+    second_read: PromptRunConfig,
+    delete: PromptRunConfig,
+    canonical_relative_path: PathBuf,
 }
 
 impl LiveToolFlowRunConfig {
@@ -178,7 +245,8 @@ struct LiveToolFlowNamespaces {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LiveToolFlowArtifacts {
-    tool_flow_run_dirs: Vec<PathBuf>,
+    tool_flow_run_dir: PathBuf,
+    tool_flow_workspace_root: PathBuf,
     visual_run_dir: PathBuf,
     manifest_json_path: PathBuf,
     manifest_jsonl_path: PathBuf,
@@ -187,6 +255,12 @@ struct LiveToolFlowArtifacts {
     shell_create_finished_png: PathBuf,
     hashline_scan_finished_png: PathBuf,
     run_finished_png: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LivePromptStageResult {
+    run_dir: PathBuf,
+    events_body: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -222,9 +296,11 @@ impl LiveNamespaceAllocation {
 #[derive(Debug, Default)]
 struct ProviderTurnEvidence {
     request_id: Option<String>,
+    provider_task_id: Option<String>,
     saw_started: bool,
     saw_finished: bool,
     delta_count: usize,
+    provider_task_completed: bool,
     task_completed_summary: Option<String>,
     run_failed: Option<String>,
 }
@@ -264,39 +340,26 @@ impl LiveProxyPreflightReport {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ToolFlowStage {
-    Create,
-    Read,
-    Scan,
-    Apply,
+    Full,
 }
 
 impl ToolFlowStage {
     fn tools(self) -> &'static [&'static str] {
         match self {
-            Self::Create => &["shell.run"],
-            Self::Read => &["fs.read"],
-            Self::Scan => &["edit.hashline_scan"],
-            Self::Apply => &["edit.hashline_apply"],
+            Self::Full => &[
+                "shell.run",
+                "fs.read",
+                "edit.hashline_scan",
+                "edit.hashline_apply",
+            ],
         }
     }
 
     fn description(self) -> &'static str {
         match self {
-            Self::Create => concat!(
-                "Execute only the file-creation step for the live tool-flow task. ",
-                "Use only shell.run against tmp/live_tool_flow.md and stop after that tool completes."
-            ),
-            Self::Read => concat!(
-                "Execute only the file-read verification step for the live tool-flow task. ",
-                "Use only fs.read against tmp/live_tool_flow.md and do not edit or call shell."
-            ),
-            Self::Scan => concat!(
-                "Execute only the hashline scan step for the live tool-flow task. ",
-                "Use only edit.hashline_scan against tmp/live_tool_flow.md and do not apply edits in the same run."
-            ),
-            Self::Apply => concat!(
-                "Execute only the hashline apply step for the live tool-flow task. ",
-                "Use exactly one Replace op on tmp/live_tool_flow.md and do not insert or delete lines."
+            Self::Full => concat!(
+                "Execute the full live tool-flow task in one session. ",
+                "Use only shell.run, fs.read, edit.hashline_scan, and edit.hashline_apply against tmp/live_tool_flow.md."
             ),
         }
     }
@@ -427,24 +490,297 @@ fn live_proxy_e2e_tui_tool_flow() {
     );
 }
 
+#[test]
+#[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
+fn live_proxy_prompt_chat_tool_flow() {
+    if env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
+        return;
+    }
+
+    let repo_root = repo_root();
+    let live_request = resolve_live_prompt_request(&repo_root)
+        .unwrap_or_else(|err| panic!("failed to resolve live proxy chat-flow inputs: {err}"));
+    let run_config = prepare_live_prompt_chat_tool_run_config(&live_request)
+        .unwrap_or_else(|err| panic!("failed to prepare live proxy chat-flow config: {err}"));
+
+    let todo_result = run_live_prompt_stage(
+        &run_config.todo_flow,
+        LIVE_CHAT_TODO_FLOW_PROMPT,
+        &live_request.wait_timeout_ms,
+        &[],
+    )
+    .unwrap_or_else(|err| panic!("live prompt todo-flow stage failed: {err}"));
+    assert_requested_tool_sequence(&todo_result.events_body, &["todowrite"])
+        .unwrap_or_else(|err| panic!("todo-flow tool sequence mismatch: {err}"));
+    assert_requested_tool_args(
+        &todo_result.events_body,
+        "todowrite",
+        &json!({
+            "todos": [{
+                "content": LIVE_CHAT_TODO_CONTENT,
+                "status": "pending",
+                "priority": "high",
+            }]
+        }),
+    )
+    .unwrap_or_else(|err| panic!("todo-flow tool arguments mismatch: {err}"));
+    assert_todo_state_matches(&todo_result.run_dir).unwrap_or_else(|err| {
+        panic!(
+            "todo-flow todo state mismatch under {}: {err}",
+            todo_result.run_dir.display()
+        )
+    });
+
+    let question_result = run_live_prompt_stage(
+        &run_config.question,
+        LIVE_CHAT_QUESTION_PROMPT,
+        &live_request.wait_timeout_ms,
+        &[("HARNESS_QUESTION_ANSWERS", LIVE_CHAT_QUESTION_ANSWERS)],
+    )
+    .unwrap_or_else(|err| panic!("live prompt question stage failed: {err}"));
+    assert_requested_tool_sequence(&question_result.events_body, &["user.question"])
+        .unwrap_or_else(|err| panic!("question-stage tool sequence mismatch: {err}"));
+    assert_requested_tool_args(
+        &question_result.events_body,
+        "user.question",
+        &json!({
+            "questions": [{
+                "question": "Pick one",
+                "header": "Choice",
+                "options": [
+                    {"label": "Yes", "description": "Choose yes"},
+                    {"label": "No", "description": "Choose no"}
+                ]
+            }]
+        }),
+    )
+    .unwrap_or_else(|err| panic!("question-stage tool arguments mismatch: {err}"));
+    assert_tool_call_output_contains(
+        &question_result.events_body,
+        "user.question",
+        "\"Pick one\"=\"Yes\"",
+    )
+    .unwrap_or_else(|err| panic!("question-stage answer evidence mismatch: {err}"));
+    assert_event_log_contains(&question_result.events_body, "LIVE_CHAT_QUESTION_CONFIRMED")
+        .unwrap_or_else(|err| panic!("question-stage final confirmation mismatch: {err}"));
+    assert_question_state_matches(&question_result.run_dir, &question_result.events_body)
+        .unwrap_or_else(|err| {
+            panic!(
+                "question-stage state mismatch under {}: {err}",
+                question_result.run_dir.display()
+            )
+        });
+
+    let skill_result = run_live_prompt_stage(
+        &run_config.skill,
+        LIVE_CHAT_SKILL_PROMPT,
+        &live_request.wait_timeout_ms,
+        &[],
+    )
+    .unwrap_or_else(|err| panic!("live prompt skill stage failed: {err}"));
+    assert_requested_tool_sequence(&skill_result.events_body, &["skill"])
+        .unwrap_or_else(|err| panic!("skill-stage tool sequence mismatch: {err}"));
+    assert_requested_tool_args(
+        &skill_result.events_body,
+        "skill",
+        &json!({
+            "name": "rust-best-practices",
+            "user_message": Value::Null,
+        }),
+    )
+    .unwrap_or_else(|err| panic!("skill-stage tool arguments mismatch: {err}"));
+    assert_tool_call_output_contains(
+        &skill_result.events_body,
+        "skill",
+        "# Skill: rust-best-practices",
+    )
+    .unwrap_or_else(|err| panic!("skill-stage skill output mismatch: {err}"));
+    assert_event_log_contains(&skill_result.events_body, "LIVE_CHAT_SKILL_CONFIRMED")
+        .unwrap_or_else(|err| panic!("skill-stage final confirmation mismatch: {err}"));
+}
+
+#[test]
+#[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
+fn live_proxy_prompt_compat_edit_flow() {
+    if env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
+        return;
+    }
+
+    let repo_root = repo_root();
+    let live_request = resolve_live_prompt_request(&repo_root)
+        .unwrap_or_else(|err| panic!("failed to resolve live proxy compat-edit inputs: {err}"));
+    let run_config = prepare_live_prompt_compat_edit_run_config(&live_request)
+        .unwrap_or_else(|err| panic!("failed to prepare live proxy compat-edit config: {err}"));
+    let compat_edit_path = run_config
+        .write
+        .workspace_root
+        .join(&run_config.canonical_relative_path);
+
+    let write_result = run_live_prompt_stage(
+        &run_config.write,
+        LIVE_COMPAT_EDIT_WRITE_PROMPT,
+        &live_request.wait_timeout_ms,
+        &[],
+    )
+    .unwrap_or_else(|err| panic!("live compat-edit write stage failed: {err}"));
+    assert_requested_tool_sequence(&write_result.events_body, &["write"])
+        .unwrap_or_else(|err| panic!("compat-edit write tool sequence mismatch: {err}"));
+    assert_requested_tool_args(
+        &write_result.events_body,
+        "write",
+        &json!({
+            "filePath": LIVE_COMPAT_EDIT_RELATIVE_PATH,
+            "content": LIVE_COMPAT_EDIT_INITIAL_CONTENT,
+        }),
+    )
+    .unwrap_or_else(|err| panic!("compat-edit write tool arguments mismatch: {err}"));
+    assert_tool_call_output_contains(&write_result.events_body, "write", "live_compat_edit.md")
+        .unwrap_or_else(|err| panic!("compat-edit write output mismatch: {err}"));
+    assert_event_log_contains(
+        &write_result.events_body,
+        "LIVE_COMPAT_EDIT_WRITE_CONFIRMED",
+    )
+    .unwrap_or_else(|err| panic!("compat-edit write confirmation mismatch: {err}"));
+    let initial_content = fs::read_to_string(&compat_edit_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read created compat-edit file {}: {err}",
+            compat_edit_path.display()
+        )
+    });
+    assert_eq!(initial_content, LIVE_COMPAT_EDIT_INITIAL_CONTENT);
+
+    let first_read_result = run_live_prompt_stage(
+        &run_config.first_read,
+        LIVE_COMPAT_EDIT_INITIAL_READ_PROMPT,
+        &live_request.wait_timeout_ms,
+        &[],
+    )
+    .unwrap_or_else(|err| panic!("live compat-edit initial read stage failed: {err}"));
+    assert_requested_tool_sequence(&first_read_result.events_body, &["read"])
+        .unwrap_or_else(|err| panic!("compat-edit initial read tool sequence mismatch: {err}"));
+    assert_requested_tool_args(
+        &first_read_result.events_body,
+        "read",
+        &json!({
+            "filePath": LIVE_COMPAT_EDIT_RELATIVE_PATH,
+            "offset": Value::Null,
+            "limit": Value::Null,
+        }),
+    )
+    .unwrap_or_else(|err| panic!("compat-edit initial read tool arguments mismatch: {err}"));
+    assert_tool_call_output_contains(&first_read_result.events_body, "read", "2: beta")
+        .unwrap_or_else(|err| panic!("compat-edit initial read output mismatch: {err}"));
+    assert_event_log_contains(
+        &first_read_result.events_body,
+        "LIVE_COMPAT_EDIT_INITIAL_READ_CONFIRMED",
+    )
+    .unwrap_or_else(|err| panic!("compat-edit initial read confirmation mismatch: {err}"));
+
+    let patch_result = run_live_prompt_stage(
+        &run_config.patch,
+        LIVE_COMPAT_EDIT_PATCH_PROMPT,
+        &live_request.wait_timeout_ms,
+        &[],
+    )
+    .unwrap_or_else(|err| panic!("live compat-edit patch stage failed: {err}"));
+    assert_requested_tool_sequence(&patch_result.events_body, &["apply_patch"])
+        .unwrap_or_else(|err| panic!("compat-edit patch tool sequence mismatch: {err}"));
+    assert_requested_tool_args(
+        &patch_result.events_body,
+        "apply_patch",
+        &json!({
+            "patchText": LIVE_COMPAT_EDIT_PATCH_TEXT,
+        }),
+    )
+    .unwrap_or_else(|err| panic!("compat-edit patch tool arguments mismatch: {err}"));
+    assert_tool_call_output_contains(
+        &patch_result.events_body,
+        "apply_patch",
+        "Success. Updated the following files",
+    )
+    .unwrap_or_else(|err| panic!("compat-edit patch output mismatch: {err}"));
+    assert_event_log_contains(
+        &patch_result.events_body,
+        "LIVE_COMPAT_EDIT_PATCH_CONFIRMED",
+    )
+    .unwrap_or_else(|err| panic!("compat-edit patch confirmation mismatch: {err}"));
+    let patched_content = fs::read_to_string(&compat_edit_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read patched compat-edit file {}: {err}",
+            compat_edit_path.display()
+        )
+    });
+    assert_eq!(patched_content, LIVE_COMPAT_EDIT_PATCHED_CONTENT);
+
+    let second_read_result = run_live_prompt_stage(
+        &run_config.second_read,
+        LIVE_COMPAT_EDIT_FINAL_READ_PROMPT,
+        &live_request.wait_timeout_ms,
+        &[],
+    )
+    .unwrap_or_else(|err| panic!("live compat-edit final read stage failed: {err}"));
+    assert_requested_tool_sequence(&second_read_result.events_body, &["read"])
+        .unwrap_or_else(|err| panic!("compat-edit final read tool sequence mismatch: {err}"));
+    assert_requested_tool_args(
+        &second_read_result.events_body,
+        "read",
+        &json!({
+            "filePath": LIVE_COMPAT_EDIT_RELATIVE_PATH,
+            "offset": Value::Null,
+            "limit": Value::Null,
+        }),
+    )
+    .unwrap_or_else(|err| panic!("compat-edit final read tool arguments mismatch: {err}"));
+    assert_tool_call_output_contains(&second_read_result.events_body, "read", "2: BETA")
+        .unwrap_or_else(|err| panic!("compat-edit final read output mismatch: {err}"));
+    assert_event_log_contains(
+        &second_read_result.events_body,
+        "LIVE_COMPAT_EDIT_FINAL_READ_CONFIRMED",
+    )
+    .unwrap_or_else(|err| panic!("compat-edit final read confirmation mismatch: {err}"));
+
+    let delete_result = run_live_prompt_stage(
+        &run_config.delete,
+        LIVE_COMPAT_EDIT_DELETE_PROMPT,
+        &live_request.wait_timeout_ms,
+        &[],
+    )
+    .unwrap_or_else(|err| panic!("live compat-edit delete stage failed: {err}"));
+    assert_requested_tool_sequence(&delete_result.events_body, &["apply_patch"])
+        .unwrap_or_else(|err| panic!("compat-edit delete tool sequence mismatch: {err}"));
+    assert_requested_tool_args(
+        &delete_result.events_body,
+        "apply_patch",
+        &json!({
+            "patchText": LIVE_COMPAT_EDIT_DELETE_PATCH_TEXT,
+        }),
+    )
+    .unwrap_or_else(|err| panic!("compat-edit delete tool arguments mismatch: {err}"));
+    let deleted_summary = "live_compat_edit.md";
+    assert_tool_call_output_contains(&delete_result.events_body, "apply_patch", deleted_summary)
+        .unwrap_or_else(|err| panic!("compat-edit delete output mismatch: {err}"));
+    assert_event_log_contains(
+        &delete_result.events_body,
+        "LIVE_COMPAT_EDIT_DELETE_CONFIRMED",
+    )
+    .unwrap_or_else(|err| panic!("compat-edit delete confirmation mismatch: {err}"));
+    assert!(
+        !compat_edit_path.exists(),
+        "compat-edit file should be deleted at {}",
+        compat_edit_path.display()
+    );
+}
+
 fn run_live_proxy_tui_tool_flow_once(
     live_request: &LivePromptRequest,
     run_config: &LiveToolFlowRunConfig,
 ) -> Result<(), String> {
-    let tool_flow_path = run_config
-        .create
-        .workspace_root
-        .join(&run_config.canonical_relative_path);
-    if tool_flow_path.exists() {
-        return Err(format!(
-            "canonical tool-flow file should not exist before the run: {}",
-            tool_flow_path.display()
-        ));
-    }
-
     let tool_flow_artifacts =
         run_live_tui_tool_flow(run_config, live_tui_command_timeout(live_request))?;
 
+    let tool_flow_path = tool_flow_artifacts
+        .tool_flow_workspace_root
+        .join(&run_config.canonical_relative_path);
     if !tool_flow_path.exists() {
         return Err(format!(
             "canonical tool-flow file should exist after the run: {}",
@@ -464,9 +800,9 @@ fn run_live_proxy_tui_tool_flow_once(
         ));
     }
 
-    let evidence = ToolFlowEvidence::collect_many(
-        &tool_flow_artifacts.tool_flow_run_dirs,
-        &run_config.create.workspace_root,
+    let evidence = ToolFlowEvidence::collect(
+        &tool_flow_artifacts.tool_flow_run_dir,
+        &tool_flow_artifacts.tool_flow_workspace_root,
         &run_config.canonical_relative_path,
     )?;
     evidence.assert_run_succeeded()?;
@@ -726,76 +1062,27 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
     )
     .expect("prepare live tool-flow config");
 
-    assert_eq!(
-        run_config.create.profile,
-        LIVE_PROXY_TOOL_FLOW_CREATE_PROFILE
-    );
-    assert_eq!(
-        run_config.first_read.profile,
-        LIVE_PROXY_TOOL_FLOW_READ_PROFILE
-    );
-    assert_eq!(run_config.scan.profile, LIVE_PROXY_TOOL_FLOW_SCAN_PROFILE);
-    assert_eq!(run_config.apply.profile, LIVE_PROXY_TOOL_FLOW_APPLY_PROFILE);
-    assert_eq!(
-        run_config.final_read.profile,
-        LIVE_PROXY_TOOL_FLOW_FINAL_READ_PROFILE
-    );
-    assert_eq!(run_config.create.model_id, "primary-model");
-    assert_eq!(run_config.first_read.model_id, "primary-model");
-    assert_eq!(run_config.scan.model_id, "primary-model");
-    assert_eq!(run_config.apply.model_id, "primary-model");
-    assert_eq!(run_config.final_read.model_id, "primary-model");
+    assert_eq!(run_config.tool_flow.profile, LIVE_PROXY_TOOL_FLOW_PROFILE);
+    assert_eq!(run_config.tool_flow.model_id, "primary-model");
     assert_eq!(
         run_config.vision_verifier.profile,
         LIVE_PROXY_VISION_VERIFIER_PROFILE
     );
     assert_eq!(run_config.vision_verifier.model_id, "vision-model");
     assert_ne!(
-        run_config.create.session_dir, run_config.vision_verifier.session_dir,
+        run_config.tool_flow.session_dir, run_config.vision_verifier.session_dir,
         "tool-flow and vision verifier runs must use distinct session dirs"
-    );
-    assert_ne!(
-        run_config.create.session_dir,
-        run_config.first_read.session_dir
-    );
-    assert_ne!(
-        run_config.first_read.session_dir,
-        run_config.scan.session_dir
-    );
-    assert_ne!(run_config.scan.session_dir, run_config.apply.session_dir);
-    assert_ne!(
-        run_config.apply.session_dir,
-        run_config.final_read.session_dir
     );
     assert_eq!(
         run_config.canonical_relative_path,
         PathBuf::from(LIVE_TOOL_FLOW_RELATIVE_PATH)
     );
-    assert_eq!(
-        run_config
-            .create
-            .workspace_root
-            .join(&run_config.canonical_relative_path),
-        run_config
-            .create
-            .workspace_root
-            .join("tmp")
-            .join("live_tool_flow.md")
-    );
 
-    let create_config =
-        load_json5_config(&run_config.create.config_path).expect("load prepared create config");
-    let read_config = load_json5_config(&run_config.first_read.config_path)
-        .expect("load prepared first-read config");
-    let scan_config =
-        load_json5_config(&run_config.scan.config_path).expect("load prepared scan config");
-    let apply_config =
-        load_json5_config(&run_config.apply.config_path).expect("load prepared apply config");
-    let final_read_config = load_json5_config(&run_config.final_read.config_path)
-        .expect("load prepared final-read config");
+    let tool_flow_config = load_json5_config(&run_config.tool_flow.config_path)
+        .expect("load prepared tool-flow config");
 
     assert_eq!(
-        create_config
+        tool_flow_config
             .get("permissions")
             .and_then(Value::as_object)
             .and_then(|permissions| permissions.get("edit"))
@@ -803,7 +1090,7 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
         Some("allow")
     );
     assert_eq!(
-        create_config
+        tool_flow_config
             .get("permissions")
             .and_then(Value::as_object)
             .and_then(|permissions| permissions.get("shell"))
@@ -811,7 +1098,7 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
         Some("allow")
     );
     assert_eq!(
-        create_config
+        tool_flow_config
             .get("permissions")
             .and_then(Value::as_object)
             .and_then(|permissions| permissions.get("network"))
@@ -819,7 +1106,7 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
         Some("allow")
     );
     assert_eq!(
-        create_config
+        tool_flow_config
             .get("permissions")
             .and_then(Value::as_object)
             .and_then(|permissions| permissions.get("shell_allowlist"))
@@ -829,84 +1116,47 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
         Some(&vec![Value::String("sh".to_string())])
     );
     assert_eq!(
-        create_config
+        tool_flow_config
             .get("permissions")
             .and_then(Value::as_object)
             .and_then(|permissions| permissions.get("shell_allowlist"))
             .and_then(Value::as_object)
             .and_then(|allowlist| allowlist.get("cwd_roots"))
             .and_then(Value::as_array),
-        Some(&vec![Value::String(
-            run_config.create.workspace_root.display().to_string(),
-        )])
+        Some(&vec![Value::String(".".to_string())])
     );
     assert_eq!(
-        create_config
+        tool_flow_config
             .get("paths")
             .and_then(Value::as_object)
             .and_then(|paths| paths.get("session_dir"))
             .and_then(Value::as_str),
-        Some(run_config.create.session_dir.to_string_lossy().as_ref())
+        Some(run_config.tool_flow.session_dir.to_string_lossy().as_ref())
     );
 
-    let create_profile = create_config
+    let tool_flow_profile = tool_flow_config
         .get("categories")
         .and_then(Value::as_object)
-        .and_then(|categories| categories.get(LIVE_PROXY_TOOL_FLOW_CREATE_PROFILE))
+        .and_then(|categories| categories.get(LIVE_PROXY_TOOL_FLOW_PROFILE))
         .and_then(Value::as_object)
-        .expect("tool-flow create profile present");
+        .expect("tool-flow profile present");
     assert_eq!(
-        create_profile.get("model_ref").and_then(Value::as_str),
+        tool_flow_profile.get("model_ref").and_then(Value::as_str),
         Some("default:primary-model")
     );
     assert_eq!(
-        create_profile.get("tools").and_then(Value::as_array),
-        Some(&vec![Value::String("shell.run".to_string())])
+        tool_flow_profile.get("tools").and_then(Value::as_array),
+        Some(&vec![
+            Value::String("shell.run".to_string()),
+            Value::String("fs.read".to_string()),
+            Value::String("edit.hashline_scan".to_string()),
+            Value::String("edit.hashline_apply".to_string()),
+        ])
     );
-    let read_profile = read_config
-        .get("categories")
-        .and_then(Value::as_object)
-        .and_then(|categories| categories.get(LIVE_PROXY_TOOL_FLOW_READ_PROFILE))
-        .and_then(Value::as_object)
-        .expect("tool-flow read profile present");
-    assert_eq!(
-        read_profile.get("tools").and_then(Value::as_array),
-        Some(&vec![Value::String("fs.read".to_string())])
-    );
-    let scan_profile = scan_config
-        .get("categories")
-        .and_then(Value::as_object)
-        .and_then(|categories| categories.get(LIVE_PROXY_TOOL_FLOW_SCAN_PROFILE))
-        .and_then(Value::as_object)
-        .expect("tool-flow scan profile present");
-    assert_eq!(
-        scan_profile.get("tools").and_then(Value::as_array),
-        Some(&vec![Value::String("edit.hashline_scan".to_string())])
-    );
-    let apply_profile = apply_config
-        .get("categories")
-        .and_then(Value::as_object)
-        .and_then(|categories| categories.get(LIVE_PROXY_TOOL_FLOW_APPLY_PROFILE))
-        .and_then(Value::as_object)
-        .expect("tool-flow apply profile present");
-    assert_eq!(
-        apply_profile.get("tools").and_then(Value::as_array),
-        Some(&vec![Value::String("edit.hashline_apply".to_string())])
-    );
-    let final_read_profile = final_read_config
-        .get("categories")
-        .and_then(Value::as_object)
-        .and_then(|categories| categories.get(LIVE_PROXY_TOOL_FLOW_FINAL_READ_PROFILE))
-        .and_then(Value::as_object)
-        .expect("tool-flow final-read profile present");
-    assert_eq!(
-        final_read_profile.get("tools").and_then(Value::as_array),
-        Some(&vec![Value::String("fs.read".to_string())])
-    );
-    let profile_permissions = create_profile
+    let profile_permissions = tool_flow_profile
         .get("permissions")
         .and_then(Value::as_object)
-        .expect("tool-flow create profile permissions present");
+        .expect("tool-flow profile permissions present");
     assert_eq!(
         profile_permissions.get("edit").and_then(Value::as_str),
         Some("allow")
@@ -918,6 +1168,183 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
     assert_eq!(
         profile_permissions.get("network").and_then(Value::as_str),
         Some("allow")
+    );
+}
+
+#[test]
+fn prepare_live_prompt_chat_tool_run_config_builds_restricted_profiles() {
+    let source_config_path = unique_temp_file("live-proxy-chat-tool-config", "jsonc");
+    let source_session_dir = unique_temp_dir("live-proxy-chat-tool-source-session");
+    let source_config = build_live_proxy_test_config(
+        "default",
+        "http://127.0.0.1:9999",
+        "responses",
+        "primary-model",
+        &source_session_dir,
+    );
+    fs::write(
+        &source_config_path,
+        serde_json::to_string_pretty(&source_config).expect("serialize chat tool config"),
+    )
+    .expect("write chat tool config");
+
+    let request = LivePromptRequest {
+        source_config_path,
+        provider_name: "default".to_string(),
+        primary_model: "primary-model".to_string(),
+        vision_model: "vision-model".to_string(),
+        profile: DEFAULT_LIVE_PROXY_PROFILE.to_string(),
+        prompt_text: DEFAULT_LIVE_PROXY_PROMPT.to_string(),
+        wait_timeout_ms: DEFAULT_LIVE_PROXY_WAIT_TIMEOUT_MS.to_string(),
+    };
+
+    let run_config = prepare_live_prompt_chat_tool_run_config(&request)
+        .expect("prepare live prompt chat tool config");
+
+    assert_eq!(run_config.todo_flow.model_id, "primary-model");
+    assert_eq!(run_config.question.model_id, "primary-model");
+    assert_eq!(run_config.skill.model_id, "primary-model");
+    assert_ne!(
+        run_config.todo_flow.session_dir,
+        run_config.question.session_dir
+    );
+    assert_ne!(
+        run_config.question.session_dir,
+        run_config.skill.session_dir
+    );
+
+    let todo_config =
+        load_json5_config(&run_config.todo_flow.config_path).expect("load prepared todo config");
+    let question_config =
+        load_json5_config(&run_config.question.config_path).expect("load prepared question config");
+    let skill_config =
+        load_json5_config(&run_config.skill.config_path).expect("load prepared skill config");
+
+    let todo_profile = todo_config
+        .get("categories")
+        .and_then(Value::as_object)
+        .and_then(|categories| categories.get(LIVE_PROXY_CHAT_TODO_FLOW_PROFILE))
+        .and_then(Value::as_object)
+        .expect("todo profile present");
+    assert_eq!(
+        todo_profile.get("tools").and_then(Value::as_array),
+        Some(&vec![Value::String("todowrite".to_string())])
+    );
+
+    let question_profile = question_config
+        .get("categories")
+        .and_then(Value::as_object)
+        .and_then(|categories| categories.get(LIVE_PROXY_CHAT_QUESTION_PROFILE))
+        .and_then(Value::as_object)
+        .expect("question profile present");
+    assert_eq!(
+        question_profile.get("tools").and_then(Value::as_array),
+        Some(&vec![Value::String("user.question".to_string())])
+    );
+    assert_eq!(
+        question_profile.get("tool_surface").and_then(Value::as_str),
+        Some("native")
+    );
+
+    let skill_profile = skill_config
+        .get("categories")
+        .and_then(Value::as_object)
+        .and_then(|categories| categories.get(LIVE_PROXY_CHAT_SKILL_PROFILE))
+        .and_then(Value::as_object)
+        .expect("skill profile present");
+    assert_eq!(
+        skill_profile.get("tools").and_then(Value::as_array),
+        Some(&vec![Value::String("skill".to_string())])
+    );
+}
+
+#[test]
+fn prepare_live_prompt_compat_edit_run_config_builds_restricted_profile() {
+    let source_config_path = unique_temp_file("live-proxy-compat-edit-config", "jsonc");
+    let source_session_dir = unique_temp_dir("live-proxy-compat-edit-source-session");
+    let source_config = build_live_proxy_test_config(
+        "default",
+        "http://127.0.0.1:9999",
+        "responses",
+        "primary-model",
+        &source_session_dir,
+    );
+    fs::write(
+        &source_config_path,
+        serde_json::to_string_pretty(&source_config).expect("serialize compat edit config"),
+    )
+    .expect("write compat edit config");
+
+    let request = LivePromptRequest {
+        source_config_path,
+        provider_name: "default".to_string(),
+        primary_model: "primary-model".to_string(),
+        vision_model: "vision-model".to_string(),
+        profile: DEFAULT_LIVE_PROXY_PROFILE.to_string(),
+        prompt_text: DEFAULT_LIVE_PROXY_PROMPT.to_string(),
+        wait_timeout_ms: DEFAULT_LIVE_PROXY_WAIT_TIMEOUT_MS.to_string(),
+    };
+
+    let run_config = prepare_live_prompt_compat_edit_run_config(&request)
+        .expect("prepare live prompt compat edit config");
+
+    assert_eq!(run_config.write.model_id, "primary-model");
+    assert_eq!(run_config.first_read.model_id, "primary-model");
+    assert_eq!(run_config.patch.model_id, "primary-model");
+    assert_eq!(run_config.second_read.model_id, "primary-model");
+    assert_eq!(run_config.delete.model_id, "primary-model");
+    assert_eq!(
+        run_config.canonical_relative_path,
+        PathBuf::from(LIVE_COMPAT_EDIT_RELATIVE_PATH)
+    );
+    assert_eq!(
+        run_config.write.workspace_root,
+        run_config.first_read.workspace_root
+    );
+    assert_eq!(
+        run_config.write.workspace_root,
+        run_config.patch.workspace_root
+    );
+    assert_eq!(
+        run_config.write.workspace_root,
+        run_config.second_read.workspace_root
+    );
+    assert_eq!(
+        run_config.write.workspace_root,
+        run_config.delete.workspace_root
+    );
+    assert_ne!(
+        run_config.write.session_dir,
+        run_config.first_read.session_dir
+    );
+    assert_ne!(
+        run_config.first_read.session_dir,
+        run_config.patch.session_dir
+    );
+    assert_ne!(
+        run_config.patch.session_dir,
+        run_config.second_read.session_dir
+    );
+    assert_ne!(
+        run_config.second_read.session_dir,
+        run_config.delete.session_dir
+    );
+
+    let write_config =
+        load_json5_config(&run_config.write.config_path).expect("load prepared compat edit config");
+    let compat_profile = write_config
+        .get("categories")
+        .and_then(Value::as_object)
+        .and_then(|categories| categories.get(LIVE_PROXY_COMPAT_EDIT_PROFILE))
+        .and_then(Value::as_object)
+        .expect("compat edit profile present");
+    assert_eq!(
+        compat_profile.get("tools").and_then(Value::as_array),
+        Some(&vec![
+            Value::String("write".to_string()),
+            Value::String("read".to_string()),
+            Value::String("apply_patch".to_string()),
+        ])
     );
 }
 
@@ -2202,83 +2629,18 @@ fn prepare_live_tool_flow_run_config(
         )
     })?;
 
-    let create = prepare_prompt_run_config_with_contract(
+    let tool_flow = prepare_prompt_run_config_with_contract(
         &request.source_config_path,
         &request.provider_name,
         &request.primary_model,
-        LIVE_PROXY_TOOL_FLOW_CREATE_PROFILE,
+        LIVE_PROXY_TOOL_FLOW_PROFILE,
         PreparedLiveConfigContract::ToolFlow {
             paths: PreparedLiveConfigPaths {
                 workspace_root: workspace_root.clone(),
-                session_dir: namespace
-                    .session_dir(&format!("{}-create", namespaces.tool_flow_session)),
-                prepared_config_path: namespace.artifact_file("tool-flow-create-config", "jsonc"),
+                session_dir: namespace.session_dir(namespaces.tool_flow_session),
+                prepared_config_path: namespace.artifact_file("tool-flow-config", "jsonc"),
             },
-            stage: ToolFlowStage::Create,
-        },
-    )?;
-
-    let first_read = prepare_prompt_run_config_with_contract(
-        &request.source_config_path,
-        &request.provider_name,
-        &request.primary_model,
-        LIVE_PROXY_TOOL_FLOW_READ_PROFILE,
-        PreparedLiveConfigContract::ToolFlow {
-            paths: PreparedLiveConfigPaths {
-                workspace_root: workspace_root.clone(),
-                session_dir: namespace
-                    .session_dir(&format!("{}-read-1", namespaces.tool_flow_session)),
-                prepared_config_path: namespace.artifact_file("tool-flow-read-1-config", "jsonc"),
-            },
-            stage: ToolFlowStage::Read,
-        },
-    )?;
-
-    let scan = prepare_prompt_run_config_with_contract(
-        &request.source_config_path,
-        &request.provider_name,
-        &request.primary_model,
-        LIVE_PROXY_TOOL_FLOW_SCAN_PROFILE,
-        PreparedLiveConfigContract::ToolFlow {
-            paths: PreparedLiveConfigPaths {
-                workspace_root: workspace_root.clone(),
-                session_dir: namespace
-                    .session_dir(&format!("{}-scan", namespaces.tool_flow_session)),
-                prepared_config_path: namespace.artifact_file("tool-flow-scan-config", "jsonc"),
-            },
-            stage: ToolFlowStage::Scan,
-        },
-    )?;
-
-    let apply = prepare_prompt_run_config_with_contract(
-        &request.source_config_path,
-        &request.provider_name,
-        &request.primary_model,
-        LIVE_PROXY_TOOL_FLOW_APPLY_PROFILE,
-        PreparedLiveConfigContract::ToolFlow {
-            paths: PreparedLiveConfigPaths {
-                workspace_root: workspace_root.clone(),
-                session_dir: namespace
-                    .session_dir(&format!("{}-apply", namespaces.tool_flow_session)),
-                prepared_config_path: namespace.artifact_file("tool-flow-apply-config", "jsonc"),
-            },
-            stage: ToolFlowStage::Apply,
-        },
-    )?;
-
-    let final_read = prepare_prompt_run_config_with_contract(
-        &request.source_config_path,
-        &request.provider_name,
-        &request.primary_model,
-        LIVE_PROXY_TOOL_FLOW_FINAL_READ_PROFILE,
-        PreparedLiveConfigContract::ToolFlow {
-            paths: PreparedLiveConfigPaths {
-                workspace_root: workspace_root.clone(),
-                session_dir: namespace
-                    .session_dir(&format!("{}-read-2", namespaces.tool_flow_session)),
-                prepared_config_path: namespace.artifact_file("tool-flow-read-2-config", "jsonc"),
-            },
-            stage: ToolFlowStage::Read,
+            stage: ToolFlowStage::Full,
         },
     )?;
 
@@ -2295,14 +2657,111 @@ fn prepare_live_tool_flow_run_config(
     )?;
 
     Ok(LiveToolFlowRunConfig {
-        create,
-        first_read,
-        scan,
-        apply,
-        final_read,
+        tool_flow,
         vision_verifier,
         canonical_relative_path: PathBuf::from(LIVE_TOOL_FLOW_RELATIVE_PATH),
         namespaces,
+    })
+}
+
+fn prepare_live_prompt_chat_tool_run_config(
+    request: &LivePromptRequest,
+) -> Result<LivePromptChatToolRunConfig, String> {
+    let namespace = LiveNamespaceAllocation::allocate("live-proxy-chat-tool-workspace")?;
+    let workspace_root = namespace.root_dir().to_path_buf();
+
+    let todo_flow = prepare_prompt_run_config_with_contract(
+        &request.source_config_path,
+        &request.provider_name,
+        &request.primary_model,
+        LIVE_PROXY_CHAT_TODO_FLOW_PROFILE,
+        PreparedLiveConfigContract::RestrictedTools {
+            paths: PreparedLiveConfigPaths {
+                workspace_root: workspace_root.clone(),
+                session_dir: namespace.session_dir("chat-tool-todo-flow"),
+                prepared_config_path: namespace
+                    .artifact_file("chat-tool-todo-flow-config", "jsonc"),
+            },
+            description: "Execute the live chat todo flow via todowrite.".to_string(),
+            tools: vec!["todowrite".to_string()],
+        },
+    )?;
+
+    let question = prepare_prompt_run_config_with_contract(
+        &request.source_config_path,
+        &request.provider_name,
+        &request.primary_model,
+        LIVE_PROXY_CHAT_QUESTION_PROFILE,
+        PreparedLiveConfigContract::RestrictedTools {
+            paths: PreparedLiveConfigPaths {
+                workspace_root: workspace_root.clone(),
+                session_dir: namespace.session_dir("chat-tool-question"),
+                prepared_config_path: namespace.artifact_file("chat-tool-question-config", "jsonc"),
+            },
+            description: "Execute the live question flow and stop after answering.".to_string(),
+            tools: vec!["user.question".to_string()],
+        },
+    )?;
+
+    let skill = prepare_prompt_run_config_with_contract(
+        &request.source_config_path,
+        &request.provider_name,
+        &request.primary_model,
+        LIVE_PROXY_CHAT_SKILL_PROFILE,
+        PreparedLiveConfigContract::RestrictedTools {
+            paths: PreparedLiveConfigPaths {
+                workspace_root,
+                session_dir: namespace.session_dir("chat-tool-skill"),
+                prepared_config_path: namespace.artifact_file("chat-tool-skill-config", "jsonc"),
+            },
+            description: "Execute the live skill-loading flow and stop after the skill tool call."
+                .to_string(),
+            tools: vec!["skill".to_string()],
+        },
+    )?;
+
+    Ok(LivePromptChatToolRunConfig {
+        todo_flow,
+        question,
+        skill,
+    })
+}
+
+fn prepare_live_prompt_compat_edit_run_config(
+    request: &LivePromptRequest,
+) -> Result<LivePromptCompatEditRunConfig, String> {
+    let namespace = LiveNamespaceAllocation::allocate("live-proxy-compat-edit-workspace")?;
+    let workspace_root = namespace.root_dir().to_path_buf();
+    let prepare_stage = |session_namespace: &str, config_stem: &str| {
+        prepare_prompt_run_config_with_contract(
+            &request.source_config_path,
+            &request.provider_name,
+            &request.primary_model,
+            LIVE_PROXY_COMPAT_EDIT_PROFILE,
+            PreparedLiveConfigContract::RestrictedTools {
+                paths: PreparedLiveConfigPaths {
+                    workspace_root: workspace_root.clone(),
+                    session_dir: namespace.session_dir(session_namespace),
+                    prepared_config_path: namespace.artifact_file(config_stem, "jsonc"),
+                },
+                description: "Execute the live compat edit flow via write, read, and apply_patch."
+                    .to_string(),
+                tools: vec![
+                    "write".to_string(),
+                    "read".to_string(),
+                    "apply_patch".to_string(),
+                ],
+            },
+        )
+    };
+
+    Ok(LivePromptCompatEditRunConfig {
+        write: prepare_stage("compat-edit-write", "compat-edit-write-config")?,
+        first_read: prepare_stage("compat-edit-first-read", "compat-edit-first-read-config")?,
+        patch: prepare_stage("compat-edit-patch", "compat-edit-patch-config")?,
+        second_read: prepare_stage("compat-edit-second-read", "compat-edit-second-read-config")?,
+        delete: prepare_stage("compat-edit-delete", "compat-edit-delete-config")?,
+        canonical_relative_path: PathBuf::from(LIVE_COMPAT_EDIT_RELATIVE_PATH),
     })
 }
 
@@ -2501,8 +2960,11 @@ fn prepare_prompt_run_config_with_contract(
     match &contract {
         PreparedLiveConfigContract::Standard(_) => {}
         PreparedLiveConfigContract::ToolFlow { stage, .. } => {
-            apply_tool_flow_contract(&mut config, &paths.workspace_root, profile_name, *stage)?;
+            apply_tool_flow_contract(&mut config, profile_name, *stage)?;
         }
+        PreparedLiveConfigContract::RestrictedTools {
+            description, tools, ..
+        } => apply_restricted_tools_contract(&mut config, profile_name, description, tools)?,
         PreparedLiveConfigContract::VisionVerifier(_) => {}
     }
 
@@ -2522,6 +2984,57 @@ fn prepare_prompt_run_config_with_contract(
         endpoint,
         workspace_root: paths.workspace_root,
         session_dir: paths.session_dir,
+    })
+}
+
+fn run_live_prompt_stage(
+    run_config: &PromptRunConfig,
+    prompt: &str,
+    wait_timeout_ms: &str,
+    extra_env: &[(&str, &str)],
+) -> Result<LivePromptStageResult, String> {
+    let harness_bin = resolve_harness_bin();
+    let mut command = Command::new(&harness_bin);
+    command
+        .arg("prompt")
+        .arg("--text")
+        .arg(prompt)
+        .arg("--profile")
+        .arg(&run_config.profile)
+        .arg("--config")
+        .arg(&run_config.config_path)
+        .env("HARNESS_PROMPT_WAIT_TIMEOUT_MS", wait_timeout_ms)
+        .current_dir(&run_config.workspace_root);
+    for (name, value) in extra_env {
+        command.env(name, value);
+    }
+
+    let output = command
+        .output()
+        .map_err(|err| format!("spawn harness prompt stage: {err}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.status.success() {
+        return Err(format!(
+            "prompt stage failed with status {:?}\nstdout:\n{}\nstderr:\n{}\nPrepared config: {}\nSelected profile: {}",
+            output.status.code(),
+            stdout,
+            stderr,
+            run_config.config_path.display(),
+            run_config.profile,
+        ));
+    }
+
+    let session_namespace = session_namespace_name(&run_config.session_dir)?;
+    let run_dir = resolve_tagged_run_dir(&run_config.session_dir, &session_namespace)?;
+    let events_path = run_dir.join("events.jsonl");
+    let events_body = fs::read_to_string(&events_path)
+        .map_err(|err| format!("failed to read {}: {err}", events_path.display()))?;
+    assert_events_show_successful_provider_turn(&events_body);
+
+    Ok(LivePromptStageResult {
+        run_dir,
+        events_body,
     })
 }
 
@@ -2684,72 +3197,76 @@ fn run_live_tui_tool_flow(
         LiveVisualRunOptions {
             run_metadata: default_live_run_metadata(
                 DEFAULT_LIVE_PROXY_PROVIDER,
-                &run_config.create.model_id,
-                &run_config.create.profile,
-                &run_config.create.workspace_root,
-                &run_config.create.session_dir,
+                &run_config.tool_flow.model_id,
+                &run_config.tool_flow.profile,
+                &run_config.tool_flow.workspace_root,
+                &run_config.tool_flow.session_dir,
             ),
         },
     )?;
     let deadline = Instant::now() + timeout;
-    let mut tool_flow_run_dirs = Vec::new();
-
-    let mut create_stage = spawn_live_tui_stage_process(&run_config.create)?;
+    let mut stage = spawn_live_tui_stage_process(&run_config.tool_flow)?;
     wait_for_screen_contains(
-        &mut create_stage.parser,
-        &create_stage.output_rx,
+        &mut stage.parser,
+        &stage.output_rx,
         LIVE_TUI_READY_MARKER,
         remaining_before(deadline, "create-stage ready marker")?,
     )?;
     let startup_checkpoint = live_visual.capture_checkpoint_with_metadata(
         CHECKPOINT_STARTUP,
-        &create_stage.parser,
+        &stage.parser,
         LIVE_VISUAL_STARTUP_MARKERS,
         &FocusCapture::anchored_exact(LIVE_TUI_READY_MARKER, 24, 3),
         Some(json!({
             "purpose": "tool-flow-startup",
-            "stage": "create",
-            "session_dir": run_config.create.session_dir.display().to_string(),
+            "session_dir": run_config.tool_flow.session_dir.display().to_string(),
         })),
     )?;
-    type_and_flush_live_prompt(&mut create_stage.writer, LIVE_TOOL_FLOW_CREATE_PROMPT)?;
+    type_and_flush_live_prompt(&mut stage.writer, LIVE_TOOL_FLOW_CREATE_PROMPT)?;
     wait_for_screen_contains(
-        &mut create_stage.parser,
-        &create_stage.output_rx,
+        &mut stage.parser,
+        &stage.output_rx,
         LIVE_TOOL_FLOW_DRAFT_MARKER,
         remaining_before(deadline, "tool-flow draft marker")?,
     )?;
     let draft_visible_checkpoint = live_visual.capture_checkpoint_with_metadata(
         CHECKPOINT_DRAFT_VISIBLE,
-        &create_stage.parser,
+        &stage.parser,
         &[LIVE_TUI_READY_MARKER, LIVE_TOOL_FLOW_DRAFT_MARKER],
         &FocusCapture::anchored(LIVE_TOOL_FLOW_DRAFT_MARKER, 32, 5),
         Some(json!({
             "purpose": "tool-flow-draft-visible",
-            "stage": "create",
             "prompt_preview": LIVE_TOOL_FLOW_CREATE_PROMPT,
         })),
     )?;
-    submit_live_prompt(&mut create_stage.writer)?;
+    submit_live_prompt(&mut stage.writer)?;
 
-    let create_namespace = session_namespace_name(&run_config.create.session_dir)?;
-    let create_run_dir = wait_for_tool_flow_tool_call_succeeded(
-        &run_config.create.session_dir,
+    let tool_flow_namespace = session_namespace_name(&run_config.tool_flow.session_dir)?;
+    let tool_flow_run_dir = wait_for_tool_flow_tool_call_succeeded(
+        &run_config.tool_flow.session_dir,
         &run_config.canonical_relative_path,
-        &create_namespace,
+        &tool_flow_namespace,
         "shell.run",
         1,
         remaining_before(deadline, "shell.run tool completion")?,
     )?;
+    let create_events = wait_for_tui_provider_turn_count(
+        &run_config.tool_flow.session_dir,
+        &tool_flow_namespace,
+        1,
+        remaining_before(deadline, "create-stage provider turn completion")?,
+    )?;
+    assert_events_show_successful_provider_turn(&create_events);
+    let tool_flow_workspace_root = read_run_workspace_root(&tool_flow_run_dir)?;
     wait_for_screen_contains(
-        &mut create_stage.parser,
-        &create_stage.output_rx,
+        &mut stage.parser,
+        &stage.output_rx,
         "shell.run",
         Duration::from_secs(5),
     )?;
     let shell_create_finished_checkpoint = live_visual.capture_checkpoint_with_metadata(
         CHECKPOINT_SHELL_CREATE_FINISHED,
-        &create_stage.parser,
+        &stage.parser,
         &[
             LIVE_TUI_READY_MARKER,
             "shell.run",
@@ -2760,57 +3277,64 @@ fn run_live_tui_tool_flow(
             "purpose": "tool-flow-stage-finished",
             "stage": "create",
             "stage_tool": "shell.run",
-            "session_dir": run_config.create.session_dir.display().to_string(),
+            "session_dir": run_config.tool_flow.session_dir.display().to_string(),
         })),
     )?;
-    let create_events = wait_for_tui_provider_turn(
-        &run_config.create.session_dir,
-        &create_namespace,
-        remaining_before(deadline, "create-stage provider turn completion")?,
+    wait_for_live_tui_idle(
+        &mut stage.parser,
+        &stage.output_rx,
+        remaining_before(deadline, "tool-flow ready for first read")?,
     )?;
-    assert_events_show_successful_provider_turn(&create_events);
-    finish_live_tui_stage_process(
-        &mut create_stage,
-        remaining_before(deadline, "create-stage process exit")?,
-    )?;
-    tool_flow_run_dirs.push(create_run_dir);
 
-    let first_read_run_dir = run_live_tui_tool_flow_stage(
-        &run_config.first_read,
-        LIVE_TOOL_FLOW_READ_PROMPT,
+    type_and_flush_live_prompt(&mut stage.writer, LIVE_TOOL_FLOW_READ_PROMPT)?;
+    submit_live_prompt(&mut stage.writer)?;
+    wait_for_tool_flow_tool_call_succeeded(
+        &run_config.tool_flow.session_dir,
         &run_config.canonical_relative_path,
+        &tool_flow_namespace,
         "fs.read",
-        deadline,
+        1,
+        remaining_before(deadline, "first fs.read completion")?,
     )?;
-    tool_flow_run_dirs.push(first_read_run_dir);
+    let first_read_events = wait_for_tui_provider_turn_count(
+        &run_config.tool_flow.session_dir,
+        &tool_flow_namespace,
+        2,
+        remaining_before(deadline, "first-read provider turn completion")?,
+    )?;
+    assert_events_show_successful_provider_turn(&first_read_events);
+    wait_for_live_tui_idle(
+        &mut stage.parser,
+        &stage.output_rx,
+        remaining_before(deadline, "tool-flow ready for scan")?,
+    )?;
 
-    let mut scan_stage = spawn_live_tui_stage_process(&run_config.scan)?;
-    wait_for_screen_contains(
-        &mut scan_stage.parser,
-        &scan_stage.output_rx,
-        LIVE_TUI_READY_MARKER,
-        remaining_before(deadline, "scan-stage ready marker")?,
-    )?;
-    type_and_flush_live_prompt(&mut scan_stage.writer, LIVE_TOOL_FLOW_SCAN_PROMPT)?;
-    submit_live_prompt(&mut scan_stage.writer)?;
-    let scan_namespace = session_namespace_name(&run_config.scan.session_dir)?;
-    let scan_run_dir = wait_for_tool_flow_tool_call_succeeded(
-        &run_config.scan.session_dir,
+    type_and_flush_live_prompt(&mut stage.writer, LIVE_TOOL_FLOW_SCAN_PROMPT)?;
+    submit_live_prompt(&mut stage.writer)?;
+    wait_for_tool_flow_tool_call_succeeded(
+        &run_config.tool_flow.session_dir,
         &run_config.canonical_relative_path,
-        &scan_namespace,
+        &tool_flow_namespace,
         "edit.hashline_scan",
         1,
         remaining_before(deadline, "edit.hashline_scan completion")?,
     )?;
     wait_for_screen_contains(
-        &mut scan_stage.parser,
-        &scan_stage.output_rx,
+        &mut stage.parser,
+        &stage.output_rx,
         "edit.hashline_scan",
         Duration::from_secs(5),
     )?;
+    let scan_events = wait_for_tui_provider_turn_count(
+        &run_config.tool_flow.session_dir,
+        &tool_flow_namespace,
+        3,
+        remaining_before(deadline, "scan-stage provider turn completion")?,
+    )?;
+    assert_events_show_successful_provider_turn(&scan_events);
     let hashline_scan_finished_checkpoint = live_visual.capture_checkpoint_with_metadata(
         CHECKPOINT_HASHLINE_SCAN_FINISHED,
-        &scan_stage.parser,
+        &stage.parser,
         &[
             LIVE_TUI_READY_MARKER,
             "edit.hashline_scan",
@@ -2821,73 +3345,70 @@ fn run_live_tui_tool_flow(
             "purpose": "tool-flow-stage-finished",
             "stage": "scan",
             "stage_tool": "edit.hashline_scan",
-            "session_dir": run_config.scan.session_dir.display().to_string(),
+            "session_dir": run_config.tool_flow.session_dir.display().to_string(),
         })),
     )?;
-    let scan_events = wait_for_tui_provider_turn(
-        &run_config.scan.session_dir,
-        &scan_namespace,
-        remaining_before(deadline, "scan-stage provider turn completion")?,
-    )?;
-    assert_events_show_successful_provider_turn(&scan_events);
-    finish_live_tui_stage_process(
-        &mut scan_stage,
-        remaining_before(deadline, "scan-stage process exit")?,
-    )?;
     let line_two_hash =
-        read_hashline_scan_line_hash(&scan_run_dir, &run_config.canonical_relative_path, 2)?;
-    tool_flow_run_dirs.push(scan_run_dir);
+        read_hashline_scan_line_hash(&tool_flow_run_dir, &run_config.canonical_relative_path, 2)?;
+    wait_for_live_tui_idle(
+        &mut stage.parser,
+        &stage.output_rx,
+        remaining_before(deadline, "tool-flow ready for apply")?,
+    )?;
 
     let apply_prompt = live_tool_flow_apply_prompt(&line_two_hash);
-    let apply_run_dir = run_live_tui_tool_flow_stage(
-        &run_config.apply,
-        &apply_prompt,
+    type_and_flush_live_prompt(&mut stage.writer, &apply_prompt)?;
+    submit_live_prompt(&mut stage.writer)?;
+    wait_for_tool_flow_tool_call_succeeded(
+        &run_config.tool_flow.session_dir,
         &run_config.canonical_relative_path,
+        &tool_flow_namespace,
         "edit.hashline_apply",
-        deadline,
-    )?;
-    tool_flow_run_dirs.push(apply_run_dir);
-
-    let mut final_read_stage = spawn_live_tui_stage_process(&run_config.final_read)?;
-    wait_for_screen_contains(
-        &mut final_read_stage.parser,
-        &final_read_stage.output_rx,
-        LIVE_TUI_READY_MARKER,
-        remaining_before(deadline, "final-read-stage ready marker")?,
-    )?;
-    type_and_flush_live_prompt(
-        &mut final_read_stage.writer,
-        LIVE_TOOL_FLOW_FINAL_READ_PROMPT,
-    )?;
-    submit_live_prompt(&mut final_read_stage.writer)?;
-    let final_read_namespace = session_namespace_name(&run_config.final_read.session_dir)?;
-    let final_read_run_dir = wait_for_tool_flow_tool_call_succeeded(
-        &run_config.final_read.session_dir,
-        &run_config.canonical_relative_path,
-        &final_read_namespace,
-        "fs.read",
         1,
+        remaining_before(deadline, "edit.hashline_apply completion")?,
+    )?;
+    let apply_events = wait_for_tui_provider_turn_count(
+        &run_config.tool_flow.session_dir,
+        &tool_flow_namespace,
+        4,
+        remaining_before(deadline, "apply-stage provider turn completion")?,
+    )?;
+    assert_events_show_successful_provider_turn(&apply_events);
+    wait_for_live_tui_idle(
+        &mut stage.parser,
+        &stage.output_rx,
+        remaining_before(deadline, "tool-flow ready for final read")?,
+    )?;
+
+    type_and_flush_live_prompt(&mut stage.writer, LIVE_TOOL_FLOW_FINAL_READ_PROMPT)?;
+    submit_live_prompt(&mut stage.writer)?;
+    wait_for_tool_flow_tool_call_succeeded(
+        &run_config.tool_flow.session_dir,
+        &run_config.canonical_relative_path,
+        &tool_flow_namespace,
+        "fs.read",
+        2,
         remaining_before(deadline, "final verification fs.read completion")?,
     )?;
-    let final_read_events = wait_for_tui_provider_turn(
-        &run_config.final_read.session_dir,
-        &final_read_namespace,
+    let final_read_events = wait_for_tui_provider_turn_count(
+        &run_config.tool_flow.session_dir,
+        &tool_flow_namespace,
+        5,
         remaining_before(deadline, "final-read provider turn completion")?,
     )?;
     assert_events_show_successful_provider_turn(&final_read_events);
     wait_for_screen_contains(
-        &mut final_read_stage.parser,
-        &final_read_stage.output_rx,
+        &mut stage.parser,
+        &stage.output_rx,
         "fs.read",
         Duration::from_secs(5),
     )?;
     wait_for_screen_state(
-        &mut final_read_stage.parser,
-        &final_read_stage.output_rx,
+        &mut stage.parser,
+        &stage.output_rx,
         &[
-            LIVE_TUI_READY_MARKER,
-            LIVE_TUI_STATUS_READY_MARKER,
-            LIVE_TUI_ASSISTANT_DONE_MARKER,
+            LIVE_TUI_STATUS_SUCCESS_MARKER,
+            LIVE_TUI_FINISHED_MARKER,
             "fs.read",
         ],
         &[
@@ -2898,11 +3419,10 @@ fn run_live_tui_tool_flow(
     )?;
     let run_finished_checkpoint = live_visual.capture_checkpoint_with_metadata(
         CHECKPOINT_RUN_FINISHED,
-        &final_read_stage.parser,
+        &stage.parser,
         &[
-            LIVE_TUI_READY_MARKER,
-            LIVE_TUI_STATUS_READY_MARKER,
-            LIVE_TUI_ASSISTANT_DONE_MARKER,
+            LIVE_TUI_STATUS_SUCCESS_MARKER,
+            LIVE_TUI_FINISHED_MARKER,
             LIVE_TUI_ASSISTANT_STREAMING_MARKER,
             LIVE_TUI_WAITING_FOR_RESPONSE_MARKER,
             "fs.read",
@@ -2912,17 +3432,17 @@ fn run_live_tui_tool_flow(
             "purpose": "tool-flow-stage-finished",
             "stage": "final_read",
             "stage_tool": "fs.read",
-            "session_dir": run_config.final_read.session_dir.display().to_string(),
+            "session_dir": run_config.tool_flow.session_dir.display().to_string(),
         })),
     )?;
     finish_live_tui_stage_process(
-        &mut final_read_stage,
+        &mut stage,
         remaining_before(deadline, "final-read-stage process exit")?,
     )?;
-    tool_flow_run_dirs.push(final_read_run_dir);
 
     Ok(LiveToolFlowArtifacts {
-        tool_flow_run_dirs,
+        tool_flow_run_dir,
+        tool_flow_workspace_root,
         visual_run_dir: live_visual.run_dir().to_path_buf(),
         manifest_json_path: run_finished_checkpoint.manifest_json_path().to_path_buf(),
         manifest_jsonl_path: run_finished_checkpoint.manifest_jsonl_path().to_path_buf(),
@@ -2939,9 +3459,8 @@ fn assert_final_visual_checkpoint(artifacts: &LiveToolFlowArtifacts) -> Result<(
         &artifacts.manifest_json_path,
         CHECKPOINT_RUN_FINISHED,
         &[
-            LIVE_TUI_READY_MARKER,
-            LIVE_TUI_STATUS_READY_MARKER,
-            LIVE_TUI_ASSISTANT_DONE_MARKER,
+            LIVE_TUI_STATUS_SUCCESS_MARKER,
+            LIVE_TUI_FINISHED_MARKER,
             "fs.read",
         ],
         &[
@@ -2956,17 +3475,17 @@ fn write_live_tool_flow_summary_artifacts(
     evidence: &ToolFlowEvidence,
     run_config: &LiveToolFlowRunConfig,
 ) -> Result<(), String> {
-    let summary_json = evidence.summary_json(&artifacts.tool_flow_run_dirs)?;
+    let summary_json = evidence.summary_json(std::slice::from_ref(&artifacts.tool_flow_run_dir))?;
     let summary_json = json!({
         "visual_run_dir": artifacts.visual_run_dir.display().to_string(),
         "manifest_json_path": artifacts.manifest_json_path.display().to_string(),
         "manifest_jsonl_path": artifacts.manifest_jsonl_path.display().to_string(),
         "final_png": artifacts.run_finished_png.display().to_string(),
-        "workspace_root": run_config.create.workspace_root.display().to_string(),
+        "workspace_root": artifacts.tool_flow_workspace_root.display().to_string(),
         "canonical_relative_path": run_config.canonical_relative_path.display().to_string(),
         "provider": DEFAULT_LIVE_PROXY_PROVIDER,
-        "model": run_config.create.model_id.clone(),
-        "profile": run_config.create.profile.clone(),
+        "model": run_config.tool_flow.model_id.clone(),
+        "profile": run_config.tool_flow.profile.clone(),
         "summary": summary_json,
     });
     let summary_json_path = artifacts.visual_run_dir.join(LIVE_TOOL_FLOW_SUMMARY_JSON);
@@ -2978,9 +3497,8 @@ fn write_live_tool_flow_summary_artifacts(
     .map_err(|err| format!("failed to write {}: {err}", summary_json_path.display()))?;
 
     let final_content = fs::read_to_string(
-        run_config
-            .create
-            .workspace_root
+        artifacts
+            .tool_flow_workspace_root
             .join(&run_config.canonical_relative_path),
     )
     .map_err(|err| format!("failed to read final tool-flow content for summary: {err}"))?;
@@ -2988,6 +3506,10 @@ fn write_live_tool_flow_summary_artifacts(
         format!("Visual run dir: {}", artifacts.visual_run_dir.display()),
         format!("Manifest: {}", artifacts.manifest_json_path.display()),
         format!("Final screenshot: {}", artifacts.run_finished_png.display()),
+        format!(
+            "Workspace root: {}",
+            artifacts.tool_flow_workspace_root.display()
+        ),
         format!(
             "Workspace file: {}",
             run_config.canonical_relative_path.display()
@@ -3049,49 +3571,6 @@ fn finish_live_tui_stage_process(
         &mut process.parser,
         timeout,
     )
-}
-
-fn run_live_tui_tool_flow_stage(
-    run_config: &PromptRunConfig,
-    prompt: &str,
-    canonical_relative_path: &Path,
-    expected_tool_id: &str,
-    deadline: Instant,
-) -> Result<PathBuf, String> {
-    let mut stage = spawn_live_tui_stage_process(run_config)?;
-    wait_for_screen_contains(
-        &mut stage.parser,
-        &stage.output_rx,
-        LIVE_TUI_READY_MARKER,
-        remaining_before(deadline, &format!("{} ready marker", run_config.profile))?,
-    )?;
-    type_and_flush_live_prompt(&mut stage.writer, prompt)?;
-    submit_live_prompt(&mut stage.writer)?;
-
-    let session_namespace = session_namespace_name(&run_config.session_dir)?;
-    let run_dir = wait_for_tool_flow_tool_call_succeeded(
-        &run_config.session_dir,
-        canonical_relative_path,
-        &session_namespace,
-        expected_tool_id,
-        1,
-        remaining_before(deadline, &format!("{} completion", expected_tool_id))?,
-    )?;
-    let events_body = wait_for_tui_provider_turn(
-        &run_config.session_dir,
-        &session_namespace,
-        remaining_before(
-            deadline,
-            &format!("{} provider completion", run_config.profile),
-        )?,
-    )?;
-    assert_events_show_successful_provider_turn(&events_body);
-    finish_live_tui_stage_process(
-        &mut stage,
-        remaining_before(deadline, &format!("{} process exit", run_config.profile))?,
-    )?;
-
-    Ok(run_dir)
 }
 
 fn session_namespace_name(session_dir: &Path) -> Result<String, String> {
@@ -3188,7 +3667,7 @@ fn live_vision_checkpoint_contracts() -> &'static [LiveVisionCheckpointContract]
         LiveVisionCheckpointContract {
             checkpoint_id: CHECKPOINT_STARTUP,
             expected_markers: &[
-                "Composer input is visible.",
+                "Compose-first input is visible.",
                 "No fatal error banner is visible.",
             ],
         },
@@ -3394,20 +3873,35 @@ fn tool_flow_tool_call_state(
                     .to_string();
                 if status != "succeeded" {
                     return Ok(ToolFlowToolCallState::Failed(status));
+                } else if expected_tool_id == "shell.run"
+                    && data
+                        .get("output_json")
+                        .and_then(|output| output.get("success"))
+                        .and_then(Value::as_bool)
+                        == Some(false)
+                {
+                    let shell_status = data
+                        .get("output_json")
+                        .and_then(|output| output.get("status"))
+                        .and_then(Value::as_i64)
+                        .map(|code| code.to_string())
+                        .unwrap_or_else(|| "unknown".to_string());
+                    return Ok(ToolFlowToolCallState::Failed(format!(
+                        "shell_exit_{shell_status}"
+                    )));
                 } else {
                     success_count += 1;
-                    if success_count >= minimum_successes {
-                        return Ok(ToolFlowToolCallState::Succeeded);
-                    } else {
-                        return Ok(ToolFlowToolCallState::Pending);
-                    }
                 }
             }
             _ => {}
         }
     }
 
-    Ok(ToolFlowToolCallState::Pending)
+    if success_count >= minimum_successes {
+        Ok(ToolFlowToolCallState::Succeeded)
+    } else {
+        Ok(ToolFlowToolCallState::Pending)
+    }
 }
 
 fn type_and_flush_live_prompt(
@@ -3429,6 +3923,63 @@ fn submit_live_prompt(writer: &mut Box<dyn Write + Send>) -> Result<(), String> 
     writer
         .flush()
         .map_err(|err| format!("failed to flush submitted live TUI tool-flow prompt: {err}"))
+}
+
+fn wait_for_live_tui_idle(
+    parser: &mut VtParser,
+    output_rx: &Receiver<Vec<u8>>,
+    timeout: Duration,
+) -> Result<(), String> {
+    wait_for_screen_state(
+        parser,
+        output_rx,
+        &[LIVE_TUI_FINISHED_MARKER],
+        &[
+            LIVE_TUI_ASSISTANT_STREAMING_MARKER,
+            LIVE_TUI_WAITING_FOR_RESPONSE_MARKER,
+        ],
+        timeout,
+    )
+    .map(|_| ())
+}
+
+fn read_run_workspace_root(run_dir: &Path) -> Result<PathBuf, String> {
+    let events_path = run_dir.join("events.jsonl");
+    let events_body = fs::read_to_string(&events_path)
+        .map_err(|err| format!("failed to read {}: {err}", events_path.display()))?;
+
+    for (idx, line) in events_body.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let event: Value = serde_json::from_str(line)
+            .map_err(|err| format!("events line {} is invalid JSON: {err}", idx + 1))?;
+        let event_type = event
+            .get("payload")
+            .and_then(|payload| payload.get("event_type"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if event_type != "run_started" {
+            continue;
+        }
+        let workspace_root = event
+            .get("payload")
+            .and_then(|payload| payload.get("data"))
+            .and_then(|data| data.get("workspace_root"))
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                format!(
+                    "run_started missing workspace_root in {}",
+                    events_path.display()
+                )
+            })?;
+        return Ok(PathBuf::from(workspace_root));
+    }
+
+    Err(format!(
+        "run_started with workspace_root not found in {}",
+        events_path.display()
+    ))
 }
 
 fn tool_call_targets_path(tool_id: &str, args_summary: &str, canonical_path: &str) -> bool {
@@ -3755,6 +4306,15 @@ fn wait_for_tui_provider_turn(
     session_namespace: &str,
     timeout: Duration,
 ) -> Result<String, String> {
+    wait_for_tui_provider_turn_count(session_dir, session_namespace, 1, timeout)
+}
+
+fn wait_for_tui_provider_turn_count(
+    session_dir: &Path,
+    session_namespace: &str,
+    minimum_completed_turns: usize,
+    timeout: Duration,
+) -> Result<String, String> {
     let deadline = Instant::now() + timeout;
 
     loop {
@@ -3774,7 +4334,7 @@ fn wait_for_tui_provider_turn(
                         describe_session_events_state(session_dir, session_namespace)
                     ));
                 }
-                if provider_turn_completed(&evidence) {
+                if completed_provider_task_count(&events_body) >= minimum_completed_turns {
                     return Ok(events_body);
                 }
             }
@@ -3790,6 +4350,59 @@ fn wait_for_tui_provider_turn(
 
         thread::sleep(LIVE_TUI_READ_POLL_TIMEOUT);
     }
+}
+
+fn completed_provider_task_count(events_body: &str) -> usize {
+    let mut scheduled = BTreeMap::<String, bool>::new();
+    let mut completed = 0usize;
+
+    for line in events_body.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        let event_type = event
+            .get("payload")
+            .and_then(|payload| payload.get("event_type"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let data = event
+            .get("payload")
+            .and_then(|payload| payload.get("data"))
+            .cloned()
+            .unwrap_or(Value::Null);
+
+        match event_type {
+            "task_scheduled" => {
+                if data
+                    .get("queue_key")
+                    .and_then(Value::as_str)
+                    .is_some_and(|queue_key| queue_key.starts_with("provider_model:"))
+                {
+                    if let Some(task_id) = data.get("task_id").and_then(Value::as_str) {
+                        scheduled.insert(task_id.to_string(), false);
+                    }
+                }
+            }
+            "task_completed" => {
+                let Some(task_id) = data.get("task_id").and_then(Value::as_str) else {
+                    continue;
+                };
+                let Some(seen) = scheduled.get_mut(task_id) else {
+                    continue;
+                };
+                if !*seen {
+                    *seen = true;
+                    completed += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    completed
 }
 
 fn assert_events_show_successful_provider_turn(events_body: &str) {
@@ -3813,18 +4426,12 @@ fn assert_events_show_successful_provider_turn(events_body: &str) {
 
     assert!(
         provider_turn_completed(&evidence),
-        "expected either provider_stream_delta events or a non-empty task_completed summary for the provider request"
+        "expected either provider_stream_delta events or a completed provider task for the provider request"
     );
 }
 
 fn provider_turn_completed(evidence: &ProviderTurnEvidence) -> bool {
-    evidence.delta_count > 0
-        || evidence
-            .task_completed_summary
-            .as_deref()
-            .map(str::trim)
-            .map(|text| !text.is_empty())
-            .unwrap_or(false)
+    evidence.delta_count > 0 || evidence.provider_task_completed
 }
 
 fn collect_provider_turn_evidence(events_body: &str) -> ProviderTurnEvidence {
@@ -3855,6 +4462,19 @@ fn collect_provider_turn_evidence(events_body: &str) -> ProviderTurnEvidence {
                     .map(ToOwned::to_owned);
                 evidence.saw_started = true;
             }
+            "task_scheduled" => {
+                if evidence.provider_task_id.is_none()
+                    && data
+                        .get("queue_key")
+                        .and_then(Value::as_str)
+                        .is_some_and(|queue_key| queue_key.starts_with("provider_model:"))
+                {
+                    evidence.provider_task_id = data
+                        .get("task_id")
+                        .and_then(Value::as_str)
+                        .map(ToOwned::to_owned);
+                }
+            }
             "provider_stream_delta" => {
                 evidence.delta_count += 1;
             }
@@ -3862,6 +4482,11 @@ fn collect_provider_turn_evidence(events_body: &str) -> ProviderTurnEvidence {
                 evidence.saw_finished = true;
             }
             "task_completed" => {
+                if evidence.provider_task_id.as_deref()
+                    == data.get("task_id").and_then(Value::as_str)
+                {
+                    evidence.provider_task_completed = true;
+                }
                 if evidence.task_completed_summary.is_none() {
                     evidence.task_completed_summary = data
                         .get("result_summary")
@@ -4087,6 +4712,11 @@ enum PreparedLiveConfigContract {
         paths: PreparedLiveConfigPaths,
         stage: ToolFlowStage,
     },
+    RestrictedTools {
+        paths: PreparedLiveConfigPaths,
+        description: String,
+        tools: Vec<String>,
+    },
     VisionVerifier(PreparedLiveConfigPaths),
 }
 
@@ -4095,6 +4725,7 @@ impl PreparedLiveConfigContract {
         match self {
             Self::Standard(paths) | Self::VisionVerifier(paths) => paths,
             Self::ToolFlow { paths, .. } => paths,
+            Self::RestrictedTools { paths, .. } => paths,
         }
     }
 }
@@ -4149,6 +4780,7 @@ fn apply_allow_permissions(config: &mut Value) -> Result<(), String> {
     permissions.insert("edit".to_string(), Value::String("allow".to_string()));
     permissions.insert("shell".to_string(), Value::String("allow".to_string()));
     permissions.insert("network".to_string(), Value::String("allow".to_string()));
+    permissions.insert("question".to_string(), Value::String("allow".to_string()));
     Ok(())
 }
 
@@ -4167,17 +4799,9 @@ fn disable_prepared_determinism(config: &mut Value) -> Result<(), String> {
 
 fn apply_tool_flow_contract(
     config: &mut Value,
-    workspace_root: &Path,
     profile_name: &str,
     stage: ToolFlowStage,
 ) -> Result<(), String> {
-    let canonical_workspace = workspace_root.canonicalize().map_err(|err| {
-        format!(
-            "failed to canonicalize tool-flow workspace {}: {err}",
-            workspace_root.display()
-        )
-    })?;
-
     let root = config
         .as_object_mut()
         .ok_or_else(|| "config root must be a JSON object".to_string())?;
@@ -4190,7 +4814,7 @@ fn apply_tool_flow_contract(
         "shell_allowlist".to_string(),
         json!({
             "executables": ["sh"],
-            "cwd_roots": [canonical_workspace.display().to_string()],
+            "cwd_roots": ["."],
         }),
     );
 
@@ -4212,6 +4836,7 @@ fn apply_tool_flow_contract(
             "edit": "allow",
             "shell": "allow",
             "network": "allow",
+            "question": "allow",
         }),
     );
     profile.insert(
@@ -4226,6 +4851,336 @@ fn apply_tool_flow_contract(
     );
 
     Ok(())
+}
+
+fn apply_restricted_tools_contract(
+    config: &mut Value,
+    profile_name: &str,
+    description: &str,
+    tools: &[String],
+) -> Result<(), String> {
+    let root = config
+        .as_object_mut()
+        .ok_or_else(|| "config root must be a JSON object".to_string())?;
+    let categories = root
+        .get_mut("categories")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| "config.categories must be an object".to_string())?;
+    let profile = categories
+        .get_mut(profile_name)
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| format!("category `{profile_name}` must be present and be an object"))?;
+    profile.insert(
+        "description".to_string(),
+        Value::String(description.to_string()),
+    );
+    profile.insert(
+        "tool_surface".to_string(),
+        Value::String(restricted_tools_surface(tools).to_string()),
+    );
+    profile.insert(
+        "permissions".to_string(),
+        json!({
+            "edit": "allow",
+            "shell": "allow",
+            "network": "allow",
+        }),
+    );
+    profile.insert(
+        "tools".to_string(),
+        Value::Array(tools.iter().cloned().map(Value::String).collect()),
+    );
+    Ok(())
+}
+
+fn restricted_tools_surface(tools: &[String]) -> &'static str {
+    if tools.iter().any(|tool| tool.contains('.')) {
+        "native"
+    } else {
+        "compat"
+    }
+}
+
+fn assert_requested_tool_args(
+    events_body: &str,
+    expected_tool_id: &str,
+    expected_args: &Value,
+) -> Result<(), String> {
+    let args = first_requested_tool_args(events_body, expected_tool_id)?
+        .ok_or_else(|| format!("expected requested args for `{expected_tool_id}`"))?;
+    if &args == expected_args {
+        Ok(())
+    } else {
+        Err(format!(
+            "expected `{expected_tool_id}` args {} ; found {}",
+            expected_args, args
+        ))
+    }
+}
+
+fn assert_tool_call_output_contains(
+    events_body: &str,
+    expected_tool_id: &str,
+    needle: &str,
+) -> Result<(), String> {
+    let output = first_tool_call_output_summary(events_body, expected_tool_id)?
+        .ok_or_else(|| format!("expected output summary for `{expected_tool_id}`"))?;
+    if output.contains(needle) {
+        Ok(())
+    } else {
+        Err(format!(
+            "expected `{expected_tool_id}` output summary to contain `{needle}`; found `{output}`"
+        ))
+    }
+}
+
+fn assert_event_log_contains(events_body: &str, needle: &str) -> Result<(), String> {
+    if events_body.contains(needle) {
+        Ok(())
+    } else {
+        Err(format!("expected event log to contain `{needle}`"))
+    }
+}
+
+fn assert_requested_tool_sequence(
+    events_body: &str,
+    expected_tools: &[&str],
+) -> Result<(), String> {
+    let mut requested = Vec::<(String, String)>::new();
+    let mut finished = BTreeMap::<String, String>::new();
+
+    for (idx, line) in events_body.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let event: Value = serde_json::from_str(line)
+            .map_err(|err| format!("events line {} is invalid JSON: {err}", idx + 1))?;
+        let event_type = event
+            .get("payload")
+            .and_then(|payload| payload.get("event_type"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let data = event
+            .get("payload")
+            .and_then(|payload| payload.get("data"))
+            .cloned()
+            .unwrap_or(Value::Null);
+
+        match event_type {
+            "tool_call_requested" => {
+                let Some(tool_id) = data.get("tool_id").and_then(Value::as_str) else {
+                    continue;
+                };
+                let Some(tool_call_id) = data.get("tool_call_id").and_then(Value::as_str) else {
+                    continue;
+                };
+                requested.push((tool_id.to_string(), tool_call_id.to_string()));
+            }
+            "tool_call_finished" => {
+                let Some(tool_call_id) = data.get("tool_call_id").and_then(Value::as_str) else {
+                    continue;
+                };
+                let status = data
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .unwrap_or("missing");
+                finished.insert(tool_call_id.to_string(), status.to_string());
+            }
+            _ => {}
+        }
+    }
+
+    let actual_tools = requested
+        .iter()
+        .map(|(tool_id, _)| tool_id.as_str())
+        .collect::<Vec<_>>();
+    if actual_tools != expected_tools {
+        return Err(format!(
+            "expected requested tool sequence {:?}; found {:?}",
+            expected_tools, actual_tools
+        ));
+    }
+
+    for (tool_id, tool_call_id) in requested {
+        let status = finished
+            .get(&tool_call_id)
+            .map(String::as_str)
+            .unwrap_or("missing");
+        if status != "succeeded" {
+            return Err(format!(
+                "expected `{tool_id}` ({tool_call_id}) to finish with status `succeeded`; found `{status}`"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn assert_todo_state_matches(run_dir: &Path) -> Result<(), String> {
+    let todos_path = run_dir.join("opencode-compat").join("todos.json");
+    let todos = read_required_json(&todos_path)?;
+    let expected = json!([
+        {
+            "content": LIVE_CHAT_TODO_CONTENT,
+            "status": "pending",
+            "priority": "high",
+        }
+    ]);
+    if todos == expected {
+        Ok(())
+    } else {
+        Err(format!(
+            "expected {} to equal {}; found {}",
+            todos_path.display(),
+            expected,
+            todos
+        ))
+    }
+}
+
+fn assert_question_state_matches(run_dir: &Path, events_body: &str) -> Result<(), String> {
+    let tool_call_id = first_requested_tool_call_id(events_body, "user.question")?
+        .ok_or_else(|| "expected requested user.question tool_call_id".to_string())?;
+    let question_path = run_dir
+        .join("opencode-compat")
+        .join("questions")
+        .join(format!("{tool_call_id}.json"));
+    let question_state = read_required_json(&question_path)?;
+    let expected = json!([
+        {
+            "question": "Pick one",
+            "header": "Choice",
+            "multiple": Value::Null,
+            "options": [
+                {"label": "Yes", "description": "Choose yes"},
+                {"label": "No", "description": "Choose no"}
+            ]
+        }
+    ]);
+    if question_state == expected {
+        Ok(())
+    } else {
+        Err(format!(
+            "expected {} to equal {}; found {}",
+            question_path.display(),
+            expected,
+            question_state
+        ))
+    }
+}
+
+fn first_requested_tool_call_id(
+    events_body: &str,
+    expected_tool_id: &str,
+) -> Result<Option<String>, String> {
+    for (idx, line) in events_body.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let event: Value = serde_json::from_str(line)
+            .map_err(|err| format!("events line {} is invalid JSON: {err}", idx + 1))?;
+        let event_type = event
+            .get("payload")
+            .and_then(|payload| payload.get("event_type"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if event_type != "tool_call_requested" {
+            continue;
+        }
+        let data = event
+            .get("payload")
+            .and_then(|payload| payload.get("data"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        if data.get("tool_id").and_then(Value::as_str) != Some(expected_tool_id) {
+            continue;
+        }
+        if let Some(tool_call_id) = data.get("tool_call_id").and_then(Value::as_str) {
+            return Ok(Some(tool_call_id.to_string()));
+        }
+    }
+
+    Ok(None)
+}
+
+fn first_requested_tool_args(
+    events_body: &str,
+    expected_tool_id: &str,
+) -> Result<Option<Value>, String> {
+    for (idx, line) in events_body.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let event: Value = serde_json::from_str(line)
+            .map_err(|err| format!("events line {} is invalid JSON: {err}", idx + 1))?;
+        let event_type = event
+            .get("payload")
+            .and_then(|payload| payload.get("event_type"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if event_type != "tool_call_requested" {
+            continue;
+        }
+        let data = event
+            .get("payload")
+            .and_then(|payload| payload.get("data"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        if data.get("tool_id").and_then(Value::as_str) != Some(expected_tool_id) {
+            continue;
+        }
+        if let Some(args_summary) = data.get("args_summary").and_then(Value::as_str) {
+            let args = serde_json::from_str(args_summary).map_err(|err| {
+                format!(
+                    "failed to parse args_summary for `{expected_tool_id}` on line {}: {err}",
+                    idx + 1
+                )
+            })?;
+            return Ok(Some(args));
+        }
+    }
+
+    Ok(None)
+}
+
+fn first_tool_call_output_summary(
+    events_body: &str,
+    expected_tool_id: &str,
+) -> Result<Option<String>, String> {
+    let tool_call_id = first_requested_tool_call_id(events_body, expected_tool_id)?;
+    let Some(tool_call_id) = tool_call_id else {
+        return Ok(None);
+    };
+
+    for (idx, line) in events_body.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let event: Value = serde_json::from_str(line)
+            .map_err(|err| format!("events line {} is invalid JSON: {err}", idx + 1))?;
+        let event_type = event
+            .get("payload")
+            .and_then(|payload| payload.get("event_type"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if event_type != "tool_call_finished" {
+            continue;
+        }
+        let data = event
+            .get("payload")
+            .and_then(|payload| payload.get("data"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        if data.get("tool_call_id").and_then(Value::as_str) != Some(tool_call_id.as_str()) {
+            continue;
+        }
+        return Ok(data
+            .get("output_summary")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned));
+    }
+
+    Ok(None)
 }
 
 fn resolve_env_reference_value(value: &str) -> Result<String, String> {
@@ -4405,10 +5360,6 @@ fn resolve_harness_bin() -> PathBuf {
                 .join("target")
                 .join("debug")
                 .join(binary_name("harness"));
-            if harness_bin.exists() {
-                return harness_bin;
-            }
-
             let status = Command::new("cargo")
                 .arg("build")
                 .arg("-p")

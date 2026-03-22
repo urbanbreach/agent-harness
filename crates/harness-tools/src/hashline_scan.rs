@@ -156,21 +156,34 @@ fn sanitize_artifact_name(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::HashlineScanTool;
+    use harness_core::clock::RealClock;
+    use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
     use harness_core::edit::hashline::compute_line_hash;
     use harness_core::event::{ActorKind, EventActor};
+    use harness_core::redact::DefaultRedactor;
     use harness_core::tool::{Tool, ToolContext};
     use serde_json::json;
+    use std::sync::Arc;
 
     fn test_context(
         workspace_root: &std::path::Path,
         artifacts_dir: &std::path::Path,
     ) -> ToolContext {
+        let coordinator = spawn_coordinator(
+            CoordinatorConfig::default(),
+            Arc::new(RealClock::new()),
+            Arc::new(DefaultRedactor::default()),
+        );
         ToolContext {
             run_id: "run-1".to_string(),
             workspace_root: workspace_root.to_path_buf(),
             artifacts_dir: artifacts_dir.to_path_buf(),
             actor: EventActor::new(ActorKind::Worker, Some("worker-1".to_string())),
+            category: Some("deep".to_string()),
+            plan_mode: false,
+            plan_exit_target_profile: None,
             tool_call_id: "tool-call-1".to_string(),
+            coordinator,
         }
     }
 

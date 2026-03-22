@@ -485,6 +485,7 @@ mod tests {
                     task_id: "task_000002".to_string(),
                     result_summary: "tool ok".to_string(),
                     result_digest: "def456".to_string(),
+                    metadata: None,
                 }),
                 Some("req_000001"),
             ),
@@ -503,6 +504,7 @@ mod tests {
                     task_id: "task_000001".to_string(),
                     result_summary: "ok".to_string(),
                     result_digest: "abc123".to_string(),
+                    metadata: None,
                 }),
                 Some("req_000001"),
             ),
@@ -547,6 +549,7 @@ mod tests {
             task_id: "req_000123".to_string(),
             result_summary: "ok".to_string(),
             result_digest: "abc123".to_string(),
+            metadata: None,
         }))];
 
         let status = evaluate_prompt_completion(&events, "req_000123");

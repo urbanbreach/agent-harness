@@ -8,7 +8,7 @@ use serde_json::json;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::clock::FakeClock;
+use crate::clock::{FakeClock, RealClock};
 use crate::config::PermissionMode;
 use crate::event::{
     ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1,
@@ -178,7 +178,7 @@ async fn perm_ask_path_blocks_until_resolved() {
         .expect("permission requested event");
 
     handle
-        .resolve_permission(permission_id, PermissionDecision::Allow)
+        .resolve_permission(permission_id, PermissionDecision::Allow, None)
         .await
         .expect("resolve permission");
 
@@ -279,6 +279,73 @@ async fn perm_timeout_path_denies_deterministically() {
     }));
 }
 
+#[tokio::test]
+async fn malformed_question_answer_does_not_resolve_permission() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let config = test_config(temp_dir.path());
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(RealClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("question_validation", temp_dir.path())
+        .await
+        .expect("start run");
+
+    let question_handle = handle.clone();
+    let request = tokio::spawn(async move {
+        question_handle
+            .request_question(
+                EventActor::new(ActorKind::Worker, Some("agent-worker".to_string())),
+                "toolcall_question_validation",
+                json!({
+                    "questions": [{
+                        "question": "Pick one",
+                        "header": "Choice",
+                        "options": [{"label": "A", "description": "Option A"}],
+                    }]
+                }),
+            )
+            .await
+    });
+
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    let before = read_events(&run.events_path);
+    let permission_id = before
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::PermissionRequested(data) if data.kind == "question" => {
+                Some(data.permission_id.clone())
+            }
+            _ => None,
+        })
+        .expect("question permission requested");
+
+    let err = handle
+        .resolve_permission(
+            permission_id.clone(),
+            PermissionDecision::Allow,
+            Some("not-json".to_string()),
+        )
+        .await
+        .expect_err("malformed answers must be rejected");
+    assert!(err.to_string().contains("invalid question answer payload"));
+
+    assert!(
+        read_events(&run.events_path).iter().all(|event| {
+            !matches!(
+                &event.payload,
+                EventV1::PermissionResolved(data) if data.permission_id == permission_id
+            )
+        }),
+        "permission should remain pending when answer payload is invalid"
+    );
+
+    request.abort();
+    handle.stop_run().await.expect("stop run");
+}
+
 #[test]
 fn stale_tool_task_late_result_preserves_owner_actor() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
@@ -313,11 +380,13 @@ fn stale_tool_task_late_result_preserves_owner_actor() {
             task_id.clone(),
             TaskState {
                 tool_call_id: "toolcall_000001".to_string(),
+                tool_metadata: None,
                 owner_actor: owner_actor.clone(),
                 request_correlation_id: request_correlation_id.clone(),
                 queue_key,
                 state: TaskExecutionState::Running,
                 cancellation_token: CancellationToken::new(),
+                started_mono_ms: 0,
                 last_progress_mono_ms: 0,
                 last_progress_kind: JobProgressKind::Heartbeat,
                 hashline_edit: None,
@@ -444,6 +513,7 @@ fn restore_provider_context_uses_task_completed_summary_for_iterative_history() 
                     task_id: "task_000001".to_string(),
                     result_summary: "final answer".to_string(),
                     result_digest: "digest-task".to_string(),
+                    metadata: None,
                 }),
             ),
             restore_fixture_event(

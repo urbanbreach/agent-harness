@@ -1200,7 +1200,7 @@ async fn run_scenario_runner(
         let permission_id =
             wait_for_permission_id(&run.events_path, &tool_call_id, WAIT_TIMEOUT).await?;
         coordinator
-            .resolve_permission(permission_id, PermissionDecision::Allow)
+            .resolve_permission(permission_id, PermissionDecision::Allow, None)
             .await
             .map_err(|err| err.to_string())?;
     }
@@ -1313,9 +1313,10 @@ async fn handle_ui_intents(
             UiIntent::ResolvePermission {
                 permission_id,
                 decision,
+                reason,
             } => {
                 coordinator
-                    .resolve_permission(permission_id, decision)
+                    .resolve_permission(permission_id, decision, reason)
                     .await
                     .map_err(|err| err.to_string())?;
             }

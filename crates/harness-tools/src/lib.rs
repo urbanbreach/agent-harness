@@ -5,8 +5,8 @@
 //! argument validation, execution, and stable schema exposure.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use harness_core::config::ShellAllowlist;
@@ -31,16 +31,105 @@ use fs_ls::FsLsTool;
 mod fs_grep;
 use fs_grep::FsGrepTool;
 
+mod workspace_edit;
+use workspace_edit::{FsWriteTool, WorkspaceEditExecutor};
+
+mod network;
+use network::{NetworkExecutor, SearchCodeTool, SearchWebTool, WebFetchTool};
+
+mod control_plane;
+use control_plane::{
+    ControlPlaneExecutor, InvalidTool, PlanExitTool, SkillLoadTool, TodoReadTool, TodoWriteTool,
+    UserQuestionTool,
+};
+
+mod agent_ops;
+use agent_ops::{AgentOpsExecutor, AgentSpawnTool, ToolBatchTool};
+
+mod code_lsp;
+use code_lsp::{CodeLspExecutor, CodeLspTool};
+
+mod lsp_support;
+
+mod opencode_compat;
+use opencode_compat::{
+    ApplyPatchCompatTool, BashCompatTool, BatchCompatTool, CodeSearchCompatTool, GlobCompatTool,
+    GrepCompatTool, InvalidCompatTool, ListCompatTool, LspCompatTool, QuestionCompatTool,
+    ReadCompatTool, SkillCompatTool, TaskCompatTool, TodoReadCompatTool, TodoWriteCompatTool,
+    WebFetchCompatTool, WebSearchCompatTool, WriteCompatTool,
+};
+
+pub use harness_core::tool::{
+    canonical_tool_id_for, native_and_alias_tool_ids, native_tool_parity_matrix,
+    NativeToolMigrationStatus, NativeToolParityEntry, NativeToolPermissionClass,
+    NativeToolProviderExposure,
+};
+
 pub fn coordinator_registry(shell_allowlist: ShellAllowlist) -> ToolRegistry {
+    let agent_ops_executor = Arc::new(AgentOpsExecutor::new());
+    let control_plane_executor = Arc::new(ControlPlaneExecutor::new());
+    let network_executor = Arc::new(NetworkExecutor::new());
+    let code_lsp_executor = Arc::new(CodeLspExecutor::new());
+    let workspace_edit_executor = Arc::new(WorkspaceEditExecutor::new());
+
     let mut registry = ToolRegistry::new();
     registry.register(Arc::new(FsReadTool));
     registry.register(Arc::new(FsGlobTool));
     registry.register(Arc::new(FsLsTool));
     registry.register(Arc::new(FsGrepTool));
-    registry.register(Arc::new(AgentSpawnTool));
+    registry.register(Arc::new(ReadCompatTool));
+    registry.register(Arc::new(ListCompatTool));
+    registry.register(Arc::new(GlobCompatTool));
+    registry.register(Arc::new(GrepCompatTool));
+    registry.register(Arc::new(AgentSpawnTool::new(agent_ops_executor.clone())));
+    registry.register(Arc::new(TaskCompatTool::new(agent_ops_executor.clone())));
     registry.register(Arc::new(HashlineScanTool));
     registry.register(Arc::new(HashlineApplyTool));
-    registry.register(Arc::new(ShellRunTool::new(shell_allowlist)));
+    registry.register(Arc::new(FsWriteTool::new(workspace_edit_executor.clone())));
+    registry.register(Arc::new(WriteCompatTool::new(
+        workspace_edit_executor.clone(),
+    )));
+    registry.register(Arc::new(ApplyPatchCompatTool::new(
+        workspace_edit_executor.clone(),
+    )));
+    registry.register(Arc::new(ShellRunTool::new(shell_allowlist.clone())));
+    registry.register(Arc::new(BashCompatTool::new(shell_allowlist)));
+    registry.register(Arc::new(WebFetchTool::new(network_executor.clone())));
+    registry.register(Arc::new(WebFetchCompatTool::new(network_executor.clone())));
+    registry.register(Arc::new(SearchWebTool::new(network_executor.clone())));
+    registry.register(Arc::new(WebSearchCompatTool::new(network_executor.clone())));
+    registry.register(Arc::new(SearchCodeTool::new(network_executor.clone())));
+    registry.register(Arc::new(CodeSearchCompatTool::new(
+        network_executor.clone(),
+    )));
+    registry.register(Arc::new(TodoWriteTool::new(control_plane_executor.clone())));
+    registry.register(Arc::new(TodoWriteCompatTool::new(
+        control_plane_executor.clone(),
+    )));
+    registry.register(Arc::new(TodoReadTool::new(control_plane_executor.clone())));
+    registry.register(Arc::new(TodoReadCompatTool::new(
+        control_plane_executor.clone(),
+    )));
+    registry.register(Arc::new(SkillLoadTool::new(control_plane_executor.clone())));
+    registry.register(Arc::new(SkillCompatTool::new(
+        control_plane_executor.clone(),
+    )));
+    registry.register(Arc::new(ToolBatchTool::new(agent_ops_executor.clone())));
+    registry.register(Arc::new(BatchCompatTool::new(agent_ops_executor.clone())));
+    registry.register(Arc::new(UserQuestionTool::new(
+        control_plane_executor.clone(),
+    )));
+    registry.register(Arc::new(QuestionCompatTool::new(
+        control_plane_executor.clone(),
+    )));
+    registry.register(Arc::new(PlanExitTool::new(control_plane_executor.clone())));
+    registry.register(Arc::new(opencode_compat::PlanExitCompatTool::new(
+        control_plane_executor.clone(),
+    )));
+    registry.register(Arc::new(CodeLspTool::new(code_lsp_executor.clone())));
+    registry.register(Arc::new(LspCompatTool::new(code_lsp_executor)));
+    registry.register(Arc::new(InvalidTool::new(control_plane_executor.clone())));
+    registry.register(Arc::new(InvalidCompatTool::new(control_plane_executor)));
     registry
 }
 
@@ -53,64 +142,7 @@ pub fn worker_registry(shell_allowlist: ShellAllowlist) -> ToolRegistry {
     worker
 }
 
-struct AgentSpawnTool;
-
-#[derive(Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct AgentSpawnArgs {
-    profile_name: String,
-    #[serde(default)]
-    system_prompt: Option<String>,
-    task: String,
-}
-
-#[async_trait]
-impl Tool for AgentSpawnTool {
-    fn id(&self) -> &str {
-        "agent.spawn"
-    }
-
-    fn description(&self) -> &str {
-        "Spawns a child agent with an optional system prompt override and delegated task."
-    }
-
-    fn parameters_json_schema(&self) -> serde_json::Value {
-        json_schema_for::<AgentSpawnArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::SpawnAgent
-    }
-
-    async fn call(
-        &self,
-        _ctx: ToolContext,
-        args_json: serde_json::Value,
-    ) -> Result<ToolResult, ToolError> {
-        let args: AgentSpawnArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
-
-        if args.profile_name.trim().is_empty() {
-            return Err(ToolError::InvalidArguments(
-                "profile_name must not be empty".to_string(),
-            ));
-        }
-
-        if args.task.trim().is_empty() {
-            return Err(ToolError::InvalidArguments(
-                "task must not be empty".to_string(),
-            ));
-        }
-
-        let _ = args.system_prompt.as_deref();
-
-        Err(ToolError::Execution(
-            "agent.spawn is handled internally by the coordinator".to_string(),
-        ))
-    }
-}
-
-struct FsReadTool;
+pub(crate) struct FsReadTool;
 
 const FS_READ_DEFAULT_OFFSET: u32 = 1;
 const FS_READ_DEFAULT_LIMIT: u32 = 2000;
@@ -273,12 +305,12 @@ impl Tool for FsReadTool {
     }
 }
 
-struct ShellRunTool {
+pub(crate) struct ShellRunTool {
     allowlist: ShellAllowlist,
 }
 
 impl ShellRunTool {
-    fn new(allowlist: ShellAllowlist) -> Self {
+    pub(crate) fn new(allowlist: ShellAllowlist) -> Self {
         Self { allowlist }
     }
 
@@ -322,11 +354,20 @@ impl ShellRunTool {
 
 #[derive(Deserialize, JsonSchema)]
 struct ShellRunArgs {
-    cmd: String,
+    #[serde(default)]
+    cmd: Option<String>,
     #[serde(default)]
     args: Vec<String>,
     #[serde(default)]
     cwd: Option<String>,
+    #[serde(default)]
+    command: Option<String>,
+    #[serde(default)]
+    workdir: Option<String>,
+    #[serde(default)]
+    timeout: Option<u64>,
+    #[serde(default)]
+    description: Option<String>,
 }
 
 #[async_trait]
@@ -355,30 +396,105 @@ impl Tool for ShellRunTool {
         let args: ShellRunArgs = serde_json::from_value(args_json)
             .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
 
-        if !self.is_executable_allowed(&args.cmd) {
-            return Err(ToolError::CommandBlocked(args.cmd));
+        let direct_exec_requested = args.cmd.is_some();
+        let shell_command_requested = args.command.is_some();
+        if direct_exec_requested == shell_command_requested {
+            return Err(ToolError::InvalidArguments(
+                "provide exactly one of cmd or command".to_string(),
+            ));
         }
 
-        let cwd = self.resolve_cwd(&ctx, args.cwd.as_deref())?;
+        let timeout_ms = args.timeout.unwrap_or(120_000);
+        let (display_text, structured_json) = if let Some(cmd) = args.cmd {
+            if !self.is_executable_allowed(&cmd) {
+                return Err(ToolError::CommandBlocked(cmd));
+            }
 
-        let output = Command::new(&args.cmd)
-            .args(&args.args)
-            .current_dir(cwd)
-            .output()
+            let cwd = self.resolve_cwd(&ctx, args.cwd.as_deref())?;
+            let output = tokio::time::timeout(
+                Duration::from_millis(timeout_ms),
+                tokio::process::Command::new(&cmd)
+                    .args(&args.args)
+                    .current_dir(cwd)
+                    .output(),
+            )
+            .await
+            .map_err(|_| ToolError::Execution(format!("command timed out after {timeout_ms} ms")))?
             .map_err(|err| ToolError::Execution(format!("failed to execute command: {err}")))?;
 
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        let status = output.status.code().unwrap_or(-1);
-
-        Ok(ToolResult {
-            display_text: stdout.clone(),
-            structured_json: Some(json!({
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            let status = output.status.code().unwrap_or(-1);
+            let display_text = if stderr.is_empty() {
+                stdout.clone()
+            } else if stdout.is_empty() {
+                stderr.clone()
+            } else {
+                format!("{stdout}\n{stderr}")
+            };
+            let structured_json = json!({
+                "cmd": cmd,
+                "args": args.args,
+                "cwd": args.cwd,
                 "status": status,
                 "stdout": stdout,
                 "stderr": stderr,
                 "success": output.status.success(),
-            })),
+            });
+
+            (display_text, structured_json)
+        } else {
+            let command = args.command.expect("validated shell command presence");
+            let workdir = args.workdir.or(args.cwd);
+            let cwd = self.resolve_cwd(&ctx, workdir.as_deref())?;
+            crate::opencode_compat::validate_bash_command(
+                &command,
+                &cwd,
+                &ctx.workspace_root,
+                &self.allowlist,
+            )?;
+            let shell = std::env::var("SHELL")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| "/bin/bash".to_string());
+            let output = tokio::time::timeout(
+                Duration::from_millis(timeout_ms),
+                tokio::process::Command::new(&shell)
+                    .arg("-lc")
+                    .arg(&command)
+                    .current_dir(cwd)
+                    .output(),
+            )
+            .await
+            .map_err(|_| ToolError::Execution(format!("command timed out after {timeout_ms} ms")))?
+            .map_err(|err| ToolError::Execution(format!("failed to execute command: {err}")))?;
+
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            let status = output.status.code().unwrap_or(-1);
+            let display_text = if stderr.is_empty() {
+                stdout.clone()
+            } else if stdout.is_empty() {
+                stderr.clone()
+            } else {
+                format!("{stdout}\n{stderr}")
+            };
+            let structured_json = json!({
+                "description": args.description,
+                "command": command,
+                "workdir": workdir,
+                "status": status,
+                "stdout": stdout,
+                "stderr": stderr,
+                "success": output.status.success(),
+            });
+
+            (display_text, structured_json)
+        };
+
+        Ok(ToolResult {
+            display_text,
+            structured_json: Some(structured_json),
             artifacts: Vec::new(),
         })
     }
@@ -394,20 +510,33 @@ fn json_schema_for<T: JsonSchema>() -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::{coordinator_registry, FsReadTool};
+    use harness_core::clock::RealClock;
     use harness_core::config::ShellAllowlist;
+    use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
     use harness_core::event::{ActorKind, EventActor};
+    use harness_core::redact::DefaultRedactor;
     use harness_core::tool::{Tool, ToolContext, ToolError};
     use serde_json::json;
     use std::collections::BTreeSet;
     use std::path::Path;
+    use std::sync::Arc;
 
     fn fs_read_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
+        let coordinator = spawn_coordinator(
+            CoordinatorConfig::default(),
+            Arc::new(RealClock::new()),
+            Arc::new(DefaultRedactor::default()),
+        );
         ToolContext {
             run_id: "run-fs-read-tests".to_string(),
             workspace_root: workspace_root.to_path_buf(),
             artifacts_dir: workspace_root.join(".artifacts"),
             actor: EventActor::new(ActorKind::Supervisor, None),
+            category: Some("deep".to_string()),
+            plan_mode: false,
+            plan_exit_target_profile: None,
             tool_call_id: tool_call_id.to_string(),
+            coordinator,
         }
     }
 

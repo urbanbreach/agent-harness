@@ -157,6 +157,7 @@ struct TranscriptToolCallHeader {
     status: ToolCallDisplayStatus,
     visual_style: TranscriptToolCallVisualStyle,
     struck_out: bool,
+    disclosure_state: Option<TranscriptToolCallDisclosureState>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,6 +183,12 @@ enum TranscriptToolCallVisualStyle {
 enum TranscriptToolCallDetailTone {
     Secondary,
     Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TranscriptToolCallDisclosureState {
+    Collapsed,
+    Expanded,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -434,6 +441,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
                 build_tool_call_section(
                     tool_call,
                     show_tool_details,
+                    timestamps_visible,
                     show_generic_tool_output,
                     app.tool_output_expanded(tool_call),
                     stacked_diffs,
@@ -452,6 +460,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
 fn build_tool_call_section(
     tool_call: &crate::app::ToolCallEntry,
     show_tool_details: bool,
+    timestamps_visible: bool,
     show_generic_tool_output: bool,
     tool_output_expanded: bool,
     stacked_diffs: bool,
@@ -463,6 +472,7 @@ fn build_tool_call_section(
 
     Some(build_opencode_tool_call_section(
         tool_call,
+        timestamps_visible,
         show_generic_tool_output,
         tool_output_expanded,
         stacked_diffs,
@@ -472,6 +482,7 @@ fn build_tool_call_section(
 
 fn build_opencode_tool_call_section(
     tool_call: &crate::app::ToolCallEntry,
+    timestamps_visible: bool,
     show_generic_tool_output: bool,
     tool_output_expanded: bool,
     stacked_diffs: bool,
@@ -480,8 +491,9 @@ fn build_opencode_tool_call_section(
     let struck_out = tool_call_denied(tool_call);
     let mut detail_blocks = Vec::new();
     let expanded = show_generic_tool_output || tool_output_expanded;
+    let display_tool_id = tool_call.canonical_tool_id();
 
-    let (title, icon, visual_style) = match tool_call.tool_id.as_str() {
+    let (title, icon, visual_style) = match display_tool_id {
         "fs.read" => (
             format!(
                 "Read {}{}",
@@ -607,17 +619,81 @@ fn build_opencode_tool_call_section(
             Some("→"),
             TranscriptToolCallVisualStyle::Inline,
         ),
-        "agent.spawn" => (
-            tool_summary_string(&tool_call.args_summary, &["task", "description"])
-                .map(|task| format!("Task {task}"))
-                .unwrap_or_else(|| "Delegate task".to_string()),
-            Some("│"),
+        "agent.spawn" => build_agent_spawn_tool_row(tool_call, &mut detail_blocks),
+        "fs.write" => (
+            format!(
+                "Write {}",
+                tool_summary_string(&tool_call.args_summary, &["filePath", "path"])
+                    .unwrap_or_else(|| "file".to_string())
+            ),
+            Some("←"),
             TranscriptToolCallVisualStyle::Inline,
+        ),
+        "apply_patch" => (
+            "Apply patch".to_string(),
+            Some("←"),
+            TranscriptToolCallVisualStyle::Block,
+        ),
+        "web.fetch" => (
+            format!(
+                "Fetch {}",
+                tool_summary_string(&tool_call.args_summary, &["url"])
+                    .unwrap_or_else(|| "url".to_string())
+            ),
+            Some("⇣"),
+            TranscriptToolCallVisualStyle::Block,
+        ),
+        "search.web" | "search.code" => (
+            format!(
+                "{} \"{}\"",
+                if display_tool_id == "search.web" {
+                    "Search"
+                } else {
+                    "Code search"
+                },
+                tool_summary_string(&tool_call.args_summary, &["query"])
+                    .unwrap_or_else(|| "query".to_string())
+            ),
+            Some("✱"),
+            TranscriptToolCallVisualStyle::Block,
+        ),
+        "todo.write" | "todo.read" => (
+            if display_tool_id == "todo.write" {
+                "Update todos".to_string()
+            } else {
+                "Read todos".to_string()
+            },
+            Some("☑"),
+            TranscriptToolCallVisualStyle::Inline,
+        ),
+        "skill.load" => (
+            format!(
+                "Load skill {}",
+                tool_summary_string(&tool_call.args_summary, &["name"])
+                    .unwrap_or_else(|| "skill".to_string())
+            ),
+            Some("✦"),
+            TranscriptToolCallVisualStyle::Inline,
+        ),
+        "user.question" => (
+            "Ask question".to_string(),
+            Some("?"),
+            TranscriptToolCallVisualStyle::Block,
+        ),
+        "tool.batch" => (
+            batch_tool_title(tool_call),
+            Some("≋"),
+            TranscriptToolCallVisualStyle::Block,
+        ),
+        "code.lsp" => (
+            lsp_tool_title(tool_call),
+            Some("⌘"),
+            TranscriptToolCallVisualStyle::Block,
         ),
         _ => {
             let title = format!(
                 "{}{}",
-                generic_tool_name(&tool_call.tool_id),
+                generic_tool_name(display_tool_id),
                 tool_input_suffix(&tool_call.args_summary, &[]),
             );
             if tool_call.output_summary.is_some() {
@@ -626,7 +702,11 @@ fn build_opencode_tool_call_section(
                     tool_call.output_summary.as_deref().unwrap_or_default(),
                     3,
                     expanded,
-                    TranscriptToolCallDetailTone::Secondary,
+                    if tool_call.status == ToolCallDisplayStatus::Failed {
+                        TranscriptToolCallDetailTone::Error
+                    } else {
+                        TranscriptToolCallDetailTone::Secondary
+                    },
                 );
                 (title, Some("⚙"), TranscriptToolCallVisualStyle::Block)
             } else {
@@ -635,7 +715,7 @@ fn build_opencode_tool_call_section(
         }
     };
 
-    if tool_call.tool_id == "fs.read"
+    if matches!(tool_call.tool_id.as_str(), "fs.read" | "read")
         && tool_call.status == ToolCallDisplayStatus::Succeeded
         && detail_blocks.is_empty()
     {
@@ -647,13 +727,33 @@ fn build_opencode_tool_call_section(
         }
     }
 
+    if detail_blocks.is_empty()
+        && tool_prefers_generic_output_block(display_tool_id)
+        && tool_call.output_summary.is_some()
+    {
+        push_collapsible_output_block(
+            &mut detail_blocks,
+            tool_call.output_summary.as_deref().unwrap_or_default(),
+            3,
+            expanded,
+            if tool_call.status == ToolCallDisplayStatus::Failed {
+                TranscriptToolCallDetailTone::Error
+            } else {
+                TranscriptToolCallDetailTone::Secondary
+            },
+        );
+    }
+
+    push_tool_identity_block(&mut detail_blocks, tool_call);
+    push_tool_attachment_blocks(&mut detail_blocks, tool_call, expanded);
+
     if detail_blocks.is_empty() {
         if let Some(output) = tool_error_text(tool_call) {
             detail_blocks.push(TranscriptToolCallDetailBlock::Message {
                 text: output,
                 tone: TranscriptToolCallDetailTone::Error,
             });
-        } else if tool_call.tool_id == "agent.spawn" {
+        } else if display_tool_id == "agent.spawn" {
             if let Some(output) = tool_call.output_summary.as_deref() {
                 detail_blocks.push(TranscriptToolCallDetailBlock::Message {
                     text: format!("└ {}", format_detail_payload(output)),
@@ -663,14 +763,17 @@ fn build_opencode_tool_call_section(
         }
     }
 
+    let disclosure_state = tool_disclosure_state(tool_call, tool_output_expanded);
+
     TranscriptToolCallSection {
         header: TranscriptToolCallHeader {
             tool_id: tool_call.tool_id.clone(),
-            title: decorate_tool_call_title(title, tool_call),
+            title: decorate_tool_call_title(title, tool_call, timestamps_visible),
             icon,
             status: tool_call.status,
             visual_style,
             struck_out,
+            disclosure_state,
         },
         detail_blocks,
     }
@@ -678,6 +781,279 @@ fn build_opencode_tool_call_section(
 
 fn generic_tool_name(tool_id: &str) -> String {
     tool_id.trim().to_string()
+}
+
+fn batch_tool_title(tool_call: &crate::app::ToolCallEntry) -> String {
+    let count = tool_call
+        .output_json
+        .as_ref()
+        .and_then(|value| value.get("requested_call_count"))
+        .and_then(serde_json::Value::as_u64)
+        .or_else(|| {
+            tool_call
+                .output_json
+                .as_ref()
+                .and_then(|value| value.get("processed_call_count"))
+                .and_then(serde_json::Value::as_u64)
+        });
+
+    count
+        .map(|count| {
+            format!(
+                "Run batch · {count} tool{}",
+                if count == 1 { "" } else { "s" }
+            )
+        })
+        .unwrap_or_else(|| "Run batch".to_string())
+}
+
+fn lsp_tool_title(tool_call: &crate::app::ToolCallEntry) -> String {
+    let operation = tool_summary_string(&tool_call.args_summary, &["operation", "op"])
+        .or_else(|| tool_summary_string(&tool_call.args_summary, &["tool_name"]))
+        .unwrap_or_else(|| "request".to_string());
+    format!("LSP {}", collapse_inline_whitespace(&operation))
+}
+
+fn build_agent_spawn_tool_row(
+    tool_call: &crate::app::ToolCallEntry,
+    detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
+) -> (String, Option<&'static str>, TranscriptToolCallVisualStyle) {
+    let title = agent_spawn_title(tool_call);
+    if let Some(line) = agent_spawn_lineage_line(tool_call) {
+        detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+            text: line,
+            tone: TranscriptToolCallDetailTone::Secondary,
+        });
+    }
+    if let Some(line) = agent_spawn_status_line(tool_call) {
+        detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+            text: line,
+            tone: TranscriptToolCallDetailTone::Secondary,
+        });
+    }
+    if let Some(summary) = agent_spawn_result_summary(tool_call) {
+        detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+            text: summary,
+            tone: if tool_call.status == ToolCallDisplayStatus::Failed {
+                TranscriptToolCallDetailTone::Error
+            } else {
+                TranscriptToolCallDetailTone::Secondary
+            },
+        });
+    }
+    (title, Some("↗"), TranscriptToolCallVisualStyle::Block)
+}
+
+fn agent_spawn_title(tool_call: &crate::app::ToolCallEntry) -> String {
+    let description = tool_call
+        .output_json
+        .as_ref()
+        .and_then(|value| value.get("description"))
+        .and_then(serde_json::Value::as_str)
+        .map(collapse_inline_whitespace)
+        .or_else(|| tool_summary_string(&tool_call.args_summary, &["description", "task"]));
+    let profile = tool_call
+        .output_json
+        .as_ref()
+        .and_then(|value| value.get("profile"))
+        .and_then(serde_json::Value::as_str)
+        .map(collapse_inline_whitespace)
+        .or_else(|| {
+            tool_summary_string(
+                &tool_call.args_summary,
+                &["profile_name", "profile", "subagent_type"],
+            )
+        });
+
+    match (profile, description) {
+        (Some(profile), Some(description)) => format!("Spawn {profile} · {description}"),
+        (Some(profile), None) => format!("Spawn {profile}"),
+        (None, Some(description)) => format!("Spawn task · {description}"),
+        (None, None) => "Spawn task".to_string(),
+    }
+}
+
+fn agent_spawn_lineage_line(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
+    let child_session = tool_call
+        .lineage
+        .as_ref()
+        .and_then(|lineage| lineage.child_session_id.as_deref())
+        .map(str::to_string)
+        .or_else(|| {
+            tool_json_string(
+                tool_call.output_json.as_ref(),
+                &["child_session_id", "session_id"],
+            )
+        });
+    let child_request = tool_call
+        .lineage
+        .as_ref()
+        .and_then(|lineage| lineage.child_request_id.as_deref())
+        .map(str::to_string)
+        .or_else(|| {
+            tool_json_string(
+                tool_call.output_json.as_ref(),
+                &["child_request_id", "request_id"],
+            )
+        });
+
+    match (child_session, child_request) {
+        (Some(child_session), Some(child_request)) => {
+            Some(format!("Session {child_session} · Request {child_request}"))
+        }
+        (Some(child_session), None) => Some(format!("Session {child_session}")),
+        (None, Some(child_request)) => Some(format!("Request {child_request}")),
+        (None, None) => None,
+    }
+}
+
+fn agent_spawn_status_line(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
+    let mode = tool_json_string(tool_call.output_json.as_ref(), &["mode"]);
+    let status = tool_json_string(tool_call.output_json.as_ref(), &["status"]);
+    let child_tool_call_count = tool_call
+        .output_json
+        .as_ref()
+        .and_then(|value| value.get("child_tool_call_count"))
+        .and_then(serde_json::Value::as_u64);
+    let resumed_existing_session = tool_call
+        .output_json
+        .as_ref()
+        .and_then(|value| value.get("resumed_existing_session"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let mut parts = Vec::new();
+    if let Some(mode) = mode {
+        parts.push(mode);
+    }
+    if let Some(status) = status {
+        parts.push(status);
+    }
+    if let Some(count) = child_tool_call_count {
+        parts.push(format!(
+            "{count} child tool call{}",
+            if count == 1 { "" } else { "s" }
+        ));
+    }
+    if resumed_existing_session {
+        parts.push("resumed session".to_string());
+    }
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
+fn agent_spawn_result_summary(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
+    tool_json_string(tool_call.output_json.as_ref(), &["result_summary"]).or_else(|| {
+        tool_call.output_summary.as_deref().and_then(|output| {
+            let trimmed = output.trim();
+            (!trimmed.is_empty()).then(|| format_detail_payload(trimmed))
+        })
+    })
+}
+
+fn tool_json_string(output_json: Option<&serde_json::Value>, keys: &[&str]) -> Option<String> {
+    let object = output_json?.as_object()?;
+    keys.iter().find_map(|key| {
+        object
+            .get(*key)
+            .and_then(serde_json::Value::as_str)
+            .map(collapse_inline_whitespace)
+            .filter(|value| !value.is_empty())
+    })
+}
+
+fn push_tool_identity_block(
+    detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
+    tool_call: &crate::app::ToolCallEntry,
+) {
+    let Some(alias_source) = tool_call.alias_source_tool_id.as_deref() else {
+        return;
+    };
+    let canonical = tool_call.canonical_tool_id();
+    if alias_source == canonical {
+        return;
+    }
+    detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+        text: format!("Compat alias · {alias_source} → {canonical}"),
+        tone: TranscriptToolCallDetailTone::Secondary,
+    });
+}
+
+fn push_tool_attachment_blocks(
+    detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
+    tool_call: &crate::app::ToolCallEntry,
+    expanded: bool,
+) {
+    if tool_call.artifact_refs.is_empty() {
+        return;
+    }
+
+    let visible = if expanded {
+        tool_call.artifact_refs.len()
+    } else {
+        2
+    };
+    let lines = tool_call
+        .artifact_refs
+        .iter()
+        .take(visible)
+        .map(|artifact| {
+            let digest = artifact
+                .digest
+                .as_deref()
+                .map(|digest| format!(" · {digest}"))
+                .unwrap_or_default();
+            format!("Attachment · {}{digest}", artifact.path)
+        })
+        .collect::<Vec<_>>();
+
+    detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+        text: lines.join("\n"),
+        tone: TranscriptToolCallDetailTone::Secondary,
+    });
+
+    if !expanded && tool_call.artifact_refs.len() > visible {
+        let hidden = tool_call.artifact_refs.len().saturating_sub(visible);
+        detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+            text: format!(
+                "↳ {hidden} more attachment{} hidden",
+                if hidden == 1 { "" } else { "s" }
+            ),
+            tone: TranscriptToolCallDetailTone::Secondary,
+        });
+    }
+}
+
+fn tool_disclosure_state(
+    tool_call: &crate::app::ToolCallEntry,
+    tool_output_expanded: bool,
+) -> Option<TranscriptToolCallDisclosureState> {
+    tool_call_has_transcript_disclosure(tool_call).then_some(if tool_output_expanded {
+        TranscriptToolCallDisclosureState::Expanded
+    } else {
+        TranscriptToolCallDisclosureState::Collapsed
+    })
+}
+
+fn tool_call_has_transcript_disclosure(tool_call: &crate::app::ToolCallEntry) -> bool {
+    let output = tool_call.output_summary.as_deref().unwrap_or_default();
+    let output_line_count = output.lines().count();
+    !tool_call.artifact_refs.is_empty()
+        || match tool_call.canonical_tool_id() {
+            "shell.run" => output_line_count > 10,
+            "edit.hashline_apply" => tool_call
+                .edit
+                .as_ref()
+                .and_then(|edit| edit.diff_rel_path.as_ref())
+                .is_some(),
+            "agent.spawn" => true,
+            _ => !output.trim().is_empty() && output_line_count > 3,
+        }
+}
+
+fn tool_prefers_generic_output_block(display_tool_id: &str) -> bool {
+    matches!(
+        display_tool_id,
+        "web.fetch" | "search.web" | "search.code" | "tool.batch" | "code.lsp"
+    )
 }
 
 fn tool_path_display(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
@@ -879,8 +1255,17 @@ fn push_collapsible_output_block(
     }
 }
 
-fn decorate_tool_call_title(title: String, tool_call: &crate::app::ToolCallEntry) -> String {
+fn decorate_tool_call_title(
+    title: String,
+    tool_call: &crate::app::ToolCallEntry,
+    timestamps_visible: bool,
+) -> String {
     let mut suffixes = Vec::new();
+    if timestamps_visible {
+        if let Some(timestamp) = tool_call.transcript_timestamp() {
+            suffixes.push(format_transcript_timestamp(timestamp));
+        }
+    }
     match tool_call.status {
         ToolCallDisplayStatus::PendingPermission => suffixes.push("pending permission".to_string()),
         ToolCallDisplayStatus::Queued => suffixes.push("queued".to_string()),
@@ -1151,9 +1536,9 @@ fn build_user_render_surface(
 ) -> TranscriptRenderSurface {
     let surface = transcript_emphasized_surface(theme, base_surface);
     let content_width = transcript_surface_content_width(width, true);
-    let mut lines = vec![build_user_surface_header_line(
-        user_msg,
-        theme,
+    let mut lines = vec![user_surface_line(
+        Vec::new(),
+        Style::default().fg(theme.text.primary),
         content_width,
         surface,
     )];
@@ -1165,6 +1550,20 @@ fn build_user_render_surface(
         surface,
         theme,
     );
+    if let Some(timestamp) = user_msg.timestamp.as_deref() {
+        lines.push(build_user_surface_metadata_line(
+            timestamp,
+            theme,
+            content_width,
+            surface,
+        ));
+    }
+    lines.push(user_surface_line(
+        Vec::new(),
+        Style::default().fg(theme.text.primary),
+        content_width,
+        surface,
+    ));
 
     TranscriptRenderSurface {
         show_outer_rail: true,
@@ -1182,26 +1581,8 @@ fn append_user_surface_rich_text_block(
     surface: Color,
     theme: &Theme,
 ) {
-    if !text.contains("```") {
-        append_user_surface_markdownish_text_block(lines, text, color, width, surface, theme);
-        return;
-    }
-
-    let Some(blocks) = parse_fenced_text_blocks(text) else {
-        append_user_surface_markdownish_text_block(lines, text, color, width, surface, theme);
-        return;
-    };
-
-    for block in blocks {
-        match block {
-            ParsedTextBlock::Plain(plain) => append_user_surface_markdownish_text_block(
-                lines, &plain, color, width, surface, theme,
-            ),
-            ParsedTextBlock::Code { raw, .. } => {
-                append_user_surface_text_block(lines, &raw, color, width, surface)
-            }
-        }
-    }
+    let _ = theme;
+    append_user_surface_text_block(lines, text, color, width, surface);
 }
 
 fn build_assistant_render_surfaces(
@@ -1343,6 +1724,12 @@ fn append_opencode_inline_tool_section_lines(
     }
 
     let mut spans = Vec::new();
+    if let Some(disclosure_state) = tool_call.header.disclosure_state {
+        spans.push(Span::styled(
+            format!("{} ", disclosure_glyph(disclosure_state)),
+            style,
+        ));
+    }
     if let Some(icon) = tool_call.header.icon {
         spans.push(Span::styled(format!("{icon} "), style));
     }
@@ -1368,23 +1755,26 @@ fn append_opencode_block_tool_section_lines(
 ) {
     let surface = transcript_emphasized_surface(theme, base_surface);
     let rail_color = transcript_nested_rail_color(theme);
-    let mut title_style = Style::default().fg(theme.text.secondary);
-    if matches!(
-        tool_call.header.status,
-        ToolCallDisplayStatus::PendingPermission
-    ) {
-        title_style = title_style.fg(theme.status.warning);
-    }
+    let mut title_style = Style::default().fg(block_tool_color(tool_call, theme));
     if tool_call.header.struck_out {
         title_style = title_style.add_modifier(Modifier::CROSSED_OUT);
     }
+
+    let mut title_spans = Vec::new();
+    if let Some(disclosure_state) = tool_call.header.disclosure_state {
+        title_spans.push(Span::styled(
+            format!("{} ", disclosure_glyph(disclosure_state)),
+            title_style,
+        ));
+    }
+    title_spans.push(Span::styled(tool_call.header.title.clone(), title_style));
 
     append_nested_surface_row(
         lines,
         TRANSCRIPT_ASSISTANT_BODY_PREFIX,
         rail_color,
         surface,
-        vec![Span::styled(tool_call.header.title.clone(), title_style)],
+        title_spans,
         transcript_surface_content_width(width, false),
     );
 
@@ -1470,10 +1860,26 @@ fn append_tool_call_message_block(
 fn inline_tool_color(tool_call: &TranscriptToolCallSection, theme: &Theme) -> Color {
     match tool_call.header.status {
         ToolCallDisplayStatus::PendingPermission => theme.status.warning,
+        ToolCallDisplayStatus::Queued | ToolCallDisplayStatus::Running => theme.text.secondary,
+        ToolCallDisplayStatus::Succeeded => theme.text.secondary,
+        ToolCallDisplayStatus::Failed => theme.status.error,
+    }
+}
+
+fn block_tool_color(tool_call: &TranscriptToolCallSection, theme: &Theme) -> Color {
+    match tool_call.header.status {
+        ToolCallDisplayStatus::PendingPermission => theme.status.warning,
+        ToolCallDisplayStatus::Failed => theme.status.error,
         ToolCallDisplayStatus::Queued
         | ToolCallDisplayStatus::Running
-        | ToolCallDisplayStatus::Succeeded
-        | ToolCallDisplayStatus::Failed => theme.text.secondary,
+        | ToolCallDisplayStatus::Succeeded => theme.text.secondary,
+    }
+}
+
+fn disclosure_glyph(state: TranscriptToolCallDisclosureState) -> &'static str {
+    match state {
+        TranscriptToolCallDisclosureState::Collapsed => "▸",
+        TranscriptToolCallDisclosureState::Expanded => "▾",
     }
 }
 
@@ -1688,34 +2094,6 @@ fn append_user_surface_text_block(
                 Vec::new()
             } else {
                 vec![Span::styled(line.to_string(), base_style)]
-            },
-            base_style,
-            width,
-            surface,
-        );
-    }
-
-    if text.is_empty() {
-        append_user_surface_wrapped_line(lines, Vec::new(), base_style, width, surface);
-    }
-}
-
-fn append_user_surface_markdownish_text_block(
-    lines: &mut Vec<Line<'static>>,
-    text: &str,
-    color: ratatui::style::Color,
-    width: u16,
-    surface: Color,
-    theme: &Theme,
-) {
-    let base_style = Style::default().fg(color);
-    for line in text.lines() {
-        append_user_surface_wrapped_line(
-            lines,
-            if line.is_empty() {
-                Vec::new()
-            } else {
-                parse_inline_markdown_spans(line, base_style, color, theme)
             },
             base_style,
             width,
@@ -2508,30 +2886,15 @@ fn transcript_nested_surface(_theme: &Theme, base_surface: Color) -> Color {
     transcript_flat_surface(base_surface)
 }
 
-fn build_user_surface_header_line(
-    user_msg: &TranscriptUserMessageSection,
+fn build_user_surface_metadata_line(
+    metadata: &str,
     theme: &Theme,
     width: u16,
     surface: Color,
 ) -> Line<'static> {
-    let mut content = vec![Span::styled(
-        "› You",
-        Style::default()
-            .fg(theme.text.accent)
-            .bg(surface)
-            .add_modifier(Modifier::BOLD),
-    )];
-    if let Some(timestamp) = user_msg.timestamp.as_deref() {
-        content.push(Span::styled(" · ", muted_meta_style(theme).bg(surface)));
-        content.push(Span::styled(
-            timestamp.to_string(),
-            muted_meta_style(theme).bg(surface),
-        ));
-    }
-
     user_surface_line(
-        content,
-        Style::default().fg(theme.text.accent),
+        vec![Span::styled(metadata.to_string(), muted_meta_style(theme))],
+        Style::default().fg(theme.text.primary),
         width,
         surface,
     )
@@ -2891,6 +3254,8 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
     entry.tool_calls.push(crate::app::ToolCallEntry {
         tool_call_id: "call-1".to_string(),
         tool_id: "shell.run".to_string(),
+        canonical_tool_id: None,
+        alias_source_tool_id: None,
         args_summary: r#"{"cmd":"false"}"#.to_string(),
         args_digest: "digest".to_string(),
         status: ToolCallDisplayStatus::Failed,
@@ -2899,11 +3264,16 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
         output_json: None,
         truncated_output: Some("command failed".to_string()),
         edit: None,
+        lineage: None,
+        artifact_refs: Vec::new(),
+        timing_elapsed_ms: None,
         permissions: Vec::new(),
         first_seq: 10,
         last_seq: 11,
         first_mono_ms: 10,
         last_mono_ms: 11,
+        first_timestamp: None,
+        last_timestamp: None,
     });
     app.activities = std::collections::VecDeque::from(vec![entry]);
 
@@ -2937,6 +3307,7 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
                 status: ToolCallDisplayStatus::Failed,
                 visual_style: TranscriptToolCallVisualStyle::Block,
                 struck_out: false,
+                disclosure_state: None,
             },
             detail_blocks: vec![
                 TranscriptToolCallDetailBlock::Message {
@@ -2964,6 +3335,8 @@ pub(crate) fn exact_test_transcript_answer_precedes_nested_context() {
     entry.tool_calls.push(crate::app::ToolCallEntry {
         tool_call_id: "call-1".to_string(),
         tool_id: "fs.read".to_string(),
+        canonical_tool_id: None,
+        alias_source_tool_id: None,
         args_summary: r#"{"path":"src/ui.rs"}"#.to_string(),
         args_digest: "digest".to_string(),
         status: ToolCallDisplayStatus::Succeeded,
@@ -2972,11 +3345,16 @@ pub(crate) fn exact_test_transcript_answer_precedes_nested_context() {
         output_json: None,
         truncated_output: Some("24 lines read".to_string()),
         edit: None,
+        lineage: None,
+        artifact_refs: Vec::new(),
+        timing_elapsed_ms: None,
         permissions: Vec::new(),
         first_seq: 10,
         last_seq: 11,
         first_mono_ms: 10,
         last_mono_ms: 11,
+        first_timestamp: None,
+        last_timestamp: None,
     });
     app.activities = std::collections::VecDeque::from(vec![entry]);
 
@@ -3028,6 +3406,8 @@ pub(crate) fn exact_test_transcript_edit_tool_matches_opencode_inline_diff_shape
     entry.tool_calls.push(crate::app::ToolCallEntry {
         tool_call_id: "call-edit-1".to_string(),
         tool_id: "edit.hashline_apply".to_string(),
+        canonical_tool_id: None,
+        alias_source_tool_id: None,
         args_summary: r#"{"path":"crates/harness-tui/src/ui.rs"}"#.to_string(),
         args_digest: "digest-edit".to_string(),
         status: ToolCallDisplayStatus::Succeeded,
@@ -3046,11 +3426,16 @@ pub(crate) fn exact_test_transcript_edit_tool_matches_opencode_inline_diff_shape
             diff_digest: Some("digest-diff".to_string()),
             rejection_reason: None,
         }),
+        lineage: None,
+        artifact_refs: Vec::new(),
+        timing_elapsed_ms: None,
         permissions: Vec::new(),
         first_seq: 10,
         last_seq: 11,
         first_mono_ms: 10,
         last_mono_ms: 11,
+        first_timestamp: None,
+        last_timestamp: None,
     });
     app.activities = std::collections::VecDeque::from(vec![entry]);
 
@@ -3083,6 +3468,8 @@ pub(crate) fn exact_test_transcript_proposed_edit_renders_opencode_header() {
     entry.tool_calls.push(crate::app::ToolCallEntry {
         tool_call_id: "call-edit-proposed".to_string(),
         tool_id: "edit.hashline_apply".to_string(),
+        canonical_tool_id: None,
+        alias_source_tool_id: None,
         args_summary: r#"{"path":"crates/harness-tui/src/ui.rs"}"#.to_string(),
         args_digest: "digest-edit-proposed".to_string(),
         status: ToolCallDisplayStatus::Running,
@@ -3101,11 +3488,16 @@ pub(crate) fn exact_test_transcript_proposed_edit_renders_opencode_header() {
             diff_digest: None,
             rejection_reason: None,
         }),
+        lineage: None,
+        artifact_refs: Vec::new(),
+        timing_elapsed_ms: None,
         permissions: Vec::new(),
         first_seq: 10,
         last_seq: 11,
         first_mono_ms: 10,
         last_mono_ms: 11,
+        first_timestamp: None,
+        last_timestamp: None,
     });
     app.activities = std::collections::VecDeque::from(vec![entry]);
 
@@ -3132,6 +3524,8 @@ pub(crate) fn exact_test_transcript_rejected_edit_surfaces_reason_inline() {
     entry.tool_calls.push(crate::app::ToolCallEntry {
         tool_call_id: "call-edit-rejected".to_string(),
         tool_id: "edit.hashline_apply".to_string(),
+        canonical_tool_id: None,
+        alias_source_tool_id: None,
         args_summary: r#"{"path":"crates/harness-tui/src/ui.rs"}"#.to_string(),
         args_digest: "digest-edit-rejected".to_string(),
         status: ToolCallDisplayStatus::Failed,
@@ -3150,11 +3544,16 @@ pub(crate) fn exact_test_transcript_rejected_edit_surfaces_reason_inline() {
             diff_digest: None,
             rejection_reason: Some("ANCHOR_MISMATCH at line 45".to_string()),
         }),
+        lineage: None,
+        artifact_refs: Vec::new(),
+        timing_elapsed_ms: None,
         permissions: Vec::new(),
         first_seq: 10,
         last_seq: 11,
         first_mono_ms: 10,
         last_mono_ms: 11,
+        first_timestamp: None,
+        last_timestamp: None,
     });
     app.activities = std::collections::VecDeque::from(vec![entry]);
 
@@ -3276,6 +3675,147 @@ pub(crate) fn exact_test_transcript_pending_permission_stays_after_last_activity
 }
 
 #[cfg(test)]
+pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_and_task_metadata()
+{
+    let theme = Theme::default();
+
+    let mut native_read = transcript_section_model_test_tool_call("tc-native-read", "fs.read");
+    native_read.args_summary = r#"{"path":"src/ui.rs","offset":12,"limit":24}"#.to_string();
+    native_read.status = ToolCallDisplayStatus::Succeeded;
+    native_read.output_summary = Some("24 lines read from src/ui.rs".to_string());
+    native_read.truncated_output = native_read.output_summary.clone();
+    native_read.last_mono_ms = 1_250;
+    native_read.last_timestamp = Some("2026-03-22T14:35:44Z".to_string());
+
+    let mut alias_read = transcript_section_model_test_tool_call("tc-alias-read", "read");
+    alias_read.canonical_tool_id = Some("fs.read".to_string());
+    alias_read.alias_source_tool_id = Some("read".to_string());
+    alias_read.args_summary = native_read.args_summary.clone();
+    alias_read.status = ToolCallDisplayStatus::Succeeded;
+    alias_read.output_summary = native_read.output_summary.clone();
+    alias_read.truncated_output = native_read.truncated_output.clone();
+    alias_read.last_mono_ms = native_read.last_mono_ms;
+    alias_read.last_timestamp = native_read.last_timestamp.clone();
+
+    let native_read_section =
+        build_opencode_tool_call_section(&native_read, true, false, false, false, None);
+    let alias_read_section =
+        build_opencode_tool_call_section(&alias_read, true, false, false, false, None);
+    assert_eq!(
+        native_read_section.header.title,
+        alias_read_section.header.title
+    );
+    assert_eq!(
+        native_read_section.header.icon,
+        alias_read_section.header.icon
+    );
+    assert_eq!(
+        native_read_section.header.visual_style,
+        alias_read_section.header.visual_style
+    );
+    assert_eq!(alias_read_section.header.disclosure_state, None);
+    assert!(alias_read_section
+        .detail_blocks
+        .iter()
+        .any(|block| matches!(
+            block,
+            TranscriptToolCallDetailBlock::Message { text, .. }
+                if text.contains("Compat alias · read → fs.read")
+        )));
+
+    let mut task_call = transcript_section_model_test_tool_call("tc-task", "task");
+    task_call.canonical_tool_id = Some("agent.spawn".to_string());
+    task_call.alias_source_tool_id = Some("task".to_string());
+    task_call.args_summary =
+        r#"{"description":"audit transcript parity","subagent_type":"researcher"}"#.to_string();
+    task_call.status = ToolCallDisplayStatus::Succeeded;
+    task_call.output_json = Some(serde_json::json!({
+        "description": "audit transcript parity",
+        "profile": "researcher",
+        "mode": "foreground",
+        "status": "completed",
+        "duration_ms": 1600,
+        "result_summary": "Found the inline transcript path.",
+        "child_tool_call_count": 3,
+        "child_session_id": "agent_worker",
+        "child_request_id": "req_child",
+    }));
+    task_call.lineage = Some(crate::app::TaskLineageEntry {
+        parent_tool_call_id: Some("tc-task".to_string()),
+        parent_task_id: None,
+        parent_request_id: Some("req_parent".to_string()),
+        child_session_id: Some("agent_worker".to_string()),
+        child_request_id: Some("req_child".to_string()),
+    });
+    task_call.timing_elapsed_ms = Some(1600);
+    task_call.last_mono_ms = 1_600;
+    task_call.last_timestamp = Some("2026-03-22T14:36:01Z".to_string());
+
+    let task_section =
+        build_opencode_tool_call_section(&task_call, true, false, false, false, None);
+    assert_eq!(
+        task_section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
+    let mut task_lines = Vec::new();
+    append_tool_call_section_lines(
+        &mut task_lines,
+        &task_section,
+        &theme,
+        120,
+        theme.surface.panel,
+    );
+    let task_text = transcript_test_line_texts(task_lines).join("\n");
+    assert!(task_text.contains("▸ Spawn researcher · audit transcript parity · 14:36 · 1.6s"));
+    assert!(task_text.contains("Session agent_worker · Request req_child"));
+    assert!(task_text.contains("foreground · completed · 3 child tool calls"));
+    assert!(task_text.contains("Found the inline transcript path."));
+    assert!(task_text.contains("Compat alias · task → agent.spawn"));
+    assert!(!task_text.contains("Task audit transcript parity"));
+
+    let mut fetch_call = transcript_section_model_test_tool_call("tc-fetch", "webfetch");
+    fetch_call.canonical_tool_id = Some("web.fetch".to_string());
+    fetch_call.alias_source_tool_id = Some("webfetch".to_string());
+    fetch_call.args_summary =
+        r#"{"url":"https://example.test/report.pdf","format":"markdown"}"#.to_string();
+    fetch_call.status = ToolCallDisplayStatus::Succeeded;
+    fetch_call.output_summary =
+        Some("report ready\npage count: 2\nformat: pdf\nstored inline artifact".to_string());
+    fetch_call.truncated_output = fetch_call.output_summary.clone();
+    fetch_call.artifact_refs = vec![crate::app::ToolArtifactEntry {
+        path: "artifacts/toolcalls/tc-fetch/web.fetch.pdf".to_string(),
+        digest: Some("digest-fetch-artifact".to_string()),
+    }];
+    fetch_call.timing_elapsed_ms = Some(2400);
+    fetch_call.last_mono_ms = 2_400;
+    fetch_call.last_timestamp = Some("2026-03-22T14:37:12Z".to_string());
+
+    let fetch_section =
+        build_opencode_tool_call_section(&fetch_call, true, false, false, false, None);
+    assert_eq!(
+        fetch_section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
+    let mut fetch_lines = Vec::new();
+    append_tool_call_section_lines(
+        &mut fetch_lines,
+        &fetch_section,
+        &theme,
+        120,
+        theme.surface.panel,
+    );
+    let fetch_text = transcript_test_line_texts(fetch_lines).join("\n");
+    assert!(fetch_text.contains("▸ Fetch https://example.test/report.pdf · 14:37 · 2.4s"));
+    assert!(fetch_text.contains("report ready"));
+    assert!(!fetch_text.contains("stored inline artifact"));
+    assert!(fetch_text.contains("↳ 1 more line hidden"));
+    assert!(fetch_text.contains(
+        "Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact"
+    ));
+    assert!(fetch_text.contains("Compat alias · webfetch → web.fetch"));
+}
+
+#[cfg(test)]
 fn transcript_section_model_test_activity(
     request_id: &str,
     status: ActivityStatus,
@@ -3298,6 +3838,37 @@ fn transcript_section_model_test_activity(
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+    }
+}
+
+#[cfg(test)]
+fn transcript_section_model_test_tool_call(
+    tool_call_id: &str,
+    tool_id: &str,
+) -> crate::app::ToolCallEntry {
+    crate::app::ToolCallEntry {
+        tool_call_id: tool_call_id.to_string(),
+        tool_id: tool_id.to_string(),
+        canonical_tool_id: None,
+        alias_source_tool_id: None,
+        args_summary: "{}".to_string(),
+        args_digest: "digest".to_string(),
+        status: ToolCallDisplayStatus::Queued,
+        output_summary: None,
+        output_digest: None,
+        output_json: None,
+        truncated_output: None,
+        edit: None,
+        lineage: None,
+        artifact_refs: Vec::new(),
+        timing_elapsed_ms: None,
+        permissions: Vec::new(),
+        first_seq: 1,
+        last_seq: 1,
+        first_mono_ms: 0,
+        last_mono_ms: 0,
+        first_timestamp: None,
+        last_timestamp: None,
     }
 }
 
@@ -3424,7 +3995,7 @@ mod tests {
     }
 
     #[test]
-    fn user_message_surface_keeps_compact_header_and_body() {
+    fn user_message_surface_matches_opencode_panel_body_and_metadata() {
         let mut app = AppState::default();
         app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
             request_id: "request-user-padding".to_string(),
@@ -3468,7 +4039,7 @@ mod tests {
             80,
         ));
 
-        assert!(lines.iter().any(|line| line.contains("› You")));
+        assert!(!lines.iter().any(|line| line.contains("› You")));
         assert!(lines.iter().any(|line| line.contains("09:45")));
         assert!(lines.iter().any(|line| line.contains("hello")));
         assert!(lines.iter().any(|line| line.contains("reply")));

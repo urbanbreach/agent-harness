@@ -66,6 +66,7 @@ delegate_test!(transcript_edit_tool_matches_opencode_inline_diff_shape => ui::ex
 delegate_test!(transcript_proposed_edit_renders_opencode_header => ui::exact_test_transcript_proposed_edit_renders_opencode_header);
 delegate_test!(transcript_rejected_edit_surfaces_reason_inline => ui::exact_test_transcript_rejected_edit_surfaces_reason_inline);
 delegate_test!(transcript_follow_mode_uses_measured_surface_heights => ui::exact_test_transcript_follow_mode_uses_measured_surface_heights);
+delegate_test!(native_tool_transcript_rows_show_disclosure_timestamps_and_task_metadata => ui::exact_test_native_tool_transcript_rows_show_disclosure_timestamps_and_task_metadata);
 delegate_test!(transcript_pending_permission_stays_after_last_activity => ui::exact_test_transcript_pending_permission_stays_after_last_activity);
 
 #[cfg(test)]
@@ -122,8 +123,10 @@ fn transcript_turn_sections_render_open_rail_surfaces() {
         "user message text should keep Opencode's single rail plus two-column left padding\n{rendered}"
     );
     assert!(
-        user_body > 0 && lines[user_body - 1].contains("› You"),
-        "user message header should stay anchored inside the rail surface\n{rendered}"
+        user_body > 0
+            && lines[user_body - 1].contains('┃')
+            && !lines[user_body - 1].contains("You"),
+        "user message should use Opencode-style top padding without a synthetic header label\n{rendered}"
     );
     let (user_body_row, user_body_fgs, user_body_bgs) =
         row_at(&buffer, 80, user_body).expect("user body palette row");
@@ -145,7 +148,7 @@ fn transcript_turn_sections_render_open_rail_surfaces() {
             .all(|color| *color == theme.surface.shell)
     );
     assert!(
-        assistant_body - user_body <= 2,
+        assistant_body - user_body <= 3,
         "turn stacking should stay compact\n{rendered}"
     );
     assert!(!rendered.contains('╭') && !rendered.contains('╰') && !rendered.contains('│'));
@@ -212,6 +215,8 @@ fn transcript_turn_sections_keep_nested_tool_details() {
     activity.tool_calls.push(app::ToolCallEntry {
         tool_call_id: "call-1".to_string(),
         tool_id: "shell.run".to_string(),
+        canonical_tool_id: None,
+        alias_source_tool_id: None,
         args_summary: r#"{"cmd":"false"}"#.to_string(),
         args_digest: "digest-1".to_string(),
         status: app::ToolCallDisplayStatus::Failed,
@@ -220,11 +225,16 @@ fn transcript_turn_sections_keep_nested_tool_details() {
         output_json: None,
         truncated_output: Some("command failed".to_string()),
         edit: None,
+        lineage: None,
+        artifact_refs: Vec::new(),
+        timing_elapsed_ms: None,
         permissions: Vec::new(),
         first_seq: 10,
         last_seq: 11,
         first_mono_ms: 10,
         last_mono_ms: 11,
+        first_timestamp: None,
+        last_timestamp: None,
     });
     app.activities = std::collections::VecDeque::from(vec![activity]);
     app.selected_activity_index = 0;
@@ -3437,6 +3447,7 @@ fn orchestration_projection_tracks_queued_started_completed_counts() {
             task_id: "task_worker_primary".to_string(),
             result_summary: "primary completed".to_string(),
             result_digest: "digest-primary".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -3461,6 +3472,7 @@ fn orchestration_projection_tracks_queued_started_completed_counts() {
             task_id: "task_worker_secondary".to_string(),
             result_summary: "secondary completed".to_string(),
             result_digest: "digest-secondary".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -3677,6 +3689,7 @@ fn orchestration_projection_retains_only_recent_terminal_rows() {
             task_id: "task_terminal_1".to_string(),
             result_summary: "terminal 1 completed".to_string(),
             result_digest: "digest-terminal-1".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -3737,6 +3750,7 @@ fn orchestration_projection_retains_only_recent_terminal_rows() {
             task_id: "task_terminal_4".to_string(),
             result_summary: "terminal 4 completed".to_string(),
             result_digest: "digest-terminal-4".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -3772,6 +3786,7 @@ fn orchestration_projection_retains_only_recent_terminal_rows() {
             task_id: "task_terminal_6".to_string(),
             result_summary: "terminal 6 completed".to_string(),
             result_digest: "digest-terminal-6".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -3882,6 +3897,7 @@ fn session_view_events() -> Vec<harness_core::event::EventEnvelopeV1> {
                     tool_id: "fs.read".to_string(),
                     args_summary: r#"{"path":"src/app.rs"}"#.to_string(),
                     args_digest: "digest-tool-args".to_string(),
+                    metadata: None,
                 },
             ),
         ),
@@ -3915,6 +3931,7 @@ fn session_view_events() -> Vec<harness_core::event::EventEnvelopeV1> {
                     output_summary: Some("tool output".to_string()),
                     output_digest: Some("digest-tool-output".to_string()),
                     output_json: None,
+                    metadata: None,
                 },
             ),
         ),
@@ -4026,6 +4043,7 @@ fn orchestration_details_drawer_events(extra_terminal_rows: usize) -> Vec<EventE
                 task_id: "task_done".to_string(),
                 result_summary: "done".to_string(),
                 result_digest: "digest-task-done".to_string(),
+                metadata: None,
             }),
         ),
     ]);
@@ -4058,6 +4076,7 @@ fn orchestration_details_drawer_events(extra_terminal_rows: usize) -> Vec<EventE
                 task_id,
                 result_summary: format!("tail {index} done"),
                 result_digest: format!("digest-tail-{index}"),
+                metadata: None,
             }),
         ));
         seq += 1;
@@ -4463,6 +4482,7 @@ fn rich_transcript_fixture_app() -> app::AppState {
                 tool_id: "fs.read".to_string(),
                 args_summary: r#"{"path":"src/ui.rs","start_line":1,"limit":24}"#.to_string(),
                 args_digest: "digest-rich-shell-args".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -4483,6 +4503,7 @@ fn rich_transcript_fixture_app() -> app::AppState {
                 output_summary: Some("24 lines read from src/ui.rs".to_string()),
                 output_digest: Some("digest-rich-shell-output".to_string()),
                 output_json: None,
+                metadata: None,
             },
         ),
     ));
@@ -4934,6 +4955,7 @@ fn permission_modal_preempts_palette() {
         &[UiIntent::ResolvePermission {
             permission_id: "perm_preempt_palette".to_string(),
             decision: harness_core::perm::PermissionDecision::Allow,
+            reason: None,
         }]
     );
 }
@@ -5307,6 +5329,7 @@ fn transcript_renders_inline_tool_states_and_prompt_echo() {
                 tool_id: "shell.run".to_string(),
                 args_summary: r#"{"cmd":"false"}"#.to_string(),
                 args_digest: "digest-inline-args".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -5327,6 +5350,7 @@ fn transcript_renders_inline_tool_states_and_prompt_echo() {
                 output_summary: Some("exit code: 1".to_string()),
                 output_digest: None,
                 output_json: None,
+                metadata: None,
             },
         ),
     ));
@@ -5377,6 +5401,7 @@ fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
                 tool_id: "fs.read".to_string(),
                 args_summary: r#"{"path":"src/lib.rs","start_line":42,"limit":20}"#.to_string(),
                 args_digest: "digest-tool-compact-args".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -5397,6 +5422,7 @@ fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
                 output_summary: Some("12 lines read".to_string()),
                 output_digest: Some("digest-tool-compact-output".to_string()),
                 output_json: None,
+                metadata: None,
             },
         ),
     ));
@@ -5606,6 +5632,7 @@ fn failed_tool_rows_still_surface_error_summary() {
                 tool_id: "shell.run".to_string(),
                 args_summary: r#"{"cmd":"false","cwd":"/tmp/demo"}"#.to_string(),
                 args_digest: "digest-tool-error-args".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -5626,6 +5653,7 @@ fn failed_tool_rows_still_surface_error_summary() {
                 output_summary: Some("exit code: 1\nstderr: permission denied".to_string()),
                 output_digest: None,
                 output_json: None,
+                metadata: None,
             },
         ),
     ));
@@ -8069,6 +8097,7 @@ fn live_shell_inline_tool_state_snapshot() {
                 tool_id: "fs.read".to_string(),
                 args_summary: r#"{"path":"src/lib.rs"}"#.to_string(),
                 args_digest: "digest-inline-tool-args".to_string(),
+                metadata: None,
             },
         ),
     ));

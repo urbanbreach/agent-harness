@@ -10,6 +10,7 @@ use harness_core::event::{
     TaskCompletedEvent, SCHEMA_VERSION,
 };
 use harness_core::redact::DefaultRedactor;
+use harness_core::tool::ToolSurface;
 use harness_tui::app::{
     set_pending_live_launch_metadata, set_pending_live_prompt_draft, AppState, LaunchMetadata,
     RuntimeStateKind,
@@ -122,6 +123,7 @@ async fn tui_new_live_bootstrap_stays_idle_until_first_user_prompt() {
             category: "deep".to_string(),
             model_ref: "default:default".to_string(),
             system_prompt: "deep agent mode intro".to_string(),
+            tool_surface: ToolSurface::Native,
             toolset: Vec::new(),
         },
     );
@@ -248,6 +250,7 @@ fn tui_continue_session_bootstraps_live_with_preloaded_history() {
                 task_id: "task_000001".to_string(),
                 result_summary: "first answer".to_string(),
                 result_digest: "digest-out".to_string(),
+                metadata: None,
             }),
         ),
     ] {

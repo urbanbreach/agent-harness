@@ -2,7 +2,7 @@
 
      events   15 recorded · selected seq 15 · follow on
     Event log · j/k active · Event details
-       ┃ ← Patched crates/harness-tui/src/ui.rs · 0ms
+       ┃ ▸ ← Patched crates/harness-tui/src/ui.rs · 4ms
          1ates/harness-tui/src{ui.rs · +1 -1
      UserMessageSubmitted(U   "schema_version": 1,
      serMessageSubmittedEve:{ "event_id": "evt-0015",

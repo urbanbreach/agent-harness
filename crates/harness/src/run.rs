@@ -227,7 +227,7 @@ async fn run_once(cmd: &RunCommand, settings: &RunSettings) -> Result<RunOutcome
     };
 
     coordinator
-        .resolve_permission(permission_id, decision)
+        .resolve_permission(permission_id, decision, None)
         .await
         .map_err(|err| err.to_string())?;
 

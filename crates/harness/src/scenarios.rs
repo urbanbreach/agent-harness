@@ -8,6 +8,7 @@ use harness_core::agent::AgentProfile;
 use harness_core::edit::hashline::{compute_line_hash, HashlineOp, HashlinePatch, LineAnchor};
 use harness_core::event::{ActorKind, EventActor};
 use harness_core::perm::PermissionPolicy;
+use harness_core::tool::ToolSurface;
 use harness_providers::mock::{request_digest, MockProvider};
 use harness_providers::{
     CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, ProviderStreamEvent,
@@ -247,6 +248,24 @@ fn demo_hashline_apply_tool_def() -> ToolDef {
                             {
                                 "type": "object",
                                 "additionalProperties": false,
+                                "required": ["Rewrite"],
+                                "properties": {
+                                    "Rewrite": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": ["lines"],
+                                        "properties": {
+                                            "lines": {
+                                                "type": "array",
+                                                "items": { "type": "string" }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
                                 "required": ["InsertBefore"],
                                 "properties": {
                                     "InsertBefore": {
@@ -350,6 +369,7 @@ pub fn golden_path_profiles() -> BTreeMap<String, AgentProfile> {
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             system_prompt: "planner-prompt".to_string(),
+            tool_surface: ToolSurface::Native,
             toolset: vec![],
         },
     );
@@ -360,6 +380,7 @@ pub fn golden_path_profiles() -> BTreeMap<String, AgentProfile> {
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             system_prompt: "worker-prompt".to_string(),
+            tool_surface: ToolSurface::Native,
             toolset: vec!["edit.hashline_apply".to_string()],
         },
     );

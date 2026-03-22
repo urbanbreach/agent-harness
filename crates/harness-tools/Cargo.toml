@@ -9,15 +9,18 @@ harness-core = { path = "../harness-core" }
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
 async-trait = "0.1"
 tempfile.workspace = true
 similar = "2.7.0"
 globset = "0.4"
 walkdir = "2"
 regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+shell-words = "1"
 
 [dev-dependencies]
-tokio.workspace = true
 blake3 = "1"
 
 [lints]

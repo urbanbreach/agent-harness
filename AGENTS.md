@@ -46,6 +46,7 @@ Rust workspace for an event-sourced agent harness with a CLI entrypoint, coordin
 - Prefer typed helper structs over widening parameter lists when coordination/event APIs get large.
 - Favor crate-root `//!` docs and local module docs to explain ownership and invariants near code.
 - Keep deterministic test env intact: `HARNESS_DETERMINISTIC=1`, `HARNESS_DISABLE_ANIMATIONS=1`, `HARNESS_SEED=42`, `RUST_TEST_THREADS=1` where documented.
+- For chat/tool-flow changes, treat the live-config signoff as part of normal iteration: run `live_proxy_preflight`, then `live_proxy_prompt_chat_tool_flow`, then `live_proxy_e2e_tui_tool_flow` when file-edit or visible tool flows changed.
 
 ## ANTI-PATTERNS
 - Do not weaken PTY/live verification to make brittle tests pass.

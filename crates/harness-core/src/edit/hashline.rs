@@ -17,7 +17,43 @@ pub struct HashlinePatch {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum HashlineWorkspaceOp {
+    Patch {
+        patch: HashlinePatch,
+    },
+    RewriteFile {
+        edit_id: String,
+        path: String,
+        content: String,
+    },
+    DeleteFile {
+        edit_id: String,
+        path: String,
+    },
+    MoveFile {
+        edit_id: String,
+        from_path: String,
+        to_path: String,
+    },
+}
+
+impl HashlineWorkspaceOp {
+    pub fn edit_id(&self) -> &str {
+        match self {
+            Self::Patch { patch } => &patch.edit_id,
+            Self::RewriteFile { edit_id, .. }
+            | Self::DeleteFile { edit_id, .. }
+            | Self::MoveFile { edit_id, .. } => edit_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HashlineOp {
+    Rewrite {
+        lines: Vec<String>,
+    },
     InsertBefore {
         anchor: LineAnchor,
         lines: Vec<String>,
@@ -91,6 +127,11 @@ impl HashlineError {
 
 #[derive(Debug, Clone)]
 enum PlannedOp {
+    Rewrite {
+        op_index: usize,
+        source_line_count: usize,
+        lines: Vec<String>,
+    },
     Insert {
         op_index: usize,
         anchor_line: u32,
@@ -110,12 +151,17 @@ enum PlannedOp {
 impl PlannedOp {
     fn op_index(&self) -> usize {
         match self {
-            Self::Insert { op_index, .. } | Self::Replace { op_index, .. } => *op_index,
+            Self::Rewrite { op_index, .. }
+            | Self::Insert { op_index, .. }
+            | Self::Replace { op_index, .. } => *op_index,
         }
     }
 
     fn max_anchor_line(&self) -> u32 {
         match self {
+            Self::Rewrite {
+                source_line_count, ..
+            } => *source_line_count as u32,
             Self::Insert { anchor_line, .. } => *anchor_line,
             Self::Replace { end_line, .. } => *end_line,
         }
@@ -123,6 +169,15 @@ impl PlannedOp {
 
     fn changed_range(&self) -> ChangedLineRange {
         match self {
+            Self::Rewrite {
+                source_line_count,
+                lines,
+                ..
+            } => ChangedLineRange {
+                start_line: 1,
+                removed_lines: *source_line_count as u32,
+                added_lines: lines.len() as u32,
+            },
             Self::Insert {
                 insert_idx, lines, ..
             } => ChangedLineRange {
@@ -145,6 +200,10 @@ impl PlannedOp {
     }
 
     fn conflicts_with(&self, other: &Self) -> bool {
+        if matches!(self, Self::Rewrite { .. }) || matches!(other, Self::Rewrite { .. }) {
+            return true;
+        }
+
         match (self, other) {
             (
                 Self::Insert {
@@ -186,6 +245,7 @@ impl PlannedOp {
                     ..
                 },
             ) => left_start <= right_end && right_start <= left_end,
+            _ => unreachable!("rewrite conflicts are handled before pair matching"),
         }
     }
 }
@@ -234,6 +294,9 @@ pub fn apply_hashline_patch(
     let mut next_lines = split.lines;
     for planned in execution_order {
         match planned {
+            PlannedOp::Rewrite { lines, .. } => {
+                next_lines = lines;
+            }
             PlannedOp::Insert {
                 insert_idx, lines, ..
             } => {
@@ -268,6 +331,11 @@ fn plan_op(
     source_lines: &[String],
 ) -> Result<PlannedOp, HashlineError> {
     match op {
+        HashlineOp::Rewrite { lines } => Ok(PlannedOp::Rewrite {
+            op_index,
+            source_line_count: source_lines.len(),
+            lines: lines.clone(),
+        }),
         HashlineOp::InsertBefore { anchor, lines } => {
             validate_anchor(anchor, op_index, source_lines)?;
             Ok(PlannedOp::Insert {
@@ -520,6 +588,51 @@ mod tests {
     }
 
     #[test]
+    fn hashline_rewrite_op_replaces_entire_file() {
+        let patch = HashlinePatch {
+            edit_id: "rewrite".to_string(),
+            path: "demo.txt".to_string(),
+            ops: vec![HashlineOp::Rewrite {
+                lines: vec!["fresh".to_string(), "content".to_string()],
+            }],
+        };
+
+        let applied = apply_hashline_patch("alpha\nbeta\n", &patch).expect("rewrite applies");
+        assert_eq!(applied.content, "fresh\ncontent\n");
+        assert_eq!(
+            applied.changed_ranges,
+            vec![ChangedLineRange {
+                start_line: 1,
+                removed_lines: 2,
+                added_lines: 2,
+            }]
+        );
+    }
+
+    #[test]
+    fn hashline_rewrite_conflicts_with_other_ops() {
+        let patch = HashlinePatch {
+            edit_id: "rewrite-overlap".to_string(),
+            path: "demo.txt".to_string(),
+            ops: vec![
+                HashlineOp::Rewrite {
+                    lines: vec!["fresh".to_string()],
+                },
+                HashlineOp::InsertBefore {
+                    anchor: LineAnchor {
+                        line: 1,
+                        hash: compute_line_hash("alpha"),
+                    },
+                    lines: vec!["intro".to_string()],
+                },
+            ],
+        };
+
+        let error = apply_hashline_patch("alpha\n", &patch).expect_err("must reject conflict");
+        assert_eq!(error.code(), "OVERLAP");
+    }
+
+    #[test]
     fn hashline_out_of_range_anchor_rejected() {
         let patch = HashlinePatch {
             edit_id: "out-of-range".to_string(),
@@ -690,6 +803,9 @@ mod tests {
         };
 
         match patch.ops.first_mut().expect("patch has ops") {
+            HashlineOp::Rewrite { .. } => {
+                panic!("rewrite ops cannot be anchor-corrupted for mismatch checks")
+            }
             HashlineOp::InsertBefore { anchor, .. } | HashlineOp::InsertAfter { anchor, .. } => {
                 anchor.hash = replacement_hash(&anchor.hash);
             }

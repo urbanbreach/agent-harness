@@ -150,6 +150,67 @@ pub enum TaskScheduleState {
     Started,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ToolIdentityMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_tool_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias_source_tool_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct TaskLineageMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_tool_call_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_task_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub child_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub child_request_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ExecutionTimingMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_mono_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finished_mono_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elapsed_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EventArtifactRef {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ToolCallMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_tool_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias_source_tool_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lineage: Option<TaskLineageMetadata>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub artifact_refs: Vec<EventArtifactRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timing: Option<ExecutionTimingMetadata>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct TaskCompletionMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lineage: Option<TaskLineageMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timing: Option<ExecutionTimingMetadata>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskCancelledEvent {
     pub task_id: String,
@@ -161,6 +222,8 @@ pub struct TaskCompletedEvent {
     pub task_id: String,
     pub result_summary: String,
     pub result_digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<TaskCompletionMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -210,6 +273,8 @@ pub struct ToolCallRequestedEvent {
     pub tool_id: String,
     pub args_summary: String,
     pub args_digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ToolCallMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -227,6 +292,8 @@ pub struct ToolCallFinishedEvent {
     pub output_digest: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_json: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ToolCallMetadata>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -304,6 +371,10 @@ pub struct ArtifactWrittenEvent {
     pub path: String,
     pub digest: String,
     pub bytes: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_metadata: Option<ToolIdentityMetadata>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub metadata: BTreeMap<String, String>,
 }
@@ -413,6 +484,7 @@ impl<'a, C: Clock + ?Sized, R: Redactor + ?Sized> EventBuilder<'a, C, R> {
         tool_call_id: impl Into<String>,
         tool_id: impl Into<String>,
         raw_args: &Value,
+        metadata: Option<ToolCallMetadata>,
     ) -> Result<EventEnvelopeV1, EventBuildError> {
         let args_summary = self.summarize_and_redact(raw_args);
         let args_digest = value_digest(raw_args);
@@ -421,6 +493,7 @@ impl<'a, C: Clock + ?Sized, R: Redactor + ?Sized> EventBuilder<'a, C, R> {
             tool_id: tool_id.into(),
             args_summary,
             args_digest,
+            metadata,
         });
 
         self.build(context, payload)
@@ -560,6 +633,7 @@ mod tests {
                 "toolcall_002",
                 "shell.run",
                 &args,
+                None,
             )
             .expect("build tool call requested envelope");
 

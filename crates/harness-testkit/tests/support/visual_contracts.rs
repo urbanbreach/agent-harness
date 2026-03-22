@@ -94,8 +94,20 @@ pub(crate) const OFFLINE_VISUAL_EVIDENCE_CONTRACTS: &[OfflineVisualEvidenceContr
     OfflineVisualEvidenceContract {
         family: "transcript_shell",
         state: "happy_path",
-        png: "pty_session_transcript_rich_shell.png",
-        snapshot: "pty_session_transcript_rich_shell",
+        png: "pty_native_tool_parity_task_row.png",
+        snapshot: "native_tool_parity_task_row",
+    },
+    OfflineVisualEvidenceContract {
+        family: "transcript_shell",
+        state: "happy_path",
+        png: "pty_native_tool_parity_fetch_row.png",
+        snapshot: "native_tool_parity_fetch_row",
+    },
+    OfflineVisualEvidenceContract {
+        family: "transcript_shell",
+        state: "dense_parity",
+        png: "pty_native_tool_parity_dense.png",
+        snapshot: "native_tool_parity_dense",
     },
     OfflineVisualEvidenceContract {
         family: "operator_sidebar",
