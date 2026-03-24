@@ -31,6 +31,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const DEFAULT_LIVE_PROXY_PROVIDER: &str = "default";
+const DEFAULT_LIVE_PROXY_MODEL: &str = "gpt-5.4-mini";
 const DEFAULT_LIVE_PROXY_PROFILE: &str = "live_proxy_smoke";
 const LIVE_PROXY_TOOL_FLOW_PROFILE: &str = "live_proxy_tool_flow";
 const LIVE_PROXY_CHAT_TODO_FLOW_PROFILE: &str = "live_proxy_chat_todo_flow";
@@ -585,7 +586,7 @@ fn live_proxy_prompt_chat_tool_flow() {
         "skill",
         &json!({
             "name": "rust-best-practices",
-            "user_message": Value::Null,
+            "user_message": LIVE_CHAT_SKILL_PROMPT,
         }),
     )
     .unwrap_or_else(|err| panic!("skill-stage tool arguments mismatch: {err}"));
@@ -1032,7 +1033,7 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
         "default",
         "http://127.0.0.1:9999",
         "responses",
-        "primary-model",
+        DEFAULT_LIVE_PROXY_MODEL,
         &source_session_dir,
     );
     fs::write(
@@ -1044,7 +1045,7 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
     let request = LivePromptRequest {
         source_config_path,
         provider_name: "default".to_string(),
-        primary_model: "primary-model".to_string(),
+        primary_model: DEFAULT_LIVE_PROXY_MODEL.to_string(),
         vision_model: "vision-model".to_string(),
         profile: DEFAULT_LIVE_PROXY_PROFILE.to_string(),
         prompt_text: DEFAULT_LIVE_PROXY_PROMPT.to_string(),
@@ -1063,7 +1064,7 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
     .expect("prepare live tool-flow config");
 
     assert_eq!(run_config.tool_flow.profile, LIVE_PROXY_TOOL_FLOW_PROFILE);
-    assert_eq!(run_config.tool_flow.model_id, "primary-model");
+    assert_eq!(run_config.tool_flow.model_id, DEFAULT_LIVE_PROXY_MODEL);
     assert_eq!(
         run_config.vision_verifier.profile,
         LIVE_PROXY_VISION_VERIFIER_PROFILE
@@ -1085,7 +1086,9 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
         tool_flow_config
             .get("permissions")
             .and_then(Value::as_object)
-            .and_then(|permissions| permissions.get("edit"))
+            .and_then(|permissions| permissions.get("defaults"))
+            .and_then(Value::as_object)
+            .and_then(|defaults| defaults.get("edit"))
             .and_then(Value::as_str),
         Some("allow")
     );
@@ -1093,7 +1096,9 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
         tool_flow_config
             .get("permissions")
             .and_then(Value::as_object)
-            .and_then(|permissions| permissions.get("shell"))
+            .and_then(|permissions| permissions.get("defaults"))
+            .and_then(Value::as_object)
+            .and_then(|defaults| defaults.get("shell"))
             .and_then(Value::as_str),
         Some("allow")
     );
@@ -1101,7 +1106,9 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
         tool_flow_config
             .get("permissions")
             .and_then(Value::as_object)
-            .and_then(|permissions| permissions.get("network"))
+            .and_then(|permissions| permissions.get("defaults"))
+            .and_then(Value::as_object)
+            .and_then(|defaults| defaults.get("network"))
             .and_then(Value::as_str),
         Some("allow")
     );
@@ -1127,22 +1134,22 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
     );
     assert_eq!(
         tool_flow_config
-            .get("paths")
+            .get("runtime")
             .and_then(Value::as_object)
-            .and_then(|paths| paths.get("session_dir"))
+            .and_then(|runtime| runtime.get("session_dir"))
             .and_then(Value::as_str),
         Some(run_config.tool_flow.session_dir.to_string_lossy().as_ref())
     );
 
     let tool_flow_profile = tool_flow_config
-        .get("categories")
+        .get("profiles")
         .and_then(Value::as_object)
-        .and_then(|categories| categories.get(LIVE_PROXY_TOOL_FLOW_PROFILE))
+        .and_then(|profiles| profiles.get(LIVE_PROXY_TOOL_FLOW_PROFILE))
         .and_then(Value::as_object)
         .expect("tool-flow profile present");
     assert_eq!(
         tool_flow_profile.get("model_ref").and_then(Value::as_str),
-        Some("default:primary-model")
+        Some("default:gpt-5.4-mini")
     );
     assert_eq!(
         tool_flow_profile.get("tools").and_then(Value::as_array),
@@ -1179,7 +1186,7 @@ fn prepare_live_prompt_chat_tool_run_config_builds_restricted_profiles() {
         "default",
         "http://127.0.0.1:9999",
         "responses",
-        "primary-model",
+        DEFAULT_LIVE_PROXY_MODEL,
         &source_session_dir,
     );
     fs::write(
@@ -1191,7 +1198,7 @@ fn prepare_live_prompt_chat_tool_run_config_builds_restricted_profiles() {
     let request = LivePromptRequest {
         source_config_path,
         provider_name: "default".to_string(),
-        primary_model: "primary-model".to_string(),
+        primary_model: DEFAULT_LIVE_PROXY_MODEL.to_string(),
         vision_model: "vision-model".to_string(),
         profile: DEFAULT_LIVE_PROXY_PROFILE.to_string(),
         prompt_text: DEFAULT_LIVE_PROXY_PROMPT.to_string(),
@@ -1201,9 +1208,9 @@ fn prepare_live_prompt_chat_tool_run_config_builds_restricted_profiles() {
     let run_config = prepare_live_prompt_chat_tool_run_config(&request)
         .expect("prepare live prompt chat tool config");
 
-    assert_eq!(run_config.todo_flow.model_id, "primary-model");
-    assert_eq!(run_config.question.model_id, "primary-model");
-    assert_eq!(run_config.skill.model_id, "primary-model");
+    assert_eq!(run_config.todo_flow.model_id, DEFAULT_LIVE_PROXY_MODEL);
+    assert_eq!(run_config.question.model_id, DEFAULT_LIVE_PROXY_MODEL);
+    assert_eq!(run_config.skill.model_id, DEFAULT_LIVE_PROXY_MODEL);
     assert_ne!(
         run_config.todo_flow.session_dir,
         run_config.question.session_dir
@@ -1221,9 +1228,9 @@ fn prepare_live_prompt_chat_tool_run_config_builds_restricted_profiles() {
         load_json5_config(&run_config.skill.config_path).expect("load prepared skill config");
 
     let todo_profile = todo_config
-        .get("categories")
+        .get("profiles")
         .and_then(Value::as_object)
-        .and_then(|categories| categories.get(LIVE_PROXY_CHAT_TODO_FLOW_PROFILE))
+        .and_then(|profiles| profiles.get(LIVE_PROXY_CHAT_TODO_FLOW_PROFILE))
         .and_then(Value::as_object)
         .expect("todo profile present");
     assert_eq!(
@@ -1232,9 +1239,9 @@ fn prepare_live_prompt_chat_tool_run_config_builds_restricted_profiles() {
     );
 
     let question_profile = question_config
-        .get("categories")
+        .get("profiles")
         .and_then(Value::as_object)
-        .and_then(|categories| categories.get(LIVE_PROXY_CHAT_QUESTION_PROFILE))
+        .and_then(|profiles| profiles.get(LIVE_PROXY_CHAT_QUESTION_PROFILE))
         .and_then(Value::as_object)
         .expect("question profile present");
     assert_eq!(
@@ -1247,9 +1254,9 @@ fn prepare_live_prompt_chat_tool_run_config_builds_restricted_profiles() {
     );
 
     let skill_profile = skill_config
-        .get("categories")
+        .get("profiles")
         .and_then(Value::as_object)
-        .and_then(|categories| categories.get(LIVE_PROXY_CHAT_SKILL_PROFILE))
+        .and_then(|profiles| profiles.get(LIVE_PROXY_CHAT_SKILL_PROFILE))
         .and_then(Value::as_object)
         .expect("skill profile present");
     assert_eq!(
@@ -1266,7 +1273,7 @@ fn prepare_live_prompt_compat_edit_run_config_builds_restricted_profile() {
         "default",
         "http://127.0.0.1:9999",
         "responses",
-        "primary-model",
+        DEFAULT_LIVE_PROXY_MODEL,
         &source_session_dir,
     );
     fs::write(
@@ -1278,7 +1285,7 @@ fn prepare_live_prompt_compat_edit_run_config_builds_restricted_profile() {
     let request = LivePromptRequest {
         source_config_path,
         provider_name: "default".to_string(),
-        primary_model: "primary-model".to_string(),
+        primary_model: DEFAULT_LIVE_PROXY_MODEL.to_string(),
         vision_model: "vision-model".to_string(),
         profile: DEFAULT_LIVE_PROXY_PROFILE.to_string(),
         prompt_text: DEFAULT_LIVE_PROXY_PROMPT.to_string(),
@@ -1288,11 +1295,11 @@ fn prepare_live_prompt_compat_edit_run_config_builds_restricted_profile() {
     let run_config = prepare_live_prompt_compat_edit_run_config(&request)
         .expect("prepare live prompt compat edit config");
 
-    assert_eq!(run_config.write.model_id, "primary-model");
-    assert_eq!(run_config.first_read.model_id, "primary-model");
-    assert_eq!(run_config.patch.model_id, "primary-model");
-    assert_eq!(run_config.second_read.model_id, "primary-model");
-    assert_eq!(run_config.delete.model_id, "primary-model");
+    assert_eq!(run_config.write.model_id, DEFAULT_LIVE_PROXY_MODEL);
+    assert_eq!(run_config.first_read.model_id, DEFAULT_LIVE_PROXY_MODEL);
+    assert_eq!(run_config.patch.model_id, DEFAULT_LIVE_PROXY_MODEL);
+    assert_eq!(run_config.second_read.model_id, DEFAULT_LIVE_PROXY_MODEL);
+    assert_eq!(run_config.delete.model_id, DEFAULT_LIVE_PROXY_MODEL);
     assert_eq!(
         run_config.canonical_relative_path,
         PathBuf::from(LIVE_COMPAT_EDIT_RELATIVE_PATH)
@@ -1333,9 +1340,9 @@ fn prepare_live_prompt_compat_edit_run_config_builds_restricted_profile() {
     let write_config =
         load_json5_config(&run_config.write.config_path).expect("load prepared compat edit config");
     let compat_profile = write_config
-        .get("categories")
+        .get("profiles")
         .and_then(Value::as_object)
-        .and_then(|categories| categories.get(LIVE_PROXY_COMPAT_EDIT_PROFILE))
+        .and_then(|profiles| profiles.get(LIVE_PROXY_COMPAT_EDIT_PROFILE))
         .and_then(Value::as_object)
         .expect("compat edit profile present");
     assert_eq!(
@@ -1345,6 +1352,114 @@ fn prepare_live_prompt_compat_edit_run_config_builds_restricted_profile() {
             Value::String("read".to_string()),
             Value::String("apply_patch".to_string()),
         ])
+    );
+}
+
+#[test]
+fn example_tool_audit_profile_covers_signoff_surface_and_gpt_5_4_mini_baseline() {
+    let config = load_json5_config(&repo_root().join("configs").join("harness.example.jsonc"))
+        .expect("load shipped example config");
+
+    let tool_audit = config
+        .get("profiles")
+        .and_then(Value::as_object)
+        .and_then(|profiles| profiles.get("tool_audit"))
+        .and_then(Value::as_object)
+        .expect("tool_audit profile present in example config");
+
+    assert_eq!(
+        tool_audit.get("model_ref").and_then(Value::as_str),
+        Some("default:gpt-5.4-mini")
+    );
+    assert_eq!(
+        tool_audit.get("variant").and_then(Value::as_str),
+        Some("deterministic")
+    );
+    assert_eq!(
+        tool_audit.get("tool_failure_mode").and_then(Value::as_str),
+        Some("continue_as_tool_message")
+    );
+
+    let tools = tool_audit
+        .get("tools")
+        .and_then(Value::as_array)
+        .expect("tool_audit tools array present");
+    for required_tool in [
+        "skill.load",
+        "user.question",
+        "code.lsp",
+        "agent.spawn",
+        "tool.batch",
+        "tool.invalid",
+        "todo.write",
+        "todo.read",
+    ] {
+        assert!(
+            tools.contains(&Value::String(required_tool.to_string())),
+            "tool_audit should expose {required_tool} in the shipped example config"
+        );
+    }
+
+    let system_prompt = tool_audit
+        .get("system_prompt")
+        .and_then(Value::as_str)
+        .expect("tool_audit system prompt present");
+    for needle in [
+        "skills",
+        "question flow",
+        "hooks evidence",
+        "LSP evidence",
+        "subagent",
+        "variants",
+        "model metadata",
+        "HARNESS_QUESTION_ANSWERS",
+    ] {
+        assert!(
+            system_prompt.contains(needle),
+            "tool_audit prompt should mention `{needle}` for evidence-first signoff"
+        );
+    }
+
+    let lifecycle_hooks = config
+        .get("hooks")
+        .and_then(|hooks| hooks.get("lifecycle"))
+        .and_then(Value::as_array)
+        .expect("example config lifecycle hooks present");
+    assert!(
+        !lifecycle_hooks.is_empty(),
+        "example config should ship lifecycle hook examples for audit coverage"
+    );
+
+    let rust_server = config
+        .get("lsp")
+        .and_then(|lsp| lsp.get("servers"))
+        .and_then(|servers| servers.get("rust"))
+        .and_then(Value::as_object)
+        .expect("example config rust LSP server present");
+    assert_eq!(
+        rust_server
+            .get("command")
+            .and_then(Value::as_array)
+            .and_then(|command| command.first())
+            .and_then(Value::as_str),
+        Some("rust-analyzer")
+    );
+
+    let deterministic_variant = config
+        .get("providers")
+        .and_then(|providers| providers.get("default"))
+        .and_then(|provider| provider.get("models"))
+        .and_then(|models| models.get("gpt-5.4-mini"))
+        .and_then(|model| model.get("variants"))
+        .and_then(|variants| variants.get("deterministic"))
+        .and_then(Value::as_object)
+        .expect("gpt-5.4-mini deterministic variant present");
+    assert_eq!(
+        deterministic_variant
+            .get("metadata")
+            .and_then(|metadata| metadata.get("recommended_for"))
+            .and_then(Value::as_str),
+        Some("tool_audit")
     );
 }
 
@@ -1733,7 +1848,7 @@ fn resolve_live_request_defaults_vision_model_to_primary() {
         "default",
         "http://127.0.0.1:9999",
         "responses",
-        "primary-model",
+        DEFAULT_LIVE_PROXY_MODEL,
         &session_dir,
     );
     fs::write(
@@ -1751,7 +1866,7 @@ fn resolve_live_request_defaults_vision_model_to_primary() {
             ("HARNESS_LIVE_PROXY_PROVIDER", Some(OsStr::new("default"))),
             (
                 "HARNESS_LIVE_PROXY_MODEL",
-                Some(OsStr::new("primary-model")),
+                Some(OsStr::new(DEFAULT_LIVE_PROXY_MODEL)),
             ),
             ("HARNESS_LIVE_PROXY_VISION_MODEL", None),
             ("HARNESS_LIVE_PROXY_PROFILE", None),
@@ -1761,7 +1876,7 @@ fn resolve_live_request_defaults_vision_model_to_primary() {
         || {
             let request =
                 resolve_live_prompt_request(&repo_root()).expect("resolve live prompt request");
-            assert_eq!(request.primary_model, "primary-model");
+            assert_eq!(request.primary_model, DEFAULT_LIVE_PROXY_MODEL);
             assert_eq!(request.vision_model, request.primary_model);
         },
     );
@@ -1834,9 +1949,9 @@ fn live_tui_smoke_helpers_reuse_cliproxy_config_and_endpoint_rules() {
     assert_eq!(provider_api_mode(default_provider), "auto");
 
     let categories = prepared_config
-        .get("categories")
+        .get("profiles")
         .and_then(Value::as_object)
-        .expect("prepared config categories object");
+        .expect("prepared config profiles object");
     assert_eq!(
         categories
             .get("deep")
@@ -2388,7 +2503,7 @@ async fn live_vision_request_uses_responses_endpoint_and_selected_model() {
         "proxy",
         &server.uri(),
         "responses",
-        "primary-model",
+        DEFAULT_LIVE_PROXY_MODEL,
         &session_dir,
     );
     fs::write(
@@ -2411,7 +2526,7 @@ async fn live_vision_request_uses_responses_endpoint_and_selected_model() {
                 ("HARNESS_LIVE_PROXY_PROVIDER", Some(OsStr::new("proxy"))),
                 (
                     "HARNESS_LIVE_PROXY_MODEL",
-                    Some(OsStr::new("primary-model")),
+                    Some(OsStr::new(DEFAULT_LIVE_PROXY_MODEL)),
                 ),
                 (
                     "HARNESS_LIVE_PROXY_VISION_MODEL",
@@ -4621,13 +4736,13 @@ fn normalize_category_model_refs_to_default(config: &mut Value) -> Result<(), St
         .as_object_mut()
         .ok_or_else(|| "config root must be a JSON object".to_string())?;
     let categories = root
-        .get_mut("categories")
+        .get_mut("profiles")
         .and_then(Value::as_object_mut)
-        .ok_or_else(|| "config.categories must be an object".to_string())?;
+        .ok_or_else(|| "config.profiles must be an object".to_string())?;
 
     for (category_name, category_value) in categories.iter_mut() {
         let Some(category_obj) = category_value.as_object_mut() else {
-            return Err(format!("category `{category_name}` must be an object"));
+            return Err(format!("profile `{category_name}` must be an object"));
         };
 
         let model_ref = category_obj
@@ -4668,10 +4783,10 @@ fn ensure_profile_model_ref(
         .ok_or_else(|| "config root must be a JSON object".to_string())?;
 
     let categories = root
-        .entry("categories".to_string())
+        .entry("profiles".to_string())
         .or_insert_with(|| Value::Object(serde_json::Map::new()))
         .as_object_mut()
-        .ok_or_else(|| "config.categories must be an object".to_string())?;
+        .ok_or_else(|| "config.profiles must be an object".to_string())?;
 
     let mut profile = categories.get(profile_name).cloned().unwrap_or_else(|| {
         json!({
@@ -4682,7 +4797,7 @@ fn ensure_profile_model_ref(
 
     let profile_obj = profile
         .as_object_mut()
-        .ok_or_else(|| format!("category `{profile_name}` must be an object"))?;
+        .ok_or_else(|| format!("profile `{profile_name}` must be an object"))?;
     profile_obj.insert(
         "model_ref".to_string(),
         Value::String(format!("default:{model_id}")),
@@ -4745,12 +4860,12 @@ fn apply_prepared_run_paths(
     let root = config
         .as_object_mut()
         .ok_or_else(|| "config root must be a JSON object".to_string())?;
-    let paths = root
-        .entry("paths".to_string())
+    let runtime = root
+        .entry("runtime".to_string())
         .or_insert_with(|| Value::Object(serde_json::Map::new()))
         .as_object_mut()
-        .ok_or_else(|| "config.paths must be an object".to_string())?;
-    paths.insert(
+        .ok_or_else(|| "config.runtime must be an object".to_string())?;
+    runtime.insert(
         "session_dir".to_string(),
         Value::String(session_dir.display().to_string()),
     );
@@ -4777,10 +4892,15 @@ fn apply_allow_permissions(config: &mut Value) -> Result<(), String> {
         .or_insert_with(|| Value::Object(serde_json::Map::new()))
         .as_object_mut()
         .ok_or_else(|| "config.permissions must be an object".to_string())?;
-    permissions.insert("edit".to_string(), Value::String("allow".to_string()));
-    permissions.insert("shell".to_string(), Value::String("allow".to_string()));
-    permissions.insert("network".to_string(), Value::String("allow".to_string()));
-    permissions.insert("question".to_string(), Value::String("allow".to_string()));
+    let defaults = permissions
+        .entry("defaults".to_string())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()))
+        .as_object_mut()
+        .ok_or_else(|| "config.permissions.defaults must be an object".to_string())?;
+    defaults.insert("edit".to_string(), Value::String("allow".to_string()));
+    defaults.insert("shell".to_string(), Value::String("allow".to_string()));
+    defaults.insert("network".to_string(), Value::String("allow".to_string()));
+    defaults.insert("question".to_string(), Value::String("allow".to_string()));
     Ok(())
 }
 
@@ -4788,11 +4908,16 @@ fn disable_prepared_determinism(config: &mut Value) -> Result<(), String> {
     let root = config
         .as_object_mut()
         .ok_or_else(|| "config root must be a JSON object".to_string())?;
-    let deterministic = root
+    let runtime = root
+        .entry("runtime".to_string())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()))
+        .as_object_mut()
+        .ok_or_else(|| "config.runtime must be an object".to_string())?;
+    let deterministic = runtime
         .entry("deterministic".to_string())
         .or_insert_with(|| Value::Object(serde_json::Map::new()))
         .as_object_mut()
-        .ok_or_else(|| "config.deterministic must be an object".to_string())?;
+        .ok_or_else(|| "config.runtime.deterministic must be an object".to_string())?;
     deterministic.insert("enabled".to_string(), Value::Bool(false));
     Ok(())
 }
@@ -4819,13 +4944,13 @@ fn apply_tool_flow_contract(
     );
 
     let categories = root
-        .get_mut("categories")
+        .get_mut("profiles")
         .and_then(Value::as_object_mut)
-        .ok_or_else(|| "config.categories must be an object".to_string())?;
+        .ok_or_else(|| "config.profiles must be an object".to_string())?;
     let profile = categories
         .get_mut(profile_name)
         .and_then(Value::as_object_mut)
-        .ok_or_else(|| format!("category `{profile_name}` must be present and be an object"))?;
+        .ok_or_else(|| format!("profile `{profile_name}` must be present and be an object"))?;
     profile.insert(
         "description".to_string(),
         Value::String(stage.description().to_string()),
@@ -4863,13 +4988,13 @@ fn apply_restricted_tools_contract(
         .as_object_mut()
         .ok_or_else(|| "config root must be a JSON object".to_string())?;
     let categories = root
-        .get_mut("categories")
+        .get_mut("profiles")
         .and_then(Value::as_object_mut)
-        .ok_or_else(|| "config.categories must be an object".to_string())?;
+        .ok_or_else(|| "config.profiles must be an object".to_string())?;
     let profile = categories
         .get_mut(profile_name)
         .and_then(Value::as_object_mut)
-        .ok_or_else(|| format!("category `{profile_name}` must be present and be an object"))?;
+        .ok_or_else(|| format!("profile `{profile_name}` must be present and be an object"))?;
     profile.insert(
         "description".to_string(),
         Value::String(description.to_string()),
@@ -5296,22 +5421,33 @@ fn build_live_proxy_test_config(
     );
 
     json!({
-        "backgroundTask": {
-            "defaultConcurrency": 2,
-            "providerConcurrency": 2,
-            "modelConcurrency": 2,
-            "staleTimeoutMs": 30000,
-            "messageStalenessTimeoutMs": 10000
-        },
         "providers": providers,
-        "categories": categories,
+        "profiles": categories,
         "permissions": {
-            "edit": "allow",
-            "shell": "allow",
-            "network": "allow"
+            "defaults": {
+                "edit": "allow",
+                "shell": "allow",
+                "network": "allow"
+            }
         },
-        "paths": {
-            "session_dir": session_dir.display().to_string()
+        "runtime": {
+            "background_tasks": {
+                "default_concurrency": 2,
+                "provider_concurrency": 2,
+                "model_concurrency": 2,
+                "stale_timeout_ms": 30000,
+                "message_staleness_timeout_ms": 10000
+            },
+            "session_dir": session_dir.display().to_string(),
+            "deterministic": {
+                "enabled": false,
+                "seed": 42
+            }
+        },
+        "integrations": {
+            "remote_search": {
+                "endpoint": "https://mcp.exa.ai/mcp"
+            }
         },
         "ui": {
             "default_profile": "deep"

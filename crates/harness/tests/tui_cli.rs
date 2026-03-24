@@ -123,6 +123,7 @@ async fn tui_new_live_bootstrap_stays_idle_until_first_user_prompt() {
             category: "deep".to_string(),
             model_ref: "default:default".to_string(),
             system_prompt: "deep agent mode intro".to_string(),
+            tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             tool_surface: ToolSurface::Native,
             toolset: Vec::new(),
         },

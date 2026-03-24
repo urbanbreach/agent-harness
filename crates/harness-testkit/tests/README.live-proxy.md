@@ -10,7 +10,7 @@ Run this first when validating local setup:
 HARNESS_LIVE_PROXY=1 \
 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
 HARNESS_LIVE_PROXY_PROVIDER=default \
-HARNESS_LIVE_PROXY_MODEL=gpt-5.3-codex \
+HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
 cargo test -p harness-testkit live_proxy_preflight -- --ignored --exact
 ```
 
@@ -33,7 +33,7 @@ Run the prompt-based chat-control lane first when the change is about tool orche
 HARNESS_LIVE_PROXY=1 \
 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
 HARNESS_LIVE_PROXY_PROVIDER=default \
-HARNESS_LIVE_PROXY_MODEL=gpt-5.3-codex \
+HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
 cargo test -p harness-testkit live_proxy_prompt_chat_tool_flow -- --ignored --exact
 ```
 
@@ -52,7 +52,7 @@ Then run the file-edit / visual lane:
 HARNESS_LIVE_PROXY=1 \
 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
 HARNESS_LIVE_PROXY_PROVIDER=default \
-HARNESS_LIVE_PROXY_MODEL=gpt-5.3-codex \
+HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
 HARNESS_VISUAL_ARTIFACT_DIR=target/pty-visual-artifacts \
 cargo test -p harness-testkit live_proxy_e2e_tui_tool_flow -- --ignored --exact
 ```

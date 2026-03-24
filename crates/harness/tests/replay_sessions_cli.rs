@@ -69,7 +69,7 @@ fn replay_cli_prints_json_summary() {
                 EventV1::TaskScheduled(TaskScheduledEvent {
                     task_id: "task-123".to_string(),
                     state: TaskScheduleState::Queued,
-                    queue_key: Some("deep/default:gpt-5.3-codex".to_string()),
+                    queue_key: Some("deep/default:gpt-5.4-mini".to_string()),
                 }),
             ),
             envelope(
@@ -487,7 +487,7 @@ fn session_history_exposes_profile_and_model_labels() {
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
                     request_id: "req_1".to_string(),
                     provider_id: "openai".to_string(),
-                    model_id: "gpt-5.3-codex".to_string(),
+                    model_id: "gpt-5.4-mini".to_string(),
                     prompt_summary: "hello".to_string(),
                     request_digest: "digest-1".to_string(),
                 }),
@@ -519,7 +519,7 @@ fn session_history_exposes_profile_and_model_labels() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("worker"));
-    assert!(stdout.contains("openai/gpt-5.3-codex"));
+    assert!(stdout.contains("openai/gpt-5.4-mini"));
 }
 
 #[test]

@@ -5,6 +5,62 @@ use tempfile::tempdir;
 use wiremock::matchers::{body_string_contains, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+fn prompt_cli_config(base_url: &str, session_dir: &std::path::Path, tools: &[&str]) -> String {
+    serde_json::json!({
+        "providers": {
+            "default": {
+                "type": "openai_compatible",
+                "base_url": base_url,
+                "api_key": "DUMMY",
+                "api_mode": "responses",
+                "timeout_ms": 60000,
+                "models": {
+                    "gpt-4o-mini": {
+                        "display_name": "GPT-4o mini"
+                    }
+                }
+            }
+        },
+        "profiles": {
+            "deep": {
+                "description": "Deep profile",
+                "model_ref": "default:gpt-4o-mini",
+                "tools": tools
+            }
+        },
+        "permissions": {
+            "defaults": {
+                "edit": "allow",
+                "shell": "allow",
+                "network": "allow"
+            }
+        },
+        "runtime": {
+            "background_tasks": {
+                "default_concurrency": 2,
+                "provider_concurrency": 2,
+                "model_concurrency": 2,
+                "stale_timeout_ms": 30000,
+                "message_staleness_timeout_ms": 10000
+            },
+            "session_dir": session_dir,
+            "deterministic": {
+                "enabled": false,
+                "seed": 42
+            }
+        },
+        "integrations": {
+            "remote_search": {
+                "endpoint": "https://mcp.exa.ai/mcp"
+            }
+        },
+        "ui": {
+            "default_profile": "deep"
+        }
+    })
+    .to_string()
+}
+
 #[tokio::test]
 async fn prompt_cli_calls_responses_endpoint() {
     let server = MockServer::start().await;
@@ -25,40 +81,7 @@ async fn prompt_cli_calls_responses_endpoint() {
     let config_path = temp.path().join("harness.test.jsonc");
     let session_dir = temp.path().join("sessions");
 
-    let config = serde_json::json!({
-        "backgroundTask": {
-            "defaultConcurrency": 2,
-            "providerConcurrency": 2,
-            "modelConcurrency": 2,
-            "staleTimeoutMs": 30000,
-            "messageStalenessTimeoutMs": 10000
-        },
-        "providers": {
-            "default": {
-                "type": "openai_compatible",
-                "base_url": format!("{}/v1", server.uri()),
-                "api_key": "DUMMY",
-                "api_mode": "responses",
-                "timeout_ms": 60000
-            }
-        },
-        "categories": {
-            "deep": {
-                "description": "Deep profile",
-                "model_ref": "default:gpt-4o-mini",
-                "tools": []
-            }
-        },
-        "permissions": {
-            "edit": "allow",
-            "shell": "allow",
-            "network": "allow"
-        },
-        "paths": {
-            "session_dir": session_dir
-        }
-    })
-    .to_string();
+    let config = prompt_cli_config(&format!("{}/v1", server.uri()), &session_dir, &[]);
 
     fs::write(&config_path, config).expect("write config");
 
@@ -137,40 +160,7 @@ async fn prompt_cli_executes_tool_call_and_completes_turn() {
     fs::write(temp.path().join("tool-target.txt"), "alpha\nbeta\ngamma\n")
         .expect("write tool target");
 
-    let config = serde_json::json!({
-        "backgroundTask": {
-            "defaultConcurrency": 2,
-            "providerConcurrency": 2,
-            "modelConcurrency": 2,
-            "staleTimeoutMs": 30000,
-            "messageStalenessTimeoutMs": 10000
-        },
-        "providers": {
-            "default": {
-                "type": "openai_compatible",
-                "base_url": format!("{}/v1", server.uri()),
-                "api_key": "DUMMY",
-                "api_mode": "responses",
-                "timeout_ms": 60000
-            }
-        },
-        "categories": {
-            "deep": {
-                "description": "Deep profile",
-                "model_ref": "default:gpt-4o-mini",
-                "tools": ["fs.read"]
-            }
-        },
-        "permissions": {
-            "edit": "allow",
-            "shell": "allow",
-            "network": "allow"
-        },
-        "paths": {
-            "session_dir": session_dir
-        }
-    })
-    .to_string();
+    let config = prompt_cli_config(&format!("{}/v1", server.uri()), &session_dir, &["fs.read"]);
 
     fs::write(&config_path, config).expect("write config");
 
@@ -450,40 +440,7 @@ async fn run_prompt_with_single_tool(
     let session_dir = workspace_root.join("sessions");
     let out_path = workspace_root.join("events.jsonl");
 
-    let config = serde_json::json!({
-        "backgroundTask": {
-            "defaultConcurrency": 2,
-            "providerConcurrency": 2,
-            "modelConcurrency": 2,
-            "staleTimeoutMs": 30000,
-            "messageStalenessTimeoutMs": 10000
-        },
-        "providers": {
-            "default": {
-                "type": "openai_compatible",
-                "base_url": format!("{}/v1", server.uri()),
-                "api_key": "DUMMY",
-                "api_mode": "responses",
-                "timeout_ms": 60000
-            }
-        },
-        "categories": {
-            "deep": {
-                "description": "Deep profile",
-                "model_ref": "default:gpt-4o-mini",
-                "tools": tools
-            }
-        },
-        "permissions": {
-            "edit": "allow",
-            "shell": "allow",
-            "network": "allow"
-        },
-        "paths": {
-            "session_dir": session_dir
-        }
-    })
-    .to_string();
+    let config = prompt_cli_config(&format!("{}/v1", server.uri()), &session_dir, tools);
 
     fs::write(&config_path, config).expect("write config");
 
