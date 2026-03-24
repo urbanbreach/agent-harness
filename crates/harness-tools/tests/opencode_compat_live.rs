@@ -87,6 +87,7 @@ fn example_profiles(
                     category: name.clone(),
                     model_ref: category.model_ref.clone(),
                     system_prompt: category.description.clone(),
+                    tool_failure_mode: category.tool_failure_mode,
                     tool_surface: category.tool_surface,
                     toolset: resolve_tool_ids_for_surface(
                         category.tools.iter().map(String::as_str),

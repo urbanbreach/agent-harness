@@ -1,7 +1,9 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use harness_core::config::{registered_skills_config, PermissionMode};
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -56,10 +58,25 @@ impl ControlPlaneExecutor {
         name: &str,
         user_message: Option<String>,
     ) -> Result<ToolResult, ToolError> {
-        let skill = discover_skills()?
-            .into_iter()
-            .find(|skill| skill.name == name)
-            .ok_or_else(|| ToolError::Execution(format!("Skill \"{name}\" not found")))?;
+        let skill = match discover_skill_catalog()?
+            .remove(name)
+            .ok_or_else(|| ToolError::Execution(format!("Skill \"{name}\" not found")))?
+        {
+            DiscoveredSkill::Visible(skill) => match skill.permission {
+                PermissionMode::Allow => skill,
+                PermissionMode::Ask => {
+                    return Err(ToolError::Execution(format!(
+                        "Skill \"{name}\" requires approval before loading"
+                    )));
+                }
+                PermissionMode::Deny => {
+                    return Err(ToolError::Execution(format!("Skill \"{name}\" not found")));
+                }
+            },
+            DiscoveredSkill::Denied | DiscoveredSkill::Invalid => {
+                return Err(ToolError::Execution(format!("Skill \"{name}\" not found")));
+            }
+        };
         let mut output = format!(
             "<skill_content name=\"{}\">\n# Skill: {}\n\n{}\n\n{}\n\nBase directory for this skill: file://{}\n</skill_content>",
             skill.name,
@@ -338,7 +355,12 @@ impl Tool for TodoReadTool {
     }
 
     fn parameters_json_schema(&self) -> Value {
-        json!({"type": "object", "additionalProperties": false})
+        json!({
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+        })
     }
 
     fn capability(&self) -> ToolCapability {
@@ -479,6 +501,20 @@ struct SkillRecord {
     description: String,
     content: String,
     location: PathBuf,
+    permission: PermissionMode,
+}
+
+#[derive(Debug, Clone)]
+enum DiscoveredSkill {
+    Visible(SkillRecord),
+    Denied,
+    Invalid,
+}
+
+#[derive(Debug, Default)]
+struct SkillFrontmatter {
+    name: Option<String>,
+    description: Option<String>,
 }
 
 fn todo_state_path(ctx: &ToolContext) -> Result<PathBuf, ToolError> {
@@ -674,52 +710,514 @@ fn run_root(ctx: &ToolContext) -> Result<PathBuf, ToolError> {
         })
 }
 
-fn discover_skills() -> Result<Vec<SkillRecord>, ToolError> {
-    let mut dirs = Vec::new();
-    if let Some(home) = std::env::var_os("HOME") {
-        let home = PathBuf::from(home);
-        dirs.push(home.join(".config/opencode/skills"));
-        dirs.push(home.join(".agents/skills"));
-    }
-    let mut skills = Vec::new();
-    for dir in dirs {
+fn discover_skill_catalog() -> Result<BTreeMap<String, DiscoveredSkill>, ToolError> {
+    let config = registered_skills_config();
+    let current_dir = std::env::current_dir().map_err(|err| {
+        ToolError::Execution(format!("failed to determine current directory: {err}"))
+    })?;
+    let mut catalog = BTreeMap::new();
+    for dir in skill_search_dirs(&current_dir, &config) {
         if !dir.exists() {
             continue;
         }
-        for entry in std::fs::read_dir(&dir).map_err(|err| {
-            ToolError::Execution(format!(
-                "failed to read skill directory {}: {err}",
-                dir.display()
-            ))
-        })? {
-            let entry = entry.map_err(|err| {
-                ToolError::Execution(format!("failed to read skill entry: {err}"))
-            })?;
-            let skill_dir = entry.path();
-            let skill_file = skill_dir.join("SKILL.md");
+
+        for entry in sorted_skill_entries(&dir)? {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if catalog.contains_key(&name) {
+                continue;
+            }
+
+            let permission = resolve_skill_permission(&name, &config.permissions);
+            if permission == PermissionMode::Deny {
+                catalog.insert(name, DiscoveredSkill::Denied);
+                continue;
+            }
+
+            let skill_file = entry.path().join("SKILL.md");
             if !skill_file.exists() {
                 continue;
             }
+
             let content = std::fs::read_to_string(&skill_file).map_err(|err| {
                 ToolError::Execution(format!(
                     "failed to read skill file {}: {err}",
                     skill_file.display()
                 ))
             })?;
-            let description = content
-                .lines()
-                .find(|line| !line.trim().is_empty() && !line.starts_with('#'))
-                .unwrap_or("No description available.")
-                .trim()
-                .to_string();
-            skills.push(SkillRecord {
-                name: entry.file_name().to_string_lossy().to_string(),
-                description,
-                content,
-                location: skill_file,
-            });
+
+            match build_skill_record(&name, &skill_file, &content, permission.clone()) {
+                Ok(skill) => {
+                    catalog.insert(name, DiscoveredSkill::Visible(skill));
+                }
+                Err(_) => {
+                    catalog.insert(name, DiscoveredSkill::Invalid);
+                }
+            }
         }
     }
-    skills.sort_by(|left, right| left.name.cmp(&right.name));
-    Ok(skills)
+
+    Ok(catalog)
+}
+
+fn skill_search_dirs(
+    current_dir: &Path,
+    config: &harness_core::config::SkillsConfig,
+) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    for base_dir in project_search_bases(current_dir, config.walk_to_git_root) {
+        for root in &config.project_roots {
+            push_unique_path(&mut dirs, resolve_skill_root(&base_dir, root));
+        }
+    }
+    for root in &config.global_roots {
+        push_unique_path(&mut dirs, resolve_skill_root(current_dir, root));
+    }
+    dirs
+}
+
+fn project_search_bases(current_dir: &Path, walk_to_git_root: bool) -> Vec<PathBuf> {
+    if !walk_to_git_root {
+        return vec![current_dir.to_path_buf()];
+    }
+
+    let ancestors = current_dir
+        .ancestors()
+        .map(Path::to_path_buf)
+        .collect::<Vec<_>>();
+    if let Some(git_root_index) = ancestors.iter().position(|path| path.join(".git").exists()) {
+        return ancestors.into_iter().take(git_root_index + 1).collect();
+    }
+
+    vec![current_dir.to_path_buf()]
+}
+
+fn push_unique_path(paths: &mut Vec<PathBuf>, candidate: PathBuf) {
+    if !paths.iter().any(|existing| existing == &candidate) {
+        paths.push(candidate);
+    }
+}
+
+fn resolve_skill_root(base_dir: &Path, root: &Path) -> PathBuf {
+    let expanded = expand_home(root);
+    if expanded.is_absolute() {
+        expanded
+    } else {
+        base_dir.join(expanded)
+    }
+}
+
+fn expand_home(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    if text == "~" {
+        return std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| path.to_path_buf());
+    }
+    if let Some(stripped) = text.strip_prefix("~/") {
+        if let Some(home) = std::env::var_os("HOME") {
+            return PathBuf::from(home).join(stripped);
+        }
+    }
+    path.to_path_buf()
+}
+
+fn sorted_skill_entries(dir: &Path) -> Result<Vec<std::fs::DirEntry>, ToolError> {
+    let mut entries = std::fs::read_dir(dir)
+        .map_err(|err| {
+            ToolError::Execution(format!(
+                "failed to read skill directory {}: {err}",
+                dir.display()
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| ToolError::Execution(format!("failed to read skill entry: {err}")))?;
+    entries.sort_by_key(|entry| entry.file_name());
+    Ok(entries)
+}
+
+fn resolve_skill_permission(
+    name: &str,
+    permissions: &BTreeMap<String, PermissionMode>,
+) -> PermissionMode {
+    permissions
+        .iter()
+        .filter(|(pattern, _)| skill_name_matches_pattern(name, pattern))
+        .max_by(|(left, _), (right, _)| compare_permission_patterns(left, right))
+        .map(|(_, mode)| mode.clone())
+        .unwrap_or(PermissionMode::Allow)
+}
+
+fn compare_permission_patterns(left: &str, right: &str) -> std::cmp::Ordering {
+    skill_pattern_specificity(left)
+        .cmp(&skill_pattern_specificity(right))
+        .then_with(|| left.cmp(right))
+}
+
+fn skill_pattern_specificity(pattern: &str) -> (bool, usize, usize) {
+    let non_wildcard_len = pattern.chars().filter(|ch| *ch != '*').count();
+    (!pattern.contains('*'), non_wildcard_len, pattern.len())
+}
+
+fn skill_name_matches_pattern(name: &str, pattern: &str) -> bool {
+    if pattern == "*" {
+        return true;
+    }
+
+    let segments = pattern.split('*').collect::<Vec<_>>();
+    let anchored_start = !pattern.starts_with('*');
+    let anchored_end = !pattern.ends_with('*');
+    let mut remainder = name;
+
+    for (index, segment) in segments.iter().enumerate() {
+        if segment.is_empty() {
+            continue;
+        }
+
+        if index == 0 && anchored_start {
+            let Some(stripped) = remainder.strip_prefix(segment) else {
+                return false;
+            };
+            remainder = stripped;
+            continue;
+        }
+
+        if index == segments.len() - 1 && anchored_end {
+            return remainder.ends_with(segment);
+        }
+
+        let Some(position) = remainder.find(segment) else {
+            return false;
+        };
+        remainder = &remainder[position + segment.len()..];
+    }
+
+    !anchored_end
+        || segments.last().is_some_and(|segment| segment.is_empty())
+        || remainder.is_empty()
+}
+
+fn build_skill_record(
+    directory_name: &str,
+    skill_file: &Path,
+    content: &str,
+    permission: PermissionMode,
+) -> Result<SkillRecord, String> {
+    let frontmatter = parse_skill_frontmatter(content)?;
+    let name = frontmatter.name.ok_or_else(|| {
+        format!(
+            "skill {} is missing required frontmatter `name`",
+            skill_file.display()
+        )
+    })?;
+    validate_skill_name(&name, skill_file)?;
+    if name != directory_name {
+        return Err(format!(
+            "skill {} frontmatter `name` `{name}` must match directory `{directory_name}`",
+            skill_file.display()
+        ));
+    }
+
+    let description = frontmatter.description.ok_or_else(|| {
+        format!(
+            "skill {} is missing required frontmatter `description`",
+            skill_file.display()
+        )
+    })?;
+    let description_len = description.chars().count();
+    if !(1..=1024).contains(&description_len) {
+        return Err(format!(
+            "skill {} frontmatter `description` must be 1-1024 characters",
+            skill_file.display()
+        ));
+    }
+
+    Ok(SkillRecord {
+        name,
+        description,
+        content: content.to_string(),
+        location: skill_file.to_path_buf(),
+        permission,
+    })
+}
+
+fn parse_skill_frontmatter(content: &str) -> Result<SkillFrontmatter, String> {
+    let mut lines = content.lines();
+    if lines.next() != Some("---") {
+        return Err("skill frontmatter must start with `---`".to_string());
+    }
+
+    let mut frontmatter_lines = Vec::new();
+    let mut found_closing = false;
+    for line in lines {
+        if line == "---" {
+            found_closing = true;
+            break;
+        }
+        frontmatter_lines.push(line);
+    }
+
+    if !found_closing {
+        return Err("skill frontmatter must end with `---`".to_string());
+    }
+
+    parse_frontmatter_fields(&frontmatter_lines)
+}
+
+fn parse_frontmatter_fields(lines: &[&str]) -> Result<SkillFrontmatter, String> {
+    let mut frontmatter = SkillFrontmatter::default();
+    let mut index = 0;
+
+    while index < lines.len() {
+        let line = lines[index];
+        if line.trim().is_empty() {
+            index += 1;
+            continue;
+        }
+        if leading_indent(line)? != 0 {
+            return Err(format!(
+                "frontmatter line `{}` must not be indented",
+                line.trim()
+            ));
+        }
+
+        let trimmed = line.trim_end();
+        let (key, raw_value) = trimmed
+            .split_once(':')
+            .ok_or_else(|| format!("frontmatter line `{trimmed}` must use `key: value` syntax"))?;
+        let key = key.trim();
+        let raw_value = raw_value.trim_start();
+
+        match key {
+            "name" => {
+                let (value, next_index) = parse_scalar_field(lines, index, raw_value)?;
+                frontmatter.name = Some(value);
+                index = next_index;
+            }
+            "description" => {
+                let (value, next_index) = parse_scalar_field(lines, index, raw_value)?;
+                frontmatter.description = Some(value);
+                index = next_index;
+            }
+            "license" | "compatibility" => {
+                let (_, next_index) = parse_scalar_field(lines, index, raw_value)?;
+                index = next_index;
+            }
+            "metadata" => {
+                index = parse_metadata_field(lines, index, raw_value)?;
+            }
+            _ => {
+                index = skip_unknown_field(lines, index, raw_value)?;
+            }
+        }
+    }
+
+    Ok(frontmatter)
+}
+
+fn parse_scalar_field(
+    lines: &[&str],
+    index: usize,
+    raw_value: &str,
+) -> Result<(String, usize), String> {
+    match raw_value {
+        ">" => {
+            let (value, next_index) = collect_block_scalar(lines, index + 1, 0)?;
+            Ok((
+                value
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                next_index,
+            ))
+        }
+        "|" => collect_block_scalar(lines, index + 1, 0),
+        "" => {
+            if next_line_is_indented(lines, index + 1)? {
+                return Err("frontmatter scalar fields must not use nested mappings".to_string());
+            }
+            Ok((String::new(), index + 1))
+        }
+        value => Ok((parse_inline_scalar(value), index + 1)),
+    }
+}
+
+fn parse_metadata_field(lines: &[&str], index: usize, raw_value: &str) -> Result<usize, String> {
+    if !raw_value.is_empty() {
+        return Err("frontmatter `metadata` must be a string-to-string map".to_string());
+    }
+
+    let mut cursor = index + 1;
+    while cursor < lines.len() {
+        let line = lines[cursor];
+        if line.trim().is_empty() {
+            cursor += 1;
+            continue;
+        }
+
+        let indent = leading_indent(line)?;
+        if indent == 0 {
+            break;
+        }
+
+        let trimmed = line.trim();
+        let (key, raw_nested_value) = trimmed.split_once(':').ok_or_else(|| {
+            format!("frontmatter `metadata` entry `{trimmed}` must use `key: value` syntax")
+        })?;
+        if key.trim().is_empty() {
+            return Err("frontmatter `metadata` keys must not be empty".to_string());
+        }
+
+        let raw_nested_value = raw_nested_value.trim_start();
+        match raw_nested_value {
+            ">" | "|" => {
+                let (_, next_index) = collect_block_scalar(lines, cursor + 1, indent)?;
+                cursor = next_index;
+            }
+            "" => {
+                if next_line_has_deeper_indent(lines, cursor + 1, indent)? {
+                    return Err("frontmatter `metadata` must be a string-to-string map".to_string());
+                }
+                cursor += 1;
+            }
+            _ => {
+                cursor += 1;
+            }
+        }
+    }
+
+    Ok(cursor)
+}
+
+fn skip_unknown_field(lines: &[&str], index: usize, raw_value: &str) -> Result<usize, String> {
+    match raw_value {
+        ">" | "|" => {
+            let (_, next_index) = collect_block_scalar(lines, index + 1, 0)?;
+            Ok(next_index)
+        }
+        "" => {
+            let mut cursor = index + 1;
+            while cursor < lines.len() {
+                let line = lines[cursor];
+                if line.trim().is_empty() {
+                    cursor += 1;
+                    continue;
+                }
+                if leading_indent(line)? == 0 {
+                    break;
+                }
+                cursor += 1;
+            }
+            Ok(cursor)
+        }
+        _ => Ok(index + 1),
+    }
+}
+
+fn collect_block_scalar(
+    lines: &[&str],
+    start_index: usize,
+    parent_indent: usize,
+) -> Result<(String, usize), String> {
+    let mut cursor = start_index;
+    let mut block_indent = None;
+    let mut values = Vec::new();
+
+    while cursor < lines.len() {
+        let line = lines[cursor];
+        if line.trim().is_empty() {
+            values.push(String::new());
+            cursor += 1;
+            continue;
+        }
+
+        let indent = leading_indent(line)?;
+        if indent <= parent_indent {
+            break;
+        }
+
+        let block_indent = *block_indent.get_or_insert(indent);
+        if indent < block_indent {
+            break;
+        }
+        values.push(line[block_indent..].to_string());
+        cursor += 1;
+    }
+
+    Ok((values.join("\n"), cursor))
+}
+
+fn next_line_is_indented(lines: &[&str], start_index: usize) -> Result<bool, String> {
+    for line in &lines[start_index..] {
+        if line.trim().is_empty() {
+            continue;
+        }
+        return Ok(leading_indent(line)? > 0);
+    }
+    Ok(false)
+}
+
+fn next_line_has_deeper_indent(
+    lines: &[&str],
+    start_index: usize,
+    current_indent: usize,
+) -> Result<bool, String> {
+    for line in &lines[start_index..] {
+        if line.trim().is_empty() {
+            continue;
+        }
+        return Ok(leading_indent(line)? > current_indent);
+    }
+    Ok(false)
+}
+
+fn leading_indent(line: &str) -> Result<usize, String> {
+    let indent = line
+        .chars()
+        .take_while(|ch| matches!(ch, ' ' | '\t'))
+        .count();
+    if line[..indent].contains('\t') {
+        return Err("frontmatter indentation must use spaces".to_string());
+    }
+    Ok(indent)
+}
+
+fn parse_inline_scalar(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.len() >= 2 {
+        let bytes = trimmed.as_bytes();
+        if (bytes[0] == b'"' && bytes[trimmed.len() - 1] == b'"')
+            || (bytes[0] == b'\'' && bytes[trimmed.len() - 1] == b'\'')
+        {
+            return trimmed[1..trimmed.len() - 1].to_string();
+        }
+    }
+    trimmed.to_string()
+}
+
+fn validate_skill_name(name: &str, skill_file: &Path) -> Result<(), String> {
+    let len = name.chars().count();
+    if !(1..=64).contains(&len) {
+        return Err(format!(
+            "skill {} frontmatter `name` must be 1-64 characters",
+            skill_file.display()
+        ));
+    }
+    if name.starts_with('-') || name.ends_with('-') || name.contains("--") {
+        return Err(format!(
+            "skill {} frontmatter `name` must use single hyphen separators",
+            skill_file.display()
+        ));
+    }
+    if !name
+        .chars()
+        .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-')
+    {
+        return Err(format!(
+            "skill {} frontmatter `name` must match `^[a-z0-9]+(-[a-z0-9]+)*$`",
+            skill_file.display()
+        ));
+    }
+    Ok(())
 }

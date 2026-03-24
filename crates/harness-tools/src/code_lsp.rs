@@ -7,7 +7,10 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::lsp_support::{execute_lsp_operation, LspOperation, LspOperationRequest, LspPosition};
+use crate::lsp_support::{
+    execute_lsp_operation, LspDiagnosticReport, LspOperation, LspOperationRequest,
+    LspOperationResponse, LspPosition,
+};
 
 pub(crate) struct CodeLspExecutor;
 
@@ -24,7 +27,7 @@ impl CodeLspExecutor {
         let operation = LspOperation::parse(&request.operation)?;
         let position = LspPosition::from_one_based(request.line, request.character)?;
         let file_path = resolve_existing_path(ctx, &request.file_path)?;
-        let result = tokio::task::spawn_blocking({
+        let response = tokio::task::spawn_blocking({
             let workspace_root = ctx.workspace_root.clone();
             let file_path = file_path.clone();
             move || {
@@ -39,13 +42,7 @@ impl CodeLspExecutor {
         .await
         .map_err(|err| ToolError::Execution(format!("lsp task failed: {err}")))??;
         let operation_name = operation.as_str();
-        let display_text = if lsp_result_is_empty(&result) {
-            format!("No results found for {operation_name}")
-        } else {
-            serde_json::to_string_pretty(&result).map_err(|err| {
-                ToolError::Execution(format!("failed to render lsp result: {err}"))
-            })?
-        };
+        let display_text = render_display_text(operation_name, &response)?;
         Ok(ToolResult {
             display_text,
             structured_json: Some(json!({
@@ -53,7 +50,12 @@ impl CodeLspExecutor {
                 "filePath": file_path.display().to_string(),
                 "line": request.line,
                 "character": request.character,
-                "result": result,
+                "server": {
+                    "name": response.server.name,
+                    "command": response.server.command,
+                },
+                "result": response.result,
+                "diagnostics": response.diagnostics,
             })),
             artifacts: Vec::new(),
         })
@@ -138,6 +140,66 @@ fn lsp_result_is_empty(value: &Value) -> bool {
         Value::Array(items) => items.is_empty(),
         _ => false,
     }
+}
+
+fn render_display_text(
+    operation_name: &str,
+    response: &LspOperationResponse,
+) -> Result<String, ToolError> {
+    let mut text = if lsp_result_is_empty(&response.result) {
+        format!("No results found for {operation_name}")
+    } else {
+        serde_json::to_string_pretty(&response.result)
+            .map_err(|err| ToolError::Execution(format!("failed to render lsp result: {err}")))?
+    };
+
+    let diagnostics = format_diagnostics(&response.diagnostics);
+    if !diagnostics.is_empty() {
+        text.push_str("\n\nDiagnostics:\n");
+        text.push_str(&diagnostics);
+    }
+
+    Ok(text)
+}
+
+fn format_diagnostics(reports: &[LspDiagnosticReport]) -> String {
+    reports
+        .iter()
+        .flat_map(|report| {
+            report.diagnostics.iter().map(|diagnostic| {
+                let line = diagnostic
+                    .get("range")
+                    .and_then(|range| range.get("start"))
+                    .and_then(|start| start.get("line"))
+                    .and_then(Value::as_u64)
+                    .map(|line| line + 1)
+                    .unwrap_or(1);
+                let character = diagnostic
+                    .get("range")
+                    .and_then(|range| range.get("start"))
+                    .and_then(|start| start.get("character"))
+                    .and_then(Value::as_u64)
+                    .map(|character| character + 1)
+                    .unwrap_or(1);
+                let severity = match diagnostic.get("severity").and_then(Value::as_u64) {
+                    Some(1) => "Error",
+                    Some(2) => "Warning",
+                    Some(3) => "Information",
+                    Some(4) => "Hint",
+                    _ => "Diagnostic",
+                };
+                let message = diagnostic
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("<missing message>");
+                format!(
+                    "{}:{}:{} {} {}",
+                    report.file_path, line, character, severity, message
+                )
+            })
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn resolve_existing_path(ctx: &ToolContext, input: &str) -> Result<PathBuf, ToolError> {

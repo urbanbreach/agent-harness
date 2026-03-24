@@ -1,0 +1,476 @@
+use std::env;
+use std::ffi::OsString;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
+use harness_core::clock::RealClock;
+use harness_core::config::{
+    refresh_skills_config_registry, registered_skills_config, HarnessConfig, PermissionMode,
+    ShellAllowlist, SkillsConfig,
+};
+use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
+use harness_core::event::{ActorKind, EventActor};
+use harness_core::redact::DefaultRedactor;
+use harness_core::tool::ToolContext;
+use harness_tools::coordinator_registry;
+use serde_json::json;
+
+static SKILL_DISCOVERY_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+struct EnvTestContext {
+    previous_cwd: PathBuf,
+    previous_home: Option<OsString>,
+}
+
+impl EnvTestContext {
+    fn new(cwd: &Path, home: &Path) -> Self {
+        let previous_cwd = env::current_dir().expect("capture current dir");
+        let previous_home = env::var_os("HOME");
+
+        env::set_current_dir(cwd).expect("set test current dir");
+        env::set_var("HOME", home);
+
+        Self {
+            previous_cwd,
+            previous_home,
+        }
+    }
+}
+
+impl Drop for EnvTestContext {
+    fn drop(&mut self) {
+        env::set_current_dir(&self.previous_cwd).expect("restore current dir");
+        match &self.previous_home {
+            Some(value) => env::set_var("HOME", value),
+            None => env::remove_var("HOME"),
+        }
+    }
+}
+
+fn tool_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
+    let coordinator = spawn_coordinator(
+        CoordinatorConfig::default(),
+        Arc::new(RealClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+
+    ToolContext {
+        run_id: "run-skill-load-tests".to_string(),
+        workspace_root: workspace_root.to_path_buf(),
+        artifacts_dir: workspace_root.join(".artifacts"),
+        actor: EventActor::new(ActorKind::Supervisor, None),
+        category: Some("deep".to_string()),
+        plan_mode: false,
+        plan_exit_target_profile: None,
+        tool_call_id: tool_call_id.to_string(),
+        coordinator,
+    }
+}
+
+fn write_skill(root: &Path, name: &str, description: &str, body: &str) {
+    let skill_dir = root.join(name);
+    fs::create_dir_all(&skill_dir).expect("create skill dir");
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        format!("---\nname: {name}\ndescription: {description}\n---\n\n{body}\n"),
+    )
+    .expect("write skill file");
+}
+
+fn write_invalid_skill(root: &Path, name: &str) {
+    let skill_dir = root.join(name);
+    fs::create_dir_all(&skill_dir).expect("create invalid skill dir");
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        format!(
+            "---\nname: {name}\ndescription: Broken precedence target\nmetadata: nope\n---\n\nThis skill should be rejected.\n"
+        ),
+    )
+    .expect("write invalid skill file");
+}
+
+fn harness_config_with_skills(skills: SkillsConfig) -> HarnessConfig {
+    serde_json::from_value(json!({
+        "providers": {
+            "default": {
+                "type": "openai_compatible",
+                "base_url": "http://127.0.0.1:1/v1",
+                "api_key": "DUMMY",
+                "api_mode": "responses",
+                "models": {
+                    "gpt-5.4-mini": {
+                        "display_name": "GPT-5.4 Mini"
+                    }
+                }
+            }
+        },
+        "profiles": {
+            "deep": {
+                "description": "Deep profile",
+                "model_ref": "default:gpt-5.4-mini",
+                "tools": []
+            }
+        },
+        "permissions": {
+            "defaults": {
+                "edit": "allow",
+                "shell": "allow",
+                "network": "allow"
+            }
+        },
+        "runtime": {
+            "background_tasks": {
+                "default_concurrency": 2,
+                "provider_concurrency": 2,
+                "model_concurrency": 2,
+                "stale_timeout_ms": 30000,
+                "message_staleness_timeout_ms": 10000
+            },
+            "session_dir": ".agent-harness/sessions"
+        },
+        "integrations": {
+            "remote_search": {
+                "endpoint": "https://mcp.exa.ai/mcp"
+            }
+        },
+        "skills": serde_json::to_value(skills).expect("serialize skills config")
+    }))
+    .expect("config shape should deserialize")
+}
+
+struct SkillsConfigGuard {
+    previous: SkillsConfig,
+}
+
+impl SkillsConfigGuard {
+    fn install(skills: SkillsConfig) -> Self {
+        let previous = registered_skills_config();
+        refresh_skills_config_registry(&harness_config_with_skills(skills));
+        Self { previous }
+    }
+}
+
+impl Drop for SkillsConfigGuard {
+    fn drop(&mut self) {
+        refresh_skills_config_registry(&harness_config_with_skills(self.previous.clone()));
+    }
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
+)]
+async fn skill_load_discovers_project_and_global_roots_with_precedence() {
+    let _guard = SKILL_DISCOVERY_ENV_LOCK.lock().expect("env test lock");
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("home");
+    let repo = temp_dir.path().join("repo");
+    let app = repo.join("packages/app");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&app).expect("app dir");
+    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    let _env = EnvTestContext::new(&app, &home);
+
+    write_skill(
+        &home.join(".config/opencode/skills"),
+        "shared-skill",
+        "Global shared description",
+        "Global body",
+    );
+    write_skill(
+        &repo.join(".opencode/skills"),
+        "shared-skill",
+        "Repo shared description",
+        "Repo body",
+    );
+    write_skill(
+        &app.join(".opencode/skills"),
+        "shared-skill",
+        "App shared description",
+        "App body",
+    );
+    write_skill(
+        &repo.join(".agents/skills"),
+        "repo-only",
+        "Repo only description",
+        "Repo only body",
+    );
+    write_skill(
+        &home.join(".agents/skills"),
+        "global-only",
+        "Global only description",
+        "Global only body",
+    );
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let native = registry.get("skill.load").expect("skill.load tool");
+    let compat = registry.get("skill").expect("skill tool");
+
+    let native_shared = native
+        .call(
+            tool_context(&repo, "toolcall-native-shared"),
+            json!({"name": "shared-skill"}),
+        )
+        .await
+        .expect("native shared skill");
+    assert!(native_shared
+        .display_text
+        .contains("App shared description"));
+    assert!(native_shared.display_text.contains("App body"));
+    assert!(!native_shared.display_text.contains("Repo body"));
+    assert!(!native_shared.display_text.contains("Global body"));
+    assert_eq!(
+        native_shared
+            .structured_json
+            .as_ref()
+            .and_then(|value| value.get("location")),
+        Some(&json!(app
+            .join(".opencode/skills/shared-skill/SKILL.md")
+            .display()
+            .to_string()))
+    );
+
+    let compat_shared = compat
+        .call(
+            tool_context(&repo, "toolcall-compat-shared"),
+            json!({"name": "shared-skill"}),
+        )
+        .await
+        .expect("compat shared skill");
+    assert_eq!(native_shared.display_text, compat_shared.display_text);
+    assert_eq!(native_shared.structured_json, compat_shared.structured_json);
+
+    let repo_only = native
+        .call(
+            tool_context(&repo, "toolcall-repo-only"),
+            json!({"name": "repo-only"}),
+        )
+        .await
+        .expect("repo-only skill");
+    assert!(repo_only.display_text.contains("Repo only description"));
+
+    let global_only = native
+        .call(
+            tool_context(&repo, "toolcall-global-only"),
+            json!({"name": "global-only"}),
+        )
+        .await
+        .expect("global-only skill");
+    assert!(global_only.display_text.contains("Global only description"));
+}
+
+#[test]
+fn skill_discovery_walks_project_and_global_roots() {
+    skill_load_discovers_project_and_global_roots_with_precedence();
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
+)]
+async fn skill_load_hides_denied_or_invalid_skills() {
+    let _guard = SKILL_DISCOVERY_ENV_LOCK.lock().expect("env test lock");
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("home");
+    let repo = temp_dir.path().join("repo");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&repo).expect("repo dir");
+    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    let _env = EnvTestContext::new(&repo, &home);
+
+    write_skill(
+        &repo.join(".opencode/skills"),
+        "visible-skill",
+        "Visible description",
+        "Visible body",
+    );
+    write_skill(
+        &repo.join(".opencode/skills"),
+        "internal-secret",
+        "Denied description",
+        "Denied body",
+    );
+    write_skill(
+        &repo.join(".opencode/skills"),
+        "experimental-preview",
+        "Ask description",
+        "Ask body",
+    );
+    write_invalid_skill(&repo.join(".opencode/skills"), "broken-skill");
+    write_skill(
+        &home.join(".config/opencode/skills"),
+        "broken-skill",
+        "Global fallback description",
+        "Global fallback body",
+    );
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let native = registry.get("skill.load").expect("skill.load tool");
+    let compat = registry.get("skill").expect("skill tool");
+
+    let visible = native
+        .call(
+            tool_context(&repo, "toolcall-visible-skill"),
+            json!({"name": "visible-skill"}),
+        )
+        .await
+        .expect("visible skill");
+    assert!(visible.display_text.contains("Visible description"));
+
+    let denied = native
+        .call(
+            tool_context(&repo, "toolcall-denied-skill"),
+            json!({"name": "internal-secret"}),
+        )
+        .await
+        .expect_err("denied skill should be hidden");
+    assert!(denied
+        .to_string()
+        .contains("Skill \"internal-secret\" not found"));
+
+    let compat_denied = compat
+        .call(
+            tool_context(&repo, "toolcall-compat-denied-skill"),
+            json!({"name": "internal-secret"}),
+        )
+        .await
+        .expect_err("compat denied skill should be hidden");
+    assert_eq!(denied.to_string(), compat_denied.to_string());
+
+    let blocked = native
+        .call(
+            tool_context(&repo, "toolcall-ask-skill"),
+            json!({"name": "experimental-preview"}),
+        )
+        .await
+        .expect_err("ask skill should require approval");
+    assert!(blocked
+        .to_string()
+        .contains("Skill \"experimental-preview\" requires approval before loading"));
+
+    let invalid = native
+        .call(
+            tool_context(&repo, "toolcall-invalid-skill"),
+            json!({"name": "broken-skill"}),
+        )
+        .await
+        .expect_err("invalid higher-precedence skill should hide fallback");
+    assert!(invalid
+        .to_string()
+        .contains("Skill \"broken-skill\" not found"));
+}
+
+#[test]
+fn skill_permissions_hide_denied_and_reject_invalid_frontmatter() {
+    skill_load_hides_denied_or_invalid_skills();
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
+)]
+async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
+    let _guard = SKILL_DISCOVERY_ENV_LOCK.lock().expect("env test lock");
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("home");
+    let repo = temp_dir.path().join("repo");
+    let app = repo.join("packages/app");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&app).expect("app dir");
+    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    let _env = EnvTestContext::new(&app, &home);
+    let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
+        project_roots: vec![PathBuf::from(".custom/skills")],
+        global_roots: vec![PathBuf::from("~/.company/skills")],
+        walk_to_git_root: false,
+        permissions: std::collections::BTreeMap::from([
+            ("*".to_string(), PermissionMode::Allow),
+            ("team-*".to_string(), PermissionMode::Allow),
+            ("team-secret".to_string(), PermissionMode::Ask),
+        ]),
+    });
+
+    write_skill(
+        &app.join(".custom/skills"),
+        "team-visible",
+        "Team visible description",
+        "Team visible body",
+    );
+    write_skill(
+        &app.join(".custom/skills"),
+        "team-secret",
+        "Team secret description",
+        "Team secret body",
+    );
+    write_skill(
+        &repo.join(".custom/skills"),
+        "team-repo",
+        "Repo-only description",
+        "Repo-only body",
+    );
+    write_skill(
+        &home.join(".company/skills"),
+        "global-visible",
+        "Global visible description",
+        "Global visible body",
+    );
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let native = registry.get("skill.load").expect("skill.load tool");
+
+    let visible = native
+        .call(
+            tool_context(&repo, "toolcall-custom-visible"),
+            json!({"name": "team-visible"}),
+        )
+        .await
+        .expect("team-visible skill");
+    assert!(visible.display_text.contains("Team visible description"));
+    assert_eq!(
+        visible
+            .structured_json
+            .as_ref()
+            .and_then(|value| value.get("location")),
+        Some(&json!(app
+            .join(".custom/skills/team-visible/SKILL.md")
+            .display()
+            .to_string()))
+    );
+
+    let gated = native
+        .call(
+            tool_context(&repo, "toolcall-custom-ask"),
+            json!({"name": "team-secret"}),
+        )
+        .await
+        .expect_err("exact permission override should require approval");
+    assert!(gated
+        .to_string()
+        .contains("Skill \"team-secret\" requires approval before loading"));
+
+    let repo_hidden = native
+        .call(
+            tool_context(&repo, "toolcall-custom-repo-hidden"),
+            json!({"name": "team-repo"}),
+        )
+        .await
+        .expect_err("walk_to_git_root=false should skip repo-root skills from app cwd");
+    assert!(repo_hidden
+        .to_string()
+        .contains("Skill \"team-repo\" not found"));
+
+    let global_visible = native
+        .call(
+            tool_context(&repo, "toolcall-custom-global"),
+            json!({"name": "global-visible"}),
+        )
+        .await
+        .expect("global-visible skill");
+    assert!(global_visible
+        .display_text
+        .contains("Global visible description"));
+}

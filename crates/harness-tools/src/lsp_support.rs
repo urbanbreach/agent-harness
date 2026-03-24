@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -5,14 +6,13 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::thread;
 use std::time::Duration;
 
+use harness_core::config::{registered_lsp_config, LspConfig, LspServerConfig};
 use harness_core::tool::ToolError;
+use serde::Serialize;
 use serde_json::{json, Value};
 
 const DEFAULT_LSP_BOOT_DELAY_MS: u64 = 150;
 const DEFAULT_LSP_RETRY_ATTEMPTS: usize = 8;
-const SUPPORTED_LSP_EXTENSIONS: &[&str] = &[
-    ".rs", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts",
-];
 
 const SUPPORTED_LSP_OPERATION_NAMES: &[&str] = &[
     "goToDefinition",
@@ -24,6 +24,16 @@ const SUPPORTED_LSP_OPERATION_NAMES: &[&str] = &[
     "prepareCallHierarchy",
     "incomingCalls",
     "outgoingCalls",
+];
+
+const RUST_ROOT_MARKERS: &[&str] = &["Cargo.toml", "rust-project.json"];
+const TYPESCRIPT_ROOT_MARKERS: &[&str] = &[
+    "tsconfig.json",
+    "jsconfig.json",
+    "package.json",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,7 +101,6 @@ impl LspPosition {
             ));
         }
 
-        // Public code.lsp coordinates are 1-based. LSP wire protocol is 0-based.
         Ok(Self {
             line: (line as u32) - 1,
             character: (character as u32) - 1,
@@ -114,15 +123,37 @@ pub(crate) struct LspOperationRequest<'a> {
     pub(crate) workspace_root: &'a Path,
 }
 
-pub(crate) fn execute_lsp_operation(request: &LspOperationRequest<'_>) -> Result<Value, ToolError> {
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct LspServerMetadata {
+    pub(crate) name: String,
+    pub(crate) command: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct LspDiagnosticReport {
+    pub(crate) file_path: String,
+    pub(crate) diagnostics: Vec<Value>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct LspOperationResponse {
+    pub(crate) server: LspServerMetadata,
+    pub(crate) result: Value,
+    pub(crate) diagnostics: Vec<LspDiagnosticReport>,
+}
+
+pub(crate) fn execute_lsp_operation(
+    request: &LspOperationRequest<'_>,
+) -> Result<LspOperationResponse, ToolError> {
     let file_path = request
         .file_path
         .canonicalize()
         .map_err(|err| ToolError::Execution(format!("failed to resolve file path: {err}")))?;
-    let spec = server_for_path(&file_path)?;
+    let cfg = registered_lsp_config();
+    let spec = server_for_path(&file_path, &cfg)?;
     let root = project_root(&file_path, request.workspace_root, spec.root_markers);
-    let mut session = LspSession::start(spec, &root)?;
-    session.open_file(&file_path)?;
+    let mut session = LspSession::start(&spec, &root)?;
+    session.open_file(&file_path, spec.name.as_str())?;
 
     let position = json!({
         "textDocument": { "uri": path_to_uri(&file_path) },
@@ -132,7 +163,7 @@ pub(crate) fn execute_lsp_operation(request: &LspOperationRequest<'_>) -> Result
         },
     });
 
-    match request.operation {
+    let result = match request.operation {
         LspOperation::GoToDefinition => {
             request_with_retry(&mut session, "textDocument/definition", position)
         }
@@ -166,7 +197,14 @@ pub(crate) fn execute_lsp_operation(request: &LspOperationRequest<'_>) -> Result
             let prepared =
                 request_with_retry(&mut session, "textDocument/prepareCallHierarchy", position)?;
             let Some(item) = prepared.as_array().and_then(|items| items.first()).cloned() else {
-                return Ok(Value::Array(Vec::new()));
+                return Ok(LspOperationResponse {
+                    server: LspServerMetadata {
+                        name: spec.name.clone(),
+                        command: spec.command.clone(),
+                    },
+                    result: Value::Array(Vec::new()),
+                    diagnostics: session.diagnostics(),
+                });
             };
             request_with_retry(
                 &mut session,
@@ -178,7 +216,14 @@ pub(crate) fn execute_lsp_operation(request: &LspOperationRequest<'_>) -> Result
             let prepared =
                 request_with_retry(&mut session, "textDocument/prepareCallHierarchy", position)?;
             let Some(item) = prepared.as_array().and_then(|items| items.first()).cloned() else {
-                return Ok(Value::Array(Vec::new()));
+                return Ok(LspOperationResponse {
+                    server: LspServerMetadata {
+                        name: spec.name.clone(),
+                        command: spec.command.clone(),
+                    },
+                    result: Value::Array(Vec::new()),
+                    diagnostics: session.diagnostics(),
+                });
             };
             request_with_retry(
                 &mut session,
@@ -186,44 +231,182 @@ pub(crate) fn execute_lsp_operation(request: &LspOperationRequest<'_>) -> Result
                 json!({ "item": item }),
             )
         }
+    }?;
+
+    Ok(LspOperationResponse {
+        server: LspServerMetadata {
+            name: spec.name,
+            command: spec.command,
+        },
+        result,
+        diagnostics: session.diagnostics(),
+    })
+}
+
+#[derive(Debug, Clone)]
+struct LspServerSpec {
+    name: String,
+    disabled: bool,
+    command: Vec<String>,
+    extensions: Vec<String>,
+    root_markers: &'static [&'static str],
+    env: BTreeMap<String, String>,
+    initialization: Option<Value>,
+}
+
+impl LspServerSpec {
+    fn rust() -> Self {
+        Self {
+            name: "rust".to_string(),
+            disabled: false,
+            command: vec!["rust-analyzer".to_string()],
+            extensions: vec![".rs".to_string()],
+            root_markers: RUST_ROOT_MARKERS,
+            env: BTreeMap::new(),
+            initialization: None,
+        }
+    }
+
+    fn typescript() -> Self {
+        Self {
+            name: "typescript".to_string(),
+            disabled: false,
+            command: vec![
+                "typescript-language-server".to_string(),
+                "--stdio".to_string(),
+            ],
+            extensions: vec![
+                ".ts".to_string(),
+                ".tsx".to_string(),
+                ".js".to_string(),
+                ".jsx".to_string(),
+                ".mjs".to_string(),
+                ".cjs".to_string(),
+                ".mts".to_string(),
+                ".cts".to_string(),
+            ],
+            root_markers: TYPESCRIPT_ROOT_MARKERS,
+            env: BTreeMap::new(),
+            initialization: None,
+        }
+    }
+
+    fn custom(name: &str, cfg: &LspServerConfig) -> Result<Self, ToolError> {
+        let command = cfg.command.clone().ok_or_else(|| {
+            ToolError::InvalidArguments(format!(
+                "lsp.servers.`{name}` must provide `command` for custom local servers"
+            ))
+        })?;
+        let extensions = cfg.extensions.clone().ok_or_else(|| {
+            ToolError::InvalidArguments(format!(
+                "lsp.servers.`{name}` must provide `extensions` for custom local servers"
+            ))
+        })?;
+        let spec = Self {
+            name: name.to_string(),
+            disabled: cfg.disabled,
+            command,
+            extensions,
+            root_markers: &[],
+            env: cfg.env.clone(),
+            initialization: cfg.initialization.clone(),
+        };
+        spec.validate_runtime()?;
+        Ok(spec)
+    }
+
+    fn apply_override(&mut self, cfg: &LspServerConfig) {
+        self.disabled = cfg.disabled;
+        if let Some(command) = &cfg.command {
+            self.command = command.clone();
+        }
+        if let Some(extensions) = &cfg.extensions {
+            self.extensions = extensions.clone();
+        }
+        if !cfg.env.is_empty() {
+            self.env = cfg.env.clone();
+        }
+        if let Some(initialization) = &cfg.initialization {
+            self.initialization = Some(initialization.clone());
+        }
+    }
+
+    fn validate_runtime(&self) -> Result<(), ToolError> {
+        if self.command.is_empty() {
+            return Err(ToolError::InvalidArguments(format!(
+                "configured code.lsp server `{}` has no command",
+                self.name
+            )));
+        }
+        if self.extensions.is_empty() {
+            return Err(ToolError::InvalidArguments(format!(
+                "configured code.lsp server `{}` has no extensions",
+                self.name
+            )));
+        }
+        Ok(())
     }
 }
 
-struct LspServerSpec {
-    command: &'static [&'static str],
-    extensions: &'static [&'static str],
-    root_markers: &'static [&'static str],
+fn default_server_specs() -> BTreeMap<String, LspServerSpec> {
+    BTreeMap::from([
+        ("rust".to_string(), LspServerSpec::rust()),
+        ("typescript".to_string(), LspServerSpec::typescript()),
+    ])
 }
 
-const RUST_LSP: LspServerSpec = LspServerSpec {
-    command: &["rust-analyzer"],
-    extensions: &[".rs"],
-    root_markers: &["Cargo.toml", "rust-project.json"],
-};
+fn resolved_server_specs(cfg: &LspConfig) -> Result<BTreeMap<String, LspServerSpec>, ToolError> {
+    let mut specs = default_server_specs();
+    for (name, server) in &cfg.servers {
+        if let Some(spec) = specs.get_mut(name) {
+            spec.apply_override(server);
+            spec.validate_runtime()?;
+            continue;
+        }
+        specs.insert(name.clone(), LspServerSpec::custom(name, server)?);
+    }
+    Ok(specs)
+}
 
-const TYPESCRIPT_LSP: LspServerSpec = LspServerSpec {
-    command: &["typescript-language-server", "--stdio"],
-    extensions: &[".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"],
-    root_markers: &[
-        "tsconfig.json",
-        "jsconfig.json",
-        "package.json",
-        "package-lock.json",
-        "pnpm-lock.yaml",
-        "yarn.lock",
-    ],
-};
+fn server_for_path(path: &Path, cfg: &LspConfig) -> Result<LspServerSpec, ToolError> {
+    if cfg.disabled {
+        return Err(ToolError::InvalidArguments(
+            "code.lsp is disabled by config".to_string(),
+        ));
+    }
 
-fn server_for_path(path: &Path) -> Result<&'static LspServerSpec, ToolError> {
     let extension = normalized_extension(path).ok_or_else(|| unsupported_language_error(None))?;
-    [&RUST_LSP, &TYPESCRIPT_LSP]
-        .into_iter()
-        .find(|spec| {
-            spec.extensions
+    let specs = resolved_server_specs(cfg)?;
+
+    if let Some(spec) = specs.values().find(|spec| {
+        !spec.disabled
+            && spec
+                .extensions
                 .iter()
                 .any(|candidate| candidate == &extension)
+    }) {
+        return Ok(spec.clone());
+    }
+
+    let disabled = specs
+        .values()
+        .filter(|spec| {
+            spec.disabled
+                && spec
+                    .extensions
+                    .iter()
+                    .any(|candidate| candidate == &extension)
         })
-        .ok_or_else(|| unsupported_language_error(Some(&extension)))
+        .map(|spec| spec.name.as_str())
+        .collect::<Vec<_>>();
+    if !disabled.is_empty() {
+        return Err(disabled_server_error(&extension, &disabled));
+    }
+
+    Err(unsupported_language_error_with_specs(
+        Some(&extension),
+        specs.values(),
+    ))
 }
 
 fn normalized_extension(path: &Path) -> Option<String> {
@@ -233,10 +416,42 @@ fn normalized_extension(path: &Path) -> Option<String> {
 }
 
 fn unsupported_language_error(extension: Option<&str>) -> ToolError {
+    let specs = default_server_specs();
+    unsupported_language_error_with_specs(extension, specs.values())
+}
+
+fn unsupported_language_error_with_specs<'a>(
+    extension: Option<&str>,
+    specs: impl IntoIterator<Item = &'a LspServerSpec>,
+) -> ToolError {
+    let mut supported = specs
+        .into_iter()
+        .filter(|spec| !spec.disabled)
+        .flat_map(|spec| spec.extensions.iter().cloned())
+        .collect::<Vec<_>>();
+    supported.sort();
+    supported.dedup();
+
     ToolError::InvalidArguments(format!(
         "unsupported code.lsp language extension: {}; supported extensions: {}",
         extension.unwrap_or("<none>"),
-        SUPPORTED_LSP_EXTENSIONS.join(", ")
+        if supported.is_empty() {
+            "<none>".to_string()
+        } else {
+            supported.join(", ")
+        }
+    ))
+}
+
+fn disabled_server_error(extension: &str, servers: &[&str]) -> ToolError {
+    let names = servers
+        .iter()
+        .map(|name| format!("`{name}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let verb = if servers.len() == 1 { "is" } else { "are" };
+    ToolError::InvalidArguments(format!(
+        "configured code.lsp server {names} {verb} disabled for extension {extension}"
     ))
 }
 
@@ -266,20 +481,27 @@ fn path_to_uri(path: &Path) -> String {
         .to_string()
 }
 
-fn language_id(path: &Path) -> &'static str {
+fn uri_to_workspace_path(uri: &str, root: &Path) -> Option<PathBuf> {
+    let url = reqwest::Url::parse(uri).ok()?;
+    let path = url.to_file_path().ok()?;
+    path.starts_with(root).then_some(path)
+}
+
+fn language_id(path: &Path, server_name: &str) -> String {
     match path
         .extension()
         .and_then(|value| value.to_str())
         .map(|value| value.to_ascii_lowercase())
         .as_deref()
     {
-        Some("rs") => "rust",
-        Some("ts") => "typescript",
-        Some("tsx") => "typescriptreact",
-        Some("js") => "javascript",
-        Some("jsx") => "javascriptreact",
-        Some("mjs") | Some("cjs") | Some("mts") | Some("cts") => "javascript",
-        _ => "plaintext",
+        Some("rs") => "rust".to_string(),
+        Some("ts") => "typescript".to_string(),
+        Some("tsx") => "typescriptreact".to_string(),
+        Some("js") => "javascript".to_string(),
+        Some("jsx") => "javascriptreact".to_string(),
+        Some("mjs") | Some("cjs") | Some("mts") | Some("cts") => "javascript".to_string(),
+        Some(other) => other.to_string(),
+        None => server_name.to_string(),
     }
 }
 
@@ -289,17 +511,22 @@ struct LspSession {
     stdout: BufReader<ChildStdout>,
     next_id: u64,
     root: PathBuf,
+    diagnostics: BTreeMap<String, Vec<Value>>,
 }
 
 impl LspSession {
     fn start(spec: &LspServerSpec, root: &Path) -> Result<Self, ToolError> {
-        let mut command = Command::new(spec.command[0]);
+        let mut command = Command::new(&spec.command[0]);
         command
-            .args(&spec.command[1..])
+            .args(spec.command.iter().skip(1))
             .current_dir(root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
+        if !spec.env.is_empty() {
+            command.envs(spec.env.iter());
+        }
+
         let mut child = command.spawn().map_err(|err| {
             ToolError::Execution(format!("failed to start language server: {err}"))
         })?;
@@ -317,45 +544,51 @@ impl LspSession {
             stdout: BufReader::new(stdout),
             next_id: 1,
             root: root.to_path_buf(),
+            diagnostics: BTreeMap::new(),
         };
-        let root_uri = path_to_uri(root);
-        let initialize_id = session.next_request_id();
-        let initialize_result = session.request_raw(
-            initialize_id,
-            "initialize",
-            json!({
-                "processId": std::process::id(),
-                "rootUri": root_uri,
-                "workspaceFolders": [{
-                    "name": "workspace",
-                    "uri": path_to_uri(root),
-                }],
-                "capabilities": {
-                    "window": { "workDoneProgress": true },
-                    "workspace": {
-                        "configuration": true,
-                        "workspaceFolders": true,
+
+        let mut params = json!({
+            "processId": std::process::id(),
+            "rootUri": path_to_uri(root),
+            "workspaceFolders": [{
+                "name": "workspace",
+                "uri": path_to_uri(root),
+            }],
+            "capabilities": {
+                "window": { "workDoneProgress": true },
+                "workspace": {
+                    "configuration": true,
+                    "workspaceFolders": true,
+                },
+                "textDocument": {
+                    "publishDiagnostics": {
+                        "relatedInformation": true,
                     },
-                    "textDocument": {
-                        "synchronization": {
-                            "didOpen": true,
-                            "didChange": true,
-                        }
+                    "synchronization": {
+                        "didOpen": true,
+                        "didChange": true,
                     }
                 }
-            }),
-        )?;
+            }
+        });
+        if let Some(initialization) = &spec.initialization {
+            params["initializationOptions"] = initialization.clone();
+        }
+
+        let initialize_id = session.next_request_id();
+        let initialize_result = session.request_raw(initialize_id, "initialize", params)?;
         if initialize_result.is_null() {
             return Err(ToolError::Execution(
                 "language server failed to initialize".to_string(),
             ));
         }
+
         session.notify("initialized", json!({}))?;
         thread::sleep(Duration::from_millis(DEFAULT_LSP_BOOT_DELAY_MS));
         Ok(session)
     }
 
-    fn open_file(&mut self, file_path: &Path) -> Result<(), ToolError> {
+    fn open_file(&mut self, file_path: &Path, server_name: &str) -> Result<(), ToolError> {
         let text = fs::read_to_string(file_path)
             .map_err(|err| ToolError::Execution(format!("failed to read source file: {err}")))?;
         self.notify(
@@ -363,7 +596,7 @@ impl LspSession {
             json!({
                 "textDocument": {
                     "uri": path_to_uri(file_path),
-                    "languageId": language_id(file_path),
+                    "languageId": language_id(file_path, server_name),
                     "version": 0,
                     "text": text,
                 }
@@ -389,8 +622,8 @@ impl LspSession {
         loop {
             let message = self.read_message()?;
             if let Some(response_id) = message.get("id").and_then(Value::as_u64) {
-                if let Some(method) = message.get("method").and_then(Value::as_str) {
-                    self.respond_to_server_request(response_id, method, &message)?;
+                if let Some(server_method) = message.get("method").and_then(Value::as_str) {
+                    self.respond_to_server_request(response_id, server_method, &message)?;
                     continue;
                 }
                 if response_id != id {
@@ -403,6 +636,10 @@ impl LspSession {
                     )));
                 }
                 return Ok(message.get("result").cloned().unwrap_or(Value::Null));
+            }
+
+            if let Some(server_method) = message.get("method").and_then(Value::as_str) {
+                self.handle_server_notification(server_method, &message);
             }
         }
     }
@@ -493,6 +730,39 @@ impl LspSession {
             "result": result,
         }))
     }
+
+    fn handle_server_notification(&mut self, method: &str, message: &Value) {
+        if method != "textDocument/publishDiagnostics" {
+            return;
+        }
+
+        let Some(params) = message.get("params") else {
+            return;
+        };
+        let Some(uri) = params.get("uri").and_then(Value::as_str) else {
+            return;
+        };
+        let Some(path) = uri_to_workspace_path(uri, &self.root) else {
+            return;
+        };
+        let diagnostics = params
+            .get("diagnostics")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        self.diagnostics
+            .insert(path.display().to_string(), diagnostics);
+    }
+
+    fn diagnostics(&self) -> Vec<LspDiagnosticReport> {
+        self.diagnostics
+            .iter()
+            .map(|(file_path, diagnostics)| LspDiagnosticReport {
+                file_path: file_path.clone(),
+                diagnostics: diagnostics.clone(),
+            })
+            .collect()
+    }
 }
 
 impl Drop for LspSession {
@@ -548,6 +818,7 @@ mod tests {
     use super::{
         path_to_uri, server_for_path, LspOperation, LspPosition, SUPPORTED_LSP_OPERATION_NAMES,
     };
+    use harness_core::config::LspConfig;
     use harness_core::tool::ToolError;
     use std::fs;
 
@@ -592,7 +863,7 @@ mod tests {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let path = tempdir.path().join("fixture.py");
         fs::write(&path, "print('hello')\n").expect("write fixture");
-        let err = match server_for_path(&path) {
+        let err = match server_for_path(&path, &LspConfig::default()) {
             Ok(_) => panic!("python should be unsupported"),
             Err(err) => err,
         };

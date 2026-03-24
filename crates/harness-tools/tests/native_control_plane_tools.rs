@@ -26,6 +26,7 @@ fn worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
         category: name.to_string(),
         model_ref: format!("default:{name}"),
         system_prompt: format!("{name} prompt"),
+        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         tool_surface: ToolSurface::Native,
         toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
     }
