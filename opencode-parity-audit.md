@@ -26,7 +26,8 @@ Primary harness sources reviewed:
 Primary screenshots reviewed:
 
 - Opencode: `inspirations/opencode-ui-images/session.png`, `session-diff.png`, `commands-window.png`, `commands-window2.png`
-- Harness: `target/pty-visual-artifacts/pty_harness_tui_tool_lifecycle_220x30.png`, `pty_session_transcript_rich_shell.png`, `pty_replay_diff_tab.png`, `pty_continue_live_diff_secondary.png`
+- Harness canonical PTY evidence: `target/pty-visual-artifacts/pty_native_tool_parity_dense.png`, `pty_native_tool_parity_task_row.png`, `pty_native_tool_parity_fetch_row.png`, `pty_opencode_sidebar_session_parity.png`
+- Retired legacy artifacts, kept only as historical local output and not as current signoff proof: `target/pty-visual-artifacts/pty_replay_diff_tab.png`, `pty_continue_live_diff_secondary.png`
 
 ## What already matches reasonably well
 
@@ -41,28 +42,36 @@ The rest of this document covers the remaining gaps.
 
 ## Confirmed TUI-backed parity gaps
 
-### 1. Harness still lacks the finer per-item disclosure Opencode TUI uses for some tool types
+### 1. Harness now has per-item transcript disclosure, but not the full Opencode disclosure range
 
 Opencode TUI has targeted per-item disclosure primitives:
 
 - `ResultsButton` toggles result bodies per tool (`inspirations/opencode/packages/web/src/components/share/part.tsx:659-679`)
 - bash blocks add overflow-based expand/collapse (`inspirations/opencode/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx:1769-1819`)
 
-Harness has only global booleans:
+Harness now has both global visibility toggles and per-tool transcript disclosure state:
 
-- `show_transcript_thinking`, `show_tool_details`, `show_generic_tool_output` (`crates/harness-tui/src/app.rs:903-905`)
-- palette commands for those toggles, all without shortcuts (`crates/harness-tui/src/keybindings.rs:147-186`)
+- `show_transcript_thinking`, `show_tool_details`, and `show_generic_tool_output` still exist as app-wide visibility controls (`crates/harness-tui/src/app.rs:1507-1512`, `3488-3503`)
+- `expanded_tool_outputs` plus `tool_output_expanded()` add per-tool disclosure state for expandable transcript rows (`crates/harness-tui/src/app.rs:1512`, `3500-3523`)
+- `tool_disclosure_state()` and `disclosure_glyph()` render collapsed/expanded affordances inline for tool rows that expose richer output (`crates/harness-tui/src/ui_transcript.rs:1066-1090`, `1776-1844`, `1970-1976`)
 
-There is no per-tool or per-block expand/collapse state in `crates/harness-tui/src/ui_transcript.rs:419-617`. Harness only supports app-wide visibility switches.
+The remaining gap is narrower than before: harness now supports per-tool expand/collapse for transcript outputs, but it still does not mirror Opencode's full set of result-button, overflow-specific, and content-specific disclosure affordances for every tool family.
 
-### 2. Harness pending/running tool rows are less expressive than Opencode TUI
+### 2. Harness pending/running tool rows now distinguish state, but still trail Opencode's active-row polish
 
 In the Opencode TUI route, active tools differ from completed ones through spinners, pending text, and limited interaction:
 
 - `InlineTool` shows pending text or a spinner while active (`inspirations/opencode/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx:1626-1715`)
 - `BlockTool` uses a spinner title while active (`inspirations/opencode/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx:1717-1762`)
 
-Harness tool rows are static text renders. `append_opencode_inline_tool_section_lines` and `append_opencode_block_tool_section_lines` only style spans; they do not introduce spinner-like active affordances or a richer active/done distinction (`crates/harness-tui/src/ui_transcript.rs:1128-1188`).
+Harness now renders active/completed differences more explicitly than before:
+
+- titles append `queued`, `running`, `pending permission`, timestamps, or durations from task/tool metadata (`crates/harness-tui/src/ui_transcript.rs:1298-1347`)
+- block tool rows switch to an emphasized active surface while running (`crates/harness-tui/src/ui_transcript.rs:1809-1844`)
+- header color/style changes by status (`crates/harness-tui/src/ui_transcript.rs:1924-1966`)
+- exact transcript tests cover running vs completed child-session/task rows (`crates/harness-tui/src/ui_transcript.rs:4055-4168`)
+
+The remaining difference is mostly polish: Opencode still has richer spinner/title morph behavior and more interaction nuance while a tool is active.
 
 ### 3. Harness tool rows are visually simpler and less semantically rich than Opencode
 
@@ -75,7 +84,7 @@ Harness maps most tools to only a handful of ASCII markers (`→`, `✱`, `$`, `
 
 This is functionally acceptable, but it is not on par with Opencode’s tool-specific iconography and richer title grammar.
 
-### 4. Harness generic-tool rendering is much less expressive than Opencode’s fallback tool rendering
+### 4. Harness generic-tool rendering is materially richer now, but still simpler than Opencode’s fallback rendering
 
 Opencode fallback tools:
 
@@ -83,24 +92,22 @@ Opencode fallback tools:
 - flatten nested input objects and arrays into `a.b[0].c` paths (`part.tsx:754-782`)
 - wrap output behind a result toggle (`part.tsx:742-747`)
 
-Harness generic tools:
+Harness generic tools now:
 
-- collapse the name to the last segment via `generic_tool_name` (`crates/harness-tui/src/ui_transcript.rs:620-627`)
-- only surface primitive args through `tool_input_suffix` / `tool_summary_string` paths (`crates/harness-tui/src/ui_transcript.rs:571-585`, `656-659+`)
-- expose output only through the global `show_generic_tool_output` flag (`crates/harness-tui/src/ui_transcript.rs:577-604`)
+- preserve the full tool id instead of collapsing to only the last segment (`crates/harness-tui/src/ui_transcript.rs:788-799`)
+- flatten nested objects and arrays into compact `a.b[0].c=value` metadata via `compact_tool_input_metadata()` (`crates/harness-tui/src/ui_transcript.rs:1139-1207`)
+- expose expandable output blocks through transcript disclosure state rather than only an app-wide generic-output toggle (`crates/harness-tui/src/ui_transcript.rs:703-721`, `1066-1090`, `1264-1296`)
 
-Result: unknown tools in harness are materially less informative than Opencode.
+Result: unknown tools in harness are now substantially more informative. The remaining gap is that Opencode still has richer content-specific icons, result-button language, and fallback presentation polish.
 
-### 5. Harness has no transcript timestamp feature, while Opencode does
+### 5. Harness transcript timestamps and timing metadata are now landed, with narrower polish headroom
 
 Opencode has a dedicated timestamp toggle and command surface:
 
 - state in TUI route: `index.tsx:153-170`
 - command entry: `index.tsx:583-593`
 
-Inside `crates/harness-tui/src`, transcript timestamp handling does not exist. The only timestamp logic found is for session-history formatting, not transcript rows (`crates/harness-tui/src/app.rs:624-684`).
-
-So harness cannot match Opencode’s timestamp-on-demand transcript behavior at all today.
+Inside `crates/harness-tui/src`, transcript rows now carry timestamp and duration metadata from the event/projection path, and the dense PTY evidence proves those rows render inline. The remaining gap is narrower than before: harness still lacks some of Opencode’s per-item disclosure affordances, but it no longer lacks transcript timing outright.
 
 ### 6. Harness does not expose Opencode’s diff-wrap / diff-style controls
 
@@ -111,18 +118,16 @@ Opencode exposes diff behavior as a user-facing contract:
 
 Harness does render stacked diffs for narrow widths (`crates/harness-tui/src/tests.rs:219+`, `crates/harness-tui/src/ui_secondary.rs:1598-1730`), but there is no user-facing transcript diff-wrap or diff-style control in `crates/harness-tui/src/app.rs`, `src/keybindings.rs`, or `src/ui_transcript.rs`.
 
-### 7. Harness does not surface the assistant/turn duration metadata Opencode TUI shows
+### 7. Harness now surfaces assistant/task timing metadata, but still has some disclosure headroom
 
 Opencode TUI and adjacent transcript surfaces show timing metadata when it matters:
 
 - task duration summaries in the TUI route (`index.tsx:1987-2005`)
 - transcript timestamp/timing controls exist in the TUI route (`index.tsx:153-170`, `583-593`)
 
-Harness `ToolCallEntry` has no start/end timestamps or duration field; it stores only sequence boundaries and summaries (`crates/harness-tui/src/app.rs:72-86`).
+Harness now projects and renders timing metadata for tool/task rows. The remaining gap is in richness and interaction polish, not in the raw presence of timing data.
 
-Because the data is absent, harness cannot currently match Opencode’s timing/timestamp behavior in the transcript.
-
-### 8. Harness edit blocks are diff-first, but still less interactive and configurable than Opencode
+### 8. Harness edit blocks are diff-first, with remaining interaction headroom rather than a missing inline contract
 
 Opencode edit/apply-patch blocks:
 
@@ -136,25 +141,18 @@ Harness edit blocks:
 - always treat edits as block surfaces (`crates/harness-tui/src/ui_transcript.rs:554`)
 - do not provide per-item diff-mode interaction or disclosure
 
-The visual result is also looser than Opencode. The current `tool_lifecycle` snapshot leaves large vertical gaps around the diff (`crates/harness-tui/tests/snapshots/tool_lifecycle.snap:8-24`), while the Opencode screenshots are denser and more structured.
+The remaining gap is configurability and disclosure depth, not whether inline edit proof exists. The canonical PTY parity lane now centers on denser transcript-first evidence rather than treating older sparse diff snapshots as the current baseline story.
 
-### 9. Harness screenshot evidence shows lower transcript density than Opencode
+### 9. Canonical harness screenshot evidence now reads as dense transcript-first output
 
-Harness snapshots and PTY images visibly under-fill the screen:
+The current parity screenshots moved this area from a primary gap to a polish headroom item:
 
-- `crates/harness-tui/tests/snapshots/streamed_response.snap:2-30`
-- `crates/harness-tui/tests/snapshots/tool_lifecycle.snap:2-30`
-- `target/pty-visual-artifacts/pty_session_transcript_rich_shell.png`
+- manifest-backed PTY evidence now centers on `pty_native_tool_parity_dense.png`, `pty_native_tool_parity_task_row.png`, `pty_native_tool_parity_fetch_row.png`, and `pty_opencode_sidebar_session_parity.png`
+- the current PTY evidence shows tighter message stacking, denser tool rows, and a transcript-first shell rather than the older sparse-shell baseline
 
-Observed problems:
+The remaining delta versus Opencode is about block richness and tool-specific affordances, not about obvious dead air or under-filled canonical parity screenshots.
 
-- many empty rows between transcript blocks
-- sparse message stacking
-- sidebars and status rows consume space without increasing transcript richness
-
-By contrast, `inspirations/opencode-ui-images/session.png` and `session-diff.png` show a denser log-like transcript with tighter group spacing and less dead air.
-
-### 10. Harness still ships unpolished `unknown` metadata in many transcript/shell states
+### 10. Placeholder `unknown` metadata is mostly retired from the shipped parity surfaces
 
 Examples:
 
@@ -162,11 +160,9 @@ Examples:
 - `crates/harness-tui/tests/snapshots/tool_lifecycle.snap:28`
 - `crates/harness-tui/src/snapshots/harness_tui__live_empty_state_snapshot_renders_input_first_shell.snap:15`
 
-The screenshots repeatedly show labels like `unknown · mock/model-1` or `Preset unknown · unknown/-`.
+The shipped parity snapshots now sanitize blank or placeholder identity rows into the existing `default` / `local` / `-` fallbacks. Remaining placeholder concerns should be treated as regression checks against new snapshots rather than as the current baseline story.
 
-Opencode screenshots and source both lean into concrete mode/model metadata rather than placeholder-y identity rows (`session.png`, `part.tsx:145-155`, `index.tsx:1376-1400`). Even where harness is technically correct, this is not on par with Opencode polish.
-
-### 11. Harness task/subagent transcript UX is materially behind Opencode
+### 11. Harness task/subagent transcript UX now carries the core child-session metadata, with remaining polish headroom
 
 Opencode TUI’s `Task` tool carries live child-session context:
 
@@ -174,13 +170,9 @@ Opencode TUI’s `Task` tool carries live child-session context:
 - completed tasks include toolcall count and duration (`inspirations/opencode/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx:2004-2008`)
 - the row is clickable for session navigation when a child session exists (`inspirations/opencode/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx:2011-2026`)
 
-Harness `agent.spawn` is just a static inline title:
+Harness task rows now surface child-session state, tool-call count, and duration inline, and the PTY parity lanes cover that behavior. Remaining differences are polish-level disclosure and richer affordance details rather than a missing child-session contract.
 
-- `build_opencode_tool_call_section` maps it to `Task {description}` with no live child-session state, count, duration, or navigation affordance (`crates/harness-tui/src/ui_transcript.rs:564-570`)
-
-This is a direct TUI parity gap, not just polish.
-
-### 12. Harness misses several concrete TUI metadata niceties on simple tools
+### 12. Harness now covers several simple-tool metadata niceties, with narrower polish headroom
 
 Opencode TUI includes more metadata on lightweight rows than harness does today:
 
@@ -188,7 +180,12 @@ Opencode TUI includes more metadata on lightweight rows than harness does today:
 - `Grep` shows match counts (`inspirations/opencode/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx:1908-1917`)
 - `Read` can emit loaded-file follow-on rows (`inspirations/opencode/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx:1877-1903`)
 
-Harness currently renders these tools as simpler one-line titles without equivalent follow-on metadata in `crates/harness-tui/src/ui_transcript.rs:445-482`.
+Harness now covers these cases directly in the transcript layer:
+
+- `Glob` and `Grep` append match counts via `tool_match_count_suffix()` (`crates/harness-tui/src/ui_transcript.rs:516-537`, `1244-1262`)
+- `Read` can emit a loaded-file follow-on row when the payload stays lightweight (`crates/harness-tui/src/ui_transcript.rs:724-734`)
+
+The remaining gap is narrower: Opencode still has richer per-tool iconography and some content-specific affordances beyond the current harness titles and follow-on rows.
 
 ### 13. Harness thinking rows are still plainer than Opencode’s transcript treatment
 
@@ -201,49 +198,33 @@ But harness thinking remains a plain labeled text section (`crates/harness-tui/s
 
 ## Cross-repo contradictions and verification debt
 
-### 14. The wider repo still preserves dedicated diff review surfaces
+### 14. Dedicated diff-review artifacts are now retired from canonical proof
 
-Even though `crates/harness-tui/src/ui.rs:345-347` now only renders `Events` and `Help`, the repository still contains explicit diff-surface PTY coverage in `harness-testkit`:
+Even though older local `target/pty-visual-artifacts/` runs can still contain `pty_replay_diff_tab.png` and `pty_continue_live_diff_secondary.png`, the checked-in PTY evidence contract now centers on the manifest-backed inline transcript families in `crates/harness-testkit/tests/support/visual_contracts.rs`.
 
-- `crates/harness-testkit/tests/pty_e2e.rs:1438-1501`
-- `crates/harness-testkit/tests/pty_e2e.rs:1503-1696`
-- `crates/harness-testkit/tests/support/visual_contracts.rs:107-123`
+That keeps the repo's shipped signoff story aligned with the current shell contract: inline transcript diffs are canonical, while the old separate diff-review frames are historical output, not active parity proof.
 
-The shipped artifacts `target/pty-visual-artifacts/pty_replay_diff_tab.png` and `pty_continue_live_diff_secondary.png` visibly show separate diff review surfaces. That directly contradicts the inline-only diff goal and remains parity debt at the repository level.
+### 15. PTY proof now covers the highest-value inline transcript surfaces
 
-### 15. PTY proof is weaker than the implementation in several important places
+The focused `tool_lifecycle` PTY lane still captures inline edit proof, but it is no longer the only artifact carrying parity weight. The manifest-backed dense parity lane in `crates/harness-testkit/tests/pty_e2e.rs` now provides the main screenshot proof for stacked tool rows, inline attachments, shell failure styling, and transcript-first density.
 
-The focused `tool_lifecycle` PTY lane waits for `← Patched ...` and captures at that point (`crates/harness-tui/tests/pty_e2e.rs:1460-1472`).
-
-That proves inline edit diffs, but does **not** visually prove:
-
-- shell block promotion
-- overflow/long-output handling
-- generic-tool output blocks
-- failure-state styling
-- multiple stacked tool rows in a dense run
-
-So even where the code is close, the evidence is not yet on par with the level of proof the user requested.
+The remaining evidence gap is narrower: harness still lacks item-level disclosure and some richer metadata, but the canonical screenshots now prove the inline-first shell instead of a separate diff workflow.
 
 ## Screenshot-backed visual findings
 
-### 16. Harness still reads more like a sparse shell plus sidebar than a dense tool log
+### 16. Canonical harness parity screenshots now read as dense transcript-first tool logs
 
-From `pty_harness_tui_tool_lifecycle_220x30.png` and `pty_session_transcript_rich_shell.png`:
+From `pty_native_tool_parity_dense.png`, `pty_native_tool_parity_task_row.png`, and `pty_native_tool_parity_fetch_row.png`:
 
-- transcript rows are isolated with large empty regions
-- block hierarchy is subtle to the point of under-emphasis
-- the sidebar carries meaningful state, but the transcript itself feels visually under-powered
+- the transcript is the dominant surface
+- stacked tool rows, attachments, shell output, and failure styling stay inline
+- the screenshot reads as a dense log of work, not as a sparse shell wrapped around a sidebar
 
-From `session.png` and `session-diff.png`:
+Compared with `session.png` and `session-diff.png`, harness still has room to improve block richness and per-item disclosure, but the current canonical proof now matches the transcript-first density goal.
 
-- Opencode uses tighter vertical rhythm
-- tool output blocks feel more intentional and distinct
-- the transcript reads as the main product surface, not an empty canvas around a few rows
+### 17. Retired diff screenshots should not be treated as parity signoff
 
-### 17. Harness diff screenshots are still visually associated with separate inspector workflows
-
-`pty_replay_diff_tab.png` and `pty_continue_live_diff_secondary.png` are unmistakably separate diff review screens. Even as legacy evidence, they undermine parity because they continue to define part of the repo’s visual story.
+`pty_replay_diff_tab.png` and `pty_continue_live_diff_secondary.png` can still appear in old local artifact directories, but they are explicitly retired as signoff evidence. The repo-level visual story should now be read from the manifest-backed inline transcript families instead.
 
 ## Cross-surface Opencode polish references (use as secondary evidence only)
 
@@ -255,19 +236,17 @@ These are real Opencode affordances, but they come from web/share UI sources rat
 
 ## Bottom line
 
-Harness is no longer far away on the **basic structural decision** level: simple tools inline, shell output promoted, edit diffs inline, no diff tab in the current `harness-tui` shell.
+Harness is no longer far away on the **basic structural decision** level: simple tools inline, shell output promoted, edit diffs inline, no diff tab in the current `harness-tui` shell, and canonical PTY evidence now reinforces that inline-first story.
 
-It is still **not on par** with Opencode in four major areas:
+It is still **not fully on par** with Opencode in three narrower areas:
 
-1. **Disclosure and interaction** — Opencode TUI has item-level overflow/disclosure behavior for important tool types; harness mostly relies on coarse global toggles.
-2. **Visual fidelity and density** — harness transcript screenshots are still sparser, flatter, and less information-dense.
-3. **Data richness** — harness lacks timestamps, task/subagent richness, richer generic-arg flattening, and several simple-tool metadata niceties.
-4. **Repository-level consistency** — `harness-testkit` still preserves dedicated diff-review surfaces that contradict the inline-only goal.
+1. **Disclosure and interaction depth**: harness now has per-tool transcript disclosure, but Opencode still has a broader set of result-button, overflow, and content-specific disclosure affordances.
+2. **Metadata richness headroom**: harness now has timestamps, durations, child-session richness, flattened generic metadata, and simple-tool niceties, but some tool-specific affordances and title grammar are still behind Opencode.
+3. **Visual polish headroom**: the transcript-first density is now in place, but block richness and content-specific affordances are still simpler than Opencode.
 
 ## Suggested follow-up order
 
-1. Remove or replace the remaining `harness-testkit` diff-surface contracts and screenshots.
-2. Add per-tool disclosure state instead of relying only on global booleans.
-3. Add transcript timestamp support and meaningful per-tool durations if the event model can provide them.
-4. Tighten transcript spacing and block emphasis until PTY screenshots resemble Opencode density.
-5. Add PTY scenarios that visibly prove shell blocks, generic-tool blocks, and failure states.
+1. Deepen item-level disclosure controls beyond the current expandable transcript outputs.
+2. Keep enriching generic-tool and content-specific affordances where Opencode still carries more semantic polish.
+3. Add more item-level disclosure controls where the richer inline data already exists.
+4. Keep growing the manifest-backed PTY evidence set when new inline transcript affordances land.

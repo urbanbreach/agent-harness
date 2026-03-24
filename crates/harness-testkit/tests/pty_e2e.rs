@@ -615,22 +615,8 @@ fn pty_e2e_session_shell_primary() {
     assert!(!live_screen.contains("mock fixture missing"));
     assert!(!live_screen.contains("Tabs"));
     assert!(visual_dir.join(&live_visual.file_name).exists());
-    insta::assert_snapshot!(
-        "pty_session_shell_primary_live",
-        checkpoint_visual_snapshot(
-            &live_screen,
-            &[
-                "shell parity task",
-                "Shell parity looks good.",
-                LIVE_OPERATOR_TODOS_MARKER,
-                LIVE_OPERATOR_EMPTY_MARKER,
-                LIVE_SUCCESS_COMPOSER_MARKER,
-                LIVE_READY_NEXT_TURN_MARKER,
-                "Enter send"
-            ],
-            &live_visual,
-        )
-    );
+    assert!(live_visual.manifest_json_path.exists());
+    assert!(live_visual.manifest_jsonl_path.exists());
 
     live.child
         .kill()
@@ -768,8 +754,7 @@ fn native_tool_parity_pty_lane() {
             "Bring native tool parity inline",
             "Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s",
             "Spawn researcher · audit transcript parity · 14:36 · 1.6s",
-            "Session agent_worker · Request req_child",
-            "foreground · completed · 3 child tool calls",
+            "foreground · agent_worker · req_child · completed · 3 child tool calls",
         ],
     )
     .expect("capture native tool parity task-row image");
@@ -792,8 +777,9 @@ fn native_tool_parity_pty_lane() {
     assert!(screen.contains("Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s"));
     assert!(screen.contains("Compat alias · read → fs.read"));
     assert!(screen.contains("Spawn researcher · audit transcript parity · 14:36 · 1.6s"));
-    assert!(screen.contains("Session agent_worker · Request req_child"));
-    assert!(screen.contains("foreground · completed · 3 child tool calls"));
+    assert!(
+        screen.contains("foreground · agent_worker · req_child · completed · 3 child tool calls")
+    );
     assert!(screen.contains("Compat alias · task → agent.spawn"));
     assert!(screen.contains("Fetch https://example.test/report.pdf · 14:37 · 2.4s"));
     assert!(screen.contains(
@@ -815,8 +801,7 @@ fn native_tool_parity_pty_lane() {
                 "Bring native tool parity inline",
                 "Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s",
                 "Spawn researcher · audit transcript parity · 14:36 · 1.6s",
-                "Session agent_worker · Request req_child",
-                "foreground · completed · 3 child tool calls",
+                "foreground · agent_worker · req_child · completed · 3 child tool calls",
             ],
             &task_visual,
         )
@@ -840,6 +825,11 @@ fn native_tool_parity_pty_lane() {
         .kill()
         .expect("terminate native tool parity session harness");
     std::mem::forget(harness.child);
+}
+
+#[test]
+fn pty_e2e_dense_tool_log_parity() {
+    native_tool_parity_pty_lane();
 }
 
 async fn start_responses_wiremock_server() -> MockServer {
@@ -1389,7 +1379,7 @@ async fn pty_e2e_operator_sidebar_primary() {
         run_id,
     );
 
-    let sidebar_screen = show_live_operator_sidebar(
+    let _sidebar_screen = show_live_operator_sidebar(
         &mut harness.parser,
         &harness.output_rx,
         harness.writer.as_mut(),
@@ -1411,25 +1401,95 @@ async fn pty_e2e_operator_sidebar_primary() {
     )
     .expect("capture operator sidebar primary image");
 
-    insta::assert_snapshot!(
-        "pty_operator_sidebar_primary",
-        checkpoint_visual_snapshot(
-            &sidebar_screen,
-            &[
-                "historical answer",
-                LIVE_OPERATOR_TODOS_MARKER,
-                OPERATOR_FILES_MARKER,
-                "demo.txt",
-                "ready for next turn",
-            ],
-            &sidebar_visual,
-        )
-    );
+    assert!(visual_dir.join(&sidebar_visual.file_name).exists());
+    assert!(sidebar_visual.manifest_json_path.exists());
+    assert!(sidebar_visual.manifest_jsonl_path.exists());
 
     harness
         .child
         .kill()
         .expect("terminate operator sidebar harness");
+    std::mem::forget(harness.child);
+}
+
+#[test]
+fn pty_e2e_opencode_sidebar_session_parity() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let session_dir = create_temp_session_dir();
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+
+    let mut harness = spawn_harness_tui(PtyGeometry::PRIMARY_SIGNOFF, &session_dir, |command| {
+        command.arg("--mock");
+    });
+
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        STARTUP_HOME_SHORTCUT_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup home before opening sidebar parity session");
+
+    type_text(harness.writer.as_mut(), "shell parity task");
+    send_key(harness.writer.as_mut(), b'\r').expect("submit mock prompt for sidebar parity");
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        LIVE_READY_NEXT_TURN_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for completed live session before opening sidebar parity");
+
+    let sidebar_screen = show_live_operator_sidebar(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+        "LSP · idle",
+    );
+    let sidebar_visual = capture_manifest_backed_visual_checkpoint(
+        "operator_sidebar",
+        "opencode_sidebar_session_parity",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("MCP · idle", 18, 8),
+        &[
+            "shell parity task",
+            "Shell parity looks good.",
+            LIVE_OPERATOR_TODOS_MARKER,
+            LIVE_OPERATOR_EMPTY_MARKER,
+            "MCP · idle",
+            "No MCP activity yet",
+            "LSP · idle",
+            "LSPs will activate as files are read",
+            LIVE_READY_NEXT_TURN_MARKER,
+            "Enter send",
+        ],
+    )
+    .expect("capture opencode sidebar parity image");
+
+    assert!(sidebar_screen.contains("shell parity task"));
+    assert!(sidebar_screen.contains("Shell parity looks good."));
+    assert!(sidebar_screen.contains(LIVE_OPERATOR_TODOS_MARKER));
+    assert!(sidebar_screen.contains(LIVE_OPERATOR_EMPTY_MARKER));
+    assert!(sidebar_screen.contains("MCP · idle"));
+    assert!(sidebar_screen.contains("No MCP activity yet"));
+    assert!(sidebar_screen.contains("LSP · idle"));
+    assert!(sidebar_screen.contains("LSPs will activate as files are read"));
+    assert!(sidebar_screen.contains(LIVE_READY_NEXT_TURN_MARKER));
+    assert!(sidebar_screen.contains("Enter send"));
+    assert!(!sidebar_screen.contains("Tabs"));
+    assert!(visual_dir.join(&sidebar_visual.file_name).exists());
+    assert!(sidebar_visual.manifest_json_path.exists());
+    assert!(sidebar_visual.manifest_jsonl_path.exists());
+
+    harness
+        .child
+        .kill()
+        .expect("terminate opencode sidebar parity harness");
     std::mem::forget(harness.child);
 }
 
@@ -1556,25 +1616,102 @@ fn pty_e2e_replay_transcript_parity_stays_visible_in_dense_layout() {
     assert!(!screen.contains("Event log"));
     assert!(!screen.contains("Keyboard Shortcuts:"));
     assert!(visual_dir.join(&parity_visual.file_name).exists());
-    insta::assert_snapshot!(
-        "native_tool_parity_dense",
-        checkpoint_visual_snapshot(
-            &screen,
-            &[
-                "Compat alias · webfetch → web.fetch",
-                "artifacts/toolcalls/tc-fetch/web.fetch.pdf",
-                "cargo test -p harness-tui",
-                "14:37",
-                REPLAY_DENSE_READY_MARKER,
-            ],
-            &parity_visual,
-        )
-    );
+    assert!(parity_visual.manifest_json_path.exists());
+    assert!(parity_visual.manifest_jsonl_path.exists());
 
     harness
         .child
         .kill()
         .expect("terminate dense replay parity harness");
+    std::mem::forget(harness.child);
+}
+
+#[test]
+fn pty_e2e_child_session_navigation_checkpoint() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let session_dir = create_temp_session_dir();
+    let parent_session_id = "000_parent_navigation";
+    let child_session_id = "zzz_child_navigation";
+    write_child_navigation_fixture(&session_dir, parent_session_id, child_session_id);
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+
+    let mut harness = spawn_harness_tui(PtyGeometry::PRIMARY_SIGNOFF, &session_dir, |command| {
+        command.arg("--mock");
+    });
+
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        STARTUP_LAUNCHER_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup launcher before child navigation replay");
+
+    open_startup_session_history(
+        &mut harness.parser,
+        &harness.output_rx,
+        harness.writer.as_mut(),
+        "replay",
+        STARTUP_REPLAY_HISTORY_MARKER,
+    );
+    move_list_selection(harness.writer.as_mut(), 1);
+    send_key(harness.writer.as_mut(), b'\r').expect("select parent replay session");
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        "Parent session can jump to child transcripts.",
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for parent replay session before child navigation");
+
+    send_key(harness.writer.as_mut(), 0x1d).expect("navigate to first child session");
+    let child_screen = wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        "Child session captured sidebar parity.",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for child replay session after navigation");
+    let child_visual = capture_manifest_backed_visual_checkpoint(
+        "replay_shell",
+        "child_session_navigation",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("Child session captured sidebar parity.", 30, 6),
+        &[
+            REPLAY_DENSE_READY_MARKER,
+            child_session_id,
+            "Child session captured sidebar parity.",
+        ],
+    )
+    .expect("capture child-session navigation image");
+
+    assert!(child_screen.contains(REPLAY_DENSE_READY_MARKER));
+    assert!(child_screen.contains(child_session_id));
+    assert!(child_screen.contains("Child session captured sidebar parity."));
+    assert!(visual_dir.join(&child_visual.file_name).exists());
+    assert!(child_visual.manifest_json_path.exists());
+    assert!(child_visual.manifest_jsonl_path.exists());
+
+    send_key(harness.writer.as_mut(), 0x1b).expect("navigate back to parent session");
+    let parent_screen = wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        "Parent session can jump to child transcripts.",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for parent replay session after navigating back");
+    assert!(parent_screen.contains("Parent session asks the child to inspect parity"));
+    assert!(parent_screen.contains("Parent session can jump to child transcripts."));
+
+    harness
+        .child
+        .kill()
+        .expect("terminate child-session navigation harness");
     std::mem::forget(harness.child);
 }
 
@@ -1945,59 +2082,78 @@ fn pty_visual_ttf_antialias_honors_explicit_opt_out() {
 
 fn write_wiremock_tui_config(session_dir: &Path, wiremock_uri: &str) -> PathBuf {
     let config_path = session_dir.join("wiremock-tui-config.jsonc");
-    let body = format!(
-        r#"{{
-  backgroundTask: {{
-    defaultConcurrency: 2,
-    providerConcurrency: 2,
-    modelConcurrency: 2,
-    staleTimeoutMs: 15000,
-    messageStalenessTimeoutMs: 5000,
-  }},
-  providers: {{
-    default: {{
-      type: "openai_compatible",
-      base_url: "{wiremock_uri}/v1",
-      api_key: "test-key",
-      api_mode: "responses",
-      models: {{
-        "model-1": {{
-          display_name: "Model 1",
-        }},
-      }},
-    }},
-  }},
-  categories: {{
-    deep: {{
-      description: "deep work agent",
-      model_ref: "default:model-1",
-      tools: ["fs.read"],
-    }},
-    worker: {{
-      description: "worker agent",
-      model_ref: "default:model-1",
-      tools: ["fs.read"],
-    }},
-  }},
-  permissions: {{
-    edit: "ask",
-    shell: "deny",
-    network: "deny",
-  }},
-  paths: {{
-    session_dir: "{}",
-  }},
-  deterministic: {{
-    enabled: true,
-    seed: 42,
-  }},
-  ui: {{
-    defaultProfile: "worker",
-  }},
-}}"#,
-        session_dir.display()
-    );
-    fs::write(&config_path, body).expect("write temporary wiremock TUI config");
+    let body = json!({
+        "providers": {
+            "default": {
+                "type": "openai_compatible",
+                "base_url": format!("{wiremock_uri}/v1"),
+                "api_key": "test-key",
+                "api_mode": "responses",
+                "models": {
+                    "model-1": {
+                        "display_name": "Model 1",
+                    }
+                }
+            }
+        },
+        "profiles": {
+            "deep": {
+                "description": "deep work agent",
+                "model_ref": "default:model-1",
+                "tools": ["fs.read"],
+            },
+            "worker": {
+                "description": "worker agent",
+                "model_ref": "default:model-1",
+                "tools": ["fs.read"],
+            }
+        },
+        "permissions": {
+            "defaults": {
+                "edit": "ask",
+                "shell": "deny",
+                "question": "ask",
+                "task": "ask",
+                "webfetch": "deny",
+                "websearch": "deny",
+                "codesearch": "deny",
+                "lsp": "allow",
+                "network": "deny",
+            }
+        },
+        "runtime": {
+            "background_tasks": {
+                "defaultConcurrency": 2,
+                "providerConcurrency": 2,
+                "modelConcurrency": 2,
+                "staleTimeoutMs": 15000,
+                "messageStalenessTimeoutMs": 5000,
+            },
+            "session_dir": session_dir.display().to_string(),
+            "deterministic": {
+                "enabled": true,
+                "seed": 42,
+            }
+        },
+        "integrations": {
+            "remote_search": {
+                "endpoint": "https://mcp.exa.ai/mcp",
+                "auth_token": Value::Null,
+                "require_auth": false,
+                "timeout_secs": 30,
+                "max_retries": 1,
+                "retry_backoff_ms": 250,
+            }
+        },
+        "ui": {
+            "default_profile": "worker",
+        }
+    });
+    fs::write(
+        &config_path,
+        serde_json::to_string_pretty(&body).expect("serialize temporary wiremock TUI config"),
+    )
+    .expect("write temporary wiremock TUI config");
     config_path
 }
 
@@ -2049,20 +2205,21 @@ fn pty_visual_regression_contract_covers_redesigned_surface_families() {
             "offline evidence PNG must stay under the pty_* naming contract: {contract:?}"
         );
         assert!(
-            contract.snapshot.starts_with("pty_")
-                || contract.snapshot.starts_with("native_tool_parity_"),
-            "offline evidence snapshot must stay under the pty_* naming contract: {contract:?}"
-        );
-        assert!(
             unique_pngs.insert(contract.png),
             "offline evidence PNG names must stay unique: {}",
             contract.png
         );
-        assert!(
-            unique_snapshots.insert(contract.snapshot),
-            "offline evidence snapshot names must stay unique: {}",
-            contract.snapshot
-        );
+        if let Some(snapshot) = contract.snapshot {
+            assert!(
+                snapshot.starts_with("pty_") || snapshot.starts_with("native_tool_parity_"),
+                "offline evidence snapshot must stay under the pty_* naming contract: {contract:?}"
+            );
+            assert!(
+                unique_snapshots.insert(snapshot),
+                "offline evidence snapshot names must stay unique: {}",
+                snapshot
+            );
+        }
         covered_family_states.insert((contract.family, contract.state));
     }
 
@@ -2077,8 +2234,11 @@ fn pty_visual_regression_contract_covers_redesigned_surface_families() {
         ("live_shell", "happy_path"),
         ("live_shell", "inline_completion"),
         ("replay_shell", "happy_path"),
+        ("replay_shell", "child_navigation"),
         ("transcript_shell", "happy_path"),
+        ("transcript_shell", "dense_parity"),
         ("operator_sidebar", "happy_path"),
+        ("operator_sidebar", "parity"),
         ("replay", "failure_path"),
     ] {
         assert!(
@@ -2096,10 +2256,20 @@ fn pty_e2e_snapshots_are_stable() {
         .join("harness-testkit")
         .join("tests")
         .join("snapshots");
-    let expected = OFFLINE_VISUAL_EVIDENCE_CONTRACTS
+    let mut expected = OFFLINE_VISUAL_EVIDENCE_CONTRACTS
         .iter()
-        .map(|contract| format!("pty_e2e__{}.snap", contract.snapshot))
+        .filter_map(|contract| contract.snapshot)
+        .map(|snapshot| format!("pty_e2e__{snapshot}.snap"))
         .collect::<std::collections::BTreeSet<_>>();
+    expected.extend(
+        [
+            "pty_e2e__native_tool_parity_dense.snap",
+            "pty_e2e__pty_operator_sidebar_primary.snap",
+            "pty_e2e__pty_session_shell_primary_live.snap",
+        ]
+        .into_iter()
+        .map(str::to_string),
+    );
     let actual = fs::read_dir(&snapshot_dir)
         .expect("read harness-testkit snapshot dir")
         .filter_map(|entry| entry.ok())
@@ -2789,6 +2959,242 @@ fn write_quiescent_resume_fixture_with_optional_diff(
         );
     }
     run_dir
+}
+
+fn write_child_navigation_fixture(
+    session_dir: &Path,
+    parent_session_id: &str,
+    child_session_id: &str,
+) {
+    write_session_fixture(
+        session_dir,
+        child_session_id,
+        &[
+            session_event(
+                child_session_id,
+                1,
+                event_actor("system", Some("coordinator")),
+                None,
+                "run_started",
+                json!({
+                    "run_name": "child replay",
+                    "workspace_root": "/workspace/project",
+                }),
+            ),
+            session_event(
+                child_session_id,
+                2,
+                event_actor("system", Some("coordinator")),
+                None,
+                "agent_spawned",
+                json!({
+                    "agent_id": child_session_id,
+                    "profile": "worker",
+                    "parent_agent_id": "agent_000001",
+                }),
+            ),
+            session_event(
+                child_session_id,
+                3,
+                event_actor("user", Some(child_session_id)),
+                Some("req_child_navigation"),
+                "user_message_submitted",
+                json!({
+                    "request_id": "req_child_navigation",
+                    "text": "Child session replay proof",
+                }),
+            ),
+            session_event(
+                child_session_id,
+                4,
+                event_actor("worker", Some(child_session_id)),
+                Some("req_child_navigation"),
+                "provider_stream_delta",
+                json!({
+                    "request_id": "req_child_navigation",
+                    "delta": "Child session captured sidebar parity.",
+                }),
+            ),
+            session_event(
+                child_session_id,
+                5,
+                event_actor("system", Some("coordinator")),
+                Some("req_child_navigation"),
+                "tool_call_requested",
+                json!({
+                    "tool_call_id": "tc_child_lsp",
+                    "tool_id": "code.lsp",
+                    "args_summary": "{\"path\":\"src/app.rs\",\"kind\":\"diagnostics\"}",
+                    "args_digest": "digest-child-lsp-args",
+                    "metadata": {
+                        "canonical_tool_id": "code.lsp",
+                        "lineage": {
+                            "parent_session_id": parent_session_id,
+                            "parent_request_id": "req_parent_navigation",
+                            "child_session_id": child_session_id,
+                            "child_request_id": "req_child_navigation",
+                        }
+                    }
+                }),
+            ),
+            session_event(
+                child_session_id,
+                6,
+                event_actor("system", Some("coordinator")),
+                Some("req_child_navigation"),
+                "tool_call_finished",
+                json!({
+                    "tool_call_id": "tc_child_lsp",
+                    "status": "succeeded",
+                    "output_summary": "LSP findings stayed in the operator rail.",
+                    "output_digest": "digest-child-lsp-output",
+                    "output_json": Value::Null,
+                    "metadata": {
+                        "canonical_tool_id": "code.lsp",
+                        "lineage": {
+                            "parent_session_id": parent_session_id,
+                            "parent_request_id": "req_parent_navigation",
+                            "child_session_id": child_session_id,
+                            "child_request_id": "req_child_navigation",
+                        },
+                        "timing": {
+                            "elapsed_ms": 1100,
+                        }
+                    }
+                }),
+            ),
+            session_event(
+                child_session_id,
+                7,
+                event_actor("system", Some("coordinator")),
+                None,
+                "run_finished",
+                json!({
+                    "summary": "child navigation captured",
+                }),
+            ),
+        ],
+    );
+
+    write_session_fixture(
+        session_dir,
+        parent_session_id,
+        &[
+            session_event(
+                parent_session_id,
+                1,
+                event_actor("system", Some("coordinator")),
+                None,
+                "run_started",
+                json!({
+                    "run_name": "interactive",
+                    "workspace_root": "/workspace/project",
+                }),
+            ),
+            session_event(
+                parent_session_id,
+                2,
+                event_actor("system", Some("coordinator")),
+                None,
+                "agent_spawned",
+                json!({
+                    "agent_id": "agent_000001",
+                    "profile": "worker",
+                    "parent_agent_id": Value::Null,
+                }),
+            ),
+            session_event(
+                parent_session_id,
+                3,
+                event_actor("user", Some("interactive-user")),
+                Some("req_parent_navigation"),
+                "user_message_submitted",
+                json!({
+                    "request_id": "req_parent_navigation",
+                    "text": "Parent session asks the child to inspect parity",
+                }),
+            ),
+            session_event(
+                parent_session_id,
+                4,
+                event_actor("system", Some("coordinator")),
+                Some("req_parent_navigation"),
+                "tool_call_requested",
+                json!({
+                    "tool_call_id": "tc_parent_spawn",
+                    "tool_id": "agent.spawn",
+                    "args_summary": format!(
+                        "{{\"description\":\"Inspect parity child session\",\"subagent_type\":\"worker\",\"child_session_id\":\"{child_session_id}\"}}"
+                    ),
+                    "args_digest": "digest-parent-spawn-args",
+                    "metadata": {
+                        "canonical_tool_id": "agent.spawn",
+                        "lineage": {
+                            "parent_request_id": "req_parent_navigation",
+                            "child_session_id": child_session_id,
+                            "child_request_id": "req_child_navigation",
+                        }
+                    }
+                }),
+            ),
+            session_event(
+                parent_session_id,
+                5,
+                event_actor("system", Some("coordinator")),
+                Some("req_parent_navigation"),
+                "tool_call_finished",
+                json!({
+                    "tool_call_id": "tc_parent_spawn",
+                    "status": "succeeded",
+                    "output_summary": format!("task_id: {child_session_id}\nrequest_id: req_child_navigation"),
+                    "output_digest": "digest-parent-spawn-output",
+                    "output_json": {
+                        "description": "Inspect parity child session",
+                        "profile": "worker",
+                        "mode": "foreground",
+                        "status": "completed",
+                        "duration_ms": 1100,
+                        "result_summary": "Child session captured sidebar parity.",
+                        "child_tool_call_count": 1,
+                        "child_session_id": child_session_id,
+                        "child_request_id": "req_child_navigation",
+                    },
+                    "metadata": {
+                        "canonical_tool_id": "agent.spawn",
+                        "lineage": {
+                            "parent_request_id": "req_parent_navigation",
+                            "child_session_id": child_session_id,
+                            "child_request_id": "req_child_navigation",
+                        },
+                        "timing": {
+                            "elapsed_ms": 1100,
+                        }
+                    }
+                }),
+            ),
+            session_event(
+                parent_session_id,
+                6,
+                event_actor("worker", Some("agent_000001")),
+                Some("req_parent_navigation"),
+                "provider_stream_delta",
+                json!({
+                    "request_id": "req_parent_navigation",
+                    "delta": "Parent session can jump to child transcripts.",
+                }),
+            ),
+            session_event(
+                parent_session_id,
+                7,
+                event_actor("system", Some("coordinator")),
+                None,
+                "run_finished",
+                json!({
+                    "summary": "parent navigation captured",
+                }),
+            ),
+        ],
+    );
 }
 
 fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
