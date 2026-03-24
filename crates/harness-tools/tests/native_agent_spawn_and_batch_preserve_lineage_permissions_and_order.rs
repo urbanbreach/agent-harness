@@ -28,6 +28,7 @@ fn worker_profile(toolset: &[&str]) -> AgentProfile {
         category: "deep".to_string(),
         model_ref: "default:deep".to_string(),
         system_prompt: "deep prompt".to_string(),
+        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         tool_surface: ToolSurface::Native,
         toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
     }
@@ -326,6 +327,14 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
         native_batch_output.pointer("/execution/nested_batch_disallowed"),
         Some(&json!(true))
     );
+    assert_eq!(
+        native_batch_output.pointer("/audit/successful"),
+        Some(&json!(2))
+    );
+    assert_eq!(
+        native_batch_output.pointer("/audit/failed"),
+        Some(&json!(2))
+    );
     let native_details = native_batch_output
         .get("details")
         .and_then(Value::as_array)
@@ -333,6 +342,10 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
     assert_eq!(native_details.len(), 4);
     assert_eq!(native_details[0].get("index"), Some(&json!(0)));
     assert_eq!(native_details[0].get("tool_id"), Some(&json!("fs.read")));
+    assert_eq!(
+        native_details[0].pointer("/request/parameters/path"),
+        Some(&json!("fixture.txt"))
+    );
     assert_eq!(native_details[0].get("success"), Some(&json!(true)));
 
     assert_eq!(native_details[1].get("index"), Some(&json!(1)));
@@ -525,6 +538,14 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
         compat_batch_output.pointer("/execution/nested_batch_disallowed"),
         Some(&json!(true))
     );
+    assert_eq!(
+        compat_batch_output.pointer("/audit/successful"),
+        Some(&json!(2))
+    );
+    assert_eq!(
+        compat_batch_output.pointer("/audit/failed"),
+        Some(&json!(1))
+    );
     let compat_details = compat_batch_output
         .get("details")
         .and_then(Value::as_array)
@@ -532,6 +553,10 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
     assert_eq!(compat_details.len(), 3);
     assert_eq!(compat_details[0].get("index"), Some(&json!(0)));
     assert_eq!(compat_details[0].get("tool_id"), Some(&json!("fs.read")));
+    assert_eq!(
+        compat_details[0].pointer("/request/parameters/path"),
+        Some(&json!("fixture.txt"))
+    );
     assert_eq!(
         compat_details[0].get("canonical_tool_id"),
         Some(&json!("fs.read"))

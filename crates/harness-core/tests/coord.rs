@@ -7,20 +7,25 @@ use std::time::Duration;
 use async_trait::async_trait;
 use harness_core::agent::AgentProfile;
 use harness_core::clock::FakeClock;
-use harness_core::config::PermissionMode;
+use harness_core::config::{
+    HookLifecycleEvent, HookRuntimeConfig, HooksConfig, LifecycleHookConfig, PermissionMode,
+    ShellAllowlist,
+};
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle, JobOutcome,
     JobProgressKind,
 };
 use harness_core::event::{
-    ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1,
-    PermissionDecision as EventPermissionDecision, PermissionRequestedEvent,
-    PermissionResolvedEvent, ProviderRequestStartedEvent, RunFinishedEvent, RunStartedEvent,
-    TaskCompletedEvent, TaskScheduleState, TaskScheduledEvent, ToolCallRequestedEvent,
-    SCHEMA_VERSION,
+    ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
+    HookExecutionMetadata, HookExecutionStatus, PermissionDecision as EventPermissionDecision,
+    PermissionRequestedEvent, PermissionResolvedEvent, ProviderRequestStartedEvent,
+    RunFinishedEvent, RunStartedEvent, TaskCancelledEvent, TaskCompletedEvent,
+    TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState,
+    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallRequestedEvent,
+    ToolCallStatus, SCHEMA_VERSION,
 };
 use harness_core::perm::{PermissionDecision as RuntimePermissionDecision, PermissionPolicy};
-use harness_core::proj::{inspect_resume_plan, LifecycleSegmentStatus};
+use harness_core::proj::{inspect_resume_plan, ChildSessionTerminalState, LifecycleSegmentStatus};
 use harness_core::redact::DefaultRedactor;
 use harness_core::store::EventStoreError;
 use harness_core::tool::ToolSurface;
@@ -315,6 +320,274 @@ async fn coord_spawn_two_agents_respects_provider_concurrency_and_queues() {
         "expected at least one queued task for concurrency limit 1"
     );
     assert_eq!(completed, 2, "both spawned agents should complete");
+}
+
+#[tokio::test]
+async fn coordinator_runs_parallel_child_sessions_under_slot_limits() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = Arc::new(PromptScriptedProvider::new(
+        BTreeMap::from([
+            (
+                "alpha-prompt".to_string(),
+                vec![
+                    ProviderStreamEvent::Start,
+                    ProviderStreamEvent::TextDelta("alpha-ok".to_string()),
+                    ProviderStreamEvent::Done {
+                        usage: CompletionUsage {
+                            prompt_tokens: 2,
+                            completion_tokens: 1,
+                            total_tokens: 3,
+                        },
+                    },
+                ],
+            ),
+            (
+                "beta-prompt".to_string(),
+                vec![
+                    ProviderStreamEvent::Start,
+                    ProviderStreamEvent::TextDelta("beta-ok".to_string()),
+                    ProviderStreamEvent::Done {
+                        usage: CompletionUsage {
+                            prompt_tokens: 2,
+                            completion_tokens: 1,
+                            total_tokens: 3,
+                        },
+                    },
+                ],
+            ),
+        ]),
+        Duration::from_millis(40),
+    ));
+    let coordinator = test_agent_coordinator_with_provider(temp_dir.path(), provider, 2);
+
+    let run = coordinator
+        .start_run(
+            "coord_parallel_child_sessions_under_limits",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+
+    let actor = supervisor_actor();
+    let _alpha = coordinator
+        .spawn_agent(actor.clone(), "alpha", None)
+        .await
+        .expect("spawn alpha");
+    let _beta = coordinator
+        .spawn_agent(actor.clone(), "beta", None)
+        .await
+        .expect("spawn beta");
+    let _beta_two = coordinator
+        .spawn_agent(actor, "beta", None)
+        .await
+        .expect("spawn second beta");
+
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    let scheduled = events
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, event)| match &event.payload {
+            EventV1::TaskScheduled(data)
+                if data.queue_key.as_deref() == Some("provider_model:mock:model-1") =>
+            {
+                Some((idx, data.clone()))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        scheduled.len(),
+        4,
+        "three tasks should yield one queued+restarted record"
+    );
+
+    let first_three_states = scheduled
+        .iter()
+        .take(3)
+        .map(|(_, data)| data.state)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        first_three_states,
+        vec![
+            TaskScheduleState::Started,
+            TaskScheduleState::Started,
+            TaskScheduleState::Queued,
+        ],
+        "limit=2 should start two child sessions and deterministically queue the third"
+    );
+
+    let started = scheduled
+        .iter()
+        .filter(|(_, data)| data.state == TaskScheduleState::Started)
+        .map(|(_, data)| data.task_id.clone())
+        .collect::<Vec<_>>();
+    let queued = scheduled
+        .iter()
+        .filter(|(_, data)| data.state == TaskScheduleState::Queued)
+        .map(|(_, data)| data.task_id.clone())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        started.len(),
+        3,
+        "all three child tasks should eventually start"
+    );
+    assert_eq!(
+        queued.len(),
+        1,
+        "exactly one child task should queue at saturation"
+    );
+    assert_eq!(
+        started
+            .iter()
+            .filter(|task_id| *task_id == &queued[0])
+            .count(),
+        1,
+        "queued task should later transition to started once a slot frees"
+    );
+
+    let scheduled_task_ids = scheduled
+        .iter()
+        .map(|(_, data)| data.task_id.clone())
+        .collect::<BTreeSet<_>>();
+    let completed = events
+        .iter()
+        .filter(|event| {
+            matches!(&event.payload, EventV1::TaskCompleted(data) if scheduled_task_ids.contains(&data.task_id))
+        })
+        .count();
+    assert_eq!(
+        completed, 3,
+        "all child sessions should complete under limit=2"
+    );
+}
+
+#[tokio::test]
+async fn coordinator_isolates_parallel_child_failures() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = Arc::new(PromptScriptedProvider::new(
+        BTreeMap::from([
+            (
+                "alpha-prompt".to_string(),
+                vec![
+                    ProviderStreamEvent::Start,
+                    ProviderStreamEvent::Error {
+                        message: "alpha child failed".to_string(),
+                    },
+                ],
+            ),
+            (
+                "beta-prompt".to_string(),
+                vec![
+                    ProviderStreamEvent::Start,
+                    ProviderStreamEvent::TextDelta("beta child ok".to_string()),
+                    ProviderStreamEvent::Done {
+                        usage: CompletionUsage {
+                            prompt_tokens: 2,
+                            completion_tokens: 1,
+                            total_tokens: 3,
+                        },
+                    },
+                ],
+            ),
+        ]),
+        Duration::from_millis(40),
+    ));
+    let coordinator = test_agent_coordinator_with_provider(temp_dir.path(), provider, 2);
+
+    let run = coordinator
+        .start_run(
+            "coord_parallel_child_failure_isolation",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+
+    let actor = supervisor_actor();
+    let _alpha = coordinator
+        .spawn_agent(actor.clone(), "alpha", None)
+        .await
+        .expect("spawn alpha");
+    let _beta = coordinator
+        .spawn_agent(actor, "beta", None)
+        .await
+        .expect("spawn beta");
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    let scheduled_task_ids = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::TaskScheduled(data)
+                if data.queue_key.as_deref() == Some("provider_model:mock:model-1")
+                    && data.state == TaskScheduleState::Started =>
+            {
+                Some(data.task_id.clone())
+            }
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        scheduled_task_ids.len(),
+        2,
+        "both child sessions should start in parallel under limit=2"
+    );
+
+    let queued = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskScheduled(data)
+                    if data.queue_key.as_deref() == Some("provider_model:mock:model-1")
+                        && data.state == TaskScheduleState::Queued
+            )
+        })
+        .count();
+    assert_eq!(
+        queued, 0,
+        "no queueing expected with two slots and two children"
+    );
+
+    let completed = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::TaskCompleted(data) if scheduled_task_ids.contains(&data.task_id) => {
+                Some(data.result_summary.clone())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let cancelled = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::TaskCancelled(data) if scheduled_task_ids.contains(&data.task_id) => {
+                Some(data.reason.clone())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(completed.len(), 1, "one sibling should still complete");
+    assert_eq!(cancelled.len(), 1, "one sibling failure should be isolated");
+    assert!(
+        completed
+            .iter()
+            .any(|summary| summary.contains("beta child ok")),
+        "beta sibling should complete despite alpha failure"
+    );
+    assert!(
+        cancelled
+            .iter()
+            .any(|reason| reason.contains("alpha child failed")),
+        "alpha failure should be recorded without cancelling sibling"
+    );
 }
 
 #[tokio::test]
@@ -974,6 +1247,132 @@ async fn resume_existing_run_reuses_same_run_id_and_directory() {
         "resume should append start+bindings+finish"
     );
     assert_eq!(events.last().map(|event| event.seq), Some(7));
+}
+
+#[tokio::test]
+async fn resume_existing_run_restores_subagent_parent_lineage_for_hooks_and_replay() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let run_id = "run_resume_subagent_parent_lineage";
+    let workspace_root = temp_dir.path().display().to_string();
+    let hook_output_path = temp_dir.path().join("resume-subagent-parent-hooks.txt");
+    let hook_command = "printf '%s|agent=%s|parent=%s|request=%s\\n' \"$HARNESS_HOOK_EVENT\" \"${HARNESS_HOOK_AGENT_ID:-}\" \"${HARNESS_HOOK_PARENT_AGENT_ID:-}\" \"${HARNESS_HOOK_REQUEST_ID:-}\" >> \"$HOOK_OUTPUT_PATH\"";
+    let hook_env = BTreeMap::from([(
+        "HOOK_OUTPUT_PATH".to_string(),
+        hook_output_path.display().to_string(),
+    )]);
+    let hook_runtime_config = HookRuntimeConfig {
+        hooks: HooksConfig {
+            lifecycle: vec![LifecycleHookConfig {
+                id: Some("provider-started".to_string()),
+                event: HookLifecycleEvent::ProviderRequestStarted,
+                command: vec![
+                    "bash".to_string(),
+                    "-lc".to_string(),
+                    hook_command.to_string(),
+                ],
+                cwd: Some(".".to_string()),
+                timeout_ms: 4_000,
+                critical: false,
+                env: hook_env,
+            }],
+        },
+        shell_allowlist: ShellAllowlist {
+            executables: vec!["bash".to_string()],
+            cwd_roots: vec![".".to_string()],
+        },
+        suppress_execution: false,
+    };
+
+    write_resume_fixture(
+        temp_dir.path(),
+        run_id,
+        &[
+            resume_fixture_event(
+                run_id,
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: workspace_root.clone(),
+                }),
+            ),
+            resume_fixture_event(
+                run_id,
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_000001".to_string(),
+                    profile: "alpha".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            resume_fixture_event(
+                run_id,
+                3,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_000002".to_string(),
+                    profile: "beta".to_string(),
+                    parent_agent_id: Some("agent_000001".to_string()),
+                }),
+            ),
+            resume_fixture_event(
+                run_id,
+                4,
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_000001".to_string(),
+                    provider_id: "mock".to_string(),
+                    model_id: "model-1".to_string(),
+                    prompt_summary: "existing prompt".to_string(),
+                    request_digest: "digest-existing".to_string(),
+                }),
+            ),
+            resume_fixture_event(
+                run_id,
+                5,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "segment complete".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
+    config.deterministic_store = true;
+    config.command_buffer = 64;
+    config.provider = Arc::new(CapturingProvider::new(vec!["resumed child answer"]));
+    config.agent_profiles = agent_profiles();
+    config.hook_runtime_config = hook_runtime_config;
+
+    let clock = Arc::new(FakeClock::new());
+    let redactor = Arc::new(DefaultRedactor::default());
+    let coordinator = spawn_coordinator(config, clock, redactor);
+
+    let run = coordinator
+        .resume_run(run_id, "interactive")
+        .await
+        .expect("resume run");
+
+    let request_id = coordinator
+        .request_agent_turn(supervisor_actor(), "agent_000002", "resume child prompt")
+        .await
+        .expect("request resumed child turn");
+    assert_eq!(request_id, "req_000002");
+
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    coordinator.stop_run().await.expect("stop resumed run");
+
+    let hook_output = fs::read_to_string(&hook_output_path).expect("hook output");
+    assert!(hook_output.lines().any(|line| {
+        line.starts_with("provider_request_started|")
+            && line.contains("agent=agent_000002")
+            && line.contains("parent=agent_000001")
+            && line.contains("request=req_000002")
+    }));
+
+    let plan = inspect_resume_plan(&run.run_dir);
+    let child = plan
+        .child_sessions
+        .get("agent_000002")
+        .expect("projected resumed child session");
+    assert_eq!(child.parent_session_id.as_deref(), Some("agent_000001"));
 }
 
 #[tokio::test]
@@ -1829,6 +2228,1100 @@ async fn stale_tool_task_late_result_preserves_owner_actor() {
     assert_task_event_context(late_event, &owner_actor, &request_id);
 }
 
+#[tokio::test]
+async fn critical_hook_failure_fails_closed_and_records_metadata() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let hook_output_path = temp_dir.path().join("hook-finish.txt");
+    let hook_runtime_config = HookRuntimeConfig {
+        hooks: HooksConfig {
+            lifecycle: vec![
+                LifecycleHookConfig {
+                    id: Some("tool-start-timeout".to_string()),
+                    event: HookLifecycleEvent::ToolCallStarted,
+                    command: vec![
+                        "bash".to_string(),
+                        "-lc".to_string(),
+                        "sleep 0.05".to_string(),
+                    ],
+                    cwd: Some(".".to_string()),
+                    timeout_ms: 10,
+                    critical: false,
+                    env: BTreeMap::new(),
+                },
+                LifecycleHookConfig {
+                    id: Some("tool-finish-critical".to_string()),
+                    event: HookLifecycleEvent::ToolCallFinished,
+                    command: vec![
+                        "bash".to_string(),
+                        "-lc".to_string(),
+                        "printf '%s|%s|%s|%s' \"$PWD\" \"$HOOK_CUSTOM\" \"$HARNESS_HOOK_EVENT\" \"$HARNESS_HOOK_TOOL_ID\" > \"$HOOK_OUTPUT_PATH\"; exit 23".to_string(),
+                    ],
+                    cwd: Some(".".to_string()),
+                    timeout_ms: 4_000,
+                    critical: true,
+                    env: BTreeMap::from([
+                        ("HOOK_CUSTOM".to_string(), "from-config".to_string()),
+                        (
+                            "HOOK_OUTPUT_PATH".to_string(),
+                            hook_output_path.display().to_string(),
+                        ),
+                    ]),
+                },
+            ],
+        },
+        shell_allowlist: ShellAllowlist {
+            executables: vec!["bash".to_string()],
+            cwd_roots: vec![".".to_string()],
+        },
+        suppress_execution: false,
+    };
+
+    let clock = Arc::new(FakeClock::new());
+    let coordinator = test_tool_lifecycle_coordinator_with_hook_runtime(
+        temp_dir.path(),
+        clock,
+        lifecycle_tool_registry(Arc::new(Notify::new())),
+        Duration::from_millis(50),
+        15_000,
+        5,
+        1,
+        hook_runtime_config,
+    );
+
+    let run = coordinator
+        .start_run(
+            "critical_hook_failure_fails_closed_and_records_metadata",
+            temp_dir.path().to_path_buf(),
+        )
+        .await
+        .expect("start run");
+
+    let tool_call_id = coordinator
+        .request_tool_call(
+            supervisor_actor(),
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "true"}),
+        )
+        .await
+        .expect("request tool call");
+
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let hook_output = fs::read_to_string(&hook_output_path).expect("hook output file");
+    assert!(
+        hook_output.starts_with(&temp_dir.path().display().to_string()),
+        "hook should execute from workspace-root cwd: {hook_output}"
+    );
+    assert!(hook_output.contains("from-config|tool_call_finished|shell.run"));
+
+    let events = load_events(&run.events_path);
+    let task_id = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::TaskScheduled(data) if data.queue_key.as_deref() == Some("tool:shell.run") => {
+                Some(data.task_id.clone())
+            }
+            _ => None,
+        })
+        .expect("tool task id");
+
+    assert!(
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCancelled(data) if data.task_id == task_id
+            )
+        }),
+        "critical finish hook should fail closed and cancel the task"
+    );
+    assert!(
+        !events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data) if data.task_id == task_id
+            )
+        }),
+        "critical finish hook must prevent successful task completion"
+    );
+
+    let tool_finished = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::ToolCallFinished(data) if data.tool_call_id == tool_call_id => Some(data),
+            _ => None,
+        })
+        .expect("tool finished event");
+    assert_eq!(tool_finished.status, ToolCallStatus::Failed);
+    let hook_executions = tool_finished
+        .metadata
+        .as_ref()
+        .map(|metadata| metadata.hook_executions.clone())
+        .expect("hook metadata on tool finish");
+    assert_eq!(hook_executions.len(), 2, "expected both hooks recorded");
+    assert_eq!(hook_executions[0].hook_name, "tool-start-timeout");
+    assert_eq!(hook_executions[0].status, HookExecutionStatus::Failed);
+    assert_eq!(
+        hook_executions[0].hook_event.as_deref(),
+        Some("tool_call_started")
+    );
+    assert_eq!(
+        hook_executions[0].output_summary.as_deref(),
+        Some("no output")
+    );
+    assert_eq!(hook_executions[1].hook_name, "tool-finish-critical");
+    assert_eq!(hook_executions[1].status, HookExecutionStatus::Failed);
+    assert_eq!(
+        hook_executions[1].hook_event.as_deref(),
+        Some("tool_call_finished")
+    );
+    assert_eq!(
+        hook_executions[1].output_summary.as_deref(),
+        Some("no output")
+    );
+}
+
+#[tokio::test]
+async fn noncritical_hook_failure_records_metadata_without_cancelling_task() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let hook_output_path = temp_dir.path().join("hook-finish-noncritical.txt");
+    let hook_runtime_config = HookRuntimeConfig {
+        hooks: HooksConfig {
+            lifecycle: vec![LifecycleHookConfig {
+                id: Some("tool-finish-noncritical".to_string()),
+                event: HookLifecycleEvent::ToolCallFinished,
+                command: vec![
+                    "bash".to_string(),
+                    "-lc".to_string(),
+                    "printf '%s|%s|%s' \"$PWD\" \"$HARNESS_HOOK_EVENT\" \"$HARNESS_HOOK_TOOL_ID\" > \"$HOOK_OUTPUT_PATH\"; exit 17"
+                        .to_string(),
+                ],
+                cwd: Some(".".to_string()),
+                timeout_ms: 4_000,
+                critical: false,
+                env: BTreeMap::from([(
+                    "HOOK_OUTPUT_PATH".to_string(),
+                    hook_output_path.display().to_string(),
+                )]),
+            }],
+        },
+        shell_allowlist: ShellAllowlist {
+            executables: vec!["bash".to_string()],
+            cwd_roots: vec![".".to_string()],
+        },
+        suppress_execution: false,
+    };
+
+    let clock = Arc::new(FakeClock::new());
+    let coordinator = test_tool_lifecycle_coordinator_with_hook_runtime(
+        temp_dir.path(),
+        clock,
+        lifecycle_tool_registry(Arc::new(Notify::new())),
+        Duration::from_millis(50),
+        15_000,
+        5,
+        1,
+        hook_runtime_config,
+    );
+
+    let run = coordinator
+        .start_run(
+            "noncritical_hook_failure_records_metadata_without_cancelling_task",
+            temp_dir.path().to_path_buf(),
+        )
+        .await
+        .expect("start run");
+
+    let tool_call_id = coordinator
+        .request_tool_call(
+            supervisor_actor(),
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "true"}),
+        )
+        .await
+        .expect("request tool call");
+
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let hook_output = fs::read_to_string(&hook_output_path).expect("hook output file");
+    assert!(
+        hook_output.starts_with(&temp_dir.path().display().to_string()),
+        "hook should execute from workspace-root cwd: {hook_output}"
+    );
+    assert!(hook_output.contains("tool_call_finished|shell.run"));
+
+    let events = load_events(&run.events_path);
+    let task_id = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::TaskScheduled(data) if data.queue_key.as_deref() == Some("tool:shell.run") => {
+                Some(data.task_id.clone())
+            }
+            _ => None,
+        })
+        .expect("tool task id");
+
+    assert!(
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data) if data.task_id == task_id
+            )
+        }),
+        "non-critical hook failure should keep the task completion intact"
+    );
+    assert!(
+        !events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCancelled(data) if data.task_id == task_id
+            )
+        }),
+        "non-critical hook failure should not cancel the task"
+    );
+
+    let tool_finished = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::ToolCallFinished(data) if data.tool_call_id == tool_call_id => Some(data),
+            _ => None,
+        })
+        .expect("tool finished event");
+    assert_eq!(tool_finished.status, ToolCallStatus::Succeeded);
+    let hook_executions = tool_finished
+        .metadata
+        .as_ref()
+        .map(|metadata| metadata.hook_executions.clone())
+        .expect("hook metadata on tool finish");
+    assert_eq!(
+        hook_executions.len(),
+        1,
+        "expected one failed hook recorded"
+    );
+    assert_eq!(hook_executions[0].hook_name, "tool-finish-noncritical");
+    assert_eq!(hook_executions[0].status, HookExecutionStatus::Failed);
+    assert_eq!(
+        hook_executions[0].hook_event.as_deref(),
+        Some("tool_call_finished")
+    );
+    assert_eq!(
+        hook_executions[0].output_summary.as_deref(),
+        Some("no output")
+    );
+}
+
+#[test]
+fn hook_runner_blocks_critical_and_reports_noncritical_failures() {
+    critical_hook_failure_fails_closed_and_records_metadata();
+    noncritical_hook_failure_records_metadata_without_cancelling_task();
+}
+
+#[tokio::test]
+async fn lifecycle_hooks_cover_provider_subagent_and_permission_events() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let hook_output_path = temp_dir.path().join("hook-lifecycle-events.txt");
+    let hook_command = "printf '%s|agent=%s|parent=%s|request=%s|permission=%s|tool_call=%s|provider=%s|outcome=%s\\n' \"$HARNESS_HOOK_EVENT\" \"${HARNESS_HOOK_AGENT_ID:-}\" \"${HARNESS_HOOK_PARENT_AGENT_ID:-}\" \"${HARNESS_HOOK_REQUEST_ID:-}\" \"${HARNESS_HOOK_PERMISSION_ID:-}\" \"${HARNESS_HOOK_TOOL_CALL_ID:-}\" \"${HARNESS_HOOK_PROVIDER_ID:-}\" \"${HARNESS_HOOK_OUTCOME:-}\" >> \"$HOOK_OUTPUT_PATH\"";
+    let hook_env = BTreeMap::from([(
+        "HOOK_OUTPUT_PATH".to_string(),
+        hook_output_path.display().to_string(),
+    )]);
+    let hook_runtime_config = HookRuntimeConfig {
+        hooks: HooksConfig {
+            lifecycle: vec![
+                LifecycleHookConfig {
+                    id: Some("subagent-spawned".to_string()),
+                    event: HookLifecycleEvent::SubagentSpawned,
+                    command: vec![
+                        "bash".to_string(),
+                        "-lc".to_string(),
+                        hook_command.to_string(),
+                    ],
+                    cwd: Some(".".to_string()),
+                    timeout_ms: 4_000,
+                    critical: false,
+                    env: hook_env.clone(),
+                },
+                LifecycleHookConfig {
+                    id: Some("provider-started".to_string()),
+                    event: HookLifecycleEvent::ProviderRequestStarted,
+                    command: vec![
+                        "bash".to_string(),
+                        "-lc".to_string(),
+                        hook_command.to_string(),
+                    ],
+                    cwd: Some(".".to_string()),
+                    timeout_ms: 4_000,
+                    critical: false,
+                    env: hook_env.clone(),
+                },
+                LifecycleHookConfig {
+                    id: Some("provider-finished".to_string()),
+                    event: HookLifecycleEvent::ProviderRequestFinished,
+                    command: vec![
+                        "bash".to_string(),
+                        "-lc".to_string(),
+                        hook_command.to_string(),
+                    ],
+                    cwd: Some(".".to_string()),
+                    timeout_ms: 4_000,
+                    critical: false,
+                    env: hook_env.clone(),
+                },
+                LifecycleHookConfig {
+                    id: Some("subagent-finished".to_string()),
+                    event: HookLifecycleEvent::SubagentFinished,
+                    command: vec![
+                        "bash".to_string(),
+                        "-lc".to_string(),
+                        hook_command.to_string(),
+                    ],
+                    cwd: Some(".".to_string()),
+                    timeout_ms: 4_000,
+                    critical: false,
+                    env: hook_env.clone(),
+                },
+                LifecycleHookConfig {
+                    id: Some("permission-requested".to_string()),
+                    event: HookLifecycleEvent::PermissionRequested,
+                    command: vec![
+                        "bash".to_string(),
+                        "-lc".to_string(),
+                        hook_command.to_string(),
+                    ],
+                    cwd: Some(".".to_string()),
+                    timeout_ms: 4_000,
+                    critical: false,
+                    env: hook_env.clone(),
+                },
+                LifecycleHookConfig {
+                    id: Some("permission-resolved".to_string()),
+                    event: HookLifecycleEvent::PermissionResolved,
+                    command: vec![
+                        "bash".to_string(),
+                        "-lc".to_string(),
+                        hook_command.to_string(),
+                    ],
+                    cwd: Some(".".to_string()),
+                    timeout_ms: 4_000,
+                    critical: false,
+                    env: hook_env,
+                },
+            ],
+        },
+        shell_allowlist: ShellAllowlist {
+            executables: vec!["bash".to_string()],
+            cwd_roots: vec![".".to_string()],
+        },
+        suppress_execution: false,
+    };
+
+    let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
+    config.deterministic_store = true;
+    config.command_buffer = 64;
+    config.permission_policy = PermissionPolicy::new(
+        PermissionMode::Deny,
+        PermissionMode::Ask,
+        PermissionMode::Deny,
+    )
+    .with_ask_timeout_ms(5_000);
+    config.tool_registry = lifecycle_tool_registry(Arc::new(Notify::new()));
+    config.provider = Arc::new(SlowMockProvider {
+        inner: test_mock_provider(),
+        delay: Duration::from_millis(5),
+    });
+    config.agent_profiles = agent_profiles();
+    config.hook_runtime_config = hook_runtime_config;
+
+    let clock = Arc::new(FakeClock::new());
+    let redactor = Arc::new(DefaultRedactor::default());
+    let coordinator = spawn_coordinator(config, clock, redactor);
+
+    let _run = coordinator
+        .start_run(
+            "lifecycle_hooks_cover_provider_subagent_and_permission_events",
+            temp_dir.path().to_path_buf(),
+        )
+        .await
+        .expect("start run");
+
+    let subagent_id = coordinator
+        .spawn_agent(
+            supervisor_actor(),
+            "alpha",
+            Some("agent_parent_001".to_string()),
+        )
+        .await
+        .expect("spawn subagent");
+    assert_eq!(subagent_id, "agent_000001");
+
+    tokio::time::sleep(Duration::from_millis(180)).await;
+
+    let tool_call_id = coordinator
+        .request_tool_call(
+            supervisor_actor(),
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "true"}),
+        )
+        .await
+        .expect("request tool call");
+    assert_eq!(tool_call_id, "toolcall_000001");
+
+    coordinator
+        .resolve_permission(
+            "perm_000001",
+            RuntimePermissionDecision::Allow,
+            Some("approved".to_string()),
+        )
+        .await
+        .expect("resolve permission");
+
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let hook_output = fs::read_to_string(&hook_output_path).expect("hook output");
+    let lines = hook_output.lines().collect::<Vec<_>>();
+
+    assert!(lines.iter().any(|line| {
+        line.starts_with("subagent_spawned|")
+            && line.contains("agent=agent_000001")
+            && line.contains("parent=agent_parent_001")
+            && line.contains("outcome=spawned")
+    }));
+    assert!(lines.iter().any(|line| {
+        line.starts_with("provider_request_started|")
+            && line.contains("agent=agent_000001")
+            && line.contains("request=req_000001")
+            && line.contains("provider=mock")
+    }));
+    assert!(lines.iter().any(|line| {
+        line.starts_with("provider_request_finished|") && line.contains("request=req_000001")
+    }));
+    assert!(lines.iter().any(|line| {
+        line.starts_with("subagent_finished|")
+            && line.contains("agent=agent_000001")
+            && line.contains("parent=agent_parent_001")
+            && line.contains("outcome=succeeded")
+    }));
+    assert!(lines.iter().any(|line| {
+        line.starts_with("permission_requested|")
+            && line.contains("permission=perm_000001")
+            && line.contains("tool_call=toolcall_000001")
+            && line.contains("outcome=requested")
+    }));
+    assert!(lines.iter().any(|line| {
+        line.starts_with("permission_resolved|")
+            && line.contains("permission=perm_000001")
+            && line.contains("tool_call=toolcall_000001")
+            && line.contains("outcome=allow")
+    }));
+}
+
+#[test]
+fn replay_reconstructs_parallel_child_sessions_and_timings() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let run_id = "run_replay_parallel_child_sessions";
+
+    let lineage_a = TaskLineageMetadata {
+        parent_tool_call_id: Some("toolcall_000201".to_string()),
+        parent_task_id: Some("task_000201".to_string()),
+        parent_request_id: Some("req_000010".to_string()),
+        parent_session_id: Some("agent_000001".to_string()),
+        child_session_id: Some("agent_000101".to_string()),
+        child_request_id: Some("req_000101".to_string()),
+        child_provider_id: Some("mock".to_string()),
+        child_model_id: Some("model-a".to_string()),
+    };
+    let lineage_b = TaskLineageMetadata {
+        parent_tool_call_id: Some("toolcall_000202".to_string()),
+        parent_task_id: Some("task_000202".to_string()),
+        parent_request_id: Some("req_000010".to_string()),
+        parent_session_id: Some("agent_000001".to_string()),
+        child_session_id: Some("agent_000102".to_string()),
+        child_request_id: Some("req_000102".to_string()),
+        child_provider_id: Some("mock".to_string()),
+        child_model_id: Some("model-b".to_string()),
+    };
+
+    write_resume_fixture(
+        temp_dir.path(),
+        run_id,
+        &[
+            resume_fixture_event(
+                run_id,
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/workspace/project".to_string(),
+                }),
+            ),
+            resume_fixture_event(
+                run_id,
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_000001".to_string(),
+                    profile: "alpha".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            resume_fixture_event(
+                run_id,
+                3,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_000101".to_string(),
+                    profile: "explore".to_string(),
+                    parent_agent_id: Some("agent_000001".to_string()),
+                }),
+            ),
+            resume_fixture_event(
+                run_id,
+                4,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_000102".to_string(),
+                    profile: "librarian".to_string(),
+                    parent_agent_id: Some("agent_000001".to_string()),
+                }),
+            ),
+            resume_fixture_event_with_actor_and_correlation(
+                run_id,
+                5,
+                EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                Some("req_000010"),
+                EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                    tool_call_id: "toolcall_000201".to_string(),
+                    tool_id: "agent.spawn".to_string(),
+                    args_summary: "{\"task\":\"child A\"}".to_string(),
+                    args_digest: "digest-tool-a-req".to_string(),
+                    metadata: Some(ToolCallMetadata {
+                        canonical_tool_id: Some("agent.spawn".to_string()),
+                        alias_source_tool_id: None,
+                        lineage: Some(lineage_a.clone()),
+                        artifact_refs: Vec::new(),
+                        timing: None,
+                        hook_executions: Vec::new(),
+                    }),
+                }),
+            ),
+            resume_fixture_event_with_actor_and_correlation(
+                run_id,
+                6,
+                EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                Some("req_000010"),
+                EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                    tool_call_id: "toolcall_000201".to_string(),
+                    status: ToolCallStatus::Succeeded,
+                    output_summary: Some("child A scheduled".to_string()),
+                    output_digest: Some("digest-tool-a-out".to_string()),
+                    output_json: None,
+                    metadata: Some(ToolCallMetadata {
+                        canonical_tool_id: Some("agent.spawn".to_string()),
+                        alias_source_tool_id: None,
+                        lineage: Some(lineage_a),
+                        artifact_refs: Vec::new(),
+                        timing: Some(ExecutionTimingMetadata {
+                            started_mono_ms: Some(5),
+                            finished_mono_ms: Some(6),
+                            elapsed_ms: Some(1),
+                        }),
+                        hook_executions: Vec::new(),
+                    }),
+                }),
+            ),
+            resume_fixture_event_with_actor_and_correlation(
+                run_id,
+                7,
+                EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                Some("req_000010"),
+                EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                    tool_call_id: "toolcall_000202".to_string(),
+                    tool_id: "agent.spawn".to_string(),
+                    args_summary: "{\"task\":\"child B\"}".to_string(),
+                    args_digest: "digest-tool-b-req".to_string(),
+                    metadata: Some(ToolCallMetadata {
+                        canonical_tool_id: Some("agent.spawn".to_string()),
+                        alias_source_tool_id: None,
+                        lineage: Some(lineage_b.clone()),
+                        artifact_refs: Vec::new(),
+                        timing: None,
+                        hook_executions: Vec::new(),
+                    }),
+                }),
+            ),
+            resume_fixture_event_with_actor_and_correlation(
+                run_id,
+                8,
+                EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                Some("req_000010"),
+                EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                    tool_call_id: "toolcall_000202".to_string(),
+                    status: ToolCallStatus::Succeeded,
+                    output_summary: Some("child B scheduled".to_string()),
+                    output_digest: Some("digest-tool-b-out".to_string()),
+                    output_json: None,
+                    metadata: Some(ToolCallMetadata {
+                        canonical_tool_id: Some("agent.spawn".to_string()),
+                        alias_source_tool_id: None,
+                        lineage: Some(lineage_b),
+                        artifact_refs: Vec::new(),
+                        timing: Some(ExecutionTimingMetadata {
+                            started_mono_ms: Some(7),
+                            finished_mono_ms: Some(8),
+                            elapsed_ms: Some(1),
+                        }),
+                        hook_executions: Vec::new(),
+                    }),
+                }),
+            ),
+            resume_fixture_event_with_actor_and_correlation(
+                run_id,
+                9,
+                EventActor::new(ActorKind::Worker, Some("agent_000101".to_string())),
+                Some("req_000101"),
+                EventV1::TaskScheduled(TaskScheduledEvent {
+                    task_id: "task_000301".to_string(),
+                    state: TaskScheduleState::Started,
+                    queue_key: Some("provider_model:mock:model-a".to_string()),
+                }),
+            ),
+            resume_fixture_event_with_actor_and_correlation(
+                run_id,
+                10,
+                EventActor::new(ActorKind::Worker, Some("agent_000101".to_string())),
+                Some("req_000101"),
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_000101".to_string(),
+                    provider_id: "mock".to_string(),
+                    model_id: "model-a".to_string(),
+                    prompt_summary: "child a prompt".to_string(),
+                    request_digest: "digest-child-a".to_string(),
+                }),
+            ),
+            resume_fixture_event_with_actor_and_correlation(
+                run_id,
+                11,
+                EventActor::new(ActorKind::Worker, Some("agent_000101".to_string())),
+                Some("req_000101"),
+                EventV1::TaskCompleted(TaskCompletedEvent {
+                    task_id: "task_000301".to_string(),
+                    result_summary: "child a done".to_string(),
+                    result_digest: "digest-child-a-done".to_string(),
+                    metadata: Some(TaskCompletionMetadata {
+                        lineage: None,
+                        timing: Some(ExecutionTimingMetadata {
+                            started_mono_ms: Some(9),
+                            finished_mono_ms: Some(60),
+                            elapsed_ms: Some(51),
+                        }),
+                        hook_executions: Vec::new(),
+                    }),
+                }),
+            ),
+            resume_fixture_event_with_actor_and_correlation(
+                run_id,
+                12,
+                EventActor::new(ActorKind::Worker, Some("agent_000102".to_string())),
+                Some("req_000102"),
+                EventV1::TaskScheduled(TaskScheduledEvent {
+                    task_id: "task_000302".to_string(),
+                    state: TaskScheduleState::Started,
+                    queue_key: Some("provider_model:mock:model-b".to_string()),
+                }),
+            ),
+            resume_fixture_event_with_actor_and_correlation(
+                run_id,
+                13,
+                EventActor::new(ActorKind::Worker, Some("agent_000102".to_string())),
+                Some("req_000102"),
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_000102".to_string(),
+                    provider_id: "mock".to_string(),
+                    model_id: "model-b".to_string(),
+                    prompt_summary: "child b prompt".to_string(),
+                    request_digest: "digest-child-b".to_string(),
+                }),
+            ),
+            resume_fixture_event_with_actor_and_correlation(
+                run_id,
+                14,
+                EventActor::new(ActorKind::Worker, Some("agent_000102".to_string())),
+                Some("req_000102"),
+                EventV1::TaskCancelled(TaskCancelledEvent {
+                    task_id: "task_000302".to_string(),
+                    reason: "cancelled while running".to_string(),
+                }),
+            ),
+            resume_fixture_event_with_actor_and_correlation(
+                run_id,
+                15,
+                EventActor::new(ActorKind::Worker, Some("agent_000102".to_string())),
+                Some("req_000102"),
+                EventV1::TaskResultLate(TaskResultLateEvent {
+                    task_id: "task_000302".to_string(),
+                    result_digest: "digest-child-b-late".to_string(),
+                }),
+            ),
+            resume_fixture_event(
+                run_id,
+                16,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "segment complete".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let plan = inspect_resume_plan(&temp_dir.path().join(run_id));
+
+    assert_eq!(
+        plan.latest_lifecycle_status,
+        LifecycleSegmentStatus::Finished,
+        "replay should preserve final lifecycle status"
+    );
+
+    let child_a = plan
+        .child_sessions
+        .get("agent_000101")
+        .expect("child A projection");
+    assert_eq!(child_a.parent_session_id.as_deref(), Some("agent_000001"));
+    assert_eq!(
+        child_a.parent_tool_call_id.as_deref(),
+        Some("toolcall_000201")
+    );
+    assert_eq!(
+        child_a.latest_child_request_id.as_deref(),
+        Some("req_000101")
+    );
+    assert_eq!(child_a.provider_id.as_deref(), Some("mock"));
+    assert_eq!(child_a.model_id.as_deref(), Some("model-a"));
+    assert_eq!(
+        child_a.terminal_state,
+        Some(ChildSessionTerminalState::Completed)
+    );
+    assert_eq!(
+        child_a.timing.as_ref().and_then(|timing| timing.elapsed_ms),
+        Some(51)
+    );
+
+    let child_b = plan
+        .child_sessions
+        .get("agent_000102")
+        .expect("child B projection");
+    assert_eq!(child_b.parent_session_id.as_deref(), Some("agent_000001"));
+    assert_eq!(
+        child_b.parent_tool_call_id.as_deref(),
+        Some("toolcall_000202")
+    );
+    assert_eq!(
+        child_b.latest_child_request_id.as_deref(),
+        Some("req_000102")
+    );
+    assert_eq!(child_b.provider_id.as_deref(), Some("mock"));
+    assert_eq!(child_b.model_id.as_deref(), Some("model-b"));
+    assert_eq!(
+        child_b.terminal_state,
+        Some(ChildSessionTerminalState::LateResult)
+    );
+    assert_eq!(
+        child_b.timing.as_ref().and_then(|timing| timing.elapsed_ms),
+        Some(3),
+        "late-result terminal timing should be derived from scheduled start"
+    );
+}
+
+#[test]
+fn replay_suppresses_hooks_but_preserves_hook_history() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let run_id = "run_replay_hook_suppression";
+    let side_effect_path = temp_dir.path().join("hook-side-effect.txt");
+    let side_effect_digest = format!("digest:{}", side_effect_path.display());
+
+    let hook_execution = HookExecutionMetadata {
+        hook_name: "after_task".to_string(),
+        status: HookExecutionStatus::Succeeded,
+        hook_event: Some("task_completed".to_string()),
+        command_digest: Some(side_effect_digest),
+        output_digest: Some("hook-output-digest".to_string()),
+        output_summary: Some("hook already executed live".to_string()),
+        duration_ms: Some(12),
+    };
+
+    let lineage = TaskLineageMetadata {
+        parent_tool_call_id: Some("toolcall_000401".to_string()),
+        parent_task_id: Some("task_000401".to_string()),
+        parent_request_id: Some("req_000401".to_string()),
+        parent_session_id: Some("agent_000001".to_string()),
+        child_session_id: Some("agent_000401".to_string()),
+        child_request_id: Some("req_000401".to_string()),
+        child_provider_id: Some("mock".to_string()),
+        child_model_id: Some("model-hook".to_string()),
+    };
+
+    write_resume_fixture(
+        temp_dir.path(),
+        run_id,
+        &[
+            resume_fixture_event(
+                run_id,
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/workspace/project".to_string(),
+                }),
+            ),
+            resume_fixture_event(
+                run_id,
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_000001".to_string(),
+                    profile: "alpha".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            resume_fixture_event(
+                run_id,
+                3,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_000401".to_string(),
+                    profile: "hook-runner".to_string(),
+                    parent_agent_id: Some("agent_000001".to_string()),
+                }),
+            ),
+            resume_fixture_event_with_actor_and_correlation(
+                run_id,
+                4,
+                EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                Some("req_000401"),
+                EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                    tool_call_id: "toolcall_000401".to_string(),
+                    tool_id: "agent.spawn".to_string(),
+                    args_summary: "{\"task\":\"run with hooks\"}".to_string(),
+                    args_digest: "digest-hook-req".to_string(),
+                    metadata: Some(ToolCallMetadata {
+                        canonical_tool_id: Some("agent.spawn".to_string()),
+                        alias_source_tool_id: None,
+                        lineage: Some(lineage.clone()),
+                        artifact_refs: Vec::new(),
+                        timing: None,
+                        hook_executions: vec![hook_execution.clone()],
+                    }),
+                }),
+            ),
+            resume_fixture_event_with_actor_and_correlation(
+                run_id,
+                5,
+                EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                Some("req_000401"),
+                EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                    tool_call_id: "toolcall_000401".to_string(),
+                    status: ToolCallStatus::Succeeded,
+                    output_summary: Some("hook already executed live".to_string()),
+                    output_digest: Some("digest-hook-finish".to_string()),
+                    output_json: Some(json!({
+                        "hook_executions": [
+                            {
+                                "hook_name": "after_task",
+                                "status": "succeeded",
+                                "hook_event": "task_completed",
+                                "command_digest": "hook-command-digest",
+                                "output_digest": "hook-output-digest",
+                                "output_summary": "hook already executed live",
+                                "duration_ms": 12
+                            }
+                        ]
+                    })),
+                    metadata: Some(ToolCallMetadata {
+                        canonical_tool_id: Some("agent.spawn".to_string()),
+                        alias_source_tool_id: None,
+                        lineage: Some(lineage.clone()),
+                        artifact_refs: Vec::new(),
+                        timing: Some(ExecutionTimingMetadata {
+                            started_mono_ms: Some(4),
+                            finished_mono_ms: Some(5),
+                            elapsed_ms: Some(1),
+                        }),
+                        hook_executions: vec![hook_execution.clone()],
+                    }),
+                }),
+            ),
+            resume_fixture_event_with_actor_and_correlation(
+                run_id,
+                6,
+                EventActor::new(ActorKind::Worker, Some("agent_000401".to_string())),
+                Some("req_000401"),
+                EventV1::TaskScheduled(TaskScheduledEvent {
+                    task_id: "task_000401".to_string(),
+                    state: TaskScheduleState::Started,
+                    queue_key: Some("provider_model:mock:model-hook".to_string()),
+                }),
+            ),
+            resume_fixture_event_with_actor_and_correlation(
+                run_id,
+                7,
+                EventActor::new(ActorKind::Worker, Some("agent_000401".to_string())),
+                Some("req_000401"),
+                EventV1::TaskCompleted(TaskCompletedEvent {
+                    task_id: "task_000401".to_string(),
+                    result_summary: "child done".to_string(),
+                    result_digest: "digest-child-hook".to_string(),
+                    metadata: Some(TaskCompletionMetadata {
+                        lineage: Some(lineage),
+                        timing: Some(ExecutionTimingMetadata {
+                            started_mono_ms: Some(6),
+                            finished_mono_ms: Some(7),
+                            elapsed_ms: Some(1),
+                        }),
+                        hook_executions: vec![hook_execution.clone()],
+                    }),
+                }),
+            ),
+            resume_fixture_event(
+                run_id,
+                8,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "segment complete".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let plan = inspect_resume_plan(&temp_dir.path().join(run_id));
+
+    assert!(
+        !side_effect_path.exists(),
+        "replay must not execute historical hook side effects"
+    );
+
+    let tool_call_hooks = plan
+        .tool_calls
+        .get("toolcall_000401")
+        .and_then(|snapshot| snapshot.metadata.as_ref())
+        .map(|metadata| metadata.hook_executions.clone())
+        .expect("projected tool-call hook metadata");
+    assert_eq!(tool_call_hooks, vec![hook_execution.clone()]);
+
+    let completed_task_hooks = plan
+        .completed_tasks
+        .get("task_000401")
+        .and_then(|snapshot| snapshot.metadata.as_ref())
+        .map(|metadata| metadata.hook_executions.clone())
+        .expect("projected task hook metadata");
+    assert_eq!(completed_task_hooks, vec![hook_execution.clone()]);
+
+    let child = plan
+        .child_sessions
+        .get("agent_000401")
+        .expect("projected child session for hook replay");
+    assert_eq!(
+        child.terminal_state,
+        Some(ChildSessionTerminalState::Completed)
+    );
+    assert_eq!(child.hook_executions, vec![hook_execution]);
+}
+
+#[test]
+fn replay_suppresses_hook_execution_but_preserves_hook_events() {
+    replay_suppresses_hooks_but_preserves_hook_history();
+}
+
+#[tokio::test]
+async fn hook_runner_is_suppressed_in_replay_and_deterministic_modes() {
+    replay_suppresses_hooks_but_preserves_hook_history();
+    deterministic_runs_suppress_live_hook_execution().await;
+}
+
+async fn deterministic_runs_suppress_live_hook_execution() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let hook_output_path = temp_dir.path().join("deterministic-hook-side-effect.txt");
+    let hook_runtime_config = HookRuntimeConfig {
+        hooks: HooksConfig {
+            lifecycle: vec![LifecycleHookConfig {
+                id: Some("tool-finish-suppressed".to_string()),
+                event: HookLifecycleEvent::ToolCallFinished,
+                command: vec![
+                    "bash".to_string(),
+                    "-lc".to_string(),
+                    "printf '%s|%s' \"$HARNESS_HOOK_EVENT\" \"$HARNESS_HOOK_TOOL_ID\" > \"$HOOK_OUTPUT_PATH\""
+                        .to_string(),
+                ],
+                cwd: Some(".".to_string()),
+                timeout_ms: 4_000,
+                critical: false,
+                env: BTreeMap::from([(
+                    "HOOK_OUTPUT_PATH".to_string(),
+                    hook_output_path.display().to_string(),
+                )]),
+            }],
+        },
+        shell_allowlist: ShellAllowlist {
+            executables: vec!["bash".to_string()],
+            cwd_roots: vec![".".to_string()],
+        },
+        suppress_execution: true,
+    };
+
+    let clock = Arc::new(FakeClock::new());
+    let coordinator = test_tool_lifecycle_coordinator_with_hook_runtime(
+        temp_dir.path(),
+        clock,
+        lifecycle_tool_registry(Arc::new(Notify::new())),
+        Duration::from_millis(50),
+        15_000,
+        5,
+        1,
+        hook_runtime_config,
+    );
+
+    let run = coordinator
+        .start_run(
+            "deterministic_runs_suppress_live_hook_execution",
+            temp_dir.path().to_path_buf(),
+        )
+        .await
+        .expect("start run");
+
+    let tool_call_id = coordinator
+        .request_tool_call(
+            supervisor_actor(),
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "true"}),
+        )
+        .await
+        .expect("request tool call");
+
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    assert!(
+        !hook_output_path.exists(),
+        "deterministic suppression should prevent live hook side effects"
+    );
+
+    let events = load_events(&run.events_path);
+    let tool_finished = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::ToolCallFinished(data) if data.tool_call_id == tool_call_id => Some(data),
+            _ => None,
+        })
+        .expect("tool finished event");
+    let hook_executions = tool_finished
+        .metadata
+        .as_ref()
+        .map(|metadata| metadata.hook_executions.clone())
+        .expect("hook metadata on tool finish");
+    assert_eq!(hook_executions.len(), 1);
+    assert_eq!(hook_executions[0].hook_name, "tool-finish-suppressed");
+    assert_eq!(hook_executions[0].status, HookExecutionStatus::Skipped);
+    assert_eq!(
+        hook_executions[0].output_summary.as_deref(),
+        Some("suppressed during deterministic execution")
+    );
+}
+
 fn test_coordinator(session_dir: &Path) -> CoordinatorHandle {
     let mut config = CoordinatorConfig::new(session_dir.to_path_buf());
     config.deterministic_store = true;
@@ -1839,14 +3332,26 @@ fn test_coordinator(session_dir: &Path) -> CoordinatorHandle {
 }
 
 fn test_agent_coordinator(session_dir: &Path, delay: Duration) -> CoordinatorHandle {
+    test_agent_coordinator_with_provider(
+        session_dir,
+        Arc::new(SlowMockProvider {
+            inner: test_mock_provider(),
+            delay,
+        }),
+        1,
+    )
+}
+
+fn test_agent_coordinator_with_provider(
+    session_dir: &Path,
+    provider: Arc<dyn Provider>,
+    provider_model_concurrency: usize,
+) -> CoordinatorHandle {
     let mut config = CoordinatorConfig::new(session_dir.to_path_buf());
     config.deterministic_store = true;
     config.command_buffer = 64;
-    config.provider_model_concurrency = 1;
-    config.provider = Arc::new(SlowMockProvider {
-        inner: test_mock_provider(),
-        delay,
-    });
+    config.provider_model_concurrency = provider_model_concurrency;
+    config.provider = provider;
     config.agent_profiles = agent_profiles();
 
     let clock = Arc::new(FakeClock::new());
@@ -1918,6 +3423,46 @@ fn test_tool_lifecycle_coordinator(
         delay: provider_delay,
     });
     config.agent_profiles = agent_profiles();
+    if let Some(profile) = config.agent_profiles.get_mut("alpha") {
+        profile.toolset = vec![
+            "shell.run".to_string(),
+            "shell.fail".to_string(),
+            "shell.block".to_string(),
+        ];
+    }
+
+    let redactor = Arc::new(DefaultRedactor::default());
+    spawn_coordinator(config, clock, redactor)
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "test helper keeps lifecycle coordinator knobs explicit for focused hook/runtime scenarios"
+)]
+fn test_tool_lifecycle_coordinator_with_hook_runtime(
+    session_dir: &Path,
+    clock: Arc<FakeClock>,
+    tool_registry: Arc<ToolRegistry>,
+    provider_delay: Duration,
+    stale_timeout_ms: u64,
+    watchdog_tick_ms: u64,
+    tool_concurrency: usize,
+    hook_runtime_config: HookRuntimeConfig,
+) -> CoordinatorHandle {
+    let mut config = CoordinatorConfig::new(session_dir.to_path_buf());
+    config.deterministic_store = true;
+    config.command_buffer = 64;
+    config.tool_registry = tool_registry;
+    config.provider_model_concurrency = 1;
+    config.tool_concurrency = tool_concurrency;
+    config.stale_timeout_ms = stale_timeout_ms;
+    config.watchdog_tick_ms = watchdog_tick_ms;
+    config.provider = Arc::new(SlowMockProvider {
+        inner: test_mock_provider(),
+        delay: provider_delay,
+    });
+    config.agent_profiles = agent_profiles();
+    config.hook_runtime_config = hook_runtime_config;
     if let Some(profile) = config.agent_profiles.get_mut("alpha") {
         profile.toolset = vec![
             "shell.run".to_string(),
@@ -2212,6 +3757,7 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             system_prompt: "alpha-prompt".to_string(),
+            tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             tool_surface: ToolSurface::Native,
             toolset: vec![],
         },
@@ -2223,6 +3769,7 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             system_prompt: "beta-prompt".to_string(),
+            tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             tool_surface: ToolSurface::Native,
             toolset: vec![],
         },
@@ -2296,6 +3843,52 @@ impl Provider for SlowMockProvider {
                 tokio::time::sleep(delay).await;
                 event
             });
+        Box::pin(stream)
+    }
+}
+
+#[derive(Clone)]
+struct PromptScriptedProvider {
+    scripts: BTreeMap<String, Vec<ProviderStreamEvent>>,
+    delay: Duration,
+}
+
+impl PromptScriptedProvider {
+    fn new(scripts: BTreeMap<String, Vec<ProviderStreamEvent>>, delay: Duration) -> Self {
+        Self { scripts, delay }
+    }
+}
+
+#[async_trait]
+impl Provider for PromptScriptedProvider {
+    async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
+        let prompt = req
+            .messages
+            .iter()
+            .rev()
+            .find(|message| message.role == MessageRole::User)
+            .map(|message| message.content.clone())
+            .unwrap_or_default();
+
+        let events = self.scripts.get(&prompt).cloned().unwrap_or_else(|| {
+            vec![
+                ProviderStreamEvent::Start,
+                ProviderStreamEvent::TextDelta("ok".to_string()),
+                ProviderStreamEvent::Done {
+                    usage: CompletionUsage {
+                        prompt_tokens: 1,
+                        completion_tokens: 1,
+                        total_tokens: 2,
+                    },
+                },
+            ]
+        });
+
+        let delay = self.delay;
+        let stream = tokio_stream::iter(events).then(move |event| async move {
+            tokio::time::sleep(delay).await;
+            event
+        });
         Box::pin(stream)
     }
 }

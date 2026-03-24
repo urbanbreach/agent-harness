@@ -17,11 +17,15 @@ use crate::agent::{
     AgentTurnOutcome, MultiTurnStreamingRequest, ProviderConversationTurn,
 };
 use crate::clock::Clock;
+use crate::config::{
+    registered_hook_runtime_config, HookLifecycleEvent, HookRuntimeConfig, LifecycleHookConfig,
+    ShellAllowlist,
+};
 use crate::edit::hashline::HashlinePatch;
 use crate::event::{
     ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, EditAppliedEvent, EditProposedEvent,
     EditRejectedEvent, EventActor, EventArtifactRef, EventBuildError, EventBuilder, EventContext,
-    EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
+    EventEnvelopeV1, EventV1, ExecutionTimingMetadata, HookExecutionMetadata, HookExecutionStatus,
     PermissionDecision as EventPermissionDecision, PermissionRequestedArgs,
     PermissionResolvedEvent, PolicyViolationDetectedEvent, RunFinishedEvent, RunStartedEvent,
     StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata,
@@ -71,6 +75,7 @@ pub struct CoordinatorConfig {
     pub provider: Arc<dyn Provider>,
     pub agent_profiles: BTreeMap<String, AgentProfile>,
     pub plan_profiles: BTreeMap<String, PlanProfileConfig>,
+    pub hook_runtime_config: HookRuntimeConfig,
     pub config_digest: String,
     pub harness_version: String,
 }
@@ -98,6 +103,7 @@ impl CoordinatorConfig {
             provider: default_provider(),
             agent_profiles: BTreeMap::new(),
             plan_profiles: BTreeMap::new(),
+            hook_runtime_config: registered_hook_runtime_config(),
             config_digest: "none".to_string(),
             harness_version: env!("CARGO_PKG_VERSION").to_string(),
         }
@@ -296,6 +302,8 @@ pub enum CoordinatorError {
     ResumeDisabled { run_id: String, reason: String },
     #[error("resume restoration failed for run `{run_id}`: {reason}")]
     ResumeRestoreFailed { run_id: String, reason: String },
+    #[error("lifecycle hook failed: {0}")]
+    LifecycleHookFailed(String),
 }
 
 #[derive(Debug, Clone)]
@@ -634,8 +642,9 @@ impl Coordinator {
         loop {
             if command_channel_closed {
                 if self.run_state.is_some() {
-                    let _ =
-                        self.stop_run_internal("coordinator command channel closed".to_string());
+                    let _ = self
+                        .stop_run_internal("coordinator command channel closed".to_string())
+                        .await;
                 } else {
                     break;
                 }
@@ -644,13 +653,13 @@ impl Coordinator {
             tokio::select! {
                 command = self.command_rx.recv(), if !command_channel_closed => {
                     match command {
-                        Some(command) => self.handle_command(command),
+                        Some(command) => self.handle_command(command).await,
                         None => command_channel_closed = true,
                     }
                 }
                 command = self.job_rx.recv() => {
                     if let Some(command) = command {
-                        self.handle_command(command);
+                        self.handle_command(command).await;
                     }
                 }
                 _ = watchdog.tick() => {
@@ -660,14 +669,16 @@ impl Coordinator {
         }
     }
 
-    fn handle_command(&mut self, command: Command) {
+    async fn handle_command(&mut self, command: Command) {
         match command {
             Command::StartRun {
                 run_name,
                 workspace_root,
                 respond_to,
             } => {
-                let result = self.start_run_internal(run_name, workspace_root);
+                let result = self
+                    .start_run_internal_async(run_name, workspace_root)
+                    .await;
                 let _ = respond_to.send(result);
             }
             Command::ResumeRun {
@@ -679,7 +690,7 @@ impl Coordinator {
                 let _ = respond_to.send(result);
             }
             Command::StopRun { respond_to } => {
-                let result = self.stop_run_internal("run stopped".to_string());
+                let result = self.stop_run_internal("run stopped".to_string()).await;
                 let _ = respond_to.send(result);
             }
             Command::GetEventStore { respond_to } => {
@@ -692,7 +703,9 @@ impl Coordinator {
                 parent_agent_id,
                 respond_to,
             } => {
-                let result = self.spawn_agent_internal(actor, profile, parent_agent_id, true);
+                let result = self
+                    .spawn_agent_internal(actor, profile, parent_agent_id, true)
+                    .await;
                 let _ = respond_to.send(result);
             }
             Command::SpawnAgentIdle {
@@ -701,7 +714,9 @@ impl Coordinator {
                 parent_agent_id,
                 respond_to,
             } => {
-                let result = self.spawn_agent_internal(actor, profile, parent_agent_id, false);
+                let result = self
+                    .spawn_agent_internal(actor, profile, parent_agent_id, false)
+                    .await;
                 let _ = respond_to.send(result);
             }
             Command::RequestAgentTurn {
@@ -710,7 +725,9 @@ impl Coordinator {
                 prompt,
                 respond_to,
             } => {
-                let result = self.request_agent_turn_internal(actor, agent_id, prompt);
+                let result = self
+                    .request_agent_turn_internal(actor, agent_id, prompt)
+                    .await;
                 let _ = respond_to.send(result);
             }
             Command::RequestToolCall {
@@ -720,8 +737,9 @@ impl Coordinator {
                 args_json,
                 respond_to,
             } => {
-                let result =
-                    self.request_tool_call_internal(actor, category, tool_id, args_json, None);
+                let result = self
+                    .request_tool_call_internal(actor, category, tool_id, args_json, None)
+                    .await;
                 let _ = respond_to.send(result);
             }
             Command::ExecuteAgentToolCall {
@@ -731,13 +749,15 @@ impl Coordinator {
                 args_json,
                 respond_to,
             } => {
-                let _ = self.request_tool_call_internal(
-                    actor,
-                    category,
-                    tool_id,
-                    args_json,
-                    Some(respond_to),
-                );
+                let _ = self
+                    .request_tool_call_internal(
+                        actor,
+                        category,
+                        tool_id,
+                        args_json,
+                        Some(respond_to),
+                    )
+                    .await;
             }
             Command::RequestQuestion {
                 actor,
@@ -745,8 +765,9 @@ impl Coordinator {
                 request_json,
                 respond_to,
             } => {
-                let _ =
-                    self.request_question_internal(actor, tool_call_id, request_json, respond_to);
+                let _ = self
+                    .request_question_internal(actor, tool_call_id, request_json, respond_to)
+                    .await;
             }
             Command::ResolvePermission {
                 permission_id,
@@ -754,11 +775,14 @@ impl Coordinator {
                 reason,
                 respond_to,
             } => {
-                let result = self.resolve_permission_internal(permission_id, decision, reason);
+                let result = self
+                    .resolve_permission_internal(permission_id, decision, reason)
+                    .await;
                 let _ = respond_to.send(result);
             }
             Command::PermissionTimedOut { permission_id } => {
-                self.resolve_permission_timeout_internal(permission_id);
+                self.resolve_permission_timeout_internal(permission_id)
+                    .await;
             }
             Command::JobProgress { task_id, kind } => {
                 self.job_progress_internal(task_id, kind);
@@ -772,7 +796,7 @@ impl Coordinator {
                 let _ = respond_to.send(result);
             }
             Command::JobFinished { task_id, outcome } => {
-                let _ = self.job_finished_internal(task_id, outcome);
+                let _ = self.job_finished_internal_async(task_id, outcome).await;
             }
             Command::AgentProviderRequestStarted {
                 task_id,
@@ -783,8 +807,8 @@ impl Coordinator {
                 prompt_summary,
                 request_digest,
             } => {
-                let _ =
-                    self.agent_provider_request_started_internal(AgentProviderRequestStartedArgs {
+                let _ = self
+                    .agent_provider_request_started_internal(AgentProviderRequestStartedArgs {
                         task_id,
                         agent_id,
                         request_id,
@@ -792,7 +816,8 @@ impl Coordinator {
                         model_id,
                         prompt_summary,
                         request_digest,
-                    });
+                    })
+                    .await;
             }
             Command::AgentProviderStreamDelta {
                 task_id,
@@ -810,13 +835,15 @@ impl Coordinator {
                 finish_reason,
                 output_digest,
             } => {
-                let _ = self.agent_provider_request_finished_internal(
-                    task_id,
-                    agent_id,
-                    request_id,
-                    finish_reason,
-                    output_digest,
-                );
+                let _ = self
+                    .agent_provider_request_finished_internal(
+                        task_id,
+                        agent_id,
+                        request_id,
+                        finish_reason,
+                        output_digest,
+                    )
+                    .await;
             }
             Command::AgentTurnFinished {
                 task_id,
@@ -824,12 +851,23 @@ impl Coordinator {
                 request_id,
                 outcome,
             } => {
-                let _ = self.agent_turn_finished_internal(task_id, agent_id, request_id, outcome);
+                let _ = self
+                    .agent_turn_finished_internal(task_id, agent_id, request_id, outcome)
+                    .await;
             }
         }
     }
 
+    #[cfg(test)]
     fn start_run_internal(
+        &mut self,
+        run_name: String,
+        workspace_root: PathBuf,
+    ) -> Result<RunInfo, CoordinatorError> {
+        block_on_coordinator_future(self.start_run_internal_async(run_name, workspace_root))
+    }
+
+    async fn start_run_internal_async(
         &mut self,
         run_name: String,
         workspace_root: PathBuf,
@@ -884,6 +922,9 @@ impl Coordinator {
             agents: BTreeMap::new(),
             provider_context_by_agent: BTreeMap::new(),
             tasks: BTreeMap::new(),
+            task_hook_state: BTreeMap::new(),
+            agent_hook_state: BTreeMap::new(),
+            subagent_parent_by_id: BTreeMap::new(),
             pending_permissions: BTreeMap::new(),
             cancelled_running_tasks: BTreeSet::new(),
             queued_agent_turns: BTreeMap::new(),
@@ -908,6 +949,35 @@ impl Coordinator {
         )?;
 
         write_run_metadata(&run_state, &self.config, self.clock.as_ref())?;
+
+        let hook_batch = run_lifecycle_hooks(
+            self.clock.as_ref(),
+            &self.config.hook_runtime_config,
+            HookInvocationContext {
+                event: HookLifecycleEvent::RunStarted,
+                run_id: run_state.info.run_id.clone(),
+                workspace_root: run_state.info.workspace_root.clone(),
+                artifacts_dir: run_state.info.artifacts_dir.clone(),
+                actor: Some(system_actor()),
+                agent_id: None,
+                request_id: None,
+                permission_id: None,
+                task_id: None,
+                tool_call_id: None,
+                tool_id: None,
+                provider_id: None,
+                model_id: None,
+                parent_agent_id: None,
+                category: None,
+                outcome: Some("started".to_string()),
+                output_summary: Some(run_state.info.run_name.clone()),
+                failure_reason: None,
+            },
+        )
+        .await;
+        if let Some(reason) = hook_batch.critical_failure {
+            return Err(CoordinatorError::LifecycleHookFailed(reason));
+        }
 
         self.run_state = Some(run_state);
         Ok(run_info)
@@ -972,6 +1042,7 @@ impl Coordinator {
 
         let mut agents = BTreeMap::new();
         let mut restored_agent_bindings = Vec::new();
+        let mut restored_subagent_parent_by_id = BTreeMap::new();
         let mut max_agent_id = 0_u64;
         for (agent_id, profile_name) in &resume_plan.known_agents {
             let parsed_agent_id = parse_prefixed_counter(agent_id, "agent_").ok_or_else(|| {
@@ -993,8 +1064,20 @@ impl Coordinator {
                         "historical agent `{agent_id}` references missing profile binding `{profile_name}`"
                     ),
                 })?;
+            let parent_agent_id = resume_plan
+                .child_sessions
+                .get(agent_id)
+                .and_then(|child| child.parent_session_id.as_deref())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+
+            if let Some(parent_agent_id) = parent_agent_id.as_ref() {
+                restored_subagent_parent_by_id.insert(agent_id.clone(), parent_agent_id.clone());
+            }
+
             agents.insert(agent_id.clone(), profile_cfg);
-            restored_agent_bindings.push((agent_id.clone(), profile_name.clone()));
+            restored_agent_bindings.push((agent_id.clone(), profile_name.clone(), parent_agent_id));
         }
 
         let provider_context_by_agent =
@@ -1049,6 +1132,9 @@ impl Coordinator {
             agents,
             provider_context_by_agent,
             tasks: BTreeMap::new(),
+            task_hook_state: BTreeMap::new(),
+            agent_hook_state: BTreeMap::new(),
+            subagent_parent_by_id: restored_subagent_parent_by_id,
             pending_permissions: BTreeMap::new(),
             cancelled_running_tasks: BTreeSet::new(),
             queued_agent_turns: BTreeMap::new(),
@@ -1072,7 +1158,7 @@ impl Coordinator {
             }),
         )?;
 
-        for (agent_id, profile) in restored_agent_bindings {
+        for (agent_id, profile, parent_agent_id) in restored_agent_bindings {
             append_payload_event(
                 self.clock.as_ref(),
                 self.redactor.as_ref(),
@@ -1082,7 +1168,7 @@ impl Coordinator {
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id,
                     profile,
-                    parent_agent_id: None,
+                    parent_agent_id,
                 }),
             )?;
         }
@@ -1099,7 +1185,7 @@ impl Coordinator {
         Ok(run_state.event_store.clone())
     }
 
-    fn stop_run_internal(&mut self, summary: String) -> Result<(), CoordinatorError> {
+    async fn stop_run_internal(&mut self, summary: String) -> Result<(), CoordinatorError> {
         let mut run_state = self
             .run_state
             .take()
@@ -1121,13 +1207,44 @@ impl Coordinator {
             &mut run_state,
             system_actor(),
             Some(run_stream_key),
-            EventV1::RunFinished(RunFinishedEvent { summary }),
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: summary.clone(),
+            }),
         )?;
+
+        let hook_batch = run_lifecycle_hooks(
+            self.clock.as_ref(),
+            &self.config.hook_runtime_config,
+            HookInvocationContext {
+                event: HookLifecycleEvent::RunFinished,
+                run_id: run_state.info.run_id.clone(),
+                workspace_root: run_state.info.workspace_root.clone(),
+                artifacts_dir: run_state.info.artifacts_dir.clone(),
+                actor: Some(system_actor()),
+                agent_id: None,
+                request_id: None,
+                permission_id: None,
+                task_id: None,
+                tool_call_id: None,
+                tool_id: None,
+                provider_id: None,
+                model_id: None,
+                parent_agent_id: None,
+                category: None,
+                outcome: Some("finished".to_string()),
+                output_summary: Some(summary),
+                failure_reason: None,
+            },
+        )
+        .await;
+        if let Some(reason) = hook_batch.critical_failure {
+            return Err(CoordinatorError::LifecycleHookFailed(reason));
+        }
 
         Ok(())
     }
 
-    fn spawn_agent_internal(
+    async fn spawn_agent_internal(
         &mut self,
         actor: EventActor,
         profile: String,
@@ -1163,16 +1280,49 @@ impl Coordinator {
         let agent_id = format!("agent_{:06}", run_state.next_agent_id);
         run_state.next_agent_id += 1;
 
+        let mut subagent_spawn_hook_executions = Vec::new();
+        if let Some(parent) = parent_agent_id.as_ref() {
+            let hook_batch = run_lifecycle_hooks(
+                self.clock.as_ref(),
+                &self.config.hook_runtime_config,
+                HookInvocationContext {
+                    event: HookLifecycleEvent::SubagentSpawned,
+                    run_id: run_state.info.run_id.clone(),
+                    workspace_root: run_state.info.workspace_root.clone(),
+                    artifacts_dir: run_state.info.artifacts_dir.clone(),
+                    actor: Some(actor.clone()),
+                    agent_id: Some(agent_id.clone()),
+                    request_id: None,
+                    permission_id: None,
+                    task_id: None,
+                    tool_call_id: None,
+                    tool_id: None,
+                    provider_id: None,
+                    model_id: None,
+                    parent_agent_id: Some(parent.clone()),
+                    category: Some(profile.clone()),
+                    outcome: Some("spawned".to_string()),
+                    output_summary: Some(profile.clone()),
+                    failure_reason: None,
+                },
+            )
+            .await;
+            subagent_spawn_hook_executions = hook_batch.hook_executions;
+            if let Some(reason) = hook_batch.critical_failure {
+                return Err(CoordinatorError::LifecycleHookFailed(reason));
+            }
+        }
+
         append_payload_event(
             self.clock.as_ref(),
             self.redactor.as_ref(),
             run_state,
-            actor,
+            actor.clone(),
             Some(format!("agent:{agent_id}")),
             EventV1::AgentSpawned(AgentSpawnedEvent {
                 agent_id: agent_id.clone(),
                 profile: profile.clone(),
-                parent_agent_id,
+                parent_agent_id: parent_agent_id.clone(),
             }),
         )?;
 
@@ -1185,6 +1335,19 @@ impl Coordinator {
         run_state
             .agents
             .insert(agent_id.clone(), profile_cfg.clone());
+
+        if let Some(parent) = parent_agent_id {
+            run_state
+                .subagent_parent_by_id
+                .insert(agent_id.clone(), parent);
+            if !subagent_spawn_hook_executions.is_empty() {
+                run_state
+                    .agent_hook_state
+                    .entry(agent_id.clone())
+                    .or_default()
+                    .extend(subagent_spawn_hook_executions);
+            }
+        }
 
         if auto_start_turn {
             let request_id = format!("req_{:06}", run_state.next_provider_request_id);
@@ -1205,6 +1368,7 @@ impl Coordinator {
                 self.redactor.as_ref(),
                 self.job_tx.clone(),
                 run_state,
+                self.config.hook_runtime_config.clone(),
                 ScheduleAgentTurnArgs {
                     provider: self.config.provider.clone(),
                     tool_registry: self.config.tool_registry.clone(),
@@ -1212,13 +1376,14 @@ impl Coordinator {
                     request,
                     request_id,
                 },
-            )?;
+            )
+            .await?;
         }
 
         Ok(agent_id)
     }
 
-    fn request_agent_turn_internal(
+    async fn request_agent_turn_internal(
         &mut self,
         actor: EventActor,
         agent_id: String,
@@ -1279,6 +1444,7 @@ impl Coordinator {
             self.redactor.as_ref(),
             self.job_tx.clone(),
             run_state,
+            self.config.hook_runtime_config.clone(),
             ScheduleAgentTurnArgs {
                 provider: self.config.provider.clone(),
                 tool_registry: self.config.tool_registry.clone(),
@@ -1286,12 +1452,13 @@ impl Coordinator {
                 request,
                 request_id: request_id.clone(),
             },
-        )?;
+        )
+        .await?;
 
         Ok(request_id)
     }
 
-    fn request_tool_call_internal(
+    async fn request_tool_call_internal(
         &mut self,
         actor: EventActor,
         category: Option<String>,
@@ -1462,8 +1629,11 @@ impl Coordinator {
                 finalize_permission_denied(
                     clock.as_ref(),
                     redactor.as_ref(),
+                    &self.config.hook_runtime_config,
                     run_state,
                     PermissionDeniedArgs {
+                        actor: actor.clone(),
+                        category: effective_category.clone(),
                         tool_id: &tool_id,
                         tool_call_id: &tool_call_id,
                         hashline_edit: hashline_edit.as_ref(),
@@ -1472,7 +1642,8 @@ impl Coordinator {
                         reason: "policy denied request",
                         request_correlation_id: request_correlation_id.as_deref(),
                     },
-                )?;
+                )
+                .await?;
                 if let Some(respond_to) = respond_to {
                     let _ =
                         respond_to.send(Err("tool call denied: policy denied request".to_string()));
@@ -1488,6 +1659,10 @@ impl Coordinator {
 
                 let summary = permission_summary(self.redactor.as_ref(), &tool_id, &args_json);
                 let digest = permission_request_digest(&tool_id, &args_json);
+                let hook_request_id = request_correlation_id
+                    .clone()
+                    .or_else(|| Some(tool_call_id.clone()));
+                let kind = maybe_kind.expect("permission kind exists when policy decision exists");
 
                 append_permission_requested_event(
                     self.clock.as_ref(),
@@ -1496,9 +1671,8 @@ impl Coordinator {
                     PermissionRequestedEventArgs {
                         permission_id: &permission_id,
                         tool_call_id: &tool_call_id,
-                        kind: maybe_kind
-                            .expect("permission kind exists when policy decision exists"),
-                        summary,
+                        kind,
+                        summary: summary.clone(),
                         request_digest: digest,
                         timeout_ms,
                         default_decision: event_permission_decision(default_decision),
@@ -1506,22 +1680,134 @@ impl Coordinator {
                     },
                 )?;
 
-                run_state.pending_permissions.insert(
-                    permission_id.clone(),
-                    PendingPermissionState {
-                        tool_call_id: tool_call_id.clone(),
-                        request_correlation_id,
-                        resolution: PendingPermissionResolution::ToolCall {
-                            tool_id,
-                            args_json,
-                            actor,
-                            category: effective_category.clone(),
-                            plan_mode,
-                            plan_exit_target_profile,
-                            respond_to,
-                        },
+                let requested_hook_batch = run_lifecycle_hooks(
+                    self.clock.as_ref(),
+                    &self.config.hook_runtime_config,
+                    HookInvocationContext {
+                        event: HookLifecycleEvent::PermissionRequested,
+                        run_id: run_state.info.run_id.clone(),
+                        workspace_root: run_state.info.workspace_root.clone(),
+                        artifacts_dir: run_state.info.artifacts_dir.clone(),
+                        actor: Some(actor.clone()),
+                        agent_id: actor.agent_id.clone(),
+                        request_id: hook_request_id.clone(),
+                        permission_id: Some(permission_id.clone()),
+                        task_id: None,
+                        tool_call_id: Some(tool_call_id.clone()),
+                        tool_id: Some(tool_id.clone()),
+                        provider_id: None,
+                        model_id: None,
+                        parent_agent_id: None,
+                        category: effective_category.clone(),
+                        outcome: Some("requested".to_string()),
+                        output_summary: Some(summary),
+                        failure_reason: None,
                     },
-                );
+                )
+                .await;
+
+                let mut pending = PendingPermissionState {
+                    tool_call_id: tool_call_id.clone(),
+                    request_correlation_id,
+                    hook_executions: requested_hook_batch.hook_executions.clone(),
+                    resolution: PendingPermissionResolution::ToolCall {
+                        tool_id,
+                        args_json,
+                        actor,
+                        category: effective_category.clone(),
+                        plan_mode,
+                        plan_exit_target_profile,
+                        respond_to,
+                    },
+                };
+
+                if let Some(reason) = requested_hook_batch.critical_failure {
+                    let mut final_reason = format!("critical lifecycle hook failed: {reason}");
+
+                    append_permission_resolved_event(
+                        self.clock.as_ref(),
+                        self.redactor.as_ref(),
+                        run_state,
+                        permission_id.clone(),
+                        EventPermissionDecision::Deny,
+                        Some(final_reason.clone()),
+                    )?;
+
+                    let resolved_hook_batch = run_lifecycle_hooks(
+                        self.clock.as_ref(),
+                        &self.config.hook_runtime_config,
+                        HookInvocationContext {
+                            event: HookLifecycleEvent::PermissionResolved,
+                            run_id: run_state.info.run_id.clone(),
+                            workspace_root: run_state.info.workspace_root.clone(),
+                            artifacts_dir: run_state.info.artifacts_dir.clone(),
+                            actor: match &pending.resolution {
+                                PendingPermissionResolution::ToolCall { actor, .. } => {
+                                    Some(actor.clone())
+                                }
+                                PendingPermissionResolution::Question { .. } => {
+                                    Some(system_actor())
+                                }
+                            },
+                            agent_id: match &pending.resolution {
+                                PendingPermissionResolution::ToolCall { actor, .. } => {
+                                    actor.agent_id.clone()
+                                }
+                                PendingPermissionResolution::Question { .. } => None,
+                            },
+                            request_id: hook_request_id,
+                            permission_id: Some(permission_id),
+                            task_id: None,
+                            tool_call_id: Some(pending.tool_call_id.clone()),
+                            tool_id: match &pending.resolution {
+                                PendingPermissionResolution::ToolCall { tool_id, .. } => {
+                                    Some(tool_id.clone())
+                                }
+                                PendingPermissionResolution::Question { .. } => {
+                                    Some("user.question".to_string())
+                                }
+                            },
+                            provider_id: None,
+                            model_id: None,
+                            parent_agent_id: None,
+                            category: match &pending.resolution {
+                                PendingPermissionResolution::ToolCall { category, .. } => {
+                                    category.clone()
+                                }
+                                PendingPermissionResolution::Question { .. } => None,
+                            },
+                            outcome: Some("deny".to_string()),
+                            output_summary: Some(final_reason.clone()),
+                            failure_reason: Some(final_reason.clone()),
+                        },
+                    )
+                    .await;
+                    pending
+                        .hook_executions
+                        .extend(resolved_hook_batch.hook_executions.clone());
+                    if let Some(resolved_reason) = resolved_hook_batch.critical_failure {
+                        final_reason = format!(
+                            "{final_reason}; critical lifecycle hook failed: {resolved_reason}"
+                        );
+                    }
+
+                    let response_message = format!("tool call denied: {final_reason}");
+                    let pending_hook_executions = pending.hook_executions.clone();
+                    reject_pending_permission(
+                        self.clock.as_ref(),
+                        self.redactor.as_ref(),
+                        run_state,
+                        &final_reason,
+                        &response_message,
+                        pending,
+                        &pending_hook_executions,
+                    )?;
+                    return Err(CoordinatorError::LifecycleHookFailed(final_reason));
+                }
+
+                run_state
+                    .pending_permissions
+                    .insert(permission_id.clone(), pending);
 
                 tokio::spawn(async move {
                     tokio::time::sleep(Duration::from_millis(timeout_ms)).await;
@@ -1536,26 +1822,29 @@ impl Coordinator {
                     redactor.as_ref(),
                     job_tx,
                     run_state,
+                    self.config.hook_runtime_config.clone(),
                     ToolCallExecutionArgs {
                         tool_call_id: tool_call_id.clone(),
                         tool_id,
                         args_json,
                         actor,
                         category: effective_category.clone(),
+                        hook_executions: Vec::new(),
                         plan_mode,
                         plan_exit_target_profile,
                         tool_registry: self.config.tool_registry.clone(),
                         request_correlation_id,
                         respond_to,
                     },
-                )?;
+                )
+                .await?;
             }
         }
 
         Ok(tool_call_id)
     }
 
-    fn resolve_permission_internal(
+    async fn resolve_permission_internal(
         &mut self,
         permission_id: String,
         decision: PermissionDecision,
@@ -1591,14 +1880,69 @@ impl Coordinator {
             .remove(&permission_id)
             .expect("pending permission exists after validation");
 
+        let hook_request_id = pending
+            .request_correlation_id
+            .clone()
+            .or_else(|| Some(pending.tool_call_id.clone()));
+        let hook_tool_call_id = pending.tool_call_id.clone();
+        let (hook_actor, hook_agent_id, hook_tool_id, hook_category) = match &pending.resolution {
+            PendingPermissionResolution::ToolCall {
+                tool_id,
+                actor,
+                category,
+                ..
+            } => (
+                actor.clone(),
+                actor.agent_id.clone(),
+                Some(tool_id.clone()),
+                category.clone(),
+            ),
+            PendingPermissionResolution::Question { actor, .. } => (
+                actor.clone(),
+                actor.agent_id.clone(),
+                Some("user.question".to_string()),
+                None,
+            ),
+        };
+        let mut permission_hook_executions = pending.hook_executions.clone();
+        let permission_decision = event_permission_decision(decision);
+
         append_permission_resolved_event(
             self.clock.as_ref(),
             self.redactor.as_ref(),
             run_state,
-            permission_id,
-            event_permission_decision(decision),
+            permission_id.clone(),
+            permission_decision,
             reason.clone(),
         )?;
+
+        let resolved_hook_batch = run_lifecycle_hooks(
+            self.clock.as_ref(),
+            &self.config.hook_runtime_config,
+            HookInvocationContext {
+                event: HookLifecycleEvent::PermissionResolved,
+                run_id: run_state.info.run_id.clone(),
+                workspace_root: run_state.info.workspace_root.clone(),
+                artifacts_dir: run_state.info.artifacts_dir.clone(),
+                actor: Some(hook_actor),
+                agent_id: hook_agent_id,
+                request_id: hook_request_id,
+                permission_id: Some(permission_id),
+                task_id: None,
+                tool_call_id: Some(hook_tool_call_id),
+                tool_id: hook_tool_id,
+                provider_id: None,
+                model_id: None,
+                parent_agent_id: None,
+                category: hook_category,
+                outcome: Some(permission_decision_label(permission_decision).to_string()),
+                output_summary: reason.clone(),
+                failure_reason: reason.clone(),
+            },
+        )
+        .await;
+        permission_hook_executions.extend(resolved_hook_batch.hook_executions.clone());
+        let permission_hook_failure = resolved_hook_batch.critical_failure.clone();
 
         match pending {
             PendingPermissionState {
@@ -1614,36 +1958,55 @@ impl Coordinator {
                         plan_exit_target_profile,
                         respond_to,
                     },
+                ..
             } => {
-                if decision == PermissionDecision::Allow {
+                if decision == PermissionDecision::Allow && permission_hook_failure.is_none() {
                     start_tool_call_execution(
                         clock.as_ref(),
                         redactor.as_ref(),
                         job_tx,
                         run_state,
+                        self.config.hook_runtime_config.clone(),
                         ToolCallExecutionArgs {
                             tool_call_id,
                             tool_id,
                             args_json,
                             actor,
                             category,
+                            hook_executions: permission_hook_executions,
                             plan_mode,
                             plan_exit_target_profile,
                             tool_registry: self.config.tool_registry.clone(),
                             request_correlation_id,
                             respond_to,
                         },
-                    )?;
+                    )
+                    .await?;
                 } else {
+                    let (rejection_reason, response_message) =
+                        if let Some(hook_reason) = permission_hook_failure.as_ref() {
+                            (
+                                format!("permission denied by lifecycle hook: {hook_reason}"),
+                                format!(
+                                "tool call denied: critical lifecycle hook failed: {hook_reason}"
+                            ),
+                            )
+                        } else {
+                            (
+                                "permission denied".to_string(),
+                                "tool call denied: permission denied".to_string(),
+                            )
+                        };
                     reject_pending_permission(
                         self.clock.as_ref(),
                         self.redactor.as_ref(),
                         run_state,
-                        "permission denied",
-                        "tool call denied: permission denied",
+                        &rejection_reason,
+                        &response_message,
                         PendingPermissionState {
                             tool_call_id,
                             request_correlation_id,
+                            hook_executions: permission_hook_executions.clone(),
                             resolution: PendingPermissionResolution::ToolCall {
                                 tool_id,
                                 args_json,
@@ -1654,6 +2017,7 @@ impl Coordinator {
                                 respond_to,
                             },
                         },
+                        &permission_hook_executions,
                     )?;
                 }
             }
@@ -1661,10 +2025,14 @@ impl Coordinator {
                 resolution: PendingPermissionResolution::Question { respond_to, .. },
                 ..
             } => {
-                if decision == PermissionDecision::Allow {
+                if decision == PermissionDecision::Allow && permission_hook_failure.is_none() {
                     let answers = validated_question_answers
                         .expect("validated answers exist for allowed question resolution");
                     let _ = respond_to.send(Ok(answers));
+                } else if let Some(hook_reason) = permission_hook_failure.as_ref() {
+                    let _ = respond_to.send(Err(format!(
+                        "question denied: critical lifecycle hook failed: {hook_reason}"
+                    )));
                 } else {
                     let _ = respond_to.send(Err(
                         reason.unwrap_or_else(|| "question rejected by user".to_string())
@@ -1673,10 +2041,14 @@ impl Coordinator {
             }
         }
 
+        if let Some(reason) = permission_hook_failure {
+            return Err(CoordinatorError::LifecycleHookFailed(reason));
+        }
+
         Ok(())
     }
 
-    fn resolve_permission_timeout_internal(&mut self, permission_id: String) {
+    async fn resolve_permission_timeout_internal(&mut self, permission_id: String) {
         let Some(run_state) = self.run_state.as_mut() else {
             return;
         };
@@ -1685,38 +2057,139 @@ impl Coordinator {
             return;
         };
 
+        let timeout_reason = "permission request timed out".to_string();
+        let hook_request_id = pending
+            .request_correlation_id
+            .clone()
+            .or_else(|| Some(pending.tool_call_id.clone()));
+        let hook_tool_call_id = pending.tool_call_id.clone();
+        let (hook_actor, hook_agent_id, hook_tool_id, hook_category) = match &pending.resolution {
+            PendingPermissionResolution::ToolCall {
+                tool_id,
+                actor,
+                category,
+                ..
+            } => (
+                actor.clone(),
+                actor.agent_id.clone(),
+                Some(tool_id.clone()),
+                category.clone(),
+            ),
+            PendingPermissionResolution::Question { actor, .. } => (
+                actor.clone(),
+                actor.agent_id.clone(),
+                Some("user.question".to_string()),
+                None,
+            ),
+        };
+
         let _ = append_permission_resolved_event(
             self.clock.as_ref(),
             self.redactor.as_ref(),
             run_state,
-            permission_id,
+            permission_id.clone(),
             EventPermissionDecision::Deny,
-            Some("permission request timed out".to_string()),
+            Some(timeout_reason.clone()),
         );
+
+        let resolved_hook_batch = run_lifecycle_hooks(
+            self.clock.as_ref(),
+            &self.config.hook_runtime_config,
+            HookInvocationContext {
+                event: HookLifecycleEvent::PermissionResolved,
+                run_id: run_state.info.run_id.clone(),
+                workspace_root: run_state.info.workspace_root.clone(),
+                artifacts_dir: run_state.info.artifacts_dir.clone(),
+                actor: Some(hook_actor),
+                agent_id: hook_agent_id,
+                request_id: hook_request_id,
+                permission_id: Some(permission_id),
+                task_id: None,
+                tool_call_id: Some(hook_tool_call_id),
+                tool_id: hook_tool_id,
+                provider_id: None,
+                model_id: None,
+                parent_agent_id: None,
+                category: hook_category,
+                outcome: Some("deny".to_string()),
+                output_summary: Some(timeout_reason.clone()),
+                failure_reason: Some(timeout_reason.clone()),
+            },
+        )
+        .await;
+        let mut permission_hook_executions = pending.hook_executions.clone();
+        permission_hook_executions.extend(resolved_hook_batch.hook_executions.clone());
+        let permission_hook_failure = resolved_hook_batch.critical_failure.clone();
 
         let _ = match pending {
             PendingPermissionState {
-                resolution: PendingPermissionResolution::ToolCall { .. },
+                tool_call_id,
+                request_correlation_id,
+                resolution:
+                    PendingPermissionResolution::ToolCall {
+                        tool_id,
+                        args_json,
+                        actor,
+                        category,
+                        plan_mode,
+                        plan_exit_target_profile,
+                        respond_to,
+                    },
                 ..
-            } => reject_pending_permission(
-                self.clock.as_ref(),
-                self.redactor.as_ref(),
-                run_state,
-                "permission denied by timeout",
-                "tool call timed out: permission request timed out",
-                pending,
-            ),
+            } => {
+                let (rejection_reason, response_message) =
+                    if let Some(hook_reason) = permission_hook_failure.as_ref() {
+                        (
+                            format!("permission denied by timeout hook: {hook_reason}"),
+                            format!(
+                                "tool call timed out: critical lifecycle hook failed: {hook_reason}"
+                            ),
+                        )
+                    } else {
+                        (
+                            "permission denied by timeout".to_string(),
+                            "tool call timed out: permission request timed out".to_string(),
+                        )
+                    };
+                reject_pending_permission(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    &rejection_reason,
+                    &response_message,
+                    PendingPermissionState {
+                        tool_call_id,
+                        request_correlation_id,
+                        hook_executions: permission_hook_executions.clone(),
+                        resolution: PendingPermissionResolution::ToolCall {
+                            tool_id,
+                            args_json,
+                            actor,
+                            category,
+                            plan_mode,
+                            plan_exit_target_profile,
+                            respond_to,
+                        },
+                    },
+                    &permission_hook_executions,
+                )
+            }
             PendingPermissionState {
                 resolution: PendingPermissionResolution::Question { respond_to, .. },
                 ..
             } => {
-                let _ = respond_to.send(Err("question timed out awaiting user input".to_string()));
+                let reason = if let Some(hook_reason) = permission_hook_failure.as_ref() {
+                    format!("question timed out: critical lifecycle hook failed: {hook_reason}")
+                } else {
+                    "question timed out awaiting user input".to_string()
+                };
+                let _ = respond_to.send(Err(reason));
                 Ok(())
             }
         };
     }
 
-    fn request_question_internal(
+    async fn request_question_internal(
         &mut self,
         actor: EventActor,
         tool_call_id: String,
@@ -1724,7 +2197,7 @@ impl Coordinator {
         respond_to: oneshot::Sender<Result<Vec<Vec<String>>, String>>,
     ) -> Result<(), CoordinatorError> {
         let mut respond_to = Some(respond_to);
-        let result = (|| -> Result<(), CoordinatorError> {
+        let result = async {
             let run_state = self
                 .run_state
                 .as_mut()
@@ -1738,45 +2211,122 @@ impl Coordinator {
             let kind = permission_kind_for_tool("user.question")
                 .expect("user.question must resolve to a formal permission kind");
             let timeout_ms = question_request_timeout_ms(&self.config.permission_policy);
-
-            let builder = EventBuilder::new(
-                self.clock.as_ref(),
-                self.redactor.as_ref(),
-                run_state.info.run_id.clone(),
-            );
-            let mut context = EventContext::new(run_state.next_event_seq, system_actor());
-            context.correlation_id = request_correlation_id
+            let request_summary = serde_json::to_string(&request_json)?;
+            let request_digest = permission_request_digest(kind.as_str(), &request_json);
+            let hook_request_id = request_correlation_id
                 .clone()
                 .or_else(|| Some(tool_call_id.clone()));
-            context.stream_key = Some(format!("permission:{permission_id}"));
 
-            let envelope = builder.permission_requested(
-                context,
-                PermissionRequestedArgs {
-                    permission_id: permission_id.clone(),
-                    kind: kind.as_str().to_string(),
-                    tool_call_id: Some(tool_call_id.clone()),
-                    summary: serde_json::to_string(&request_json)?,
-                    request_digest: permission_request_digest(kind.as_str(), &request_json),
+            append_permission_requested_event(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                run_state,
+                PermissionRequestedEventArgs {
+                    permission_id: &permission_id,
+                    tool_call_id: &tool_call_id,
+                    kind,
+                    summary: request_summary.clone(),
+                    request_digest,
                     timeout_ms,
                     default_decision: EventPermissionDecision::Deny,
+                    request_correlation_id: request_correlation_id.as_deref(),
                 },
             )?;
-            append_built_event(run_state, envelope)?;
 
-            run_state.pending_permissions.insert(
-                permission_id.clone(),
-                PendingPermissionState {
-                    tool_call_id,
-                    request_correlation_id,
-                    resolution: PendingPermissionResolution::Question {
-                        prompts,
-                        respond_to: respond_to
-                            .take()
-                            .expect("question responder is available before storing"),
-                    },
+            let requested_hook_batch = run_lifecycle_hooks(
+                self.clock.as_ref(),
+                &self.config.hook_runtime_config,
+                HookInvocationContext {
+                    event: HookLifecycleEvent::PermissionRequested,
+                    run_id: run_state.info.run_id.clone(),
+                    workspace_root: run_state.info.workspace_root.clone(),
+                    artifacts_dir: run_state.info.artifacts_dir.clone(),
+                    actor: Some(actor.clone()),
+                    agent_id: actor.agent_id.clone(),
+                    request_id: hook_request_id.clone(),
+                    permission_id: Some(permission_id.clone()),
+                    task_id: None,
+                    tool_call_id: Some(tool_call_id.clone()),
+                    tool_id: Some("user.question".to_string()),
+                    provider_id: None,
+                    model_id: None,
+                    parent_agent_id: None,
+                    category: None,
+                    outcome: Some("requested".to_string()),
+                    output_summary: Some(request_summary),
+                    failure_reason: None,
                 },
-            );
+            )
+            .await;
+
+            let mut pending = PendingPermissionState {
+                tool_call_id,
+                request_correlation_id,
+                hook_executions: requested_hook_batch.hook_executions.clone(),
+                resolution: PendingPermissionResolution::Question {
+                    actor: actor.clone(),
+                    prompts,
+                    respond_to: respond_to
+                        .take()
+                        .expect("question responder is available before storing"),
+                },
+            };
+
+            if let Some(reason) = requested_hook_batch.critical_failure {
+                let mut final_reason = format!("critical lifecycle hook failed: {reason}");
+                append_permission_resolved_event(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    permission_id.clone(),
+                    EventPermissionDecision::Deny,
+                    Some(final_reason.clone()),
+                )?;
+
+                let resolved_hook_batch = run_lifecycle_hooks(
+                    self.clock.as_ref(),
+                    &self.config.hook_runtime_config,
+                    HookInvocationContext {
+                        event: HookLifecycleEvent::PermissionResolved,
+                        run_id: run_state.info.run_id.clone(),
+                        workspace_root: run_state.info.workspace_root.clone(),
+                        artifacts_dir: run_state.info.artifacts_dir.clone(),
+                        actor: Some(actor.clone()),
+                        agent_id: actor.agent_id.clone(),
+                        request_id: hook_request_id,
+                        permission_id: Some(permission_id),
+                        task_id: None,
+                        tool_call_id: Some(pending.tool_call_id.clone()),
+                        tool_id: Some("user.question".to_string()),
+                        provider_id: None,
+                        model_id: None,
+                        parent_agent_id: None,
+                        category: None,
+                        outcome: Some("deny".to_string()),
+                        output_summary: Some(final_reason.clone()),
+                        failure_reason: Some(final_reason.clone()),
+                    },
+                )
+                .await;
+                pending
+                    .hook_executions
+                    .extend(resolved_hook_batch.hook_executions.clone());
+                if let Some(resolved_reason) = resolved_hook_batch.critical_failure {
+                    final_reason = format!(
+                        "{final_reason}; critical lifecycle hook failed: {resolved_reason}"
+                    );
+                }
+
+                if let PendingPermissionResolution::Question { respond_to, .. } = pending.resolution
+                {
+                    let _ = respond_to.send(Err(final_reason.clone()));
+                }
+                return Err(CoordinatorError::LifecycleHookFailed(final_reason));
+            }
+
+            run_state
+                .pending_permissions
+                .insert(permission_id.clone(), pending);
 
             let job_tx = self.job_tx.clone();
             tokio::spawn(async move {
@@ -1787,7 +2337,8 @@ impl Coordinator {
             });
 
             Ok(())
-        })();
+        }
+        .await;
 
         if let Err(err) = &result {
             if let Some(respond_to) = respond_to {
@@ -1932,7 +2483,16 @@ impl Coordinator {
         Ok(())
     }
 
+    #[cfg(test)]
     fn job_finished_internal(
+        &mut self,
+        task_id: String,
+        outcome: JobOutcome,
+    ) -> Result<(), CoordinatorError> {
+        block_on_coordinator_future(self.job_finished_internal_async(task_id, outcome))
+    }
+
+    async fn job_finished_internal_async(
         &mut self,
         task_id: String,
         outcome: JobOutcome,
@@ -1944,6 +2504,17 @@ impl Coordinator {
         let Some(task) = run_state.tasks.remove(&task_id) else {
             return Ok(());
         };
+        let task_hook_state = run_state
+            .task_hook_state
+            .remove(&task_id)
+            .unwrap_or_else(|| TaskHookState {
+                tool_id: match &task.queue_key {
+                    ConcurrencyKey::Tool { tool_id } => tool_id.clone(),
+                    _ => String::new(),
+                },
+                category: None,
+                hook_executions: Vec::new(),
+            });
 
         if run_state.cancelled_running_tasks.remove(&task_id) {
             append_payload_event_with_correlation(
@@ -2005,6 +2576,36 @@ impl Coordinator {
                 let artifact_refs = event_artifact_refs(&result.artifacts);
                 let lineage =
                     tool_task_lineage_metadata(&task, result_for_response.structured_json.as_ref());
+                let mut hook_executions = task_hook_state.hook_executions.clone();
+                hook_executions.extend(extract_hook_execution_metadata(
+                    result_for_response.structured_json.as_ref(),
+                ));
+                let finish_hook_batch = run_lifecycle_hooks(
+                    self.clock.as_ref(),
+                    &self.config.hook_runtime_config,
+                    HookInvocationContext {
+                        event: HookLifecycleEvent::ToolCallFinished,
+                        run_id: run_state.info.run_id.clone(),
+                        workspace_root: run_state.info.workspace_root.clone(),
+                        artifacts_dir: run_state.info.artifacts_dir.clone(),
+                        actor: Some(task.owner_actor.clone()),
+                        agent_id: task.owner_actor.agent_id.clone(),
+                        request_id: request_correlation_id.clone(),
+                        permission_id: None,
+                        task_id: Some(task_id.clone()),
+                        tool_call_id: Some(task.tool_call_id.clone()),
+                        tool_id: Some(task_hook_state.tool_id.clone()),
+                        provider_id: None,
+                        model_id: None,
+                        parent_agent_id: None,
+                        category: task_hook_state.category.clone(),
+                        outcome: Some("succeeded".to_string()),
+                        output_summary: Some(result_summary.clone()),
+                        failure_reason: None,
+                    },
+                )
+                .await;
+                hook_executions.extend(finish_hook_batch.hook_executions.clone());
                 for artifact in &result.artifacts {
                     append_artifact_written_event(
                         self.clock.as_ref(),
@@ -2015,6 +2616,40 @@ impl Coordinator {
                         request_correlation_id.as_deref(),
                         task.tool_metadata.as_ref(),
                     )?;
+                }
+                if let Some(reason) = finish_hook_batch.critical_failure.clone() {
+                    append_payload_event_with_correlation(
+                        self.clock.as_ref(),
+                        self.redactor.as_ref(),
+                        run_state,
+                        task.owner_actor.clone(),
+                        Some(format!("task:{task_id}")),
+                        request_correlation_id.clone(),
+                        EventV1::TaskCancelled(TaskCancelledEvent {
+                            task_id,
+                            reason: reason.clone(),
+                        }),
+                    )?;
+                    append_failed_tool_call_finished_event(
+                        self.clock.as_ref(),
+                        self.redactor.as_ref(),
+                        run_state,
+                        &task.tool_call_id,
+                        &reason,
+                        request_correlation_id.as_deref(),
+                        tool_call_metadata(
+                            task.tool_metadata.as_ref(),
+                            Some(lineage),
+                            artifact_refs,
+                            Some(timing.clone()),
+                            hook_executions.clone(),
+                        ),
+                        &hook_executions,
+                    )?;
+                    if let Some(respond_to) = task.respond_to {
+                        let _ = respond_to.send(Err(reason.clone()));
+                    }
+                    return Ok(());
                 }
                 append_payload_event_with_correlation(
                     self.clock.as_ref(),
@@ -2030,6 +2665,7 @@ impl Coordinator {
                         metadata: Some(TaskCompletionMetadata {
                             lineage: Some(lineage.clone()),
                             timing: Some(timing.clone()),
+                            hook_executions: hook_executions.clone(),
                         }),
                     }),
                 )?;
@@ -2040,6 +2676,7 @@ impl Coordinator {
                     &artifact_refs,
                     &lineage,
                     &timing,
+                    &hook_executions,
                 ));
 
                 append_tool_call_finished_event(
@@ -2056,6 +2693,7 @@ impl Coordinator {
                             Some(lineage),
                             artifact_refs,
                             Some(timing.clone()),
+                            hook_executions,
                         ),
                         request_correlation_id: request_correlation_id.as_deref(),
                     },
@@ -2065,7 +2703,7 @@ impl Coordinator {
                 }
             }
             JobOutcome::Failed { error } => {
-                let error_for_response = error.clone();
+                let mut final_error = error.clone();
                 if let Some(metadata) = task.hashline_edit.as_ref() {
                     append_edit_rejected_event(
                         self.clock.as_ref(),
@@ -2078,6 +2716,38 @@ impl Coordinator {
                     )?;
                 }
 
+                let mut hook_executions = task_hook_state.hook_executions.clone();
+                let finish_hook_batch = run_lifecycle_hooks(
+                    self.clock.as_ref(),
+                    &self.config.hook_runtime_config,
+                    HookInvocationContext {
+                        event: HookLifecycleEvent::ToolCallFinished,
+                        run_id: run_state.info.run_id.clone(),
+                        workspace_root: run_state.info.workspace_root.clone(),
+                        artifacts_dir: run_state.info.artifacts_dir.clone(),
+                        actor: Some(task.owner_actor.clone()),
+                        agent_id: task.owner_actor.agent_id.clone(),
+                        request_id: request_correlation_id.clone(),
+                        permission_id: None,
+                        task_id: Some(task_id.clone()),
+                        tool_call_id: Some(task.tool_call_id.clone()),
+                        tool_id: Some(task_hook_state.tool_id.clone()),
+                        provider_id: None,
+                        model_id: None,
+                        parent_agent_id: None,
+                        category: task_hook_state.category.clone(),
+                        outcome: Some("failed".to_string()),
+                        output_summary: None,
+                        failure_reason: Some(final_error.clone()),
+                    },
+                )
+                .await;
+                hook_executions.extend(finish_hook_batch.hook_executions.clone());
+                if let Some(hook_reason) = finish_hook_batch.critical_failure {
+                    final_error =
+                        format!("{final_error}; critical lifecycle hook failed: {hook_reason}");
+                }
+
                 append_payload_event_with_correlation(
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
@@ -2087,7 +2757,7 @@ impl Coordinator {
                     request_correlation_id.clone(),
                     EventV1::TaskCancelled(TaskCancelledEvent {
                         task_id,
-                        reason: error,
+                        reason: final_error.clone(),
                     }),
                 )?;
 
@@ -2096,22 +2766,23 @@ impl Coordinator {
                     self.redactor.as_ref(),
                     run_state,
                     &task.tool_call_id,
-                    "tool execution failed",
+                    &final_error,
                     request_correlation_id.as_deref(),
                     tool_call_metadata(
                         task.tool_metadata.as_ref(),
                         Some(tool_task_lineage_metadata(&task, None)),
                         Vec::new(),
                         Some(timing.clone()),
+                        hook_executions.clone(),
                     ),
+                    &hook_executions,
                 )?;
                 if let Some(respond_to) = task.respond_to {
-                    let _ = respond_to
-                        .send(Err(format!("tool execution failed: {error_for_response}")));
+                    let _ = respond_to.send(Err(format!("tool execution failed: {final_error}")));
                 }
             }
             JobOutcome::Cancelled { reason } => {
-                let reason_for_response = reason.clone();
+                let mut final_reason = reason.clone();
                 if let Some(metadata) = task.hashline_edit.as_ref() {
                     append_edit_rejected_event(
                         self.clock.as_ref(),
@@ -2124,6 +2795,38 @@ impl Coordinator {
                     )?;
                 }
 
+                let mut hook_executions = task_hook_state.hook_executions.clone();
+                let finish_hook_batch = run_lifecycle_hooks(
+                    self.clock.as_ref(),
+                    &self.config.hook_runtime_config,
+                    HookInvocationContext {
+                        event: HookLifecycleEvent::ToolCallFinished,
+                        run_id: run_state.info.run_id.clone(),
+                        workspace_root: run_state.info.workspace_root.clone(),
+                        artifacts_dir: run_state.info.artifacts_dir.clone(),
+                        actor: Some(task.owner_actor.clone()),
+                        agent_id: task.owner_actor.agent_id.clone(),
+                        request_id: request_correlation_id.clone(),
+                        permission_id: None,
+                        task_id: Some(task_id.clone()),
+                        tool_call_id: Some(task.tool_call_id.clone()),
+                        tool_id: Some(task_hook_state.tool_id.clone()),
+                        provider_id: None,
+                        model_id: None,
+                        parent_agent_id: None,
+                        category: task_hook_state.category.clone(),
+                        outcome: Some("cancelled".to_string()),
+                        output_summary: None,
+                        failure_reason: Some(final_reason.clone()),
+                    },
+                )
+                .await;
+                hook_executions.extend(finish_hook_batch.hook_executions.clone());
+                if let Some(hook_reason) = finish_hook_batch.critical_failure {
+                    final_reason =
+                        format!("{final_reason}; critical lifecycle hook failed: {hook_reason}");
+                }
+
                 append_payload_event_with_correlation(
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
@@ -2131,7 +2834,10 @@ impl Coordinator {
                     task.owner_actor.clone(),
                     Some(format!("task:{task_id}")),
                     request_correlation_id.clone(),
-                    EventV1::TaskCancelled(TaskCancelledEvent { task_id, reason }),
+                    EventV1::TaskCancelled(TaskCancelledEvent {
+                        task_id,
+                        reason: final_reason.clone(),
+                    }),
                 )?;
 
                 append_failed_tool_call_finished_event(
@@ -2139,18 +2845,19 @@ impl Coordinator {
                     self.redactor.as_ref(),
                     run_state,
                     &task.tool_call_id,
-                    "tool execution cancelled",
+                    &final_reason,
                     request_correlation_id.as_deref(),
                     tool_call_metadata(
                         task.tool_metadata.as_ref(),
                         Some(tool_task_lineage_metadata(&task, None)),
                         Vec::new(),
                         Some(timing),
+                        hook_executions.clone(),
                     ),
+                    &hook_executions,
                 )?;
                 if let Some(respond_to) = task.respond_to {
-                    let _ =
-                        respond_to.send(Err(format!("tool call cancelled: {reason_for_response}")));
+                    let _ = respond_to.send(Err(format!("tool call cancelled: {final_reason}")));
                 }
             }
         }
@@ -2158,7 +2865,7 @@ impl Coordinator {
         Ok(())
     }
 
-    fn agent_provider_request_started_internal(
+    async fn agent_provider_request_started_internal(
         &mut self,
         args: AgentProviderRequestStartedArgs,
     ) -> Result<(), CoordinatorError> {
@@ -2175,9 +2882,12 @@ impl Coordinator {
             return Ok(());
         };
 
-        if !run_state.running_agent_turns.contains_key(&task_id) {
+        let Some(running) = run_state.running_agent_turns.get(&task_id) else {
             return Ok(());
-        }
+        };
+        let category = running.category.clone();
+        let cancellation_token = running.cancellation_token.clone();
+        let parent_agent_id = run_state.subagent_parent_by_id.get(&agent_id).cloned();
 
         append_payload_event_with_correlation(
             self.clock.as_ref(),
@@ -2187,13 +2897,58 @@ impl Coordinator {
             Some(format!("agent:{agent_id}")),
             Some(request_id.clone()),
             EventV1::ProviderRequestStarted(crate::event::ProviderRequestStartedEvent {
-                request_id,
-                provider_id,
-                model_id,
-                prompt_summary,
+                request_id: request_id.clone(),
+                provider_id: provider_id.clone(),
+                model_id: model_id.clone(),
+                prompt_summary: prompt_summary.clone(),
                 request_digest,
             }),
         )?;
+
+        let hook_batch = run_lifecycle_hooks(
+            self.clock.as_ref(),
+            &self.config.hook_runtime_config,
+            HookInvocationContext {
+                event: HookLifecycleEvent::ProviderRequestStarted,
+                run_id: run_state.info.run_id.clone(),
+                workspace_root: run_state.info.workspace_root.clone(),
+                artifacts_dir: run_state.info.artifacts_dir.clone(),
+                actor: Some(agent_actor(&agent_id)),
+                agent_id: Some(agent_id.clone()),
+                request_id: Some(request_id.clone()),
+                permission_id: None,
+                task_id: Some(task_id.clone()),
+                tool_call_id: None,
+                tool_id: None,
+                provider_id: Some(provider_id),
+                model_id: Some(model_id),
+                parent_agent_id,
+                category,
+                outcome: Some("started".to_string()),
+                output_summary: Some(prompt_summary),
+                failure_reason: None,
+            },
+        )
+        .await;
+        if let Some(running) = run_state.running_agent_turns.get_mut(&task_id) {
+            running
+                .hook_executions
+                .extend(hook_batch.hook_executions.clone());
+        }
+        if let Some(reason) = hook_batch.critical_failure {
+            cancellation_token.cancel();
+            if run_state.cancelled_running_tasks.insert(task_id.clone()) {
+                append_payload_event_with_correlation(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    agent_actor(&agent_id),
+                    Some(format!("task:{task_id}")),
+                    Some(request_id),
+                    EventV1::TaskCancelled(TaskCancelledEvent { task_id, reason }),
+                )?;
+            }
+        }
 
         Ok(())
     }
@@ -2229,7 +2984,7 @@ impl Coordinator {
         Ok(())
     }
 
-    fn agent_provider_request_finished_internal(
+    async fn agent_provider_request_finished_internal(
         &mut self,
         task_id: String,
         agent_id: String,
@@ -2241,9 +2996,12 @@ impl Coordinator {
             return Ok(());
         };
 
-        if !run_state.running_agent_turns.contains_key(&task_id) {
+        let Some(running) = run_state.running_agent_turns.get(&task_id) else {
             return Ok(());
-        }
+        };
+        let category = running.category.clone();
+        let cancellation_token = running.cancellation_token.clone();
+        let parent_agent_id = run_state.subagent_parent_by_id.get(&agent_id).cloned();
 
         append_payload_event_with_correlation(
             self.clock.as_ref(),
@@ -2253,16 +3011,61 @@ impl Coordinator {
             Some(format!("agent:{agent_id}")),
             Some(request_id.clone()),
             EventV1::ProviderRequestFinished(crate::event::ProviderRequestFinishedEvent {
-                request_id,
-                finish_reason,
-                output_digest,
+                request_id: request_id.clone(),
+                finish_reason: finish_reason.clone(),
+                output_digest: output_digest.clone(),
             }),
         )?;
+
+        let hook_batch = run_lifecycle_hooks(
+            self.clock.as_ref(),
+            &self.config.hook_runtime_config,
+            HookInvocationContext {
+                event: HookLifecycleEvent::ProviderRequestFinished,
+                run_id: run_state.info.run_id.clone(),
+                workspace_root: run_state.info.workspace_root.clone(),
+                artifacts_dir: run_state.info.artifacts_dir.clone(),
+                actor: Some(agent_actor(&agent_id)),
+                agent_id: Some(agent_id.clone()),
+                request_id: Some(request_id.clone()),
+                permission_id: None,
+                task_id: Some(task_id.clone()),
+                tool_call_id: None,
+                tool_id: None,
+                provider_id: None,
+                model_id: None,
+                parent_agent_id,
+                category,
+                outcome: Some(finish_reason.clone()),
+                output_summary: output_digest,
+                failure_reason: None,
+            },
+        )
+        .await;
+        if let Some(running) = run_state.running_agent_turns.get_mut(&task_id) {
+            running
+                .hook_executions
+                .extend(hook_batch.hook_executions.clone());
+        }
+        if let Some(reason) = hook_batch.critical_failure {
+            cancellation_token.cancel();
+            if run_state.cancelled_running_tasks.insert(task_id.clone()) {
+                append_payload_event_with_correlation(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    agent_actor(&agent_id),
+                    Some(format!("task:{task_id}")),
+                    Some(request_id),
+                    EventV1::TaskCancelled(TaskCancelledEvent { task_id, reason }),
+                )?;
+            }
+        }
 
         Ok(())
     }
 
-    fn agent_turn_finished_internal(
+    async fn agent_turn_finished_internal(
         &mut self,
         task_id: String,
         _agent_id: String,
@@ -2280,6 +3083,81 @@ impl Coordinator {
         let was_cancelled = run_state.cancelled_running_tasks.remove(&task_id);
         let dequeued = run_state.scheduler.complete(&running.queue_key);
         let finished_mono_ms = self.clock.mono_ms();
+        let subagent_parent_id = run_state
+            .subagent_parent_by_id
+            .get(&running.agent_id)
+            .cloned();
+        let (hook_outcome, hook_output_summary, hook_failure_reason) = match &outcome {
+            AgentTurnTaskOutcome::Succeeded { output } => {
+                ("succeeded".to_string(), Some(output.clone()), None)
+            }
+            AgentTurnTaskOutcome::Failed { reason } => {
+                ("failed".to_string(), None, Some(reason.clone()))
+            }
+        };
+        let finished_hook_batch = run_lifecycle_hooks(
+            self.clock.as_ref(),
+            &self.config.hook_runtime_config,
+            HookInvocationContext {
+                event: HookLifecycleEvent::AgentTurnFinished,
+                run_id: run_state.info.run_id.clone(),
+                workspace_root: run_state.info.workspace_root.clone(),
+                artifacts_dir: run_state.info.artifacts_dir.clone(),
+                actor: Some(agent_actor(&running.agent_id)),
+                agent_id: Some(running.agent_id.clone()),
+                request_id: Some(request_id.clone()),
+                permission_id: None,
+                task_id: Some(task_id.clone()),
+                tool_call_id: None,
+                tool_id: None,
+                provider_id: None,
+                model_id: None,
+                parent_agent_id: None,
+                category: running.category.clone(),
+                outcome: Some(hook_outcome.clone()),
+                output_summary: hook_output_summary.clone(),
+                failure_reason: hook_failure_reason.clone(),
+            },
+        )
+        .await;
+        let mut hook_executions = running.hook_executions.clone();
+        hook_executions.extend(finished_hook_batch.hook_executions.clone());
+        let mut critical_hook_failure = finished_hook_batch.critical_failure.clone();
+
+        if let Some(parent_agent_id) = subagent_parent_id {
+            let subagent_finished_hook_batch = run_lifecycle_hooks(
+                self.clock.as_ref(),
+                &self.config.hook_runtime_config,
+                HookInvocationContext {
+                    event: HookLifecycleEvent::SubagentFinished,
+                    run_id: run_state.info.run_id.clone(),
+                    workspace_root: run_state.info.workspace_root.clone(),
+                    artifacts_dir: run_state.info.artifacts_dir.clone(),
+                    actor: Some(agent_actor(&running.agent_id)),
+                    agent_id: Some(running.agent_id.clone()),
+                    request_id: Some(request_id.clone()),
+                    permission_id: None,
+                    task_id: Some(task_id.clone()),
+                    tool_call_id: None,
+                    tool_id: None,
+                    provider_id: None,
+                    model_id: None,
+                    parent_agent_id: Some(parent_agent_id),
+                    category: running.category.clone(),
+                    outcome: Some(hook_outcome),
+                    output_summary: hook_output_summary,
+                    failure_reason: hook_failure_reason,
+                },
+            )
+            .await;
+            hook_executions.extend(subagent_finished_hook_batch.hook_executions.clone());
+            if let Some(reason) = subagent_finished_hook_batch.critical_failure {
+                critical_hook_failure = Some(match critical_hook_failure {
+                    Some(existing) => format!("{existing}; {reason}"),
+                    None => reason,
+                });
+            }
+        }
 
         if !was_cancelled {
             match outcome {
@@ -2292,28 +3170,47 @@ impl Coordinator {
                             user_prompt: running.request_prompt,
                             assistant_response: output.clone(),
                         });
-                    append_payload_event_with_correlation(
-                        self.clock.as_ref(),
-                        self.redactor.as_ref(),
-                        run_state,
-                        agent_actor(&running.agent_id),
-                        Some(format!("task:{task_id}")),
-                        Some(request_id),
-                        EventV1::TaskCompleted(TaskCompletedEvent {
-                            task_id,
-                            result_digest: digest12(output.as_bytes()),
-                            result_summary: output,
-                            metadata: Some(TaskCompletionMetadata {
-                                lineage: None,
-                                timing: Some(execution_timing_metadata(
-                                    running.started_mono_ms,
-                                    finished_mono_ms,
-                                )),
+                    if let Some(reason) = critical_hook_failure.clone() {
+                        append_payload_event_with_correlation(
+                            self.clock.as_ref(),
+                            self.redactor.as_ref(),
+                            run_state,
+                            agent_actor(&running.agent_id),
+                            Some(format!("task:{task_id}")),
+                            Some(request_id),
+                            EventV1::TaskCancelled(TaskCancelledEvent { task_id, reason }),
+                        )?;
+                    } else {
+                        append_payload_event_with_correlation(
+                            self.clock.as_ref(),
+                            self.redactor.as_ref(),
+                            run_state,
+                            agent_actor(&running.agent_id),
+                            Some(format!("task:{task_id}")),
+                            Some(request_id),
+                            EventV1::TaskCompleted(TaskCompletedEvent {
+                                task_id,
+                                result_digest: digest12(output.as_bytes()),
+                                result_summary: output,
+                                metadata: Some(TaskCompletionMetadata {
+                                    lineage: None,
+                                    timing: Some(execution_timing_metadata(
+                                        running.started_mono_ms,
+                                        finished_mono_ms,
+                                    )),
+                                    hook_executions,
+                                }),
                             }),
-                        }),
-                    )?;
+                        )?;
+                    }
                 }
                 AgentTurnTaskOutcome::Failed { reason } => {
+                    let reason = match critical_hook_failure.clone() {
+                        Some(hook_reason) => {
+                            format!("{reason}; critical lifecycle hook failed: {hook_reason}")
+                        }
+                        None => reason,
+                    };
                     append_payload_event_with_correlation(
                         self.clock.as_ref(),
                         self.redactor.as_ref(),
@@ -2350,10 +3247,12 @@ impl Coordinator {
                     self.redactor.as_ref(),
                     self.job_tx.clone(),
                     run_state,
+                    self.config.hook_runtime_config.clone(),
                     self.config.provider.clone(),
                     self.config.tool_registry.clone(),
                     queued,
-                )?;
+                )
+                .await?;
             }
         }
 
@@ -2373,6 +3272,9 @@ struct RunState {
     agents: BTreeMap<String, AgentProfile>,
     provider_context_by_agent: BTreeMap<String, Vec<ProviderConversationTurn>>,
     tasks: BTreeMap<String, TaskState>,
+    task_hook_state: BTreeMap<String, TaskHookState>,
+    agent_hook_state: BTreeMap<String, Vec<HookExecutionMetadata>>,
+    subagent_parent_by_id: BTreeMap<String, String>,
     pending_permissions: BTreeMap<String, PendingPermissionState>,
     cancelled_running_tasks: BTreeSet<String>,
     queued_agent_turns: BTreeMap<String, QueuedAgentTurn>,
@@ -2397,9 +3299,11 @@ struct RunningAgentTurn {
     agent_id: String,
     request_id: String,
     request_prompt: String,
+    category: Option<String>,
     queue_key: ConcurrencyKey,
     cancellation_token: CancellationToken,
     started_mono_ms: u64,
+    hook_executions: Vec<HookExecutionMetadata>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2430,9 +3334,17 @@ struct TaskState {
     respond_to: Option<oneshot::Sender<Result<ToolResult, String>>>,
 }
 
+#[derive(Debug, Clone, Default)]
+struct TaskHookState {
+    tool_id: String,
+    category: Option<String>,
+    hook_executions: Vec<HookExecutionMetadata>,
+}
+
 struct PendingPermissionState {
     tool_call_id: String,
     request_correlation_id: Option<String>,
+    hook_executions: Vec<HookExecutionMetadata>,
     resolution: PendingPermissionResolution,
 }
 
@@ -2447,6 +3359,7 @@ enum PendingPermissionResolution {
         respond_to: Option<oneshot::Sender<Result<ToolResult, String>>>,
     },
     Question {
+        actor: EventActor,
         prompts: Vec<QuestionPromptSpec>,
         respond_to: oneshot::Sender<Result<Vec<Vec<String>>, String>>,
     },
@@ -2474,6 +3387,34 @@ struct QuestionOptionSpec {
     _description: String,
 }
 
+#[derive(Debug, Clone, Default)]
+struct HookExecutionBatch {
+    hook_executions: Vec<HookExecutionMetadata>,
+    critical_failure: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct HookInvocationContext {
+    event: HookLifecycleEvent,
+    run_id: String,
+    workspace_root: PathBuf,
+    artifacts_dir: PathBuf,
+    actor: Option<EventActor>,
+    agent_id: Option<String>,
+    request_id: Option<String>,
+    permission_id: Option<String>,
+    task_id: Option<String>,
+    tool_call_id: Option<String>,
+    tool_id: Option<String>,
+    provider_id: Option<String>,
+    model_id: Option<String>,
+    parent_agent_id: Option<String>,
+    category: Option<String>,
+    outcome: Option<String>,
+    output_summary: Option<String>,
+    failure_reason: Option<String>,
+}
+
 struct AgentTurnTaskScheduledEventArgs<'a> {
     task_id: &'a str,
     agent_id: &'a str,
@@ -2483,6 +3424,8 @@ struct AgentTurnTaskScheduledEventArgs<'a> {
 }
 
 struct PermissionDeniedArgs<'a> {
+    actor: EventActor,
+    category: Option<String>,
     tool_id: &'a str,
     tool_call_id: &'a str,
     hashline_edit: Option<&'a HashlineEditMetadata>,
@@ -2516,6 +3459,7 @@ struct ToolCallExecutionArgs {
     args_json: Value,
     actor: EventActor,
     category: Option<String>,
+    hook_executions: Vec<HookExecutionMetadata>,
     plan_mode: bool,
     plan_exit_target_profile: Option<String>,
     tool_registry: Arc<ToolRegistry>,
@@ -2590,11 +3534,372 @@ fn resolve_plan_profile_context(
     (true, fallback)
 }
 
-fn start_tool_call_execution<C, R>(
+#[cfg(test)]
+fn block_on_coordinator_future<T>(future: impl std::future::Future<Output = T>) -> T {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("coordinator helper runtime")
+        .block_on(future)
+}
+
+async fn run_lifecycle_hooks<C>(
+    clock: &C,
+    runtime: &HookRuntimeConfig,
+    context: HookInvocationContext,
+) -> HookExecutionBatch
+where
+    C: Clock + ?Sized,
+{
+    let mut batch = HookExecutionBatch::default();
+
+    for (index, hook) in runtime.hooks.lifecycle.iter().enumerate() {
+        if hook.event != context.event {
+            continue;
+        }
+
+        if runtime.suppress_execution {
+            batch.hook_executions.push(HookExecutionMetadata {
+                hook_name: hook_identifier(hook, index),
+                status: HookExecutionStatus::Skipped,
+                hook_event: Some(context.event.as_str().to_string()),
+                command_digest: Some(digest12(hook.command.join("\u{0}").as_bytes())),
+                output_digest: None,
+                output_summary: Some("suppressed during deterministic execution".to_string()),
+                duration_ms: Some(0),
+            });
+            continue;
+        }
+
+        let (metadata, failure) =
+            execute_lifecycle_hook(clock, runtime, hook, index, &context).await;
+        batch.hook_executions.push(metadata);
+        if hook.critical {
+            if let Some(failure) = failure {
+                batch.critical_failure = Some(failure);
+                break;
+            }
+        }
+    }
+
+    batch
+}
+
+async fn execute_lifecycle_hook<C>(
+    clock: &C,
+    runtime: &HookRuntimeConfig,
+    hook: &LifecycleHookConfig,
+    index: usize,
+    context: &HookInvocationContext,
+) -> (HookExecutionMetadata, Option<String>)
+where
+    C: Clock + ?Sized,
+{
+    let hook_name = hook_identifier(hook, index);
+    let command_digest = digest12(hook.command.join("\u{0}").as_bytes());
+    let started_mono_ms = clock.mono_ms();
+
+    let execution = execute_lifecycle_hook_command(runtime, hook, &hook_name, context).await;
+    let finished_mono_ms = clock.mono_ms();
+
+    match execution {
+        Ok((output_digest, output_summary)) => (
+            HookExecutionMetadata {
+                hook_name,
+                status: HookExecutionStatus::Succeeded,
+                hook_event: Some(context.event.as_str().to_string()),
+                command_digest: Some(command_digest),
+                output_digest: Some(output_digest),
+                output_summary: Some(output_summary),
+                duration_ms: Some(finished_mono_ms.saturating_sub(started_mono_ms)),
+            },
+            None,
+        ),
+        Err((reason, output_summary)) => {
+            let failure = format!(
+                "hook `{hook_name}` for `{}` failed: {reason}",
+                context.event.as_str()
+            );
+            (
+                HookExecutionMetadata {
+                    hook_name,
+                    status: HookExecutionStatus::Failed,
+                    hook_event: Some(context.event.as_str().to_string()),
+                    command_digest: Some(command_digest),
+                    output_digest: Some(digest12(reason.as_bytes())),
+                    output_summary: Some(output_summary),
+                    duration_ms: Some(finished_mono_ms.saturating_sub(started_mono_ms)),
+                },
+                Some(failure),
+            )
+        }
+    }
+}
+
+async fn execute_lifecycle_hook_command(
+    runtime: &HookRuntimeConfig,
+    hook: &LifecycleHookConfig,
+    hook_name: &str,
+    context: &HookInvocationContext,
+) -> Result<(String, String), (String, String)> {
+    let executable = hook.command.first().ok_or_else(|| {
+        (
+            format!("hook `{hook_name}` is missing a command executable"),
+            "no output".to_string(),
+        )
+    })?;
+
+    if !hook_executable_allowed(&runtime.shell_allowlist, executable) {
+        return Err((
+            format!("executable `{executable}` is not in the shell allowlist"),
+            "no output".to_string(),
+        ));
+    }
+
+    let cwd = resolve_hook_cwd(
+        &runtime.shell_allowlist,
+        &context.workspace_root,
+        hook.cwd.as_deref(),
+    )
+    .map_err(|err| (err, "no output".to_string()))?;
+    let mut command = tokio::process::Command::new(executable);
+    command.args(&hook.command[1..]);
+    command.current_dir(&cwd);
+    command.kill_on_drop(true);
+    for (key, value) in hook_environment(hook_name, context, &cwd, hook) {
+        command.env(key, value);
+    }
+
+    let output = tokio::time::timeout(Duration::from_millis(hook.timeout_ms), command.output())
+        .await
+        .map_err(|_| {
+            (
+                format!("timed out after {} ms", hook.timeout_ms),
+                "no output".to_string(),
+            )
+        })?
+        .map_err(|err| {
+            (
+                format!("failed to execute command: {err}"),
+                "no output".to_string(),
+            )
+        })?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let output_summary = summarize_hook_output(&stdout, &stderr);
+    let output_digest =
+        digest12(format!("{}\u{0}{}\u{0}{:?}", stdout, stderr, output.status).as_bytes());
+
+    if output.status.success() {
+        Ok((output_digest, output_summary))
+    } else {
+        Err((
+            format!(
+                "exit status {:?}: {output_summary}",
+                output.status.code().unwrap_or(-1)
+            ),
+            output_summary,
+        ))
+    }
+}
+
+fn hook_identifier(hook: &LifecycleHookConfig, index: usize) -> String {
+    hook.id
+        .clone()
+        .unwrap_or_else(|| format!("{}_{:02}", hook.event.as_str(), index + 1))
+}
+
+fn hook_executable_allowed(allowlist: &ShellAllowlist, executable: &str) -> bool {
+    allowlist
+        .executables
+        .iter()
+        .any(|allowed| allowed == executable)
+}
+
+fn resolve_hook_cwd(
+    allowlist: &ShellAllowlist,
+    workspace_root: &Path,
+    cwd: Option<&str>,
+) -> Result<PathBuf, String> {
+    let cwd = match cwd {
+        Some(value) => workspace_root.join(value),
+        None => workspace_root.to_path_buf(),
+    };
+
+    if allowlist.cwd_roots.is_empty() {
+        return Ok(cwd);
+    }
+
+    let canonical_cwd = cwd
+        .canonicalize()
+        .map_err(|err| format!("failed to resolve cwd: {err}"))?;
+    let allowed = allowlist.cwd_roots.iter().any(|root| {
+        workspace_root
+            .join(root)
+            .canonicalize()
+            .map(|allowed_root| canonical_cwd.starts_with(&allowed_root))
+            .unwrap_or(false)
+    });
+
+    if allowed {
+        Ok(canonical_cwd)
+    } else {
+        Err(format!(
+            "cwd {} is not in the shell allowlist",
+            canonical_cwd.display()
+        ))
+    }
+}
+
+fn hook_environment(
+    hook_name: &str,
+    context: &HookInvocationContext,
+    cwd: &Path,
+    hook: &LifecycleHookConfig,
+) -> BTreeMap<String, String> {
+    let mut env = hook.env.clone();
+    env.insert("HARNESS_HOOK_ID".to_string(), hook_name.to_string());
+    env.insert(
+        "HARNESS_HOOK_EVENT".to_string(),
+        context.event.as_str().to_string(),
+    );
+    env.insert("HARNESS_HOOK_RUN_ID".to_string(), context.run_id.clone());
+    env.insert(
+        "HARNESS_HOOK_WORKSPACE_ROOT".to_string(),
+        context.workspace_root.display().to_string(),
+    );
+    env.insert(
+        "HARNESS_HOOK_ARTIFACTS_DIR".to_string(),
+        context.artifacts_dir.display().to_string(),
+    );
+    env.insert("HARNESS_HOOK_CWD".to_string(), cwd.display().to_string());
+    if let Some(actor) = context.actor.as_ref() {
+        env.insert(
+            "HARNESS_HOOK_ACTOR_KIND".to_string(),
+            format!("{:?}", actor.kind).to_ascii_lowercase(),
+        );
+        if let Some(actor_agent_id) = actor.agent_id.as_ref() {
+            env.insert(
+                "HARNESS_HOOK_ACTOR_AGENT_ID".to_string(),
+                actor_agent_id.clone(),
+            );
+        }
+    }
+    if let Some(agent_id) = context.agent_id.as_ref() {
+        env.insert("HARNESS_HOOK_AGENT_ID".to_string(), agent_id.clone());
+    }
+    if let Some(request_id) = context.request_id.as_ref() {
+        env.insert("HARNESS_HOOK_REQUEST_ID".to_string(), request_id.clone());
+    }
+    if let Some(permission_id) = context.permission_id.as_ref() {
+        env.insert(
+            "HARNESS_HOOK_PERMISSION_ID".to_string(),
+            permission_id.clone(),
+        );
+    }
+    if let Some(task_id) = context.task_id.as_ref() {
+        env.insert("HARNESS_HOOK_TASK_ID".to_string(), task_id.clone());
+    }
+    if let Some(tool_call_id) = context.tool_call_id.as_ref() {
+        env.insert(
+            "HARNESS_HOOK_TOOL_CALL_ID".to_string(),
+            tool_call_id.clone(),
+        );
+    }
+    if let Some(tool_id) = context.tool_id.as_ref() {
+        env.insert("HARNESS_HOOK_TOOL_ID".to_string(), tool_id.clone());
+    }
+    if let Some(provider_id) = context.provider_id.as_ref() {
+        env.insert("HARNESS_HOOK_PROVIDER_ID".to_string(), provider_id.clone());
+    }
+    if let Some(model_id) = context.model_id.as_ref() {
+        env.insert("HARNESS_HOOK_MODEL_ID".to_string(), model_id.clone());
+    }
+    if let Some(parent_agent_id) = context.parent_agent_id.as_ref() {
+        env.insert(
+            "HARNESS_HOOK_PARENT_AGENT_ID".to_string(),
+            parent_agent_id.clone(),
+        );
+    }
+    if let Some(category) = context.category.as_ref() {
+        env.insert("HARNESS_HOOK_CATEGORY".to_string(), category.clone());
+    }
+    if let Some(outcome) = context.outcome.as_ref() {
+        env.insert("HARNESS_HOOK_OUTCOME".to_string(), outcome.clone());
+    }
+    if let Some(output_summary) = context.output_summary.as_ref() {
+        env.insert(
+            "HARNESS_HOOK_OUTPUT_SUMMARY".to_string(),
+            output_summary.clone(),
+        );
+    }
+    if let Some(failure_reason) = context.failure_reason.as_ref() {
+        env.insert(
+            "HARNESS_HOOK_FAILURE_REASON".to_string(),
+            failure_reason.clone(),
+        );
+    }
+
+    env.insert(
+        "HARNESS_HOOK_CONTEXT_JSON".to_string(),
+        json!({
+            "hook_id": hook_name,
+            "event": context.event.as_str(),
+            "run_id": context.run_id,
+            "workspace_root": context.workspace_root.display().to_string(),
+            "artifacts_dir": context.artifacts_dir.display().to_string(),
+            "cwd": cwd.display().to_string(),
+            "actor": context.actor.as_ref().map(|actor| json!({
+                "kind": format!("{:?}", actor.kind).to_ascii_lowercase(),
+                "agent_id": actor.agent_id,
+            })),
+            "agent_id": context.agent_id,
+            "request_id": context.request_id,
+            "permission_id": context.permission_id,
+            "task_id": context.task_id,
+            "tool_call_id": context.tool_call_id,
+            "tool_id": context.tool_id,
+            "provider_id": context.provider_id,
+            "model_id": context.model_id,
+            "parent_agent_id": context.parent_agent_id,
+            "category": context.category,
+            "outcome": context.outcome,
+            "output_summary": context.output_summary,
+            "failure_reason": context.failure_reason,
+        })
+        .to_string(),
+    );
+
+    env
+}
+
+fn summarize_hook_output(stdout: &str, stderr: &str) -> String {
+    let combined = if stderr.trim().is_empty() {
+        stdout.trim()
+    } else if stdout.trim().is_empty() {
+        stderr.trim()
+    } else {
+        "stdout/stderr captured"
+    };
+
+    let mut summary = combined.chars().take(160).collect::<String>();
+    if combined.chars().count() > 160 {
+        summary.push('…');
+    }
+    if summary.is_empty() {
+        "no output".to_string()
+    } else {
+        summary
+    }
+}
+
+async fn start_tool_call_execution<C, R>(
     clock: &C,
     redactor: &R,
     job_tx: mpsc::Sender<Command>,
     run_state: &mut RunState,
+    hook_runtime_config: HookRuntimeConfig,
     args: ToolCallExecutionArgs,
 ) -> Result<(), CoordinatorError>
 where
@@ -2607,12 +3912,14 @@ where
         args_json,
         actor,
         category,
+        hook_executions,
         plan_mode,
         plan_exit_target_profile,
         tool_registry,
         request_correlation_id,
         respond_to,
     } = args;
+    let mut respond_to = respond_to;
     let tool_metadata = tool_identity_metadata(&tool_id);
 
     let Some(tool) = tool_registry.get(&tool_id) else {
@@ -2636,6 +3943,7 @@ where
             "unknown tool",
             request_correlation_id.as_deref(),
             requested_tool_call_metadata(&tool_id),
+            &[],
         )?;
         return Err(CoordinatorError::PolicyViolation(format!(
             "tool `{tool_id}` is not registered"
@@ -2669,6 +3977,7 @@ where
             "capability forbidden",
             request_correlation_id.as_deref(),
             requested_tool_call_metadata(&tool_id),
+            &[],
         )?;
         return Err(CoordinatorError::PolicyViolation(
             "tool capability forbidden for actor".to_string(),
@@ -2694,6 +4003,56 @@ where
             metadata,
             request_correlation_id.as_deref(),
         )?;
+    }
+
+    let started_hook_batch = run_lifecycle_hooks(
+        clock,
+        &hook_runtime_config,
+        HookInvocationContext {
+            event: HookLifecycleEvent::ToolCallStarted,
+            run_id: run_state.info.run_id.clone(),
+            workspace_root: run_state.info.workspace_root.clone(),
+            artifacts_dir: run_state.info.artifacts_dir.clone(),
+            actor: Some(actor.clone()),
+            agent_id: actor.agent_id.clone(),
+            request_id: request_correlation_id.clone(),
+            permission_id: None,
+            task_id: None,
+            tool_call_id: Some(tool_call_id.clone()),
+            tool_id: Some(tool_id.clone()),
+            provider_id: None,
+            model_id: None,
+            parent_agent_id: None,
+            category: category.clone(),
+            outcome: Some("started".to_string()),
+            output_summary: None,
+            failure_reason: None,
+        },
+    )
+    .await;
+    let mut initial_hook_executions = hook_executions;
+    initial_hook_executions.extend(started_hook_batch.hook_executions.clone());
+    if let Some(reason) = started_hook_batch.critical_failure.clone() {
+        append_failed_tool_call_finished_event(
+            clock,
+            redactor,
+            run_state,
+            &tool_call_id,
+            &reason,
+            request_correlation_id.as_deref(),
+            tool_call_metadata(
+                tool_metadata.as_ref(),
+                None,
+                Vec::new(),
+                None,
+                initial_hook_executions.clone(),
+            ),
+            &initial_hook_executions,
+        )?;
+        if let Some(respond_to) = respond_to.take() {
+            let _ = respond_to.send(Err(reason.clone()));
+        }
+        return Err(CoordinatorError::LifecycleHookFailed(reason.to_string()));
     }
 
     let task_id = format!("task_{:06}", run_state.next_task_id);
@@ -2737,6 +4096,14 @@ where
             last_progress_kind: JobProgressKind::Heartbeat,
             hashline_edit,
             respond_to,
+        },
+    );
+    run_state.task_hook_state.insert(
+        task_id.clone(),
+        TaskHookState {
+            tool_id: tool_id.clone(),
+            category: category.clone(),
+            hook_executions: initial_hook_executions,
         },
     );
 
@@ -2792,11 +4159,12 @@ where
     Ok(())
 }
 
-fn schedule_agent_turn<C, R>(
+async fn schedule_agent_turn<C, R>(
     clock: &C,
     redactor: &R,
     job_tx: mpsc::Sender<Command>,
     run_state: &mut RunState,
+    hook_runtime_config: HookRuntimeConfig,
     args: ScheduleAgentTurnArgs,
 ) -> Result<(), CoordinatorError>
 where
@@ -2848,6 +4216,7 @@ where
                 redactor,
                 job_tx,
                 run_state,
+                hook_runtime_config,
                 provider,
                 tool_registry,
                 QueuedAgentTurn {
@@ -2859,7 +4228,8 @@ where
                     prior_turns,
                     queue_key,
                 },
-            )?;
+            )
+            .await?;
         }
         ScheduleDecision::Queued(_) => {
             append_agent_turn_task_scheduled_event(
@@ -2926,11 +4296,16 @@ where
     )
 }
 
-fn start_agent_turn_execution<C, R>(
+#[expect(
+    clippy::too_many_arguments,
+    reason = "coordinator launch wiring intentionally passes explicit runtime dependencies"
+)]
+async fn start_agent_turn_execution<C, R>(
     clock: &C,
     _redactor: &R,
     job_tx: mpsc::Sender<Command>,
     run_state: &mut RunState,
+    hook_runtime_config: HookRuntimeConfig,
     provider: Arc<dyn Provider>,
     tool_registry: Arc<ToolRegistry>,
     task: QueuedAgentTurn,
@@ -2941,17 +4316,63 @@ where
 {
     let cancellation_token = run_state.shutdown_token.child_token();
 
+    let category = Some(task.profile.category.clone());
+    let mut hook_executions = run_state
+        .agent_hook_state
+        .remove(&task.agent_id)
+        .unwrap_or_default();
+    let started_hook_batch = run_lifecycle_hooks(
+        clock,
+        &hook_runtime_config,
+        HookInvocationContext {
+            event: HookLifecycleEvent::AgentTurnStarted,
+            run_id: run_state.info.run_id.clone(),
+            workspace_root: run_state.info.workspace_root.clone(),
+            artifacts_dir: run_state.info.artifacts_dir.clone(),
+            actor: Some(agent_actor(&task.agent_id)),
+            agent_id: Some(task.agent_id.clone()),
+            request_id: Some(task.request_id.clone()),
+            permission_id: None,
+            task_id: Some(task.task_id.clone()),
+            tool_call_id: None,
+            tool_id: None,
+            provider_id: None,
+            model_id: None,
+            parent_agent_id: None,
+            category: category.clone(),
+            outcome: Some("started".to_string()),
+            output_summary: Some(task.request.prompt.clone()),
+            failure_reason: None,
+        },
+    )
+    .await;
+    hook_executions.extend(started_hook_batch.hook_executions.clone());
+
     run_state.running_agent_turns.insert(
         task.task_id.clone(),
         RunningAgentTurn {
             agent_id: task.agent_id.clone(),
             request_id: task.request_id.clone(),
             request_prompt: task.request.prompt.clone(),
+            category: category.clone(),
             queue_key: task.queue_key.clone(),
             cancellation_token: cancellation_token.clone(),
             started_mono_ms: clock.mono_ms(),
+            hook_executions,
         },
     );
+
+    if let Some(reason) = started_hook_batch.critical_failure {
+        let _ = job_tx
+            .send(Command::AgentTurnFinished {
+                task_id: task.task_id,
+                agent_id: task.agent_id,
+                request_id: task.request_id,
+                outcome: AgentTurnTaskOutcome::Failed { reason },
+            })
+            .await;
+        return Ok(());
+    }
 
     tokio::spawn(async move {
         let task_id = task.task_id.clone();
@@ -3059,9 +4480,10 @@ where
     Ok(())
 }
 
-fn finalize_permission_denied<C, R>(
+async fn finalize_permission_denied<C, R>(
     clock: &C,
     redactor: &R,
+    hook_runtime_config: &HookRuntimeConfig,
     run_state: &mut RunState,
     args: PermissionDeniedArgs<'_>,
 ) -> Result<(), CoordinatorError>
@@ -3070,6 +4492,8 @@ where
     R: Redactor + ?Sized,
 {
     let PermissionDeniedArgs {
+        actor,
+        category,
         tool_id,
         tool_call_id,
         hashline_edit,
@@ -3080,15 +4504,51 @@ where
 
     let permission_id = format!("perm_{:06}", run_state.next_permission_id);
     run_state.next_permission_id += 1;
+    let denial_reason = format!("{} ({})", reason, kind.as_str());
 
     append_permission_resolved_event(
         clock,
         redactor,
         run_state,
-        permission_id,
+        permission_id.clone(),
         EventPermissionDecision::Deny,
-        Some(format!("{} ({})", reason, kind.as_str())),
+        Some(denial_reason.clone()),
     )?;
+
+    let resolved_hook_batch = run_lifecycle_hooks(
+        clock,
+        hook_runtime_config,
+        HookInvocationContext {
+            event: HookLifecycleEvent::PermissionResolved,
+            run_id: run_state.info.run_id.clone(),
+            workspace_root: run_state.info.workspace_root.clone(),
+            artifacts_dir: run_state.info.artifacts_dir.clone(),
+            actor: Some(actor.clone()),
+            agent_id: actor.agent_id.clone(),
+            request_id: request_correlation_id
+                .map(ToOwned::to_owned)
+                .or_else(|| Some(tool_call_id.to_string())),
+            permission_id: Some(permission_id),
+            task_id: None,
+            tool_call_id: Some(tool_call_id.to_string()),
+            tool_id: Some(tool_id.to_string()),
+            provider_id: None,
+            model_id: None,
+            parent_agent_id: None,
+            category,
+            outcome: Some("deny".to_string()),
+            output_summary: Some(denial_reason.clone()),
+            failure_reason: Some(denial_reason.clone()),
+        },
+    )
+    .await;
+
+    let hook_executions = resolved_hook_batch.hook_executions.clone();
+    let mut final_rejection_reason = reason.to_string();
+    if let Some(hook_reason) = resolved_hook_batch.critical_failure.clone() {
+        final_rejection_reason =
+            format!("{final_rejection_reason}; critical lifecycle hook failed: {hook_reason}");
+    }
 
     let tool_metadata = tool_identity_metadata(tool_id);
 
@@ -3100,10 +4560,16 @@ where
             tool_call_id,
             hashline_edit,
             tool_metadata: tool_metadata.as_ref(),
-            reason,
+            reason: &final_rejection_reason,
             request_correlation_id,
+            hook_executions,
         },
     )?;
+
+    if let Some(reason) = resolved_hook_batch.critical_failure {
+        return Err(CoordinatorError::LifecycleHookFailed(reason));
+    }
+
     Ok(())
 }
 
@@ -3113,6 +4579,7 @@ struct ToolCallRejectionArgs<'a> {
     tool_metadata: Option<&'a ToolIdentityMetadata>,
     reason: &'a str,
     request_correlation_id: Option<&'a str>,
+    hook_executions: Vec<HookExecutionMetadata>,
 }
 
 fn append_permission_resolved_event<C, R>(
@@ -3157,6 +4624,7 @@ where
         tool_metadata,
         reason,
         request_correlation_id,
+        hook_executions,
     } = args;
 
     if let Some(metadata) = hashline_edit {
@@ -3178,7 +4646,14 @@ where
         tool_call_id,
         reason,
         request_correlation_id,
-        tool_call_metadata(tool_metadata, None, Vec::new(), None),
+        tool_call_metadata(
+            tool_metadata,
+            None,
+            Vec::new(),
+            None,
+            hook_executions.clone(),
+        ),
+        &hook_executions,
     )?;
 
     Ok(())
@@ -3191,6 +4666,7 @@ fn reject_pending_permission<C, R>(
     reason: &str,
     response_message: &str,
     pending: PendingPermissionState,
+    hook_executions: &[HookExecutionMetadata],
 ) -> Result<(), CoordinatorError>
 where
     C: Clock + ?Sized,
@@ -3218,6 +4694,7 @@ where
             tool_metadata: tool_metadata.as_ref(),
             reason,
             request_correlation_id: pending.request_correlation_id.as_deref(),
+            hook_executions: hook_executions.to_vec(),
         },
     )?;
 
@@ -3605,6 +5082,10 @@ where
     append_built_event(run_state, envelope)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "failed tool-call terminal events carry explicit metadata and hook context"
+)]
 fn append_failed_tool_call_finished_event<C, R>(
     clock: &C,
     redactor: &R,
@@ -3613,6 +5094,7 @@ fn append_failed_tool_call_finished_event<C, R>(
     reason: &str,
     request_correlation_id: Option<&str>,
     metadata: Option<ToolCallMetadata>,
+    hook_executions: &[HookExecutionMetadata],
 ) -> Result<EventEnvelopeV1, CoordinatorError>
 where
     C: Clock + ?Sized,
@@ -3626,7 +5108,7 @@ where
             tool_call_id,
             status: ToolCallStatus::Failed,
             output_summary: Some(reason.to_string()),
-            output_json: Some(failed_tool_output_json(reason)),
+            output_json: Some(failed_tool_output_json(reason, hook_executions)),
             metadata,
             request_correlation_id,
         },
@@ -3734,6 +5216,13 @@ fn event_permission_decision(decision: PermissionDecision) -> EventPermissionDec
     }
 }
 
+fn permission_decision_label(decision: EventPermissionDecision) -> &'static str {
+    match decision {
+        EventPermissionDecision::Allow => "allow",
+        EventPermissionDecision::Deny => "deny",
+    }
+}
+
 fn permission_summary(redactor: &dyn Redactor, tool_id: &str, args_json: &Value) -> String {
     let redacted_args = crate::redact::redact_value(redactor, args_json);
     let args = serde_json::to_string(&redacted_args).unwrap_or_else(|_| "null".to_string());
@@ -3827,7 +5316,7 @@ fn hashline_diff_refs(result: &ToolResult) -> (Option<String>, Option<String>) {
 
 fn requested_tool_call_metadata(tool_id: &str) -> Option<ToolCallMetadata> {
     let tool_identity = tool_identity_metadata(tool_id);
-    tool_call_metadata(tool_identity.as_ref(), None, Vec::new(), None)
+    tool_call_metadata(tool_identity.as_ref(), None, Vec::new(), None, Vec::new())
 }
 
 fn tool_identity_metadata(tool_id: &str) -> Option<ToolIdentityMetadata> {
@@ -3845,6 +5334,7 @@ fn tool_call_metadata(
     lineage: Option<TaskLineageMetadata>,
     artifact_refs: Vec<EventArtifactRef>,
     timing: Option<ExecutionTimingMetadata>,
+    hook_executions: Vec<HookExecutionMetadata>,
 ) -> Option<ToolCallMetadata> {
     let canonical_tool_id = tool_identity.and_then(|value| value.canonical_tool_id.clone());
     let alias_source_tool_id = tool_identity.and_then(|value| value.alias_source_tool_id.clone());
@@ -3854,6 +5344,7 @@ fn tool_call_metadata(
         && lineage.is_none()
         && artifact_refs.is_empty()
         && timing.is_none()
+        && hook_executions.is_empty()
     {
         return None;
     }
@@ -3864,6 +5355,7 @@ fn tool_call_metadata(
         lineage,
         artifact_refs,
         timing,
+        hook_executions,
     })
 }
 
@@ -3875,11 +5367,20 @@ fn tool_task_lineage_metadata(
         parent_tool_call_id: Some(task.tool_call_id.clone()),
         parent_task_id: None,
         parent_request_id: task.request_correlation_id.clone(),
+        parent_session_id: task.owner_actor.agent_id.clone(),
         child_session_id: extract_lineage_value(
             output_json,
             &["child_session_id", "session_id", "task_id"],
         ),
         child_request_id: extract_lineage_value(output_json, &["child_request_id", "request_id"]),
+        child_provider_id: extract_lineage_value(
+            output_json,
+            &["child_provider_id", "provider_id", "provider"],
+        ),
+        child_model_id: extract_lineage_value(
+            output_json,
+            &["child_model_id", "model_id", "model"],
+        ),
     }
 }
 
@@ -3942,12 +5443,14 @@ fn stable_tool_output_json(
     artifact_refs: &[EventArtifactRef],
     lineage: &TaskLineageMetadata,
     timing: &ExecutionTimingMetadata,
+    hook_executions: &[HookExecutionMetadata],
 ) -> Value {
     let harness_metadata = json!({
         "output_summary": output_summary,
         "artifact_refs": artifact_refs,
         "lineage": lineage,
         "timing": timing,
+        "hook_executions": hook_executions,
     });
 
     match structured_output {
@@ -3965,11 +5468,110 @@ fn stable_tool_output_json(
     }
 }
 
-fn failed_tool_output_json(reason: &str) -> Value {
+fn extract_hook_execution_metadata(output_json: Option<&Value>) -> Vec<HookExecutionMetadata> {
+    let Some(output_json) = output_json else {
+        return Vec::new();
+    };
+
+    let mut hook_executions = Vec::new();
+    for source in [
+        output_json.get("hook_executions"),
+        output_json.get("hooks"),
+        output_json
+            .get("_harness")
+            .and_then(|harness| harness.get("hook_executions")),
+    ] {
+        let Some(items) = source.and_then(Value::as_array) else {
+            continue;
+        };
+
+        for item in items {
+            let Some(parsed) = parse_hook_execution_metadata(item) else {
+                continue;
+            };
+            if hook_executions.iter().any(|existing| existing == &parsed) {
+                continue;
+            }
+            hook_executions.push(parsed);
+        }
+    }
+
+    hook_executions
+}
+
+fn parse_hook_execution_metadata(value: &Value) -> Option<HookExecutionMetadata> {
+    let object = value.as_object()?;
+    let hook_name = extract_object_string(object, &["hook_name", "name", "hook", "id", "hook_id"])
+        .or_else(|| {
+            object
+                .get("hook")
+                .and_then(Value::as_object)
+                .and_then(|hook| extract_object_string(hook, &["name", "id"]))
+        })
+        .unwrap_or_else(|| "unknown_hook".to_string());
+
+    let status = extract_object_string(object, &["status", "result", "outcome"])
+        .map(|status| parse_hook_execution_status(&status))
+        .unwrap_or_default();
+
+    Some(HookExecutionMetadata {
+        hook_name,
+        status,
+        hook_event: extract_object_string(object, &["hook_event", "event", "phase", "trigger"]),
+        command_digest: extract_object_string(
+            object,
+            &["command_digest", "command_hash", "command_blake3"],
+        ),
+        output_digest: extract_object_string(object, &["output_digest", "result_digest", "digest"]),
+        output_summary: extract_object_string(
+            object,
+            &["output_summary", "summary", "message", "output_message"],
+        ),
+        duration_ms: extract_object_u64(object, &["duration_ms", "elapsed_ms"]),
+    })
+}
+
+fn extract_object_string(object: &serde_json::Map<String, Value>, keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Some(value) = object
+            .get(*key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+        {
+            return Some(value);
+        }
+    }
+
+    None
+}
+
+fn extract_object_u64(object: &serde_json::Map<String, Value>, keys: &[&str]) -> Option<u64> {
+    for key in keys {
+        if let Some(value) = object.get(*key).and_then(Value::as_u64) {
+            return Some(value);
+        }
+    }
+
+    None
+}
+
+fn parse_hook_execution_status(status: &str) -> HookExecutionStatus {
+    match status.trim().to_ascii_lowercase().as_str() {
+        "succeeded" | "success" | "ok" | "passed" => HookExecutionStatus::Succeeded,
+        "failed" | "error" => HookExecutionStatus::Failed,
+        "skipped" | "ignored" => HookExecutionStatus::Skipped,
+        _ => HookExecutionStatus::Unknown,
+    }
+}
+
+fn failed_tool_output_json(reason: &str, hook_executions: &[HookExecutionMetadata]) -> Value {
     json!({
         "_harness": {
             "status": "failed",
             "error": reason,
+            "hook_executions": hook_executions,
         }
     })
 }

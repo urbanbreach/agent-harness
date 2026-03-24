@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use harness_core::event::{ActorKind, EventActor, EventV1};
+use harness_core::event::{ActorKind, EventActor, EventV1, TaskScheduleState, ToolCallStatus};
 use harness_core::tool::{
     canonical_tool_id_for, Tool, ToolCapability, ToolContext, ToolError, ToolResult,
 };
@@ -56,63 +56,70 @@ impl AgentOpsExecutor {
             "child_session_id": agent_id.clone(),
             "child_request_id": request_id.clone(),
         });
+        let permissions = child_permission_metadata(ctx, &request);
 
         if request.run_in_background {
+            let child_session = child_session_observability(
+                &agent_id,
+                &request_id,
+                &request,
+                resumed_existing_session,
+                &permissions,
+                ChildRequestObservability {
+                    status: "scheduled",
+                    duration_ms: None,
+                    result_summary: None,
+                    failure_summary: None,
+                    tool_calls: ChildToolCallCounts::default(),
+                },
+            );
             return Ok(ToolResult {
                 display_text: format!(
                     "task_id: {agent_id}\nrequest_id: {request_id}\n\n<task_result>Background task scheduled.</task_result>"
                 ),
-                structured_json: Some(json!({
-                    "description": request.description,
-                    "profile": request.profile_name,
-                    "task_id": agent_id.clone(),
-                    "session_id": agent_id.clone(),
-                    "request_id": request_id.clone(),
-                    "child_session_id": agent_id.clone(),
-                    "child_request_id": request_id.clone(),
-                    "lineage": lineage.clone(),
-                    "load_skills": request.load_skills.clone(),
-                    "skills": request.load_skills,
-                    "command": request.command,
-                    "background": true,
-                    "mode": "background",
-                    "status": "scheduled",
-                    "resumed_existing_session": resumed_existing_session,
-                })),
+                structured_json: Some(spawn_result_json(
+                    &request,
+                    &agent_id,
+                    &request_id,
+                    lineage.clone(),
+                    &child_session,
+                )),
                 artifacts: Vec::new(),
             });
         }
 
-        let wait_started = Instant::now();
-        let result = wait_for_request_completion(ctx, &request_id).await?;
-        let duration_ms = wait_started.elapsed().as_millis() as u64;
-        let child_tool_call_count = count_request_tool_calls(ctx, &request_id).await.ok();
+        let child_observability = wait_for_request_completion(ctx, &request_id).await?;
+        let child_session = child_session_observability(
+            &agent_id,
+            &request_id,
+            &request,
+            resumed_existing_session,
+            &permissions,
+            child_observability,
+        );
+        let task_result = child_session
+            .result_summary
+            .clone()
+            .or_else(|| child_session.failure_summary.clone())
+            .unwrap_or_else(|| match child_session.status {
+                "timed_out" => {
+                    format!("timed out waiting for child session request {request_id}")
+                }
+                _ => "Child session finished without a summary.".to_string(),
+            });
 
         Ok(ToolResult {
             display_text: format!(
                 "task_id: {agent_id}\nrequest_id: {request_id}\n\n<task_result>\n{}\n</task_result>",
-                result
+                task_result
             ),
-            structured_json: Some(json!({
-                "description": request.description,
-                "profile": request.profile_name,
-                "task_id": agent_id.clone(),
-                "session_id": agent_id.clone(),
-                "request_id": request_id.clone(),
-                "child_session_id": agent_id.clone(),
-                "child_request_id": request_id.clone(),
-                "lineage": lineage,
-                "load_skills": request.load_skills.clone(),
-                "skills": request.load_skills,
-                "command": request.command,
-                "background": false,
-                "mode": "foreground",
-                "status": "completed",
-                "duration_ms": duration_ms,
-                "result_summary": result,
-                "child_tool_call_count": child_tool_call_count,
-                "resumed_existing_session": resumed_existing_session,
-            })),
+            structured_json: Some(spawn_result_json(
+                &request,
+                &agent_id,
+                &request_id,
+                lineage,
+                &child_session,
+            )),
             artifacts: Vec::new(),
         })
     }
@@ -134,12 +141,14 @@ impl AgentOpsExecutor {
         let mut outcomes = Vec::new();
         for (index, call) in calls.into_iter().enumerate() {
             let tool_id = call.tool;
+            let parameters = call.parameters;
             if index >= MAX_BATCH_CALLS {
                 let canonical_tool_id = canonical_tool_id_for(&tool_id).map(str::to_string);
                 outcomes.push(BatchCallOutcome {
                     index,
                     tool_id,
                     canonical_tool_id,
+                    parameters,
                     result: Err(BATCH_MAX_CALLS_ERROR.to_string()),
                 });
                 continue;
@@ -151,23 +160,25 @@ impl AgentOpsExecutor {
                     index,
                     tool_id,
                     canonical_tool_id,
+                    parameters,
                     result: Err(BATCH_NESTED_ERROR.to_string()),
                 });
                 continue;
             }
 
-            let parameters = call.parameters;
             let coordinator = ctx.coordinator.clone();
             let actor = ctx.actor.clone();
             let category = ctx.category.clone();
             join_set.spawn(async move {
+                let execution_parameters = parameters.clone();
                 let result = coordinator
-                    .execute_agent_tool_call(actor, category, tool_id.clone(), parameters)
+                    .execute_agent_tool_call(actor, category, tool_id.clone(), execution_parameters)
                     .await;
                 BatchCallOutcome {
                     index,
                     tool_id,
                     canonical_tool_id,
+                    parameters,
                     result,
                 }
             });
@@ -189,26 +200,7 @@ impl AgentOpsExecutor {
 
         let details = outcomes
             .into_iter()
-            .map(|outcome| match outcome.result {
-                Ok(value) => json!({
-                    "index": outcome.index,
-                    "tool_id": outcome.tool_id,
-                    "canonical_tool_id": outcome.canonical_tool_id,
-                    "success": true,
-                    "status": "succeeded",
-                    "summary": value.display_text,
-                    "structured_output": value.structured_json,
-                    "artifacts": value.artifacts,
-                }),
-                Err(error) => json!({
-                    "index": outcome.index,
-                    "tool_id": outcome.tool_id,
-                    "canonical_tool_id": outcome.canonical_tool_id,
-                    "success": false,
-                    "status": "failed",
-                    "error": error,
-                }),
-            })
+            .map(batch_detail_json)
             .collect::<Vec<_>>();
 
         Ok(ToolResult {
@@ -228,6 +220,13 @@ impl AgentOpsExecutor {
                     "concurrency": "parallel",
                     "result_order": "input",
                     "nested_batch_disallowed": true,
+                },
+                "audit": {
+                    "successful": successful,
+                    "failed": failed,
+                    "requested_call_count": requested_call_count,
+                    "processed_call_count": details.len(),
+                    "discarded_call_count": requested_call_count.saturating_sub(MAX_BATCH_CALLS),
                 },
                 "details": details,
             })),
@@ -333,7 +332,59 @@ struct BatchCallOutcome {
     index: usize,
     tool_id: String,
     canonical_tool_id: Option<String>,
+    parameters: Value,
     result: Result<ToolResult, String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+struct ChildToolCallCounts {
+    requested: u64,
+    succeeded: u64,
+    failed: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ChildPermissionMetadata {
+    spawn_permission_kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent_scope: Option<String>,
+    child_scope: String,
+    scope_relation: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ChildSessionObservability {
+    session_id: String,
+    request_id: String,
+    profile: String,
+    background: bool,
+    mode: &'static str,
+    status: &'static str,
+    resumed_existing_session: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    duration_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result_summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    failure_summary: Option<String>,
+    tool_calls: ChildToolCallCounts,
+    permissions: ChildPermissionMetadata,
+}
+
+#[derive(Debug, Clone)]
+struct ChildRequestObservability {
+    status: &'static str,
+    duration_ms: Option<u64>,
+    result_summary: Option<String>,
+    failure_summary: Option<String>,
+    tool_calls: ChildToolCallCounts,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ChildTerminalState {
+    Completed,
+    Failed,
+    TimedOut,
 }
 
 fn resolve_string_alias(
@@ -543,7 +594,7 @@ pub(crate) fn select_profile_name(
 async fn wait_for_request_completion(
     ctx: &ToolContext,
     request_id: &str,
-) -> Result<String, ToolError> {
+) -> Result<ChildRequestObservability, ToolError> {
     let store = ctx
         .coordinator
         .event_store()
@@ -562,15 +613,16 @@ async fn wait_for_request_completion(
                 EventV1::TaskCompleted(data)
                     if event.correlation_id.as_deref() == Some(request_id) =>
                 {
-                    return Ok(data.result_summary.clone())
+                    let _ = data;
+                    return summarize_child_request(ctx, request_id, ChildTerminalState::Completed)
+                        .await;
                 }
                 EventV1::TaskCancelled(data)
                     if event.correlation_id.as_deref() == Some(request_id) =>
                 {
-                    return Err(ToolError::Execution(format!(
-                        "subtask cancelled: {}",
-                        data.reason
-                    )))
+                    let _ = data;
+                    return summarize_child_request(ctx, request_id, ChildTerminalState::Failed)
+                        .await;
                 }
                 _ => {}
             },
@@ -584,12 +636,14 @@ async fn wait_for_request_completion(
             }
         }
     }
-    Err(ToolError::Execution(format!(
-        "timed out waiting for task request {request_id}"
-    )))
+    summarize_child_request(ctx, request_id, ChildTerminalState::TimedOut).await
 }
 
-async fn count_request_tool_calls(ctx: &ToolContext, request_id: &str) -> Result<u64, ToolError> {
+async fn summarize_child_request(
+    ctx: &ToolContext,
+    request_id: &str,
+    terminal_state: ChildTerminalState,
+) -> Result<ChildRequestObservability, ToolError> {
     let store = ctx
         .coordinator
         .event_store()
@@ -599,17 +653,210 @@ async fn count_request_tool_calls(ctx: &ToolContext, request_id: &str) -> Result
         .replay(1)
         .map_err(|err| ToolError::Execution(format!("failed to replay events: {err}")))?;
 
-    let mut count = 0_u64;
+    let mut tool_calls = ChildToolCallCounts::default();
+    let mut started_mono_ms = None;
+    let mut observed_result_summary = None;
+    let mut observed_failure_summary = None;
+    let mut observed_duration_ms = None;
+    let mut observed_status = None;
+
     while let Some(next) = replay.next().await {
         let event = next
             .map_err(|err| ToolError::Execution(format!("failed to replay event stream: {err}")))?;
         if event.correlation_id.as_deref() != Some(request_id) {
             continue;
         }
-        if matches!(event.payload, EventV1::ToolCallRequested(_)) {
-            count = count.saturating_add(1);
+
+        match &event.payload {
+            EventV1::TaskScheduled(data) if data.state == TaskScheduleState::Started => {
+                started_mono_ms.get_or_insert(event.mono_ms);
+            }
+            EventV1::ToolCallRequested(_) => {
+                tool_calls.requested = tool_calls.requested.saturating_add(1);
+            }
+            EventV1::ToolCallFinished(data) => match data.status {
+                ToolCallStatus::Succeeded => {
+                    tool_calls.succeeded = tool_calls.succeeded.saturating_add(1);
+                }
+                ToolCallStatus::Failed => {
+                    tool_calls.failed = tool_calls.failed.saturating_add(1);
+                }
+            },
+            EventV1::TaskCompleted(data) => {
+                observed_status = Some("completed");
+                observed_result_summary = Some(data.result_summary.clone());
+                let timing = data
+                    .metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.timing.as_ref());
+                started_mono_ms = timing
+                    .and_then(|metadata| metadata.started_mono_ms)
+                    .or(started_mono_ms);
+                observed_duration_ms = timing
+                    .and_then(|metadata| metadata.elapsed_ms)
+                    .or_else(|| elapsed_ms_from_events(started_mono_ms, event.mono_ms));
+            }
+            EventV1::TaskCancelled(data) => {
+                observed_status = Some("failed");
+                observed_failure_summary = Some(data.reason.clone());
+                observed_duration_ms = elapsed_ms_from_events(started_mono_ms, event.mono_ms);
+            }
+            _ => {}
         }
     }
 
-    Ok(count)
+    let (status, failure_summary) = match (observed_status, terminal_state) {
+        (Some(status), _) => (status, observed_failure_summary),
+        (None, ChildTerminalState::Completed) => ("completed", observed_failure_summary),
+        (None, ChildTerminalState::Failed) => ("failed", observed_failure_summary),
+        (None, ChildTerminalState::TimedOut) => (
+            "timed_out",
+            Some(format!("timed out waiting for task request {request_id}")),
+        ),
+    };
+
+    Ok(ChildRequestObservability {
+        status,
+        duration_ms: observed_duration_ms,
+        result_summary: observed_result_summary,
+        failure_summary,
+        tool_calls,
+    })
+}
+
+fn elapsed_ms_from_events(started_mono_ms: Option<u64>, finished_mono_ms: u64) -> Option<u64> {
+    started_mono_ms.map(|started| finished_mono_ms.saturating_sub(started))
+}
+
+fn child_permission_metadata(
+    ctx: &ToolContext,
+    request: &AgentSpawnRequest,
+) -> ChildPermissionMetadata {
+    let parent_scope = ctx.category.clone();
+    let scope_relation = if parent_scope.as_deref() == Some(request.profile_name.as_str()) {
+        "inherits_parent_scope"
+    } else {
+        "isolated_by_requested_profile"
+    };
+
+    ChildPermissionMetadata {
+        spawn_permission_kind: "task",
+        parent_scope,
+        child_scope: request.profile_name.clone(),
+        scope_relation,
+    }
+}
+
+fn child_session_observability(
+    session_id: &str,
+    request_id: &str,
+    request: &AgentSpawnRequest,
+    resumed_existing_session: bool,
+    permissions: &ChildPermissionMetadata,
+    observability: ChildRequestObservability,
+) -> ChildSessionObservability {
+    ChildSessionObservability {
+        session_id: session_id.to_string(),
+        request_id: request_id.to_string(),
+        profile: request.profile_name.clone(),
+        background: request.run_in_background,
+        mode: if request.run_in_background {
+            "background"
+        } else {
+            "foreground"
+        },
+        status: observability.status,
+        resumed_existing_session,
+        duration_ms: observability.duration_ms,
+        result_summary: observability.result_summary,
+        failure_summary: observability.failure_summary,
+        tool_calls: observability.tool_calls,
+        permissions: permissions.clone(),
+    }
+}
+
+fn spawn_result_json(
+    request: &AgentSpawnRequest,
+    agent_id: &str,
+    request_id: &str,
+    lineage: Value,
+    child_session: &ChildSessionObservability,
+) -> Value {
+    json!({
+        "description": request.description,
+        "profile": request.profile_name,
+        "task_id": agent_id,
+        "session_id": agent_id,
+        "request_id": request_id,
+        "child_session_id": agent_id,
+        "child_request_id": request_id,
+        "lineage": lineage,
+        "load_skills": request.load_skills,
+        "skills": request.load_skills,
+        "command": request.command,
+        "background": child_session.background,
+        "mode": child_session.mode,
+        "status": child_session.status,
+        "duration_ms": child_session.duration_ms,
+        "result_summary": child_session.result_summary,
+        "failure_summary": child_session.failure_summary,
+        "child_tool_call_count": child_session.tool_calls.requested,
+        "child_tool_call_counts": child_session.tool_calls,
+        "resumed_existing_session": child_session.resumed_existing_session,
+        "permissions": child_session.permissions,
+        "child_session": child_session,
+    })
+}
+
+fn batch_detail_json(outcome: BatchCallOutcome) -> Value {
+    let request = json!({
+        "tool_id": outcome.tool_id,
+        "canonical_tool_id": outcome.canonical_tool_id,
+        "parameters": outcome.parameters,
+    });
+
+    match outcome.result {
+        Ok(value) => {
+            let result = json!({
+                "success": true,
+                "status": "succeeded",
+                "summary": value.display_text,
+                "structured_output": value.structured_json,
+                "artifacts": value.artifacts,
+            });
+
+            json!({
+                "index": outcome.index,
+                "tool_id": request.get("tool_id").cloned(),
+                "canonical_tool_id": request.get("canonical_tool_id").cloned(),
+                "parameters": request.get("parameters").cloned(),
+                "request": request,
+                "success": true,
+                "status": "succeeded",
+                "summary": result.get("summary").cloned(),
+                "structured_output": result.get("structured_output").cloned(),
+                "artifacts": result.get("artifacts").cloned(),
+                "result": result,
+            })
+        }
+        Err(error) => {
+            let result = json!({
+                "success": false,
+                "status": "failed",
+                "error": error,
+            });
+
+            json!({
+                "index": outcome.index,
+                "tool_id": request.get("tool_id").cloned(),
+                "canonical_tool_id": request.get("canonical_tool_id").cloned(),
+                "parameters": request.get("parameters").cloned(),
+                "request": request,
+                "success": false,
+                "status": "failed",
+                "error": result.get("error").cloned(),
+                "result": result,
+            })
+        }
+    }
 }

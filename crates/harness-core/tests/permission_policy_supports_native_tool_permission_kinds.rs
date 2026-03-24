@@ -12,13 +12,6 @@ fn permission_policy_supports_native_tool_permission_kinds() {
     let config = load_config_from_str(
         r#"
         {
-          backgroundTask: {
-            defaultConcurrency: 2,
-            providerConcurrency: 2,
-            modelConcurrency: 2,
-            staleTimeoutMs: 15000,
-            messageStalenessTimeoutMs: 5000,
-          },
           providers: {
             default: {
               type: "openai_compatible",
@@ -33,7 +26,7 @@ fn permission_policy_supports_native_tool_permission_kinds() {
               },
             },
           },
-          categories: {
+          profiles: {
             deep: {
               description: "Deep work",
               model_ref: "default:gpt-4o-mini",
@@ -46,12 +39,26 @@ fn permission_policy_supports_native_tool_permission_kinds() {
             },
           },
           permissions: {
-            edit: "ask",
-            shell: "deny",
-            network: "deny",
+            defaults: {
+              edit: "ask",
+              shell: "deny",
+              network: "deny",
+            },
           },
-          paths: {
+          runtime: {
+            background_tasks: {
+              default_concurrency: 2,
+              provider_concurrency: 2,
+              model_concurrency: 2,
+              stale_timeout_ms: 15000,
+              message_staleness_timeout_ms: 5000,
+            },
             session_dir: ".agent-harness/sessions",
+          },
+          integrations: {
+            remote_search: {
+              endpoint: "https://mcp.exa.ai/mcp",
+            },
           },
         }
         "#,

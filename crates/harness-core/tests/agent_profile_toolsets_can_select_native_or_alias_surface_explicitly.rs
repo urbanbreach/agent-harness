@@ -67,6 +67,7 @@ fn test_profile(tool_surface: ToolSurface) -> AgentProfile {
         category: "deep".to_string(),
         model_ref: "mock:model-1".to_string(),
         system_prompt: "sys".to_string(),
+        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         tool_surface,
         toolset: vec![
             "read".to_string(),

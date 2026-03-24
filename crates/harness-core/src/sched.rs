@@ -293,4 +293,38 @@ mod tests {
         assert_eq!(stale[0].task_id, "task_1");
         assert_eq!(stale[0].stale_for_ms, 1_500);
     }
+
+    #[test]
+    fn scheduler_limit_two_starts_two_and_dequeues_fifo_when_saturated() {
+        let mut scheduler = Scheduler::new(SchedulerLimits {
+            provider_model: 2,
+            tool: 1,
+        });
+
+        let key = ConcurrencyKey::ProviderModel {
+            provider_id: "mock".to_string(),
+            model_id: "model-1".to_string(),
+        };
+
+        let first = scheduler.schedule("task_1", key.clone());
+        let second = scheduler.schedule("task_2", key.clone());
+        let third = scheduler.schedule("task_3", key.clone());
+
+        assert!(matches!(
+            first,
+            ScheduleDecision::Started(task) if task.task_id == "task_1"
+        ));
+        assert!(matches!(
+            second,
+            ScheduleDecision::Started(task) if task.task_id == "task_2"
+        ));
+        assert!(matches!(
+            third,
+            ScheduleDecision::Queued(task) if task.task_id == "task_3"
+        ));
+
+        let dequeued = scheduler.complete(&key);
+        assert_eq!(dequeued.len(), 1);
+        assert_eq!(dequeued[0].task_id, "task_3");
+    }
 }

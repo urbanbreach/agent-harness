@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio_stream::StreamExt;
 
+use crate::config::ToolFailureMode;
 use crate::tool::{
     build_tool_function_name_mapping, resolve_tool_ids_for_surface, ToolRegistry, ToolResult,
     ToolSurface,
@@ -22,6 +23,7 @@ pub struct AgentProfile {
     pub category: String,
     pub model_ref: String,
     pub system_prompt: String,
+    pub tool_failure_mode: ToolFailureMode,
     #[serde(default)]
     pub tool_surface: ToolSurface,
     pub toolset: Vec<String>,
@@ -34,6 +36,7 @@ impl AgentProfile {
             category: name.clone(),
             model_ref: "default:default".to_string(),
             system_prompt: String::new(),
+            tool_failure_mode: ToolFailureMode::FailTurn,
             tool_surface: ToolSurface::Native,
             toolset: Vec::new(),
             name,
@@ -395,6 +398,31 @@ where
             let tool_result = match call_tool_and_wait(tool_id.clone(), args_json).await {
                 Ok(result) => result,
                 Err(reason) => {
+                    if matches!(
+                        profile.tool_failure_mode,
+                        ToolFailureMode::ContinueAsToolMessage
+                    ) {
+                        let tool_error_result = ToolResult {
+                            display_text: format!(
+                                "tool call `{}` failed: {reason}",
+                                tool_call.function_name
+                            ),
+                            structured_json: Some(serde_json::json!({
+                                "error": reason,
+                                "status": "failed"
+                            })),
+                            artifacts: Vec::new(),
+                        };
+                        messages.push(CompletionMessage {
+                            role: MessageRole::Tool,
+                            content: tool_result_to_message_content(&tool_error_result),
+                            name: Some(tool_call.function_name),
+                            tool_call_id: Some(tool_call.tool_call_id),
+                            assistant_tool_calls: None,
+                        });
+                        continue;
+                    }
+
                     return AgentTurnOutcome::Failed {
                         reason: format!(
                             "tool call `{}` failed closed: {reason}",
@@ -546,6 +574,7 @@ mod tests {
         build_provider_tool_defs, run_multi_turn_streaming, tool_result_to_message_content,
         AgentProfile, AgentRequest, AgentTurnOutcome, MultiTurnStreamingRequest,
     };
+    use crate::config::ToolFailureMode;
     use crate::tool::{
         Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult, ToolSurface,
     };
@@ -908,9 +937,170 @@ mod tests {
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             system_prompt: "sys".to_string(),
+            tool_failure_mode: ToolFailureMode::FailTurn,
             tool_surface: ToolSurface::Native,
             toolset: vec!["fs.read".to_string()],
         }
+    }
+
+    fn continue_profile() -> AgentProfile {
+        AgentProfile {
+            tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
+            ..test_profile()
+        }
+    }
+
+    struct RecordingProvider {
+        requests: Arc<Mutex<Vec<harness_providers::CompletionRequest>>>,
+        scripted_events: Vec<Vec<harness_providers::ProviderStreamEvent>>,
+        next_call_index: Arc<Mutex<usize>>,
+    }
+
+    impl RecordingProvider {
+        fn new(
+            requests: Arc<Mutex<Vec<harness_providers::CompletionRequest>>>,
+            scripted_events: Vec<Vec<harness_providers::ProviderStreamEvent>>,
+        ) -> Self {
+            Self {
+                requests,
+                scripted_events,
+                next_call_index: Arc::new(Mutex::new(0)),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl harness_providers::Provider for RecordingProvider {
+        async fn stream_completion(
+            &self,
+            req: harness_providers::CompletionRequest,
+        ) -> harness_providers::ProviderEventStream {
+            self.requests.lock().expect("lock requests").push(req);
+
+            let mut next_call_index = self.next_call_index.lock().expect("lock call index");
+            let call_index = *next_call_index;
+            *next_call_index += 1;
+
+            let events = self
+                .scripted_events
+                .get(call_index)
+                .cloned()
+                .unwrap_or_else(|| {
+                    vec![harness_providers::ProviderStreamEvent::Error {
+                        message: format!("unexpected stream_completion call index {call_index}"),
+                    }]
+                });
+
+            Box::pin(tokio_stream::iter(events))
+        }
+    }
+
+    #[tokio::test]
+    async fn multi_turn_runner_can_continue_as_tool_message_on_tool_failure() {
+        let profile = continue_profile();
+        let request = test_request();
+        let tool_registry = test_tool_registry();
+        let tool_defs =
+            build_provider_tool_defs(&profile, tool_registry.as_ref()).expect("build tool defs");
+        let function_name = tool_defs.first().expect("tool def").function_name.clone();
+
+        let first_request = completion_request(
+            "model-1",
+            vec![
+                completion_system_message("sys"),
+                completion_user_message("Use a tool"),
+            ],
+            &tool_defs,
+        );
+        let second_request = completion_request(
+            "model-1",
+            vec![
+                completion_system_message("sys"),
+                completion_user_message("Use a tool"),
+                completion_assistant_message_with_tool_call(
+                    "calling tool",
+                    &function_name,
+                    "call_1",
+                    r#"{"filePath":"/tmp/demo.txt"}"#,
+                ),
+                completion_tool_message(
+                    &tool_result_to_message_content(&ToolResult {
+                        display_text: format!(
+                            "tool call `{}` failed: command failed",
+                            function_name
+                        ),
+                        structured_json: Some(serde_json::json!({
+                            "error": "command failed",
+                            "status": "failed"
+                        })),
+                        artifacts: Vec::new(),
+                    }),
+                    &function_name,
+                    "call_1",
+                ),
+            ],
+            &tool_defs,
+        );
+
+        let requests = Arc::new(Mutex::new(
+            Vec::<harness_providers::CompletionRequest>::new(),
+        ));
+        let provider = Arc::new(RecordingProvider::new(
+            requests.clone(),
+            vec![
+                vec![
+                    harness_providers::ProviderStreamEvent::Start,
+                    harness_providers::ProviderStreamEvent::TextDelta("calling tool".to_string()),
+                    harness_providers::ProviderStreamEvent::ToolCallComplete {
+                        tool_call_id: "call_1".to_string(),
+                        function_name: function_name.clone(),
+                        arguments_json: r#"{"filePath":"/tmp/demo.txt"}"#.to_string(),
+                    },
+                    harness_providers::ProviderStreamEvent::Done {
+                        usage: CompletionUsage {
+                            prompt_tokens: 4,
+                            completion_tokens: 3,
+                            total_tokens: 7,
+                        },
+                    },
+                ],
+                vec![
+                    harness_providers::ProviderStreamEvent::Start,
+                    harness_providers::ProviderStreamEvent::TextDelta("final response".to_string()),
+                    harness_providers::ProviderStreamEvent::Done {
+                        usage: CompletionUsage {
+                            prompt_tokens: 10,
+                            completion_tokens: 3,
+                            total_tokens: 13,
+                        },
+                    },
+                ],
+            ],
+        ));
+
+        let outcome = run_multi_turn_streaming(
+            MultiTurnStreamingRequest {
+                provider,
+                tool_registry,
+                profile: &profile,
+                request_id: "req_000005".to_string(),
+                request,
+                prior_turns: &[],
+            },
+            move |_tool_id, _args_json| async move { Err("command failed".to_string()) },
+            |_event| async {},
+        )
+        .await;
+
+        assert_eq!(
+            outcome,
+            AgentTurnOutcome::Succeeded {
+                output: "final response".to_string(),
+            }
+        );
+
+        let requests = requests.lock().expect("lock requests");
+        assert_eq!(requests.as_slice(), &[first_request, second_request]);
     }
 
     fn test_request() -> AgentRequest {
