@@ -7,7 +7,8 @@ use serde_json::Value;
 use thiserror::Error;
 
 use crate::event::{
-    EventArtifactRef, EventEnvelopeV1, EventV1, TaskCompletionMetadata, ToolCallMetadata,
+    EventArtifactRef, EventEnvelopeV1, EventV1, ExecutionTimingMetadata, HookExecutionMetadata,
+    TaskCompletionMetadata, TaskLineageMetadata, TaskScheduleState, ToolCallMetadata,
     ToolCallStatus,
 };
 
@@ -120,6 +121,42 @@ pub struct ResumeTaskSnapshot {
     pub metadata: Option<TaskCompletionMetadata>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChildSessionTerminalState {
+    Completed,
+    Cancelled,
+    LateResult,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ResumeChildSessionSnapshot {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_tool_call_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_task_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_child_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_state: Option<ChildSessionTerminalState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timing: Option<ExecutionTimingMetadata>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hook_executions: Vec<HookExecutionMetadata>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResumePlan {
     pub run_id: String,
@@ -134,6 +171,8 @@ pub struct ResumePlan {
     pub tool_calls: BTreeMap<String, ResumeToolCallSnapshot>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub completed_tasks: BTreeMap<String, ResumeTaskSnapshot>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub child_sessions: BTreeMap<String, ResumeChildSessionSnapshot>,
     pub workspace_root: Option<String>,
     pub provider_model: Option<String>,
     pub is_resumable: bool,
@@ -157,6 +196,7 @@ impl ResumePlan {
             tasks_in_flight: BTreeSet::new(),
             tool_calls: BTreeMap::new(),
             completed_tasks: BTreeMap::new(),
+            child_sessions: BTreeMap::new(),
             workspace_root: None,
             provider_model: None,
             is_resumable: false,
@@ -235,6 +275,15 @@ pub enum ProjectionError {
     },
 }
 
+#[derive(Debug, Clone)]
+struct AgentTurnProjectionState {
+    agent_id: String,
+    request_id: Option<String>,
+    started_mono_ms: u64,
+    provider_id: Option<String>,
+    model_id: Option<String>,
+}
+
 pub fn project_run_summary<'a>(
     events: impl IntoIterator<Item = &'a EventEnvelopeV1>,
 ) -> Result<RunSummary, ProjectionError> {
@@ -293,6 +342,9 @@ pub fn project_resume_plan<'a>(
     let mut tasks_in_flight = BTreeSet::new();
     let mut tool_calls = BTreeMap::new();
     let mut completed_tasks = BTreeMap::new();
+    let mut child_sessions = BTreeMap::new();
+    let mut agent_turns_in_flight = BTreeMap::new();
+    let mut agent_turns_terminal_pending_late = BTreeMap::new();
     let mut workspace_root = None;
     let mut provider_model = None;
     let mut run_id: Option<String> = None;
@@ -330,6 +382,8 @@ pub fn project_resume_plan<'a>(
                 tasks_in_flight.clear();
                 tool_calls.clear();
                 completed_tasks.clear();
+                agent_turns_in_flight.clear();
+                agent_turns_terminal_pending_late.clear();
             }
             EventV1::RunFinished(_) => {
                 if latest_lifecycle_status != LifecycleSegmentStatus::Missing {
@@ -344,6 +398,15 @@ pub fn project_resume_plan<'a>(
             EventV1::AgentSpawned(payload) => {
                 known_agents.insert(payload.agent_id.clone(), payload.profile.clone());
                 known_profiles.insert(payload.profile.clone());
+                let child = child_sessions
+                    .entry(payload.agent_id.clone())
+                    .or_insert_with(ResumeChildSessionSnapshot::default);
+                if child.profile.is_none() {
+                    child.profile = Some(payload.profile.clone());
+                }
+                if child.parent_session_id.is_none() {
+                    child.parent_session_id = payload.parent_agent_id.clone();
+                }
             }
             EventV1::TaskScheduled(payload) => {
                 update_id_watermark(
@@ -353,6 +416,43 @@ pub fn project_resume_plan<'a>(
                     "task",
                 )?;
                 tasks_in_flight.insert(payload.task_id.clone());
+
+                if payload.state == TaskScheduleState::Started {
+                    let Some(queue_key) = payload.queue_key.as_deref() else {
+                        continue;
+                    };
+                    let Some((provider_id, model_id)) = parse_provider_model_queue_key(queue_key)
+                    else {
+                        continue;
+                    };
+                    let Some(agent_id) = event.actor.agent_id.as_ref() else {
+                        continue;
+                    };
+
+                    let request_id = event.correlation_id.clone();
+                    let turn = AgentTurnProjectionState {
+                        agent_id: agent_id.clone(),
+                        request_id: request_id.clone(),
+                        started_mono_ms: event.mono_ms,
+                        provider_id: Some(provider_id.clone()),
+                        model_id: Some(model_id.clone()),
+                    };
+                    agent_turns_in_flight.insert(payload.task_id.clone(), turn);
+
+                    let child = child_sessions
+                        .entry(agent_id.clone())
+                        .or_insert_with(ResumeChildSessionSnapshot::default);
+                    child.latest_child_request_id = request_id;
+                    child.provider_id = Some(provider_id);
+                    child.model_id = Some(model_id);
+                    child.terminal_state = None;
+                    child.terminal_reason = None;
+                    child.timing = Some(ExecutionTimingMetadata {
+                        started_mono_ms: Some(event.mono_ms),
+                        finished_mono_ms: None,
+                        elapsed_ms: None,
+                    });
+                }
             }
             EventV1::TaskCancelled(payload) => {
                 update_id_watermark(
@@ -362,6 +462,19 @@ pub fn project_resume_plan<'a>(
                     "task",
                 )?;
                 tasks_in_flight.remove(&payload.task_id);
+
+                if let Some(turn) = agent_turns_in_flight.remove(&payload.task_id) {
+                    apply_agent_turn_terminal_state(
+                        &mut child_sessions,
+                        &turn,
+                        ChildSessionTerminalState::Cancelled,
+                        Some(payload.reason.clone()),
+                        event.mono_ms,
+                        None,
+                        &[],
+                    );
+                    agent_turns_terminal_pending_late.insert(payload.task_id.clone(), turn);
+                }
             }
             EventV1::TaskCompleted(payload) => {
                 update_id_watermark(
@@ -378,6 +491,41 @@ pub fn project_resume_plan<'a>(
                         metadata: payload.metadata.clone(),
                     },
                 );
+
+                if let Some(metadata) = payload.metadata.as_ref() {
+                    apply_child_session_metadata(
+                        &mut child_sessions,
+                        metadata.lineage.as_ref(),
+                        event.actor.agent_id.as_deref(),
+                        metadata.timing.as_ref(),
+                        &metadata.hook_executions,
+                    );
+                }
+
+                if let Some(turn) = agent_turns_in_flight.remove(&payload.task_id) {
+                    let timing = payload
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.timing.clone())
+                        .unwrap_or_else(|| {
+                            derive_timing_from_start(turn.started_mono_ms, event.mono_ms)
+                        });
+                    let hook_executions = payload
+                        .metadata
+                        .as_ref()
+                        .map(|metadata| metadata.hook_executions.clone())
+                        .unwrap_or_default();
+
+                    apply_agent_turn_terminal_state(
+                        &mut child_sessions,
+                        &turn,
+                        ChildSessionTerminalState::Completed,
+                        None,
+                        event.mono_ms,
+                        Some(timing),
+                        &hook_executions,
+                    );
+                }
             }
             EventV1::TaskResultLate(payload) => {
                 update_id_watermark(
@@ -387,6 +535,30 @@ pub fn project_resume_plan<'a>(
                     "task",
                 )?;
                 tasks_in_flight.remove(&payload.task_id);
+
+                if let Some(turn) = agent_turns_terminal_pending_late
+                    .remove(&payload.task_id)
+                    .or_else(|| agent_turns_in_flight.remove(&payload.task_id))
+                {
+                    apply_agent_turn_terminal_state(
+                        &mut child_sessions,
+                        &turn,
+                        ChildSessionTerminalState::LateResult,
+                        None,
+                        event.mono_ms,
+                        Some(derive_timing_from_start(
+                            turn.started_mono_ms,
+                            event.mono_ms,
+                        )),
+                        &[],
+                    );
+                } else if let Some(agent_id) = event.actor.agent_id.as_ref() {
+                    let child = child_sessions
+                        .entry(agent_id.clone())
+                        .or_insert_with(ResumeChildSessionSnapshot::default);
+                    child.terminal_state = Some(ChildSessionTerminalState::LateResult);
+                    child.terminal_reason = None;
+                }
             }
             EventV1::ProviderRequestStarted(payload) => {
                 update_id_watermark(
@@ -396,6 +568,15 @@ pub fn project_resume_plan<'a>(
                     "request",
                 )?;
                 provider_model = Some(format!("{}/{}", payload.provider_id, payload.model_id));
+
+                if let Some(agent_id) = event.actor.agent_id.as_ref() {
+                    let child = child_sessions
+                        .entry(agent_id.clone())
+                        .or_insert_with(ResumeChildSessionSnapshot::default);
+                    child.latest_child_request_id = Some(payload.request_id.clone());
+                    child.provider_id = Some(payload.provider_id.clone());
+                    child.model_id = Some(payload.model_id.clone());
+                }
             }
             EventV1::ProviderStreamDelta(payload) => {
                 update_id_watermark(
@@ -424,8 +605,15 @@ pub fn project_resume_plan<'a>(
                     .entry(payload.tool_call_id.clone())
                     .or_insert_with(ResumeToolCallSnapshot::default);
                 tool_call.tool_id = Some(payload.tool_id.clone());
-                if let Some(metadata) = payload.metadata.clone() {
-                    merge_tool_call_metadata(tool_call, metadata);
+                if let Some(metadata) = payload.metadata.as_ref() {
+                    apply_child_session_metadata(
+                        &mut child_sessions,
+                        metadata.lineage.as_ref(),
+                        event.actor.agent_id.as_deref(),
+                        metadata.timing.as_ref(),
+                        &metadata.hook_executions,
+                    );
+                    merge_tool_call_metadata(tool_call, metadata.clone());
                 }
             }
             EventV1::ToolCallStarted(payload) => {
@@ -449,8 +637,15 @@ pub fn project_resume_plan<'a>(
                 tool_call.status = Some(payload.status);
                 tool_call.output_digest = payload.output_digest.clone();
                 tool_call.output_json = payload.output_json.clone();
-                if let Some(metadata) = payload.metadata.clone() {
-                    merge_tool_call_metadata(tool_call, metadata);
+                if let Some(metadata) = payload.metadata.as_ref() {
+                    apply_child_session_metadata(
+                        &mut child_sessions,
+                        metadata.lineage.as_ref(),
+                        event.actor.agent_id.as_deref(),
+                        metadata.timing.as_ref(),
+                        &metadata.hook_executions,
+                    );
+                    merge_tool_call_metadata(tool_call, metadata.clone());
                 }
             }
             EventV1::ArtifactWritten(payload) => {
@@ -531,6 +726,7 @@ pub fn project_resume_plan<'a>(
         tasks_in_flight,
         tool_calls,
         completed_tasks,
+        child_sessions,
         workspace_root,
         provider_model,
         is_resumable: resume_disabled_reason.is_none(),
@@ -539,23 +735,35 @@ pub fn project_resume_plan<'a>(
 }
 
 fn merge_tool_call_metadata(snapshot: &mut ResumeToolCallSnapshot, incoming: ToolCallMetadata) {
+    let ToolCallMetadata {
+        canonical_tool_id,
+        alias_source_tool_id,
+        lineage,
+        artifact_refs,
+        timing,
+        hook_executions,
+    } = incoming;
+
     let metadata = snapshot
         .metadata
         .get_or_insert_with(ToolCallMetadata::default);
     if metadata.canonical_tool_id.is_none() {
-        metadata.canonical_tool_id = incoming.canonical_tool_id;
+        metadata.canonical_tool_id = canonical_tool_id;
     }
     if metadata.alias_source_tool_id.is_none() {
-        metadata.alias_source_tool_id = incoming.alias_source_tool_id;
+        metadata.alias_source_tool_id = alias_source_tool_id;
     }
     if metadata.lineage.is_none() {
-        metadata.lineage = incoming.lineage;
+        metadata.lineage = lineage;
     }
     if metadata.timing.is_none() {
-        metadata.timing = incoming.timing;
+        metadata.timing = timing;
     }
-    for artifact_ref in incoming.artifact_refs {
+    for artifact_ref in artifact_refs {
         merge_artifact_ref(&mut metadata.artifact_refs, artifact_ref);
+    }
+    for hook_execution in hook_executions {
+        merge_hook_execution(&mut metadata.hook_executions, hook_execution);
     }
 }
 
@@ -573,6 +781,16 @@ fn merge_artifact_ref(existing: &mut Vec<EventArtifactRef>, candidate: EventArti
             .cmp(&right.path)
             .then_with(|| left.digest.cmp(&right.digest))
     });
+}
+
+fn merge_hook_execution(
+    existing: &mut Vec<HookExecutionMetadata>,
+    candidate: HookExecutionMetadata,
+) {
+    if existing.iter().any(|current| current == &candidate) {
+        return;
+    }
+    existing.push(candidate);
 }
 
 fn read_events_for_resume_inspection(run_dir: &Path) -> Result<Vec<EventEnvelopeV1>, String> {
@@ -627,6 +845,108 @@ fn parse_prefixed_counter(id: &str, expected_prefix: &str) -> Option<u64> {
         return None;
     }
     tail.parse::<u64>().ok()
+}
+
+fn parse_provider_model_queue_key(queue_key: &str) -> Option<(String, String)> {
+    let tail = queue_key.strip_prefix("provider_model:")?;
+    let mut parts = tail.splitn(2, ':');
+    let provider_id = parts
+        .next()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?
+        .to_string();
+    let model_id = parts
+        .next()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?
+        .to_string();
+    Some((provider_id, model_id))
+}
+
+fn apply_child_session_metadata(
+    child_sessions: &mut BTreeMap<String, ResumeChildSessionSnapshot>,
+    lineage: Option<&TaskLineageMetadata>,
+    parent_session_id: Option<&str>,
+    timing: Option<&ExecutionTimingMetadata>,
+    hook_executions: &[HookExecutionMetadata],
+) {
+    let Some(lineage) = lineage else {
+        return;
+    };
+    let Some(child_session_id) = lineage.child_session_id.as_ref() else {
+        return;
+    };
+
+    let child = child_sessions.entry(child_session_id.clone()).or_default();
+    if child.parent_tool_call_id.is_none() {
+        child.parent_tool_call_id = lineage.parent_tool_call_id.clone();
+    }
+    if child.parent_task_id.is_none() {
+        child.parent_task_id = lineage.parent_task_id.clone();
+    }
+    if child.parent_request_id.is_none() {
+        child.parent_request_id = lineage.parent_request_id.clone();
+    }
+    if child.parent_session_id.is_none() {
+        child.parent_session_id = lineage
+            .parent_session_id
+            .clone()
+            .or_else(|| parent_session_id.map(str::to_string));
+    }
+    if let Some(request_id) = lineage.child_request_id.as_ref() {
+        child.latest_child_request_id = Some(request_id.clone());
+    }
+    if child.provider_id.is_none() {
+        child.provider_id = lineage.child_provider_id.clone();
+    }
+    if child.model_id.is_none() {
+        child.model_id = lineage.child_model_id.clone();
+    }
+    if let Some(timing) = timing {
+        child.timing = Some(timing.clone());
+    }
+    for hook_execution in hook_executions {
+        merge_hook_execution(&mut child.hook_executions, hook_execution.clone());
+    }
+}
+
+fn apply_agent_turn_terminal_state(
+    child_sessions: &mut BTreeMap<String, ResumeChildSessionSnapshot>,
+    turn: &AgentTurnProjectionState,
+    terminal_state: ChildSessionTerminalState,
+    terminal_reason: Option<String>,
+    finished_mono_ms: u64,
+    timing_override: Option<ExecutionTimingMetadata>,
+    hook_executions: &[HookExecutionMetadata],
+) {
+    let child = child_sessions.entry(turn.agent_id.clone()).or_default();
+    child.latest_child_request_id = turn.request_id.clone();
+    if let Some(provider_id) = turn.provider_id.as_ref() {
+        child.provider_id = Some(provider_id.clone());
+    }
+    if let Some(model_id) = turn.model_id.as_ref() {
+        child.model_id = Some(model_id.clone());
+    }
+    child.terminal_state = Some(terminal_state);
+    child.terminal_reason = terminal_reason;
+    child.timing = Some(
+        timing_override
+            .unwrap_or_else(|| derive_timing_from_start(turn.started_mono_ms, finished_mono_ms)),
+    );
+    for hook_execution in hook_executions {
+        merge_hook_execution(&mut child.hook_executions, hook_execution.clone());
+    }
+}
+
+fn derive_timing_from_start(
+    started_mono_ms: u64,
+    finished_mono_ms: u64,
+) -> ExecutionTimingMetadata {
+    ExecutionTimingMetadata {
+        started_mono_ms: Some(started_mono_ms),
+        finished_mono_ms: Some(finished_mono_ms),
+        elapsed_ms: Some(finished_mono_ms.saturating_sub(started_mono_ms)),
+    }
 }
 
 fn resume_plan_disabled_reason(

@@ -4,9 +4,9 @@ use std::path::Path;
 use harness_core::event::{
     ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1, PermissionDecision,
     PermissionRequestedEvent, PermissionResolvedEvent, ProviderRequestStartedEvent,
-    RunFinishedEvent, RunStartedEvent, TaskCompletedEvent, TaskScheduleState, TaskScheduledEvent,
-    ToolCallFinishedEvent, ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus,
-    UserMessageSubmittedEvent, SCHEMA_VERSION,
+    RunFinishedEvent, RunStartedEvent, TaskCompletedEvent, TaskLineageMetadata, TaskScheduleState,
+    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallRequestedEvent,
+    ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use harness_core::proj::{inspect_resume_plan, LifecycleSegmentStatus};
 
@@ -477,6 +477,126 @@ fn resume_plan_keeps_provider_model_after_open_and_quit_resumed_segment() {
         plan.is_resumable,
         "open-and-quit resumed segment should remain resumable"
     );
+}
+
+#[test]
+fn resume_plan_preserves_child_session_lineage_across_open_and_quit_resumed_segment() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let run_dir = temp_dir.path().join("run_child_lineage_open_quit");
+    let lineage = TaskLineageMetadata {
+        parent_tool_call_id: Some("toolcall_000777".to_string()),
+        parent_task_id: Some("task_000777".to_string()),
+        parent_request_id: Some("req_000001".to_string()),
+        parent_session_id: Some("agent_000001".to_string()),
+        child_session_id: Some("agent_000777".to_string()),
+        child_request_id: Some("req_000777".to_string()),
+        child_provider_id: Some("default".to_string()),
+        child_model_id: Some("gpt-5".to_string()),
+    };
+    write_events(
+        &run_dir,
+        &[
+            envelope(
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/workspace/original".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_000001".to_string(),
+                    profile: "default".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                3,
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_000001".to_string(),
+                    provider_id: "default".to_string(),
+                    model_id: "gpt-5".to_string(),
+                    prompt_summary: "parent turn".to_string(),
+                    request_digest: "digest-parent-turn".to_string(),
+                }),
+            ),
+            envelope(
+                4,
+                EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                    tool_call_id: "toolcall_000777".to_string(),
+                    tool_id: "agent.spawn".to_string(),
+                    args_summary: "{\"task\":\"spawn child\"}".to_string(),
+                    args_digest: "digest-child-spawn-req".to_string(),
+                    metadata: Some(ToolCallMetadata {
+                        canonical_tool_id: Some("agent.spawn".to_string()),
+                        alias_source_tool_id: None,
+                        lineage: Some(lineage.clone()),
+                        artifact_refs: Vec::new(),
+                        timing: None,
+                        hook_executions: Vec::new(),
+                    }),
+                }),
+            ),
+            envelope(
+                5,
+                EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                    tool_call_id: "toolcall_000777".to_string(),
+                    status: ToolCallStatus::Succeeded,
+                    output_summary: Some("child spawned".to_string()),
+                    output_digest: Some("digest-child-spawn-finished".to_string()),
+                    output_json: None,
+                    metadata: Some(ToolCallMetadata {
+                        canonical_tool_id: Some("agent.spawn".to_string()),
+                        alias_source_tool_id: None,
+                        lineage: Some(lineage),
+                        artifact_refs: Vec::new(),
+                        timing: None,
+                        hook_executions: Vec::new(),
+                    }),
+                }),
+            ),
+            envelope(
+                6,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "first segment done".to_string(),
+                }),
+            ),
+            envelope(
+                7,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/workspace/resumed".to_string(),
+                }),
+            ),
+            envelope(
+                8,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_000001".to_string(),
+                    profile: "default".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                9,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "resumed segment quit without prompt".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let plan = inspect_resume_plan(&run_dir);
+    let child = plan
+        .child_sessions
+        .get("agent_000777")
+        .expect("child lineage should survive open-and-quit resumed segment");
+    assert_eq!(child.parent_session_id.as_deref(), Some("agent_000001"));
+    assert_eq!(
+        child.parent_tool_call_id.as_deref(),
+        Some("toolcall_000777")
+    );
+    assert_eq!(child.latest_child_request_id.as_deref(), Some("req_000777"));
 }
 
 fn envelope(seq: u64, payload: EventV1) -> EventEnvelopeV1 {

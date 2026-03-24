@@ -124,7 +124,7 @@ mod tests {
     #[test]
     fn completion_request_roundtrip_with_tools_is_stable() {
         let request = CompletionRequest {
-            model_id: "gpt-5.3-codex".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
             messages: vec![
                 CompletionMessage {
                     role: MessageRole::Assistant,

@@ -167,9 +167,15 @@ pub struct TaskLineageMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_request_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub child_session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub child_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub child_provider_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub child_model_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -180,6 +186,32 @@ pub struct ExecutionTimingMetadata {
     pub finished_mono_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub elapsed_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum HookExecutionStatus {
+    Succeeded,
+    Failed,
+    Skipped,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HookExecutionMetadata {
+    pub hook_name: String,
+    pub status: HookExecutionStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hook_event: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -201,6 +233,8 @@ pub struct ToolCallMetadata {
     pub artifact_refs: Vec<EventArtifactRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timing: Option<ExecutionTimingMetadata>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hook_executions: Vec<HookExecutionMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -209,6 +243,8 @@ pub struct TaskCompletionMetadata {
     pub lineage: Option<TaskLineageMetadata>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timing: Option<ExecutionTimingMetadata>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hook_executions: Vec<HookExecutionMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

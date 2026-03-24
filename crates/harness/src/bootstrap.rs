@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use harness_core::agent::{AgentModelRef, AgentProfile};
 use harness_core::config::{
-    load_config_from_file, HarnessConfig, OpenAiApiMode as CoreOpenAiApiMode, ProviderConfig,
+    load_config_from_file, refresh_profile_model_metadata_registry, HarnessConfig,
+    OpenAiApiMode as CoreOpenAiApiMode, ProviderConfig,
 };
 use harness_core::coord::{CoordinatorConfig, PlanProfileConfig};
 use harness_core::perm::PermissionPolicy;
@@ -86,9 +87,11 @@ fn map_openai_api_mode(mode: CoreOpenAiApiMode) -> ProviderOpenAiApiMode {
 pub fn interactive_agent_profiles(
     cfg: &HarnessConfig,
 ) -> Result<BTreeMap<String, AgentProfile>, String> {
+    refresh_profile_model_metadata_registry(cfg).map_err(|err| err.to_string())?;
+
     let mut profiles = BTreeMap::new();
 
-    for (category_name, category_cfg) in &cfg.categories {
+    for (category_name, category_cfg) in &cfg.profiles {
         let model_ref = AgentModelRef::parse(&category_cfg.model_ref);
         if model_ref.provider_id != DEFAULT_PROVIDER_ID {
             return Err(format!(
@@ -107,6 +110,7 @@ pub fn interactive_agent_profiles(
                     "You are the {category_name} agent. {}",
                     category_cfg.description
                 ),
+                tool_failure_mode: category_cfg.tool_failure_mode,
                 tool_surface: category_cfg.tool_surface,
                 toolset: resolve_tool_ids_for_surface(
                     category_cfg.tools.iter().map(String::as_str),
