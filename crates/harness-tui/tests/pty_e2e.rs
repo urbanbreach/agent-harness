@@ -57,6 +57,10 @@ impl PtyGeometry {
         cols: 160,
         rows: 30,
     };
+    const SIDEBAR_SIGNOFF: Self = Self {
+        cols: 160,
+        rows: 48,
+    };
     const OPENCODE_EDIT_SIGNOFF: Self = Self {
         cols: 220,
         rows: 30,
@@ -150,6 +154,7 @@ enum HelperScenario {
     ToolLifecycle,
     PermissionWithDraft,
     DetailsDrawer,
+    OpencodeSidebarSessionParity,
     LiveOrchestrationLifecycle,
     LiveOrchestrationStaleLateResult,
     DegradedBootstrap,
@@ -168,6 +173,7 @@ impl HelperScenario {
             Self::ToolLifecycle => "tool_lifecycle",
             Self::PermissionWithDraft => "permission_with_draft",
             Self::DetailsDrawer => "details_drawer",
+            Self::OpencodeSidebarSessionParity => "opencode_sidebar_session_parity",
             Self::LiveOrchestrationLifecycle => "live_orchestration_lifecycle",
             Self::LiveOrchestrationStaleLateResult => "live_orchestration_stale_late_result",
             Self::DegradedBootstrap => "degraded_bootstrap",
@@ -186,6 +192,7 @@ impl HelperScenario {
             Self::ToolLifecycle => "pty_helper_tool_lifecycle",
             Self::PermissionWithDraft => "pty_helper_permission_with_draft",
             Self::DetailsDrawer => "pty_helper_details_drawer",
+            Self::OpencodeSidebarSessionParity => "pty_helper_opencode_sidebar_session_parity",
             Self::LiveOrchestrationLifecycle => "pty_helper_live_orchestration_lifecycle",
             Self::LiveOrchestrationStaleLateResult => {
                 "pty_helper_live_orchestration_stale_late_result"
@@ -428,6 +435,11 @@ fn pty_helper_details_drawer() {
 }
 
 #[test]
+fn pty_helper_opencode_sidebar_session_parity() {
+    run_helper_if_requested(HelperScenario::OpencodeSidebarSessionParity);
+}
+
+#[test]
 fn pty_helper_live_orchestration_lifecycle() {
     run_helper_if_requested(HelperScenario::LiveOrchestrationLifecycle);
 }
@@ -507,6 +519,61 @@ fn pty_live_details_drawer_remains_reachable() {
 }
 
 #[test]
+fn operator_sidebar_matches_opencode_information_architecture() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let mut helper = spawn_helper_pty(
+        HelperScenario::OpencodeSidebarSessionParity,
+        PtyGeometry::SIDEBAR_SIGNOFF,
+    );
+    wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "Live · run run_fixture",
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for sidebar parity startup render");
+
+    let screen = wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "Modified Files · 3",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for opencode sidebar parity markers");
+
+    assert_markers_in_order(
+        &screen,
+        &[
+            "Live · run run_fixture",
+            "Share unavailable",
+            "default/openai/gpt-5.4-mini",
+            "Context",
+            "MCP · 2",
+            "LSP · 1",
+            "▼ Todo · 3",
+            "▼ Modified Files · 3",
+        ],
+    );
+    assert_screen_contains_all(
+        &screen,
+        &[
+            "search.web · completed",
+            "tool.batch · running",
+            "goto_definition · src/ui_secondary.rs",
+            "task_review · tool:fs.read · w1/deep",
+            "src/ui_secondary.rs",
+            "src/layout.rs",
+            "src/theme.rs",
+        ],
+    );
+
+    terminate_child(helper.child);
+}
+
+#[test]
 fn pty_live_orchestration_drawer_and_status() {
     if !cfg!(target_os = "linux") {
         return;
@@ -548,11 +615,14 @@ fn pty_live_orchestration_drawer_and_status() {
     let completed_screen = wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
-        "Recent context",
+        "MCP · idle",
         MARKER_TIMEOUT,
     )
     .expect("wait for completed orchestration state");
-    assert_screen_contains_all(&completed_screen, &["Context", "ready for next turn"]);
+    assert_screen_contains_all(
+        &completed_screen,
+        &["Context", "MCP · idle", "LSP · idle", "ready for next turn"],
+    );
     assert!(!completed_screen.contains("orch 0a 0q 0r 0s"));
 
     terminate_child(helper.child);
@@ -741,6 +811,17 @@ fn run_helper_if_requested(scenario: HelperScenario) {
                     details_tx
                         .send(LiveUpdate::Event(Box::new(event)))
                         .expect("send operator sidebar events");
+                }
+                thread::park();
+            });
+        }
+        HelperScenario::OpencodeSidebarSessionParity => {
+            let sidebar_tx = tx.clone();
+            thread::spawn(move || {
+                for event in opencode_sidebar_session_parity_events() {
+                    sidebar_tx
+                        .send(LiveUpdate::Event(Box::new(event)))
+                        .expect("send opencode sidebar parity events");
                 }
                 thread::park();
             });
@@ -1127,6 +1208,200 @@ fn details_drawer_events() -> Vec<EventEnvelopeV1> {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "Inspect the operator sidebar".to_string(),
                 request_digest: "digest-details-drawer".to_string(),
+            }),
+        ),
+    ]
+}
+
+fn opencode_sidebar_session_parity_events() -> Vec<EventEnvelopeV1> {
+    let request_id = "req_sidebar_parity";
+    vec![
+        envelope(
+            1,
+            Some(request_id),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: request_id.to_string(),
+                text: "Inspect sidebar parity".to_string(),
+            }),
+        ),
+        envelope(
+            2,
+            Some(request_id),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: request_id.to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5.4-mini".to_string(),
+                prompt_summary: "Inspect sidebar parity".to_string(),
+                request_digest: "digest-sidebar-parity".to_string(),
+            }),
+        ),
+        envelope(
+            3,
+            None,
+            EventV1::AgentSpawned(AgentSpawnedEvent {
+                agent_id: "w1".to_string(),
+                profile: "deep".to_string(),
+                parent_agent_id: None,
+            }),
+        ),
+        envelope_with_actor(
+            4,
+            Some(request_id),
+            EventActor::new(ActorKind::System, None),
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: "task_plan".to_string(),
+                state: TaskScheduleState::Queued,
+                queue_key: Some("agent:queue:plan".to_string()),
+            }),
+        ),
+        envelope_with_actor(
+            5,
+            Some(request_id),
+            EventActor::new(ActorKind::Worker, Some("w1".to_string())),
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: "task_review".to_string(),
+                state: TaskScheduleState::Queued,
+                queue_key: Some("tool:fs.read".to_string()),
+            }),
+        ),
+        envelope_with_actor(
+            6,
+            Some(request_id),
+            EventActor::new(ActorKind::Worker, Some("w1".to_string())),
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: "task_follow_up".to_string(),
+                state: TaskScheduleState::Started,
+                queue_key: Some("agent:queue:follow-up".to_string()),
+            }),
+        ),
+        envelope(
+            7,
+            Some(request_id),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tool_call_search".to_string(),
+                tool_id: "search.web".to_string(),
+                args_summary: serde_json::json!({"query": "opencode sidebar"}).to_string(),
+                args_digest: "digest-search-web".to_string(),
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("search.web".to_string()),
+                    ..Default::default()
+                }),
+            }),
+        ),
+        envelope(
+            8,
+            Some(request_id),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tool_call_search".to_string(),
+            }),
+        ),
+        envelope(
+            9,
+            Some(request_id),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tool_call_search".to_string(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("Fetched opencode sidebar examples".to_string()),
+                output_digest: Some("digest-search-web-output".to_string()),
+                output_json: None,
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("search.web".to_string()),
+                    ..Default::default()
+                }),
+            }),
+        ),
+        envelope(
+            10,
+            Some(request_id),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tool_call_batch".to_string(),
+                tool_id: "tool.batch".to_string(),
+                args_summary: serde_json::json!({"requested_call_count": 2}).to_string(),
+                args_digest: "digest-tool-batch".to_string(),
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("tool.batch".to_string()),
+                    ..Default::default()
+                }),
+            }),
+        ),
+        envelope(
+            11,
+            Some(request_id),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tool_call_batch".to_string(),
+            }),
+        ),
+        envelope(
+            12,
+            Some(request_id),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tool_call_lsp".to_string(),
+                tool_id: "code.lsp".to_string(),
+                args_summary: serde_json::json!({
+                    "operation": "goto_definition",
+                    "path": "src/ui_secondary.rs"
+                })
+                .to_string(),
+                args_digest: "digest-tool-lsp".to_string(),
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("code.lsp".to_string()),
+                    ..Default::default()
+                }),
+            }),
+        ),
+        envelope(
+            13,
+            Some(request_id),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tool_call_lsp".to_string(),
+            }),
+        ),
+        envelope(
+            14,
+            Some(request_id),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tool_call_lsp".to_string(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("Found definition in src/ui_secondary.rs".to_string()),
+                output_digest: Some("digest-tool-lsp-output".to_string()),
+                output_json: None,
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("code.lsp".to_string()),
+                    ..Default::default()
+                }),
+            }),
+        ),
+        envelope(
+            15,
+            Some(request_id),
+            EventV1::EditApplied(EditAppliedEvent {
+                edit_id: "edit_sidebar_1".to_string(),
+                path: "src/ui_secondary.rs".to_string(),
+                new_file_digest: "digest-edit-sidebar-1".to_string(),
+                diff_rel_path: None,
+                diff_digest: None,
+            }),
+        ),
+        envelope(
+            16,
+            Some(request_id),
+            EventV1::EditApplied(EditAppliedEvent {
+                edit_id: "edit_sidebar_2".to_string(),
+                path: "src/layout.rs".to_string(),
+                new_file_digest: "digest-edit-sidebar-2".to_string(),
+                diff_rel_path: None,
+                diff_digest: None,
+            }),
+        ),
+        envelope(
+            17,
+            Some(request_id),
+            EventV1::EditApplied(EditAppliedEvent {
+                edit_id: "edit_sidebar_3".to_string(),
+                path: "src/theme.rs".to_string(),
+                new_file_digest: "digest-edit-sidebar-3".to_string(),
+                diff_rel_path: None,
+                diff_digest: None,
             }),
         ),
     ]
@@ -1592,6 +1867,16 @@ fn assert_screen_contains_all(screen: &str, markers: &[&str]) {
     }
 }
 
+fn assert_markers_in_order(screen: &str, markers: &[&str]) {
+    let mut cursor = 0usize;
+    for marker in markers {
+        let Some(index) = screen[cursor..].find(marker) else {
+            panic!("expected marker {marker:?} after byte {cursor}\n{screen}");
+        };
+        cursor += index + marker.len();
+    }
+}
+
 fn send_live_updates(tx: &Sender<LiveUpdate>, events: Vec<EventEnvelopeV1>) {
     for event in events {
         tx.send(LiveUpdate::Event(Box::new(event)))
@@ -1686,6 +1971,9 @@ fn helper_scenario_from_env() -> Option<HelperScenario> {
         Some("tool_lifecycle") => Some(HelperScenario::ToolLifecycle),
         Some("permission_with_draft") => Some(HelperScenario::PermissionWithDraft),
         Some("details_drawer") => Some(HelperScenario::DetailsDrawer),
+        Some("opencode_sidebar_session_parity") => {
+            Some(HelperScenario::OpencodeSidebarSessionParity)
+        }
         Some("live_orchestration_lifecycle") => Some(HelperScenario::LiveOrchestrationLifecycle),
         Some("live_orchestration_stale_late_result") => {
             Some(HelperScenario::LiveOrchestrationStaleLateResult)
@@ -1993,7 +2281,7 @@ fn startup_session_history_entries() -> Vec<SessionHistoryEntry> {
                 last_updated_at: Some("2026-03-08T12:34:56Z".to_string()),
                 workspace_root: Some("/tmp/workspace".to_string()),
                 profile_preset: Some("deep".to_string()),
-                provider_model: Some("openai/gpt-5.4".to_string()),
+                provider_model: Some("openai/gpt-5.4-mini".to_string()),
                 mode_source: SessionModeSource::InteractiveLive,
                 is_resumable: true,
                 resume_disabled_reason: None,

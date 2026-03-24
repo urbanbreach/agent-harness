@@ -134,6 +134,7 @@ pub(crate) use ui_transcript::{
     exact_test_transcript_rejected_edit_surfaces_reason_inline,
     exact_test_transcript_section_model_keeps_nested_tool_and_error_blocks,
     exact_test_transcript_section_model_preserves_activity_order,
+    exact_test_transcript_task_rows_show_child_status_duration_and_counts,
 };
 
 #[cfg(test)]

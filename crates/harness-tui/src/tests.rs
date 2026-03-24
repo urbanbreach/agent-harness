@@ -980,7 +980,7 @@ fn generic_tool_output_toggle_reveals_block_payload() {
         .draw(|frame| ui::render_app(frame, &app))
         .expect("draw generic tool frame");
     let collapsed = format!("{:?}", terminal.backend().buffer());
-    assert!(collapsed.contains("background.cancel [taskId=bg_123]"));
+    assert!(collapsed.contains("background.cancel · taskId=bg_123"));
     assert!(collapsed.contains("cancelled background task"));
     assert!(!collapsed.contains("result: ok"));
 
@@ -999,7 +999,7 @@ fn generic_tool_output_toggle_reveals_block_payload() {
         .draw(|frame| ui::render_app(frame, &app))
         .expect("draw expanded generic tool frame");
     let expanded = format!("{:?}", terminal.backend().buffer());
-    assert!(expanded.contains("background.cancel [taskId=bg_123]"));
+    assert!(expanded.contains("background.cancel · taskId=bg_123"));
     assert!(expanded.contains("cancelled background task"));
     assert!(expanded.contains("result: ok"));
 }

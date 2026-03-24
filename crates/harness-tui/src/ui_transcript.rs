@@ -440,6 +440,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
             .filter_map(|tool_call| {
                 build_tool_call_section(
                     tool_call,
+                    app,
                     show_tool_details,
                     timestamps_visible,
                     show_generic_tool_output,
@@ -457,8 +458,13 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "transcript tool-row assembly keeps the rendering toggles explicit at the call site"
+)]
 fn build_tool_call_section(
     tool_call: &crate::app::ToolCallEntry,
+    app: &AppState,
     show_tool_details: bool,
     timestamps_visible: bool,
     show_generic_tool_output: bool,
@@ -470,8 +476,11 @@ fn build_tool_call_section(
         return None;
     }
 
+    let task_row = app.transcript_task_row_for_tool_call(tool_call);
+
     Some(build_opencode_tool_call_section(
         tool_call,
+        task_row.as_ref(),
         timestamps_visible,
         show_generic_tool_output,
         tool_output_expanded,
@@ -482,6 +491,7 @@ fn build_tool_call_section(
 
 fn build_opencode_tool_call_section(
     tool_call: &crate::app::ToolCallEntry,
+    task_row: Option<&crate::app::OrchestrationTaskRow>,
     timestamps_visible: bool,
     show_generic_tool_output: bool,
     tool_output_expanded: bool,
@@ -619,7 +629,7 @@ fn build_opencode_tool_call_section(
             Some("→"),
             TranscriptToolCallVisualStyle::Inline,
         ),
-        "agent.spawn" => build_agent_spawn_tool_row(tool_call, &mut detail_blocks),
+        "agent.spawn" => build_agent_spawn_tool_row(tool_call, task_row, &mut detail_blocks),
         "fs.write" => (
             format!(
                 "Write {}",
@@ -691,11 +701,7 @@ fn build_opencode_tool_call_section(
             TranscriptToolCallVisualStyle::Block,
         ),
         _ => {
-            let title = format!(
-                "{}{}",
-                generic_tool_name(display_tool_id),
-                tool_input_suffix(&tool_call.args_summary, &[]),
-            );
+            let title = generic_tool_title(tool_call, display_tool_id);
             if tool_call.output_summary.is_some() {
                 push_collapsible_output_block(
                     &mut detail_blocks,
@@ -768,7 +774,7 @@ fn build_opencode_tool_call_section(
     TranscriptToolCallSection {
         header: TranscriptToolCallHeader {
             tool_id: tool_call.tool_id.clone(),
-            title: decorate_tool_call_title(title, tool_call, timestamps_visible),
+            title: decorate_tool_call_title(title, tool_call, task_row, timestamps_visible),
             icon,
             status: tool_call.status,
             visual_style,
@@ -776,6 +782,15 @@ fn build_opencode_tool_call_section(
             disclosure_state,
         },
         detail_blocks,
+    }
+}
+
+fn generic_tool_title(tool_call: &crate::app::ToolCallEntry, tool_id: &str) -> String {
+    let metadata = compact_tool_input_metadata(&tool_call.args_summary, &[], 3);
+    if metadata.is_empty() {
+        generic_tool_name(tool_id)
+    } else {
+        format!("{} · {}", generic_tool_name(tool_id), metadata.join(" · "))
     }
 }
 
@@ -816,22 +831,17 @@ fn lsp_tool_title(tool_call: &crate::app::ToolCallEntry) -> String {
 
 fn build_agent_spawn_tool_row(
     tool_call: &crate::app::ToolCallEntry,
+    task_row: Option<&crate::app::OrchestrationTaskRow>,
     detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
 ) -> (String, Option<&'static str>, TranscriptToolCallVisualStyle) {
     let title = agent_spawn_title(tool_call);
-    if let Some(line) = agent_spawn_lineage_line(tool_call) {
+    if let Some(line) = agent_spawn_context_line(tool_call, task_row) {
         detail_blocks.push(TranscriptToolCallDetailBlock::Message {
             text: line,
             tone: TranscriptToolCallDetailTone::Secondary,
         });
     }
-    if let Some(line) = agent_spawn_status_line(tool_call) {
-        detail_blocks.push(TranscriptToolCallDetailBlock::Message {
-            text: line,
-            tone: TranscriptToolCallDetailTone::Secondary,
-        });
-    }
-    if let Some(summary) = agent_spawn_result_summary(tool_call) {
+    if let Some(summary) = agent_spawn_result_summary(tool_call, task_row) {
         detail_blocks.push(TranscriptToolCallDetailBlock::Message {
             text: summary,
             tone: if tool_call.status == ToolCallDisplayStatus::Failed {
@@ -873,48 +883,54 @@ fn agent_spawn_title(tool_call: &crate::app::ToolCallEntry) -> String {
     }
 }
 
-fn agent_spawn_lineage_line(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
-    let child_session = tool_call
-        .lineage
-        .as_ref()
-        .and_then(|lineage| lineage.child_session_id.as_deref())
-        .map(str::to_string)
+fn agent_spawn_context_line(
+    tool_call: &crate::app::ToolCallEntry,
+    task_row: Option<&crate::app::OrchestrationTaskRow>,
+) -> Option<String> {
+    let mode = tool_json_string(tool_call.output_json.as_ref(), &["mode"]);
+    let child_session = task_row
+        .and_then(|row| row.effective_child_session_id().map(str::to_string))
+        .or_else(|| {
+            tool_call
+                .lineage
+                .as_ref()
+                .and_then(|lineage| lineage.child_session_id.as_deref())
+                .map(str::to_string)
+        })
         .or_else(|| {
             tool_json_string(
                 tool_call.output_json.as_ref(),
                 &["child_session_id", "session_id"],
             )
         });
-    let child_request = tool_call
-        .lineage
-        .as_ref()
-        .and_then(|lineage| lineage.child_request_id.as_deref())
-        .map(str::to_string)
+    let child_request = task_row
+        .and_then(|row| row.effective_child_request_id().map(str::to_string))
+        .or_else(|| {
+            tool_call
+                .lineage
+                .as_ref()
+                .and_then(|lineage| lineage.child_request_id.as_deref())
+                .map(str::to_string)
+        })
         .or_else(|| {
             tool_json_string(
                 tool_call.output_json.as_ref(),
                 &["child_request_id", "request_id"],
             )
         });
-
-    match (child_session, child_request) {
-        (Some(child_session), Some(child_request)) => {
-            Some(format!("Session {child_session} · Request {child_request}"))
-        }
-        (Some(child_session), None) => Some(format!("Session {child_session}")),
-        (None, Some(child_request)) => Some(format!("Request {child_request}")),
-        (None, None) => None,
-    }
-}
-
-fn agent_spawn_status_line(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
-    let mode = tool_json_string(tool_call.output_json.as_ref(), &["mode"]);
-    let status = tool_json_string(tool_call.output_json.as_ref(), &["status"]);
-    let child_tool_call_count = tool_call
-        .output_json
-        .as_ref()
-        .and_then(|value| value.get("child_tool_call_count"))
-        .and_then(serde_json::Value::as_u64);
+    let status = task_row
+        .map(|row| orchestration_task_state_label(row.state).to_string())
+        .or_else(|| tool_json_string(tool_call.output_json.as_ref(), &["status"]));
+    let child_tool_call_count = task_row
+        .map(|row| row.child_tool_call_count as u64)
+        .filter(|count| *count > 0)
+        .or_else(|| {
+            tool_call
+                .output_json
+                .as_ref()
+                .and_then(|value| value.get("child_tool_call_count"))
+                .and_then(serde_json::Value::as_u64)
+        });
     let resumed_existing_session = tool_call
         .output_json
         .as_ref()
@@ -924,6 +940,12 @@ fn agent_spawn_status_line(tool_call: &crate::app::ToolCallEntry) -> Option<Stri
     let mut parts = Vec::new();
     if let Some(mode) = mode {
         parts.push(mode);
+    }
+    if let Some(child_session) = child_session {
+        parts.push(child_session);
+    }
+    if let Some(child_request) = child_request {
+        parts.push(child_request);
     }
     if let Some(status) = status {
         parts.push(status);
@@ -940,13 +962,32 @@ fn agent_spawn_status_line(tool_call: &crate::app::ToolCallEntry) -> Option<Stri
     (!parts.is_empty()).then(|| parts.join(" · "))
 }
 
-fn agent_spawn_result_summary(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
-    tool_json_string(tool_call.output_json.as_ref(), &["result_summary"]).or_else(|| {
-        tool_call.output_summary.as_deref().and_then(|output| {
-            let trimmed = output.trim();
-            (!trimmed.is_empty()).then(|| format_detail_payload(trimmed))
+fn agent_spawn_result_summary(
+    tool_call: &crate::app::ToolCallEntry,
+    task_row: Option<&crate::app::OrchestrationTaskRow>,
+) -> Option<String> {
+    task_row
+        .and_then(|row| row.result_summary.as_deref())
+        .map(collapse_inline_whitespace)
+        .filter(|value| !value.is_empty())
+        .or_else(|| tool_json_string(tool_call.output_json.as_ref(), &["result_summary"]))
+        .or_else(|| {
+            tool_call.output_summary.as_deref().and_then(|output| {
+                let trimmed = output.trim();
+                (!trimmed.is_empty()).then(|| format_detail_payload(trimmed))
+            })
         })
-    })
+}
+
+fn orchestration_task_state_label(state: crate::app::OrchestrationTaskState) -> &'static str {
+    match state {
+        crate::app::OrchestrationTaskState::Queued => "queued",
+        crate::app::OrchestrationTaskState::Running => "running",
+        crate::app::OrchestrationTaskState::Stale => "stale",
+        crate::app::OrchestrationTaskState::Completed => "completed",
+        crate::app::OrchestrationTaskState::Cancelled => "cancelled",
+        crate::app::OrchestrationTaskState::LateResult => "late result",
+    }
 }
 
 fn tool_json_string(output_json: Option<&serde_json::Value>, keys: &[&str]) -> Option<String> {
@@ -1095,12 +1136,16 @@ fn tool_summary_string(args_summary: &str, keys: &[&str]) -> Option<String> {
     })
 }
 
-fn tool_input_suffix(args_summary: &str, omit_keys: &[&str]) -> String {
+fn compact_tool_input_metadata(
+    args_summary: &str,
+    omit_keys: &[&str],
+    max_parts: usize,
+) -> Vec<String> {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(args_summary) else {
-        return String::new();
+        return Vec::new();
     };
     let Some(object) = value.as_object() else {
-        return String::new();
+        return Vec::new();
     };
 
     let mut keys = object.keys().map(String::as_str).collect::<Vec<_>>();
@@ -1109,18 +1154,13 @@ fn tool_input_suffix(args_summary: &str, omit_keys: &[&str]) -> String {
     let mut parts = Vec::new();
     for key in keys.into_iter().filter(|key| !omit_keys.contains(key)) {
         if let Some(value) = object.get(key) {
-            collect_input_parts(&mut parts, key.to_string(), value, 6);
+            collect_input_parts(&mut parts, key.to_string(), value, max_parts);
         }
-        if parts.len() >= 6 {
+        if parts.len() >= max_parts {
             break;
         }
     }
-
-    if parts.is_empty() {
-        String::new()
-    } else {
-        format!(" [{}]", parts.join(", "))
-    }
+    parts
 }
 
 fn collect_input_parts(
@@ -1258,21 +1298,44 @@ fn push_collapsible_output_block(
 fn decorate_tool_call_title(
     title: String,
     tool_call: &crate::app::ToolCallEntry,
+    task_row: Option<&crate::app::OrchestrationTaskRow>,
     timestamps_visible: bool,
 ) -> String {
     let mut suffixes = Vec::new();
     if timestamps_visible {
-        if let Some(timestamp) = tool_call.transcript_timestamp() {
+        if let Some(timestamp) = task_row
+            .and_then(crate::app::OrchestrationTaskRow::transcript_timestamp)
+            .or_else(|| tool_call.transcript_timestamp())
+        {
             suffixes.push(format_transcript_timestamp(timestamp));
         }
     }
-    match tool_call.status {
-        ToolCallDisplayStatus::PendingPermission => suffixes.push("pending permission".to_string()),
-        ToolCallDisplayStatus::Queued => suffixes.push("queued".to_string()),
-        ToolCallDisplayStatus::Running => suffixes.push("running".to_string()),
-        ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed => {
-            if let Some(duration_ms) = tool_call.duration_ms() {
-                suffixes.push(format_duration_ms(duration_ms));
+    if let Some(task_row) = task_row {
+        match task_row.state {
+            crate::app::OrchestrationTaskState::Queued => suffixes.push("queued".to_string()),
+            crate::app::OrchestrationTaskState::Running => suffixes.push("running".to_string()),
+            crate::app::OrchestrationTaskState::Stale => suffixes.push("stale".to_string()),
+            crate::app::OrchestrationTaskState::Cancelled => suffixes.push("cancelled".to_string()),
+            crate::app::OrchestrationTaskState::LateResult => {
+                suffixes.push("late result".to_string())
+            }
+            crate::app::OrchestrationTaskState::Completed => {
+                if let Some(duration_ms) = task_row.duration_ms() {
+                    suffixes.push(format_duration_ms(duration_ms));
+                }
+            }
+        }
+    } else {
+        match tool_call.status {
+            ToolCallDisplayStatus::PendingPermission => {
+                suffixes.push("pending permission".to_string())
+            }
+            ToolCallDisplayStatus::Queued => suffixes.push("queued".to_string()),
+            ToolCallDisplayStatus::Running => suffixes.push("running".to_string()),
+            ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed => {
+                if let Some(duration_ms) = tool_call.duration_ms() {
+                    suffixes.push(format_duration_ms(duration_ms));
+                }
             }
         }
     }
@@ -1718,10 +1781,7 @@ fn append_opencode_inline_tool_section_lines(
     base_surface: Color,
 ) {
     let fg = inline_tool_color(tool_call, theme);
-    let mut style = Style::default().fg(fg);
-    if tool_call.header.struck_out {
-        style = style.add_modifier(Modifier::CROSSED_OUT);
-    }
+    let style = tool_call_header_style(tool_call, fg);
 
     let mut spans = Vec::new();
     if let Some(disclosure_state) = tool_call.header.disclosure_state {
@@ -1753,12 +1813,14 @@ fn append_opencode_block_tool_section_lines(
     width: u16,
     base_surface: Color,
 ) {
-    let surface = transcript_emphasized_surface(theme, base_surface);
+    let active = tool_call_is_active(tool_call.header.status);
+    let surface = if active {
+        transcript_emphasized_surface(theme, base_surface)
+    } else {
+        transcript_flat_surface(base_surface)
+    };
     let rail_color = transcript_nested_rail_color(theme);
-    let mut title_style = Style::default().fg(block_tool_color(tool_call, theme));
-    if tool_call.header.struck_out {
-        title_style = title_style.add_modifier(Modifier::CROSSED_OUT);
-    }
+    let title_style = tool_call_header_style(tool_call, block_tool_color(tool_call, theme));
 
     let mut title_spans = Vec::new();
     if let Some(disclosure_state) = tool_call.header.disclosure_state {
@@ -1778,7 +1840,7 @@ fn append_opencode_block_tool_section_lines(
         transcript_surface_content_width(width, false),
     );
 
-    append_tool_call_detail_blocks(lines, tool_call, theme, width, base_surface, true);
+    append_tool_call_detail_blocks(lines, tool_call, theme, width, base_surface, active);
 }
 
 fn append_tool_call_detail_blocks(
@@ -1860,8 +1922,9 @@ fn append_tool_call_message_block(
 fn inline_tool_color(tool_call: &TranscriptToolCallSection, theme: &Theme) -> Color {
     match tool_call.header.status {
         ToolCallDisplayStatus::PendingPermission => theme.status.warning,
-        ToolCallDisplayStatus::Queued | ToolCallDisplayStatus::Running => theme.text.secondary,
-        ToolCallDisplayStatus::Succeeded => theme.text.secondary,
+        ToolCallDisplayStatus::Queued => theme.text.secondary,
+        ToolCallDisplayStatus::Running => theme.status.info,
+        ToolCallDisplayStatus::Succeeded => theme.text.tertiary,
         ToolCallDisplayStatus::Failed => theme.status.error,
     }
 }
@@ -1869,11 +1932,39 @@ fn inline_tool_color(tool_call: &TranscriptToolCallSection, theme: &Theme) -> Co
 fn block_tool_color(tool_call: &TranscriptToolCallSection, theme: &Theme) -> Color {
     match tool_call.header.status {
         ToolCallDisplayStatus::PendingPermission => theme.status.warning,
+        ToolCallDisplayStatus::Running => theme.status.info,
         ToolCallDisplayStatus::Failed => theme.status.error,
-        ToolCallDisplayStatus::Queued
-        | ToolCallDisplayStatus::Running
-        | ToolCallDisplayStatus::Succeeded => theme.text.secondary,
+        ToolCallDisplayStatus::Queued => theme.text.secondary,
+        ToolCallDisplayStatus::Succeeded => theme.text.tertiary,
     }
+}
+
+fn tool_call_header_style(tool_call: &TranscriptToolCallSection, color: Color) -> Style {
+    let mut style = Style::default().fg(color);
+    match tool_call.header.status {
+        ToolCallDisplayStatus::PendingPermission
+        | ToolCallDisplayStatus::Queued
+        | ToolCallDisplayStatus::Running
+        | ToolCallDisplayStatus::Failed => {
+            style = style.add_modifier(Modifier::BOLD);
+        }
+        ToolCallDisplayStatus::Succeeded => {
+            style = style.add_modifier(Modifier::DIM);
+        }
+    }
+    if tool_call.header.struck_out {
+        style = style.add_modifier(Modifier::CROSSED_OUT);
+    }
+    style
+}
+
+fn tool_call_is_active(status: ToolCallDisplayStatus) -> bool {
+    matches!(
+        status,
+        ToolCallDisplayStatus::PendingPermission
+            | ToolCallDisplayStatus::Queued
+            | ToolCallDisplayStatus::Running
+    )
 }
 
 fn disclosure_glyph(state: TranscriptToolCallDisclosureState) -> &'static str {
@@ -3698,9 +3789,9 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
     alias_read.last_timestamp = native_read.last_timestamp.clone();
 
     let native_read_section =
-        build_opencode_tool_call_section(&native_read, true, false, false, false, None);
+        build_opencode_tool_call_section(&native_read, None, true, false, false, false, None);
     let alias_read_section =
-        build_opencode_tool_call_section(&alias_read, true, false, false, false, None);
+        build_opencode_tool_call_section(&alias_read, None, true, false, false, false, None);
     assert_eq!(
         native_read_section.header.title,
         alias_read_section.header.title
@@ -3752,7 +3843,7 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
     task_call.last_timestamp = Some("2026-03-22T14:36:01Z".to_string());
 
     let task_section =
-        build_opencode_tool_call_section(&task_call, true, false, false, false, None);
+        build_opencode_tool_call_section(&task_call, None, true, false, false, false, None);
     assert_eq!(
         task_section.header.disclosure_state,
         Some(TranscriptToolCallDisclosureState::Collapsed)
@@ -3767,8 +3858,8 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
     );
     let task_text = transcript_test_line_texts(task_lines).join("\n");
     assert!(task_text.contains("▸ Spawn researcher · audit transcript parity · 14:36 · 1.6s"));
-    assert!(task_text.contains("Session agent_worker · Request req_child"));
-    assert!(task_text.contains("foreground · completed · 3 child tool calls"));
+    assert!(task_text
+        .contains("foreground · agent_worker · req_child · completed · 3 child tool calls"));
     assert!(task_text.contains("Found the inline transcript path."));
     assert!(task_text.contains("Compat alias · task → agent.spawn"));
     assert!(!task_text.contains("Task audit transcript parity"));
@@ -3791,7 +3882,7 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
     fetch_call.last_timestamp = Some("2026-03-22T14:37:12Z".to_string());
 
     let fetch_section =
-        build_opencode_tool_call_section(&fetch_call, true, false, false, false, None);
+        build_opencode_tool_call_section(&fetch_call, None, true, false, false, false, None);
     assert_eq!(
         fetch_section.header.disclosure_state,
         Some(TranscriptToolCallDisclosureState::Collapsed)
@@ -3813,6 +3904,268 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
         "Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact"
     ));
     assert!(fetch_text.contains("Compat alias · webfetch → web.fetch"));
+
+    let mut generic_call = transcript_section_model_test_tool_call("tc-generic", "vendor.magic");
+    generic_call.args_summary =
+        r#"{"path":"notes.md","query":"child parity","limit":3}"#.to_string();
+    generic_call.status = ToolCallDisplayStatus::Succeeded;
+    generic_call.timing_elapsed_ms = Some(800);
+    let generic_section =
+        build_opencode_tool_call_section(&generic_call, None, true, false, false, false, None);
+    assert_eq!(
+        generic_section.header.title,
+        "vendor.magic · limit=3 · path=notes.md · query=child parity · 800ms"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_counts() {
+    fn event(
+        seq: u64,
+        ts: &str,
+        actor: harness_core::event::EventActor,
+        correlation_id: Option<&str>,
+        payload: harness_core::event::EventV1,
+    ) -> harness_core::event::EventEnvelopeV1 {
+        harness_core::event::EventEnvelopeV1 {
+            schema_version: harness_core::event::SCHEMA_VERSION,
+            event_id: format!("evt_task_rows_{seq:04}"),
+            seq,
+            run_id: "run_task_rows".to_string(),
+            mono_ms: seq * 100,
+            ts: Some(ts.to_string()),
+            actor,
+            correlation_id: correlation_id.map(str::to_string),
+            causation_id: None,
+            stream_key: None,
+            payload,
+        }
+    }
+
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(event(
+        1,
+        "2026-03-22T14:36:00Z",
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::User,
+            Some("interactive-user".to_string()),
+        ),
+        Some("req_parent"),
+        harness_core::event::EventV1::UserMessageSubmitted(
+            harness_core::event::UserMessageSubmittedEvent {
+                request_id: "req_parent".to_string(),
+                text: "Audit transcript parity".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(event(
+        2,
+        "2026-03-22T14:36:01Z",
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_parent".to_string()),
+        ),
+        Some("req_parent"),
+        harness_core::event::EventV1::ProviderRequestStarted(
+            harness_core::event::ProviderRequestStartedEvent {
+                request_id: "req_parent".to_string(),
+                provider_id: "default".to_string(),
+                model_id: "model-1".to_string(),
+                prompt_summary: "Audit transcript parity".to_string(),
+                request_digest: "digest-parent".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(event(
+        3,
+        "2026-03-22T14:36:02Z",
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::System,
+            Some("coordinator".to_string()),
+        ),
+        Some("req_parent"),
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tc_task".to_string(),
+                tool_id: "task".to_string(),
+                args_summary:
+                    r#"{"description":"audit transcript parity","subagent_type":"researcher"}"#
+                        .to_string(),
+                args_digest: "digest-task-call".to_string(),
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("agent.spawn".to_string()),
+                    alias_source_tool_id: Some("task".to_string()),
+                    lineage: Some(harness_core::event::TaskLineageMetadata {
+                        parent_tool_call_id: Some("tc_task".to_string()),
+                        parent_request_id: Some("req_parent".to_string()),
+                        child_session_id: Some("agent_worker".to_string()),
+                        child_request_id: Some("req_child".to_string()),
+                        ..harness_core::event::TaskLineageMetadata::default()
+                    }),
+                    ..harness_core::event::ToolCallMetadata::default()
+                }),
+            },
+        ),
+    ));
+    app.ingest_event(event(
+        4,
+        "2026-03-22T14:36:03Z",
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::System,
+            Some("coordinator".to_string()),
+        ),
+        Some("req_parent"),
+        harness_core::event::EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
+            tool_call_id: "tc_task".to_string(),
+        }),
+    ));
+    app.ingest_event(event(
+        5,
+        "2026-03-22T14:36:04Z",
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_worker".to_string()),
+        ),
+        Some("req_child"),
+        harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
+            task_id: "task_child".to_string(),
+            state: harness_core::event::TaskScheduleState::Started,
+            queue_key: Some("agent:running:researcher".to_string()),
+        }),
+    ));
+    app.ingest_event(event(
+        6,
+        "2026-03-22T14:36:05Z",
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::System,
+            Some("coordinator".to_string()),
+        ),
+        Some("req_child"),
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tc_child_read".to_string(),
+                tool_id: "fs.read".to_string(),
+                args_summary: r#"{"path":"src/ui.rs"}"#.to_string(),
+                args_digest: "digest-child-read".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+
+    let running_tool = &app.activities[0].tool_calls[0];
+    let running_row = app.transcript_task_row_for_tool_call(running_tool);
+    let running_section = build_opencode_tool_call_section(
+        running_tool,
+        running_row.as_ref(),
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    let mut running_lines = Vec::new();
+    append_tool_call_section_lines(
+        &mut running_lines,
+        &running_section,
+        &Theme::default(),
+        120,
+        Theme::default().surface.panel,
+    );
+    let running_text = transcript_test_line_texts(running_lines).join("\n");
+    assert!(running_text.contains("Spawn researcher · audit transcript parity · 14:36 · running"));
+    assert!(running_text.contains("agent_worker · req_child · running · 1 child tool call"));
+
+    app.ingest_event(event(
+        7,
+        "2026-03-22T14:36:06Z",
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::System,
+            Some("coordinator".to_string()),
+        ),
+        Some("req_child"),
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tc_child_grep".to_string(),
+                tool_id: "fs.grep".to_string(),
+                args_summary: r#"{"pattern":"task row"}"#.to_string(),
+                args_digest: "digest-child-grep".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(event(
+        8,
+        "2026-03-22T14:36:07Z",
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_worker".to_string()),
+        ),
+        Some("req_child"),
+        harness_core::event::EventV1::TaskCompleted(harness_core::event::TaskCompletedEvent {
+            task_id: "task_child".to_string(),
+            result_summary: "Found the inline transcript path.".to_string(),
+            result_digest: "digest-task-child".to_string(),
+            metadata: Some(harness_core::event::TaskCompletionMetadata {
+                lineage: Some(harness_core::event::TaskLineageMetadata {
+                    parent_tool_call_id: Some("tc_task".to_string()),
+                    parent_request_id: Some("req_parent".to_string()),
+                    child_session_id: Some("agent_worker".to_string()),
+                    child_request_id: Some("req_child".to_string()),
+                    ..harness_core::event::TaskLineageMetadata::default()
+                }),
+                timing: Some(harness_core::event::ExecutionTimingMetadata {
+                    started_mono_ms: Some(400),
+                    finished_mono_ms: Some(2_000),
+                    elapsed_ms: Some(1_600),
+                }),
+                hook_executions: Vec::new(),
+            }),
+        }),
+    ));
+    app.ingest_event(event(
+        9,
+        "2026-03-22T14:36:08Z",
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::System,
+            Some("coordinator".to_string()),
+        ),
+        Some("req_parent"),
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tc_task".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("child session finished".to_string()),
+                output_digest: Some("digest-task-finished".to_string()),
+                output_json: None,
+                metadata: None,
+            },
+        ),
+    ));
+
+    let completed_tool = &app.activities[0].tool_calls[0];
+    let completed_row = app.transcript_task_row_for_tool_call(completed_tool);
+    let completed_section = build_opencode_tool_call_section(
+        completed_tool,
+        completed_row.as_ref(),
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    let mut completed_lines = Vec::new();
+    append_tool_call_section_lines(
+        &mut completed_lines,
+        &completed_section,
+        &Theme::default(),
+        120,
+        Theme::default().surface.panel,
+    );
+    let completed_text = transcript_test_line_texts(completed_lines).join("\n");
+    assert!(completed_text.contains("Spawn researcher · audit transcript parity · 14:36 · 1.6s"));
+    assert!(completed_text.contains("agent_worker · req_child · completed · 2 child tool calls"));
+    assert!(completed_text.contains("Found the inline transcript path."));
+    assert!(!completed_text.contains("child session finished"));
 }
 
 #[cfg(test)]
@@ -3823,7 +4176,7 @@ fn transcript_section_model_test_activity(
 ) -> ActivityEntry {
     ActivityEntry {
         request_id: request_id.to_string(),
-        model_id: "gpt-5.4".to_string(),
+        model_id: "gpt-5.4-mini".to_string(),
         provider_id: "openai".to_string(),
         status,
         user_message: None,
@@ -3966,7 +4319,7 @@ mod tests {
         let mut app = AppState::default();
         app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
             request_id: "request-streaming-header".to_string(),
-            model_id: "gpt-5.4".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
             provider_id: "openai".to_string(),
             status: ActivityStatus::Streaming,
             user_message: None,
@@ -3991,7 +4344,7 @@ mod tests {
         ));
 
         assert_eq!(lines[0], "   Waiting for response…");
-        assert_eq!(lines[1], "   ◐ Assistant · gpt-5.4 · active");
+        assert_eq!(lines[1], "   ◐ Assistant · gpt-5.4-mini · active");
     }
 
     #[test]
@@ -3999,7 +4352,7 @@ mod tests {
         let mut app = AppState::default();
         app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
             request_id: "request-user-padding".to_string(),
-            model_id: "gpt-5.4".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
             provider_id: "openai".to_string(),
             status: ActivityStatus::Done,
             user_message: Some(harness_core::event::UserMessageSubmittedEvent {

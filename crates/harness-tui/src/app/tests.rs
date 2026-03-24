@@ -3,10 +3,14 @@ use crate::overlay::OverlayKind;
 use crate::ui::WheelTarget;
 use crossterm::event::MouseEvent;
 use harness_core::event::{
-    ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
-    ProviderRequestStartedEvent, RunFailedEvent, RunFinishedEvent, TaskCompletedEvent,
-    ToolCallFinishedEvent, ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
+    ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
+    ProviderRequestStartedEvent, RunFailedEvent, RunFinishedEvent, RunStartedEvent,
+    TaskCompletedEvent, TaskLineageMetadata, ToolCallFinishedEvent, ToolCallMetadata,
+    ToolCallRequestedEvent, ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 
 fn envelope(seq: u64, request_id: &str, payload: EventV1) -> EventEnvelopeV1 {
     EventEnvelopeV1 {
@@ -30,6 +34,90 @@ fn key(code: KeyCode) -> KeyEvent {
 
 fn key_with_modifiers(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
     KeyEvent::new(code, modifiers)
+}
+
+fn opencode_navigation_keybindings() -> BTreeMap<String, String> {
+    BTreeMap::from([
+        ("session_child_first".to_string(), "ctrl+]".to_string()),
+        ("session_child_cycle".to_string(), "]".to_string()),
+        ("session_child_cycle_reverse".to_string(), "[".to_string()),
+        ("session_parent".to_string(), "ctrl+[".to_string()),
+        ("variant_cycle".to_string(), "tab".to_string()),
+    ])
+}
+
+fn write_events_jsonl(run_dir: &Path, events: &[EventEnvelopeV1]) {
+    fs::create_dir_all(run_dir).expect("create run dir");
+    let body = events
+        .iter()
+        .map(|event| serde_json::to_string(event).expect("serialize event"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).expect("write events");
+}
+
+fn run_started(seq: u64) -> EventEnvelopeV1 {
+    envelope(
+        seq,
+        "req_run_started",
+        EventV1::RunStarted(RunStartedEvent {
+            run_name: "interactive".to_string(),
+            workspace_root: "/tmp/workspace".to_string(),
+        }),
+    )
+}
+
+fn agent_spawned(seq: u64, agent_id: &str, profile: &str) -> EventEnvelopeV1 {
+    envelope(
+        seq,
+        "req_agent_spawned",
+        EventV1::AgentSpawned(AgentSpawnedEvent {
+            agent_id: agent_id.to_string(),
+            profile: profile.to_string(),
+            parent_agent_id: None,
+        }),
+    )
+}
+
+fn provider_started(seq: u64, request_id: &str, provider: &str, model: &str) -> EventEnvelopeV1 {
+    envelope(
+        seq,
+        request_id,
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: request_id.to_string(),
+            provider_id: provider.to_string(),
+            model_id: model.to_string(),
+            prompt_summary: "prompt summary".to_string(),
+            request_digest: format!("digest-{request_id}"),
+        }),
+    )
+}
+
+fn child_link_requested(
+    seq: u64,
+    request_id: &str,
+    tool_call_id: &str,
+    child_session_id: Option<&str>,
+    parent_session_id: Option<&str>,
+) -> EventEnvelopeV1 {
+    envelope(
+        seq,
+        request_id,
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: tool_call_id.to_string(),
+            tool_id: "agent.spawn".to_string(),
+            args_summary: "{}".to_string(),
+            args_digest: format!("digest-{tool_call_id}"),
+            metadata: Some(ToolCallMetadata {
+                lineage: Some(TaskLineageMetadata {
+                    parent_session_id: parent_session_id.map(str::to_string),
+                    child_session_id: child_session_id.map(str::to_string),
+                    ..TaskLineageMetadata::default()
+                }),
+                ..ToolCallMetadata::default()
+            }),
+        }),
+    )
 }
 
 #[test]
@@ -292,7 +380,7 @@ fn details_drawer_toggles_without_stealing_transcript_state() {
 #[test]
 fn config_backed_live_launch_starts_in_session_shell_without_details_drawer() {
     set_pending_live_launch_metadata(
-        LaunchMetadata::new("deep", "default", Some("gpt-5.3-codex".to_string()))
+        LaunchMetadata::new("deep", "default", Some("gpt-5.4-mini".to_string()))
             .with_mode_label("Live"),
     );
 
@@ -524,7 +612,7 @@ fn continued_quiescent_bootstrap_stays_in_session_shell_without_handoff() {
 #[test]
 fn startup_prompt_enter_emits_submit_intent_and_quits_launcher() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
-    let sink = {
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
             intents.lock().expect("lock intents").push(intent);
@@ -595,7 +683,7 @@ fn multiline_history_keys_move_cursor_before_recalling_history() {
 #[test]
 fn live_bootstrap_auto_submit_echoes_and_emits_first_prompt() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
-    let sink = {
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
             intents.lock().expect("lock intents").push(intent);
@@ -631,7 +719,7 @@ fn live_bootstrap_auto_submit_echoes_and_emits_first_prompt() {
 #[test]
 fn tool_call_finished_plan_exit_handoff_emits_switch_model_then_submit_prompt() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
-    let sink = {
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
             intents.lock().expect("lock intents").push(intent);
@@ -706,6 +794,179 @@ fn replay_mode_focus_cycle_skips_prompt_and_blocks_draft_edits() {
 }
 
 #[test]
+fn child_session_navigation_keybinds_follow_opencode_contract() {
+    let run_dir = tempfile::tempdir().expect("create temp run dir");
+    let parent_dir = run_dir.path().join("parent");
+    let child_a_dir = run_dir.path().join("child_a");
+    let child_b_dir = run_dir.path().join("child_b");
+
+    let parent_events = vec![
+        run_started(1),
+        agent_spawned(2, "parent", "planner"),
+        provider_started(3, "req_parent", "mock", "model-parent"),
+        child_link_requested(4, "req_parent", "tc_child_a", Some("child_a"), None),
+        child_link_requested(5, "req_parent", "tc_child_b", Some("child_b"), None),
+    ];
+    let child_a_events = vec![
+        run_started(1),
+        agent_spawned(2, "child_a", "worker-a"),
+        provider_started(3, "req_child_a", "mock", "model-child-a"),
+        child_link_requested(4, "req_child_a", "tc_parent_a", None, Some("parent")),
+    ];
+    let child_b_events = vec![
+        run_started(1),
+        agent_spawned(2, "child_b", "worker-b"),
+        provider_started(3, "req_child_b", "mock", "model-child-b"),
+        child_link_requested(4, "req_child_b", "tc_parent_b", None, Some("parent")),
+    ];
+
+    write_events_jsonl(&parent_dir, &parent_events);
+    write_events_jsonl(&child_a_dir, &child_a_events);
+    write_events_jsonl(&child_b_dir, &child_b_events);
+
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut parent_app =
+        AppState::new_live(Some(parent_dir.clone()), false, Some(Arc::clone(&sink)));
+    parent_app.apply_keybindings(opencode_navigation_keybindings());
+    for event in parent_events.clone() {
+        parent_app.ingest_event(event);
+    }
+    parent_app.focus = Focus::Prompt;
+    parent_app.handle_key(key_with_modifiers(
+        KeyCode::Char(']'),
+        KeyModifiers::CONTROL,
+    ));
+    assert!(parent_app.prompt_buffer.is_empty());
+
+    let mut child_app =
+        AppState::new_live(Some(child_a_dir.clone()), false, Some(Arc::clone(&sink)));
+    child_app.apply_keybindings(opencode_navigation_keybindings());
+    for event in child_a_events {
+        child_app.ingest_event(event);
+    }
+    child_app.focus = Focus::Prompt;
+    child_app.handle_key(key(KeyCode::Char(']')));
+    child_app.handle_key(key_with_modifiers(
+        KeyCode::Char('['),
+        KeyModifiers::CONTROL,
+    ));
+    assert!(child_app.prompt_buffer.is_empty());
+
+    let mut reverse_app = AppState::new_live(Some(child_b_dir.clone()), false, Some(sink));
+    reverse_app.apply_keybindings(opencode_navigation_keybindings());
+    for event in child_b_events {
+        reverse_app.ingest_event(event);
+    }
+    reverse_app.focus = Focus::Prompt;
+    reverse_app.handle_key(key(KeyCode::Char('[')));
+    assert!(reverse_app.prompt_buffer.is_empty());
+
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[
+            UiIntent::ReplaySession {
+                run_id: "child_a".to_string(),
+                run_dir: child_a_dir.clone(),
+            },
+            UiIntent::ReplaySession {
+                run_id: "child_b".to_string(),
+                run_dir: child_b_dir.clone(),
+            },
+            UiIntent::ReplaySession {
+                run_id: "parent".to_string(),
+                run_dir: parent_dir.clone(),
+            },
+            UiIntent::ReplaySession {
+                run_id: "child_a".to_string(),
+                run_dir: child_a_dir,
+            },
+        ]
+    );
+}
+
+#[test]
+fn replay_child_navigation_does_not_emit_live_intents() {
+    let run_dir = tempfile::tempdir().expect("create temp run dir");
+    let parent_dir = run_dir.path().join("parent");
+    let child_a_dir = run_dir.path().join("child_a");
+    let child_b_dir = run_dir.path().join("child_b");
+
+    let parent_events = vec![
+        run_started(1),
+        agent_spawned(2, "parent", "planner"),
+        provider_started(3, "req_parent", "mock", "model-parent"),
+        child_link_requested(4, "req_parent", "tc_child_a", Some("child_a"), None),
+        child_link_requested(5, "req_parent", "tc_child_b", Some("child_b"), None),
+    ];
+    let child_a_events = vec![
+        run_started(1),
+        agent_spawned(2, "child_a", "worker-a"),
+        provider_started(3, "req_child_a", "mock", "model-child-a"),
+        child_link_requested(4, "req_child_a", "tc_parent_a", None, Some("parent")),
+    ];
+    let child_b_events = vec![
+        run_started(1),
+        agent_spawned(2, "child_b", "worker-b"),
+        provider_started(3, "req_child_b", "mock", "model-child-b"),
+        child_link_requested(4, "req_child_b", "tc_parent_b", None, Some("parent")),
+    ];
+
+    write_events_jsonl(&parent_dir, &parent_events);
+    write_events_jsonl(&child_a_dir, &child_a_events);
+    write_events_jsonl(&child_b_dir, &child_b_events);
+
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_replay(parent_dir.clone(), parent_events);
+    app.on_ui_intent = Some(sink);
+    app.apply_keybindings(opencode_navigation_keybindings());
+    app.set_launch_metadata(LaunchMetadata::new(
+        "planner",
+        "mock",
+        Some("model-parent".to_string()),
+    ));
+    app.focus = Focus::Prompt;
+
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char(']'),
+        KeyModifiers::CONTROL,
+    ));
+    assert_eq!(app.session_path.as_deref(), Some(child_a_dir.as_path()));
+    assert_eq!(app.active_profile(), "worker-a");
+    assert!(app.replay_mode);
+    assert!(app.prompt_buffer.is_empty());
+
+    app.handle_key(key(KeyCode::Char(']')));
+    assert_eq!(app.session_path.as_deref(), Some(child_b_dir.as_path()));
+    assert_eq!(app.active_profile(), "worker-b");
+
+    app.handle_key(key(KeyCode::Char('[')));
+    assert_eq!(app.session_path.as_deref(), Some(child_a_dir.as_path()));
+    assert_eq!(app.active_profile(), "worker-a");
+
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('['),
+        KeyModifiers::CONTROL,
+    ));
+    assert_eq!(app.session_path.as_deref(), Some(parent_dir.as_path()));
+    assert_eq!(app.active_profile(), "planner");
+    assert!(intents.lock().expect("lock intents").is_empty());
+}
+
+#[test]
 fn slash_menu_closes_after_whitespace() {
     let mut app = AppState::new_startup(Vec::new(), None);
 
@@ -722,7 +983,7 @@ fn slash_menu_closes_after_whitespace() {
 #[test]
 fn slash_exit_matches_quit_requested_behavior() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
-    let sink = {
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
             intents.lock().expect("lock intents").push(intent);

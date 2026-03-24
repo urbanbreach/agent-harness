@@ -13,7 +13,7 @@ expression: "fallback_render.lines().map(str::trim_end).collect::<Vec<_>>().join
 
                   ┌──────────────────────────────────────────────────────────────┐
                   │                            Harness                           │
-                  │                  Preset unknown · unknown/-                  │
+                  │                  Preset default · local/-                    │
                   │                                                              │
                   │                 Start a conversation to begin                │
 │     Enter send · Shift+Enter/Ctrl+j newline · ↑/↓ history    │

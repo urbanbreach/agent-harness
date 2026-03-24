@@ -3,7 +3,7 @@ source: crates/harness-tui/src/lib.rs
 assertion_line: 6761
 expression: "completed_shell_render.lines().map(str::trim_end).collect::<Vec<_>>().join(\"\\n\")"
 ---
-           run run_fixture · unknown/unknown · -
+           run run_fixture · default/local · -
             Waiting for first turn…
 
 

@@ -80,6 +80,8 @@ impl ShellHeights {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShellRhythm {
     pub composer_padding_x: u16,
+    pub sidebar_padding_x: u16,
+    pub sidebar_padding_y: u16,
     pub footer_prefix_gap: u16,
     pub transcript_gutter_x: u16,
     pub transcript_gutter_y: u16,
@@ -565,6 +567,8 @@ impl Theme {
         },
         rhythm: ShellRhythm {
             composer_padding_x: 2,
+            sidebar_padding_x: 2,
+            sidebar_padding_y: 1,
             footer_prefix_gap: 2,
             transcript_gutter_x: 2,
             transcript_gutter_y: 1,
@@ -1077,6 +1081,8 @@ mod tests {
         assert_eq!(minimum_lifecycle.post_run_card.height, 12);
         assert_eq!(minimum_lifecycle.overlay.width, 76);
         assert_eq!(theme.live_shell.rhythm.composer_padding_x, 2);
+        assert_eq!(theme.live_shell.rhythm.sidebar_padding_x, 2);
+        assert_eq!(theme.live_shell.rhythm.sidebar_padding_y, 1);
         assert_eq!(theme.live_shell.rhythm.footer_prefix_gap, 2);
         assert_eq!(minimum.permission_modal_width, 58);
         assert_eq!(split.centered_content_width, 86);

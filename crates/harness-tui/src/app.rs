@@ -1,20 +1,23 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::fs;
 use std::ops::{Deref, DerefMut};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 #[cfg(test)]
 use std::sync::Mutex;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use harness_core::agent::AgentModelRef;
+use harness_core::config::{registered_profile_model_metadata, ResolvedProfileModelMetadata};
 use harness_core::event::{
     ActorKind, EventArtifactRef, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
     PermissionDecision as EventPermissionDecision, ProviderRequestStartedEvent,
-    TaskLineageMetadata, ToolCallMetadata, ToolCallStatus, UserMessageSubmittedEvent,
+    TaskCompletionMetadata, TaskLineageMetadata, ToolCallMetadata, ToolCallStatus,
+    UserMessageSubmittedEvent,
 };
 use harness_core::perm::PermissionDecision;
-use harness_core::proj::{SessionCatalogEntry, SessionModeSource};
+use harness_core::proj::{inspect_resume_plan, SessionCatalogEntry, SessionModeSource};
 use serde::Deserialize;
 
 use crate::keybindings::{Action, KeyMap};
@@ -104,6 +107,14 @@ pub struct TaskLineageEntry {
     pub parent_request_id: Option<String>,
     pub child_session_id: Option<String>,
     pub child_request_id: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct SessionNavigationSnapshot {
+    session_path: PathBuf,
+    events: Vec<EventEnvelopeV1>,
+    launch_metadata: LaunchMetadata,
+    child_session_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -502,8 +513,114 @@ pub struct OrchestrationTaskRow {
     pub warning: Option<String>,
     pub owner_kind: ActorKind,
     pub owner_agent_id: Option<String>,
+    pub request_id: Option<String>,
+    pub parent_tool_call_id: Option<String>,
+    pub parent_request_id: Option<String>,
+    pub child_session_id: Option<String>,
+    pub child_request_id: Option<String>,
+    pub result_summary: Option<String>,
+    pub child_tool_call_count: usize,
+    pub timing_elapsed_ms: Option<u64>,
     pub first_seq: u64,
     pub last_seq: u64,
+    pub first_mono_ms: u64,
+    pub last_mono_ms: u64,
+    pub first_timestamp: Option<String>,
+    pub last_timestamp: Option<String>,
+}
+
+impl OrchestrationTaskRow {
+    pub fn duration_ms(&self) -> Option<u64> {
+        self.timing_elapsed_ms.or_else(|| {
+            (self.last_mono_ms >= self.first_mono_ms)
+                .then_some(self.last_mono_ms.saturating_sub(self.first_mono_ms))
+        })
+    }
+
+    pub fn transcript_timestamp(&self) -> Option<&str> {
+        self.last_timestamp
+            .as_deref()
+            .or(self.first_timestamp.as_deref())
+    }
+
+    pub(crate) fn effective_child_session_id(&self) -> Option<&str> {
+        self.child_session_id
+            .as_deref()
+            .or(self.owner_agent_id.as_deref())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    }
+
+    pub(crate) fn effective_child_request_id(&self) -> Option<&str> {
+        self.child_request_id
+            .as_deref()
+            .or(self.request_id.as_deref())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    }
+}
+
+fn merge_orchestration_task_event(row: &mut OrchestrationTaskRow, event: &EventEnvelopeV1) {
+    if row.first_seq == 0 {
+        row.first_seq = event.seq;
+    }
+    row.last_seq = event.seq;
+    if row.first_mono_ms == 0 {
+        row.first_mono_ms = event.mono_ms;
+    }
+    row.last_mono_ms = event.mono_ms;
+    if row.first_timestamp.is_none() {
+        row.first_timestamp = event.ts.clone();
+    }
+    row.last_timestamp = event.ts.clone();
+    if row.request_id.is_none() {
+        row.request_id = event.correlation_id.clone();
+    }
+    if row.child_session_id.is_none() {
+        row.child_session_id = event.actor.agent_id.clone();
+    }
+}
+
+fn merge_orchestration_task_lineage(
+    row: &mut OrchestrationTaskRow,
+    lineage: Option<&TaskLineageMetadata>,
+) {
+    let Some(lineage) = lineage else {
+        return;
+    };
+
+    if row.parent_tool_call_id.is_none() {
+        row.parent_tool_call_id = lineage.parent_tool_call_id.clone();
+    }
+    if row.parent_request_id.is_none() {
+        row.parent_request_id = lineage.parent_request_id.clone();
+    }
+    if row.child_session_id.is_none() {
+        row.child_session_id = lineage.child_session_id.clone();
+    }
+    if row.child_request_id.is_none() {
+        row.child_request_id = lineage.child_request_id.clone();
+    }
+    if row.request_id.is_none() {
+        row.request_id = lineage.child_request_id.clone();
+    }
+}
+
+fn merge_orchestration_task_completion_metadata(
+    row: &mut OrchestrationTaskRow,
+    metadata: Option<&TaskCompletionMetadata>,
+) {
+    let Some(metadata) = metadata else {
+        return;
+    };
+
+    merge_orchestration_task_lineage(row, metadata.lineage.as_ref());
+    if row.timing_elapsed_ms.is_none() {
+        row.timing_elapsed_ms = metadata
+            .timing
+            .as_ref()
+            .and_then(execution_timing_elapsed_ms);
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -651,6 +768,10 @@ pub enum Focus {
     Prompt,
 }
 
+#[expect(
+    clippy::large_enum_variant,
+    reason = "UiIntent keeps launch metadata inline so intent sinks do not need extra boxing/unboxing glue"
+)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiIntent {
     ResolvePermission {
@@ -905,6 +1026,16 @@ pub struct LaunchMetadata {
     profile: Option<String>,
     provider: Option<String>,
     model: Option<String>,
+    variant: Option<String>,
+    display_label: Option<String>,
+    token_window_label: Option<String>,
+    context_window_tokens: Option<u32>,
+    max_input_tokens: Option<u32>,
+    max_output_tokens: Option<u32>,
+    description: Option<String>,
+    reasoning_effort: Option<String>,
+    text_verbosity: Option<String>,
+    recommended_for: Option<String>,
     mode_label: Option<String>,
     available_models: Vec<ModelOption>,
 }
@@ -915,26 +1046,54 @@ impl LaunchMetadata {
         provider: impl Into<String>,
         model: Option<String>,
     ) -> Self {
-        Self {
-            profile: Some(profile.into()),
-            provider: Some(provider.into()),
+        let profile = profile.into();
+        let provider = provider.into();
+        let model = model.filter(|value| !value.trim().is_empty());
+        let mut metadata = Self {
+            profile: Some(profile.clone()),
+            provider: Some(provider.clone()),
             model,
+            variant: None,
+            display_label: None,
+            token_window_label: None,
+            context_window_tokens: None,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            description: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            recommended_for: None,
             mode_label: None,
             available_models: Vec::new(),
-        }
+        };
+        metadata.apply_registered_metadata();
+        metadata
     }
 
     pub fn from_model_ref(profile: impl Into<String>, model_ref: &str) -> Self {
+        let profile = profile.into();
         let model_ref = AgentModelRef::parse(model_ref);
         Self::new(profile, model_ref.provider_id, Some(model_ref.model_id))
     }
 
     pub fn from_model_option(option: &ModelOption) -> Self {
-        Self::new(
-            option.profile.clone(),
-            option.provider.clone(),
-            Some(option.model.clone()),
-        )
+        Self {
+            profile: Some(option.profile.clone()),
+            provider: Some(option.provider.clone()),
+            model: Some(option.model.clone()),
+            variant: option.variant.clone(),
+            display_label: option.display_label.clone(),
+            token_window_label: option.token_window_label.clone(),
+            context_window_tokens: option.context_window_tokens,
+            max_input_tokens: option.max_input_tokens,
+            max_output_tokens: option.max_output_tokens,
+            description: option.description.clone(),
+            reasoning_effort: option.reasoning_effort.clone(),
+            text_verbosity: option.text_verbosity.clone(),
+            recommended_for: option.recommended_for.clone(),
+            mode_label: None,
+            available_models: Vec::new(),
+        }
     }
 
     pub fn with_mode_label(mut self, mode_label: impl Into<String>) -> Self {
@@ -972,6 +1131,97 @@ impl LaunchMetadata {
             .filter(|value| !value.trim().is_empty())
     }
 
+    pub fn variant(&self) -> Option<&str> {
+        self.variant
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                self.matching_available_model()
+                    .and_then(|option| option.variant())
+            })
+    }
+
+    pub fn display_label(&self) -> Option<&str> {
+        self.display_label
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                self.matching_available_model()
+                    .and_then(|option| option.display_label())
+            })
+    }
+
+    pub fn token_window_label(&self) -> Option<&str> {
+        self.token_window_label
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                self.matching_available_model()
+                    .and_then(|option| option.token_window_label())
+            })
+    }
+
+    pub fn context_window_tokens(&self) -> Option<u32> {
+        self.context_window_tokens.or_else(|| {
+            self.matching_available_model()
+                .and_then(|option| option.context_window_tokens)
+        })
+    }
+
+    pub fn max_input_tokens(&self) -> Option<u32> {
+        self.max_input_tokens.or_else(|| {
+            self.matching_available_model()
+                .and_then(|option| option.max_input_tokens)
+        })
+    }
+
+    pub fn max_output_tokens(&self) -> Option<u32> {
+        self.max_output_tokens.or_else(|| {
+            self.matching_available_model()
+                .and_then(|option| option.max_output_tokens)
+        })
+    }
+
+    pub fn description(&self) -> Option<&str> {
+        self.description
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                self.matching_available_model()
+                    .and_then(|option| option.description())
+            })
+    }
+
+    pub fn reasoning_effort(&self) -> Option<&str> {
+        self.reasoning_effort
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                self.matching_available_model()
+                    .and_then(|option| option.reasoning_effort())
+            })
+    }
+
+    pub fn text_verbosity(&self) -> Option<&str> {
+        self.text_verbosity
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                self.matching_available_model()
+                    .and_then(|option| option.text_verbosity())
+            })
+    }
+
+    pub fn recommended_for(&self) -> Option<&str> {
+        self.recommended_for
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                self.matching_available_model()
+                    .and_then(|option| option.recommended_for())
+            })
+    }
+
     pub fn mode_label(&self) -> Option<&str> {
         self.mode_label
             .as_deref()
@@ -981,6 +1231,69 @@ impl LaunchMetadata {
     pub fn available_models(&self) -> &[ModelOption] {
         &self.available_models
     }
+
+    fn to_model_option(&self) -> Option<ModelOption> {
+        Some(ModelOption {
+            profile: self.profile().to_string(),
+            provider: self.provider().to_string(),
+            model: self.model()?.to_string(),
+            variant: self.variant().map(str::to_string),
+            display_label: self.display_label().map(str::to_string),
+            token_window_label: self.token_window_label().map(str::to_string),
+            context_window_tokens: self.context_window_tokens(),
+            max_input_tokens: self.max_input_tokens(),
+            max_output_tokens: self.max_output_tokens(),
+            description: self.description().map(str::to_string),
+            reasoning_effort: self.reasoning_effort().map(str::to_string),
+            text_verbosity: self.text_verbosity().map(str::to_string),
+            recommended_for: self.recommended_for().map(str::to_string),
+        })
+    }
+
+    fn apply_registered_metadata(&mut self) {
+        let profile = self.profile();
+        let provider = self.provider();
+        let model = self.model();
+        let Some(metadata) = metadata_for_profile_identity(profile, provider, model) else {
+            return;
+        };
+        self.apply_resolved_metadata(&metadata);
+    }
+
+    fn apply_resolved_metadata(&mut self, metadata: &ResolvedProfileModelMetadata) {
+        self.variant = metadata.variant.clone();
+        self.display_label = Some(metadata.display_label.clone());
+        self.token_window_label = metadata.token_window_label.clone();
+        self.context_window_tokens = metadata.context_window_tokens;
+        self.max_input_tokens = metadata.max_input_tokens;
+        self.max_output_tokens = metadata.max_output_tokens;
+        self.description = metadata.description.clone();
+        self.reasoning_effort = metadata.reasoning_effort.clone();
+        self.text_verbosity = metadata.text_verbosity.clone();
+        self.recommended_for = metadata.recommended_for.clone();
+    }
+
+    fn matching_available_model(&self) -> Option<&ModelOption> {
+        let profile = self.profile();
+        let provider = self.provider();
+        let model = self.model();
+
+        self.available_models
+            .iter()
+            .find(|option| {
+                option.profile == profile
+                    && option.provider == provider
+                    && model.is_some_and(|model_id| option.model == model_id)
+            })
+            .or_else(|| {
+                let mut matches = self.available_models.iter().filter(|option| {
+                    option.provider == provider
+                        && model.is_some_and(|model_id| option.model == model_id)
+                });
+                let first = matches.next()?;
+                matches.next().is_none().then_some(first)
+            })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -988,17 +1301,39 @@ pub struct ModelOption {
     pub profile: String,
     pub provider: String,
     pub model: String,
+    pub variant: Option<String>,
+    pub display_label: Option<String>,
+    pub token_window_label: Option<String>,
+    pub context_window_tokens: Option<u32>,
+    pub max_input_tokens: Option<u32>,
+    pub max_output_tokens: Option<u32>,
+    pub description: Option<String>,
+    pub reasoning_effort: Option<String>,
+    pub text_verbosity: Option<String>,
+    pub recommended_for: Option<String>,
 }
 
 impl ModelOption {
     pub fn from_model_ref(profile: impl Into<String>, model_ref: &str) -> Self {
         let profile = profile.into();
         let model_ref = AgentModelRef::parse(model_ref);
-        Self {
+        let mut option = Self {
             profile,
             provider: model_ref.provider_id,
             model: model_ref.model_id,
-        }
+            variant: None,
+            display_label: None,
+            token_window_label: None,
+            context_window_tokens: None,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            description: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            recommended_for: None,
+        };
+        option.apply_registered_metadata();
+        option
     }
 
     fn matches(&self, input: &str) -> bool {
@@ -1010,6 +1345,89 @@ impl ModelOption {
         self.profile.to_lowercase().contains(&input)
             || self.provider.to_lowercase().contains(&input)
             || self.model.to_lowercase().contains(&input)
+            || self
+                .variant()
+                .is_some_and(|value| value.to_lowercase().contains(&input))
+            || self
+                .display_label()
+                .is_some_and(|value| value.to_lowercase().contains(&input))
+            || self
+                .token_window_label()
+                .is_some_and(|value| value.to_lowercase().contains(&input))
+            || self
+                .description()
+                .is_some_and(|value| value.to_lowercase().contains(&input))
+            || self
+                .reasoning_effort()
+                .is_some_and(|value| value.to_lowercase().contains(&input))
+            || self
+                .text_verbosity()
+                .is_some_and(|value| value.to_lowercase().contains(&input))
+            || self
+                .recommended_for()
+                .is_some_and(|value| value.to_lowercase().contains(&input))
+    }
+
+    pub fn variant(&self) -> Option<&str> {
+        self.variant
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+    }
+
+    pub fn display_label(&self) -> Option<&str> {
+        self.display_label
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+    }
+
+    pub fn token_window_label(&self) -> Option<&str> {
+        self.token_window_label
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+    }
+
+    pub fn description(&self) -> Option<&str> {
+        self.description
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+    }
+
+    pub fn reasoning_effort(&self) -> Option<&str> {
+        self.reasoning_effort
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+    }
+
+    pub fn text_verbosity(&self) -> Option<&str> {
+        self.text_verbosity
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+    }
+
+    pub fn recommended_for(&self) -> Option<&str> {
+        self.recommended_for
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+    }
+
+    fn apply_registered_metadata(&mut self) {
+        let Some(metadata) = metadata_for_profile_identity(
+            self.profile.as_str(),
+            self.provider.as_str(),
+            Some(self.model.as_str()),
+        ) else {
+            return;
+        };
+        self.variant = metadata.variant;
+        self.display_label = Some(metadata.display_label);
+        self.token_window_label = metadata.token_window_label;
+        self.context_window_tokens = metadata.context_window_tokens;
+        self.max_input_tokens = metadata.max_input_tokens;
+        self.max_output_tokens = metadata.max_output_tokens;
+        self.description = metadata.description;
+        self.reasoning_effort = metadata.reasoning_effort;
+        self.text_verbosity = metadata.text_verbosity;
+        self.recommended_for = metadata.recommended_for;
     }
 }
 
@@ -1024,8 +1442,26 @@ impl Ord for ModelOption {
         self.provider
             .cmp(&other.provider)
             .then_with(|| self.model.cmp(&other.model))
+            .then_with(|| self.variant.cmp(&other.variant))
             .then_with(|| self.profile.cmp(&other.profile))
     }
+}
+
+fn metadata_for_profile_identity(
+    profile: &str,
+    provider: &str,
+    model: Option<&str>,
+) -> Option<ResolvedProfileModelMetadata> {
+    let metadata = registered_profile_model_metadata(profile)?;
+    if metadata.provider != provider {
+        return None;
+    }
+    if let Some(model_id) = model {
+        if metadata.model != model_id {
+            return None;
+        }
+    }
+    Some(metadata)
 }
 
 #[derive(Default)]
@@ -1095,6 +1531,7 @@ pub struct AppState {
     pub keymap: KeyMap,
     theme: Theme,
     launch_metadata: LaunchMetadata,
+    session_navigation_stack: Vec<SessionNavigationSnapshot>,
     dismissed_permissions: BTreeSet<String>,
     submitted_permission_id: Option<String>,
     question_answer_permission_id: Option<String>,
@@ -1160,6 +1597,7 @@ impl Default for AppState {
             keymap: KeyMap::default(),
             theme: Theme::default(),
             launch_metadata: LaunchMetadata::default(),
+            session_navigation_stack: Vec::new(),
             dismissed_permissions: BTreeSet::new(),
             submitted_permission_id: None,
             question_answer_permission_id: None,
@@ -1341,15 +1779,26 @@ impl SessionProjection {
                 warning: None,
                 owner_kind: event.actor.kind,
                 owner_agent_id: event.actor.agent_id.clone(),
+                request_id: event.correlation_id.clone(),
+                parent_tool_call_id: None,
+                parent_request_id: None,
+                child_session_id: event.actor.agent_id.clone(),
+                child_request_id: event.correlation_id.clone(),
+                result_summary: None,
+                child_tool_call_count: 0,
+                timing_elapsed_ms: None,
                 first_seq: event.seq,
                 last_seq: event.seq,
+                first_mono_ms: event.mono_ms,
+                last_mono_ms: event.mono_ms,
+                first_timestamp: event.ts.clone(),
+                last_timestamp: event.ts.clone(),
             });
 
         row.owner_kind = event.actor.kind;
         if let Some(agent_id) = event.actor.agent_id.as_ref() {
             row.owner_agent_id = Some(agent_id.clone());
         }
-        row.last_seq = event.seq;
         row
     }
 
@@ -1359,9 +1808,75 @@ impl SessionProjection {
     {
         {
             let row = self.orchestration_task_row_mut(event, task_id);
+            merge_orchestration_task_event(row, event);
             update(row);
         }
         self.enforce_orchestration_retention();
+    }
+
+    fn note_child_task_tool_call(&mut self, event: &EventEnvelopeV1) {
+        let Some(request_id) = event.correlation_id.as_deref() else {
+            return;
+        };
+
+        for row in self.orchestration_tasks.values_mut() {
+            if row.effective_child_request_id() == Some(request_id) {
+                row.child_tool_call_count = row.child_tool_call_count.saturating_add(1);
+                row.last_seq = event.seq;
+                row.last_mono_ms = event.mono_ms;
+                row.last_timestamp = event.ts.clone();
+            }
+        }
+    }
+
+    fn transcript_task_row_for_tool_call(
+        &self,
+        tool_call: &ToolCallEntry,
+    ) -> Option<OrchestrationTaskRow> {
+        let child_request_id = tool_call
+            .lineage
+            .as_ref()
+            .and_then(|lineage| lineage.child_request_id.clone())
+            .or_else(|| {
+                json_string_field(
+                    tool_call.output_json.as_ref(),
+                    &["child_request_id", "request_id"],
+                )
+            });
+        let child_session_id = tool_call
+            .lineage
+            .as_ref()
+            .and_then(|lineage| lineage.child_session_id.clone())
+            .or_else(|| {
+                json_string_field(
+                    tool_call.output_json.as_ref(),
+                    &["child_session_id", "session_id"],
+                )
+            });
+
+        self.orchestration_tasks
+            .values()
+            .filter_map(|row| {
+                let mut score = 0u8;
+                if row.parent_tool_call_id.as_deref() == Some(tool_call.tool_call_id.as_str()) {
+                    score += 8;
+                }
+                if child_request_id
+                    .as_deref()
+                    .is_some_and(|request_id| row.effective_child_request_id() == Some(request_id))
+                {
+                    score += 4;
+                }
+                if child_session_id
+                    .as_deref()
+                    .is_some_and(|session_id| row.effective_child_session_id() == Some(session_id))
+                {
+                    score += 2;
+                }
+                (score > 0).then_some((score, !row.state.is_terminal(), row.last_seq, row.clone()))
+            })
+            .max_by_key(|(score, active, last_seq, _)| (*score, *active, *last_seq))
+            .map(|(_, _, _, row)| row)
     }
 
     fn enforce_orchestration_retention(&mut self) {
@@ -1608,6 +2123,8 @@ impl SessionProjection {
                 self.update_orchestration_task(event, &data.task_id, |row| {
                     row.state = OrchestrationTaskState::Completed;
                     row.warning = None;
+                    row.result_summary = Some(data.result_summary.clone());
+                    merge_orchestration_task_completion_metadata(row, data.metadata.as_ref());
                 });
 
                 if let Some(request_id) = event.correlation_id.as_deref() {
@@ -1630,6 +2147,9 @@ impl SessionProjection {
                         row.queue_key = Some(queue_key.clone());
                     }
                     row.warning = None;
+                    if row.child_request_id.is_none() {
+                        row.child_request_id = event.correlation_id.clone();
+                    }
                     row.state = match data.state {
                         harness_core::event::TaskScheduleState::Queued => {
                             OrchestrationTaskState::Queued
@@ -1711,6 +2231,7 @@ impl SessionProjection {
                     entry.tool_calls.push(tool_entry);
                     entry.last_seq = event.seq;
                 }
+                self.note_child_task_tool_call(event);
             }
             EventV1::ToolCallStarted(data) => {
                 if let Some(tool_entry) = self.find_tool_call_mut(&data.tool_call_id) {
@@ -1879,6 +2400,11 @@ impl SessionProjection {
 }
 
 impl AppState {
+    fn launch_value_is_unknown(value: &str) -> bool {
+        let trimmed = value.trim();
+        trimmed.is_empty() || trimmed.eq_ignore_ascii_case("unknown")
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -1941,6 +2467,275 @@ impl AppState {
 
     pub fn set_launch_metadata(&mut self, launch_metadata: LaunchMetadata) {
         self.launch_metadata = launch_metadata;
+    }
+
+    fn current_session_id(&self) -> Option<&str> {
+        self.session_path
+            .as_deref()
+            .and_then(Path::file_name)
+            .and_then(|value| value.to_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    }
+
+    fn child_session_ids(&self) -> Vec<String> {
+        let mut child_session_ids = BTreeSet::new();
+
+        for activity in &self.activities {
+            for tool_call in &activity.tool_calls {
+                let child_session_id = tool_call
+                    .lineage
+                    .as_ref()
+                    .and_then(|lineage| lineage.child_session_id.as_deref())
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+                    .or_else(|| {
+                        json_string_field(
+                            tool_call.output_json.as_ref(),
+                            &["child_session_id", "session_id"],
+                        )
+                    });
+
+                if let Some(child_session_id) = child_session_id {
+                    child_session_ids.insert(child_session_id);
+                }
+            }
+        }
+
+        child_session_ids.into_iter().collect()
+    }
+
+    fn current_parent_session_id(&self) -> Option<String> {
+        parent_session_id_from_events(&self.events)
+    }
+
+    fn build_launch_metadata_for_option(&self, selected_model: &ModelOption) -> LaunchMetadata {
+        let mut launch_metadata = LaunchMetadata::from_model_option(selected_model)
+            .with_available_models(self.launch_metadata.available_models().to_vec());
+        if let Some(mode_label) = self.launch_metadata.mode_label().map(str::to_owned) {
+            launch_metadata = launch_metadata.with_mode_label(mode_label);
+        }
+        launch_metadata
+    }
+
+    fn apply_selected_model_option(&mut self, selected_model: ModelOption, emit_intent: bool) {
+        let launch_metadata = self.build_launch_metadata_for_option(&selected_model);
+        self.launch_metadata = launch_metadata.clone();
+
+        if emit_intent {
+            set_pending_live_launch_metadata(launch_metadata.clone());
+            self.emit_ui_intent(UiIntent::SwitchModel {
+                profile: selected_model.profile,
+                launch_metadata,
+            });
+        }
+    }
+
+    fn cycle_variant(&mut self) {
+        let Some(model_id) = self.launch_metadata.model().map(str::to_owned) else {
+            return;
+        };
+        let provider_id = self.launch_metadata.provider().to_string();
+        let mut variants = self
+            .launch_metadata
+            .available_models()
+            .iter()
+            .filter(|option| option.provider == provider_id && option.model == model_id)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        if let Some(current_option) = self.launch_metadata.to_model_option() {
+            if current_option.provider == provider_id
+                && current_option.model == model_id
+                && !variants.iter().any(|option| option == &current_option)
+            {
+                variants.push(current_option);
+            }
+        }
+
+        variants.sort();
+        variants.dedup();
+        if variants.len() < 2 {
+            return;
+        }
+
+        let current_index = variants
+            .iter()
+            .position(|option| self.is_current_model_option(option))
+            .unwrap_or(0);
+        let next_index = (current_index + 1) % variants.len();
+        let selected_model = variants[next_index].clone();
+        self.apply_selected_model_option(selected_model, !self.replay_mode);
+    }
+
+    fn current_session_snapshot(&self) -> Option<SessionNavigationSnapshot> {
+        Some(SessionNavigationSnapshot {
+            session_path: self.session_path.clone()?,
+            events: self.events.clone(),
+            launch_metadata: self.launch_metadata.clone(),
+            child_session_ids: self.child_session_ids(),
+        })
+    }
+
+    fn restore_session_snapshot(&mut self, snapshot: SessionNavigationSnapshot) {
+        self.replay_mode = true;
+        self.session_path = Some(snapshot.session_path);
+        self.launch_metadata = snapshot.launch_metadata;
+        self.replace_events(snapshot.events);
+        self.active_review_surface = None;
+        self.active_tab = Tab::Run;
+        self.focus = Focus::Details;
+        self.normalize_focus_for_active_surface();
+    }
+
+    fn session_path_for_id(&self, session_id: &str) -> Option<PathBuf> {
+        let session_id = session_id.trim();
+        if session_id.is_empty() {
+            return None;
+        }
+
+        self.session_path
+            .as_deref()
+            .and_then(Path::parent)
+            .map(|parent| parent.join(session_id))
+    }
+
+    fn live_switch_to_session(&mut self, session_id: String, session_path: PathBuf) {
+        let resume_plan = inspect_resume_plan(&session_path);
+        set_pending_live_prompt_draft(Some(self.prompt_buffer.clone()));
+        if resume_plan.is_resumable {
+            self.emit_ui_intent(UiIntent::ContinueSession {
+                run_id: session_id,
+                run_dir: session_path,
+            });
+        } else {
+            self.emit_ui_intent(UiIntent::ReplaySession {
+                run_id: session_id,
+                run_dir: session_path,
+            });
+        }
+    }
+
+    fn open_replay_session(&mut self, session_id: String, push_current: bool) {
+        let Some(session_path) = self.session_path_for_id(&session_id) else {
+            self.set_status_banner(Some(
+                "session navigation unavailable: missing session path".to_string(),
+            ));
+            return;
+        };
+
+        let snapshot =
+            match session_navigation_snapshot_from_path(&session_path, &self.launch_metadata) {
+                Ok(snapshot) => snapshot,
+                Err(err) => {
+                    self.set_status_banner(Some(format!("session navigation failed: {err}")));
+                    return;
+                }
+            };
+
+        if push_current {
+            if let Some(current_snapshot) = self.current_session_snapshot() {
+                let already_pushed = self
+                    .session_navigation_stack
+                    .last()
+                    .map(|existing| existing.session_path.as_path())
+                    == Some(current_snapshot.session_path.as_path());
+                if !already_pushed {
+                    self.session_navigation_stack.push(current_snapshot);
+                }
+            }
+        }
+
+        self.restore_session_snapshot(snapshot);
+    }
+
+    fn sibling_child_session_target(&self, reverse: bool) -> Option<String> {
+        let current_session_id = self.current_session_id()?;
+        let siblings = if let Some(parent_snapshot) = self.session_navigation_stack.last() {
+            parent_snapshot.child_session_ids.clone()
+        } else {
+            let parent_session_id = self.current_parent_session_id()?;
+            let parent_session_path = self.session_path_for_id(&parent_session_id)?;
+            session_navigation_snapshot_from_path(&parent_session_path, &self.launch_metadata)
+                .ok()?
+                .child_session_ids
+        };
+
+        sibling_session_id(&siblings, current_session_id, reverse)
+    }
+
+    fn navigate_to_first_child_session(&mut self) {
+        let Some(session_id) = self.child_session_ids().into_iter().next() else {
+            return;
+        };
+
+        if self.replay_mode {
+            self.open_replay_session(session_id, true);
+            return;
+        }
+
+        if let Some(session_path) = self.session_path_for_id(&session_id) {
+            self.live_switch_to_session(session_id, session_path);
+        }
+    }
+
+    fn navigate_to_child_sibling(&mut self, reverse: bool) {
+        let target_session_id = self.sibling_child_session_target(reverse).or_else(|| {
+            let child_session_ids = self.child_session_ids();
+            if reverse {
+                child_session_ids.into_iter().last()
+            } else {
+                child_session_ids.into_iter().next()
+            }
+        });
+        let Some(target_session_id) = target_session_id else {
+            return;
+        };
+
+        if self.replay_mode {
+            self.open_replay_session(
+                target_session_id,
+                self.current_parent_session_id().is_none(),
+            );
+            return;
+        }
+
+        if let Some(session_path) = self.session_path_for_id(&target_session_id) {
+            self.live_switch_to_session(target_session_id, session_path);
+        }
+    }
+
+    fn navigate_to_parent_session(&mut self) {
+        let Some(parent_session_id) = self.current_parent_session_id() else {
+            return;
+        };
+
+        if self.replay_mode {
+            if let Some(parent_snapshot) = self.session_navigation_stack.pop() {
+                self.restore_session_snapshot(parent_snapshot);
+                return;
+            }
+
+            let Some(parent_session_path) = self.session_path_for_id(&parent_session_id) else {
+                self.set_status_banner(Some(
+                    "session navigation unavailable: missing parent session path".to_string(),
+                ));
+                return;
+            };
+            match session_navigation_snapshot_from_path(&parent_session_path, &self.launch_metadata)
+            {
+                Ok(snapshot) => self.restore_session_snapshot(snapshot),
+                Err(err) => {
+                    self.set_status_banner(Some(format!("session navigation failed: {err}")));
+                }
+            }
+            return;
+        }
+
+        if let Some(parent_session_path) = self.session_path_for_id(&parent_session_id) {
+            self.live_switch_to_session(parent_session_id, parent_session_path);
+        }
     }
 
     pub fn replace_events(&mut self, events: Vec<EventEnvelopeV1>) {
@@ -2250,12 +3045,17 @@ impl AppState {
     }
 
     pub fn active_profile(&self) -> &str {
-        self.launch_metadata.profile()
+        let profile = self.launch_metadata.profile();
+        if Self::launch_value_is_unknown(profile) {
+            "default"
+        } else {
+            profile
+        }
     }
 
     pub fn active_provider(&self) -> &str {
         let provider = self.launch_metadata.provider();
-        if provider != "unknown" && provider != "local" {
+        if !Self::launch_value_is_unknown(provider) && provider != "local" {
             provider
         } else {
             self.activities
@@ -2264,11 +3064,12 @@ impl AppState {
                     (!activity.provider_id.trim().is_empty())
                         .then_some(activity.provider_id.as_str())
                 })
-                .unwrap_or(provider)
+                .filter(|value| !Self::launch_value_is_unknown(value))
+                .unwrap_or("local")
         }
     }
 
-    pub fn current_model_label(&self) -> &str {
+    fn current_model_id(&self) -> &str {
         self.launch_metadata
             .model()
             .or_else(|| {
@@ -2276,7 +3077,18 @@ impl AppState {
                     (!activity.model_id.trim().is_empty()).then_some(activity.model_id.as_str())
                 })
             })
+            .filter(|value| !Self::launch_value_is_unknown(value))
             .unwrap_or("-")
+    }
+
+    fn current_model_variant(&self) -> Option<&str> {
+        self.launch_metadata.variant()
+    }
+
+    pub fn current_model_label(&self) -> &str {
+        self.launch_metadata
+            .display_label()
+            .unwrap_or_else(|| self.current_model_id())
     }
 
     pub fn operator_sidebar_state_label(&self) -> String {
@@ -2288,7 +3100,7 @@ impl AppState {
     }
 
     pub fn operator_sidebar_run_identity(&self) -> String {
-        format!("run {}", self.run_id().unwrap_or("unknown"))
+        format!("run {}", self.run_id().unwrap_or("pending"))
     }
 
     pub fn operator_sidebar_pending_permission_lines(&self) -> Vec<String> {
@@ -2331,7 +3143,8 @@ impl AppState {
     pub(crate) fn is_current_model_option(&self, option: &ModelOption) -> bool {
         option.profile == self.active_profile()
             && option.provider == self.active_provider()
-            && option.model == self.current_model_label()
+            && option.model == self.current_model_id()
+            && option.variant() == self.current_model_variant()
     }
 
     fn active_slash_query(&self) -> Option<&str> {
@@ -2496,12 +3309,8 @@ impl AppState {
 
         options.extend(self.launch_metadata.available_models().iter().cloned());
 
-        if let Some(model) = self.launch_metadata.model() {
-            options.insert(ModelOption {
-                profile: self.launch_metadata.profile().to_string(),
-                provider: self.launch_metadata.provider().to_string(),
-                model: model.to_string(),
-            });
+        if let Some(current_option) = self.launch_metadata.to_model_option() {
+            options.insert(current_option);
         }
 
         if options.is_empty() {
@@ -2511,6 +3320,16 @@ impl AppState {
                         profile: self.launch_metadata.profile().to_string(),
                         provider: activity.provider_id.clone(),
                         model: activity.model_id.clone(),
+                        variant: None,
+                        display_label: None,
+                        token_window_label: None,
+                        context_window_tokens: None,
+                        max_input_tokens: None,
+                        max_output_tokens: None,
+                        description: None,
+                        reasoning_effort: None,
+                        text_verbosity: None,
+                        recommended_for: None,
                     });
                 }
             }
@@ -2526,6 +3345,16 @@ impl AppState {
                     profile: session_history_profile_label(entry).to_string(),
                     provider: provider.to_string(),
                     model: model.to_string(),
+                    variant: None,
+                    display_label: None,
+                    token_window_label: None,
+                    context_window_tokens: None,
+                    max_input_tokens: None,
+                    max_output_tokens: None,
+                    description: None,
+                    reasoning_effort: None,
+                    text_verbosity: None,
+                    recommended_for: None,
                 });
             }
         }
@@ -2586,18 +3415,7 @@ impl AppState {
             return;
         };
 
-        let mut launch_metadata = LaunchMetadata::from_model_option(&selected_model)
-            .with_available_models(self.launch_metadata.available_models().to_vec());
-        if let Some(mode_label) = self.launch_metadata.mode_label().map(str::to_owned) {
-            launch_metadata = launch_metadata.with_mode_label(mode_label);
-        }
-
-        self.launch_metadata = launch_metadata.clone();
-        set_pending_live_launch_metadata(launch_metadata.clone());
-        self.emit_ui_intent(UiIntent::SwitchModel {
-            profile: selected_model.profile,
-            launch_metadata,
-        });
+        self.apply_selected_model_option(selected_model, true);
         self.close_palette();
     }
 
@@ -2751,6 +3569,13 @@ impl AppState {
         row: &OrchestrationTaskRow,
     ) -> OrchestrationOwnerLabels {
         self.projection.orchestration_owner_labels(row)
+    }
+
+    pub(crate) fn transcript_task_row_for_tool_call(
+        &self,
+        tool_call: &ToolCallEntry,
+    ) -> Option<OrchestrationTaskRow> {
+        self.projection.transcript_task_row_for_tool_call(tool_call)
     }
 
     pub fn transcript_pending_permissions(&self) -> Vec<(String, String)> {
@@ -3173,6 +3998,8 @@ impl AppState {
             return;
         }
 
+        let mapped_action = self.keymap.get_action(&key);
+
         if self.startup_shell_visible()
             && self.focus != Focus::Prompt
             && !self.composer_disabled()
@@ -3180,6 +4007,12 @@ impl AppState {
             && !key.modifiers.contains(KeyModifiers::ALT)
             && matches!(key.code, KeyCode::Char(_))
         {
+            if mapped_action.is_some_and(action_preempts_text_input) {
+                self.execute_action(mapped_action.expect("preempting action"));
+                self.maybe_auto_exit();
+                return;
+            }
+
             if let KeyCode::Char(c) = key.code {
                 self.focus = Focus::Prompt;
                 self.execute_action(Action::Char(c));
@@ -3194,6 +4027,12 @@ impl AppState {
             && !key.modifiers.contains(KeyModifiers::ALT)
             && matches!(key.code, KeyCode::Char(_))
         {
+            if mapped_action.is_some_and(action_preempts_text_input) {
+                self.execute_action(mapped_action.expect("preempting action"));
+                self.maybe_auto_exit();
+                return;
+            }
+
             if let KeyCode::Char(c) = key.code {
                 self.execute_action(Action::Char(c));
                 self.maybe_auto_exit();
@@ -3201,7 +4040,7 @@ impl AppState {
             }
         }
 
-        let Some(action) = self.keymap.get_action(&key) else {
+        let Some(action) = mapped_action else {
             return;
         };
 
@@ -4298,6 +5137,21 @@ impl AppState {
             Action::Reload if self.replay_mode => {
                 self.reload_requested = true;
             }
+            Action::SessionChildFirst => {
+                self.navigate_to_first_child_session();
+            }
+            Action::SessionChildCycle => {
+                self.navigate_to_child_sibling(false);
+            }
+            Action::SessionChildCycleReverse => {
+                self.navigate_to_child_sibling(true);
+            }
+            Action::SessionParent => {
+                self.navigate_to_parent_session();
+            }
+            Action::VariantCycle => {
+                self.cycle_variant();
+            }
             Action::MoveDown if self.focus != Focus::Prompt => {
                 if self.active_review_surface.is_none() && self.focus == Focus::List {
                     self.next_activity();
@@ -4704,6 +5558,147 @@ impl AppState {
             self.should_quit = true;
         }
     }
+}
+
+fn action_preempts_text_input(action: Action) -> bool {
+    matches!(
+        action,
+        Action::SessionChildCycle | Action::SessionChildCycleReverse
+    )
+}
+
+fn json_string_field(output_json: Option<&serde_json::Value>, keys: &[&str]) -> Option<String> {
+    let object = output_json?.as_object()?;
+    keys.iter().find_map(|key| {
+        object
+            .get(*key)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    })
+}
+
+fn sibling_session_id(
+    session_ids: &[String],
+    current_session_id: &str,
+    reverse: bool,
+) -> Option<String> {
+    if session_ids.is_empty() {
+        return None;
+    }
+
+    let current_index = session_ids
+        .iter()
+        .position(|session_id| session_id == current_session_id)?;
+    let next_index = if reverse {
+        current_index
+            .checked_sub(1)
+            .unwrap_or(session_ids.len().saturating_sub(1))
+    } else {
+        (current_index + 1) % session_ids.len()
+    };
+    session_ids.get(next_index).cloned()
+}
+
+fn lineage_parent_session_id_from_event(event: &EventEnvelopeV1) -> Option<String> {
+    let parent_session_id = match &event.payload {
+        EventV1::ToolCallRequested(payload) => payload
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.lineage.as_ref())
+            .and_then(|lineage| lineage.parent_session_id.as_deref()),
+        EventV1::ToolCallFinished(payload) => payload
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.lineage.as_ref())
+            .and_then(|lineage| lineage.parent_session_id.as_deref()),
+        EventV1::TaskCompleted(payload) => payload
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.lineage.as_ref())
+            .and_then(|lineage| lineage.parent_session_id.as_deref()),
+        _ => None,
+    }?;
+
+    let parent_session_id = parent_session_id.trim();
+    (!parent_session_id.is_empty()).then(|| parent_session_id.to_string())
+}
+
+fn parent_session_id_from_events(events: &[EventEnvelopeV1]) -> Option<String> {
+    events.iter().find_map(lineage_parent_session_id_from_event)
+}
+
+fn load_session_events(session_path: &Path) -> Result<Vec<EventEnvelopeV1>, String> {
+    let events_path = session_path.join("events.jsonl");
+    let body = fs::read_to_string(&events_path)
+        .map_err(|err| format!("failed to read {}: {err}", events_path.display()))?;
+    let mut events = Vec::new();
+    for (line_number, line) in body.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let event = serde_json::from_str(trimmed).map_err(|err| {
+            format!(
+                "failed to parse {} line {}: {err}",
+                events_path.display(),
+                line_number + 1
+            )
+        })?;
+        events.push(event);
+    }
+    Ok(events)
+}
+
+fn infer_launch_metadata_from_events(
+    events: &[EventEnvelopeV1],
+    fallback: &LaunchMetadata,
+) -> LaunchMetadata {
+    let profile = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::AgentSpawned(payload) => Some(payload.profile.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| fallback.profile().to_string());
+    let (provider, model) = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::ProviderRequestStarted(payload) => {
+                Some((payload.provider_id.clone(), Some(payload.model_id.clone())))
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| {
+            (
+                fallback.provider().to_string(),
+                fallback.model().map(str::to_string),
+            )
+        });
+
+    let mut launch_metadata = LaunchMetadata::new(profile, provider, model)
+        .with_available_models(fallback.available_models().to_vec());
+    if let Some(mode_label) = fallback.mode_label().map(str::to_owned) {
+        launch_metadata = launch_metadata.with_mode_label(mode_label);
+    }
+    launch_metadata
+}
+
+fn session_navigation_snapshot_from_path(
+    session_path: &Path,
+    fallback_launch_metadata: &LaunchMetadata,
+) -> Result<SessionNavigationSnapshot, String> {
+    let events = load_session_events(session_path)?;
+    let launch_metadata = infer_launch_metadata_from_events(&events, fallback_launch_metadata);
+    let replay = AppState::new_replay(session_path.to_path_buf(), events.clone());
+
+    Ok(SessionNavigationSnapshot {
+        session_path: session_path.to_path_buf(),
+        events,
+        launch_metadata,
+        child_session_ids: replay.child_session_ids(),
+    })
 }
 
 fn parse_question_prompts(kind: &str, summary: &str) -> Option<Vec<QuestionPromptView>> {

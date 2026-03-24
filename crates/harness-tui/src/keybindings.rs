@@ -67,9 +67,12 @@ pub enum Action {
     MoveDown,
     /// Move up in the list
     MoveUp,
-    /// Reload (replay mode only)
     Reload,
-    /// Allow permission in modal
+    SessionChildFirst,
+    SessionChildCycle,
+    SessionChildCycleReverse,
+    SessionParent,
+    VariantCycle,
     AllowPermission,
     /// Deny permission in modal
     DenyPermission,
@@ -257,6 +260,11 @@ impl Action {
             Action::MoveDown => "move_down",
             Action::MoveUp => "move_up",
             Action::Reload => "reload",
+            Action::SessionChildFirst => "session_child_first",
+            Action::SessionChildCycle => "session_child_cycle",
+            Action::SessionChildCycleReverse => "session_child_cycle_reverse",
+            Action::SessionParent => "session_parent",
+            Action::VariantCycle => "variant_cycle",
             Action::AllowPermission => "allow_permission",
             Action::DenyPermission => "deny_permission",
             Action::DismissModal => "dismiss_modal",
@@ -397,6 +405,11 @@ impl FromStr for Action {
             "move_down" => Ok(Action::MoveDown),
             "move_up" => Ok(Action::MoveUp),
             "reload" => Ok(Action::Reload),
+            "session_child_first" => Ok(Action::SessionChildFirst),
+            "session_child_cycle" => Ok(Action::SessionChildCycle),
+            "session_child_cycle_reverse" => Ok(Action::SessionChildCycleReverse),
+            "session_parent" => Ok(Action::SessionParent),
+            "variant_cycle" => Ok(Action::VariantCycle),
             "allow_permission" => Ok(Action::AllowPermission),
             "deny_permission" => Ok(Action::DenyPermission),
             "dismiss_modal" => Ok(Action::DismissModal),
@@ -578,6 +591,22 @@ impl KeyMap {
         keymap.bind(
             KeyBinding::new(KeyCode::Char('r'), KeyModifiers::NONE),
             Action::Reload,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char(']'), KeyModifiers::CONTROL),
+            Action::SessionChildFirst,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char(']'), KeyModifiers::NONE),
+            Action::SessionChildCycle,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('['), KeyModifiers::NONE),
+            Action::SessionChildCycleReverse,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('['), KeyModifiers::CONTROL),
+            Action::SessionParent,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('?'), KeyModifiers::NONE),
@@ -888,5 +917,41 @@ mod tests {
         assert_eq!(keymap.get_action(&deny), Some(Action::DenyPermission));
         assert_eq!(keymap.get_binding_str(Action::AllowPermission), "Ctrl+y");
         assert_eq!(keymap.get_binding_str(Action::DenyPermission), "Ctrl+n");
+    }
+
+    #[test]
+    fn keymap_binds_child_session_navigation_to_opencode_defaults() {
+        let keymap = KeyMap::with_defaults();
+
+        assert_eq!(
+            keymap.get_action(&KeyEvent::new(KeyCode::Char(']'), KeyModifiers::CONTROL)),
+            Some(Action::SessionChildFirst)
+        );
+        assert_eq!(
+            keymap.get_action(&KeyEvent::new(KeyCode::Char(']'), KeyModifiers::NONE)),
+            Some(Action::SessionChildCycle)
+        );
+        assert_eq!(
+            keymap.get_action(&KeyEvent::new(KeyCode::Char('['), KeyModifiers::NONE)),
+            Some(Action::SessionChildCycleReverse)
+        );
+        assert_eq!(
+            keymap.get_action(&KeyEvent::new(KeyCode::Char('['), KeyModifiers::CONTROL)),
+            Some(Action::SessionParent)
+        );
+    }
+
+    #[test]
+    fn keymap_accepts_variant_cycle_overrides() {
+        let mut overrides = BTreeMap::new();
+        overrides.insert("variant_cycle".to_string(), "tab".to_string());
+
+        let mut keymap = KeyMap::with_defaults();
+        keymap.apply_overrides(&overrides);
+
+        assert_eq!(
+            keymap.get_action(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
+            Some(Action::VariantCycle)
+        );
     }
 }
