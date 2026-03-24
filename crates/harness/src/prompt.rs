@@ -131,6 +131,7 @@ async fn run_prompt(
 ) -> Result<PromptOutcome, String> {
     let mut coordinator_config = settings.coordinator_config.clone();
     coordinator_config.deterministic_store = settings.deterministic;
+    coordinator_config.hook_runtime_config.suppress_execution = settings.deterministic;
     coordinator_config.config_digest = settings.config_digest.clone();
     coordinator_config.harness_version = env!("CARGO_PKG_VERSION").to_string();
 
@@ -282,7 +283,10 @@ fn evaluate_prompt_completion(
 
     if let Some(cancel_reason) = events.iter().find_map(|event| match &event.payload {
         EventV1::TaskCancelled(data)
-            if event_matches_request(event, request_id) || data.task_id == request_id =>
+            if event_matches_request(event, request_id)
+                && (prompt_task_id.is_none()
+                    || prompt_task_id.is_some_and(|task_id| data.task_id == task_id)
+                    || data.task_id == request_id) =>
         {
             Some(data.reason.clone())
         }
@@ -493,6 +497,32 @@ mod tests {
 
         let status = evaluate_prompt_completion(&events, "req_000001");
         assert_eq!(status, PromptCompletionStatus::Continue);
+    }
+
+    #[test]
+    fn evaluate_prompt_completion_ignores_cancelled_child_tool_task() {
+        let events = vec![
+            provider_task_scheduled_event("task_000001", "req_000001"),
+            event_with_correlation(
+                EventV1::TaskCancelled(TaskCancelledEvent {
+                    task_id: "task_000002".to_string(),
+                    reason: "tool execution failed: expected audit error".to_string(),
+                }),
+                Some("req_000001"),
+            ),
+            event_with_correlation(
+                EventV1::TaskCompleted(TaskCompletedEvent {
+                    task_id: "task_000001".to_string(),
+                    result_summary: "ok".to_string(),
+                    result_digest: "abc123".to_string(),
+                    metadata: None,
+                }),
+                Some("req_000001"),
+            ),
+        ];
+
+        let status = evaluate_prompt_completion(&events, "req_000001");
+        assert_eq!(status, PromptCompletionStatus::Completed);
     }
 
     #[test]

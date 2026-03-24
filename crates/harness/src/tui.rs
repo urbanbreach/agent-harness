@@ -589,6 +589,7 @@ async fn run_continue_session_bootstrap(
         bootstrap::build_interactive_coordinator_config(&config)?
     };
     coordinator_config.deterministic_store = settings.deterministic;
+    coordinator_config.hook_runtime_config.suppress_execution = settings.deterministic;
     coordinator_config.config_digest = settings.config_digest.clone();
     coordinator_config.harness_version = env!("CARGO_PKG_VERSION").to_string();
 
@@ -936,6 +937,7 @@ async fn run_new_live_session(
         bootstrap::build_interactive_coordinator_config(&config)?
     };
     coordinator_config.deterministic_store = settings.deterministic;
+    coordinator_config.hook_runtime_config.suppress_execution = settings.deterministic;
     coordinator_config.run_id_override = Some(run_id_override);
     coordinator_config.config_digest = settings.config_digest.clone();
     coordinator_config.harness_version = env!("CARGO_PKG_VERSION").to_string();
@@ -1064,6 +1066,7 @@ async fn run_live_mode(
 
     let mut coordinator_config = CoordinatorConfig::new(settings.session_dir.clone());
     coordinator_config.deterministic_store = settings.deterministic;
+    coordinator_config.hook_runtime_config.suppress_execution = settings.deterministic;
     coordinator_config.permission_policy = default_permission_policy();
     coordinator_config.tool_registry =
         Arc::new(coordinator_registry(settings.shell_allowlist.clone()));

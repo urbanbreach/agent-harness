@@ -178,6 +178,7 @@ async fn run_once(cmd: &RunCommand, settings: &RunSettings) -> Result<RunOutcome
 
     let mut coordinator_config = CoordinatorConfig::new(settings.session_dir.clone());
     coordinator_config.deterministic_store = settings.deterministic;
+    coordinator_config.hook_runtime_config.suppress_execution = settings.deterministic;
     coordinator_config.permission_policy = default_permission_policy();
     coordinator_config.tool_registry =
         Arc::new(coordinator_registry(settings.shell_allowlist.clone()));
