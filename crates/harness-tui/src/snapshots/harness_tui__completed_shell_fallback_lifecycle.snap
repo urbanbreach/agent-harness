@@ -10,7 +10,7 @@ expression: "fallback_render.lines().map(str::trim_end).collect::<Vec<_>>().join
 
 
                                                Harness
-                                      Preset default · local/-
+                                         Launch: default · -
                                     Start a conversation to begin
                     “inspect src/ui.rs” · “trace the failing test” · “review the
                                             latest edit”
