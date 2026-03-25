@@ -20,15 +20,15 @@
                         ╻ ╻  ┏━┓  ┏━┓  ┏┓╻  ┏━╸  ┏━┓  ┏━┓
                         ┣━┫  ┣━┫  ┣┳┛  ┃┗┫  ┣╸   ┗━┓  ┗━┓
                         ╹ ╹  ╹ ╹  ╹┗╸  ╹ ╹  ┗━╸  ┗━┛  ┗━┛
+                            Launch: worker · model-1
+                              Provider mock · Demo
                      open a fresh session in this directory
-
-
 
 
   ┃
   ┃  Ask Harness anything… “inspect src/ui.rs”
   ┃
-  ┃  Preset worker · mock/model-1 · Demo
+  ┃  Launch: worker · model-1 · provider mock · Demo
   ┃
   ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
                                                           Ctrl+p open  q quit
