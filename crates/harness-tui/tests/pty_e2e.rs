@@ -36,7 +36,7 @@ const STABLE_WINDOW: Duration = Duration::from_millis(180);
 const STABLE_TIMEOUT: Duration = Duration::from_secs(2);
 const ORCHESTRATION_EVENT_DELAY: Duration = Duration::from_millis(250);
 const PRESERVED_DRAFT_TEXT: &str = "keep this draft";
-const STARTUP_LAUNCHER_READY_MARKER: &str = "Preset worker";
+const STARTUP_LAUNCHER_READY_MARKER: &str = "Launch: worker";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PtyGeometry {
@@ -549,7 +549,7 @@ fn operator_sidebar_matches_opencode_information_architecture() {
         &[
             "Live · run run_fixture",
             "Share unavailable",
-            "default/openai/gpt-5.4-mini",
+            "Provider openai",
             "Context",
             "MCP · 2",
             "LSP · 1",
@@ -557,6 +557,8 @@ fn operator_sidebar_matches_opencode_information_architecture() {
             "▼ Modified Files · 3",
         ],
     );
+    assert!(screen.contains("Current runtime: default · gpt-5.4-mini"));
+    assert!(screen.contains("Provider openai"));
     assert_screen_contains_all(
         &screen,
         &[
@@ -735,8 +737,7 @@ fn startup_shell_displays_meaningful_mock_launch_metadata() {
         PtyGeometry::SIX_WINDOW_DENSE,
     ] {
         let startup_shell = capture_startup_shell_snapshot(geometry);
-        assert!(startup_shell.contains("Preset worker"));
-        assert!(startup_shell.contains("mock/model-1"));
+        assert!(startup_shell.contains("Launch: worker · model-1"));
         assert!(startup_shell.contains("Ask Harness anything…"));
         assert!(!startup_shell.contains("Dispatch a new run"));
         assert!(!startup_shell.contains("Actions:"));
