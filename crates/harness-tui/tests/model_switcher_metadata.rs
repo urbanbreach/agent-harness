@@ -93,6 +93,13 @@ fn rich_model_config() -> &'static str {
     "#
 }
 
+fn available_models() -> Vec<ModelOption> {
+    vec![
+        ModelOption::from_model_ref("deep", "default:gpt-5.4-mini"),
+        ModelOption::from_model_ref("writer", "default:gpt-5.4-mini"),
+    ]
+}
+
 #[test]
 fn model_switcher_surfaces_variant_metadata_and_limits() {
     let _config = load_config_from_str(rich_model_config()).expect("config should parse");
@@ -105,10 +112,7 @@ fn model_switcher_surfaces_variant_metadata_and_limits() {
         })
     };
 
-    let available_models = vec![
-        ModelOption::from_model_ref("deep", "default:gpt-5.4-mini"),
-        ModelOption::from_model_ref("writer", "default:gpt-5.4-mini"),
-    ];
+    let available_models = available_models();
 
     let mut app = AppState::new_live(None, false, Some(sink));
     app.set_launch_metadata(
@@ -191,10 +195,7 @@ fn model_switcher_surfaces_variant_metadata_and_limits() {
 fn model_identity_rows_use_gpt_5_4_mini_defaults() {
     let _config = load_config_from_str(rich_model_config()).expect("config should parse");
 
-    let available_models = vec![
-        ModelOption::from_model_ref("deep", "default:gpt-5.4-mini"),
-        ModelOption::from_model_ref("writer", "default:gpt-5.4-mini"),
-    ];
+    let available_models = available_models();
 
     let mut app = AppState::new_live(None, false, None);
     app.set_launch_metadata(
@@ -241,10 +242,7 @@ fn variant_cycle_updates_selected_model_without_losing_launch_metadata() {
         })
     };
 
-    let available_models = vec![
-        ModelOption::from_model_ref("deep", "default:gpt-5.4-mini"),
-        ModelOption::from_model_ref("writer", "default:gpt-5.4-mini"),
-    ];
+    let available_models = available_models();
     let variant_cycle_overrides =
         BTreeMap::from([("variant_cycle".to_string(), "tab".to_string())]);
 
@@ -287,7 +285,100 @@ fn variant_cycle_updates_selected_model_without_losing_launch_metadata() {
 
     replay.handle_key(key(KeyCode::Tab));
 
-    assert_eq!(replay.active_profile(), "writer");
-    assert_eq!(replay.current_model_label(), "GPT-5.4 Mini · Creative");
+    assert_eq!(replay.active_profile(), "deep");
+    assert_eq!(replay.current_model_label(), "GPT-5.4 Mini · Deterministic");
     assert_eq!(replay.launch_mode_label(), Some("Demo"));
+}
+
+#[test]
+fn runtime_context_labels_distinguish_live_continue_and_replay() {
+    let _config = load_config_from_str(rich_model_config()).expect("config should parse");
+
+    let launch_metadata = LaunchMetadata::from_model_ref("deep", "default:gpt-5.4-mini")
+        .with_available_models(available_models());
+
+    let mut startup = AppState::new_startup(Vec::new(), None);
+    startup.set_launch_metadata(launch_metadata.clone());
+    assert_eq!(
+        startup.runtime_context_primary_summary(),
+        "Launch: deep · GPT-5.4 Mini · Deterministic"
+    );
+    assert_eq!(startup.runtime_context_summary_segment_text(), None);
+    assert_eq!(
+        startup.runtime_context_provider_display(),
+        Some("default".to_string())
+    );
+
+    let mut live = AppState::new_live(None, false, None);
+    live.set_launch_metadata(launch_metadata.clone());
+    assert_eq!(
+        live.runtime_context_primary_summary(),
+        "Current runtime: deep · GPT-5.4 Mini · Deterministic"
+    );
+    assert_eq!(live.runtime_context_summary_segment_text(), None);
+
+    let mut continued = AppState::new_live(None, false, None);
+    continued.set_launch_metadata(launch_metadata.clone().with_mode_label("Continued"));
+    assert_eq!(
+        continued.runtime_context_primary_summary(),
+        "Continued runtime: deep · GPT-5.4 Mini · Deterministic"
+    );
+    assert_eq!(continued.runtime_context_summary_segment_text(), None);
+
+    let mut replay = AppState::new_replay(PathBuf::from("/tmp/replay-runtime-context"), Vec::new());
+    replay.set_launch_metadata(launch_metadata);
+    assert_eq!(
+        replay.runtime_context_primary_summary(),
+        "Recorded runtime · read-only: deep · GPT-5.4 Mini · Deterministic"
+    );
+    assert_eq!(replay.runtime_context_summary_segment_text(), None);
+    assert_eq!(
+        replay.runtime_context_provider_display(),
+        Some("default".to_string())
+    );
+}
+
+#[test]
+fn live_switch_model_labels_next_turn_only() {
+    let _config = load_config_from_str(rich_model_config()).expect("config should parse");
+
+    let variant_cycle_overrides =
+        BTreeMap::from([("variant_cycle".to_string(), "tab".to_string())]);
+
+    let mut live = AppState::new_live(None, false, None);
+    live.apply_keybindings(variant_cycle_overrides.clone());
+    live.set_launch_metadata(
+        LaunchMetadata::from_model_ref("deep", "default:gpt-5.4-mini")
+            .with_available_models(available_models()),
+    );
+
+    live.handle_key(key(KeyCode::Tab));
+
+    assert_eq!(
+        live.runtime_context_primary_summary(),
+        "Current runtime: deep · GPT-5.4 Mini · Deterministic"
+    );
+    assert_eq!(
+        live.runtime_context_summary_segment_text(),
+        Some("Next turns: writer · GPT-5.4 Mini · Creative".to_string())
+    );
+
+    let mut replay = AppState::new_replay(
+        PathBuf::from("/tmp/replay-runtime-context-switch"),
+        Vec::new(),
+    );
+    replay.apply_keybindings(variant_cycle_overrides);
+    replay.set_launch_metadata(
+        LaunchMetadata::from_model_ref("deep", "default:gpt-5.4-mini")
+            .with_available_models(available_models()),
+    );
+
+    replay.handle_key(key(KeyCode::Tab));
+
+    assert_eq!(
+        replay.runtime_context_primary_summary(),
+        "Recorded runtime · read-only: deep · GPT-5.4 Mini · Deterministic"
+    );
+    assert_eq!(replay.runtime_context_summary_segment_text(), None);
+    assert_eq!(replay.current_model_label(), "GPT-5.4 Mini · Deterministic");
 }

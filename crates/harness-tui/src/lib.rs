@@ -22,11 +22,8 @@ pub use theme::{LiveShellLayout, LiveShellTokens, ShellGeometry, ShellGeometryTa
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
-
-#[cfg(test)]
-use std::sync::Mutex;
 
 use anyhow::{Context, Result};
 use crossterm::event::{
@@ -37,8 +34,28 @@ use harness_core::event::EventEnvelopeV1;
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 pub use app::UiIntent;
-use app::{AppState, SessionHistoryEntry};
+use app::{AppState, LaunchMetadata, SessionHistoryEntry};
 use event::poll;
+
+fn recover_mutex_lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+fn pending_replay_launch_metadata() -> &'static Mutex<Option<LaunchMetadata>> {
+    static PENDING: OnceLock<Mutex<Option<LaunchMetadata>>> = OnceLock::new();
+    PENDING.get_or_init(|| Mutex::new(None))
+}
+
+pub fn set_pending_replay_launch_metadata(launch_metadata: Option<LaunchMetadata>) {
+    *recover_mutex_lock(pending_replay_launch_metadata()) = launch_metadata;
+}
+
+fn take_pending_replay_launch_metadata() -> Option<LaunchMetadata> {
+    recover_mutex_lock(pending_replay_launch_metadata()).take()
+}
 
 pub enum LiveUpdate {
     Event(Box<EventEnvelopeV1>),
@@ -398,6 +415,7 @@ fn operator_sidebar_width_stays_fixed_when_todo_or_modified_files_exist() {
 delegate_test!(persistent_operator_sidebar_uses_panel_gutter_instead_of_border_line => ui::exact_test_persistent_operator_sidebar_uses_panel_gutter);
 delegate_test!(control_dock_view_model_handles_live_runtime_variants => view_model::exact_test_control_dock_view_model_handles_live_runtime_variants);
 delegate_test!(control_dock_view_model_preserves_replay_read_only_variant => view_model::exact_test_control_dock_view_model_preserves_replay_read_only_variant);
+delegate_test!(startup_shell_keeps_no_default_tab_chrome_after_runtime_context_addition => ui::exact_test_startup_shell_keeps_no_default_tab_chrome_after_runtime_context_addition);
 delegate_test!(replay_prompt_pane_is_visibly_read_only => ui::exact_test_replay_prompt_pane_is_visibly_read_only);
 delegate_test!(live_control_dock_renders_shared_surface => ui::exact_test_live_control_dock_renders_shared_surface);
 delegate_test!(live_control_dock_collapses_disclosure_before_status => ui::exact_test_live_control_dock_collapses_disclosure_before_status);
@@ -1083,7 +1101,9 @@ fn startup_home_screen_renders_compose_first_shell() {
 
     let rendered = render_live_lines(&app, 160, 48);
     assert!(rendered.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻"));
-    assert!(rendered.contains("Preset deep · proxy/gpt-5.4 · Demo"));
+    assert!(rendered.contains("Launch: deep · gpt-5.4"));
+    assert!(rendered.contains("Provider proxy · Demo"));
+    assert!(rendered.contains("Launch: deep · gpt-5.4 · provider proxy · Demo"));
     assert!(rendered.contains("Ctrl+p open"));
     assert!(!rendered.contains("Enter select"));
     assert!(rendered.contains("Ask Harness anything…"));
@@ -1123,8 +1143,9 @@ fn startup_composer_keeps_inset_input_then_metadata_row_order() {
             });
         let composer_first_row = composer_input_row.saturating_sub(1);
         let metadata_gap_row = composer_input_row.saturating_add(1);
-        let metadata_row = find_line_containing(&lines, "Preset ")
-            .unwrap_or_else(|| panic!("startup metadata row at {width}x{height}\n{rendered}"));
+        let metadata_row =
+            find_line_containing(&lines, "Launch: deep · gpt-5.4 · provider proxy · Demo")
+                .unwrap_or_else(|| panic!("startup metadata row at {width}x{height}\n{rendered}"));
         let composer_last_row = metadata_row.saturating_add(1);
 
         assert_eq!(
@@ -1184,7 +1205,7 @@ fn dense_live_composer_keeps_blank_spacer_before_metadata() {
         &lines,
         composer_input_row + 1,
         composer_last_row + 1,
-        "default · local/-",
+        "Current runtime: default · - · provider local",
     )
     .unwrap_or_else(|| panic!("dense composer metadata row\n{rendered}"));
     let metadata_gap_row = composer_input_row + 1;
@@ -1733,7 +1754,7 @@ fn live_shell_redesign_guardrails_preserve_primary_contract() {
     let replay_disabled_row = find_line_containing_all_from(
         &replay_lines,
         replay_header_row + 1,
-        &["read-only"],
+        &["▎", "Replay is read-only."],
     )
     .filter(|row| !replay_lines[*row].contains("run "))
     .unwrap_or_else(|| {
@@ -1821,6 +1842,9 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         }
         TuiMode::Replay { run_dir, events } => {
             let mut app = AppState::new_replay(run_dir, events);
+            if let Some(launch_metadata) = take_pending_replay_launch_metadata() {
+                app.set_launch_metadata(launch_metadata);
+            }
             if let Some(bindings) = keybindings.as_ref() {
                 app.apply_keybindings(bindings.clone());
             }
@@ -4768,12 +4792,15 @@ fn module_live_shell_redesign_preserves_replay_overlay_and_permission_parity() {
         .unwrap_or_else(|| {
             panic!("replay header should preserve replay identity\n{replay_render}")
         });
-    let replay_disabled_row =
-        find_line_containing_all_from(&replay_lines, replay_header_row + 1, &["read-only"])
-            .filter(|row| !replay_lines[*row].contains("run "))
-            .unwrap_or_else(|| {
-                panic!("replay shell should preserve a disabled composer row\n{replay_render}")
-            });
+    let replay_disabled_row = find_line_containing_all_from(
+        &replay_lines,
+        replay_header_row + 1,
+        &["▎", "Replay is read-only."],
+    )
+    .filter(|row| !replay_lines[*row].contains("run "))
+    .unwrap_or_else(|| {
+        panic!("replay shell should preserve a disabled composer row\n{replay_render}")
+    });
     let replay_shortcuts_row =
         find_line_containing_from(&replay_lines, replay_disabled_row + 1, "shortcuts")
             .unwrap_or_else(|| {
@@ -5482,7 +5509,8 @@ fn transcript_shell_remains_scannable_without_bubble_cards() {
     assert!(!rendered.contains("Composer ·"));
     assert!(!rendered.contains("Ask Harness to inspect, edit, or explain…"));
     assert!(rendered.contains("Ctrl+p commands"));
-    assert!(rendered.contains("mock/model-1"));
+    assert!(rendered.contains("Current runtime: default · model-1"));
+    assert!(rendered.contains("provider mock"));
     assert!(!rendered.contains("┌"));
     assert!(!rendered.contains("└"));
     assert!(!rendered.contains("(tool fs.read · succeeded)"));
@@ -6676,7 +6704,9 @@ fn startup_surface_renders_primary_actions() {
     let rendered = render_live_lines(&app, 100, 24);
     assert_eq!(app.focus, app::Focus::List);
     assert!(rendered.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻"));
-    assert!(rendered.contains("Preset worker · mock/model-1 · Demo"));
+    assert!(rendered.contains("Launch: worker · model-1"));
+    assert!(rendered.contains("Provider mock · Demo"));
+    assert!(rendered.contains("Launch: worker · model-1 · provider mock · Demo"));
     assert!(rendered.contains("Ctrl+p open"));
     assert!(!rendered.contains("Enter select"));
     assert!(rendered.contains("Ask Harness anything…"));
@@ -7633,7 +7663,9 @@ fn startup_shell_shows_profile_provider_and_model_chrome() {
 
     let rendered = render_live_lines(&app, 100, 24);
     assert!(rendered.contains("Harness") || rendered.contains("HARNESS"));
-    assert!(rendered.contains("Preset deep · proxy/gpt-5.4 · Demo"));
+    assert!(rendered.contains("Launch: deep · gpt-5.4"));
+    assert!(rendered.contains("Provider proxy · Demo"));
+    assert!(rendered.contains("Launch: deep · gpt-5.4 · provider proxy · Demo"));
     assert!(rendered.contains("Ctrl+p open"));
     assert!(!rendered.contains("Enter select"));
     assert!(rendered.contains("Ask Harness anything…"));
@@ -7657,7 +7689,7 @@ fn lifecycle_shell_narrow_layout_renders_primary_cta() {
     let lines = rendered.lines().collect::<Vec<_>>();
     let title_row = find_line_containing(&lines, "╻ ╻  ┏━┓  ┏━┓  ┏┓╻").expect("startup logo row");
     let metadata_row =
-        find_line_containing(&lines, "Preset worker · mock/model-1").expect("metadata row");
+        find_line_containing(&lines, "Launch: worker · model-1").expect("metadata row");
     let footer_row = find_line_containing(&lines, "q quit").expect("footer row");
 
     assert!(!rendered.contains("Actions:"));
@@ -7724,10 +7756,10 @@ fn live_empty_state_uses_shared_startup_copy_without_mode_badges() {
 
     let demo_rendered = render_live_lines(&demo, 100, 24);
     assert!(demo_rendered.contains("Harness"));
-    assert!(demo_rendered.contains("Preset worker · mock/model-1"));
+    assert!(demo_rendered.contains("Launch: worker · model-1"));
     assert!(demo_rendered.contains("Start a conversation to begin"));
     assert!(!demo_rendered.contains("Demo mode · mock provider"));
-    assert!(!demo_rendered.contains("Preset worker · mock/model-1 · Demo"));
+    assert!(!demo_rendered.contains("Launch: worker · model-1 · Demo"));
 
     let mut mock = app::AppState::new_live(None, false, None);
     mock.set_launch_metadata(
@@ -7736,10 +7768,10 @@ fn live_empty_state_uses_shared_startup_copy_without_mode_badges() {
 
     let mock_rendered = render_live_lines(&mock, 100, 24);
     assert!(mock_rendered.contains("Harness"));
-    assert!(mock_rendered.contains("Preset worker · mock/model-1"));
+    assert!(mock_rendered.contains("Launch: worker · model-1"));
     assert!(mock_rendered.contains("Start a conversation to begin"));
     assert!(!mock_rendered.contains("Mock mode · mock provider"));
-    assert!(!mock_rendered.contains("Preset worker · mock/model-1 · Mock"));
+    assert!(!mock_rendered.contains("Launch: worker · model-1 · Mock"));
 }
 
 #[cfg(test)]
@@ -7764,7 +7796,7 @@ fn live_empty_state_snapshot_renders_input_first_shell() {
     assert!(rendered.contains("Session"));
     assert!(!rendered.contains('┌'));
     assert!(rendered.contains("Harness"));
-    assert!(rendered.contains("Preset default · local/-"));
+    assert!(rendered.contains("Launch: default · -"));
     assert!(rendered.contains("Start a conversation to begin"));
     assert!(rendered.contains("Enter send · Shift+Enter/Ctrl+j newline · ↑/↓ history"));
     assert!(!rendered.contains("Type to start a new session."));
@@ -7845,8 +7877,7 @@ fn live_empty_state_respects_compact_geometry() {
     )
     .or_else(|| find_line_containing(&lines, theme.live_shell.empty_state.title))
     .expect("title row");
-    let metadata_row =
-        find_line_containing(&lines, "Preset default · local/-").expect("metadata row");
+    let metadata_row = find_line_containing(&lines, "Launch: default · -").expect("metadata row");
     let value_prop_row = find_line_containing(&lines, theme.live_shell.empty_state.value_prop)
         .expect("value prop row");
     let help_row = find_line_containing(&lines, "Enter send").expect("key hint row");
@@ -7880,7 +7911,7 @@ fn startup_home_matches_live_empty_shell_language() {
     let startup_render = render_live_lines(&startup, 100, 24);
     let live_render = render_live_lines(&live, 100, 24);
 
-    for marker in ["Harness", "Preset worker · mock/model-1"] {
+    for marker in ["Harness", "Launch: worker · model-1"] {
         assert!(
             startup_render.contains(marker),
             "startup missing {marker}\n{startup_render}"
@@ -7929,17 +7960,17 @@ fn live_empty_state_uses_shared_home_surface_tokens() {
     assert!(live_render.contains("Session"));
     assert!(!live_render.contains('┌') && !live_render.contains('╭'));
     assert!(live_render.contains("Harness"));
-    assert!(live_render.contains("worker · mock/model-1"));
+    assert!(live_render.contains("Launch: worker · model-1"));
     assert_row_segment_background(
         &startup_buffer,
         100,
-        "Preset worker · mock/model-1",
+        "Launch: worker · model-1 · provider mock",
         theme.surface.panel_elevated,
     );
     assert_row_segment_background(
         &live_buffer,
         100,
-        "worker · mock/model-1",
+        "Launch: worker · model-1",
         theme.surface.panel_elevated,
     );
 }
@@ -7963,15 +7994,15 @@ fn startup_and_live_empty_share_spacing_contract() {
     let startup_lines = startup_render.lines().collect::<Vec<_>>();
     let startup_title =
         find_line_containing(&startup_lines, "╻ ╻  ┏━┓  ┏━┓  ┏┓╻").expect("startup logo");
-    let startup_metadata = find_line_containing(&startup_lines, "Preset worker · mock/model-1")
-        .expect("startup metadata");
+    let startup_metadata =
+        find_line_containing(&startup_lines, "Launch: worker · model-1").expect("startup metadata");
     let startup_keys =
         find_line_containing(&startup_lines, "Ctrl+p open").expect("startup key hints");
 
     let live_render = render_live_lines(&live, 100, 24);
     let live_lines = live_render.lines().collect::<Vec<_>>();
     let live_metadata =
-        find_line_containing(&live_lines, "worker · mock/model-1").expect("live metadata");
+        find_line_containing(&live_lines, "Launch: worker · model-1").expect("live metadata");
     let live_value = find_line_containing(&live_lines, "Start a conversation to begin")
         .expect("live value prop");
     let live_keys = find_line_containing(&live_lines, "Enter send").expect("live key hints");
@@ -8436,7 +8467,8 @@ fn live_shell_details_drawer_orchestration_primary_snapshot() {
     let rendered = render_live_lines(&app, 100, 30);
     println!("{rendered}");
     assert!(rendered.contains("Live · run run_fixture"));
-    assert!(rendered.contains("default/openai/gpt-5-codex"));
+    assert!(rendered.contains("Current runtime: default · gpt-5-codex"));
+    assert!(rendered.contains("Provider openai"));
     assert!(rendered.contains("4 active todos · 0 modified files"));
     assert!(rendered.contains("Todo · 4"));
     assert!(rendered.contains("task_stale · scan · w1/deep"));
@@ -8834,7 +8866,7 @@ fn assert_replay_read_only_composer_contract(
     let header_row = find_line_containing(&lines, header_marker).unwrap_or_else(|| {
         panic!("missing replay header marker {header_marker:?} in shell\n{rendered}")
     });
-    let composer_row = find_line_containing_from(&lines, header_row + 1, "Replay is read-only")
+    let composer_row = find_line_containing_from(&lines, header_row + 1, "▎ Replay is read-only.")
         .unwrap_or_else(|| {
             panic!("missing replay read-only body row for header {header_marker:?}\n{rendered}")
         });
@@ -8849,10 +8881,6 @@ fn assert_replay_read_only_composer_contract(
     assert!(
         header_row < divider_row,
         "replay identity should sit in header context\n{rendered}"
-    );
-    assert!(
-        !lines[divider_row].chars().any(char::is_alphanumeric),
-        "replay composer should keep a quiet spacer before the read-only rail\n{rendered}"
     );
     assert_eq!(
         hint_row,
@@ -9263,11 +9291,12 @@ fn operator_sidebar_matches_parity_information_architecture() {
         &sidebar,
         &[
             "Live · run run_fixture",
-            "default/openai/gpt-5-codex",
+            "Current runtime: default · gpt-5-codex",
             "4 active todos · 0 modified files",
             "Todo · 4",
         ],
     );
+    assert!(sidebar.contains("Provider openai"));
     assert!(sidebar.contains("task_stale · scan · w1/deep"));
     assert!(sidebar.contains("tool_call_1 · tool:fs.read · system/n/a"));
     assert!(sidebar.lines().any(|line| line == "Context"));
@@ -9319,11 +9348,12 @@ fn operator_sidebar_preserves_section_order_and_copy() {
         &sidebar,
         &[
             "Live · run run_fixture",
-            "default/openai/gpt-5-codex",
+            "Current runtime: default · gpt-5-codex",
             "4 active todos · 0 modified files",
             "Todo · 4",
         ],
     );
+    assert!(sidebar.contains("Provider openai"));
     assert!(sidebar.contains("task_stale · scan · w1/deep"));
     assert!(sidebar.contains("tool_call_1 · tool:fs.read · system/n/a"));
 

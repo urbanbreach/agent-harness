@@ -85,6 +85,65 @@ pub(crate) struct ControlDockSummarySegment {
     pub tone: ControlDockSummaryTone,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RuntimeContextLabel {
+    Launch,
+    CurrentRuntime,
+    ContinuedRuntime,
+    RecordedRuntimeReadOnly,
+}
+
+impl RuntimeContextLabel {
+    fn text(self) -> &'static str {
+        match self {
+            Self::Launch => "Launch",
+            Self::CurrentRuntime => "Current runtime",
+            Self::ContinuedRuntime => "Continued runtime",
+            Self::RecordedRuntimeReadOnly => "Recorded runtime · read-only",
+        }
+    }
+
+    fn allows_next_turns_segment(self) -> bool {
+        matches!(self, Self::CurrentRuntime | Self::ContinuedRuntime)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RuntimeContextGrammar {
+    pub primary_summary: String,
+    pub summary_segment: Option<ControlDockSummarySegment>,
+}
+
+pub(crate) struct RuntimeContextGrammarInput {
+    pub label: RuntimeContextLabel,
+    pub identity: String,
+    pub next_turn_identity: Option<String>,
+}
+
+pub(crate) fn runtime_context_grammar(input: RuntimeContextGrammarInput) -> RuntimeContextGrammar {
+    let identity = sanitize_runtime_summary_fragment(input.identity.trim());
+    let primary_summary = format!("{}: {identity}", input.label.text());
+    let summary_segment = input
+        .label
+        .allows_next_turns_segment()
+        .then_some(input.next_turn_identity)
+        .flatten()
+        .as_deref()
+        .map(str::trim)
+        .filter(|identity| !identity.is_empty())
+        .map(sanitize_runtime_summary_fragment)
+        .map(|identity| ControlDockSummarySegment {
+            kind: ControlDockSummarySegmentKind::Orchestration,
+            text: format!("Next turns: {identity}"),
+            tone: ControlDockSummaryTone::Secondary,
+        });
+
+    RuntimeContextGrammar {
+        primary_summary,
+        summary_segment,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ControlDockViewModel {
     pub variant: ControlDockVariant,
@@ -297,12 +356,9 @@ pub(crate) fn startup_card_view_model(
     provider: &str,
     model: &str,
 ) -> StartupCardViewModel {
-    let mut segments = vec![format!("Preset {profile}"), format!("{provider}/{model}")];
-    if let Some(mode) = startup_mode_label(startup_mode, launch_mode_label) {
-        segments.push(mode.to_string());
-    }
+    let _ = (startup_mode, launch_mode_label, provider);
     StartupCardViewModel {
-        metadata: segments.join(" · "),
+        metadata: format!("Launch: {profile} · {model}"),
     }
 }
 
@@ -438,21 +494,6 @@ fn startup_runtime_state(continue_disabled_banner: Option<&str>) -> RuntimeState
         detail,
         composer_disabled: false,
         composer_hint: "Ask Harness anything… “inspect src/ui.rs”".to_string(),
-    }
-}
-
-fn startup_mode_label(startup_mode: bool, launch_mode_label: Option<&str>) -> Option<&'static str> {
-    if !startup_mode {
-        return None;
-    }
-
-    let mode = launch_mode_label?.trim();
-    if mode.eq_ignore_ascii_case("demo") {
-        Some("Demo")
-    } else if mode.eq_ignore_ascii_case("mock") {
-        Some("Mock")
-    } else {
-        None
     }
 }
 
