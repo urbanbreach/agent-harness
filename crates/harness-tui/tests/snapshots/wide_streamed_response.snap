@@ -1,10 +1,11 @@
 
   ┃                                                                                                                     Live · run run_fixture
   ┃  Hello from PTY                                                                                                     Share unavailable
-  ┃                                                                                                                     default/mock/model-1
-                                                                                                                        0 active todos · 0 modified files
-     Hello world
-     ● Assistant · model-1 · 4ms                                                                                        Context
+  ┃                                                                                                                     Current runtime: default · model-1
+                                                                                                                        Provider mock
+     Hello world                                                                                                        0 active todos · 0 modified files
+     ● Assistant · model-1 · 4ms
+                                                                                                                        Context
                                                                                                                         turn 1 · ready for next turn
 
                                                                                                                         MCP · idle
@@ -21,10 +22,9 @@
 
 
 
-
 ┃
 ┃
 ┃
-┃  default · mock/model-1
+┃  Current runtime: default · model-1 · provider mock
 ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀   harness-tui · v0.1.0
 Success  ·  turn 1 · ready for next turn

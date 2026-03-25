@@ -1,21 +1,21 @@
 
   ┃                                                                                                                                                                                 Live · run run_fixture
                                                                                                                                                                                     Share unavailable
-     Tool summaries are now easier to scan, and edits stay inline.                                                                                                                  default/mock/model-1
-     ● Assistant · model-1 · 14ms                                                                                                                                                   0 active todos · 1 modified file
+     Tool summaries are now easier to scan, and edits stay inline.                                                                                                                  Current runtime: default · model-1
+     ● Assistant · model-1 · 14ms                                                                                                                                                   Provider mock
+                                                                                                                                                                                    0 active todos · 1 modified file
+     → Read src/ui.rs [offset=1, limit=24] · 2ms
+      ↳ Loaded src/ui.rs                                                                                                                                                            Context
+     ┃ ▸ ← Patched crates/harness-tui/src/ui.rs · 4ms                                                                                                                               turn 1 · ready for next turn
+      crates/harness-tui/src/ui.rs · +1 -1
+      @@ -44,8 +44,7 @@                                                                                                                                                             MCP · idle
+        use ui_secondary::{                                                                 │   use ui_secondary::{                                                                 No MCP activity yet
 
-     → Read src/ui.rs [offset=1, limit=24] · 2ms                                                                                                                                    Context
-      ↳ Loaded src/ui.rs                                                                                                                                                            turn 1 · ready for next turn
-     ┃ ▸ ← Patched crates/harness-tui/src/ui.rs · 4ms
-      crates/harness-tui/src/ui.rs · +1 -1                                                                                                                                          MCP · idle
-      @@ -44,8 +44,7 @@                                                                                                                                                             No MCP activity yet
-        use ui_secondary::{                                                                 │   use ui_secondary::{
                                                                                                                                                                                     LSP · idle
-                                                                                                                                                                                    LSPs will activate as files are read
-      -     render_diff_tab, render_events_tab, render_help_tab,                            │ +     render_events_tab, render_help_tab, render_live_details_overlay,
+      -     render_diff_tab, render_events_tab, render_help_tab,                            │ +     render_events_tab, render_help_tab, render_live_details_overlay,                LSPs will activate as files are read
+
                                                                                                                                                                                     Modified Files · 1
-                                                                                                                                                                                    crates/harness-tui/src/ui.rs
-            render_operator_sidebar,                                                        │       render_operator_sidebar,
+            render_operator_sidebar,                                                        │       render_operator_sidebar,                                                        crates/harness-tui/src/ui.rs
 
 
         };                                                                                  │   };
@@ -25,6 +25,6 @@
 ┃
 ┃
 ┃
-┃  default · mock/model-1
+┃  Current runtime: default · model-1 · provider mock
 ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀   harness-tui · v0.1.0
 Success  ·  turn 1 · ready for next turn
