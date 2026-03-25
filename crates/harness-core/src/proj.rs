@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+use crate::agent::AgentModelRef;
+use crate::config::{registered_profile_model_metadata, ResolvedProfileModelMetadata};
 use crate::event::{
     EventArtifactRef, EventEnvelopeV1, EventV1, ExecutionTimingMetadata, HookExecutionMetadata,
     TaskCompletionMetadata, TaskLineageMetadata, TaskScheduleState, ToolCallMetadata,
@@ -39,6 +41,83 @@ pub enum SessionModeSource {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct RecordedRuntimeContext {
+    pub profile: String,
+    pub provider: String,
+    pub model: String,
+    pub variant: Option<String>,
+    pub display_label: String,
+    pub token_window_label: Option<String>,
+    pub context_window_tokens: Option<u32>,
+    pub max_input_tokens: Option<u32>,
+    pub max_output_tokens: Option<u32>,
+    pub description: Option<String>,
+    pub recommended_for: Option<String>,
+    pub reasoning_effort: Option<String>,
+    pub text_verbosity: Option<String>,
+}
+
+impl RecordedRuntimeContext {
+    pub fn from_profile_model(profile: &str, model_ref: &str) -> Self {
+        if let Some(metadata) = registered_profile_model_metadata(profile) {
+            return Self::from(metadata);
+        }
+
+        let model_ref = AgentModelRef::parse(model_ref);
+        let display_label = model_ref.model_id.clone();
+
+        Self {
+            profile: profile.to_string(),
+            provider: model_ref.provider_id,
+            model: model_ref.model_id,
+            variant: None,
+            display_label,
+            token_window_label: None,
+            context_window_tokens: None,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            description: None,
+            recommended_for: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+        }
+    }
+}
+
+impl From<ResolvedProfileModelMetadata> for RecordedRuntimeContext {
+    fn from(metadata: ResolvedProfileModelMetadata) -> Self {
+        Self {
+            profile: metadata.profile,
+            provider: metadata.provider,
+            model: metadata.model,
+            variant: metadata.variant,
+            display_label: metadata.display_label,
+            token_window_label: metadata.token_window_label,
+            context_window_tokens: metadata.context_window_tokens,
+            max_input_tokens: metadata.max_input_tokens,
+            max_output_tokens: metadata.max_output_tokens,
+            description: metadata.description,
+            recommended_for: metadata.recommended_for,
+            reasoning_effort: metadata.reasoning_effort,
+            text_verbosity: metadata.text_verbosity,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunMetadata {
+    pub run_id: String,
+    pub run_name: String,
+    pub workspace_root: String,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    pub config_digest: String,
+    pub harness_version: String,
+    #[serde(default)]
+    pub recorded_runtime_context: Option<RecordedRuntimeContext>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct SessionCatalogMetadata {
     #[serde(default)]
     pub run_id: Option<String>,
@@ -52,6 +131,8 @@ pub struct SessionCatalogMetadata {
     pub provider: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
+    #[serde(default)]
+    pub recorded_runtime_context: Option<RecordedRuntimeContext>,
     #[serde(default)]
     pub mode_source: Option<SessionModeSource>,
 }
@@ -998,6 +1079,7 @@ pub fn project_session_catalog_entry<'a>(
     degraded_reason: Option<String>,
 ) -> Result<SessionCatalogEntry, ProjectionError> {
     let collected = events.into_iter().collect::<Vec<_>>();
+    let recorded_runtime_context = metadata.and_then(|meta| meta.recorded_runtime_context.as_ref());
 
     let run_started = collected.iter().find_map(|event| match &event.payload {
         EventV1::RunStarted(data) => Some(data),
@@ -1023,12 +1105,15 @@ pub fn project_session_catalog_entry<'a>(
         .or_else(|| metadata.and_then(|meta| meta.workspace_root.clone()));
     let profile_preset = spawned
         .map(|data| data.profile.clone())
+        .or_else(|| recorded_runtime_context.map(|context| context.profile.clone()))
         .or_else(|| metadata.and_then(|meta| meta.profile_preset.clone()));
     let provider = provider_started
         .map(|data| data.provider_id.clone())
+        .or_else(|| recorded_runtime_context.map(|context| context.provider.clone()))
         .or_else(|| metadata.and_then(|meta| meta.provider.clone()));
     let model = provider_started
         .map(|data| data.model_id.clone())
+        .or_else(|| recorded_runtime_context.map(|context| context.model.clone()))
         .or_else(|| metadata.and_then(|meta| meta.model.clone()));
 
     let provider_model = match (provider.as_deref(), model.as_deref()) {

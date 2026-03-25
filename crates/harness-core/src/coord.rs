@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use thiserror::Error;
 use tokio::sync::{mpsc, oneshot};
@@ -37,7 +37,7 @@ use crate::perm::{
     permission_kind_for_tool, permission_kind_for_tool_call, PermissionDecision, PermissionKind,
     PermissionPolicy, PolicyDecision,
 };
-use crate::proj::inspect_resume_plan;
+use crate::proj::{inspect_resume_plan, RecordedRuntimeContext, RunMetadata};
 use crate::redact::Redactor;
 use crate::sched::{
     ConcurrencyKey, ScheduleDecision, Scheduler, SchedulerLimits, TaskProgressSnapshot,
@@ -933,6 +933,8 @@ impl Coordinator {
                 provider_model: self.config.provider_model_concurrency,
                 tool: self.config.tool_concurrency,
             }),
+            recorded_runtime_context: None,
+            allow_initial_runtime_context_recording: true,
             shutdown_token: CancellationToken::new(),
         };
 
@@ -1143,6 +1145,8 @@ impl Coordinator {
                 provider_model: self.config.provider_model_concurrency,
                 tool: self.config.tool_concurrency,
             }),
+            recorded_runtime_context: None,
+            allow_initial_runtime_context_recording: false,
             shutdown_token: CancellationToken::new(),
         };
 
@@ -1332,9 +1336,20 @@ impl Coordinator {
             .get(&profile)
             .cloned()
             .unwrap_or_else(|| AgentProfile::fallback(profile.clone()));
+        let should_record_runtime_context =
+            run_state.allow_initial_runtime_context_recording && parent_agent_id.is_none();
         run_state
             .agents
             .insert(agent_id.clone(), profile_cfg.clone());
+
+        if should_record_runtime_context {
+            run_state.recorded_runtime_context = Some(RecordedRuntimeContext::from_profile_model(
+                &profile_cfg.name,
+                &profile_cfg.model_ref,
+            ));
+            write_run_metadata(run_state, &self.config, self.clock.as_ref())?;
+            run_state.allow_initial_runtime_context_recording = false;
+        }
 
         if let Some(parent) = parent_agent_id {
             run_state
@@ -3280,6 +3295,8 @@ struct RunState {
     queued_agent_turns: BTreeMap<String, QueuedAgentTurn>,
     running_agent_turns: BTreeMap<String, RunningAgentTurn>,
     scheduler: Scheduler,
+    recorded_runtime_context: Option<RecordedRuntimeContext>,
+    allow_initial_runtime_context_recording: bool,
     shutdown_token: CancellationToken,
 }
 
@@ -5171,16 +5188,6 @@ where
     append_built_event(run_state, envelope)
 }
 
-#[derive(Debug, Clone, Serialize)]
-struct RunMetadata {
-    run_id: String,
-    run_name: String,
-    workspace_root: String,
-    created_at: Option<String>,
-    config_digest: String,
-    harness_version: String,
-}
-
 fn write_run_metadata(
     run_state: &RunState,
     config: &CoordinatorConfig,
@@ -5197,6 +5204,7 @@ fn write_run_metadata(
         },
         config_digest: config.config_digest.clone(),
         harness_version: config.harness_version.clone(),
+        recorded_runtime_context: run_state.recorded_runtime_context.clone(),
     };
 
     let meta_path = run_state.info.run_dir.join("meta.json");
