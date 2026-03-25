@@ -1,3 +1,4 @@
+use image::{GenericImage, Rgb, RgbImage};
 use portable_pty::{CommandBuilder, PtySize};
 use serde_json::{json, Value};
 use std::cmp;
@@ -127,6 +128,51 @@ fn pty_e2e_permission_overlay_parity() {
         .child
         .kill()
         .expect("terminate permission overlay parity harness");
+    std::mem::forget(harness.child);
+}
+
+#[test]
+fn pty_helper_permission_with_draft() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let session_dir = create_temp_session_dir();
+    let mut harness = spawn_harness_tui(PtyGeometry::MINIMUM_SIGNOFF, &session_dir, |command| {
+        command.arg("--scenario");
+        command.arg("golden_path_interactive");
+    });
+
+    LIVE_STATE_FIXTURES
+        .permission
+        .write_preserved_draft(harness.writer.as_mut())
+        .expect("queue preserved draft before permission prompt");
+
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        LIVE_STATE_FIXTURES.permission.marker,
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for permission marker");
+
+    send_key(harness.writer.as_mut(), 0x10).expect("attempt opening palette under permission");
+    send_key(harness.writer.as_mut(), b'/').expect("attempt opening slash under permission");
+
+    let current_screen = harness.parser.screen().contents();
+    let stable_screen = stabilize_screen(&mut harness.parser, &harness.output_rx, current_screen);
+
+    assert!(stable_screen.contains(LIVE_STATE_FIXTURES.permission.marker));
+    assert!(stable_screen.contains("FAIL CLOSED"));
+    assert!(stable_screen.contains("SESSION PAUSED"));
+    assert!(stable_screen.contains(LIVE_STATE_FIXTURES.permission.draft_text));
+    assert!(!stable_screen.contains("Permission blocked"));
+    assert!(!stable_screen.contains(STARTUP_COMMAND_PALETTE_MARKER));
+
+    harness
+        .child
+        .kill()
+        .expect("terminate permission overlay helper harness");
     std::mem::forget(harness.child);
 }
 
@@ -468,6 +514,8 @@ fn pty_e2e_startup_home_primary() {
     assert!(screen.contains(STARTUP_HOME_WORDMARK_MARKER));
     assert!(screen.contains(STARTUP_HOME_SHORTCUT_MARKER));
     assert!(screen.contains("Ask Harness anything…"));
+    assert!(screen.contains("Launch: worker · model-1"));
+    assert!(screen.contains("Provider mock · Demo"));
     assert!(screen.contains(STARTUP_HOME_VALUE_PROP_MARKER));
     assert!(!screen.contains("New session"));
     assert!(!screen.contains("Continue session"));
@@ -531,6 +579,8 @@ fn pty_e2e_startup_home_dense() {
     assert!(screen.contains(STARTUP_HOME_ASCII_WORDMARK_MARKER));
     assert!(screen.contains(STARTUP_HOME_SHORTCUT_MARKER));
     assert!(screen.contains("Ask Harness anything…"));
+    assert!(screen.contains("Launch: worker · model-1"));
+    assert!(screen.contains("Provider mock · Demo"));
     assert!(screen.contains(STARTUP_HOME_DENSE_VALUE_PROP_MARKER));
     assert!(!screen.contains("New session"));
     assert!(!screen.contains("Continue session"));
@@ -1412,6 +1462,127 @@ async fn pty_e2e_operator_sidebar_primary() {
     std::mem::forget(harness.child);
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn pty_helper_operator_sidebar_session_contract() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let live_session_dir = create_temp_session_dir();
+    let mut live = spawn_harness_tui(PtyGeometry::PRIMARY_SIGNOFF, &live_session_dir, |command| {
+        command.arg("--mock");
+    });
+    wait_for_screen_contains(
+        &mut live.parser,
+        &live.output_rx,
+        STARTUP_HOME_SHORTCUT_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup home before opening live runtime contract shell");
+
+    type_text(live.writer.as_mut(), "shell parity task");
+    send_key(live.writer.as_mut(), b'\r').expect("submit mock prompt for live runtime contract");
+    wait_for_screen_contains(
+        &mut live.parser,
+        &live.output_rx,
+        LIVE_READY_NEXT_TURN_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for completed live runtime contract shell");
+
+    let live_sidebar = show_live_operator_sidebar(
+        &mut live.parser,
+        &live.output_rx,
+        live.writer.as_mut(),
+        "Current runtime:",
+    );
+    let visual_dir = visual_artifacts_dir();
+    fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
+    let live_visual = capture_manifest_backed_visual_checkpoint(
+        "operator_sidebar",
+        "operator_sidebar_session_contract_live",
+        &live.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("Current runtime:", 32, 8),
+        &[
+            "Current runtime:",
+            "Provider mock",
+            LIVE_OPERATOR_EMPTY_MARKER,
+            "Enter send",
+        ],
+    )
+    .expect("capture live runtime contract image");
+    assert!(live_sidebar.contains("Current runtime: worker · model-1"));
+    assert!(live_sidebar.contains("Provider mock"));
+    assert!(live_sidebar.contains(LIVE_OPERATOR_TODOS_MARKER));
+    assert!(live_sidebar.contains(LIVE_OPERATOR_EMPTY_MARKER));
+    assert!(live_sidebar.contains("Enter send"));
+    assert!(visual_dir.join(&live_visual.file_name).exists());
+
+    live.child
+        .kill()
+        .expect("terminate live runtime contract harness");
+    std::mem::forget(live.child);
+
+    let server = start_responses_wiremock_server().await;
+    let continued_session_dir = create_temp_session_dir();
+    let run_id = "run_resume_quiescent";
+    write_quiescent_resume_fixture(&continued_session_dir, run_id);
+    let config_path = write_wiremock_tui_config(&continued_session_dir, &server.uri());
+    let mut continued = spawn_resumed_quiescent_session(
+        PtyGeometry::PRIMARY_SIGNOFF,
+        &continued_session_dir,
+        &config_path,
+        run_id,
+    );
+
+    let continued_sidebar = show_live_operator_sidebar(
+        &mut continued.parser,
+        &continued.output_rx,
+        continued.writer.as_mut(),
+        "Continued runtime:",
+    );
+    let continued_visual = capture_manifest_backed_visual_checkpoint(
+        "operator_sidebar",
+        "operator_sidebar_session_contract_continued",
+        &continued.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("Continued runtime:", 34, 8),
+        &[
+            "Continued runtime:",
+            "Provider default",
+            LIVE_OPERATOR_EMPTY_MARKER,
+            "ready for next turn",
+        ],
+    )
+    .expect("capture continued runtime contract image");
+    assert!(continued_sidebar.contains(&format!("Continued · run {run_id}")));
+    assert!(continued_sidebar.contains("Continued runtime:"));
+    assert!(continued_sidebar.contains("Provider default"));
+    assert!(continued_sidebar.contains(LIVE_OPERATOR_EMPTY_MARKER));
+    assert!(continued_sidebar.contains("ready for next turn"));
+    assert!(visual_dir.join(&continued_visual.file_name).exists());
+
+    compose_task_5_runtime_context_evidence(
+        &visual_dir.join(&live_visual.file_name),
+        &visual_dir.join(&continued_visual.file_name),
+        &visual_dir.join("pty_operator_sidebar_session_contract.png"),
+    )
+    .expect("compose operator sidebar contract artifact");
+    compose_task_5_runtime_context_evidence(
+        &visual_dir.join(&live_visual.file_name),
+        &visual_dir.join(&continued_visual.file_name),
+        &task_5_runtime_context_evidence_path(),
+    )
+    .expect("compose task 5 runtime context evidence artifact");
+
+    continued
+        .child
+        .kill()
+        .expect("terminate continued runtime contract harness");
+    std::mem::forget(continued.child);
+}
+
 #[test]
 fn pty_e2e_opencode_sidebar_session_parity() {
     if !cfg!(target_os = "linux") {
@@ -1658,7 +1829,7 @@ fn pty_e2e_child_session_navigation_checkpoint() {
         "replay",
         STARTUP_REPLAY_HISTORY_MARKER,
     );
-    move_list_selection(harness.writer.as_mut(), 1);
+    type_text(harness.writer.as_mut(), parent_session_id);
     send_key(harness.writer.as_mut(), b'\r').expect("select parent replay session");
     wait_for_screen_contains(
         &mut harness.parser,
@@ -1902,7 +2073,7 @@ fn pty_e2e_continue_rejects_active_or_unrestorable_session() {
 }
 
 #[test]
-fn pty_e2e_replay_never_appends_events() {
+fn pty_helper_replay_read_only() {
     if !cfg!(target_os = "linux") {
         return;
     }
@@ -1955,6 +2126,12 @@ fn pty_e2e_replay_never_appends_events() {
         MARKER_TIMEOUT,
     )
     .expect("wait for stable replay screen after submit attempt");
+    assert!(replay_screen.contains("Recorded runtime · read-only:"));
+    assert!(replay_screen.contains("GPT-5.4 Mini · Deterministic"));
+    assert!(replay_screen.contains("Provider default"));
+    assert!(replay_screen.contains("Replay is read-only"));
+    assert!(!replay_screen.contains("Recent context for the next turn"));
+    assert!(!replay_screen.contains("Enter send"));
     let replay_visual = capture_manifest_backed_visual_checkpoint(
         "replay",
         "replay_read_only",
@@ -2622,6 +2799,61 @@ fn capture_visual_checkpoint(
         focus_marker: focus.marker.to_string(),
         focus_region_cells: focus_region,
         size_px: (image.width(), image.height()),
+    })
+}
+
+fn task_5_runtime_context_evidence_path() -> PathBuf {
+    repo_root()
+        .join(".sisyphus")
+        .join("evidence")
+        .join("task-5-live-runtime-context.png")
+}
+
+fn compose_task_5_runtime_context_evidence(
+    live_path: &Path,
+    continued_path: &Path,
+    output_path: &Path,
+) -> Result<(), String> {
+    let live = image::open(live_path)
+        .map_err(|err| {
+            format!(
+                "failed to open live runtime artifact {}: {err}",
+                live_path.display()
+            )
+        })?
+        .to_rgb8();
+    let continued = image::open(continued_path)
+        .map_err(|err| {
+            format!(
+                "failed to open continued runtime artifact {}: {err}",
+                continued_path.display()
+            )
+        })?
+        .to_rgb8();
+
+    let gap = 16u32;
+    let width = live
+        .width()
+        .saturating_add(gap)
+        .saturating_add(continued.width());
+    let height = live.height().max(continued.height());
+    let mut canvas = RgbImage::from_pixel(width, height, Rgb([0, 0, 0]));
+    canvas
+        .copy_from(&live, 0, 0)
+        .map_err(|err| format!("failed to place live runtime image: {err}"))?;
+    canvas
+        .copy_from(&continued, live.width().saturating_add(gap), 0)
+        .map_err(|err| format!("failed to place continued runtime image: {err}"))?;
+
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create evidence dir {}: {err}", parent.display()))?;
+    }
+    canvas.save(output_path).map_err(|err| {
+        format!(
+            "failed to save composed runtime evidence {}: {err}",
+            output_path.display()
+        )
     })
 }
 
@@ -3624,7 +3856,7 @@ fn write_corrupt_blocked_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
 }
 
 fn write_replay_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
-    write_session_fixture(
+    let run_dir = write_session_fixture(
         session_dir,
         run_id,
         &[
@@ -3650,7 +3882,27 @@ fn write_replay_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
                 }),
             ),
         ],
+    );
+    fs::write(
+        run_dir.join("meta.json"),
+        json!({
+            "run_id": run_id,
+            "run_name": "interactive",
+            "workspace_root": "/workspace/project",
+            "config_digest": "fixture",
+            "harness_version": env!("CARGO_PKG_VERSION"),
+            "recorded_runtime_context": {
+                "profile": "archive",
+                "provider": "default",
+                "model": "gpt-5.4-mini",
+                "variant": "deterministic",
+                "display_label": "GPT-5.4 Mini · Deterministic"
+            }
+        })
+        .to_string(),
     )
+    .expect("write replay fixture metadata");
+    run_dir
 }
 
 fn write_session_fixture(session_dir: &Path, run_id: &str, events: &[Value]) -> PathBuf {
