@@ -1947,6 +1947,16 @@ fn live_tui_smoke_helpers_reuse_cliproxy_config_and_endpoint_rules() {
     let default_provider = provider_from_config(&prepared_config, DEFAULT_LIVE_PROXY_PROVIDER)
         .expect("default provider should be rewritten into prepared config");
     assert_eq!(provider_api_mode(default_provider), "auto");
+    assert_eq!(
+        default_provider
+            .get("models")
+            .and_then(Value::as_object)
+            .and_then(|models| models.get("override-model"))
+            .and_then(Value::as_object)
+            .and_then(|model| model.get("display_name"))
+            .and_then(Value::as_str),
+        Some("Prepared override-model")
+    );
 
     let categories = prepared_config
         .get("profiles")
@@ -3066,6 +3076,7 @@ fn prepare_prompt_run_config_with_contract(
 
     rewrite_selected_provider_to_default(&mut config, provider_name)?;
     normalize_category_model_refs_to_default(&mut config)?;
+    ensure_provider_model_entry(&mut config, &selected_model)?;
     ensure_profile_model_ref(&mut config, profile_name, &selected_model)?;
     disable_prepared_determinism(&mut config)?;
 
@@ -4810,6 +4821,46 @@ fn ensure_profile_model_ref(
         .or_insert_with(|| Value::Array(Vec::new()));
 
     categories.insert(profile_name.to_string(), profile);
+    Ok(())
+}
+
+fn ensure_provider_model_entry(config: &mut Value, model_id: &str) -> Result<(), String> {
+    let root = config
+        .as_object_mut()
+        .ok_or_else(|| "config root must be a JSON object".to_string())?;
+    let providers = root
+        .get_mut("providers")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| "config.providers must be an object".to_string())?;
+    let provider = providers
+        .get_mut(DEFAULT_LIVE_PROXY_PROVIDER)
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| format!("provider `{DEFAULT_LIVE_PROXY_PROVIDER}` must be an object"))?;
+    let models = provider
+        .entry("models".to_string())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()))
+        .as_object_mut()
+        .ok_or_else(|| {
+            format!("provider `{DEFAULT_LIVE_PROXY_PROVIDER}` models must be an object")
+        })?;
+
+    if models.contains_key(model_id) {
+        return Ok(());
+    }
+
+    let mut prepared_model = models
+        .values()
+        .next()
+        .cloned()
+        .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+    let prepared_model_obj = prepared_model.as_object_mut().ok_or_else(|| {
+        format!("provider `{DEFAULT_LIVE_PROXY_PROVIDER}` model entries must be objects")
+    })?;
+    prepared_model_obj.insert(
+        "display_name".to_string(),
+        Value::String(format!("Prepared {model_id}")),
+    );
+    models.insert(model_id.to_string(), prepared_model);
     Ok(())
 }
 
