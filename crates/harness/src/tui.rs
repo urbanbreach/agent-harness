@@ -19,7 +19,9 @@ use harness_core::coord::{
 };
 use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1, ToolCallStatus};
 use harness_core::perm::PermissionDecision;
-use harness_core::proj::{inspect_resume_plan, ResumePlan, SessionModeSource};
+use harness_core::proj::{
+    inspect_resume_plan, RecordedRuntimeContext, ResumePlan, RunMetadata, SessionModeSource,
+};
 use harness_core::redact::DefaultRedactor;
 use harness_core::store::{EventStore, EventStoreError};
 use harness_tools::coordinator_registry;
@@ -28,7 +30,8 @@ use harness_tui::app::{
     ModelOption, SessionHistoryEntry,
 };
 use harness_tui::{
-    load_events_from_run_dir, run_tui_with_options, LiveUpdate, TuiMode, TuiOptions, UiIntent,
+    load_events_from_run_dir, run_tui_with_options, set_pending_replay_launch_metadata, LiveUpdate,
+    TuiMode, TuiOptions, UiIntent,
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -191,6 +194,8 @@ fn execute_replay_mode(run_dir: &Path, exit_on_finish: bool) -> ExitCode {
     if exit_on_finish && has_terminal_event(&events) {
         return ExitCode::SUCCESS;
     }
+
+    set_pending_replay_launch_metadata(Some(replay_launch_metadata_for_run(run_dir, &events)));
 
     if let Err(err) = run_tui_with_options(TuiOptions {
         mode: TuiMode::Replay {
@@ -531,6 +536,7 @@ fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> InteractiveWorkfl
 
 async fn run_replay_tui(run_dir: PathBuf, exit_on_finish: bool) -> Result<(), String> {
     let events = load_events_from_run_dir(&run_dir).map_err(|err| err.to_string())?;
+    set_pending_replay_launch_metadata(Some(replay_launch_metadata_for_run(&run_dir, &events)));
     tokio::task::spawn_blocking(move || {
         run_tui_with_options(TuiOptions {
             mode: TuiMode::Replay { run_dir, events },
@@ -609,12 +615,14 @@ async fn run_continue_session_bootstrap(
         .map_err(|err| err.to_string())?;
 
     let preloaded_last_seq = historical_events.last().map(|event| event.seq).unwrap_or(0);
+    let recorded_runtime_context = load_recorded_runtime_context(&run_dir);
     let resume_profile = resume_plan
         .known_agents
         .get(&resume_agent_id)
         .map(String::as_str);
     let continue_metadata = continue_launch_metadata(
         &run.run_id,
+        recorded_runtime_context.as_ref(),
         &historical_events,
         &resume_agent_id,
         resume_profile,
@@ -704,6 +712,83 @@ fn continue_live_tui_options(
         on_ui_intent: Some(ui_intent_sender),
         keybindings: None,
     }
+}
+
+fn load_run_metadata(run_dir: &Path) -> Option<RunMetadata> {
+    let meta_path = run_dir.join("meta.json");
+    let body = fs::read_to_string(meta_path).ok()?;
+    serde_json::from_str(&body).ok()
+}
+
+fn load_recorded_runtime_context(run_dir: &Path) -> Option<RecordedRuntimeContext> {
+    load_run_metadata(run_dir).and_then(|metadata| metadata.recorded_runtime_context)
+}
+
+fn launch_metadata_from_recorded_runtime_context(
+    recorded_runtime_context: &RecordedRuntimeContext,
+) -> LaunchMetadata {
+    LaunchMetadata::from_model_option(&ModelOption {
+        profile: recorded_runtime_context.profile.clone(),
+        provider: recorded_runtime_context.provider.clone(),
+        model: recorded_runtime_context.model.clone(),
+        variant: recorded_runtime_context.variant.clone(),
+        display_label: Some(recorded_runtime_context.display_label.clone())
+            .filter(|value| !value.trim().is_empty()),
+        token_window_label: recorded_runtime_context.token_window_label.clone(),
+        context_window_tokens: recorded_runtime_context.context_window_tokens,
+        max_input_tokens: recorded_runtime_context.max_input_tokens,
+        max_output_tokens: recorded_runtime_context.max_output_tokens,
+        description: recorded_runtime_context.description.clone(),
+        reasoning_effort: recorded_runtime_context.reasoning_effort.clone(),
+        text_verbosity: recorded_runtime_context.text_verbosity.clone(),
+        recommended_for: recorded_runtime_context.recommended_for.clone(),
+    })
+}
+
+fn replay_launch_metadata_for_run(
+    run_dir: &Path,
+    historical_events: &[EventEnvelopeV1],
+) -> LaunchMetadata {
+    let recorded_runtime_context = load_recorded_runtime_context(run_dir);
+    replay_launch_metadata(recorded_runtime_context.as_ref(), historical_events)
+}
+
+fn replay_launch_metadata(
+    recorded_runtime_context: Option<&RecordedRuntimeContext>,
+    historical_events: &[EventEnvelopeV1],
+) -> LaunchMetadata {
+    let fallback = LaunchMetadata::default().with_mode_label("Replay");
+    if let Some(recorded_runtime_context) = recorded_runtime_context {
+        return launch_metadata_from_recorded_runtime_context(recorded_runtime_context)
+            .with_mode_label("Replay");
+    }
+    if historical_events.is_empty() {
+        return fallback;
+    }
+
+    let profile = historical_events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::AgentSpawned(payload) => Some(payload.profile.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| fallback.profile().to_string());
+    let (provider, model) = historical_events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::ProviderRequestStarted(payload) => {
+                Some((payload.provider_id.clone(), Some(payload.model_id.clone())))
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| {
+            (
+                fallback.provider().to_string(),
+                fallback.model().map(str::to_string),
+            )
+        });
+
+    LaunchMetadata::new(profile, provider, model).with_mode_label("Replay")
 }
 
 fn build_live_ui_intent_router(
@@ -846,12 +931,17 @@ fn most_recent_known_agent_spawn_id(
 
 fn continue_launch_metadata(
     run_id: &str,
+    recorded_runtime_context: Option<&RecordedRuntimeContext>,
     historical_events: &[EventEnvelopeV1],
     resume_agent_id: &str,
     resume_profile: Option<&str>,
 ) -> LaunchMetadata {
     let fallback =
         LaunchMetadata::from_model_ref("unknown", "unknown:unknown").with_mode_label("Continued");
+    if let Some(recorded_runtime_context) = recorded_runtime_context {
+        return launch_metadata_from_recorded_runtime_context(recorded_runtime_context)
+            .with_mode_label("Continued");
+    }
     if historical_events.is_empty() {
         return fallback;
     }
@@ -1560,6 +1650,15 @@ pub(crate) fn assert_startup_command_workflow_maps_model_and_session_intents_cor
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
+pub(crate) fn replay_launch_metadata_for_test(
+    run_dir: &Path,
+    historical_events: &[EventEnvelopeV1],
+) -> LaunchMetadata {
+    replay_launch_metadata_for_run(run_dir, historical_events)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use harness_core::event::{AgentSpawnedEvent, ProviderRequestStartedEvent};
@@ -1757,6 +1856,7 @@ mod tests {
 
         let metadata = continue_launch_metadata(
             "run_fixture",
+            None,
             &historical_events,
             "agent_000001",
             Some("alpha"),
@@ -1766,5 +1866,153 @@ mod tests {
         assert_eq!(metadata.provider(), "provider-alpha");
         assert_eq!(metadata.model(), Some("model-alpha"));
         assert_eq!(metadata.mode_label(), Some("Continued"));
+    }
+
+    #[test]
+    fn continue_metadata_prefers_recorded_runtime_context_before_event_inference() {
+        let historical_events = vec![EventEnvelopeV1 {
+            schema_version: 1,
+            event_id: "evt-0001".to_string(),
+            seq: 1,
+            run_id: "run_fixture".to_string(),
+            mono_ms: 1,
+            ts: None,
+            actor: EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            correlation_id: Some("req_000001".to_string()),
+            causation_id: None,
+            stream_key: Some("agent:agent_000001".to_string()),
+            payload: EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_000001".to_string(),
+                provider_id: "heuristic-provider".to_string(),
+                model_id: "heuristic-model".to_string(),
+                prompt_summary: "turn".to_string(),
+                request_digest: "digest".to_string(),
+            }),
+        }];
+        let recorded_runtime_context = RecordedRuntimeContext {
+            profile: "recorded-profile".to_string(),
+            provider: "recorded-provider".to_string(),
+            model: "recorded-model".to_string(),
+            variant: Some("recorded-variant".to_string()),
+            display_label: "Recorded Model".to_string(),
+            token_window_label: Some("128k ctx".to_string()),
+            context_window_tokens: Some(128_000),
+            max_input_tokens: Some(64_000),
+            max_output_tokens: Some(8_000),
+            description: Some("recorded description".to_string()),
+            recommended_for: Some("deep work".to_string()),
+            reasoning_effort: Some("high".to_string()),
+            text_verbosity: Some("medium".to_string()),
+        };
+
+        let metadata = continue_launch_metadata(
+            "run_fixture",
+            Some(&recorded_runtime_context),
+            &historical_events,
+            "agent_000001",
+            Some("heuristic-profile"),
+        );
+
+        assert_eq!(metadata.profile(), "recorded-profile");
+        assert_eq!(metadata.provider(), "recorded-provider");
+        assert_eq!(metadata.model(), Some("recorded-model"));
+        assert_eq!(metadata.variant(), Some("recorded-variant"));
+        assert_eq!(metadata.display_label(), Some("Recorded Model"));
+        assert_eq!(metadata.mode_label(), Some("Continued"));
+    }
+
+    #[test]
+    fn replay_launch_metadata_prefers_recorded_runtime_context_before_event_inference() {
+        let historical_events = vec![EventEnvelopeV1 {
+            schema_version: 1,
+            event_id: "evt-0001".to_string(),
+            seq: 1,
+            run_id: "run_fixture".to_string(),
+            mono_ms: 1,
+            ts: None,
+            actor: EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            correlation_id: Some("req_000001".to_string()),
+            causation_id: None,
+            stream_key: Some("agent:agent_000001".to_string()),
+            payload: EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_000001".to_string(),
+                provider_id: "heuristic-provider".to_string(),
+                model_id: "heuristic-model".to_string(),
+                prompt_summary: "turn".to_string(),
+                request_digest: "digest".to_string(),
+            }),
+        }];
+        let recorded_runtime_context = RecordedRuntimeContext {
+            profile: "recorded-profile".to_string(),
+            provider: "recorded-provider".to_string(),
+            model: "recorded-model".to_string(),
+            variant: None,
+            display_label: "Recorded Replay Model".to_string(),
+            token_window_label: None,
+            context_window_tokens: None,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            description: None,
+            recommended_for: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+        };
+
+        let metadata = replay_launch_metadata(Some(&recorded_runtime_context), &historical_events);
+
+        assert_eq!(metadata.profile(), "recorded-profile");
+        assert_eq!(metadata.provider(), "recorded-provider");
+        assert_eq!(metadata.model(), Some("recorded-model"));
+        assert_eq!(metadata.display_label(), Some("Recorded Replay Model"));
+        assert_eq!(metadata.mode_label(), Some("Replay"));
+    }
+
+    #[test]
+    fn replay_bootstrap_falls_back_when_recorded_runtime_context_missing() {
+        let historical_events = vec![
+            EventEnvelopeV1 {
+                schema_version: 1,
+                event_id: "evt-0001".to_string(),
+                seq: 1,
+                run_id: "run_fixture".to_string(),
+                mono_ms: 1,
+                ts: None,
+                actor: EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+                correlation_id: None,
+                causation_id: None,
+                stream_key: Some("run:run_fixture".to_string()),
+                payload: EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_000001".to_string(),
+                    profile: "legacy-profile".to_string(),
+                    parent_agent_id: None,
+                }),
+            },
+            EventEnvelopeV1 {
+                schema_version: 1,
+                event_id: "evt-0002".to_string(),
+                seq: 2,
+                run_id: "run_fixture".to_string(),
+                mono_ms: 2,
+                ts: None,
+                actor: EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                correlation_id: Some("req_000001".to_string()),
+                causation_id: None,
+                stream_key: Some("agent:agent_000001".to_string()),
+                payload: EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_000001".to_string(),
+                    provider_id: "legacy-provider".to_string(),
+                    model_id: "legacy-model".to_string(),
+                    prompt_summary: "hello".to_string(),
+                    request_digest: "digest-1".to_string(),
+                }),
+            },
+        ];
+
+        let metadata = replay_launch_metadata(None, &historical_events);
+
+        assert_eq!(metadata.profile(), "legacy-profile");
+        assert_eq!(metadata.provider(), "legacy-provider");
+        assert_eq!(metadata.model(), Some("legacy-model"));
+        assert_eq!(metadata.mode_label(), Some("Replay"));
     }
 }

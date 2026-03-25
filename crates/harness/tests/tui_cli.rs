@@ -4,11 +4,13 @@ use std::time::Duration;
 
 use harness_core::agent::AgentProfile;
 use harness_core::clock::FakeClock;
+use harness_core::config::ToolFailureMode;
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::event::{
     ActorKind, EventActor, EventEnvelopeV1, EventV1, RunFinishedEvent, RunStartedEvent,
     TaskCompletedEvent, SCHEMA_VERSION,
 };
+use harness_core::proj::RunMetadata;
 use harness_core::redact::DefaultRedactor;
 use harness_core::tool::ToolSurface;
 use harness_tui::app::{
@@ -17,6 +19,19 @@ use harness_tui::app::{
 };
 use harness_tui::{load_events_from_run_dir, Action};
 use tempfile::tempdir;
+
+#[allow(dead_code)]
+#[path = "../src/bootstrap.rs"]
+mod bootstrap;
+#[allow(dead_code)]
+#[path = "../src/replay.rs"]
+mod replay;
+#[allow(dead_code)]
+#[path = "../src/scenarios.rs"]
+mod scenarios;
+#[allow(dead_code)]
+#[path = "../src/tui.rs"]
+mod tui_impl;
 
 fn startup_draft_test_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -191,6 +206,83 @@ async fn tui_new_live_bootstrap_stays_idle_until_first_user_prompt() {
     );
 }
 
+#[tokio::test]
+async fn new_live_session_persists_selected_runtime_context_into_run_metadata() {
+    let temp = tempdir().expect("tempdir");
+    let session_dir = temp.path().join("sessions");
+    let workspace = temp.path().join("workspace");
+    std::fs::create_dir_all(&workspace).expect("create workspace");
+
+    let mut coordinator_config = CoordinatorConfig::new(&session_dir);
+    coordinator_config.agent_profiles.insert(
+        "deep".to_string(),
+        AgentProfile {
+            name: "deep".to_string(),
+            category: "deep".to_string(),
+            model_ref: "default:gpt-5.4-mini".to_string(),
+            system_prompt: "deep agent mode intro".to_string(),
+            tool_failure_mode: ToolFailureMode::FailTurn,
+            tool_surface: ToolSurface::Native,
+            toolset: Vec::new(),
+        },
+    );
+    coordinator_config.agent_profiles.insert(
+        "ops".to_string(),
+        AgentProfile {
+            name: "ops".to_string(),
+            category: "ops".to_string(),
+            model_ref: "anthropic:claude-3.7".to_string(),
+            system_prompt: "ops agent mode intro".to_string(),
+            tool_failure_mode: ToolFailureMode::FailTurn,
+            tool_surface: ToolSurface::Native,
+            toolset: Vec::new(),
+        },
+    );
+
+    let coordinator = spawn_coordinator(
+        coordinator_config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+
+    let run = coordinator
+        .start_run("interactive", &workspace)
+        .await
+        .expect("start interactive run");
+    coordinator
+        .spawn_agent_idle(
+            EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string())),
+            "ops",
+            None,
+        )
+        .await
+        .expect("spawn selected launch agent");
+
+    let meta_body = std::fs::read_to_string(run.run_dir.join("meta.json")).expect("read meta");
+    let metadata: RunMetadata = serde_json::from_str(&meta_body).expect("parse meta");
+    let recorded_runtime_context = metadata
+        .recorded_runtime_context
+        .expect("selected runtime context should be recorded before first turn");
+
+    assert_eq!(recorded_runtime_context.profile, "ops");
+    assert_eq!(recorded_runtime_context.provider, "anthropic");
+    assert_eq!(recorded_runtime_context.model, "claude-3.7");
+
+    let bootstrap_events = load_events_from_run_dir(&run.run_dir).expect("load bootstrap events");
+    assert!(bootstrap_events
+        .iter()
+        .any(|event| matches!(&event.payload, EventV1::AgentSpawned(_))));
+    assert!(
+        !bootstrap_events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::UserMessageSubmitted(_) | EventV1::ProviderRequestStarted(_)
+        )),
+        "selected runtime context must persist before the first user turn starts"
+    );
+
+    coordinator.stop_run().await.expect("stop interactive run");
+}
+
 #[test]
 fn tui_continue_session_bootstraps_live_with_preloaded_history() {
     let _guard = startup_draft_test_lock()
@@ -289,6 +381,136 @@ fn tui_continue_session_restores_launch_metadata_from_history() {
     assert_eq!(app.active_profile(), "history-profile");
     assert_eq!(app.active_provider(), "history-provider");
     assert_eq!(app.current_model_label(), "history-model");
+}
+
+#[test]
+fn replay_bootstrap_falls_back_when_recorded_runtime_context_missing() {
+    let run_dir = tempdir().expect("tempdir");
+    write_events_jsonl(
+        run_dir.path(),
+        &[
+            envelope(
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+                    agent_id: "agent_000001".to_string(),
+                    profile: "legacy-profile".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope_with_correlation(
+                3,
+                Some("req_000001"),
+                EventV1::ProviderRequestStarted(harness_core::event::ProviderRequestStartedEvent {
+                    request_id: "req_000001".to_string(),
+                    provider_id: "legacy-provider".to_string(),
+                    model_id: "legacy-model".to_string(),
+                    prompt_summary: "hello".to_string(),
+                    request_digest: "digest-1".to_string(),
+                }),
+            ),
+            envelope(
+                4,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ],
+    );
+    std::fs::write(
+        run_dir.path().join("meta.json"),
+        serde_json::json!({
+            "run_id": "run_fixture",
+            "run_name": "interactive",
+            "workspace_root": "/tmp/workspace",
+            "config_digest": "none",
+            "harness_version": env!("CARGO_PKG_VERSION")
+        })
+        .to_string(),
+    )
+    .expect("write legacy meta");
+
+    let events = load_events_from_run_dir(run_dir.path()).expect("load replay events");
+    let launch_metadata = tui_impl::replay_launch_metadata_for_test(run_dir.path(), &events);
+
+    assert_eq!(launch_metadata.profile(), "legacy-profile");
+    assert_eq!(launch_metadata.provider(), "legacy-provider");
+    assert_eq!(launch_metadata.model(), Some("legacy-model"));
+    assert_eq!(launch_metadata.mode_label(), Some("Replay"));
+}
+
+#[test]
+fn replay_bootstrap_prefers_recorded_runtime_context_from_meta() {
+    let run_dir = tempdir().expect("tempdir");
+    write_events_jsonl(
+        run_dir.path(),
+        &[
+            envelope(
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+                    agent_id: "agent_000001".to_string(),
+                    profile: "legacy-profile".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope_with_correlation(
+                3,
+                Some("req_000001"),
+                EventV1::ProviderRequestStarted(harness_core::event::ProviderRequestStartedEvent {
+                    request_id: "req_000001".to_string(),
+                    provider_id: "legacy-provider".to_string(),
+                    model_id: "legacy-model".to_string(),
+                    prompt_summary: "hello".to_string(),
+                    request_digest: "digest-1".to_string(),
+                }),
+            ),
+        ],
+    );
+    std::fs::write(
+        run_dir.path().join("meta.json"),
+        serde_json::json!({
+            "run_id": "run_fixture",
+            "run_name": "interactive",
+            "workspace_root": "/tmp/workspace",
+            "config_digest": "none",
+            "harness_version": env!("CARGO_PKG_VERSION"),
+            "recorded_runtime_context": {
+                "profile": "archive",
+                "provider": "default",
+                "model": "gpt-5.4-mini",
+                "variant": "deterministic",
+                "display_label": "GPT-5.4 Mini · Deterministic"
+            }
+        })
+        .to_string(),
+    )
+    .expect("write replay meta");
+
+    let events = load_events_from_run_dir(run_dir.path()).expect("load replay events");
+    let launch_metadata = tui_impl::replay_launch_metadata_for_test(run_dir.path(), &events);
+
+    assert_eq!(launch_metadata.profile(), "archive");
+    assert_eq!(launch_metadata.provider(), "default");
+    assert_eq!(launch_metadata.model(), Some("gpt-5.4-mini"));
+    assert_eq!(launch_metadata.variant(), Some("deterministic"));
+    assert_eq!(
+        launch_metadata.display_label(),
+        Some("GPT-5.4 Mini · Deterministic")
+    );
+    assert_eq!(launch_metadata.mode_label(), Some("Replay"));
 }
 
 #[test]
