@@ -1,6 +1,7 @@
 use super::*;
 use crate::overlay::OverlayKind;
 use crate::ui::WheelTarget;
+use crate::view_model;
 use crossterm::event::MouseEvent;
 use harness_core::event::{
     ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
@@ -44,6 +45,30 @@ fn opencode_navigation_keybindings() -> BTreeMap<String, String> {
         ("session_parent".to_string(), "ctrl+[".to_string()),
         ("variant_cycle".to_string(), "tab".to_string()),
     ])
+}
+
+fn runtime_context_model_option(
+    profile: &str,
+    provider: &str,
+    model: &str,
+    variant: Option<&str>,
+    display_label: &str,
+) -> ModelOption {
+    ModelOption {
+        profile: profile.to_string(),
+        provider: provider.to_string(),
+        model: model.to_string(),
+        variant: variant.map(str::to_string),
+        display_label: Some(display_label.to_string()),
+        token_window_label: None,
+        context_window_tokens: None,
+        max_input_tokens: None,
+        max_output_tokens: None,
+        description: None,
+        reasoning_effort: None,
+        text_verbosity: None,
+        recommended_for: None,
+    }
 }
 
 fn write_events_jsonl(run_dir: &Path, events: &[EventEnvelopeV1]) {
@@ -293,6 +318,122 @@ fn question_permission_modal_collects_answers_and_emits_reason_payload() {
             reason: Some("[[\"A\"]]".to_string()),
         }]
     );
+}
+
+#[test]
+fn runtime_context_labels_distinguish_live_continue_and_replay() {
+    let launch_option = runtime_context_model_option(
+        "deep",
+        "default",
+        "gpt-5.4-mini",
+        Some("deterministic"),
+        "GPT-5.4 Mini · Deterministic",
+    );
+
+    let mut startup = AppState::new_startup(Vec::new(), None);
+    startup.set_launch_metadata(LaunchMetadata::from_model_option(&launch_option));
+    let startup_dock = startup.control_dock_view_model();
+    assert_eq!(
+        startup_dock.primary_summary,
+        "Launch: deep · GPT-5.4 Mini · Deterministic"
+    );
+    assert_eq!(startup_dock.summary_segment, None);
+    assert_eq!(startup_dock.runtime_context.as_deref(), Some("default"));
+
+    let mut live = AppState::new_live(None, false, None);
+    live.set_launch_metadata(LaunchMetadata::from_model_option(&launch_option));
+    let live_dock = live.control_dock_view_model();
+    assert_eq!(
+        live_dock.primary_summary,
+        "Current runtime: deep · GPT-5.4 Mini · Deterministic"
+    );
+    assert_eq!(live_dock.summary_segment, None);
+    assert_eq!(live_dock.runtime_context.as_deref(), Some("default"));
+
+    let mut continued = AppState::new_live(None, false, None);
+    continued.set_launch_metadata(
+        LaunchMetadata::from_model_option(&launch_option).with_mode_label("Continued"),
+    );
+    let continued_dock = continued.control_dock_view_model();
+    assert_eq!(
+        continued_dock.primary_summary,
+        "Continued runtime: deep · GPT-5.4 Mini · Deterministic"
+    );
+    assert_eq!(continued_dock.summary_segment, None);
+    assert_eq!(continued_dock.runtime_context.as_deref(), Some("default"));
+
+    let mut replay = AppState::new_replay(PathBuf::from("/tmp/runtime-context-replay"), Vec::new());
+    replay.set_launch_metadata(LaunchMetadata::from_model_option(&launch_option));
+    let replay_dock = replay.control_dock_view_model();
+    assert_eq!(
+        replay_dock.primary_summary,
+        "Recorded runtime · read-only: deep · GPT-5.4 Mini · Deterministic"
+    );
+    assert_eq!(replay_dock.summary_segment, None);
+    assert_eq!(replay_dock.runtime_context.as_deref(), Some("default"));
+    assert!(replay_dock.composer_disabled);
+}
+
+#[test]
+fn live_switch_model_labels_next_turn_only() {
+    let launch_option = runtime_context_model_option(
+        "deep",
+        "default",
+        "gpt-5.4-mini",
+        Some("deterministic"),
+        "GPT-5.4 Mini · Deterministic",
+    );
+    let next_turn_option = runtime_context_model_option(
+        "writer",
+        "default",
+        "gpt-5.4-mini",
+        Some("creative"),
+        "GPT-5.4 Mini · Creative",
+    );
+
+    let mut live = AppState::new_live(None, false, None);
+    live.apply_keybindings(opencode_navigation_keybindings());
+    live.set_launch_metadata(
+        LaunchMetadata::from_model_option(&launch_option)
+            .with_available_models(vec![launch_option.clone(), next_turn_option.clone()]),
+    );
+
+    live.handle_key(key(KeyCode::Tab));
+
+    let dock = live.control_dock_view_model();
+    assert_eq!(
+        dock.primary_summary,
+        "Current runtime: deep · GPT-5.4 Mini · Deterministic"
+    );
+    assert_eq!(
+        dock.summary_segment,
+        Some(view_model::ControlDockSummarySegment {
+            kind: view_model::ControlDockSummarySegmentKind::Orchestration,
+            text: "Next turns: writer · GPT-5.4 Mini · Creative".to_string(),
+            tone: view_model::ControlDockSummaryTone::Secondary,
+        })
+    );
+
+    let mut replay = AppState::new_replay(
+        PathBuf::from("/tmp/runtime-context-replay-switch"),
+        Vec::new(),
+    );
+    replay.apply_keybindings(opencode_navigation_keybindings());
+    replay.set_launch_metadata(
+        LaunchMetadata::from_model_option(&launch_option)
+            .with_available_models(vec![launch_option, next_turn_option]),
+    );
+
+    replay.handle_key(key(KeyCode::Tab));
+
+    let replay_dock = replay.control_dock_view_model();
+    assert_eq!(
+        replay_dock.primary_summary,
+        "Recorded runtime · read-only: deep · GPT-5.4 Mini · Deterministic"
+    );
+    assert_eq!(replay_dock.summary_segment, None);
+    assert_eq!(replay.current_model_label(), "GPT-5.4 Mini · Deterministic");
+    assert_eq!(replay.active_profile(), "deep");
 }
 
 #[test]

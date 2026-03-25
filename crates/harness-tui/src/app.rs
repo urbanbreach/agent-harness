@@ -17,7 +17,9 @@ use harness_core::event::{
     UserMessageSubmittedEvent,
 };
 use harness_core::perm::PermissionDecision;
-use harness_core::proj::{inspect_resume_plan, SessionCatalogEntry, SessionModeSource};
+use harness_core::proj::{
+    inspect_resume_plan, RunMetadata, SessionCatalogEntry, SessionModeSource,
+};
 use serde::Deserialize;
 
 use crate::keybindings::{Action, KeyMap};
@@ -1531,6 +1533,7 @@ pub struct AppState {
     pub keymap: KeyMap,
     theme: Theme,
     launch_metadata: LaunchMetadata,
+    runtime_context_metadata: Option<LaunchMetadata>,
     session_navigation_stack: Vec<SessionNavigationSnapshot>,
     dismissed_permissions: BTreeSet<String>,
     submitted_permission_id: Option<String>,
@@ -1597,6 +1600,7 @@ impl Default for AppState {
             keymap: KeyMap::default(),
             theme: Theme::default(),
             launch_metadata: LaunchMetadata::default(),
+            runtime_context_metadata: None,
             session_navigation_stack: Vec::new(),
             dismissed_permissions: BTreeSet::new(),
             submitted_permission_id: None,
@@ -2415,12 +2419,14 @@ impl AppState {
         on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
     ) -> Self {
         let mut state = Self::new();
-        state.launch_metadata = take_pending_live_launch_metadata().unwrap_or_default();
         state.focus = Focus::Prompt;
         state.live_details_drawer_open = false;
         state.session_path = session_path;
         state.auto_exit_on_finish = auto_exit_on_finish;
         state.on_ui_intent = on_ui_intent;
+        if let Some(launch_metadata) = take_pending_live_launch_metadata() {
+            state.set_launch_metadata(launch_metadata);
+        }
         if let Some(pending_prompt) = take_pending_live_prompt() {
             state.apply_pending_live_prompt(pending_prompt);
         }
@@ -2444,7 +2450,9 @@ impl AppState {
         state.focus = Focus::List;
         state.startup_mode = true;
         state.on_ui_intent = on_ui_intent;
-        state.launch_metadata = take_pending_live_launch_metadata().unwrap_or_default();
+        if let Some(launch_metadata) = take_pending_live_launch_metadata() {
+            state.set_launch_metadata(launch_metadata);
+        }
         state.set_session_history_entries(session_history_entries);
         if let Some(pending_prompt) = take_pending_live_prompt() {
             state.replace_prompt_input(pending_prompt.text);
@@ -2466,7 +2474,14 @@ impl AppState {
     }
 
     pub fn set_launch_metadata(&mut self, launch_metadata: LaunchMetadata) {
-        self.launch_metadata = launch_metadata;
+        let refresh_runtime_context = self.startup_mode
+            || self.replay_mode
+            || self.runtime_context_metadata.is_none()
+            || (self.events.is_empty() && self.activities.is_empty());
+        self.launch_metadata = launch_metadata.clone();
+        if refresh_runtime_context {
+            self.runtime_context_metadata = Some(launch_metadata);
+        }
     }
 
     fn current_session_id(&self) -> Option<&str> {
@@ -2533,6 +2548,10 @@ impl AppState {
     }
 
     fn cycle_variant(&mut self) {
+        if self.replay_mode {
+            return;
+        }
+
         let Some(model_id) = self.launch_metadata.model().map(str::to_owned) else {
             return;
         };
@@ -2581,8 +2600,8 @@ impl AppState {
     fn restore_session_snapshot(&mut self, snapshot: SessionNavigationSnapshot) {
         self.replay_mode = true;
         self.session_path = Some(snapshot.session_path);
-        self.launch_metadata = snapshot.launch_metadata;
         self.replace_events(snapshot.events);
+        self.set_launch_metadata(snapshot.launch_metadata);
         self.active_review_surface = None;
         self.active_tab = Tab::Run;
         self.focus = Focus::Details;
@@ -3089,6 +3108,170 @@ impl AppState {
         self.launch_metadata
             .display_label()
             .unwrap_or_else(|| self.current_model_id())
+    }
+
+    pub fn runtime_context_primary_summary(&self) -> String {
+        self.control_dock_view_model().primary_summary
+    }
+
+    pub fn runtime_context_summary_segment_text(&self) -> Option<String> {
+        self.control_dock_view_model()
+            .summary_segment
+            .map(|segment| segment.text)
+    }
+
+    pub fn runtime_context_provider_display(&self) -> Option<String> {
+        self.control_dock_view_model().runtime_context
+    }
+
+    pub(crate) fn runtime_context_identity_line(&self) -> String {
+        format!(
+            "{} · {}/{}",
+            self.runtime_context_profile(),
+            self.runtime_context_provider(),
+            self.runtime_context_model_id()
+        )
+    }
+
+    fn runtime_context_metadata(&self) -> &LaunchMetadata {
+        self.runtime_context_metadata
+            .as_ref()
+            .unwrap_or(&self.launch_metadata)
+    }
+
+    fn runtime_context_profile(&self) -> &str {
+        let profile = self.runtime_context_metadata().profile();
+        if Self::launch_value_is_unknown(profile) {
+            self.active_profile()
+        } else {
+            profile
+        }
+    }
+
+    fn runtime_context_provider(&self) -> &str {
+        let provider = self.runtime_context_metadata().provider();
+        if Self::launch_value_is_unknown(provider) || provider == "local" {
+            self.active_provider()
+        } else {
+            provider
+        }
+    }
+
+    fn runtime_context_model_id(&self) -> &str {
+        self.runtime_context_metadata()
+            .model()
+            .filter(|value| !Self::launch_value_is_unknown(value))
+            .unwrap_or_else(|| self.current_model_id())
+    }
+
+    fn runtime_context_model_label(&self) -> String {
+        self.runtime_context_metadata()
+            .display_label()
+            .or_else(|| self.runtime_context_metadata().model())
+            .filter(|value| !Self::launch_value_is_unknown(value))
+            .unwrap_or_else(|| self.current_model_label())
+            .to_string()
+    }
+
+    fn runtime_context_identity(&self) -> String {
+        format!(
+            "{} · {}",
+            self.runtime_context_profile(),
+            self.runtime_context_model_label()
+        )
+    }
+
+    fn runtime_context_label(&self) -> view_model::RuntimeContextLabel {
+        if self.startup_shell_visible() {
+            view_model::RuntimeContextLabel::Launch
+        } else if self.replay_mode {
+            view_model::RuntimeContextLabel::RecordedRuntimeReadOnly
+        } else if self.continued_live_run() {
+            view_model::RuntimeContextLabel::ContinuedRuntime
+        } else {
+            view_model::RuntimeContextLabel::CurrentRuntime
+        }
+    }
+
+    fn runtime_identity_for_metadata(metadata: &LaunchMetadata) -> String {
+        let model_label = metadata
+            .display_label()
+            .or_else(|| metadata.model())
+            .unwrap_or("-");
+        format!("{} · {model_label}", metadata.profile())
+    }
+
+    fn runtime_provider_context(&self) -> Option<String> {
+        let provider = self.runtime_context_provider().trim();
+        (!provider.is_empty()).then(|| provider.to_string())
+    }
+
+    fn next_turn_identity(&self) -> Option<String> {
+        if self.startup_shell_visible() || self.replay_mode {
+            return None;
+        }
+
+        let current = self.runtime_context_metadata();
+        let next = &self.launch_metadata;
+        let changed = current.profile() != next.profile()
+            || current.provider() != next.provider()
+            || current.model() != next.model()
+            || current.variant() != next.variant();
+        changed.then(|| Self::runtime_identity_for_metadata(next))
+    }
+
+    pub(crate) fn control_dock_view_model(&self) -> view_model::ControlDockViewModel {
+        let runtime_state = self.runtime_state();
+        let grammar = view_model::runtime_context_grammar(view_model::RuntimeContextGrammarInput {
+            label: self.runtime_context_label(),
+            identity: self.runtime_context_identity(),
+            next_turn_identity: self.next_turn_identity(),
+        });
+        let runtime_context = self.runtime_provider_context();
+
+        if self.startup_shell_visible() {
+            let composer_body = if self.prompt_buffer.is_empty() {
+                runtime_state.composer_hint.clone()
+            } else {
+                self.prompt_buffer.clone()
+            };
+            return view_model::control_dock_view_model(view_model::ControlDockInput::Startup {
+                runtime_context,
+                runtime_state,
+                primary_summary: grammar.primary_summary,
+                composer_body,
+                composer_disclosure: String::new(),
+                composer_focused: self.focus == Focus::Prompt,
+            });
+        }
+
+        if self.replay_mode {
+            return view_model::control_dock_view_model(
+                view_model::ControlDockInput::ReplayReadOnly {
+                    runtime_context,
+                    runtime_state,
+                    primary_summary: grammar.primary_summary,
+                    composer_body: "Replay is read-only.".to_string(),
+                    composer_disclosure: String::new(),
+                    composer_focused: self.focus == Focus::Prompt,
+                },
+            );
+        }
+
+        let composer_body = if self.prompt_buffer.is_empty() {
+            String::new()
+        } else {
+            self.prompt_buffer.clone()
+        };
+        view_model::control_dock_view_model(view_model::ControlDockInput::Live {
+            runtime_context,
+            runtime_state,
+            primary_summary: grammar.primary_summary,
+            summary_segment: grammar.summary_segment,
+            composer_body,
+            composer_disclosure: String::new(),
+            composer_focused: self.focus == Focus::Prompt,
+        })
     }
 
     pub fn operator_sidebar_state_label(&self) -> String {
@@ -5685,12 +5868,61 @@ fn infer_launch_metadata_from_events(
     launch_metadata
 }
 
+fn replay_launch_metadata_from_session(
+    session_path: &Path,
+    events: &[EventEnvelopeV1],
+    fallback: &LaunchMetadata,
+) -> LaunchMetadata {
+    load_replay_run_metadata(session_path)
+        .and_then(|metadata| {
+            metadata
+                .recorded_runtime_context
+                .as_ref()
+                .map(|context| launch_metadata_from_recorded_runtime_context(context, fallback))
+        })
+        .unwrap_or_else(|| infer_launch_metadata_from_events(events, fallback))
+}
+
+fn load_replay_run_metadata(session_path: &Path) -> Option<RunMetadata> {
+    let meta_path = session_path.join("meta.json");
+    let body = fs::read_to_string(meta_path).ok()?;
+    serde_json::from_str(&body).ok()
+}
+
+fn launch_metadata_from_recorded_runtime_context(
+    recorded_runtime_context: &harness_core::proj::RecordedRuntimeContext,
+    fallback: &LaunchMetadata,
+) -> LaunchMetadata {
+    let mut launch_metadata = LaunchMetadata::from_model_option(&ModelOption {
+        profile: recorded_runtime_context.profile.clone(),
+        provider: recorded_runtime_context.provider.clone(),
+        model: recorded_runtime_context.model.clone(),
+        variant: recorded_runtime_context.variant.clone(),
+        display_label: Some(recorded_runtime_context.display_label.clone())
+            .filter(|value| !value.trim().is_empty()),
+        token_window_label: recorded_runtime_context.token_window_label.clone(),
+        context_window_tokens: recorded_runtime_context.context_window_tokens,
+        max_input_tokens: recorded_runtime_context.max_input_tokens,
+        max_output_tokens: recorded_runtime_context.max_output_tokens,
+        description: recorded_runtime_context.description.clone(),
+        reasoning_effort: recorded_runtime_context.reasoning_effort.clone(),
+        text_verbosity: recorded_runtime_context.text_verbosity.clone(),
+        recommended_for: recorded_runtime_context.recommended_for.clone(),
+    })
+    .with_available_models(fallback.available_models().to_vec());
+    if let Some(mode_label) = fallback.mode_label().map(str::to_owned) {
+        launch_metadata = launch_metadata.with_mode_label(mode_label);
+    }
+    launch_metadata
+}
+
 fn session_navigation_snapshot_from_path(
     session_path: &Path,
     fallback_launch_metadata: &LaunchMetadata,
 ) -> Result<SessionNavigationSnapshot, String> {
     let events = load_session_events(session_path)?;
-    let launch_metadata = infer_launch_metadata_from_events(&events, fallback_launch_metadata);
+    let launch_metadata =
+        replay_launch_metadata_from_session(session_path, &events, fallback_launch_metadata);
     let replay = AppState::new_replay(session_path.to_path_buf(), events.clone());
 
     Ok(SessionNavigationSnapshot {

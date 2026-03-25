@@ -9,7 +9,7 @@ use harness_core::event::{
     ProviderRequestStartedEvent, RunStartedEvent, TaskLineageMetadata, ToolCallMetadata,
     ToolCallRequestedEvent, SCHEMA_VERSION,
 };
-use harness_tui::app::{AppState, LaunchMetadata, UiIntent};
+use harness_tui::app::{AppState, LaunchMetadata, ModelOption, UiIntent};
 
 fn envelope(seq: u64, request_id: &str, payload: EventV1) -> EventEnvelopeV1 {
     EventEnvelopeV1 {
@@ -150,6 +150,41 @@ fn session_fixture(root: &Path) -> (PathBuf, PathBuf, PathBuf, Vec<EventEnvelope
     (parent_dir, child_a_dir, child_b_dir, parent_events)
 }
 
+fn continued_runtime_model_options() -> Vec<ModelOption> {
+    vec![
+        ModelOption {
+            profile: "deep".to_string(),
+            provider: "default".to_string(),
+            model: "gpt-5.4-mini".to_string(),
+            variant: Some("deterministic".to_string()),
+            display_label: Some("GPT-5.4 Mini · Deterministic".to_string()),
+            token_window_label: None,
+            context_window_tokens: None,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            description: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            recommended_for: None,
+        },
+        ModelOption {
+            profile: "writer".to_string(),
+            provider: "default".to_string(),
+            model: "gpt-5.4-mini".to_string(),
+            variant: Some("creative".to_string()),
+            display_label: Some("GPT-5.4 Mini · Creative".to_string()),
+            token_window_label: None,
+            context_window_tokens: None,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            description: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            recommended_for: None,
+        },
+    ]
+}
+
 #[test]
 fn child_session_navigation_keybinds_follow_opencode_contract() {
     let run_dir = tempfile::tempdir().expect("create temp run dir");
@@ -269,4 +304,37 @@ fn replay_child_navigation_does_not_emit_live_intents() {
     assert_eq!(app.active_profile(), "planner");
     assert_eq!(app.current_model_label(), "model-parent");
     assert!(app.replay_mode);
+}
+
+#[test]
+fn continued_runtime_stays_primary_until_variant_cycle_sets_next_turns() {
+    let variant_cycle_overrides =
+        BTreeMap::from([("variant_cycle".to_string(), "tab".to_string())]);
+    let options = continued_runtime_model_options();
+    let primary = options[0].clone();
+
+    let mut app = AppState::new_live(None, false, None);
+    app.apply_keybindings(variant_cycle_overrides);
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_option(&primary)
+            .with_available_models(options)
+            .with_mode_label("Continued"),
+    );
+
+    assert_eq!(
+        app.runtime_context_primary_summary(),
+        "Continued runtime: deep · GPT-5.4 Mini · Deterministic"
+    );
+    assert_eq!(app.runtime_context_summary_segment_text(), None);
+
+    app.handle_key(key(KeyCode::Tab));
+
+    assert_eq!(
+        app.runtime_context_primary_summary(),
+        "Continued runtime: deep · GPT-5.4 Mini · Deterministic"
+    );
+    assert_eq!(
+        app.runtime_context_summary_segment_text(),
+        Some("Next turns: writer · GPT-5.4 Mini · Creative".to_string())
+    );
 }
