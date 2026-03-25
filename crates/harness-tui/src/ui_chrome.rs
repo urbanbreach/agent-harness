@@ -877,61 +877,38 @@ fn build_control_dock_view_model(
     app: &AppState,
     theme: &Theme,
 ) -> crate::view_model::ControlDockViewModel {
-    let runtime_state = app.runtime_state();
-    let runtime_context = Some(status_context(app, theme, runtime_state.kind).0.to_string());
-    let primary_summary = completed_session_status_summary(app, &runtime_state)
-        .unwrap_or_else(|| runtime_state.summary.clone());
-
     if app.startup_shell_visible() {
-        let composer_disabled = runtime_state.composer_disabled;
-        let composer_focused = app.focus == Focus::Prompt;
-        let composer_body = if app.prompt_buffer.is_empty() {
-            runtime_state.composer_hint.clone()
-        } else {
-            app.prompt_buffer.clone()
-        };
-
-        return crate::view_model::control_dock_view_model(
-            crate::view_model::ControlDockInput::Startup {
-                runtime_context,
-                runtime_state,
-                primary_summary,
-                composer_body,
-                composer_disclosure: composer_shortcut_hints(app, composer_disabled),
-                composer_focused,
-            },
-        );
+        let mut dock = app.control_dock_view_model();
+        dock.composer_disclosure = composer_shortcut_hints(app, dock.composer_disabled);
+        return dock;
     }
 
     if app.replay_mode {
+        let mut dock = app.control_dock_view_model();
+        dock.composer_disclosure = replay_read_only_shortcut_hints(app);
+        return dock;
+    }
+
+    if app.completed_session_shell_active() {
+        let runtime_state = app.runtime_state();
+        let runtime_context = Some(status_context(app, theme, runtime_state.kind).0.to_string());
+        let primary_summary = completed_session_status_summary(app, &runtime_state)
+            .unwrap_or_else(|| runtime_state.summary.clone());
+
         return crate::view_model::control_dock_view_model(
-            crate::view_model::ControlDockInput::ReplayReadOnly {
+            crate::view_model::ControlDockInput::Live {
                 runtime_context,
                 runtime_state,
                 primary_summary,
-                composer_body: "Replay is read-only.".to_string(),
-                composer_disclosure: replay_read_only_shortcut_hints(app),
+                summary_segment: control_dock_summary_segment(app),
+                composer_body: String::new(),
+                composer_disclosure: String::new(),
                 composer_focused: app.focus == Focus::Prompt,
             },
         );
     }
 
-    let composer_focused = app.focus == Focus::Prompt;
-    let composer_body = if app.prompt_buffer.is_empty() {
-        String::new()
-    } else {
-        app.prompt_buffer.clone()
-    };
-
-    crate::view_model::control_dock_view_model(crate::view_model::ControlDockInput::Live {
-        runtime_context,
-        runtime_state,
-        primary_summary,
-        summary_segment: control_dock_summary_segment(app),
-        composer_body,
-        composer_disclosure: String::new(),
-        composer_focused,
-    })
+    app.control_dock_view_model()
 }
 
 fn control_dock_summary_segment(
@@ -1475,21 +1452,35 @@ fn composer_metadata_candidates(
     dock: &crate::view_model::ControlDockViewModel,
 ) -> Vec<Vec<(String, ComposerMetadataTone)>> {
     if app.startup_shell_visible() {
-        let mut full = vec![
-            (
-                format!("Preset {}", app.active_profile()),
-                ComposerMetadataTone::Accent,
-            ),
-            (" · ".to_string(), ComposerMetadataTone::Secondary),
-            (
-                format!("{}/", app.active_provider()),
+        let (launch_label, launch_identity) = dock
+            .primary_summary
+            .split_once(": ")
+            .map_or((dock.primary_summary.as_str(), ""), |(label, identity)| {
+                (label, identity)
+            });
+        let mut full = vec![(
+            if launch_identity.is_empty() {
+                launch_label.to_string()
+            } else {
+                format!("{launch_label}: ")
+            },
+            ComposerMetadataTone::Accent,
+        )];
+        if !launch_identity.is_empty() {
+            full.push((launch_identity.to_string(), ComposerMetadataTone::Primary));
+        }
+        if let Some(provider) = dock
+            .runtime_context
+            .as_deref()
+            .map(str::trim)
+            .filter(|provider| !provider.is_empty())
+        {
+            full.push((" · ".to_string(), ComposerMetadataTone::Secondary));
+            full.push((
+                format!("provider {provider}"),
                 ComposerMetadataTone::Secondary,
-            ),
-            (
-                app.current_model_label().to_string(),
-                ComposerMetadataTone::Primary,
-            ),
-        ];
+            ));
+        }
         if let Some(mode) = app
             .launch_mode_label()
             .filter(|mode| !mode.trim().is_empty())
@@ -1501,61 +1492,82 @@ fn composer_metadata_candidates(
         return vec![
             full,
             vec![
-                (
-                    format!("Preset {}", app.active_profile()),
-                    ComposerMetadataTone::Accent,
-                ),
+                (dock.primary_summary.clone(), ComposerMetadataTone::Primary),
                 (" · ".to_string(), ComposerMetadataTone::Secondary),
                 (
-                    format!("{}/{}", app.active_provider(), app.current_model_label()),
+                    format!("provider {}", app.active_provider()),
                     ComposerMetadataTone::Secondary,
                 ),
             ],
+            vec![(dock.primary_summary.clone(), ComposerMetadataTone::Primary)],
+        ];
+    }
+
+    if app.completed_session_shell_active() {
+        let identity = vec![(
+            app.runtime_context_identity_line(),
+            ComposerMetadataTone::Primary,
+        )];
+        let mut with_disclosure = identity.clone();
+        if !dock.composer_disclosure.trim().is_empty() {
+            with_disclosure.push((" · ".to_string(), ComposerMetadataTone::Secondary));
+            with_disclosure.push((
+                dock.composer_disclosure.clone(),
+                ComposerMetadataTone::Tertiary,
+            ));
+        }
+
+        return vec![
+            with_disclosure,
+            identity,
             vec![(
-                format!("Preset {}", app.active_profile()),
-                ComposerMetadataTone::Accent,
+                app.runtime_context_identity_line(),
+                ComposerMetadataTone::Primary,
             )],
         ];
     }
 
-    let identity = vec![
-        (
-            app.active_profile().to_string(),
-            ComposerMetadataTone::Accent,
-        ),
-        (" · ".to_string(), ComposerMetadataTone::Secondary),
-        (
-            format!("{}/", app.active_provider()),
+    let mut full = vec![(dock.primary_summary.clone(), ComposerMetadataTone::Primary)];
+    if let Some(segment) = dock.summary_segment.as_ref() {
+        full.push((" · ".to_string(), ComposerMetadataTone::Secondary));
+        full.push((segment.text.clone(), ComposerMetadataTone::Secondary));
+    }
+    if let Some(provider) = dock
+        .runtime_context
+        .as_deref()
+        .map(str::trim)
+        .filter(|provider| !provider.is_empty())
+    {
+        full.push((" · ".to_string(), ComposerMetadataTone::Secondary));
+        full.push((
+            format!("provider {provider}"),
             ComposerMetadataTone::Secondary,
-        ),
-        (
-            app.current_model_label().to_string(),
-            ComposerMetadataTone::Primary,
-        ),
-    ];
-    let mut with_disclosure = identity.clone();
-    if !dock.composer_disclosure.trim().is_empty() {
-        with_disclosure.push((" · ".to_string(), ComposerMetadataTone::Secondary));
-        with_disclosure.push((
-            dock.composer_disclosure.clone(),
-            ComposerMetadataTone::Tertiary,
+        ));
+    }
+
+    let mut summary_and_provider =
+        vec![(dock.primary_summary.clone(), ComposerMetadataTone::Primary)];
+    if let Some(provider) = dock
+        .runtime_context
+        .as_deref()
+        .map(str::trim)
+        .filter(|provider| !provider.is_empty())
+    {
+        summary_and_provider.push((" · ".to_string(), ComposerMetadataTone::Secondary));
+        summary_and_provider.push((
+            format!("provider {provider}"),
+            ComposerMetadataTone::Secondary,
         ));
     }
 
     vec![
-        with_disclosure,
-        identity,
-        vec![
-            (
-                app.active_profile().to_string(),
-                ComposerMetadataTone::Accent,
-            ),
-            (" · ".to_string(), ComposerMetadataTone::Secondary),
-            (
-                app.current_model_label().to_string(),
-                ComposerMetadataTone::Primary,
-            ),
-        ],
+        full,
+        summary_and_provider,
+        vec![(dock.primary_summary.clone(), ComposerMetadataTone::Primary)],
+        vec![(
+            app.runtime_context_identity_line(),
+            ComposerMetadataTone::Secondary,
+        )],
     ]
 }
 
@@ -1572,29 +1584,50 @@ fn composer_metadata_text(
         let metadata = app.startup_card_view_model().metadata;
         return best_fit_text(
             &[
+                dock.primary_summary.clone(),
                 format!("{}  ·  {}", dock.primary_summary, metadata),
                 metadata,
-                dock.primary_summary.clone(),
             ],
             max_width,
         );
     }
 
-    let identity = format!(
-        "{} · {}/{}",
-        app.active_profile(),
-        app.active_provider(),
-        app.current_model_label()
-    );
-    let with_disclosure = (!dock.composer_disclosure.trim().is_empty())
-        .then(|| format!("{}  ·  {}", identity, dock.composer_disclosure));
+    if app.completed_session_shell_active() {
+        let identity = app.runtime_context_identity_line();
+        let with_disclosure = (!dock.composer_disclosure.trim().is_empty())
+            .then(|| format!("{}  ·  {}", identity, dock.composer_disclosure));
+
+        return best_fit_text(
+            &[
+                with_disclosure,
+                Some(identity),
+                Some(dock.composer_disclosure.clone()),
+                Some(app.current_model_label().to_string()),
+            ]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>(),
+            max_width,
+        );
+    }
+
+    let with_next_turns = dock
+        .summary_segment
+        .as_ref()
+        .map(|segment| format!("{}  ·  {}", dock.primary_summary, segment.text));
+    let with_provider = dock
+        .runtime_context
+        .as_deref()
+        .map(str::trim)
+        .filter(|provider| !provider.is_empty())
+        .map(|provider| format!("{}  ·  provider {provider}", dock.primary_summary));
 
     best_fit_text(
         &[
-            with_disclosure,
-            Some(identity),
-            Some(dock.composer_disclosure.clone()),
-            Some(app.current_model_label().to_string()),
+            with_next_turns,
+            with_provider,
+            Some(dock.primary_summary.clone()),
+            Some(app.runtime_context_identity_line()),
         ]
         .into_iter()
         .flatten()

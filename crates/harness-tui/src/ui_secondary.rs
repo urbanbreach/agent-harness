@@ -81,7 +81,8 @@ struct OperatorRailModel {
 struct OperatorRailPinnedSummary {
     run_identity: String,
     share_label: String,
-    profile_provider_model: String,
+    runtime_summary: String,
+    provider_context: Option<String>,
     state_label: String,
     pending_permission_count: usize,
     active_todo_count: usize,
@@ -283,8 +284,12 @@ pub(crate) fn exact_test_operator_rail_section_model_builds_pinned_summary() {
     assert_eq!(model.pinned_summary.run_identity, "run run_fixture");
     assert_eq!(model.pinned_summary.share_label, "Share unavailable");
     assert_eq!(
-        model.pinned_summary.profile_provider_model,
-        "worker/mock/model-1"
+        model.pinned_summary.runtime_summary,
+        "Current runtime: worker · model-1"
+    );
+    assert_eq!(
+        model.pinned_summary.provider_context,
+        Some("mock".to_string())
     );
     assert_eq!(model.pinned_summary.state_label, "Demo");
     assert_eq!(model.pinned_summary.pending_permission_count, 0);
@@ -709,23 +714,20 @@ fn operator_sidebar_context_lines(
     pending_permission_lines: &[String],
 ) -> Vec<String> {
     if app.replay_mode {
-        let mut items = vec![runtime_state.summary.clone()];
-        if pending_permission_lines.is_empty() {
-            items.push("Recent context for the next turn".to_string());
+        let mut items = vec![app.runtime_context_primary_summary()];
+        if let Some(provider) = app.runtime_context_provider_display() {
+            items.push(format!("Provider {provider}"));
         }
+        if !runtime_state.summary.trim().is_empty() {
+            items.push(runtime_state.summary.clone());
+        }
+        items.push(
+            "Replay is read-only — inspect recorded context and use replay navigation.".to_string(),
+        );
         return items;
     }
 
-    let mut items = vec![runtime_state.summary.clone()];
-    if let Some(detail) = runtime_state.detail.as_deref() {
-        let detail = detail.trim();
-        if !detail.is_empty() && detail != runtime_state.summary {
-            items.push(detail.to_string());
-        }
-    }
-    if let Some(window) = operator_sidebar_context_window_line(app) {
-        items.push(window);
-    }
+    let mut items = Vec::new();
     if !pending_permission_lines.is_empty() {
         items.push(format!(
             "{} pending approval{}",
@@ -736,6 +738,19 @@ fn operator_sidebar_context_lines(
                 "s"
             }
         ));
+    }
+    items.push(runtime_state.summary.clone());
+    if let Some(next_turn_summary) = app.runtime_context_summary_segment_text() {
+        items.push(next_turn_summary);
+    }
+    if let Some(detail) = runtime_state.detail.as_deref() {
+        let detail = detail.trim();
+        if !detail.is_empty() && detail != runtime_state.summary {
+            items.push(detail.to_string());
+        }
+    }
+    if let Some(window) = operator_sidebar_context_window_line(app) {
+        items.push(window);
     }
     items
 }
@@ -877,6 +892,8 @@ fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
         operator_sidebar_context_lines(app, &runtime_state, &pending_permission_lines);
     let mcp_lines = operator_sidebar_mcp_lines(app);
     let lsp_lines = operator_sidebar_lsp_lines(app);
+    let runtime_summary = app.runtime_context_primary_summary();
+    let provider_context = app.runtime_context_provider_display();
 
     let mut sections = vec![
         OperatorRailBodySection::Context {
@@ -914,12 +931,8 @@ fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
         pinned_summary: OperatorRailPinnedSummary {
             run_identity: app.operator_sidebar_run_identity(),
             share_label: "Share unavailable".to_string(),
-            profile_provider_model: format!(
-                "{}/{}/{}",
-                app.active_profile(),
-                app.active_provider(),
-                app.current_model_label()
-            ),
+            runtime_summary,
+            provider_context,
             state_label: app.operator_sidebar_state_label(),
             pending_permission_count: pending_permission_lines.len(),
             active_todo_count: todo_lines.len(),
@@ -936,22 +949,30 @@ fn build_operator_rail_summary_lines(
     presentation: OperatorRailSummaryPresentation,
 ) -> Vec<Line<'static>> {
     match presentation {
-        OperatorRailSummaryPresentation::Regular => vec![
-            Line::from(Span::styled(
-                format!("{} · {}", summary.state_label, summary.run_identity),
-                Style::default()
-                    .fg(theme.text.primary)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(Span::styled(
-                summary.share_label.clone(),
-                Style::default().fg(theme.text.secondary),
-            )),
-            Line::from(Span::styled(
-                summary.profile_provider_model.clone(),
-                Style::default().fg(theme.text.secondary),
-            )),
-            Line::from(Span::styled(
+        OperatorRailSummaryPresentation::Regular => {
+            let mut lines = vec![
+                Line::from(Span::styled(
+                    format!("{} · {}", summary.state_label, summary.run_identity),
+                    Style::default()
+                        .fg(theme.text.primary)
+                        .add_modifier(Modifier::BOLD),
+                )),
+                Line::from(Span::styled(
+                    summary.share_label.clone(),
+                    Style::default().fg(theme.text.secondary),
+                )),
+                Line::from(Span::styled(
+                    summary.runtime_summary.clone(),
+                    Style::default().fg(theme.text.secondary),
+                )),
+            ];
+            if let Some(provider) = summary.provider_context.as_deref() {
+                lines.push(Line::from(Span::styled(
+                    format!("Provider {provider}"),
+                    Style::default().fg(theme.text.secondary),
+                )));
+            }
+            lines.push(Line::from(Span::styled(
                 format!(
                     "{} active todo{} · {} modified file{}",
                     summary.active_todo_count,
@@ -968,8 +989,9 @@ fn build_operator_rail_summary_lines(
                     }
                 ),
                 muted_meta_style(theme),
-            )),
-        ],
+            )));
+            lines
+        }
         OperatorRailSummaryPresentation::Condensed => {
             let title_line = format!("{} · {}", summary.state_label, summary.run_identity);
             let count_line = if width <= 24 {

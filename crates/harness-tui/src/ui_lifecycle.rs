@@ -114,7 +114,7 @@ pub(crate) fn render_startup_lifecycle_surface(
 
 pub(crate) fn render_startup_lifecycle_flow(
     frame: &mut Frame,
-    _app: &AppState,
+    app: &AppState,
     area: Rect,
     theme: &Theme,
 ) {
@@ -126,10 +126,20 @@ pub(crate) fn render_startup_lifecycle_flow(
     let surface = theme.surface.shell;
     let content_area = lifecycle_surface_copy_area(shell_area);
     let logo_height = startup_logo_height(content_area);
-    let purpose_visible = content_area.height >= logo_height.saturating_add(3);
+    let runtime_summary = app.runtime_context_primary_summary();
+    let runtime_detail = startup_runtime_detail(app);
+    let summary_visible = content_area.height >= logo_height.saturating_add(1);
+    let detail_visible =
+        runtime_detail.is_some() && content_area.height >= logo_height.saturating_add(2);
+    let purpose_visible = content_area.height
+        >= logo_height
+            .saturating_add(u16::from(summary_visible))
+            .saturating_add(u16::from(detail_visible))
+            .saturating_add(1);
     let content_height = logo_height
-        .saturating_add(u16::from(purpose_visible))
-        .saturating_add(1);
+        .saturating_add(u16::from(summary_visible))
+        .saturating_add(u16::from(detail_visible))
+        .saturating_add(u16::from(purpose_visible));
     let top_gap = content_area.height.saturating_sub(content_height) / 2;
 
     frame.render_widget(
@@ -146,6 +156,8 @@ pub(crate) fn render_startup_lifecycle_flow(
         .constraints([
             Constraint::Length(top_gap),
             Constraint::Length(logo_height),
+            Constraint::Length(u16::from(summary_visible)),
+            Constraint::Length(u16::from(detail_visible)),
             Constraint::Length(u16::from(purpose_visible)),
             Constraint::Min(0),
         ])
@@ -159,15 +171,63 @@ pub(crate) fn render_startup_lifecycle_flow(
         rows[1],
     );
 
-    if purpose_visible && rows[2].height > 0 {
+    if summary_visible && rows[2].height > 0 {
         render_lifecycle_copy_line(
             frame,
             rows[2],
+            &runtime_summary,
+            Style::default()
+                .fg(theme.text.primary)
+                .bg(surface)
+                .add_modifier(Modifier::BOLD),
+            Alignment::Center,
+        );
+    }
+
+    if detail_visible && rows[3].height > 0 {
+        if let Some(detail) = runtime_detail.as_deref() {
+            render_lifecycle_copy_line(
+                frame,
+                rows[3],
+                detail,
+                Style::default().fg(theme.text.secondary).bg(surface),
+                Alignment::Center,
+            );
+        }
+    }
+
+    if purpose_visible && rows[4].height > 0 {
+        render_lifecycle_copy_line(
+            frame,
+            rows[4],
             theme.live_shell.startup.new_session_purpose,
             Style::default().fg(theme.text.secondary).bg(surface),
             Alignment::Center,
         );
     }
+}
+
+fn startup_runtime_detail(app: &AppState) -> Option<String> {
+    let mut segments = Vec::new();
+
+    if let Some(provider) = app
+        .runtime_context_provider_display()
+        .as_deref()
+        .map(str::trim)
+        .filter(|provider| !provider.is_empty())
+    {
+        segments.push(format!("Provider {provider}"));
+    }
+
+    if let Some(mode) = app
+        .launch_mode_label()
+        .map(str::trim)
+        .filter(|mode| !mode.is_empty())
+    {
+        segments.push(mode.to_string());
+    }
+
+    (!segments.is_empty()).then(|| segments.join(" · "))
 }
 
 pub(super) fn render_live_empty_state(

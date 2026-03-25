@@ -52,10 +52,65 @@ pub(crate) use ui_chrome::{
     exact_test_live_control_dock_renders_shared_surface,
 };
 #[cfg(test)]
+pub(crate) fn exact_test_startup_shell_keeps_no_default_tab_chrome_after_runtime_context_addition()
+{
+    use ratatui::{backend::TestBackend, Terminal};
+
+    let mut app = AppState::new_startup(Vec::new(), None);
+    app.set_launch_metadata(crate::app::LaunchMetadata::from_model_option(
+        &crate::app::ModelOption {
+            profile: "deep".to_string(),
+            provider: "default".to_string(),
+            model: "gpt-5.4-mini".to_string(),
+            variant: Some("deterministic".to_string()),
+            display_label: Some("GPT-5.4 Mini · Deterministic".to_string()),
+            token_window_label: None,
+            context_window_tokens: None,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            description: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            recommended_for: None,
+        },
+    ));
+
+    let backend = TestBackend::new(100, 24);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| render_app(frame, &app))
+        .expect("draw frame");
+    let debug = format!("{:?}", terminal.backend().buffer());
+
+    assert!(debug.contains("Launch: deep · GPT-5.4 Mini · Deterministic"));
+    assert!(debug.contains("Provider default"));
+    assert!(debug.contains("Ask Harness anything…"));
+    assert!(!debug.contains("Tabs"));
+    assert!(!debug.contains("Actions:"));
+    assert!(!debug.contains("Enter select"));
+}
+#[cfg(test)]
 pub(crate) fn exact_test_replay_prompt_pane_is_visibly_read_only() {
     use ratatui::{backend::TestBackend, Terminal};
 
-    let app = AppState::new_replay(std::path::PathBuf::from("/tmp/replay-session"), Vec::new());
+    let mut app = AppState::new_replay(std::path::PathBuf::from("/tmp/replay-session"), Vec::new());
+    app.set_launch_metadata(crate::app::LaunchMetadata::from_model_option(
+        &crate::app::ModelOption {
+            profile: "archive".to_string(),
+            provider: "default".to_string(),
+            model: "gpt-5.4-mini".to_string(),
+            variant: Some("deterministic".to_string()),
+            display_label: Some("GPT-5.4 Mini · Deterministic".to_string()),
+            token_window_label: None,
+            context_window_tokens: None,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            description: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            recommended_for: None,
+        },
+    ));
 
     let backend = TestBackend::new(100, 24);
     let mut terminal = Terminal::new(backend).expect("create terminal");
@@ -64,8 +119,11 @@ pub(crate) fn exact_test_replay_prompt_pane_is_visibly_read_only() {
         .expect("draw frame");
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(debug.contains("Replay · read-only"));
+    assert!(debug.contains("Recorded runtime · read-only:"));
+    assert!(debug.contains("Provider default"));
     assert!(debug.contains("Replay is read-only"));
     assert!(!debug.contains("Type a prompt for the next turn"));
+    assert!(!debug.contains("Recent context for the next turn"));
 }
 
 #[cfg(test)]
@@ -637,7 +695,7 @@ pub(crate) fn runtime_overlay_text_for_test(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::LaunchMetadata;
+    use crate::app::{LaunchMetadata, ModelOption};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use harness_core::event::{
         ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
@@ -979,9 +1037,120 @@ mod tests {
 
         let debug = render_debug(&app, 100, 24);
         assert!(!debug.contains("run unknown"));
-        assert!(debug.contains("Preset deep · proxy/gpt-5.4"));
-        assert!(!debug.contains("Preset deep · proxy/gpt-5.4 · Demo"));
+        assert!(debug.contains("Launch: deep · gpt-5.4"));
+        assert!(!debug.contains("Launch: deep · gpt-5.4 · Demo"));
         assert!(!debug.contains("default/default"));
+    }
+
+    #[test]
+    fn live_control_dock_keeps_current_runtime_primary_and_next_turn_secondary() {
+        let variant_cycle_overrides = [("variant_cycle".to_string(), "tab".to_string())]
+            .into_iter()
+            .collect();
+        let primary = ModelOption {
+            profile: "deep".to_string(),
+            provider: "default".to_string(),
+            model: "gpt-5.4-mini".to_string(),
+            variant: Some("deterministic".to_string()),
+            display_label: Some("GPT-5.4 Mini · Deterministic".to_string()),
+            token_window_label: None,
+            context_window_tokens: None,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            description: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            recommended_for: None,
+        };
+        let alternate = ModelOption {
+            profile: "writer".to_string(),
+            provider: "default".to_string(),
+            model: "gpt-5.4-mini".to_string(),
+            variant: Some("creative".to_string()),
+            display_label: Some("GPT-5.4 Mini · Creative".to_string()),
+            token_window_label: None,
+            context_window_tokens: None,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            description: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            recommended_for: None,
+        };
+
+        let mut app = AppState::new_live(None, false, None);
+        app.apply_keybindings(variant_cycle_overrides);
+        app.set_launch_metadata(
+            LaunchMetadata::from_model_option(&primary)
+                .with_available_models(vec![primary.clone(), alternate]),
+        );
+
+        app.handle_key(key(KeyCode::Tab));
+
+        assert_eq!(
+            app.runtime_context_summary_segment_text(),
+            Some("Next turns: writer · GPT-5.4 Mini · Creative".to_string())
+        );
+
+        let debug = render_debug(&app, 160, 24);
+        assert!(debug.contains("Current runtime: deep · GPT-5.4 Mini · Deterministic"));
+        assert!(!debug.contains("Current runtime: writer · GPT-5.4 Mini · Creative"));
+    }
+
+    #[test]
+    fn continued_live_control_dock_preserves_continued_runtime_after_switch() {
+        let variant_cycle_overrides = [("variant_cycle".to_string(), "tab".to_string())]
+            .into_iter()
+            .collect();
+        let primary = ModelOption {
+            profile: "deep".to_string(),
+            provider: "default".to_string(),
+            model: "gpt-5.4-mini".to_string(),
+            variant: Some("deterministic".to_string()),
+            display_label: Some("GPT-5.4 Mini · Deterministic".to_string()),
+            token_window_label: None,
+            context_window_tokens: None,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            description: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            recommended_for: None,
+        };
+        let alternate = ModelOption {
+            profile: "writer".to_string(),
+            provider: "default".to_string(),
+            model: "gpt-5.4-mini".to_string(),
+            variant: Some("creative".to_string()),
+            display_label: Some("GPT-5.4 Mini · Creative".to_string()),
+            token_window_label: None,
+            context_window_tokens: None,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            description: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            recommended_for: None,
+        };
+
+        let mut app = AppState::new_live(None, false, None);
+        app.apply_keybindings(variant_cycle_overrides);
+        app.set_launch_metadata(
+            LaunchMetadata::from_model_option(&primary)
+                .with_available_models(vec![primary.clone(), alternate])
+                .with_mode_label("Continued"),
+        );
+
+        app.handle_key(key(KeyCode::Tab));
+
+        assert_eq!(
+            app.runtime_context_summary_segment_text(),
+            Some("Next turns: writer · GPT-5.4 Mini · Creative".to_string())
+        );
+
+        let debug = render_debug(&app, 160, 24);
+        assert!(debug.contains("Continued runtime: deep · GPT-5.4 Mini · Deterministic"));
+        assert!(!debug.contains("Continued runtime: writer · GPT-5.4 Mini · Creative"));
     }
 
     #[test]
@@ -1016,7 +1185,7 @@ mod tests {
 
         let demo_debug = render_debug(&demo, 100, 24);
         assert!(demo_debug.contains("Harness"));
-        assert!(demo_debug.contains("Preset worker · mock/model-1"));
+        assert!(demo_debug.contains("Launch: worker · model-1"));
         assert!(demo_debug.contains("Start a conversation to begin"));
         assert!(!demo_debug.contains("Demo mode · mock provider"));
 
@@ -1027,10 +1196,10 @@ mod tests {
 
         let mock_debug = render_debug(&mock, 100, 24);
         assert!(mock_debug.contains("Harness"));
-        assert!(mock_debug.contains("Preset worker · mock/model-1"));
+        assert!(mock_debug.contains("Launch: worker · model-1"));
         assert!(mock_debug.contains("Start a conversation to begin"));
         assert!(!mock_debug.contains("Mock mode · mock provider"));
-        assert!(!mock_debug.contains("Preset worker · mock/model-1 · Mock"));
+        assert!(!mock_debug.contains("Launch: worker · model-1 · Mock"));
     }
 
     #[test]
@@ -1042,12 +1211,19 @@ mod tests {
 
         let debug = render_debug(&app, 100, 24);
         assert!(debug.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻") || debug.contains("Harness"));
-        assert!(debug.contains("Preset deep · proxy/gpt-5.4 · Demo"));
+        assert!(debug.contains("Launch: deep · gpt-5.4"));
+        assert!(debug.contains("Provider proxy · Demo"));
+        assert!(debug.contains("Launch: deep · gpt-5.4 · provider proxy · Demo"));
         assert!(debug.contains("Ctrl+p open"));
         assert!(!debug.contains("Enter select"));
         assert!(debug.contains("Ask Harness anything…"));
         assert!(!debug.contains("Dispatch a new run, reopen live work, or inspect saved history."));
         assert!(!debug.contains("Actions:"));
+    }
+
+    #[test]
+    fn startup_shell_keeps_no_default_tab_chrome_after_runtime_context_addition() {
+        exact_test_startup_shell_keeps_no_default_tab_chrome_after_runtime_context_addition();
     }
 
     #[test]
@@ -1166,7 +1342,8 @@ mod tests {
 
         let sidebar_text = super::ui_secondary::operator_sidebar_text_for_test(&app).join("\n");
         assert!(sidebar_text.contains("Live · run run_ui_tests"));
-        assert!(sidebar_text.contains("default/openai/gpt-5-codex"));
+        assert!(sidebar_text.contains("Current runtime: default · gpt-5-codex"));
+        assert!(sidebar_text.contains("Provider openai"));
         assert!(sidebar_text.contains("Context"));
         assert!(sidebar_text.contains("0 active todos · 0 modified files"));
         assert!(!sidebar_text.contains("Todo ·"));
@@ -1231,7 +1408,8 @@ mod tests {
 
         let sidebar_text = super::ui_secondary::operator_sidebar_text_for_test(&app).join("\n");
         assert!(sidebar_text.contains("Live · run run_ui_tests"));
-        assert!(sidebar_text.contains("default/openai/gpt-5-codex"));
+        assert!(sidebar_text.contains("Current runtime: default · gpt-5-codex"));
+        assert!(sidebar_text.contains("Provider openai"));
         assert!(sidebar_text.contains("Context"));
         assert!(sidebar_text.contains("0 active todos · 0 modified files"));
         assert!(!sidebar_text.contains("No modified files recorded"));
