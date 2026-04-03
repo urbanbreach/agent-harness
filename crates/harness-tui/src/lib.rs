@@ -301,6 +301,7 @@ fn transcript_turn_sections_keep_nested_tool_details() {
 
 delegate_test!(operator_rail_section_model_builds_pinned_summary => ui::exact_test_operator_rail_section_model_builds_pinned_summary);
 delegate_test!(operator_rail_section_model_hides_empty_sources_but_preserves_order => ui::exact_test_operator_rail_section_model_hides_empty_sources_but_preserves_order);
+delegate_test!(operator_rail_section_model_separates_tool_families => ui::exact_test_operator_rail_section_model_separates_tool_families);
 
 #[cfg(test)]
 #[test]
@@ -308,6 +309,7 @@ fn operator_sidebar_pins_summary_and_hides_empty_sections() {
     ui::exact_test_operator_rail_low_activity_presentation_prefers_primary_stack();
     ui::exact_test_operator_rail_section_model_builds_pinned_summary();
     ui::exact_test_operator_rail_section_model_hides_empty_sources_but_preserves_order();
+    ui::exact_test_operator_rail_section_model_separates_tool_families();
     ui::exact_test_operator_rail_section_model_surfaces_pending_permissions_first();
 }
 
