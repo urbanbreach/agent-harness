@@ -25,7 +25,15 @@ pub struct ReplayCommand {
 pub struct ReplaySummary {
     pub run_id: String,
     pub run_name: Option<String>,
+    pub session_path: PathBuf,
     pub status: RunStatus,
+    pub workspace_root: Option<String>,
+    pub mode_source: harness_core::proj::SessionModeSource,
+    pub is_resumable: bool,
+    pub resume_disabled_reason: Option<String>,
+    pub artifact_count: usize,
+    pub child_session_count: usize,
+    pub parent_session_id: Option<String>,
     pub total_events: u64,
     pub counts_by_type: std::collections::BTreeMap<String, u64>,
     pub pending_permissions: Vec<String>,
@@ -71,6 +79,8 @@ pub fn summarize_session(run_dir: &Path) -> Result<ReplaySummary, String> {
 
     let projection = project_run_summary(events.iter()).map_err(|err| err.to_string())?;
     let run_id = events[0].run_id.clone();
+    let catalog = project_session_catalog_entry(events.iter(), &run_id, None, None, None)
+        .map_err(|err| err.to_string())?;
     let run_name = events.iter().find_map(|event| match &event.payload {
         EventV1::RunStarted(data) => Some(data.run_name.clone()),
         _ => None,
@@ -79,7 +89,15 @@ pub fn summarize_session(run_dir: &Path) -> Result<ReplaySummary, String> {
     Ok(ReplaySummary {
         run_id,
         run_name,
+        session_path: run_dir.to_path_buf(),
         status: projection.status,
+        workspace_root: catalog.workspace_root,
+        mode_source: catalog.mode_source,
+        is_resumable: catalog.is_resumable,
+        resume_disabled_reason: catalog.resume_disabled_reason,
+        artifact_count: catalog.artifact_count,
+        child_session_count: catalog.child_session_count,
+        parent_session_id: catalog.parent_session_id,
         total_events: projection.counts.total_events,
         counts_by_type: projection.counts.by_type,
         pending_permissions: projection.pending_permissions.into_iter().collect(),
@@ -167,6 +185,9 @@ fn inspect_single_session(run_dir: &Path) -> SessionInspectionEntry {
             mode_source: harness_core::proj::SessionModeSource::Unknown,
             is_resumable: false,
             resume_disabled_reason: Some(format!("projection unavailable: {err}")),
+            artifact_count: 0,
+            child_session_count: 0,
+            parent_session_id: None,
         },
     };
 
@@ -284,10 +305,53 @@ fn print_human_summary(summary: &ReplaySummary) {
         "run_name: {}",
         summary.run_name.as_deref().unwrap_or("<unknown>")
     );
+    println!("session_path: {}", summary.session_path.display());
     println!("status: {:?}", summary.status);
+    println!(
+        "workspace_root: {}",
+        summary.workspace_root.as_deref().unwrap_or("<unknown>")
+    );
+    println!("mode: {:?}", summary.mode_source);
+    println!(
+        "continue: {}",
+        if summary.is_resumable {
+            "ready".to_string()
+        } else {
+            summary
+                .resume_disabled_reason
+                .as_deref()
+                .map(|reason| format!("blocked · {reason}"))
+                .unwrap_or_else(|| "blocked".to_string())
+        }
+    );
+    println!(
+        "parent_session: {}",
+        summary.parent_session_id.as_deref().unwrap_or("-")
+    );
+    println!("child_sessions: {}", summary.child_session_count);
+    println!("artifacts: {}", summary.artifact_count);
     println!("total_events: {}", summary.total_events);
     if let Some(last_error) = &summary.last_error {
         println!("last_error: {last_error}");
+    }
+    println!("next_steps:");
+    println!(
+        "  replay_tui: harness tui --replay {}",
+        summary.session_path.display()
+    );
+    if summary.is_resumable {
+        println!(
+            "  continue_tui: harness tui --continue {}",
+            summary.session_path.display()
+        );
+    } else {
+        println!(
+            "  continue_tui: unavailable ({})",
+            summary
+                .resume_disabled_reason
+                .as_deref()
+                .unwrap_or("resume unavailable without reason")
+        );
     }
     println!("counts:");
     for (event_type, count) in &summary.counts_by_type {

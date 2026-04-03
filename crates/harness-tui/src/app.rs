@@ -930,6 +930,41 @@ pub(crate) fn session_history_resumability_label(entry: &SessionHistoryEntry) ->
     }
 }
 
+pub(crate) fn session_history_artifact_label(entry: &SessionHistoryEntry) -> String {
+    match entry.catalog.artifact_count {
+        0 => "no artifacts".to_string(),
+        1 => "1 artifact".to_string(),
+        count => format!("{count} artifacts"),
+    }
+}
+
+pub(crate) fn session_history_lineage_label(entry: &SessionHistoryEntry) -> String {
+    let mut parts = Vec::new();
+    if entry.catalog.child_session_count > 0 {
+        let child_label = if entry.catalog.child_session_count == 1 {
+            "1 child".to_string()
+        } else {
+            format!("{} children", entry.catalog.child_session_count)
+        };
+        parts.push(child_label);
+    }
+    if let Some(parent_session_id) = entry
+        .catalog
+        .parent_session_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        parts.push(format!("parent {parent_session_id}"));
+    }
+
+    if parts.is_empty() {
+        "root session".to_string()
+    } else {
+        parts.join(" · ")
+    }
+}
+
 fn session_history_entry_matches_action(
     entry: &SessionHistoryEntry,
     action: StartupLauncherAction,
@@ -980,6 +1015,8 @@ fn session_history_filter_matches(entry: &SessionHistoryEntry, input: &str) -> b
         session_history_profile_label(entry).to_lowercase(),
         session_history_provider_model_label(entry).to_lowercase(),
         session_history_resumability_label(entry).to_lowercase(),
+        session_history_artifact_label(entry).to_lowercase(),
+        session_history_lineage_label(entry).to_lowercase(),
     ];
 
     candidates.iter().any(|candidate| candidate.contains(input))

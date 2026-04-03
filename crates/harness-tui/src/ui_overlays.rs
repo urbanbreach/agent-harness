@@ -419,10 +419,12 @@ fn session_history_scope_line(app: &AppState) -> String {
             if app.session_history_filtered.is_empty() {
                 "Interactive histories only · blocked rows stay visible when they match".to_string()
             } else if blocked == 0 {
-                format!("Interactive histories · {ready} ready · filter by run/profile/model")
+                format!(
+                    "Interactive histories · {ready} ready · filter by run/profile/model/lineage"
+                )
             } else {
                 format!(
-                    "Interactive histories · {ready} ready · {blocked} blocked · blocked rows stay visible"
+                    "Interactive histories · {ready} ready · {blocked} blocked · filter by run/profile/model/lineage"
                 )
             }
         }
@@ -509,6 +511,8 @@ fn session_history_row(
     };
 
     let capability = overlay_session_history_capability_label(entry, app.startup_launcher_action);
+    let artifact_label = session_history_artifact_label(entry);
+    let lineage_label = session_history_lineage_label(entry);
     let source = format!(
         "{}/{}",
         session_history_profile_label(entry),
@@ -550,6 +554,30 @@ fn session_history_row(
             &mut spans,
             &mut used_width,
             row_width,
+            &artifact_label,
+            meta_style,
+            meta_style,
+            8,
+        );
+    }
+
+    if row_width >= 76 {
+        append_session_history_segment(
+            &mut spans,
+            &mut used_width,
+            row_width,
+            &lineage_label,
+            meta_style,
+            meta_style,
+            10,
+        );
+    }
+
+    if row_width >= 92 {
+        append_session_history_segment(
+            &mut spans,
+            &mut used_width,
+            row_width,
             session_history_status_label(entry),
             meta_style,
             status_style,
@@ -557,7 +585,7 @@ fn session_history_row(
         );
     }
 
-    if row_width >= 76 {
+    if row_width >= 112 {
         append_session_history_segment(
             &mut spans,
             &mut used_width,

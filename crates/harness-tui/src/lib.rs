@@ -1269,6 +1269,9 @@ fn exact_test_session_entry(run_id: &str, run_dir: &str) -> app::SessionHistoryE
             mode_source: harness_core::proj::SessionModeSource::InteractiveLive,
             is_resumable: true,
             resume_disabled_reason: None,
+            artifact_count: 0,
+            child_session_count: 0,
+            parent_session_id: None,
         },
     }
 }
@@ -5876,6 +5879,9 @@ fn startup_session_entry_with_mode_and_details(
             mode_source,
             is_resumable,
             resume_disabled_reason: resume_disabled_reason.map(str::to_string),
+            artifact_count: 0,
+            child_session_count: 0,
+            parent_session_id: None,
         },
     }
 }
@@ -6283,6 +6289,9 @@ fn session_history_filter_uses_case_insensitive_substrings() {
             ],
             None,
         );
+        app.session_history_entries[0].catalog.artifact_count = 2;
+        app.session_history_entries[0].catalog.child_session_count = 1;
+        app.session_history_entries[1].catalog.parent_session_id = Some("run_parent".to_string());
 
         app.handle_key(key_with_modifiers(
             crossterm::event::KeyCode::Char('p'),
@@ -6337,6 +6346,18 @@ fn session_history_filter_uses_case_insensitive_substrings() {
         by_resumability.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     assert_eq!(by_resumability.session_history_filtered, vec![0]);
+
+    let mut by_artifact_count = open_continue_picker();
+    for ch in "2 artifacts".chars() {
+        by_artifact_count.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert_eq!(by_artifact_count.session_history_filtered, vec![0]);
+
+    let mut by_parent_lineage = open_continue_picker();
+    for ch in "run_parent".chars() {
+        by_parent_lineage.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert_eq!(by_parent_lineage.session_history_filtered, vec![1]);
 
     let mut no_match = open_continue_picker();
     for ch in "missing".chars() {
