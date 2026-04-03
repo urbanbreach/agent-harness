@@ -21,9 +21,19 @@ The preflight verifies:
 - provider `api_mode` is `responses` or `auto`
 - the harness binary is available
 - the configured proxy host:port is reachable
+- the live visual lane uses the bundled PTY→PNG capture path and the shell-free `fs.write`
+  bootstrap used by the file-edit review flow
 
-`live_proxy_preflight` currently expects Linux because it validates the live TUI lane as well as
-the provider wiring.
+The live visual review lane does **not** require KDE, `konsole`, or `spectacle`. Screenshots are
+rendered from captured PTY state into PNGs inside the harness, and the tool-flow bootstrap uses
+`fs.write` instead of `shell.run`, so the signoff path no longer depends on a desktop session or a
+local POSIX shell.
+
+Minimal portable baseline:
+
+- a local environment that can launch the harness binary under `portable_pty`
+- a reachable configured live proxy/provider
+- the bundled renderer path used by `LiveVisualRun`
 
 ## Main live tool-flow test
 
@@ -102,7 +112,7 @@ Each run directory includes:
 
 - `live_proxy_startup.png`
 - `live_proxy_draft_visible.png`
-- `live_proxy_shell_create_finished.png`
+- `live_proxy_file_write_finished.png`
 - `live_proxy_hashline_scan_finished.png`
 - `live_proxy_run_finished.png`
 - `manifest.json`

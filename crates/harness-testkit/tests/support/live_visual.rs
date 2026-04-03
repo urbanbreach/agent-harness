@@ -12,7 +12,7 @@ pub const CHECKPOINT_STARTUP: &str = "startup";
 pub const CHECKPOINT_PERMISSION_REQUESTED: &str = "permission_requested";
 pub const CHECKPOINT_PROMPT_STREAM: &str = "prompt_stream";
 pub const CHECKPOINT_DRAFT_VISIBLE: &str = "draft_visible";
-pub const CHECKPOINT_SHELL_CREATE_FINISHED: &str = "shell_create_finished";
+pub const CHECKPOINT_FILE_WRITE_FINISHED: &str = "file_write_finished";
 pub const CHECKPOINT_HASHLINE_SCAN_FINISHED: &str = "hashline_scan_finished";
 pub const CHECKPOINT_RUN_FINISHED: &str = "run_finished";
 pub const VISUAL_MANIFEST_JSON_FILE: &str = "manifest.json";
@@ -517,7 +517,7 @@ fn ensure_known_checkpoint_id(checkpoint_id: &str) -> Result<(), String> {
         | CHECKPOINT_PERMISSION_REQUESTED
         | CHECKPOINT_PROMPT_STREAM
         | CHECKPOINT_DRAFT_VISIBLE
-        | CHECKPOINT_SHELL_CREATE_FINISHED
+        | CHECKPOINT_FILE_WRITE_FINISHED
         | CHECKPOINT_HASHLINE_SCAN_FINISHED
         | CHECKPOINT_RUN_FINISHED => Ok(()),
         other => Err(format!("unknown live visual checkpoint id `{other}`")),
@@ -529,7 +529,7 @@ fn checkpoint_order(checkpoint_id: &str) -> usize {
         CHECKPOINT_STARTUP => 0,
         CHECKPOINT_DRAFT_VISIBLE => 1,
         CHECKPOINT_PERMISSION_REQUESTED => 2,
-        CHECKPOINT_SHELL_CREATE_FINISHED => 3,
+        CHECKPOINT_FILE_WRITE_FINISHED => 3,
         CHECKPOINT_HASHLINE_SCAN_FINISHED => 4,
         CHECKPOINT_PROMPT_STREAM => 5,
         CHECKPOINT_RUN_FINISHED => 6,
