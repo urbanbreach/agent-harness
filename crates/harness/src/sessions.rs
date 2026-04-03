@@ -46,8 +46,17 @@ fn list_sessions(global_session_dir: Option<PathBuf>) -> ExitCode {
     };
 
     println!(
-        "{:<40} {:<12} {:<16} {:<24} {:<20} {:<16} {:<5} reason",
-        "run_id", "status", "run_name", "profile", "provider/model", "mode", "resume"
+        "{:<40} {:<12} {:<16} {:<24} {:<20} {:<16} {:<5} {:<9} {:<8} {:<30} reason",
+        "run_id",
+        "status",
+        "run_name",
+        "profile",
+        "provider/model",
+        "mode",
+        "resume",
+        "artifacts",
+        "children",
+        "session_path"
     );
 
     for entry in entries {
@@ -59,7 +68,7 @@ fn list_sessions(global_session_dir: Option<PathBuf>) -> ExitCode {
         }
 
         println!(
-            "{:<40} {:<12} {:<16} {:<24} {:<20} {:<16} {:<5} {}",
+            "{:<40} {:<12} {:<16} {:<24} {:<20} {:<16} {:<5} {:<9} {:<8} {:<30} {}",
             entry.catalog.run_id,
             status_label(entry.catalog.status),
             entry.catalog.run_name.as_deref().unwrap_or("<unavailable>"),
@@ -79,6 +88,9 @@ fn list_sessions(global_session_dir: Option<PathBuf>) -> ExitCode {
             } else {
                 "no"
             },
+            entry.artifact_count,
+            entry.child_session_count,
+            entry.run_dir.display(),
             entry
                 .catalog
                 .resume_disabled_reason
