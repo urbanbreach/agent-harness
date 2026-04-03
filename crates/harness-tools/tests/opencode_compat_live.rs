@@ -77,21 +77,21 @@ fn example_profiles(
     config: &harness_core::config::HarnessConfig,
 ) -> BTreeMap<String, AgentProfile> {
     config
-        .categories
+        .profiles
         .iter()
-        .map(|(name, category)| {
+        .map(|(name, profile)| {
             (
                 name.clone(),
                 AgentProfile {
                     name: name.clone(),
                     category: name.clone(),
-                    model_ref: category.model_ref.clone(),
-                    system_prompt: category.description.clone(),
-                    tool_failure_mode: category.tool_failure_mode,
-                    tool_surface: category.tool_surface,
+                    model_ref: profile.model_ref.clone(),
+                    system_prompt: profile.description.clone(),
+                    tool_failure_mode: profile.tool_failure_mode,
+                    tool_surface: profile.tool_surface,
                     toolset: resolve_tool_ids_for_surface(
-                        category.tools.iter().map(String::as_str),
-                        category.tool_surface,
+                        profile.tools.iter().map(String::as_str),
+                        profile.tool_surface,
                     ),
                 },
             )
@@ -125,7 +125,7 @@ async fn example_config_exposes_opencode_compat_tools_through_live_registry() {
     ] {
         assert!(registry.get(tool_id).is_some(), "missing tool {tool_id}");
         assert!(
-            config.categories["deep_compat"]
+            config.profiles["deep_compat"]
                 .tools
                 .iter()
                 .any(|tool| tool == tool_id),
@@ -133,7 +133,7 @@ async fn example_config_exposes_opencode_compat_tools_through_live_registry() {
         );
     }
     assert_eq!(
-        config.categories["deep_compat"].tool_surface,
+        config.profiles["deep_compat"].tool_surface,
         ToolSurface::Compat
     );
 }

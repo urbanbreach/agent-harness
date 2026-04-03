@@ -1958,23 +1958,23 @@ fn live_tui_smoke_helpers_reuse_cliproxy_config_and_endpoint_rules() {
         Some("Prepared override-model")
     );
 
-    let categories = prepared_config
+    let profiles = prepared_config
         .get("profiles")
         .and_then(Value::as_object)
         .expect("prepared config profiles object");
     assert_eq!(
-        categories
+        profiles
             .get("deep")
             .and_then(Value::as_object)
-            .and_then(|category| category.get("model_ref"))
+            .and_then(|profile| profile.get("model_ref"))
             .and_then(Value::as_str),
         Some("default:configured-model")
     );
     assert_eq!(
-        categories
+        profiles
             .get("tui_smoke_profile")
             .and_then(Value::as_object)
-            .and_then(|category| category.get("model_ref"))
+            .and_then(|profile| profile.get("model_ref"))
             .and_then(Value::as_str),
         Some("default:override-model")
     );
@@ -3075,7 +3075,7 @@ fn prepare_prompt_run_config_with_contract(
     let selected_model = selected_model.trim().to_string();
 
     rewrite_selected_provider_to_default(&mut config, provider_name)?;
-    normalize_category_model_refs_to_default(&mut config)?;
+    normalize_profile_model_refs_to_default(&mut config)?;
     ensure_provider_model_entry(&mut config, &selected_model)?;
     ensure_profile_model_ref(&mut config, profile_name, &selected_model)?;
     disable_prepared_determinism(&mut config)?;
@@ -4742,23 +4742,23 @@ fn rewrite_selected_provider_to_default(
     Ok(())
 }
 
-fn normalize_category_model_refs_to_default(config: &mut Value) -> Result<(), String> {
+fn normalize_profile_model_refs_to_default(config: &mut Value) -> Result<(), String> {
     let root = config
         .as_object_mut()
         .ok_or_else(|| "config root must be a JSON object".to_string())?;
-    let categories = root
+    let profiles = root
         .get_mut("profiles")
         .and_then(Value::as_object_mut)
         .ok_or_else(|| "config.profiles must be an object".to_string())?;
 
-    for (category_name, category_value) in categories.iter_mut() {
-        let Some(category_obj) = category_value.as_object_mut() else {
-            return Err(format!("profile `{category_name}` must be an object"));
+    for (profile_name, profile_value) in profiles.iter_mut() {
+        let Some(profile_obj) = profile_value.as_object_mut() else {
+            return Err(format!("profile `{profile_name}` must be an object"));
         };
 
-        let model_ref = category_obj
+        let model_ref = profile_obj
             .get("model_ref")
-            .or_else(|| category_obj.get("modelRef"))
+            .or_else(|| profile_obj.get("modelRef"))
             .and_then(Value::as_str)
             .map(str::trim)
             .unwrap_or_default();
@@ -4775,7 +4775,7 @@ fn normalize_category_model_refs_to_default(config: &mut Value) -> Result<(), St
             continue;
         }
 
-        category_obj.insert(
+        profile_obj.insert(
             "model_ref".to_string(),
             Value::String(format!("default:{model_id}")),
         );
@@ -4793,13 +4793,13 @@ fn ensure_profile_model_ref(
         .as_object_mut()
         .ok_or_else(|| "config root must be a JSON object".to_string())?;
 
-    let categories = root
+    let profiles = root
         .entry("profiles".to_string())
         .or_insert_with(|| Value::Object(serde_json::Map::new()))
         .as_object_mut()
         .ok_or_else(|| "config.profiles must be an object".to_string())?;
 
-    let mut profile = categories.get(profile_name).cloned().unwrap_or_else(|| {
+    let mut profile = profiles.get(profile_name).cloned().unwrap_or_else(|| {
         json!({
             "description": "Live proxy smoke profile",
             "tools": []
@@ -4820,7 +4820,7 @@ fn ensure_profile_model_ref(
         .entry("tools".to_string())
         .or_insert_with(|| Value::Array(Vec::new()));
 
-    categories.insert(profile_name.to_string(), profile);
+    profiles.insert(profile_name.to_string(), profile);
     Ok(())
 }
 
@@ -4994,11 +4994,11 @@ fn apply_tool_flow_contract(
         }),
     );
 
-    let categories = root
+    let profiles = root
         .get_mut("profiles")
         .and_then(Value::as_object_mut)
         .ok_or_else(|| "config.profiles must be an object".to_string())?;
-    let profile = categories
+    let profile = profiles
         .get_mut(profile_name)
         .and_then(Value::as_object_mut)
         .ok_or_else(|| format!("profile `{profile_name}` must be present and be an object"))?;
@@ -5038,11 +5038,11 @@ fn apply_restricted_tools_contract(
     let root = config
         .as_object_mut()
         .ok_or_else(|| "config root must be a JSON object".to_string())?;
-    let categories = root
+    let profiles = root
         .get_mut("profiles")
         .and_then(Value::as_object_mut)
         .ok_or_else(|| "config.profiles must be an object".to_string())?;
-    let profile = categories
+    let profile = profiles
         .get_mut(profile_name)
         .and_then(Value::as_object_mut)
         .ok_or_else(|| format!("profile `{profile_name}` must be present and be an object"))?;
@@ -5461,8 +5461,8 @@ fn build_live_proxy_test_config(
         }),
     );
 
-    let mut categories = serde_json::Map::new();
-    categories.insert(
+    let mut profiles = serde_json::Map::new();
+    profiles.insert(
         "deep".to_string(),
         json!({
             "description": "Deep profile",
@@ -5473,7 +5473,7 @@ fn build_live_proxy_test_config(
 
     json!({
         "providers": providers,
-        "profiles": categories,
+        "profiles": profiles,
         "permissions": {
             "defaults": {
                 "edit": "allow",
