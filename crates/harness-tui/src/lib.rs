@@ -4326,41 +4326,6 @@ fn assert_row_segment_background(
 }
 
 #[cfg(test)]
-fn assert_alphanumeric_row_palette(
-    buffer: &ratatui::buffer::Buffer,
-    width: u16,
-    row_index: usize,
-    expected_fg: ratatui::style::Color,
-    expected_bg: ratatui::style::Color,
-    label: &str,
-) {
-    let (row, fgs, bgs) = row_at(buffer, width, row_index)
-        .unwrap_or_else(|| panic!("missing row {row_index} for {label}"));
-    let semantic_columns = row
-        .chars()
-        .enumerate()
-        .filter_map(|(index, ch)| ch.is_alphanumeric().then_some(index))
-        .collect::<Vec<_>>();
-
-    assert!(
-        !semantic_columns.is_empty(),
-        "{label} row should contain semantic content\n{row}"
-    );
-    assert!(
-        semantic_columns
-            .iter()
-            .all(|index| fgs[*index] == expected_fg),
-        "{label} row should use the expected foreground palette\n{row}"
-    );
-    assert!(
-        semantic_columns
-            .iter()
-            .all(|index| bgs[*index] == expected_bg),
-        "{label} row should use the expected background palette\n{row}"
-    );
-}
-
-#[cfg(test)]
 fn transcript_code_block_app(language: &str) -> app::AppState {
     let mut app = app::AppState::new_live(None, false, None);
     let request_id = "req_code_block";
@@ -4818,13 +4783,12 @@ fn module_live_shell_redesign_preserves_replay_overlay_and_permission_parity() {
         user_row < thinking_row,
         "replay transcript should preserve turn order\n{replay_render}"
     );
-    assert_alphanumeric_row_palette(
+    assert_row_segment_palette(
         &replay_buffer,
         100,
-        replay_disabled_row,
+        "Replay is read-only.",
         theme.status.disabled,
         theme.surface.shell,
-        "replay disabled composer",
     );
     assert_row_segment_palette(
         &replay_buffer,

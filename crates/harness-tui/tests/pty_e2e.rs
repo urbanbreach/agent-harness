@@ -548,7 +548,7 @@ fn operator_sidebar_matches_opencode_information_architecture() {
         &screen,
         &[
             "Live · run run_fixture",
-            "Share unavailable",
+            "Export bundle · run_fixture/",
             "Provider openai",
             "Context",
             "MCP · 2",
@@ -562,6 +562,7 @@ fn operator_sidebar_matches_opencode_information_architecture() {
     assert_screen_contains_all(
         &screen,
         &[
+            "Bundle keeps events.jsonl and",
             "search.web · completed",
             "tool.batch · running",
             "goto_definition · src/ui_secondary.rs",
