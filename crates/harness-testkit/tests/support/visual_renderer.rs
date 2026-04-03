@@ -147,6 +147,42 @@ pub(crate) fn extract_region_pixels(
     data
 }
 
+#[allow(dead_code)]
+pub(crate) fn extract_region_render_state(
+    screen: &vt100::Screen,
+    region: (u16, u16, u16, u16),
+) -> Vec<u8> {
+    let (row_start, col_start, height_cells, width_cells) = region;
+    let row_end = row_start.saturating_add(height_cells);
+    let col_end = col_start.saturating_add(width_cells);
+    let mut data = Vec::new();
+
+    for row in row_start..row_end {
+        for col in col_start..col_end {
+            match screen.cell(row, col) {
+                Some(cell) => {
+                    data.extend_from_slice(cell.contents().as_bytes());
+                    data.push(0);
+                    append_color(&mut data, cell.fgcolor());
+                    append_color(&mut data, cell.bgcolor());
+                    data.extend_from_slice(&[
+                        u8::from(cell.bold()),
+                        u8::from(cell.italic()),
+                        u8::from(cell.underline()),
+                        u8::from(cell.inverse()),
+                        u8::from(cell.is_wide_continuation()),
+                    ]);
+                }
+                None => data.push(0xff),
+            }
+            data.push(b'|');
+        }
+        data.push(b'\n');
+    }
+
+    data
+}
+
 pub(crate) fn parse_ttf_antialias_env(value: Option<&str>) -> bool {
     value
         .map(|value| {
@@ -330,6 +366,15 @@ fn brighten(color: [u8; 3], amount: u8) -> [u8; 3] {
         color[1].saturating_add(amount),
         color[2].saturating_add(amount),
     ]
+}
+
+#[allow(dead_code)]
+fn append_color(data: &mut Vec<u8>, color: VtColor) {
+    match color {
+        VtColor::Default => data.push(0),
+        VtColor::Idx(idx) => data.extend_from_slice(&[1, idx]),
+        VtColor::Rgb(r, g, b) => data.extend_from_slice(&[2, r, g, b]),
+    }
 }
 
 struct GlyphLookup {
