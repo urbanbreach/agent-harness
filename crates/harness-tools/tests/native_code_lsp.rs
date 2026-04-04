@@ -262,6 +262,7 @@ while True:
     position = params.get("position", {})
     line = position.get("line", 0)
     character = position.get("character", 0)
+    query = params.get("query", "")
     send({
         "jsonrpc": "2.0",
         "id": message_id,
@@ -270,7 +271,8 @@ while True:
             "range": {
                 "start": {"line": line, "character": character},
                 "end": {"line": line, "character": character}
-            }
+            },
+            "query": query
         }]
     })
     break
@@ -842,6 +844,137 @@ async fn native_code_lsp_rejects_disabled_or_unsupported_servers() {
 #[test]
 fn native_code_lsp_rejects_disabled_or_unsupported_server_requests() {
     native_code_lsp_rejects_disabled_or_unsupported_servers();
+}
+
+#[tokio::test]
+async fn native_code_lsp_validates_inputs_by_operation_shape() {
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let native = registry.get("code.lsp").expect("code.lsp tool");
+    let compat = registry.get("lsp").expect("lsp alias tool");
+
+    let missing_position = native
+        .call(
+            test_context(&workspace, "missing-position"),
+            json!({
+                "operation": "hover",
+                "filePath": "src/lib.rs",
+            }),
+        )
+        .await
+        .expect_err("hover should require cursor coordinates");
+    expect_invalid_arguments(missing_position, "missing field `line`");
+
+    let file_only_rejects_cursor = compat
+        .call(
+            test_context(&workspace, "file-only-rejects-cursor"),
+            json!({
+                "operation": "documentSymbol",
+                "filePath": "src/lib.rs",
+                "line": 1,
+                "character": 1,
+            }),
+        )
+        .await
+        .expect_err("documentSymbol should reject cursor coordinates");
+    expect_invalid_arguments(file_only_rejects_cursor, "unknown field");
+
+    let missing_query = native
+        .call(
+            test_context(&workspace, "missing-query"),
+            json!({
+                "operation": "workspaceSymbol",
+                "filePath": "src/lib.rs",
+            }),
+        )
+        .await
+        .expect_err("workspaceSymbol should require a query");
+    expect_invalid_arguments(missing_query, "missing field `query`");
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global test lock intentionally serializes PATH and LSP registry mutations across awaits"
+)]
+async fn native_code_lsp_supports_non_position_operations_without_cursor_placeholders() {
+    let _lock = test_lock().lock().expect("test lock");
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let fake_bin = temp_dir.path().join("fake-lsp-bin");
+    fs::create_dir_all(&fake_bin).expect("fake bin dir");
+    install_fake_lsp_binary(
+        &fake_bin,
+        "custom-rust-analyzer",
+        &FakeLspSpec {
+            result_uri: "file:///fake/rust-symbol.rs",
+            diagnostic_message: "rust symbol diagnostic",
+            env_key: "",
+            env_value: "",
+            initialization_path: "",
+            initialization_value: "",
+        },
+    );
+    let _path_guard = PathEnvGuard::prepend(&fake_bin);
+    let _config_guard = LspConfigGuard::install(LspConfig {
+        disabled: false,
+        servers: BTreeMap::from([(
+            "rust".to_string(),
+            LspServerConfig {
+                disabled: false,
+                command: Some(vec!["custom-rust-analyzer".to_string()]),
+                extensions: None,
+                env: BTreeMap::new(),
+                initialization: None,
+            },
+        )]),
+    });
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let native = registry.get("code.lsp").expect("code.lsp tool");
+
+    let document_symbols = native
+        .call(
+            test_context(&workspace, "document-symbol"),
+            json!({
+                "operation": "documentSymbol",
+                "filePath": "src/lib.rs",
+            }),
+        )
+        .await
+        .expect("documentSymbol request");
+    let document_json = document_symbols
+        .structured_json
+        .clone()
+        .expect("documentSymbol structured json");
+    assert_eq!(document_json["operation"], json!("documentSymbol"));
+    assert_eq!(
+        document_json["filePath"],
+        json!(workspace.join("src/lib.rs").display().to_string())
+    );
+    assert!(document_json.get("line").is_none());
+    assert!(document_json.get("character").is_none());
+
+    let workspace_symbols = native
+        .call(
+            test_context(&workspace, "workspace-symbol"),
+            json!({
+                "operation": "workspaceSymbol",
+                "filePath": "src/lib.rs",
+                "query": "helper",
+            }),
+        )
+        .await
+        .expect("workspaceSymbol request");
+    let workspace_json = workspace_symbols
+        .structured_json
+        .expect("workspaceSymbol structured json");
+    assert_eq!(workspace_json["operation"], json!("workspaceSymbol"));
+    assert_eq!(workspace_json["query"], json!("helper"));
+    assert!(workspace_json["result"][0]["query"] == json!("helper"));
+    assert!(workspace_json.get("line").is_none());
+    assert!(workspace_json.get("character").is_none());
 }
 
 #[tokio::test]

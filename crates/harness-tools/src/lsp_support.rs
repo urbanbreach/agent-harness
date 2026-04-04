@@ -25,6 +25,17 @@ const SUPPORTED_LSP_OPERATION_NAMES: &[&str] = &[
     "incomingCalls",
     "outgoingCalls",
 ];
+const POSITION_LSP_OPERATION_NAMES: &[&str] = &[
+    "goToDefinition",
+    "findReferences",
+    "hover",
+    "goToImplementation",
+    "prepareCallHierarchy",
+    "incomingCalls",
+    "outgoingCalls",
+];
+const FILE_LSP_OPERATION_NAMES: &[&str] = &["documentSymbol"];
+const QUERY_LSP_OPERATION_NAMES: &[&str] = &["workspaceSymbol"];
 
 const RUST_ROOT_MARKERS: &[&str] = &["Cargo.toml", "rust-project.json"];
 const TYPESCRIPT_ROOT_MARKERS: &[&str] = &[
@@ -94,9 +105,34 @@ impl LspOperation {
         }
     }
 
-    pub(crate) fn supported_names() -> &'static [&'static str] {
-        SUPPORTED_LSP_OPERATION_NAMES
+    pub(crate) fn input_kind(self) -> LspOperationInputKind {
+        match self {
+            Self::GoToDefinition
+            | Self::FindReferences
+            | Self::Hover
+            | Self::GoToImplementation
+            | Self::PrepareCallHierarchy
+            | Self::IncomingCalls
+            | Self::OutgoingCalls => LspOperationInputKind::Position,
+            Self::DocumentSymbol => LspOperationInputKind::File,
+            Self::WorkspaceSymbol => LspOperationInputKind::Query,
+        }
     }
+
+    pub(crate) fn supported_names_for(kind: LspOperationInputKind) -> &'static [&'static str] {
+        match kind {
+            LspOperationInputKind::Position => POSITION_LSP_OPERATION_NAMES,
+            LspOperationInputKind::File => FILE_LSP_OPERATION_NAMES,
+            LspOperationInputKind::Query => QUERY_LSP_OPERATION_NAMES,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LspOperationInputKind {
+    Position,
+    File,
+    Query,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -130,9 +166,46 @@ impl LspPosition {
 
 pub(crate) struct LspOperationRequest<'a> {
     pub(crate) operation: LspOperation,
-    pub(crate) file_path: &'a Path,
-    pub(crate) position: LspPosition,
+    pub(crate) input: LspOperationInput<'a>,
     pub(crate) workspace_root: &'a Path,
+}
+
+pub(crate) enum LspOperationInput<'a> {
+    Position {
+        file_path: &'a Path,
+        position: LspPosition,
+    },
+    File {
+        file_path: &'a Path,
+    },
+    Query {
+        file_path: &'a Path,
+        query: &'a str,
+    },
+}
+
+impl LspOperationInput<'_> {
+    fn file_path(&self) -> &Path {
+        match self {
+            Self::Position { file_path, .. }
+            | Self::File { file_path }
+            | Self::Query { file_path, .. } => file_path,
+        }
+    }
+
+    fn position(&self) -> Option<LspPosition> {
+        match self {
+            Self::Position { position, .. } => Some(*position),
+            Self::File { .. } | Self::Query { .. } => None,
+        }
+    }
+
+    fn query(&self) -> Option<&str> {
+        match self {
+            Self::Query { query, .. } => Some(*query),
+            Self::Position { .. } | Self::File { .. } => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -158,7 +231,8 @@ pub(crate) fn execute_lsp_operation(
     request: &LspOperationRequest<'_>,
 ) -> Result<LspOperationResponse, ToolError> {
     let file_path = request
-        .file_path
+        .input
+        .file_path()
         .canonicalize()
         .map_err(|err| ToolError::Execution(format!("failed to resolve file path: {err}")))?;
     let cfg = registered_lsp_config();
@@ -167,28 +241,29 @@ pub(crate) fn execute_lsp_operation(
     let mut session = LspSession::start(&spec, &root)?;
     session.open_file(&file_path, spec.name.as_str())?;
 
-    let position = json!({
-        "textDocument": { "uri": path_to_uri(&file_path) },
-        "position": {
-            "line": request.position.line(),
-            "character": request.position.character(),
-        },
-    });
-
     let result = match request.operation {
-        LspOperation::GoToDefinition => {
-            request_with_retry(&mut session, "textDocument/definition", position)
-        }
-        LspOperation::FindReferences => request_with_retry(
+        LspOperation::GoToDefinition => request_with_retry(
             &mut session,
-            "textDocument/references",
-            json!({
-                "textDocument": position["textDocument"].clone(),
-                "position": position["position"].clone(),
-                "context": { "includeDeclaration": true },
-            }),
+            "textDocument/definition",
+            position_request_params(request, &file_path)?,
         ),
-        LspOperation::Hover => request_with_retry(&mut session, "textDocument/hover", position),
+        LspOperation::FindReferences => {
+            let position = position_request_params(request, &file_path)?;
+            request_with_retry(
+                &mut session,
+                "textDocument/references",
+                json!({
+                    "textDocument": position["textDocument"].clone(),
+                    "position": position["position"].clone(),
+                    "context": { "includeDeclaration": true },
+                }),
+            )
+        }
+        LspOperation::Hover => request_with_retry(
+            &mut session,
+            "textDocument/hover",
+            position_request_params(request, &file_path)?,
+        ),
         LspOperation::DocumentSymbol => request_with_retry(
             &mut session,
             "textDocument/documentSymbol",
@@ -196,18 +271,31 @@ pub(crate) fn execute_lsp_operation(
                 "textDocument": { "uri": path_to_uri(&file_path) },
             }),
         ),
-        LspOperation::WorkspaceSymbol => {
-            request_with_retry(&mut session, "workspace/symbol", json!({ "query": "" }))
-        }
-        LspOperation::GoToImplementation => {
-            request_with_retry(&mut session, "textDocument/implementation", position)
-        }
-        LspOperation::PrepareCallHierarchy => {
-            request_with_retry(&mut session, "textDocument/prepareCallHierarchy", position)
-        }
+        LspOperation::WorkspaceSymbol => request_with_retry(
+            &mut session,
+            "workspace/symbol",
+            json!({
+                "query": request.input.query().ok_or_else(|| ToolError::InvalidArguments(
+                    "workspaceSymbol requires a query".to_string(),
+                ))?,
+            }),
+        ),
+        LspOperation::GoToImplementation => request_with_retry(
+            &mut session,
+            "textDocument/implementation",
+            position_request_params(request, &file_path)?,
+        ),
+        LspOperation::PrepareCallHierarchy => request_with_retry(
+            &mut session,
+            "textDocument/prepareCallHierarchy",
+            position_request_params(request, &file_path)?,
+        ),
         LspOperation::IncomingCalls => {
-            let prepared =
-                request_with_retry(&mut session, "textDocument/prepareCallHierarchy", position)?;
+            let prepared = request_with_retry(
+                &mut session,
+                "textDocument/prepareCallHierarchy",
+                position_request_params(request, &file_path)?,
+            )?;
             let Some(item) = prepared.as_array().and_then(|items| items.first()).cloned() else {
                 return Ok(LspOperationResponse {
                     server: LspServerMetadata {
@@ -225,8 +313,11 @@ pub(crate) fn execute_lsp_operation(
             )
         }
         LspOperation::OutgoingCalls => {
-            let prepared =
-                request_with_retry(&mut session, "textDocument/prepareCallHierarchy", position)?;
+            let prepared = request_with_retry(
+                &mut session,
+                "textDocument/prepareCallHierarchy",
+                position_request_params(request, &file_path)?,
+            )?;
             let Some(item) = prepared.as_array().and_then(|items| items.first()).cloned() else {
                 return Ok(LspOperationResponse {
                     server: LspServerMetadata {
@@ -253,6 +344,25 @@ pub(crate) fn execute_lsp_operation(
         result,
         diagnostics: session.diagnostics(),
     })
+}
+
+fn position_request_params(
+    request: &LspOperationRequest<'_>,
+    file_path: &Path,
+) -> Result<Value, ToolError> {
+    let position = request.input.position().ok_or_else(|| {
+        ToolError::InvalidArguments(format!(
+            "{} requires line and character",
+            request.operation.as_str()
+        ))
+    })?;
+    Ok(json!({
+        "textDocument": { "uri": path_to_uri(file_path) },
+        "position": {
+            "line": position.line(),
+            "character": position.character(),
+        },
+    }))
 }
 
 #[derive(Debug, Clone)]
@@ -922,7 +1032,7 @@ mod tests {
 
     #[test]
     fn lsp_operation_supported_names_match_roundtrip_strings() {
-        for operation in LspOperation::supported_names() {
+        for operation in SUPPORTED_LSP_OPERATION_NAMES {
             let parsed = LspOperation::parse(operation).expect("operation should parse");
             assert_eq!(parsed.as_str(), *operation);
         }
