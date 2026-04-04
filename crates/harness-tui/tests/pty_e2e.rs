@@ -627,12 +627,7 @@ fn pty_live_orchestration_drawer_and_status() {
     );
     assert_screen_contains_all(
         &completed_screen,
-        &[
-            "Context",
-            "MCP · idle",
-            "LSP · idle",
-            "ready for next turn",
-        ],
+        &["Context", "MCP · idle", "LSP · idle", "ready for next turn"],
     );
     assert!(!completed_screen.contains("Todo ·"));
     assert!(!completed_screen.contains("Network · 1"));
