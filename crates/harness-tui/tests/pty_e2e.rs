@@ -551,8 +551,9 @@ fn operator_sidebar_matches_opencode_information_architecture() {
             "Share unavailable",
             "Provider openai",
             "Context",
-            "MCP · 2",
+            "MCP · 1",
             "LSP · 1",
+            "Batch · 1",
             "▼ Todo · 3",
             "▼ Modified Files · 3",
         ],
@@ -623,7 +624,14 @@ fn pty_live_orchestration_drawer_and_status() {
     .expect("wait for completed orchestration state");
     assert_screen_contains_all(
         &completed_screen,
-        &["Context", "MCP · idle", "LSP · idle", "ready for next turn"],
+        &[
+            "Context",
+            "MCP · idle",
+            "Web · idle",
+            "LSP · idle",
+            "Batch · idle",
+            "ready for next turn",
+        ],
     );
     assert!(!completed_screen.contains("orch 0a 0q 0r 0s"));
 

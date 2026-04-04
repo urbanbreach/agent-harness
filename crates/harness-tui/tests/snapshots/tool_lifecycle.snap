@@ -7,15 +7,15 @@
      → Read src/ui.rs [offset=1, limit=24] · 2ms
       ↳ Loaded src/ui.rs                                                                                                                                                            Context
      ┃ ▸ ← Patched crates/harness-tui/src/ui.rs · 4ms                                                                                                                               turn 1 · ready for next turn
-      crates/harness-tui/src/ui.rs · +1 -1
-      @@ -44,8 +44,7 @@                                                                                                                                                             MCP · idle
-        use ui_secondary::{                                                                 │   use ui_secondary::{                                                                 No MCP activity yet
+      crates/harness-tui/src/ui.rs · +1 -1                                                                                                                                          Modified Files · 1
+      @@ -44,8 +44,7 @@                                                                                                                                                             crates/harness-tui/src/ui.rs
+        use ui_secondary::{                                                                 │   use ui_secondary::{
 
-                                                                                                                                                                                    LSP · idle
-      -     render_diff_tab, render_events_tab, render_help_tab,                            │ +     render_events_tab, render_help_tab, render_live_details_overlay,                LSPs will activate as files are read
 
-                                                                                                                                                                                    Modified Files · 1
-            render_operator_sidebar,                                                        │       render_operator_sidebar,                                                        crates/harness-tui/src/ui.rs
+      -     render_diff_tab, render_events_tab, render_help_tab,                            │ +     render_events_tab, render_help_tab, render_live_details_overlay,
+
+
+            render_operator_sidebar,                                                        │       render_operator_sidebar,
 
 
         };                                                                                  │   };
