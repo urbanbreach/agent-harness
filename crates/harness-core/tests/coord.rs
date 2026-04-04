@@ -3782,6 +3782,7 @@ fn test_mock_provider() -> MockProvider {
 
     for prompt in ["alpha-prompt", "beta-prompt"] {
         let request = CompletionRequest {
+            provider_id: Some("mock".to_string()),
             model_id: "model-1".to_string(),
             messages: vec![
                 CompletionMessage {

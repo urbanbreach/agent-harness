@@ -102,6 +102,7 @@ pub fn golden_path_provider() -> MockProvider {
 
     for prompt in ["planner-prompt", "worker-prompt"] {
         let request = CompletionRequest {
+            provider_id: Some("mock".to_string()),
             model_id: "model-1".to_string(),
             messages: vec![
                 CompletionMessage {
@@ -143,6 +144,7 @@ pub fn golden_path_provider() -> MockProvider {
     }
 
     let interactive_request = CompletionRequest {
+        provider_id: Some("mock".to_string()),
         model_id: "model-1".to_string(),
         messages: vec![
             CompletionMessage {
@@ -184,6 +186,7 @@ pub fn golden_path_provider() -> MockProvider {
     );
 
     let interactive_request_with_tools = CompletionRequest {
+        provider_id: Some("mock".to_string()),
         model_id: "model-1".to_string(),
         messages: interactive_request.messages.clone(),
         temperature: interactive_request.temperature,
@@ -210,6 +213,7 @@ pub fn golden_path_provider() -> MockProvider {
     );
 
     let shell_parity_request = CompletionRequest {
+        provider_id: Some("mock".to_string()),
         model_id: "model-1".to_string(),
         messages: vec![
             CompletionMessage {

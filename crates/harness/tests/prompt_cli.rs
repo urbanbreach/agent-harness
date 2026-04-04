@@ -66,6 +66,83 @@ fn prompt_cli_config(base_url: &str, session_dir: &std::path::Path, tools: &[&st
     .to_string()
 }
 
+fn prompt_cli_multi_provider_config(
+    default_base_url: &str,
+    ops_base_url: &str,
+    session_dir: &std::path::Path,
+) -> String {
+    serde_json::json!({
+        "providers": {
+            "default": {
+                "type": "openai_compatible",
+                "base_url": default_base_url,
+                "api_key": "DUMMY",
+                "api_mode": "responses",
+                "timeout_ms": 60000,
+                "models": {
+                    "gpt-4o-mini": {
+                        "display_name": "GPT-4o mini"
+                    }
+                }
+            },
+            "anthropic": {
+                "type": "openai_compatible",
+                "base_url": ops_base_url,
+                "api_key": "DUMMY",
+                "api_mode": "responses",
+                "timeout_ms": 60000,
+                "models": {
+                    "claude-3.7": {
+                        "display_name": "Claude 3.7"
+                    }
+                }
+            }
+        },
+        "profiles": {
+            "deep": {
+                "description": "Deep profile",
+                "model_ref": "default:gpt-4o-mini",
+                "tools": []
+            },
+            "ops": {
+                "description": "Ops profile",
+                "model_ref": "anthropic:claude-3.7",
+                "tools": []
+            }
+        },
+        "permissions": {
+            "defaults": {
+                "edit": "allow",
+                "shell": "allow",
+                "network": "allow"
+            }
+        },
+        "runtime": {
+            "background_tasks": {
+                "default_concurrency": 2,
+                "provider_concurrency": 2,
+                "model_concurrency": 2,
+                "stale_timeout_ms": 30000,
+                "message_staleness_timeout_ms": 10000
+            },
+            "session_dir": session_dir,
+            "deterministic": {
+                "enabled": false,
+                "seed": 42
+            }
+        },
+        "integrations": {
+            "remote_search": {
+                "endpoint": "https://mcp.exa.ai/mcp"
+            }
+        },
+        "ui": {
+            "default_profile": "deep"
+        }
+    })
+    .to_string()
+}
+
 #[tokio::test]
 async fn prompt_cli_calls_responses_endpoint() {
     let server = MockServer::start().await;
@@ -229,6 +306,87 @@ async fn prompt_cli_resume_flag_continues_existing_session() {
         .await
         .expect("request recording must be enabled");
     assert_eq!(requests.len(), 1, "expected one resumed provider request");
+}
+
+#[tokio::test]
+async fn prompt_cli_routes_non_default_profile_to_matching_provider() {
+    let default_server = MockServer::start().await;
+    let ops_server = MockServer::start().await;
+
+    for server in [&default_server, &ops_server] {
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(
+                        deterministic_responses_sse_transcript(),
+                        "text/event-stream",
+                    ),
+            )
+            .mount(server)
+            .await;
+    }
+
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.multi-provider.jsonc");
+    let session_dir = temp.path().join("sessions");
+
+    let config = prompt_cli_multi_provider_config(
+        &format!("{}/v1", default_server.uri()),
+        &format!("{}/v1", ops_server.uri()),
+        &session_dir,
+    );
+    fs::write(&config_path, config).expect("write config");
+
+    let config_arg = config_path.clone();
+    let temp_path = temp.path().to_path_buf();
+    let output = tokio::task::spawn_blocking(move || {
+        Command::new(env!("CARGO_BIN_EXE_harness"))
+            .current_dir(temp_path)
+            .args([
+                "--config",
+                config_arg.to_str().expect("config path utf-8"),
+                "prompt",
+                "--profile",
+                "ops",
+                "--text",
+                "Hello from ops",
+            ])
+            .output()
+            .expect("run harness prompt")
+    })
+    .await
+    .expect("join blocking command");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let default_requests = default_server
+        .received_requests()
+        .await
+        .expect("default request recording must be enabled");
+    let ops_requests = ops_server
+        .received_requests()
+        .await
+        .expect("ops request recording must be enabled");
+
+    assert!(
+        default_requests.is_empty(),
+        "non-default prompt profile should not hit providers.default"
+    );
+    assert_eq!(
+        ops_requests
+            .iter()
+            .filter(|req| req.url.path() == "/v1/responses")
+            .count(),
+        1,
+        "expected prompt CLI to hit the selected non-default provider exactly once"
+    );
 }
 
 #[tokio::test]

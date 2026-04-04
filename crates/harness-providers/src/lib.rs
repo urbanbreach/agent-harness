@@ -4,12 +4,14 @@
 //! Keep transport/request normalization here so the coordinator and agent loop
 //! can remain provider-agnostic.
 
+use std::collections::BTreeMap;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio_stream::Stream;
+use tokio_stream::{self, Stream};
 
 pub mod mock;
 pub mod openai;
@@ -64,6 +66,8 @@ pub enum ToolChoice {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CompletionRequest {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub provider_id: Option<ProviderId>,
     pub model_id: ModelId,
     pub messages: Vec<CompletionMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -112,6 +116,77 @@ pub trait Provider: Send + Sync {
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream;
 }
 
+pub struct ProviderRouter {
+    providers: BTreeMap<ProviderId, Arc<dyn Provider>>,
+}
+
+impl ProviderRouter {
+    pub fn new(providers: BTreeMap<ProviderId, Arc<dyn Provider>>) -> Self {
+        Self { providers }
+    }
+
+    fn resolve_provider_id<'a>(
+        &'a self,
+        requested_provider_id: Option<&'a str>,
+    ) -> Result<&'a str, String> {
+        if let Some(provider_id) = requested_provider_id {
+            if self.providers.contains_key(provider_id) {
+                return Ok(provider_id);
+            }
+
+            return Err(format!(
+                "unknown provider `{provider_id}` in completion request; configured providers: {}",
+                configured_provider_list(&self.providers)
+            ));
+        }
+
+        if self.providers.contains_key("default") {
+            return Ok("default");
+        }
+
+        if self.providers.len() == 1 {
+            return Ok(self
+                .providers
+                .keys()
+                .next()
+                .expect("single-provider map should have a key"));
+        }
+
+        Err(format!(
+            "completion request omitted provider_id and no default provider is configured; configured providers: {}",
+            configured_provider_list(&self.providers)
+        ))
+    }
+}
+
+#[async_trait]
+impl Provider for ProviderRouter {
+    async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
+        let provider_id = match self.resolve_provider_id(req.provider_id.as_deref()) {
+            Ok(provider_id) => provider_id,
+            Err(message) => {
+                return Box::pin(tokio_stream::iter(vec![ProviderStreamEvent::Error {
+                    message,
+                }]));
+            }
+        };
+
+        self.providers
+            .get(provider_id)
+            .expect("resolved provider id should exist")
+            .stream_completion(req)
+            .await
+    }
+}
+
+fn configured_provider_list(providers: &BTreeMap<ProviderId, Arc<dyn Provider>>) -> String {
+    providers
+        .keys()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -124,6 +199,7 @@ mod tests {
     #[test]
     fn completion_request_roundtrip_with_tools_is_stable() {
         let request = CompletionRequest {
+            provider_id: None,
             model_id: "gpt-5.4-mini".to_string(),
             messages: vec![
                 CompletionMessage {
@@ -174,6 +250,7 @@ mod tests {
     #[test]
     fn completion_request_omits_optional_tool_fields_when_absent() {
         let request = CompletionRequest {
+            provider_id: None,
             model_id: "gpt-4o-mini".to_string(),
             messages: vec![CompletionMessage {
                 role: MessageRole::User,

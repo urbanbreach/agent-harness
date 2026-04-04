@@ -81,6 +81,7 @@ async fn openai_compatible_serializes_native_tool_schema_without_alias_dupes() {
 
 fn native_surface_request() -> CompletionRequest {
     CompletionRequest {
+        provider_id: None,
         model_id: "gpt-4o-mini".to_string(),
         messages: vec![CompletionMessage {
             role: MessageRole::User,
