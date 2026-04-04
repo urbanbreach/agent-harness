@@ -1211,6 +1211,9 @@ fn exact_test_session_entry(run_id: &str, run_dir: &str) -> app::SessionHistoryE
             mode_source: harness_core::proj::SessionModeSource::InteractiveLive,
             is_resumable: true,
             resume_disabled_reason: None,
+            artifact_count: 0,
+            child_session_count: 0,
+            parent_session_id: None,
         },
     }
 }
@@ -5575,6 +5578,9 @@ fn startup_session_entry_with_mode_and_details(
             mode_source,
             is_resumable,
             resume_disabled_reason: resume_disabled_reason.map(str::to_string),
+            artifact_count: 0,
+            child_session_count: 0,
+            parent_session_id: None,
         },
     }
 }
