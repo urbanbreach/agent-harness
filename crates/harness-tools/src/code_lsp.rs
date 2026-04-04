@@ -162,7 +162,7 @@ fn render_display_text(
     Ok(text)
 }
 
-fn format_diagnostics(reports: &[LspDiagnosticReport]) -> String {
+pub(crate) fn format_diagnostics(reports: &[LspDiagnosticReport]) -> String {
     reports
         .iter()
         .flat_map(|report| {
@@ -202,7 +202,7 @@ fn format_diagnostics(reports: &[LspDiagnosticReport]) -> String {
         .join("\n")
 }
 
-fn resolve_existing_path(ctx: &ToolContext, input: &str) -> Result<PathBuf, ToolError> {
+pub(crate) fn resolve_existing_path(ctx: &ToolContext, input: &str) -> Result<PathBuf, ToolError> {
     let workspace = canonical_workspace_root(ctx)?;
     let candidate = normalize_workspace_target_path(&workspace, Path::new(input))?;
     let canonical = candidate
@@ -212,13 +212,16 @@ fn resolve_existing_path(ctx: &ToolContext, input: &str) -> Result<PathBuf, Tool
     Ok(canonical)
 }
 
-fn canonical_workspace_root(ctx: &ToolContext) -> Result<PathBuf, ToolError> {
+pub(crate) fn canonical_workspace_root(ctx: &ToolContext) -> Result<PathBuf, ToolError> {
     ctx.workspace_root
         .canonicalize()
         .map_err(|err| ToolError::Execution(format!("failed to resolve workspace root: {err}")))
 }
 
-fn ensure_within_workspace_path(workspace: &Path, candidate: &Path) -> Result<(), ToolError> {
+pub(crate) fn ensure_within_workspace_path(
+    workspace: &Path,
+    candidate: &Path,
+) -> Result<(), ToolError> {
     if candidate.starts_with(workspace) {
         Ok(())
     } else {
@@ -229,7 +232,10 @@ fn ensure_within_workspace_path(workspace: &Path, candidate: &Path) -> Result<()
     }
 }
 
-fn normalize_workspace_target_path(workspace: &Path, input: &Path) -> Result<PathBuf, ToolError> {
+pub(crate) fn normalize_workspace_target_path(
+    workspace: &Path,
+    input: &Path,
+) -> Result<PathBuf, ToolError> {
     let relative = if input.is_absolute() {
         input
             .strip_prefix(workspace)

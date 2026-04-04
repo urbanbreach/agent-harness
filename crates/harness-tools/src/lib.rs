@@ -49,6 +49,9 @@ use agent_ops::{AgentOpsExecutor, AgentSpawnTool, ToolBatchTool};
 mod code_lsp;
 use code_lsp::{CodeLspExecutor, CodeLspTool};
 
+mod code_lsp_rename;
+use code_lsp_rename::{CodeLspRenameExecutor, CodeLspRenameTool};
+
 mod lsp_support;
 
 mod opencode_compat;
@@ -70,6 +73,7 @@ pub fn coordinator_registry(shell_allowlist: ShellAllowlist) -> ToolRegistry {
     let control_plane_executor = Arc::new(ControlPlaneExecutor::new());
     let network_executor = Arc::new(NetworkExecutor::new());
     let code_lsp_executor = Arc::new(CodeLspExecutor::new());
+    let code_lsp_rename_executor = Arc::new(CodeLspRenameExecutor::new());
     let workspace_edit_executor = Arc::new(WorkspaceEditExecutor::new());
 
     let mut registry = ToolRegistry::new();
@@ -127,6 +131,7 @@ pub fn coordinator_registry(shell_allowlist: ShellAllowlist) -> ToolRegistry {
         control_plane_executor.clone(),
     )));
     registry.register(Arc::new(CodeLspTool::new(code_lsp_executor.clone())));
+    registry.register(Arc::new(CodeLspRenameTool::new(code_lsp_rename_executor)));
     registry.register(Arc::new(LspCompatTool::new(code_lsp_executor)));
     registry.register(Arc::new(InvalidTool::new(control_plane_executor.clone())));
     registry.register(Arc::new(InvalidCompatTool::new(control_plane_executor)));

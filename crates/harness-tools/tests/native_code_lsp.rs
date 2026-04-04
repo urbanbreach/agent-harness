@@ -52,6 +52,11 @@ fn setup_workspace() -> tempfile::TempDir {
     )
     .expect("write rust fixture");
     fs::write(
+        workspace.join("src/other.rs"),
+        "fn another() {\n    helper();\n}\n",
+    )
+    .expect("write secondary rust fixture");
+    fs::write(
         workspace.join("package.json"),
         "{\"name\":\"code-lsp-test\"}\n",
     )
@@ -271,6 +276,210 @@ while True:
     fs::set_permissions(&path, permissions).expect("set fake lsp permissions");
 }
 
+fn install_fake_rename_lsp_binary(
+    directory: &Path,
+    name: &str,
+    primary_uri: &str,
+    secondary_uri: &str,
+    prepare_mode: &str,
+    rename_mode: &str,
+) {
+    let script = r#"#!/usr/bin/env python3
+import json
+import sys
+
+PRIMARY_URI = __PRIMARY_URI__
+SECONDARY_URI = __SECONDARY_URI__
+PREPARE_MODE = __PREPARE_MODE__
+RENAME_MODE = __RENAME_MODE__
+
+opened_uri = None
+prepare_ok = False
+workspace_ok = False
+
+
+def read_message():
+    headers = {}
+    while True:
+        line = sys.stdin.buffer.readline()
+        if not line:
+            return None
+        if line in (b"\r\n", b"\n"):
+            break
+        key, value = line.decode("utf-8").split(":", 1)
+        headers[key.strip().lower()] = value.strip()
+    length = int(headers.get("content-length", "0"))
+    if length <= 0:
+        return None
+    body = sys.stdin.buffer.read(length)
+    if not body:
+        return None
+    return json.loads(body.decode("utf-8"))
+
+
+def send(payload):
+    data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    sys.stdout.buffer.write(f"Content-Length: {len(data)}\r\n\r\n".encode("utf-8"))
+    sys.stdout.buffer.write(data)
+    sys.stdout.buffer.flush()
+
+
+while True:
+    message = read_message()
+    if message is None:
+        break
+
+    method = message.get("method")
+    message_id = message.get("id")
+    params = message.get("params", {})
+
+    if method == "initialize" and message_id is not None:
+        capabilities = params.get("capabilities", {})
+        prepare_ok = capabilities.get("textDocument", {}).get("rename", {}).get("prepareSupport") is True
+        resource_ops = capabilities.get("workspace", {}).get("workspaceEdit", {}).get("resourceOperations", [])
+        workspace_ok = capabilities.get("workspace", {}).get("workspaceEdit", {}).get("documentChanges") is True and resource_ops == ["create", "rename", "delete"]
+        send({"jsonrpc": "2.0", "id": message_id, "result": {"capabilities": {"renameProvider": {"prepareProvider": True}}}})
+        continue
+
+    if method == "textDocument/didOpen":
+        opened_uri = params.get("textDocument", {}).get("uri")
+        continue
+
+    if message_id is None:
+        continue
+
+    if method == "textDocument/prepareRename":
+        if PREPARE_MODE == "null":
+            send({"jsonrpc": "2.0", "id": message_id, "result": None})
+        elif PREPARE_MODE == "error":
+            send({"jsonrpc": "2.0", "id": message_id, "error": {"code": -32601, "message": "prepare rename unsupported"}})
+        else:
+            send({
+                "jsonrpc": "2.0",
+                "id": message_id,
+                "result": {
+                    "range": {
+                        "start": {"line": 0, "character": 3},
+                        "end": {"line": 0, "character": 9}
+                    },
+                    "placeholder": "helper"
+                }
+            })
+        continue
+
+    if method != "textDocument/rename":
+        send({"jsonrpc": "2.0", "id": message_id, "result": None})
+        continue
+
+    target_uri = params.get("textDocument", {}).get("uri") or opened_uri or PRIMARY_URI
+    send({
+        "jsonrpc": "2.0",
+        "method": "textDocument/publishDiagnostics",
+        "params": {
+            "uri": target_uri,
+            "diagnostics": [{
+                "range": {
+                    "start": {"line": 0, "character": 0},
+                    "end": {"line": 0, "character": 6}
+                },
+                "severity": 2,
+                "source": method,
+                "message": f"rename diagnostic; prepare_ok={prepare_ok}; workspace_ok={workspace_ok}"
+            }]
+        }
+    })
+
+    if RENAME_MODE == "null":
+        send({"jsonrpc": "2.0", "id": message_id, "result": None})
+    elif RENAME_MODE == "error":
+        send({"jsonrpc": "2.0", "id": message_id, "error": {"code": -32602, "message": "rename unsupported"}})
+    elif RENAME_MODE == "changes":
+        send({
+            "jsonrpc": "2.0",
+            "id": message_id,
+            "result": {
+                "changes": {
+                    PRIMARY_URI: [{
+                        "range": {
+                            "start": {"line": 0, "character": 3},
+                            "end": {"line": 0, "character": 9}
+                        },
+                        "newText": params.get("newName", "")
+                    }],
+                    SECONDARY_URI: [{
+                        "range": {
+                            "start": {"line": 1, "character": 4},
+                            "end": {"line": 1, "character": 10}
+                        },
+                        "newText": params.get("newName", "")
+                    }]
+                }
+            }
+        })
+    else:
+        send({
+            "jsonrpc": "2.0",
+            "id": message_id,
+            "result": {
+                "changeAnnotations": {
+                    "rename": {
+                        "label": "Semantic rename",
+                        "description": "Rename helper across files",
+                        "needsConfirmation": False
+                    }
+                },
+                "documentChanges": [{
+                    "textDocument": {
+                        "uri": PRIMARY_URI,
+                        "version": None
+                    },
+                    "edits": [{
+                        "range": {
+                            "start": {"line": 0, "character": 3},
+                            "end": {"line": 0, "character": 9}
+                        },
+                        "newText": params.get("newName", ""),
+                        "annotationId": "rename"
+                    }]
+                }, {
+                    "textDocument": {
+                        "uri": SECONDARY_URI,
+                        "version": None
+                    },
+                    "edits": [{
+                        "range": {
+                            "start": {"line": 1, "character": 4},
+                            "end": {"line": 1, "character": 10}
+                        },
+                        "newText": params.get("newName", ""),
+                        "annotationId": "rename"
+                    }]
+                }]
+            }
+        })
+"#
+    .replace("__PRIMARY_URI__", &serde_json::to_string(primary_uri).expect("primary uri json"))
+    .replace(
+        "__SECONDARY_URI__",
+        &serde_json::to_string(secondary_uri).expect("secondary uri json"),
+    )
+    .replace(
+        "__PREPARE_MODE__",
+        &serde_json::to_string(prepare_mode).expect("prepare mode json"),
+    )
+    .replace(
+        "__RENAME_MODE__",
+        &serde_json::to_string(rename_mode).expect("rename mode json"),
+    );
+    let path = directory.join(name);
+    fs::write(&path, script).expect("write fake rename lsp binary");
+    let mut permissions = fs::metadata(&path)
+        .expect("fake rename lsp metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&path, permissions).expect("set fake rename lsp permissions");
+}
+
 fn expect_invalid_arguments(error: ToolError, expected_fragment: &str) {
     match error {
         ToolError::InvalidArguments(message) => assert!(
@@ -285,6 +494,12 @@ fn first_diagnostic_message(value: &serde_json::Value) -> &str {
     value["diagnostics"][0]["diagnostics"][0]["message"]
         .as_str()
         .expect("diagnostic message")
+}
+
+fn file_uri(path: &Path) -> String {
+    reqwest::Url::from_file_path(path)
+        .expect("file url")
+        .to_string()
 }
 
 #[tokio::test]
@@ -592,7 +807,7 @@ async fn native_code_lsp_rejects_unsupported_operation_cleanly() {
         .expect_err("unsupported operation should fail");
     expect_invalid_arguments(
         unsupported_operation,
-        "unsupported code.lsp operation: renameSymbol",
+        "use code.lsp.rename for the explicit write-capable rename flow",
     );
 
     let compat_unsupported_operation = compat
@@ -609,6 +824,172 @@ async fn native_code_lsp_rejects_unsupported_operation_cleanly() {
         .expect_err("compat unsupported operation should fail");
     expect_invalid_arguments(
         compat_unsupported_operation,
-        "unsupported code.lsp operation: renameSymbol",
+        "use code.lsp.rename for the explicit write-capable rename flow",
     );
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global test lock intentionally serializes PATH and LSP registry mutations across awaits"
+)]
+async fn native_code_lsp_rename_previews_and_applies_workspace_edits() {
+    let _lock = test_lock().lock().expect("test lock");
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let fake_bin = temp_dir.path().join("fake-rename-lsp-bin");
+    fs::create_dir_all(&fake_bin).expect("fake rename bin dir");
+    let primary_uri = file_uri(&workspace.join("src/lib.rs"));
+    let secondary_uri = file_uri(&workspace.join("src/other.rs"));
+    install_fake_rename_lsp_binary(
+        &fake_bin,
+        "custom-rename-lsp",
+        &primary_uri,
+        &secondary_uri,
+        "ok",
+        "documentChanges",
+    );
+    let _path_guard = PathEnvGuard::prepend(&fake_bin);
+    let _config_guard = LspConfigGuard::install(LspConfig {
+        disabled: false,
+        servers: BTreeMap::from([(
+            "rust".to_string(),
+            LspServerConfig {
+                disabled: false,
+                command: Some(vec!["custom-rename-lsp".to_string()]),
+                extensions: None,
+                env: BTreeMap::new(),
+                initialization: None,
+            },
+        )]),
+    });
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let rename_tool = registry
+        .get("code.lsp.rename")
+        .expect("code.lsp.rename tool");
+
+    let preview = rename_tool
+        .call(
+            test_context(&workspace, "rename-preview"),
+            json!({
+                "filePath": "src/lib.rs",
+                "line": 1,
+                "character": 4,
+                "newName": "renamed",
+                "apply": false,
+            }),
+        )
+        .await
+        .expect("rename preview");
+    assert!(preview.display_text.contains("Prepared LSP rename preview"));
+    assert!(preview.display_text.contains("helper"));
+    assert!(preview.display_text.contains("Re-run with `apply: true`"));
+    let preview_json = preview
+        .structured_json
+        .clone()
+        .expect("rename preview structured json");
+    assert_eq!(preview_json["operation"], json!("renameSymbol"));
+    assert_eq!(preview_json["applied"], json!(false));
+    assert_eq!(preview_json["symbol"], json!("helper"));
+    assert_eq!(preview_json["preview"]["file_count"], json!(2));
+    assert_eq!(preview_json["preview"]["text_edit_count"], json!(2));
+    assert_eq!(
+        preview_json["preview"]["annotations"][0]["label"],
+        json!("Semantic rename")
+    );
+    assert!(first_diagnostic_message(&preview_json).contains("prepare_ok=True; workspace_ok=True"));
+    assert_eq!(
+        fs::read_to_string(workspace.join("src/lib.rs")).expect("read lib.rs after preview"),
+        "fn helper() {}\n\nfn caller() {\n    helper();\n}\n"
+    );
+
+    let apply = rename_tool
+        .call(
+            test_context(&workspace, "rename-apply"),
+            json!({
+                "filePath": "src/lib.rs",
+                "line": 1,
+                "character": 4,
+                "newName": "renamed",
+                "apply": true,
+            }),
+        )
+        .await
+        .expect("rename apply");
+    assert!(apply.display_text.contains("Applied LSP rename"));
+    assert_eq!(
+        fs::read_to_string(workspace.join("src/lib.rs")).expect("read lib.rs after apply"),
+        "fn renamed() {}\n\nfn caller() {\n    helper();\n}\n"
+    );
+    assert_eq!(
+        fs::read_to_string(workspace.join("src/other.rs")).expect("read other.rs after apply"),
+        "fn another() {\n    renamed();\n}\n"
+    );
+    let apply_json = apply.structured_json.expect("rename apply structured json");
+    assert_eq!(apply_json["applied"], json!(true));
+    assert_eq!(apply_json["appliedEdits"].as_array().map(Vec::len), Some(2),);
+    assert_eq!(apply.artifacts.len(), 2);
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global test lock intentionally serializes PATH and LSP registry mutations across awaits"
+)]
+async fn native_code_lsp_rename_reports_unsupported_server_behavior() {
+    let _lock = test_lock().lock().expect("test lock");
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let fake_bin = temp_dir.path().join("fake-rename-lsp-bin");
+    fs::create_dir_all(&fake_bin).expect("fake rename bin dir");
+    let primary_uri = file_uri(&workspace.join("src/lib.rs"));
+    let secondary_uri = file_uri(&workspace.join("src/other.rs"));
+    install_fake_rename_lsp_binary(
+        &fake_bin,
+        "unsupported-rename-lsp",
+        &primary_uri,
+        &secondary_uri,
+        "null",
+        "documentChanges",
+    );
+    let _path_guard = PathEnvGuard::prepend(&fake_bin);
+    let _config_guard = LspConfigGuard::install(LspConfig {
+        disabled: false,
+        servers: BTreeMap::from([(
+            "rust".to_string(),
+            LspServerConfig {
+                disabled: false,
+                command: Some(vec!["unsupported-rename-lsp".to_string()]),
+                extensions: None,
+                env: BTreeMap::new(),
+                initialization: None,
+            },
+        )]),
+    });
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let rename_tool = registry
+        .get("code.lsp.rename")
+        .expect("code.lsp.rename tool");
+    let error = rename_tool
+        .call(
+            test_context(&workspace, "rename-unsupported"),
+            json!({
+                "filePath": "src/lib.rs",
+                "line": 1,
+                "character": 4,
+                "newName": "renamed",
+                "apply": false,
+            }),
+        )
+        .await
+        .expect_err("unsupported rename server should fail");
+    match error {
+        ToolError::Execution(message) => assert!(
+            message.contains("rename is unavailable"),
+            "expected unsupported rename error, got {message:?}"
+        ),
+        other => panic!("expected execution error, got {other:?}"),
+    }
 }

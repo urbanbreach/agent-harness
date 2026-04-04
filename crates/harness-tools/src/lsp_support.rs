@@ -61,6 +61,10 @@ impl LspOperation {
             "prepareCallHierarchy" => Ok(Self::PrepareCallHierarchy),
             "incomingCalls" => Ok(Self::IncomingCalls),
             "outgoingCalls" => Ok(Self::OutgoingCalls),
+            "prepareRename" | "renameSymbol" => Err(ToolError::InvalidArguments(format!(
+                "unsupported code.lsp operation: {value}; use code.lsp.rename for the explicit write-capable rename flow; supported operations: {}",
+                SUPPORTED_LSP_OPERATION_NAMES.join(", ")
+            ))),
             _ => Err(ToolError::InvalidArguments(format!(
                 "unsupported code.lsp operation: {value}; supported operations: {}",
                 SUPPORTED_LSP_OPERATION_NAMES.join(", ")
@@ -123,6 +127,13 @@ pub(crate) struct LspOperationRequest<'a> {
     pub(crate) workspace_root: &'a Path,
 }
 
+pub(crate) struct LspRenameRequest<'a> {
+    pub(crate) file_path: &'a Path,
+    pub(crate) position: LspPosition,
+    pub(crate) workspace_root: &'a Path,
+    pub(crate) new_name: &'a str,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct LspServerMetadata {
     pub(crate) name: String,
@@ -142,18 +153,22 @@ pub(crate) struct LspOperationResponse {
     pub(crate) diagnostics: Vec<LspDiagnosticReport>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct LspRenameResponse {
+    pub(crate) server: LspServerMetadata,
+    pub(crate) prepare_result: Value,
+    pub(crate) workspace_edit: Value,
+    pub(crate) diagnostics: Vec<LspDiagnosticReport>,
+}
+
 pub(crate) fn execute_lsp_operation(
     request: &LspOperationRequest<'_>,
 ) -> Result<LspOperationResponse, ToolError> {
-    let file_path = request
-        .file_path
-        .canonicalize()
-        .map_err(|err| ToolError::Execution(format!("failed to resolve file path: {err}")))?;
-    let cfg = registered_lsp_config();
-    let spec = server_for_path(&file_path, &cfg)?;
-    let root = project_root(&file_path, request.workspace_root, spec.root_markers);
-    let mut session = LspSession::start(&spec, &root)?;
-    session.open_file(&file_path, spec.name.as_str())?;
+    let StartedLspSession {
+        file_path,
+        spec,
+        mut session,
+    } = start_lsp_session(request.file_path, request.workspace_root)?;
 
     let position = json!({
         "textDocument": { "uri": path_to_uri(&file_path) },
@@ -240,6 +255,77 @@ pub(crate) fn execute_lsp_operation(
         },
         result,
         diagnostics: session.diagnostics(),
+    })
+}
+
+pub(crate) fn execute_lsp_rename(
+    request: &LspRenameRequest<'_>,
+) -> Result<LspRenameResponse, ToolError> {
+    let StartedLspSession {
+        file_path,
+        spec,
+        mut session,
+    } = start_lsp_session(request.file_path, request.workspace_root)?;
+
+    let position = json!({
+        "textDocument": { "uri": path_to_uri(&file_path) },
+        "position": {
+            "line": request.position.line(),
+            "character": request.position.character(),
+        },
+    });
+
+    let prepare_result =
+        request_with_retry(&mut session, "textDocument/prepareRename", position.clone())?;
+    if prepare_result.is_null() {
+        return Err(ToolError::Execution(
+            "language server reported rename is unavailable at the requested position".to_string(),
+        ));
+    }
+
+    let workspace_edit = request_with_retry(
+        &mut session,
+        "textDocument/rename",
+        json!({
+            "textDocument": position["textDocument"].clone(),
+            "position": position["position"].clone(),
+            "newName": request.new_name,
+        }),
+    )?;
+
+    Ok(LspRenameResponse {
+        server: LspServerMetadata {
+            name: spec.name,
+            command: spec.command,
+        },
+        prepare_result,
+        workspace_edit,
+        diagnostics: session.diagnostics(),
+    })
+}
+
+struct StartedLspSession {
+    file_path: PathBuf,
+    spec: LspServerSpec,
+    session: LspSession,
+}
+
+fn start_lsp_session(
+    file_path: &Path,
+    workspace_root: &Path,
+) -> Result<StartedLspSession, ToolError> {
+    let file_path = file_path
+        .canonicalize()
+        .map_err(|err| ToolError::Execution(format!("failed to resolve file path: {err}")))?;
+    let cfg = registered_lsp_config();
+    let spec = server_for_path(&file_path, &cfg)?;
+    let root = project_root(&file_path, workspace_root, spec.root_markers);
+    let mut session = LspSession::start(&spec, &root)?;
+    session.open_file(&file_path, spec.name.as_str())?;
+    Ok(StartedLspSession {
+        file_path,
+        spec,
+        session,
     })
 }
 
@@ -559,10 +645,18 @@ impl LspSession {
                 "workspace": {
                     "configuration": true,
                     "workspaceFolders": true,
+                    "workspaceEdit": {
+                        "documentChanges": true,
+                        "resourceOperations": ["create", "rename", "delete"],
+                    },
                 },
                 "textDocument": {
                     "publishDiagnostics": {
                         "relatedInformation": true,
+                    },
+                    "rename": {
+                        "prepareSupport": true,
+                        "prepareSupportDefaultBehavior": 1,
                     },
                     "synchronization": {
                         "didOpen": true,
@@ -852,7 +946,7 @@ mod tests {
         let err = LspOperation::parse("renameSymbol").expect_err("operation should fail");
         assert!(
             matches!(err, ToolError::InvalidArguments(message) if message == format!(
-                "unsupported code.lsp operation: renameSymbol; supported operations: {}",
+                "unsupported code.lsp operation: renameSymbol; use code.lsp.rename for the explicit write-capable rename flow; supported operations: {}",
                 SUPPORTED_LSP_OPERATION_NAMES.join(", ")
             ))
         );

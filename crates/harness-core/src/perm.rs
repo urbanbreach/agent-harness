@@ -223,6 +223,7 @@ pub fn permission_kind_for_tool(tool_id: &str) -> Option<PermissionKind> {
         "search.web" => Some(PermissionKind::WebSearch),
         "search.code" => Some(PermissionKind::CodeSearch),
         "code.lsp" => Some(PermissionKind::Lsp),
+        "code.lsp.rename" => Some(PermissionKind::EditFs),
         "fs.write" => Some(PermissionKind::EditFs),
         _ if canonical_tool_id.starts_with("edit.") => Some(PermissionKind::EditFs),
         _ if canonical_tool_id.starts_with("shell.") => Some(PermissionKind::Shell),

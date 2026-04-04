@@ -180,6 +180,7 @@ async fn native_registry_exposes_canonical_and_alias_ids_without_behavior_fork()
         ("search.web", "websearch"),
         ("search.code", "codesearch"),
         ("code.lsp", "lsp"),
+        ("code.lsp.rename", "code.lsp.rename"),
         ("tool.batch", "batch"),
         ("plan.exit", "plan_exit"),
         ("agent.spawn", "task"),
