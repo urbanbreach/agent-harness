@@ -5,6 +5,9 @@ artifacts/
 *.snap.new
 *.pending-snap
 docs/
+!docs/
+docs/*
+!docs/config.md
 configs/
 
 # Local scratch / research material
