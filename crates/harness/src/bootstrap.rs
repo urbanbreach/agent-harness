@@ -84,6 +84,10 @@ fn map_openai_api_mode(mode: CoreOpenAiApiMode) -> ProviderOpenAiApiMode {
     }
 }
 
+fn default_interactive_system_prompt(category_name: &str, description: &str) -> String {
+    format!("You are the {category_name} agent. {description}")
+}
+
 pub fn interactive_agent_profiles(
     cfg: &HarnessConfig,
 ) -> Result<BTreeMap<String, AgentProfile>, String> {
@@ -106,10 +110,9 @@ pub fn interactive_agent_profiles(
                 name: category_name.clone(),
                 category: category_name.clone(),
                 model_ref: category_cfg.model_ref.clone(),
-                system_prompt: format!(
-                    "You are the {category_name} agent. {}",
-                    category_cfg.description
-                ),
+                system_prompt: category_cfg.system_prompt.clone().unwrap_or_else(|| {
+                    default_interactive_system_prompt(category_name, &category_cfg.description)
+                }),
                 tool_failure_mode: category_cfg.tool_failure_mode,
                 tool_surface: category_cfg.tool_surface,
                 toolset: resolve_tool_ids_for_surface(
@@ -136,4 +139,130 @@ fn interactive_plan_profiles(cfg: &HarnessConfig) -> BTreeMap<String, PlanProfil
             )
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use harness_core::config::load_config_from_str;
+
+    use super::*;
+
+    fn config_fixture(profiles: &str) -> HarnessConfig {
+        let raw = format!(
+            r#"
+            {{
+              providers: {{
+                default: {{
+                  type: "openai_compatible",
+                  base_url: "http://127.0.0.1:8317/v1",
+                  api_key: "sk-zerolimit",
+                  api_mode: "responses",
+                  timeout_ms: 60000,
+                  models: {{
+                    "gpt-5.4-mini": {{
+                      display_name: "GPT-5.4 mini",
+                    }},
+                  }},
+                }},
+              }},
+              profiles: {{
+                {profiles}
+              }},
+              permissions: {{
+                defaults: {{
+                  edit: "ask",
+                  shell: "ask",
+                  network: "deny",
+                  question: "ask",
+                  task: "ask",
+                  webfetch: "deny",
+                  websearch: "deny",
+                  codesearch: "deny",
+                  lsp: "allow",
+                }},
+                shell_allowlist: {{
+                  executables: ["git"],
+                  cwd_roots: ["."],
+                }},
+              }},
+              runtime: {{
+                background_tasks: {{
+                  default_concurrency: 2,
+                  provider_concurrency: 2,
+                  model_concurrency: 2,
+                  stale_timeout_ms: 15000,
+                  message_staleness_timeout_ms: 5000,
+                }},
+                session_dir: ".agent-harness/sessions",
+                permissions: {{
+                  ask_timeout_ms: 45000,
+                }},
+                prompt: {{
+                  wait_timeout_ms: 15000,
+                }},
+                deterministic: {{
+                  enabled: false,
+                  seed: 42,
+                }},
+              }},
+              integrations: {{
+                remote_search: {{
+                  endpoint: "https://mcp.exa.ai/mcp",
+                }},
+              }},
+            }}
+            "#,
+            profiles = profiles,
+        );
+
+        load_config_from_str(&raw).expect("fixture config should parse")
+    }
+
+    #[test]
+    fn interactive_profiles_preserve_configured_system_prompt_in_runtime_config() {
+        let configured_prompt =
+            "Audit the configured tool flow exactly.\nCollect hooks evidence before signoff.";
+        let configured_prompt_json = configured_prompt.replace('\n', "\\n");
+        let cfg = config_fixture(&format!(
+            r#"
+            tool_audit: {{
+              description: "Audit profile",
+              system_prompt: "{configured_prompt_json}",
+              model_ref: "default:gpt-5.4-mini",
+              tool_surface: "native",
+              tools: ["fs.read"],
+            }},
+            "#
+        ));
+
+        let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles");
+        assert_eq!(profiles["tool_audit"].system_prompt, configured_prompt);
+
+        let coordinator_config =
+            build_interactive_coordinator_config(&cfg).expect("coordinator config");
+        assert_eq!(
+            coordinator_config.agent_profiles["tool_audit"].system_prompt,
+            configured_prompt
+        );
+    }
+
+    #[test]
+    fn interactive_profiles_fall_back_to_generated_system_prompt_when_missing() {
+        let cfg = config_fixture(
+            r#"
+            deep: {
+              description: "Default deep execution profile",
+              model_ref: "default:gpt-5.4-mini",
+              tool_surface: "native",
+              tools: ["fs.read"],
+            },
+            "#,
+        );
+
+        let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles");
+        assert_eq!(
+            profiles["deep"].system_prompt,
+            default_interactive_system_prompt("deep", "Default deep execution profile")
+        );
+    }
 }
