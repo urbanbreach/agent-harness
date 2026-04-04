@@ -11,6 +11,7 @@ use harness_core::config::resolve_config_path;
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1};
 use harness_core::redact::DefaultRedactor;
+use harness_core::store::{EventStore, EventStoreError};
 use uuid::Uuid;
 
 use crate::{bootstrap, logging};
@@ -198,9 +199,13 @@ async fn run_prompt(
         .request_agent_turn(user_actor(), agent_id, cmd.text.clone())
         .await
         .map_err(|err| err.to_string())?;
+    let event_store = coordinator
+        .event_store()
+        .await
+        .map_err(|err| err.to_string())?;
 
     let wait_timeout = prompt_wait_timeout();
-    let wait_result = wait_for_prompt_completion(&run.events_path, &request_id, wait_timeout).await;
+    let wait_result = wait_for_prompt_completion(event_store, &request_id, wait_timeout).await;
     let stop_result = coordinator.stop_run().await;
 
     wait_result?;
@@ -221,32 +226,53 @@ fn user_actor() -> EventActor {
 }
 
 async fn wait_for_prompt_completion(
-    events_path: &Path,
+    event_store: Arc<dyn EventStore>,
     request_id: &str,
     timeout: Duration,
 ) -> Result<(), String> {
     let deadline = Instant::now() + timeout;
-    let mut provider_error_seen_at: Option<Instant> = None;
+    let mut tracker = PromptCompletionTracker::new(request_id);
+    let mut next_seq = 1;
+    let mut stream = event_store
+        .subscribe(next_seq)
+        .map_err(|err| format!("failed to subscribe to prompt event stream: {err}"))?;
 
     loop {
-        let events = load_events(events_path)?;
+        let wait_until = tracker.next_wait_deadline(deadline);
+        let wait_duration = wait_until.saturating_duration_since(Instant::now());
 
-        if has_provider_error_finish(&events, request_id) && provider_error_seen_at.is_none() {
-            provider_error_seen_at = Some(Instant::now());
-        }
-
-        match evaluate_prompt_completion(&events, request_id) {
-            PromptCompletionStatus::Continue => {}
-            PromptCompletionStatus::Completed => return Ok(()),
-            PromptCompletionStatus::Failed(error) => return Err(error),
-        }
-
-        if let Some(seen_at) = provider_error_seen_at {
-            if Instant::now().saturating_duration_since(seen_at) >= PROVIDER_ERROR_REASON_GRACE {
+        match tokio::time::timeout(
+            wait_duration,
+            std::future::poll_fn(|cx| stream.as_mut().poll_next(cx)),
+        )
+        .await
+        {
+            Ok(Some(Ok(event))) => {
+                next_seq = event.seq.saturating_add(1);
+                match tracker.observe(&event) {
+                    PromptCompletionStatus::Continue => {}
+                    PromptCompletionStatus::Completed => return Ok(()),
+                    PromptCompletionStatus::Failed(error) => return Err(error),
+                }
+            }
+            Ok(Some(Err(EventStoreError::SubscriberLagged(_)))) => {
+                stream = event_store.subscribe(next_seq).map_err(|err| {
+                    format!("failed to resubscribe to prompt event stream: {err}")
+                })?;
+            }
+            Ok(Some(Err(err))) => {
+                return Err(format!("prompt event stream error: {err}"));
+            }
+            Ok(None) => {
                 return Err(format!(
-                    "prompt request {request_id} finished with provider error"
+                    "prompt event stream closed before completion for {request_id}"
                 ));
             }
+            Err(_) => {}
+        }
+
+        if let Some(error) = tracker.provider_error_timeout() {
+            return Err(error);
         }
 
         if Instant::now() >= deadline {
@@ -254,8 +280,97 @@ async fn wait_for_prompt_completion(
                 "timed out waiting for ProviderRequestFinished or TaskCompleted for {request_id}"
             ));
         }
+    }
+}
 
-        tokio::time::sleep(Duration::from_millis(10)).await;
+/// Prompt mode waits on the coordinator event stream once, then processes replayed
+/// and live events incrementally. That keeps the steady-state wait cost bounded by
+/// new events instead of rereading and reparsing the full JSONL log every poll tick.
+#[derive(Debug)]
+struct PromptCompletionTracker<'a> {
+    request_id: &'a str,
+    prompt_task_id: Option<String>,
+    provider_error_seen_at: Option<Instant>,
+}
+
+impl<'a> PromptCompletionTracker<'a> {
+    fn new(request_id: &'a str) -> Self {
+        Self {
+            request_id,
+            prompt_task_id: None,
+            provider_error_seen_at: None,
+        }
+    }
+
+    fn observe(&mut self, event: &EventEnvelopeV1) -> PromptCompletionStatus {
+        match &event.payload {
+            EventV1::RunFailed(data) => {
+                return PromptCompletionStatus::Failed(format!(
+                    "run failed before prompt completion for {}: {}",
+                    self.request_id, data.error
+                ));
+            }
+            EventV1::TaskScheduled(data)
+                if event_matches_request(event, self.request_id)
+                    && data
+                        .queue_key
+                        .as_deref()
+                        .is_some_and(|queue_key| queue_key.starts_with("provider_model:")) =>
+            {
+                self.prompt_task_id = Some(data.task_id.clone());
+            }
+            EventV1::ProviderRequestFinished(data)
+                if data.request_id == self.request_id
+                    && data.finish_reason.eq_ignore_ascii_case("error")
+                    && self.provider_error_seen_at.is_none() =>
+            {
+                self.provider_error_seen_at = Some(Instant::now());
+            }
+            EventV1::TaskCancelled(data)
+                if self.matches_cancelled_prompt_task(event, &data.task_id) =>
+            {
+                return PromptCompletionStatus::Failed(format!(
+                    "prompt request {} was cancelled: {}",
+                    self.request_id, data.reason
+                ));
+            }
+            EventV1::TaskCompleted(data) if self.matches_prompt_task(&data.task_id) => {
+                return PromptCompletionStatus::Completed;
+            }
+            _ => {}
+        }
+
+        PromptCompletionStatus::Continue
+    }
+
+    fn next_wait_deadline(&self, timeout_deadline: Instant) -> Instant {
+        self.provider_error_seen_at
+            .map(|seen_at| std::cmp::min(timeout_deadline, seen_at + PROVIDER_ERROR_REASON_GRACE))
+            .unwrap_or(timeout_deadline)
+    }
+
+    fn provider_error_timeout(&self) -> Option<String> {
+        self.provider_error_seen_at.and_then(|seen_at| {
+            (Instant::now().saturating_duration_since(seen_at) >= PROVIDER_ERROR_REASON_GRACE).then(
+                || {
+                    format!(
+                        "prompt request {} finished with provider error",
+                        self.request_id
+                    )
+                },
+            )
+        })
+    }
+
+    fn matches_prompt_task(&self, task_id: &str) -> bool {
+        self.prompt_task_id.as_deref() == Some(task_id) || task_id == self.request_id
+    }
+
+    fn matches_cancelled_prompt_task(&self, event: &EventEnvelopeV1, task_id: &str) -> bool {
+        event_matches_request(event, self.request_id)
+            && (self.prompt_task_id.is_none()
+                || self.prompt_task_id.as_deref() == Some(task_id)
+                || task_id == self.request_id)
     }
 }
 
@@ -266,6 +381,7 @@ enum PromptCompletionStatus {
     Failed(String),
 }
 
+#[cfg(test)]
 fn evaluate_prompt_completion(
     events: &[EventEnvelopeV1],
     request_id: &str,
@@ -310,6 +426,7 @@ fn evaluate_prompt_completion(
     PromptCompletionStatus::Continue
 }
 
+#[cfg(test)]
 fn prompt_task_id<'a>(events: &'a [EventEnvelopeV1], request_id: &str) -> Option<&'a str> {
     events.iter().find_map(|event| match &event.payload {
         EventV1::TaskScheduled(data)
@@ -329,6 +446,7 @@ fn event_matches_request(event: &EventEnvelopeV1, request_id: &str) -> bool {
     event.correlation_id.as_deref() == Some(request_id)
 }
 
+#[cfg(test)]
 fn has_provider_error_finish(events: &[EventEnvelopeV1], request_id: &str) -> bool {
     events.iter().any(|event| match &event.payload {
         EventV1::ProviderRequestFinished(data) => {
@@ -336,14 +454,6 @@ fn has_provider_error_finish(events: &[EventEnvelopeV1], request_id: &str) -> bo
         }
         _ => false,
     })
-}
-
-fn load_events(path: &Path) -> Result<Vec<EventEnvelopeV1>, String> {
-    let body = fs::read_to_string(path)
-        .map_err(|err| format!("failed to read events file {}: {err}", path.display()))?;
-    body.lines()
-        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).map_err(|err| err.to_string()))
-        .collect()
 }
 
 fn copy_events_file(from: &Path, to: &Path) -> Result<(), String> {
@@ -390,6 +500,8 @@ fn parse_wait_timeout_ms(raw: Option<&str>) -> Duration {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
     use std::time::Duration;
 
     use harness_core::event::{
@@ -397,10 +509,13 @@ mod tests {
         RunFailedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskScheduleState,
         TaskScheduledEvent,
     };
+    use harness_core::store::{
+        EventEnvelopeWithoutSeqV1, EventStore, EventStoreError, EventStream, InMemoryEventStore,
+    };
 
     use super::{
         evaluate_prompt_completion, has_provider_error_finish, parse_wait_timeout_ms,
-        PromptCompletionStatus, DEFAULT_WAIT_TIMEOUT,
+        wait_for_prompt_completion, PromptCompletionStatus, DEFAULT_WAIT_TIMEOUT,
     };
 
     #[test]
@@ -586,8 +701,74 @@ mod tests {
         assert_eq!(status, PromptCompletionStatus::Completed);
     }
 
+    #[tokio::test]
+    async fn wait_for_prompt_completion_subscribes_once_and_streams_new_events() {
+        let store = Arc::new(CountingEventStore::new());
+        for index in 0..256 {
+            store
+                .append(draft_event(
+                    EventV1::TaskCompleted(TaskCompletedEvent {
+                        task_id: format!("tool_task_{index:04}"),
+                        result_summary: "ok".to_string(),
+                        result_digest: format!("digest_{index:04}"),
+                        metadata: None,
+                    }),
+                    Some("other_request"),
+                ))
+                .expect("append unrelated task completion");
+        }
+
+        let wait_store: Arc<dyn EventStore> = store.clone();
+        let waiter = tokio::spawn(async move {
+            wait_for_prompt_completion(wait_store, "req_000001", Duration::from_secs(1)).await
+        });
+
+        tokio::task::yield_now().await;
+
+        store
+            .append(draft_event(
+                EventV1::TaskScheduled(TaskScheduledEvent {
+                    task_id: "task_000001".to_string(),
+                    state: TaskScheduleState::Started,
+                    queue_key: Some("provider_model:default:gpt-4o-mini".to_string()),
+                }),
+                Some("req_000001"),
+            ))
+            .expect("append prompt task scheduled");
+        store
+            .append(draft_event(
+                EventV1::TaskCompleted(TaskCompletedEvent {
+                    task_id: "task_000001".to_string(),
+                    result_summary: "ok".to_string(),
+                    result_digest: "abc123".to_string(),
+                    metadata: None,
+                }),
+                Some("req_000001"),
+            ))
+            .expect("append prompt task completed");
+
+        assert_eq!(waiter.await.expect("join waiter"), Ok(()));
+        assert_eq!(store.subscribe_calls(), 1);
+        assert_eq!(store.replay_calls(), 0);
+    }
+
     fn event(payload: EventV1) -> EventEnvelopeV1 {
         event_with_correlation(payload, None)
+    }
+
+    fn draft_event(payload: EventV1, correlation_id: Option<&str>) -> EventEnvelopeWithoutSeqV1 {
+        EventEnvelopeWithoutSeqV1 {
+            schema_version: 1,
+            event_id: "evt_1".to_string(),
+            run_id: "run_1".to_string(),
+            mono_ms: 0,
+            ts: None,
+            actor: EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+            correlation_id: correlation_id.map(ToOwned::to_owned),
+            causation_id: None,
+            stream_key: None,
+            payload,
+        }
     }
 
     fn provider_task_scheduled_event(task_id: &str, request_id: &str) -> EventEnvelopeV1 {
@@ -614,6 +795,49 @@ mod tests {
             causation_id: None,
             stream_key: None,
             payload,
+        }
+    }
+
+    struct CountingEventStore {
+        inner: InMemoryEventStore,
+        subscribe_calls: AtomicUsize,
+        replay_calls: AtomicUsize,
+    }
+
+    impl CountingEventStore {
+        fn new() -> Self {
+            Self {
+                inner: InMemoryEventStore::new(),
+                subscribe_calls: AtomicUsize::new(0),
+                replay_calls: AtomicUsize::new(0),
+            }
+        }
+
+        fn subscribe_calls(&self) -> usize {
+            self.subscribe_calls.load(Ordering::SeqCst)
+        }
+
+        fn replay_calls(&self) -> usize {
+            self.replay_calls.load(Ordering::SeqCst)
+        }
+    }
+
+    impl EventStore for CountingEventStore {
+        fn append(
+            &self,
+            envelope: EventEnvelopeWithoutSeqV1,
+        ) -> Result<EventEnvelopeV1, EventStoreError> {
+            self.inner.append(envelope)
+        }
+
+        fn replay(&self, from_seq: u64) -> Result<EventStream, EventStoreError> {
+            self.replay_calls.fetch_add(1, Ordering::SeqCst);
+            self.inner.replay(from_seq)
+        }
+
+        fn subscribe(&self, from_seq: u64) -> Result<EventStream, EventStoreError> {
+            self.subscribe_calls.fetch_add(1, Ordering::SeqCst);
+            self.inner.subscribe(from_seq)
         }
     }
 }
