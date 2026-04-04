@@ -37,6 +37,10 @@ pub struct ReplayArtifactSummary {
     pub canonical_tool_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alias_source_tool_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub child_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub present_on_disk: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -138,8 +142,7 @@ pub fn summarize_session(run_dir: &Path) -> Result<ReplaySummary, String> {
         EventV1::RunStarted(data) => Some(data.run_name.clone()),
         _ => None,
     });
-    let (artifacts, child_sessions) =
-        summarize_recovery_story(&events, &run_id).unwrap_or_default();
+    let (artifacts, child_sessions) = summarize_recovery_story(run_dir, &events, &run_id);
 
     Ok(ReplaySummary {
         run_id,
@@ -150,8 +153,8 @@ pub fn summarize_session(run_dir: &Path) -> Result<ReplaySummary, String> {
         mode_source: catalog.mode_source,
         is_resumable: catalog.is_resumable,
         resume_disabled_reason: catalog.resume_disabled_reason,
-        artifact_count: catalog.artifact_count,
-        child_session_count: catalog.child_session_count,
+        artifact_count: artifacts.len(),
+        child_session_count: child_sessions.len(),
         parent_session_id: catalog.parent_session_id,
         total_events: projection.counts.total_events,
         counts_by_type: projection.counts.by_type,
@@ -248,7 +251,8 @@ fn inspect_single_session(run_dir: &Path) -> SessionInspectionEntry {
         },
     };
 
-    let (artifact_count, child_session_count) = summarize_recovery_counts(&events, run_id_fallback);
+    let (artifact_count, child_session_count) =
+        summarize_recovery_counts(run_dir, &events, run_id_fallback);
 
     SessionInspectionEntry {
         run_dir: run_dir.to_path_buf(),
@@ -259,21 +263,23 @@ fn inspect_single_session(run_dir: &Path) -> SessionInspectionEntry {
     }
 }
 
-fn summarize_recovery_counts(events: &[EventEnvelopeV1], fallback_run_id: &str) -> (usize, usize) {
-    match summarize_recovery_story(events, fallback_run_id) {
-        Ok((artifacts, child_sessions)) => (artifacts.len(), child_sessions.len()),
-        Err(_) => (0, 0),
-    }
+fn summarize_recovery_counts(
+    run_dir: &Path,
+    events: &[EventEnvelopeV1],
+    fallback_run_id: &str,
+) -> (usize, usize) {
+    let (artifacts, child_sessions) = summarize_recovery_story(run_dir, events, fallback_run_id);
+    (artifacts.len(), child_sessions.len())
 }
 
 fn summarize_recovery_story(
+    run_dir: &Path,
     events: &[EventEnvelopeV1],
     fallback_run_id: &str,
-) -> Result<(Vec<ReplayArtifactSummary>, Vec<ReplayChildSessionSummary>), String> {
-    let resume_plan = project_resume_plan(events.iter(), fallback_run_id)
-        .map_err(|err| format!("failed to inspect recovery metadata: {err}"))?;
+) -> (Vec<ReplayArtifactSummary>, Vec<ReplayChildSessionSummary>) {
+    let resume_plan = project_resume_plan(events.iter(), fallback_run_id).ok();
 
-    let mut artifacts = artifact_inventory(events, &resume_plan);
+    let mut artifacts = artifact_inventory(run_dir, events, resume_plan.as_ref());
     artifacts.sort_by(|left, right| {
         left.path
             .cmp(&right.path)
@@ -283,74 +289,102 @@ fn summarize_recovery_story(
 
     let mut child_artifact_paths: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut child_tool_call_ids: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for (tool_call_id, tool_call) in &resume_plan.tool_calls {
-        let Some(metadata) = tool_call.metadata.as_ref() else {
-            continue;
-        };
-        let Some(lineage) = metadata.lineage.as_ref() else {
-            continue;
-        };
-        let Some(child_session_id) = lineage.child_session_id.as_ref() else {
-            continue;
-        };
+    if let Some(resume_plan) = resume_plan.as_ref() {
+        for (tool_call_id, tool_call) in &resume_plan.tool_calls {
+            let Some(metadata) = tool_call.metadata.as_ref() else {
+                continue;
+            };
+            let Some(lineage) = metadata.lineage.as_ref() else {
+                continue;
+            };
+            let Some(child_session_id) = lineage.child_session_id.as_ref() else {
+                continue;
+            };
 
-        child_tool_call_ids
-            .entry(child_session_id.clone())
-            .or_default()
-            .insert(tool_call_id.clone());
-        for artifact_ref in &metadata.artifact_refs {
-            child_artifact_paths
+            child_tool_call_ids
                 .entry(child_session_id.clone())
                 .or_default()
-                .insert(artifact_ref.path.clone());
+                .insert(tool_call_id.clone());
+            for artifact_ref in &metadata.artifact_refs {
+                child_artifact_paths
+                    .entry(child_session_id.clone())
+                    .or_default()
+                    .insert(artifact_ref.path.clone());
+            }
         }
     }
 
-    let child_sessions = resume_plan
-        .child_sessions
-        .iter()
-        .map(|(child_session_id, child)| ReplayChildSessionSummary {
-            child_session_id: child_session_id.clone(),
-            profile: child.profile.clone(),
-            provider_model: provider_model_label(
-                child.provider_id.as_deref(),
-                child.model_id.as_deref(),
-            ),
-            latest_child_request_id: child.latest_child_request_id.clone(),
-            parent_session_id: child.parent_session_id.clone(),
-            parent_tool_call_id: child.parent_tool_call_id.clone(),
-            parent_task_id: child.parent_task_id.clone(),
-            parent_request_id: child.parent_request_id.clone(),
-            terminal_state: child.terminal_state,
-            terminal_reason: child.terminal_reason.clone(),
-            elapsed_ms: child.timing.as_ref().and_then(|timing| timing.elapsed_ms),
-            related_tool_call_ids: child_tool_call_ids
-                .remove(child_session_id)
-                .unwrap_or_default()
-                .into_iter()
-                .collect(),
-            artifact_paths: child_artifact_paths
-                .remove(child_session_id)
-                .unwrap_or_default()
-                .into_iter()
-                .collect(),
+    let mut child_sessions = resume_plan
+        .as_ref()
+        .map(|resume_plan| {
+            resume_plan
+                .child_sessions
+                .iter()
+                .filter(|(_, child)| {
+                    child.parent_session_id.is_some()
+                        || child.parent_tool_call_id.is_some()
+                        || child.parent_task_id.is_some()
+                        || child.parent_request_id.is_some()
+                })
+                .map(|(child_session_id, child)| ReplayChildSessionSummary {
+                    child_session_id: child_session_id.clone(),
+                    profile: child.profile.clone(),
+                    provider_model: provider_model_label(
+                        child.provider_id.as_deref(),
+                        child.model_id.as_deref(),
+                    ),
+                    latest_child_request_id: child.latest_child_request_id.clone(),
+                    parent_session_id: child.parent_session_id.clone(),
+                    parent_tool_call_id: child.parent_tool_call_id.clone(),
+                    parent_task_id: child.parent_task_id.clone(),
+                    parent_request_id: child.parent_request_id.clone(),
+                    terminal_state: child.terminal_state,
+                    terminal_reason: child.terminal_reason.clone(),
+                    elapsed_ms: child.timing.as_ref().and_then(|timing| timing.elapsed_ms),
+                    related_tool_call_ids: child_tool_call_ids
+                        .remove(child_session_id)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .collect(),
+                    artifact_paths: child_artifact_paths
+                        .remove(child_session_id)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .collect(),
+                })
+                .collect::<Vec<_>>()
         })
-        .collect();
+        .unwrap_or_default();
+    child_sessions.sort_by(|left, right| left.child_session_id.cmp(&right.child_session_id));
 
-    Ok((artifacts, child_sessions))
+    (artifacts, child_sessions)
+}
+
+#[derive(Debug, Clone, Default)]
+struct ToolCallDiscovery {
+    tool_id: Option<String>,
+    canonical_tool_id: Option<String>,
+    alias_source_tool_id: Option<String>,
+    child_session_id: Option<String>,
 }
 
 fn artifact_inventory(
+    run_dir: &Path,
     events: &[EventEnvelopeV1],
-    resume_plan: &harness_core::proj::ResumePlan,
+    resume_plan: Option<&harness_core::proj::ResumePlan>,
 ) -> Vec<ReplayArtifactSummary> {
     let mut by_key: BTreeMap<(String, Option<String>, Option<String>), ReplayArtifactSummary> =
         BTreeMap::new();
+    let tool_call_lookup = tool_call_discovery_lookup(resume_plan);
 
     for event in events {
         let EventV1::ArtifactWritten(payload) = &event.payload else {
             continue;
         };
+        let discovery = payload
+            .tool_call_id
+            .as_ref()
+            .and_then(|tool_call_id| tool_call_lookup.get(tool_call_id));
         let entry = by_key
             .entry((
                 payload.path.clone(),
@@ -362,15 +396,19 @@ fn artifact_inventory(
                 digest: Some(payload.digest.clone()),
                 bytes: Some(payload.bytes),
                 tool_call_id: payload.tool_call_id.clone(),
-                tool_id: None,
+                tool_id: discovery.and_then(|it| it.tool_id.clone()),
                 canonical_tool_id: payload
                     .tool_metadata
                     .as_ref()
-                    .and_then(|metadata| metadata.canonical_tool_id.clone()),
+                    .and_then(|metadata| metadata.canonical_tool_id.clone())
+                    .or_else(|| discovery.and_then(|it| it.canonical_tool_id.clone())),
                 alias_source_tool_id: payload
                     .tool_metadata
                     .as_ref()
-                    .and_then(|metadata| metadata.alias_source_tool_id.clone()),
+                    .and_then(|metadata| metadata.alias_source_tool_id.clone())
+                    .or_else(|| discovery.and_then(|it| it.alias_source_tool_id.clone())),
+                child_session_id: discovery.and_then(|it| it.child_session_id.clone()),
+                present_on_disk: run_dir.join(&payload.path).exists(),
             });
         if entry.digest.is_none() {
             entry.digest = Some(payload.digest.clone());
@@ -381,59 +419,183 @@ fn artifact_inventory(
         if entry.tool_call_id.is_none() {
             entry.tool_call_id = payload.tool_call_id.clone();
         }
+        if entry.tool_id.is_none() {
+            entry.tool_id = discovery.and_then(|it| it.tool_id.clone());
+        }
         if entry.canonical_tool_id.is_none() {
             entry.canonical_tool_id = payload
                 .tool_metadata
                 .as_ref()
-                .and_then(|metadata| metadata.canonical_tool_id.clone());
+                .and_then(|metadata| metadata.canonical_tool_id.clone())
+                .or_else(|| discovery.and_then(|it| it.canonical_tool_id.clone()));
         }
         if entry.alias_source_tool_id.is_none() {
             entry.alias_source_tool_id = payload
                 .tool_metadata
                 .as_ref()
-                .and_then(|metadata| metadata.alias_source_tool_id.clone());
+                .and_then(|metadata| metadata.alias_source_tool_id.clone())
+                .or_else(|| discovery.and_then(|it| it.alias_source_tool_id.clone()));
+        }
+        if entry.child_session_id.is_none() {
+            entry.child_session_id = discovery.and_then(|it| it.child_session_id.clone());
+        }
+        entry.present_on_disk |= run_dir.join(&payload.path).exists();
+    }
+
+    if let Some(resume_plan) = resume_plan {
+        for (tool_call_id, tool_call) in &resume_plan.tool_calls {
+            let Some(metadata) = tool_call.metadata.as_ref() else {
+                continue;
+            };
+            let discovery = tool_call_lookup.get(tool_call_id);
+            for artifact_ref in &metadata.artifact_refs {
+                let entry = by_key
+                    .entry((
+                        artifact_ref.path.clone(),
+                        Some(tool_call_id.clone()),
+                        artifact_ref.digest.clone(),
+                    ))
+                    .or_insert_with(|| ReplayArtifactSummary {
+                        path: artifact_ref.path.clone(),
+                        digest: artifact_ref.digest.clone(),
+                        bytes: None,
+                        tool_call_id: Some(tool_call_id.clone()),
+                        tool_id: discovery.and_then(|it| it.tool_id.clone()),
+                        canonical_tool_id: metadata
+                            .canonical_tool_id
+                            .clone()
+                            .or_else(|| discovery.and_then(|it| it.canonical_tool_id.clone())),
+                        alias_source_tool_id: metadata
+                            .alias_source_tool_id
+                            .clone()
+                            .or_else(|| discovery.and_then(|it| it.alias_source_tool_id.clone())),
+                        child_session_id: discovery.and_then(|it| it.child_session_id.clone()),
+                        present_on_disk: run_dir.join(&artifact_ref.path).exists(),
+                    });
+                if entry.digest.is_none() {
+                    entry.digest = artifact_ref.digest.clone();
+                }
+                if entry.tool_call_id.is_none() {
+                    entry.tool_call_id = Some(tool_call_id.clone());
+                }
+                if entry.tool_id.is_none() {
+                    entry.tool_id = discovery.and_then(|it| it.tool_id.clone());
+                }
+                if entry.canonical_tool_id.is_none() {
+                    entry.canonical_tool_id = metadata
+                        .canonical_tool_id
+                        .clone()
+                        .or_else(|| discovery.and_then(|it| it.canonical_tool_id.clone()));
+                }
+                if entry.alias_source_tool_id.is_none() {
+                    entry.alias_source_tool_id = metadata
+                        .alias_source_tool_id
+                        .clone()
+                        .or_else(|| discovery.and_then(|it| it.alias_source_tool_id.clone()));
+                }
+                if entry.child_session_id.is_none() {
+                    entry.child_session_id = discovery.and_then(|it| it.child_session_id.clone());
+                }
+                entry.present_on_disk |= run_dir.join(&artifact_ref.path).exists();
+            }
         }
     }
 
-    for (tool_call_id, tool_call) in &resume_plan.tool_calls {
-        let Some(metadata) = tool_call.metadata.as_ref() else {
-            continue;
-        };
-        for artifact_ref in &metadata.artifact_refs {
-            let entry = by_key
-                .entry((
-                    artifact_ref.path.clone(),
-                    Some(tool_call_id.clone()),
-                    artifact_ref.digest.clone(),
-                ))
-                .or_insert_with(|| ReplayArtifactSummary {
-                    path: artifact_ref.path.clone(),
-                    digest: artifact_ref.digest.clone(),
-                    bytes: None,
-                    tool_call_id: Some(tool_call_id.clone()),
-                    tool_id: tool_call.tool_id.clone(),
-                    canonical_tool_id: metadata.canonical_tool_id.clone(),
-                    alias_source_tool_id: metadata.alias_source_tool_id.clone(),
-                });
-            if entry.digest.is_none() {
-                entry.digest = artifact_ref.digest.clone();
+    let mut on_disk = BTreeMap::new();
+    collect_artifact_files(&run_dir.join("artifacts"), run_dir, &mut on_disk);
+    for (path, bytes) in on_disk {
+        let mut matched = false;
+        for artifact in by_key.values_mut() {
+            if artifact.path == path {
+                matched = true;
+                artifact.present_on_disk = true;
+                if artifact.bytes.is_none() {
+                    artifact.bytes = Some(bytes);
+                }
             }
-            if entry.tool_call_id.is_none() {
-                entry.tool_call_id = Some(tool_call_id.clone());
-            }
-            if entry.tool_id.is_none() {
-                entry.tool_id = tool_call.tool_id.clone();
-            }
-            if entry.canonical_tool_id.is_none() {
-                entry.canonical_tool_id = metadata.canonical_tool_id.clone();
-            }
-            if entry.alias_source_tool_id.is_none() {
-                entry.alias_source_tool_id = metadata.alias_source_tool_id.clone();
-            }
+        }
+        if !matched {
+            by_key.insert(
+                (path.clone(), None, None),
+                ReplayArtifactSummary {
+                    path,
+                    digest: None,
+                    bytes: Some(bytes),
+                    tool_call_id: None,
+                    tool_id: None,
+                    canonical_tool_id: None,
+                    alias_source_tool_id: None,
+                    child_session_id: None,
+                    present_on_disk: true,
+                },
+            );
         }
     }
 
     by_key.into_values().collect()
+}
+
+fn tool_call_discovery_lookup(
+    resume_plan: Option<&harness_core::proj::ResumePlan>,
+) -> BTreeMap<String, ToolCallDiscovery> {
+    resume_plan
+        .map(|resume_plan| {
+            resume_plan
+                .tool_calls
+                .iter()
+                .map(|(tool_call_id, snapshot)| {
+                    let metadata = snapshot.metadata.as_ref();
+                    (
+                        tool_call_id.clone(),
+                        ToolCallDiscovery {
+                            tool_id: snapshot
+                                .tool_id
+                                .clone()
+                                .or_else(|| metadata.and_then(|it| it.canonical_tool_id.clone())),
+                            canonical_tool_id: metadata.and_then(|it| it.canonical_tool_id.clone()),
+                            alias_source_tool_id: metadata
+                                .and_then(|it| it.alias_source_tool_id.clone()),
+                            child_session_id: metadata
+                                .and_then(|it| it.lineage.as_ref())
+                                .and_then(|lineage| lineage.child_session_id.clone()),
+                        },
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn collect_artifact_files(
+    artifacts_dir: &Path,
+    run_dir: &Path,
+    artifacts: &mut BTreeMap<String, u64>,
+) {
+    let Ok(read_dir) = fs::read_dir(artifacts_dir) else {
+        return;
+    };
+
+    for entry in read_dir.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_artifact_files(&path, run_dir, artifacts);
+            continue;
+        }
+        if !path.is_file() {
+            continue;
+        }
+
+        let relative = path
+            .strip_prefix(run_dir)
+            .map(normalize_path)
+            .unwrap_or_else(|_| normalize_path(&path));
+        let bytes = path
+            .metadata()
+            .ok()
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
+        artifacts.entry(relative).or_insert(bytes);
+    }
 }
 
 fn load_events(run_dir: &Path) -> Result<Vec<EventEnvelopeV1>, String> {
@@ -537,7 +699,7 @@ fn parse_unix_ms_from_string_timestamp(value: &str) -> Option<u128> {
     value.parse::<u128>().ok()
 }
 
-fn print_human_summary(summary: &ReplaySummary) {
+pub(crate) fn print_human_summary(summary: &ReplaySummary) {
     println!("run_id: {}", summary.run_id);
     println!(
         "run_name: {}",
@@ -621,6 +783,17 @@ fn print_human_summary(summary: &ReplaySummary) {
             if let Some(alias_source_tool_id) = artifact.alias_source_tool_id.as_deref() {
                 details.push(format!("alias={alias_source_tool_id}"));
             }
+            if let Some(child_session_id) = artifact.child_session_id.as_deref() {
+                details.push(format!("child_session={child_session_id}"));
+            }
+            details.push(format!(
+                "present={}",
+                if artifact.present_on_disk {
+                    "yes"
+                } else {
+                    "no"
+                }
+            ));
             if !details.is_empty() {
                 println!("    {}", details.join(", "));
             }
@@ -688,4 +861,12 @@ fn provider_model_label(provider: Option<&str>, model: Option<&str>) -> Option<S
 
 fn short_digest(digest: &str) -> String {
     digest.chars().take(12).collect()
+}
+
+fn normalize_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }

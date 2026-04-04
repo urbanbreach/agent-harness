@@ -4,19 +4,30 @@ use std::process::ExitCode;
 
 use clap::Subcommand;
 use harness_core::proj::{RunStatus, SessionModeSource};
+use serde_json::json;
 
-use crate::replay::inspect_session_catalog;
+use crate::replay::{inspect_session_catalog, print_human_summary, summarize_session};
 
 const DEFAULT_SESSION_DIR: &str = ".agent-harness/sessions";
 
 #[derive(Debug, Subcommand, Clone)]
 pub enum SessionsCommand {
     List,
+    Inspect {
+        #[arg(long = "run")]
+        run_id: String,
+
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
 }
 
 pub fn execute(command: SessionsCommand, global_session_dir: Option<PathBuf>) -> ExitCode {
     match command {
         SessionsCommand::List => list_sessions(global_session_dir),
+        SessionsCommand::Inspect { run_id, json } => {
+            inspect_session(global_session_dir, &run_id, json)
+        }
     }
 }
 
@@ -89,8 +100,8 @@ fn list_sessions(global_session_dir: Option<PathBuf>) -> ExitCode {
             } else {
                 "no"
             },
-            entry.catalog.artifact_count,
-            entry.catalog.child_session_count,
+            entry.artifact_count,
+            entry.child_session_count,
             entry.run_dir.display(),
             entry.catalog.parent_session_id.as_deref().unwrap_or("-"),
             entry
@@ -99,6 +110,90 @@ fn list_sessions(global_session_dir: Option<PathBuf>) -> ExitCode {
                 .as_deref()
                 .unwrap_or("-")
         );
+    }
+
+    ExitCode::SUCCESS
+}
+
+fn inspect_session(global_session_dir: Option<PathBuf>, run_id: &str, as_json: bool) -> ExitCode {
+    let session_dir = global_session_dir.unwrap_or_else(|| PathBuf::from(DEFAULT_SESSION_DIR));
+    if !session_dir.exists() {
+        eprintln!(
+            "failed to read session directory {}: directory does not exist",
+            session_dir.display()
+        );
+        return ExitCode::from(1);
+    }
+    if let Err(err) = fs::read_dir(&session_dir) {
+        eprintln!(
+            "failed to read session directory {}: {err}",
+            session_dir.display()
+        );
+        return ExitCode::from(1);
+    }
+
+    let entries = match inspect_session_catalog(&session_dir) {
+        Ok(entries) => entries,
+        Err(err) => {
+            eprintln!("{err}");
+            return ExitCode::from(1);
+        }
+    };
+
+    let matches = entries
+        .into_iter()
+        .filter(|entry| entry.catalog.run_id == run_id)
+        .collect::<Vec<_>>();
+
+    let [entry] = matches.as_slice() else {
+        if matches.is_empty() {
+            eprintln!(
+                "session inspect failed: no run with id `{run_id}` found in {}",
+                session_dir.display()
+            );
+        } else {
+            eprintln!(
+                "session inspect failed: run id `{run_id}` is ambiguous in {}",
+                session_dir.display()
+            );
+        }
+        return ExitCode::from(1);
+    };
+
+    let summary = match summarize_session(&entry.run_dir) {
+        Ok(summary) => summary,
+        Err(err) => {
+            eprintln!("session inspect failed: {err}");
+            return ExitCode::from(1);
+        }
+    };
+
+    if as_json {
+        match serde_json::to_string_pretty(&json!({
+            "run_dir": entry.run_dir.display().to_string(),
+            "catalog": entry.catalog.clone(),
+            "replay": summary,
+        })) {
+            Ok(body) => println!("{body}"),
+            Err(err) => {
+                eprintln!("failed to serialize session inspection: {err}");
+                return ExitCode::from(1);
+            }
+        }
+    } else {
+        println!("mode: {}", mode_source_label(entry.catalog.mode_source));
+        println!(
+            "resume: {}",
+            if entry.catalog.is_resumable {
+                "yes"
+            } else {
+                "no"
+            }
+        );
+        if let Some(reason) = entry.catalog.resume_disabled_reason.as_deref() {
+            println!("resume_reason: {reason}");
+        }
+        print_human_summary(&summary);
     }
 
     ExitCode::SUCCESS

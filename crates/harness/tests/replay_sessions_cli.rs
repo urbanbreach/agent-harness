@@ -30,6 +30,22 @@ fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
     }
 }
 
+fn agent_envelope(run_id: &str, seq: u64, agent_id: &str, payload: EventV1) -> EventEnvelopeV1 {
+    EventEnvelopeV1 {
+        schema_version: SCHEMA_VERSION,
+        event_id: format!("evt-{seq:04}"),
+        seq,
+        run_id: run_id.to_string(),
+        mono_ms: seq,
+        ts: None,
+        actor: EventActor::new(ActorKind::Worker, Some(agent_id.to_string())),
+        correlation_id: None,
+        causation_id: None,
+        stream_key: Some(format!("run:{run_id}")),
+        payload,
+    }
+}
+
 fn write_events_jsonl(run_dir: &std::path::Path, events: &[EventEnvelopeV1]) {
     let body = events
         .iter()
@@ -160,7 +176,7 @@ fn replay_cli_prints_human_summary() {
 }
 
 #[test]
-fn replay_cli_surfaces_artifacts_and_child_sessions_for_recovery() {
+fn replay_cli_surfaces_recovery_story_details_from_resume_metadata() {
     let run_dir = tempdir().expect("tempdir");
     write_events_jsonl(
         run_dir.path(),
@@ -185,6 +201,9 @@ fn replay_cli_surfaces_artifacts_and_child_sessions_for_recovery() {
     assert!(stdout.contains("artifacts: 1"));
     assert!(stdout.contains("artifacts/delegated/task-output.json"));
     assert!(stdout.contains("tool_call=toolcall_1"));
+    assert!(stdout.contains("canonical=agent.spawn"));
+    assert!(stdout.contains("alias=task"));
+    assert!(stdout.contains("child_session=child-run-001"));
     assert!(stdout.contains("child_sessions: 1"));
     assert!(stdout.contains("child-run-001"));
     assert!(stdout.contains("parent_tool=toolcall_1"));
@@ -211,10 +230,17 @@ fn replay_cli_surfaces_artifacts_and_child_sessions_for_recovery() {
     assert_eq!(summary["artifact_count"], 1);
     assert_eq!(summary["child_session_count"], 1);
     assert_eq!(
+        summary["session_path"],
+        run_dir.path().to_str().expect("run dir utf-8")
+    );
+    assert_eq!(
         summary["artifacts"][0]["path"],
         "artifacts/delegated/task-output.json"
     );
     assert_eq!(summary["artifacts"][0]["tool_call_id"], "toolcall_1");
+    assert_eq!(summary["artifacts"][0]["canonical_tool_id"], "agent.spawn");
+    assert_eq!(summary["artifacts"][0]["alias_source_tool_id"], "task");
+    assert_eq!(summary["artifacts"][0]["child_session_id"], "child-run-001");
     assert_eq!(
         summary["child_sessions"][0]["child_session_id"],
         "child-run-001"
@@ -321,6 +347,158 @@ fn replay_cli_surfaces_recovery_context_in_json_summary() {
 }
 
 #[test]
+fn replay_cli_merges_on_disk_artifact_discovery_with_recovery_metadata() {
+    let run_dir = tempdir().expect("tempdir");
+    std::fs::create_dir_all(run_dir.path().join("artifacts/notes")).expect("create artifacts dir");
+    std::fs::write(
+        run_dir.path().join("artifacts/notes/output.txt"),
+        "artifact body\n",
+    )
+    .expect("write artifact");
+
+    write_events_jsonl(
+        run_dir.path(),
+        &[
+            envelope(
+                "run_recovery_detail",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                "run_recovery_detail",
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_child".to_string(),
+                    profile: "worker".to_string(),
+                    parent_agent_id: Some("agent_parent".to_string()),
+                }),
+            ),
+            agent_envelope(
+                "run_recovery_detail",
+                3,
+                "agent_child",
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_1".to_string(),
+                    provider_id: "openai".to_string(),
+                    model_id: "gpt-5.4-mini".to_string(),
+                    prompt_summary: "delegate".to_string(),
+                    request_digest: "digest-1".to_string(),
+                }),
+            ),
+            envelope(
+                "run_recovery_detail",
+                4,
+                EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                    tool_call_id: "toolcall_1".to_string(),
+                    status: ToolCallStatus::Succeeded,
+                    output_summary: Some("wrote artifact".to_string()),
+                    output_digest: Some("tool-digest".to_string()),
+                    output_json: None,
+                    metadata: Some(ToolCallMetadata {
+                        lineage: Some(TaskLineageMetadata {
+                            parent_tool_call_id: Some("toolcall_parent".to_string()),
+                            parent_task_id: Some("task_1".to_string()),
+                            parent_request_id: Some("req_0".to_string()),
+                            parent_session_id: Some("agent_parent".to_string()),
+                            child_session_id: Some("agent_child".to_string()),
+                            child_request_id: Some("req_1".to_string()),
+                            child_provider_id: Some("openai".to_string()),
+                            child_model_id: Some("gpt-5.4-mini".to_string()),
+                        }),
+                        timing: Some(ExecutionTimingMetadata {
+                            started_mono_ms: Some(3),
+                            finished_mono_ms: Some(7),
+                            elapsed_ms: Some(4),
+                        }),
+                        ..ToolCallMetadata::default()
+                    }),
+                }),
+            ),
+            envelope(
+                "run_recovery_detail",
+                5,
+                EventV1::ArtifactWritten(ArtifactWrittenEvent {
+                    path: "artifacts/notes/output.txt".to_string(),
+                    digest: "artifact-digest".to_string(),
+                    bytes: 14,
+                    tool_call_id: Some("toolcall_1".to_string()),
+                    tool_metadata: Default::default(),
+                    metadata: Default::default(),
+                }),
+            ),
+            envelope(
+                "run_recovery_detail",
+                6,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let json_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "replay",
+            "--session",
+            run_dir.path().to_str().expect("run dir utf-8"),
+            "--json",
+        ])
+        .output()
+        .expect("run harness replay json");
+
+    assert!(
+        json_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&json_output.stderr)
+    );
+    let summary: serde_json::Value =
+        serde_json::from_slice(&json_output.stdout).expect("replay json output should parse");
+    assert_eq!(summary["artifact_count"], 1);
+    assert_eq!(summary["child_session_count"], 1);
+    assert_eq!(
+        summary["artifacts"][0]["path"],
+        "artifacts/notes/output.txt"
+    );
+    assert_eq!(summary["artifacts"][0]["tool_call_id"], "toolcall_1");
+    assert_eq!(summary["artifacts"][0]["child_session_id"], "agent_child");
+    assert_eq!(summary["artifacts"][0]["present_on_disk"], true);
+    assert_eq!(
+        summary["child_sessions"][0]["child_session_id"],
+        "agent_child"
+    );
+    assert_eq!(
+        summary["child_sessions"][0]["provider_model"],
+        "openai/gpt-5.4-mini"
+    );
+
+    let human_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "replay",
+            "--session",
+            run_dir.path().to_str().expect("run dir utf-8"),
+        ])
+        .output()
+        .expect("run harness replay human");
+
+    assert!(
+        human_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&human_output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&human_output.stdout);
+    assert!(stdout.contains("session_path:"));
+    assert!(stdout.contains("artifacts: 1"));
+    assert!(stdout.contains("artifacts/notes/output.txt"));
+    assert!(stdout.contains("present=yes"));
+    assert!(stdout.contains("child_sessions: 1"));
+    assert!(stdout.contains("agent_child"));
+    assert!(stdout.contains("openai/gpt-5.4-mini"));
+}
+
+#[test]
 fn sessions_list_cli_prints_finished_and_failed_runs() {
     let session_dir = tempdir().expect("tempdir");
     let finished_dir = session_dir.path().join("run_a");
@@ -415,7 +593,7 @@ fn sessions_list_cli_prints_finished_and_failed_runs() {
 }
 
 #[test]
-fn sessions_list_cli_surfaces_recovery_counts_and_run_path() {
+fn sessions_list_cli_surfaces_recovery_counts_run_path_and_parent() {
     let session_dir = tempdir().expect("tempdir");
     let run_dir = session_dir.path().join("run_recovery");
     std::fs::create_dir_all(&run_dir).expect("create recovery run dir");
@@ -447,6 +625,175 @@ fn sessions_list_cli_surfaces_recovery_counts_and_run_path() {
     assert_eq!(columns[7], "1");
     assert_eq!(columns[8], "1");
     assert_eq!(columns[9], run_dir.to_str().expect("run dir utf-8"));
+    assert_eq!(columns[10], "agent_supervisor");
+}
+
+#[test]
+fn sessions_inspect_cli_surfaces_recovery_details() {
+    let session_dir = tempdir().expect("tempdir");
+    let run_dir = session_dir.path().join("run_recovery_inspect");
+    std::fs::create_dir_all(run_dir.join("artifacts/notes")).expect("create run artifacts");
+    std::fs::write(
+        run_dir.join("artifacts/notes/output.txt"),
+        "artifact body\n",
+    )
+    .expect("write artifact");
+
+    write_events_jsonl(
+        &run_dir,
+        &[
+            envelope(
+                "run_recovery_inspect",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                "run_recovery_inspect",
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_root".to_string(),
+                    profile: "deep".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                "run_recovery_inspect",
+                3,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_child".to_string(),
+                    profile: "worker".to_string(),
+                    parent_agent_id: Some("agent_root".to_string()),
+                }),
+            ),
+            agent_envelope(
+                "run_recovery_inspect",
+                4,
+                "agent_child",
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_1".to_string(),
+                    provider_id: "openai".to_string(),
+                    model_id: "gpt-5.4-mini".to_string(),
+                    prompt_summary: "delegate".to_string(),
+                    request_digest: "digest-1".to_string(),
+                }),
+            ),
+            envelope(
+                "run_recovery_inspect",
+                5,
+                EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                    tool_call_id: "toolcall_1".to_string(),
+                    status: ToolCallStatus::Succeeded,
+                    output_summary: Some("wrote artifact".to_string()),
+                    output_digest: Some("tool-digest".to_string()),
+                    output_json: None,
+                    metadata: Some(ToolCallMetadata {
+                        lineage: Some(TaskLineageMetadata {
+                            parent_tool_call_id: Some("toolcall_parent".to_string()),
+                            parent_task_id: Some("task_1".to_string()),
+                            parent_request_id: Some("req_0".to_string()),
+                            parent_session_id: Some("agent_root".to_string()),
+                            child_session_id: Some("agent_child".to_string()),
+                            child_request_id: Some("req_1".to_string()),
+                            child_provider_id: Some("openai".to_string()),
+                            child_model_id: Some("gpt-5.4-mini".to_string()),
+                        }),
+                        timing: Some(ExecutionTimingMetadata {
+                            started_mono_ms: Some(4),
+                            finished_mono_ms: Some(5),
+                            elapsed_ms: Some(1),
+                        }),
+                        ..ToolCallMetadata::default()
+                    }),
+                }),
+            ),
+            envelope(
+                "run_recovery_inspect",
+                6,
+                EventV1::ArtifactWritten(ArtifactWrittenEvent {
+                    path: "artifacts/notes/output.txt".to_string(),
+                    digest: "artifact-digest".to_string(),
+                    bytes: 14,
+                    tool_call_id: Some("toolcall_1".to_string()),
+                    tool_metadata: Default::default(),
+                    metadata: Default::default(),
+                }),
+            ),
+            envelope(
+                "run_recovery_inspect",
+                7,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "inspect",
+            "--run",
+            "run_recovery_inspect",
+        ])
+        .output()
+        .expect("run harness sessions inspect");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("mode: interactive_live"));
+    assert!(stdout.contains("resume: yes"));
+    assert!(stdout.contains("session_path:"));
+    assert!(stdout.contains("artifacts: 1"));
+    assert!(stdout.contains("artifacts/notes/output.txt"));
+    assert!(stdout.contains("present=yes"));
+    assert!(stdout.contains("child_sessions: 1"));
+    assert!(stdout.contains("agent_child"));
+
+    let json_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "inspect",
+            "--run",
+            "run_recovery_inspect",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions inspect json");
+
+    assert!(
+        json_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&json_output.stderr)
+    );
+    let inspected: serde_json::Value =
+        serde_json::from_slice(&json_output.stdout).expect("sessions inspect json should parse");
+    assert_eq!(inspected["catalog"]["run_id"], "run_recovery_inspect");
+    assert_eq!(inspected["replay"]["artifact_count"], 1);
+    assert_eq!(inspected["replay"]["child_session_count"], 1);
+    assert_eq!(
+        inspected["replay"]["session_path"],
+        run_dir.to_str().expect("run dir utf-8")
+    );
+    assert_eq!(
+        inspected["replay"]["artifacts"][0]["path"],
+        "artifacts/notes/output.txt"
+    );
+    assert_eq!(inspected["replay"]["artifacts"][0]["present_on_disk"], true);
+    assert_eq!(
+        inspected["replay"]["child_sessions"][0]["child_session_id"],
+        "agent_child"
+    );
 }
 
 #[test]
