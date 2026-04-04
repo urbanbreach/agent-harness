@@ -125,6 +125,42 @@ async fn prompt_cli_calls_responses_endpoint() {
     );
 }
 
+#[test]
+fn prompt_cli_mock_mode_runs_without_config() {
+    let temp = tempdir().expect("tempdir");
+    let out_path = temp.path().join("events.jsonl");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args([
+            "prompt",
+            "--mock",
+            "--text",
+            "Hello from PTY",
+            "--out",
+            out_path.to_str().expect("out path utf-8"),
+        ])
+        .output()
+        .expect("run harness prompt --mock");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let events_body = fs::read_to_string(&out_path).expect("read prompt events");
+    assert!(
+        events_body.contains("\"event_type\":\"task_completed\""),
+        "expected prompt mock run to complete a task: {events_body}"
+    );
+    assert!(
+        events_body.contains("Hello world"),
+        "expected prompt mock transcript to include the scripted provider response: {events_body}"
+    );
+}
+
 #[tokio::test]
 async fn prompt_cli_resume_flag_continues_existing_session() {
     let server = MockServer::start().await;

@@ -7,28 +7,38 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clap::Args;
 use harness_core::clock::{Clock, FakeClock, RealClock};
-use harness_core::config::resolve_config_path;
+use harness_core::config::{resolve_config_path, ShellAllowlist};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1};
 use harness_core::proj::inspect_resume_plan;
+use harness_core::perm::PermissionPolicy;
 use harness_core::redact::DefaultRedactor;
 use harness_core::store::{EventStore, EventStoreError};
+use harness_tools::coordinator_registry;
 use harness_tui::load_events_from_run_dir;
 use uuid::Uuid;
 
 use crate::recovery::{
     inspect_session_recovery, latest_run_name, resolve_session_run_dir, select_resume_agent_id,
 };
-use crate::{bootstrap, logging};
+use crate::{
+    bootstrap, logging,
+    scenarios::{golden_path_profiles, golden_path_provider},
+};
 
 const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 const WAIT_TIMEOUT_ENV: &str = "HARNESS_PROMPT_WAIT_TIMEOUT_MS";
 const PROVIDER_ERROR_REASON_GRACE: Duration = Duration::from_secs(2);
+const DEFAULT_SESSION_DIR: &str = ".agent-harness/sessions";
+const DEFAULT_MOCK_PROFILE: &str = "worker";
 
 #[derive(Debug, Args, Clone)]
 pub struct PromptCommand {
     #[arg(long)]
     pub text: String,
+
+    #[arg(long, default_value_t = false, conflicts_with = "resume")]
+    pub mock: bool,
 
     #[arg(long, conflicts_with = "resume")]
     pub profile: Option<String>,
@@ -48,7 +58,7 @@ pub fn execute(
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
 ) -> ExitCode {
-    let settings = match resolve_settings(config_path, global_session_dir) {
+    let settings = match resolve_settings(&cmd, config_path, global_session_dir) {
         Ok(settings) => settings,
         Err(err) => {
             eprintln!("prompt setup failed: {err}");
@@ -90,9 +100,11 @@ pub fn execute(
 }
 
 struct PromptSettings {
-    config: harness_core::config::HarnessConfig,
+    logging_config: Option<harness_core::config::HarnessConfig>,
     coordinator_config: CoordinatorConfig,
+    default_profile: String,
     deterministic: bool,
+    deterministic_seed: u64,
     config_digest: String,
 }
 
@@ -102,11 +114,16 @@ struct PromptOutcome {
 }
 
 fn resolve_settings(
+    cmd: &PromptCommand,
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
 ) -> Result<PromptSettings, String> {
+    if cmd.mock {
+        return resolve_mock_settings(config_path, global_session_dir);
+    }
+
     let explicit_config = resolve_config_path(config_path.as_deref()).ok_or_else(|| {
-        "prompt mode requires a config file; pass --config <path> or create harness.jsonc. A starting point lives at configs/harness.example.jsonc"
+        "prompt mode requires a config file; pass --config <path> or create harness.jsonc. A starting point lives at configs/harness.example.jsonc, or re-run with --mock"
             .to_string()
     })?;
 
@@ -123,13 +140,61 @@ fn resolve_settings(
 
     let deterministic = config.deterministic.enabled
         || matches!(std::env::var("HARNESS_DETERMINISTIC").as_deref(), Ok("1"));
-
+    let deterministic_seed = config.deterministic.seed;
+    let default_profile = bootstrap::interactive_profile_name(&config);
     let coordinator_config = bootstrap::build_interactive_coordinator_config(&config)?;
 
     Ok(PromptSettings {
-        config,
+        logging_config: Some(config),
         coordinator_config,
+        default_profile,
         deterministic,
+        deterministic_seed,
+        config_digest,
+    })
+}
+
+fn resolve_mock_settings(
+    config_path: Option<PathBuf>,
+    global_session_dir: Option<PathBuf>,
+) -> Result<PromptSettings, String> {
+    let explicit_config = resolve_config_path(config_path.as_deref());
+    let mut shell_allowlist = ShellAllowlist::default();
+    let mut session_dir = PathBuf::from(DEFAULT_SESSION_DIR);
+    let mut deterministic = false;
+    let mut deterministic_seed = 0;
+    let mut config_digest = "none".to_string();
+    let mut logging_config = None;
+
+    if let Some(path) = explicit_config {
+        let mut config = bootstrap::load_harness_config(&path)?;
+        config.apply_session_dir_override(global_session_dir.clone());
+
+        let config_bytes = fs::read(&path)
+            .map_err(|err| format!("failed to read config file {}: {err}", path.display()))?;
+        config_digest = blake3::hash(&config_bytes).to_hex().to_string();
+        shell_allowlist = config.permissions.shell_allowlist.clone();
+        session_dir = config.paths.session_dir.clone();
+        deterministic = config.deterministic.enabled;
+        deterministic_seed = config.deterministic.seed;
+        logging_config = Some(config);
+    }
+
+    let session_dir = global_session_dir.unwrap_or(session_dir);
+    deterministic |= matches!(std::env::var("HARNESS_DETERMINISTIC").as_deref(), Ok("1"));
+
+    let mut coordinator_config = CoordinatorConfig::new(session_dir);
+    coordinator_config.permission_policy = default_prompt_permission_policy();
+    coordinator_config.tool_registry = Arc::new(coordinator_registry(shell_allowlist));
+    coordinator_config.provider = Arc::new(golden_path_provider());
+    coordinator_config.agent_profiles = golden_path_profiles();
+
+    Ok(PromptSettings {
+        logging_config,
+        coordinator_config,
+        default_profile: DEFAULT_MOCK_PROFILE.to_string(),
+        deterministic,
+        deterministic_seed,
         config_digest,
     })
 }
@@ -149,7 +214,7 @@ async fn run_prompt(
     coordinator_config.harness_version = env!("CARGO_PKG_VERSION").to_string();
 
     coordinator_config.run_id_override = Some(if settings.deterministic {
-        format!("prompt_{:016x}", settings.config.deterministic.seed)
+        format!("prompt_{:016x}", settings.deterministic_seed)
     } else {
         let entropy = format!(
             "{}:{}",
@@ -196,12 +261,14 @@ async fn run_prompt(
         .await
         .map_err(|err| err.to_string())?;
 
-    logging::init_logging(&settings.config, &run.artifacts_dir)?;
+    if let Some(config) = &settings.logging_config {
+        logging::init_logging(config, &run.artifacts_dir)?;
+    }
 
     let profile_name = cmd
         .profile
         .clone()
-        .unwrap_or_else(|| bootstrap::interactive_profile_name(&settings.config));
+        .unwrap_or_else(|| settings.default_profile.clone());
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), profile_name, None)
         .await
@@ -291,7 +358,9 @@ async fn run_resumed_prompt(
         .await
         .map_err(|err| err.to_string())?;
 
-    logging::init_logging(&settings.config, &run.artifacts_dir)?;
+    if let Some(config) = &settings.logging_config {
+        logging::init_logging(config, &run.artifacts_dir)?;
+    }
 
     let request_id = coordinator
         .request_agent_turn(user_actor(), resume_agent_id, cmd.text.clone())
@@ -321,6 +390,16 @@ fn supervisor_actor() -> EventActor {
 
 fn user_actor() -> EventActor {
     EventActor::new(ActorKind::User, Some("agent-supervisor".to_string()))
+}
+
+fn default_prompt_permission_policy() -> PermissionPolicy {
+    use harness_core::config::PermissionMode;
+
+    PermissionPolicy::new(
+        PermissionMode::Allow,
+        PermissionMode::Deny,
+        PermissionMode::Deny,
+    )
 }
 
 async fn wait_for_prompt_completion(
