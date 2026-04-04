@@ -27,6 +27,7 @@ fn profile(name: &str, category: &str, toolset: &[&str]) -> AgentProfile {
         category: category.to_string(),
         model_ref: "default:default".to_string(),
         system_prompt: format!("{name} prompt"),
+        max_iters: 12,
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         tool_surface: ToolSurface::Native,
         toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),

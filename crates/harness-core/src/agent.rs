@@ -23,6 +23,8 @@ pub struct AgentProfile {
     pub category: String,
     pub model_ref: String,
     pub system_prompt: String,
+    #[serde(default = "default_agent_profile_max_iters")]
+    pub max_iters: usize,
     pub tool_failure_mode: ToolFailureMode,
     #[serde(default)]
     pub tool_surface: ToolSurface,
@@ -36,12 +38,17 @@ impl AgentProfile {
             category: name.clone(),
             model_ref: "default:default".to_string(),
             system_prompt: String::new(),
+            max_iters: default_agent_profile_max_iters(),
             tool_failure_mode: ToolFailureMode::FailTurn,
             tool_surface: ToolSurface::Native,
             toolset: Vec::new(),
             name,
         }
     }
+}
+
+fn default_agent_profile_max_iters() -> usize {
+    12
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -117,7 +124,6 @@ pub fn default_provider() -> Arc<dyn Provider> {
     Arc::new(NullProvider)
 }
 
-const MAX_ITERS: usize = 12;
 const MAX_TOOL_CALLS_TOTAL: usize = 25;
 
 pub struct MultiTurnStreamingRequest<'a> {
@@ -250,7 +256,7 @@ where
 
     let mut total_tool_calls = 0usize;
 
-    for _iter in 1..=MAX_ITERS {
+    for _iter in 1..=profile.max_iters {
         let turn_request_id = request_id.clone();
 
         let completion_request = CompletionRequest {
@@ -445,7 +451,10 @@ where
     }
 
     AgentTurnOutcome::Failed {
-        reason: format!("agent turn exceeded MAX_ITERS={MAX_ITERS}"),
+        reason: format!(
+            "agent turn exceeded profile max_iters={}",
+            profile.max_iters
+        ),
     }
 }
 
@@ -934,11 +943,16 @@ mod tests {
     }
 
     fn test_profile() -> AgentProfile {
+        profile_with_max_iters(12)
+    }
+
+    fn profile_with_max_iters(max_iters: usize) -> AgentProfile {
         AgentProfile {
             name: "worker".to_string(),
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             system_prompt: "sys".to_string(),
+            max_iters,
             tool_failure_mode: ToolFailureMode::FailTurn,
             tool_surface: ToolSurface::Native,
             toolset: vec!["fs.read".to_string()],
@@ -950,6 +964,75 @@ mod tests {
             tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
             ..test_profile()
         }
+    }
+
+    async fn run_with_tool_loop(profile: AgentProfile) -> AgentTurnOutcome {
+        let request = test_request();
+        let tool_registry = test_tool_registry();
+        let tool_defs =
+            build_provider_tool_defs(&profile, tool_registry.as_ref()).expect("build tool defs");
+        let function_name = tool_defs.first().expect("tool def").function_name.clone();
+        let requests = Arc::new(Mutex::new(
+            Vec::<harness_providers::CompletionRequest>::new(),
+        ));
+        let scripted_events = (0..profile.max_iters)
+            .map(|call_index| {
+                vec![
+                    harness_providers::ProviderStreamEvent::Start,
+                    harness_providers::ProviderStreamEvent::TextDelta(format!(
+                        "calling tool {call_index}"
+                    )),
+                    harness_providers::ProviderStreamEvent::ToolCallComplete {
+                        tool_call_id: format!("call_{call_index}"),
+                        function_name: function_name.clone(),
+                        arguments_json: r#"{"filePath":"/tmp/demo.txt"}"#.to_string(),
+                    },
+                    harness_providers::ProviderStreamEvent::Done {
+                        usage: CompletionUsage {
+                            prompt_tokens: 4,
+                            completion_tokens: 3,
+                            total_tokens: 7,
+                        },
+                    },
+                ]
+            })
+            .collect();
+        let provider = Arc::new(RecordingProvider::new(requests.clone(), scripted_events));
+        let tool_call_count = Arc::new(Mutex::new(0usize));
+
+        let outcome = run_multi_turn_streaming(
+            MultiTurnStreamingRequest {
+                provider,
+                tool_registry,
+                profile: &profile,
+                request_id: "req_loop".to_string(),
+                request,
+                prior_turns: &[],
+            },
+            {
+                let tool_call_count = tool_call_count.clone();
+                move |_tool_id, _args_json| {
+                    let tool_call_count = tool_call_count.clone();
+                    async move {
+                        *tool_call_count.lock().expect("lock tool call count") += 1;
+                        Ok(ToolResult::text("loop"))
+                    }
+                }
+            },
+            |_event| async {},
+        )
+        .await;
+
+        assert_eq!(
+            requests.lock().expect("lock requests").len(),
+            profile.max_iters
+        );
+        assert_eq!(
+            *tool_call_count.lock().expect("lock tool call count"),
+            profile.max_iters
+        );
+
+        outcome
     }
 
     struct RecordingProvider {
@@ -1103,6 +1186,38 @@ mod tests {
 
         let requests = requests.lock().expect("lock requests");
         assert_eq!(requests.as_slice(), &[first_request, second_request]);
+    }
+
+    #[tokio::test]
+    async fn multi_turn_runner_stops_after_default_profile_max_iters() {
+        let profile = test_profile();
+        let outcome = run_with_tool_loop(profile.clone()).await;
+
+        assert_eq!(
+            outcome,
+            AgentTurnOutcome::Failed {
+                reason: format!(
+                    "agent turn exceeded profile max_iters={}",
+                    profile.max_iters
+                ),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn multi_turn_runner_stops_after_custom_profile_max_iters() {
+        let profile = profile_with_max_iters(2);
+        let outcome = run_with_tool_loop(profile.clone()).await;
+
+        assert_eq!(
+            outcome,
+            AgentTurnOutcome::Failed {
+                reason: format!(
+                    "agent turn exceeded profile max_iters={}",
+                    profile.max_iters
+                ),
+            }
+        );
     }
 
     fn test_request() -> AgentRequest {

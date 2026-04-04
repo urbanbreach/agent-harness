@@ -235,6 +235,7 @@ fn test_coordinator(
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             system_prompt: "worker-prompt".to_string(),
+            max_iters: 12,
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             tool_surface: ToolSurface::Native,
             toolset,

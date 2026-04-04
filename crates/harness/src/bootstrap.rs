@@ -115,6 +115,7 @@ pub fn interactive_agent_profiles(
                     "You are the {profile_name} agent. {}",
                     profile_cfg.description
                 ),
+                max_iters: profile_cfg.max_iters,
                 tool_failure_mode: profile_cfg.tool_failure_mode,
                 tool_surface: profile_cfg.tool_surface,
                 toolset: resolve_tool_ids_for_surface(
@@ -141,4 +142,89 @@ fn interactive_plan_profiles(cfg: &HarnessConfig) -> BTreeMap<String, PlanProfil
             )
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::interactive_agent_profiles;
+    use harness_core::config::load_config_from_str;
+
+    #[test]
+    fn interactive_agent_profiles_preserve_default_and_custom_max_iters() {
+        let cfg = load_config_from_str(
+            r#"
+            {
+              providers: {
+                default: {
+                  type: "openai_compatible",
+                  base_url: "https://example.invalid/v1",
+                  api_key: "test-key",
+                  models: {
+                    "gpt-5.4-mini": {
+                      display_name: "GPT-5.4 mini"
+                    }
+                  }
+                }
+              },
+              profiles: {
+                deep: {
+                  description: "Default iteration budget",
+                  model_ref: "default:gpt-5.4-mini",
+                  tools: ["fs.read"]
+                },
+                tool_audit: {
+                  description: "Longer tool audit budget",
+                  model_ref: "default:gpt-5.4-mini",
+                  max_iters: 20,
+                  tools: ["fs.read"]
+                }
+              },
+              permissions: {
+                defaults: {
+                  edit: "deny",
+                  shell: "deny",
+                  network: "deny",
+                  question: "deny",
+                  task: "deny",
+                  webfetch: "deny",
+                  websearch: "deny",
+                  codesearch: "deny",
+                  lsp: "deny"
+                },
+                shell_allowlist: {
+                  executables: ["git"],
+                  cwd_roots: ["."]
+                }
+              },
+              runtime: {
+                session_dir: "/tmp/harness-tests",
+                background_tasks: {
+                  default_concurrency: 1,
+                  provider_concurrency: 1,
+                  model_concurrency: 1,
+                  stale_timeout_ms: 1000,
+                  message_staleness_timeout_ms: 1000
+                },
+                permissions: {
+                  ask_timeout_ms: 1000
+                },
+                prompt: {
+                  wait_timeout_ms: 1000
+                },
+                deterministic: {
+                  enabled: false,
+                  seed: 42
+                }
+              },
+              integrations: {}
+            }
+            "#,
+        )
+        .expect("config should parse");
+
+        let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles should build");
+
+        assert_eq!(profiles["deep"].max_iters, 12);
+        assert_eq!(profiles["tool_audit"].max_iters, 20);
+    }
 }
