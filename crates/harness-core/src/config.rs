@@ -54,10 +54,6 @@ pub struct HarnessConfig {
     pub providers: BTreeMap<String, ProviderConfig>,
     #[serde(rename = "profiles")]
     pub profiles: BTreeMap<String, ProfileConfig>,
-    #[serde(default)]
-    #[serde(skip)]
-    #[schemars(skip)]
-    pub categories: BTreeMap<String, CategoryConfig>,
     pub permissions: PermissionsConfig,
     pub runtime: RuntimeConfig,
     pub integrations: IntegrationsConfig,
@@ -209,7 +205,6 @@ impl HarnessConfig {
     }
 
     fn sync_legacy_runtime_sections(&mut self) {
-        self.categories = self.profiles.clone();
         self.background_task = self.runtime.background_tasks.clone();
         self.paths.session_dir = self.runtime.session_dir.clone();
         self.deterministic = self.runtime.deterministic.clone();
@@ -820,6 +815,7 @@ pub struct ProfileConfig {
     pub tools: Vec<String>,
 }
 
+/// Legacy alias kept for migration-only compatibility shims.
 pub type CategoryConfig = ProfileConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
@@ -845,6 +841,7 @@ pub struct ProfilePermissions {
     pub lsp: Option<PermissionMode>,
 }
 
+/// Legacy alias kept for category-scoped runtime permission surfaces.
 pub type CategoryPermissions = ProfilePermissions;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
