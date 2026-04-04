@@ -35,6 +35,18 @@ const TYPESCRIPT_ROOT_MARKERS: &[&str] = &[
     "pnpm-lock.yaml",
     "yarn.lock",
 ];
+const PYTHON_ROOT_MARKERS: &[&str] = &[
+    "pyproject.toml",
+    "setup.py",
+    "setup.cfg",
+    "requirements.txt",
+    "requirements-dev.txt",
+    "Pipfile",
+    "poetry.lock",
+    "uv.lock",
+    "uv.toml",
+];
+const GO_ROOT_MARKERS: &[&str] = &["go.work", "go.mod"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LspOperation {
@@ -255,40 +267,68 @@ struct LspServerSpec {
 }
 
 impl LspServerSpec {
-    fn rust() -> Self {
+    fn builtin(
+        name: &str,
+        command: &[&str],
+        extensions: &[&str],
+        root_markers: &'static [&'static str],
+    ) -> Self {
         Self {
-            name: "rust".to_string(),
+            name: name.to_string(),
             disabled: false,
-            command: vec!["rust-analyzer".to_string()],
-            extensions: vec![".rs".to_string()],
-            root_markers: RUST_ROOT_MARKERS,
+            command: command.iter().map(|token| (*token).to_string()).collect(),
+            extensions: extensions
+                .iter()
+                .map(|extension| (*extension).to_string())
+                .collect(),
+            root_markers,
             env: BTreeMap::new(),
             initialization: None,
         }
     }
 
+    fn rust() -> Self {
+        Self::builtin("rust", &["rust-analyzer"], &[".rs"], RUST_ROOT_MARKERS)
+    }
+
     fn typescript() -> Self {
-        Self {
-            name: "typescript".to_string(),
-            disabled: false,
-            command: vec![
-                "typescript-language-server".to_string(),
-                "--stdio".to_string(),
-            ],
-            extensions: vec![
-                ".ts".to_string(),
-                ".tsx".to_string(),
-                ".js".to_string(),
-                ".jsx".to_string(),
-                ".mjs".to_string(),
-                ".cjs".to_string(),
-                ".mts".to_string(),
-                ".cts".to_string(),
-            ],
-            root_markers: TYPESCRIPT_ROOT_MARKERS,
-            env: BTreeMap::new(),
-            initialization: None,
-        }
+        Self::builtin(
+            "typescript",
+            &["typescript-language-server", "--stdio"],
+            &[".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"],
+            TYPESCRIPT_ROOT_MARKERS,
+        )
+    }
+
+    fn python() -> Self {
+        Self::builtin(
+            "python",
+            &["pyright-langserver", "--stdio"],
+            &[".py", ".pyi"],
+            PYTHON_ROOT_MARKERS,
+        )
+    }
+
+    fn go() -> Self {
+        Self::builtin("go", &["gopls"], &[".go"], GO_ROOT_MARKERS)
+    }
+
+    fn json() -> Self {
+        Self::builtin(
+            "json",
+            &["vscode-json-language-server", "--stdio"],
+            &[".json", ".jsonc"],
+            &[],
+        )
+    }
+
+    fn yaml() -> Self {
+        Self::builtin(
+            "yaml",
+            &["yaml-language-server", "--stdio"],
+            &[".yaml", ".yml"],
+            &[],
+        )
     }
 
     fn custom(name: &str, cfg: &LspServerConfig) -> Result<Self, ToolError> {
@@ -350,8 +390,12 @@ impl LspServerSpec {
 
 fn default_server_specs() -> BTreeMap<String, LspServerSpec> {
     BTreeMap::from([
+        ("go".to_string(), LspServerSpec::go()),
+        ("json".to_string(), LspServerSpec::json()),
+        ("python".to_string(), LspServerSpec::python()),
         ("rust".to_string(), LspServerSpec::rust()),
         ("typescript".to_string(), LspServerSpec::typescript()),
+        ("yaml".to_string(), LspServerSpec::yaml()),
     ])
 }
 
@@ -497,6 +541,10 @@ fn language_id(path: &Path, server_name: &str) -> String {
         Some("rs") => "rust".to_string(),
         Some("ts") => "typescript".to_string(),
         Some("tsx") => "typescriptreact".to_string(),
+        Some("py") | Some("pyi") => "python".to_string(),
+        Some("go") => "go".to_string(),
+        Some("json") | Some("jsonc") => "json".to_string(),
+        Some("yaml") | Some("yml") => "yaml".to_string(),
         Some("js") => "javascript".to_string(),
         Some("jsx") => "javascriptreact".to_string(),
         Some("mjs") | Some("cjs") | Some("mts") | Some("cts") => "javascript".to_string(),
@@ -861,14 +909,14 @@ mod tests {
     #[test]
     fn server_for_path_rejects_unsupported_extension_with_stable_message() {
         let tempdir = tempfile::tempdir().expect("tempdir");
-        let path = tempdir.path().join("fixture.py");
+        let path = tempdir.path().join("fixture.lua");
         fs::write(&path, "print('hello')\n").expect("write fixture");
         let err = match server_for_path(&path, &LspConfig::default()) {
-            Ok(_) => panic!("python should be unsupported"),
+            Ok(_) => panic!("lua should be unsupported"),
             Err(err) => err,
         };
         assert!(
-            matches!(err, ToolError::InvalidArguments(message) if message.contains("unsupported code.lsp language extension: .py"))
+            matches!(err, ToolError::InvalidArguments(message) if message.contains("unsupported code.lsp language extension: .lua"))
         );
     }
 

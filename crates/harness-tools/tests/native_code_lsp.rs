@@ -39,6 +39,9 @@ fn setup_workspace() -> tempfile::TempDir {
     let workspace = temp_dir.path().join("workspace");
     fs::create_dir_all(workspace.join("src")).expect("src");
     fs::create_dir_all(workspace.join("web")).expect("web");
+    fs::create_dir_all(workspace.join("python")).expect("python");
+    fs::create_dir_all(workspace.join("go")).expect("go");
+    fs::create_dir_all(workspace.join("config")).expect("config");
     fs::create_dir_all(workspace.join("custom")).expect("custom");
 
     fs::write(
@@ -57,16 +60,42 @@ fn setup_workspace() -> tempfile::TempDir {
     )
     .expect("write package manifest");
     fs::write(
+        workspace.join("pyproject.toml"),
+        "[project]\nname = \"code-lsp-test\"\nversion = \"0.1.0\"\n",
+    )
+    .expect("write python manifest");
+    fs::write(
+        workspace.join("go.mod"),
+        "module example.com/code-lsp-test\n",
+    )
+    .expect("write go module");
+    fs::write(
         workspace.join("web/app.ts"),
         "const answer = 42;\nexport function read() {\n  return answer;\n}\n",
     )
     .expect("write typescript fixture");
     fs::write(
+        workspace.join("python/app.py"),
+        "ANSWER = 42\n\ndef read() -> int:\n    return ANSWER\n",
+    )
+    .expect("write python fixture");
+    fs::write(
+        workspace.join("go/main.go"),
+        "package main\n\nfunc helper() {}\n\nfunc main() {\n\thelper()\n}\n",
+    )
+    .expect("write go fixture");
+    fs::write(
+        workspace.join("config/settings.json"),
+        "{\n  \"answer\": 42\n}\n",
+    )
+    .expect("write json fixture");
+    fs::write(workspace.join("config/service.yaml"), "answer: 42\n").expect("write yaml fixture");
+    fs::write(
         workspace.join("custom/schema.foo"),
         "thing Example\n\nreference Example\n",
     )
     .expect("write custom fixture");
-    fs::write(workspace.join("unsupported.py"), "print('unsupported')\n")
+    fs::write(workspace.join("unsupported.lua"), "print('unsupported')\n")
         .expect("write unsupported fixture");
 
     temp_dir
@@ -126,6 +155,7 @@ struct FakeLspSpec<'a> {
     diagnostic_message: &'a str,
     env_key: &'a str,
     env_value: &'a str,
+    expected_language_id: &'a str,
     initialization_path: &'a str,
     initialization_value: &'a str,
 }
@@ -140,10 +170,12 @@ RESULT_URI = __RESULT_URI__
 DIAGNOSTIC_MESSAGE = __DIAGNOSTIC_MESSAGE__
 EXPECT_ENV_KEY = __EXPECT_ENV_KEY__
 EXPECT_ENV_VALUE = __EXPECT_ENV_VALUE__
+EXPECT_LANGUAGE_ID = __EXPECT_LANGUAGE_ID__
 EXPECT_INIT_PATH = __EXPECT_INIT_PATH__
 EXPECT_INIT_VALUE = __EXPECT_INIT_VALUE__
 
 opened_uri = None
+opened_language_id = None
 initialization_options = {}
 
 
@@ -195,6 +227,7 @@ while True:
 
     if method == "textDocument/didOpen":
         opened_uri = params.get("textDocument", {}).get("uri")
+        opened_language_id = params.get("textDocument", {}).get("languageId")
         continue
 
     if method == "initialize" and message_id is not None:
@@ -206,6 +239,7 @@ while True:
         continue
 
     env_ok = EXPECT_ENV_KEY == "" or os.environ.get(EXPECT_ENV_KEY) == EXPECT_ENV_VALUE
+    language_ok = EXPECT_LANGUAGE_ID == "" or opened_language_id == EXPECT_LANGUAGE_ID
     init_value = lookup(initialization_options, EXPECT_INIT_PATH)
     init_ok = EXPECT_INIT_PATH == "" or str(init_value).lower() == EXPECT_INIT_VALUE.lower()
     target_uri = params.get("textDocument", {}).get("uri") or opened_uri or "file:///workspace/unknown"
@@ -221,7 +255,7 @@ while True:
                 },
                 "severity": 1,
                 "source": method,
-                "message": f"{DIAGNOSTIC_MESSAGE}; env_ok={env_ok}; init_ok={init_ok}"
+                "message": f"{DIAGNOSTIC_MESSAGE}; env_ok={env_ok}; lang_ok={language_ok}; init_ok={init_ok}"
             }]
         }
     })
@@ -253,6 +287,10 @@ while True:
     .replace(
         "__EXPECT_ENV_VALUE__",
         &serde_json::to_string(spec.env_value).expect("env value json"),
+    )
+    .replace(
+        "__EXPECT_LANGUAGE_ID__",
+        &serde_json::to_string(spec.expected_language_id).expect("language id json"),
     )
     .replace(
         "__EXPECT_INIT_PATH__",
@@ -306,6 +344,7 @@ async fn native_code_lsp_supports_configured_custom_servers() {
             diagnostic_message: "rust override diagnostic",
             env_key: "RUST_LOG",
             env_value: "trace",
+            expected_language_id: "rust",
             initialization_path: "cargo.allFeatures",
             initialization_value: "true",
         },
@@ -318,6 +357,7 @@ async fn native_code_lsp_supports_configured_custom_servers() {
             diagnostic_message: "typescript override diagnostic",
             env_key: "TS_SERVER_LOG",
             env_value: "verbose",
+            expected_language_id: "typescript",
             initialization_path: "preferences.importModuleSpecifierPreference",
             initialization_value: "relative",
         },
@@ -330,6 +370,7 @@ async fn native_code_lsp_supports_configured_custom_servers() {
             diagnostic_message: "custom server diagnostic",
             env_key: "CUSTOM_LSP_MODE",
             env_value: "enabled",
+            expected_language_id: "",
             initialization_path: "feature.mode",
             initialization_value: "custom",
         },
@@ -413,7 +454,9 @@ async fn native_code_lsp_supports_configured_custom_servers() {
         rust_json["server"]["command"],
         json!(["custom-rust-analyzer"])
     );
-    assert!(first_diagnostic_message(&rust_json).contains("env_ok=True; init_ok=True"));
+    assert!(
+        first_diagnostic_message(&rust_json).contains("env_ok=True; lang_ok=True; init_ok=True")
+    );
 
     let compat_ts = compat
         .call(
@@ -436,7 +479,7 @@ async fn native_code_lsp_supports_configured_custom_servers() {
         .expect("configured typescript structured json");
     assert_eq!(ts_json["server"]["name"], json!("typescript"));
     assert_eq!(ts_json["server"]["command"], json!(["custom-ts-lsp"]));
-    assert!(first_diagnostic_message(&ts_json).contains("env_ok=True; init_ok=True"));
+    assert!(first_diagnostic_message(&ts_json).contains("env_ok=True; lang_ok=True; init_ok=True"));
 
     let custom_result = native
         .call(
@@ -466,12 +509,243 @@ async fn native_code_lsp_supports_configured_custom_servers() {
         .as_str()
         .expect("custom diagnostic file path")
         .ends_with("custom/schema.foo"));
-    assert!(first_diagnostic_message(&custom_json).contains("env_ok=True; init_ok=True"));
+    assert!(
+        first_diagnostic_message(&custom_json).contains("env_ok=True; lang_ok=True; init_ok=True")
+    );
 }
 
 #[test]
 fn native_code_lsp_supports_configured_builtin_and_custom_servers() {
     native_code_lsp_supports_configured_custom_servers();
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global test lock intentionally serializes PATH and LSP registry mutations across awaits"
+)]
+async fn native_code_lsp_supports_additional_builtin_server_presets() {
+    let _lock = test_lock().lock().expect("test lock");
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let fake_bin = temp_dir.path().join("fake-lsp-bin");
+    fs::create_dir_all(&fake_bin).expect("fake bin dir");
+    install_fake_lsp_binary(
+        &fake_bin,
+        "custom-python-lsp",
+        &FakeLspSpec {
+            result_uri: "file:///fake/python-definition.py",
+            diagnostic_message: "python preset diagnostic",
+            env_key: "PYRIGHT_PYTHON_FORCE_VERSION",
+            env_value: "latest",
+            expected_language_id: "python",
+            initialization_path: "python.analysis.typeCheckingMode",
+            initialization_value: "basic",
+        },
+    );
+    install_fake_lsp_binary(
+        &fake_bin,
+        "custom-go-lsp",
+        &FakeLspSpec {
+            result_uri: "file:///fake/go-definition.go",
+            diagnostic_message: "go preset diagnostic",
+            env_key: "GOPLS_LOG",
+            env_value: "debug",
+            expected_language_id: "go",
+            initialization_path: "gopls.staticcheck",
+            initialization_value: "true",
+        },
+    );
+    install_fake_lsp_binary(
+        &fake_bin,
+        "custom-json-lsp",
+        &FakeLspSpec {
+            result_uri: "file:///fake/json-definition.json",
+            diagnostic_message: "json preset diagnostic",
+            env_key: "JSON_LSP_TRACE",
+            env_value: "verbose",
+            expected_language_id: "json",
+            initialization_path: "json.validate.enable",
+            initialization_value: "true",
+        },
+    );
+    install_fake_lsp_binary(
+        &fake_bin,
+        "custom-yaml-lsp",
+        &FakeLspSpec {
+            result_uri: "file:///fake/yaml-definition.yaml",
+            diagnostic_message: "yaml preset diagnostic",
+            env_key: "YAML_LSP_TRACE",
+            env_value: "verbose",
+            expected_language_id: "yaml",
+            initialization_path: "yaml.keyOrdering",
+            initialization_value: "false",
+        },
+    );
+    let _path_guard = PathEnvGuard::prepend(&fake_bin);
+    let _config_guard = LspConfigGuard::install(LspConfig {
+        disabled: false,
+        servers: BTreeMap::from([
+            (
+                "python".to_string(),
+                LspServerConfig {
+                    disabled: false,
+                    command: Some(vec!["custom-python-lsp".to_string(), "--stdio".to_string()]),
+                    extensions: None,
+                    env: BTreeMap::from([(
+                        "PYRIGHT_PYTHON_FORCE_VERSION".to_string(),
+                        "latest".to_string(),
+                    )]),
+                    initialization: Some(json!({
+                        "python": {
+                            "analysis": {
+                                "typeCheckingMode": "basic",
+                            }
+                        }
+                    })),
+                },
+            ),
+            (
+                "go".to_string(),
+                LspServerConfig {
+                    disabled: false,
+                    command: Some(vec!["custom-go-lsp".to_string()]),
+                    extensions: None,
+                    env: BTreeMap::from([("GOPLS_LOG".to_string(), "debug".to_string())]),
+                    initialization: Some(json!({
+                        "gopls": {
+                            "staticcheck": true,
+                        }
+                    })),
+                },
+            ),
+            (
+                "json".to_string(),
+                LspServerConfig {
+                    disabled: false,
+                    command: Some(vec!["custom-json-lsp".to_string(), "--stdio".to_string()]),
+                    extensions: None,
+                    env: BTreeMap::from([("JSON_LSP_TRACE".to_string(), "verbose".to_string())]),
+                    initialization: Some(json!({
+                        "json": {
+                            "validate": {
+                                "enable": true,
+                            }
+                        }
+                    })),
+                },
+            ),
+            (
+                "yaml".to_string(),
+                LspServerConfig {
+                    disabled: false,
+                    command: Some(vec!["custom-yaml-lsp".to_string(), "--stdio".to_string()]),
+                    extensions: None,
+                    env: BTreeMap::from([("YAML_LSP_TRACE".to_string(), "verbose".to_string())]),
+                    initialization: Some(json!({
+                        "yaml": {
+                            "keyOrdering": false,
+                        }
+                    })),
+                },
+            ),
+        ]),
+    });
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let native = registry.get("code.lsp").expect("code.lsp tool");
+
+    let python_result = native
+        .call(
+            test_context(&workspace, "builtin-python"),
+            json!({
+                "operation": "goToDefinition",
+                "filePath": "python/app.py",
+                "line": 4,
+                "character": 12,
+            }),
+        )
+        .await
+        .expect("python preset request");
+    let python_json = python_result
+        .structured_json
+        .clone()
+        .expect("python structured json");
+    assert_eq!(python_json["server"]["name"], json!("python"));
+    assert_eq!(
+        python_json["server"]["command"],
+        json!(["custom-python-lsp", "--stdio"])
+    );
+    assert!(
+        first_diagnostic_message(&python_json).contains("env_ok=True; lang_ok=True; init_ok=True")
+    );
+
+    let go_result = native
+        .call(
+            test_context(&workspace, "builtin-go"),
+            json!({
+                "operation": "goToDefinition",
+                "filePath": "go/main.go",
+                "line": 5,
+                "character": 2,
+            }),
+        )
+        .await
+        .expect("go preset request");
+    let go_json = go_result
+        .structured_json
+        .clone()
+        .expect("go structured json");
+    assert_eq!(go_json["server"]["name"], json!("go"));
+    assert_eq!(go_json["server"]["command"], json!(["custom-go-lsp"]));
+    assert!(first_diagnostic_message(&go_json).contains("env_ok=True; lang_ok=True; init_ok=True"));
+
+    let json_result = native
+        .call(
+            test_context(&workspace, "builtin-json"),
+            json!({
+                "operation": "hover",
+                "filePath": "config/settings.json",
+                "line": 2,
+                "character": 4,
+            }),
+        )
+        .await
+        .expect("json preset request");
+    let json_json = json_result
+        .structured_json
+        .clone()
+        .expect("json structured json");
+    assert_eq!(json_json["server"]["name"], json!("json"));
+    assert_eq!(
+        json_json["server"]["command"],
+        json!(["custom-json-lsp", "--stdio"])
+    );
+    assert!(
+        first_diagnostic_message(&json_json).contains("env_ok=True; lang_ok=True; init_ok=True")
+    );
+
+    let yaml_result = native
+        .call(
+            test_context(&workspace, "builtin-yaml"),
+            json!({
+                "operation": "documentSymbol",
+                "filePath": "config/service.yaml",
+                "line": 1,
+                "character": 1,
+            }),
+        )
+        .await
+        .expect("yaml preset request");
+    let yaml_json = yaml_result.structured_json.expect("yaml structured json");
+    assert_eq!(yaml_json["server"]["name"], json!("yaml"));
+    assert_eq!(
+        yaml_json["server"]["command"],
+        json!(["custom-yaml-lsp", "--stdio"])
+    );
+    assert!(
+        first_diagnostic_message(&yaml_json).contains("env_ok=True; lang_ok=True; init_ok=True")
+    );
 }
 
 #[tokio::test]
@@ -552,7 +826,7 @@ async fn native_code_lsp_rejects_disabled_or_unsupported_servers() {
             test_context(&workspace, "unsupported-language"),
             json!({
                 "operation": "goToDefinition",
-                "filePath": "unsupported.py",
+                "filePath": "unsupported.lua",
                 "line": 1,
                 "character": 1,
             }),
@@ -561,7 +835,7 @@ async fn native_code_lsp_rejects_disabled_or_unsupported_servers() {
         .expect_err("unsupported language should fail");
     expect_invalid_arguments(
         unsupported_language,
-        "unsupported code.lsp language extension: .py",
+        "unsupported code.lsp language extension: .lua",
     );
 }
 
