@@ -91,30 +91,30 @@ pub fn interactive_agent_profiles(
 
     let mut profiles = BTreeMap::new();
 
-    for (category_name, category_cfg) in &cfg.profiles {
-        let model_ref = AgentModelRef::parse(&category_cfg.model_ref);
+    for (profile_name, profile_cfg) in &cfg.profiles {
+        let model_ref = AgentModelRef::parse(&profile_cfg.model_ref);
         if model_ref.provider_id != DEFAULT_PROVIDER_ID {
             return Err(format!(
-                "category `{category_name}` must use provider_id `default` (got `{}`)",
+                "profile `{profile_name}` must use provider_id `default` (got `{}`)",
                 model_ref.provider_id
             ));
         }
 
         profiles.insert(
-            category_name.clone(),
+            profile_name.clone(),
             AgentProfile {
-                name: category_name.clone(),
-                category: category_name.clone(),
-                model_ref: category_cfg.model_ref.clone(),
+                name: profile_name.clone(),
+                category: profile_name.clone(),
+                model_ref: profile_cfg.model_ref.clone(),
                 system_prompt: format!(
-                    "You are the {category_name} agent. {}",
-                    category_cfg.description
+                    "You are the {profile_name} agent. {}",
+                    profile_cfg.description
                 ),
-                tool_failure_mode: category_cfg.tool_failure_mode,
-                tool_surface: category_cfg.tool_surface,
+                tool_failure_mode: profile_cfg.tool_failure_mode,
+                tool_surface: profile_cfg.tool_surface,
                 toolset: resolve_tool_ids_for_surface(
-                    category_cfg.tools.iter().map(String::as_str),
-                    category_cfg.tool_surface,
+                    profile_cfg.tools.iter().map(String::as_str),
+                    profile_cfg.tool_surface,
                 ),
             },
         );
@@ -124,14 +124,14 @@ pub fn interactive_agent_profiles(
 }
 
 fn interactive_plan_profiles(cfg: &HarnessConfig) -> BTreeMap<String, PlanProfileConfig> {
-    cfg.categories
+    cfg.profiles
         .iter()
-        .map(|(name, category)| {
+        .map(|(name, profile)| {
             (
                 name.clone(),
                 PlanProfileConfig {
-                    plan_mode: category.plan_mode,
-                    exit_target_profile: category.exit_target_profile.clone(),
+                    plan_mode: profile.plan_mode,
+                    exit_target_profile: profile.exit_target_profile.clone(),
                 },
             )
         })

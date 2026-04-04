@@ -2286,6 +2286,9 @@ fn startup_session_history_entries() -> Vec<SessionHistoryEntry> {
                 mode_source: SessionModeSource::InteractiveLive,
                 is_resumable: true,
                 resume_disabled_reason: None,
+                artifact_count: 2,
+                child_session_count: 1,
+                parent_session_id: None,
             },
         },
         SessionHistoryEntry {
@@ -2301,6 +2304,9 @@ fn startup_session_history_entries() -> Vec<SessionHistoryEntry> {
                 mode_source: SessionModeSource::InteractiveLive,
                 is_resumable: false,
                 resume_disabled_reason: Some("run is still active".to_string()),
+                artifact_count: 1,
+                child_session_count: 0,
+                parent_session_id: Some("run_parent".to_string()),
             },
         },
     ]

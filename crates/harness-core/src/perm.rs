@@ -133,10 +133,10 @@ impl DefaultPermissionModes {
 impl PermissionPolicy {
     pub fn from_config(config: &HarnessConfig) -> Self {
         let category_overrides = config
-            .categories
+            .profiles
             .iter()
-            .filter_map(|(name, category)| {
-                category
+            .filter_map(|(name, profile)| {
+                profile
                     .permissions
                     .clone()
                     .map(|permissions| (name.clone(), permissions))
