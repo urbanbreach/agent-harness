@@ -1545,7 +1545,10 @@ pub fn load_config_from_str(raw: &str) -> Result<HarnessConfig, ConfigError> {
 }
 
 fn is_builtin_lsp_server(name: &str) -> bool {
-    matches!(name, "rust" | "typescript")
+    matches!(
+        name,
+        "go" | "json" | "python" | "rust" | "typescript" | "yaml"
+    )
 }
 
 pub fn harness_schema_pretty_json() -> Result<String, ConfigError> {
@@ -1789,6 +1792,88 @@ mod tests {
             parsed.paths.session_dir,
             PathBuf::from(".agent-harness/sessions")
         );
+    }
+
+    #[test]
+    fn built_in_lsp_presets_accept_override_only_entries() {
+        let cfg = r#"
+            {
+              providers: {
+                default: {
+                  type: "openai_compatible",
+                  base_url: "http://127.0.0.1:8317/v1",
+                  api_key: "test-key",
+                  models: {
+                    "gpt-4o-mini": {
+                      display_name: "GPT-4o mini"
+                    }
+                  }
+                }
+              },
+              profiles: {
+                deep: {
+                  description: "Deep work",
+                  model_ref: "default:gpt-4o-mini",
+                  tools: ["fs.read"]
+                }
+              },
+              permissions: {
+                defaults: {
+                  edit: "ask",
+                  shell: "ask",
+                  network: "deny"
+                }
+              },
+              runtime: {
+                background_tasks: {
+                  default_concurrency: 2,
+                  provider_concurrency: 2,
+                  model_concurrency: 2,
+                  stale_timeout_ms: 15000,
+                  message_staleness_timeout_ms: 5000
+                },
+                session_dir: ".agent-harness/sessions",
+                deterministic: {
+                  enabled: false,
+                  seed: 42
+                }
+              },
+              integrations: {
+                remote_search: {
+                  endpoint: "https://mcp.exa.ai/mcp"
+                }
+              },
+              lsp: {
+                servers: {
+                  python: {
+                    command: ["pyright-langserver", "--stdio"],
+                    env: {
+                      PYRIGHT_PYTHON_FORCE_VERSION: "latest"
+                    }
+                  },
+                  go: {
+                    command: ["gopls"]
+                  },
+                  yaml: {
+                    initialization: {
+                      yaml: {
+                        keyOrdering: false
+                      }
+                    }
+                  },
+                  json: {
+                    disabled: true
+                  }
+                }
+              }
+            }
+        "#;
+
+        let parsed = load_config_from_str(cfg).expect("built-in lsp presets should parse");
+        assert!(parsed.lsp.servers.contains_key("python"));
+        assert!(parsed.lsp.servers.contains_key("go"));
+        assert!(parsed.lsp.servers.contains_key("yaml"));
+        assert!(parsed.lsp.servers.contains_key("json"));
     }
 
     #[test]
