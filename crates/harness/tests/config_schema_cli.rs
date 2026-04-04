@@ -275,14 +275,15 @@ fn schema_cli_documents_current_integrations_boundary() {
     let integration_properties = integrations["properties"]
         .as_object()
         .expect("integrations properties object");
-    assert_eq!(integration_properties.len(), 1);
+    assert_eq!(integration_properties.len(), 2);
+    assert!(integration_properties.contains_key("mcp"));
     assert!(integration_properties.contains_key("remote_search"));
 
     let integrations_description = integrations["description"]
         .as_str()
         .expect("integrations description");
     assert!(integrations_description.contains("remote search transport"));
-    assert!(integrations_description.contains("Generic MCP server registration"));
+    assert!(integrations_description.contains("configured MCP servers"));
 
     let remote_search_description = schema["definitions"]["RemoteSearchConfig"]["description"]
         .as_str()

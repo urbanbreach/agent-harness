@@ -941,17 +941,16 @@ pub struct DeterministicConfig {
 
 /// Current public integration settings.
 ///
-/// Agent Harness currently exposes only the native remote search transport used
-/// by the built-in `web_search` and `code_search` tools. Generic MCP server
-/// registration is not part of the public config contract yet.
+/// Agent Harness exposes the native remote search transport used by the built-in
+/// `web_search` and `code_search` tools, plus configured MCP servers.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
 pub struct IntegrationsConfig {
     /// Configuration for the currently supported built-in external integrations.
     ///
-    /// Agent Harness currently exposes only the native remote search transport
-    /// used by the built-in `web_search` and `code_search` tools. Generic MCP
-    /// server registration is not part of the public config contract yet.
+    /// Agent Harness exposes the native remote search transport used by the
+    /// built-in `web_search` and `code_search` tools, plus configured MCP
+    /// servers.
     #[serde(default, alias = "remoteSearch")]
     pub remote_search: RemoteSearchConfig,
     #[serde(default)]
