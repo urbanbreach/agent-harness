@@ -60,6 +60,7 @@ impl RootInteractiveArgs {
     fn into_tui_command(self) -> TuiCommand {
         TuiCommand {
             replay: None,
+            continue_session: None,
             scenario: None,
             mock: self.mock,
             deterministic: false,

@@ -7,10 +7,11 @@ use ratatui::{
 };
 
 use crate::app::{
-    session_history_profile_label, session_history_provider_model_label,
-    session_history_resumability_label, session_history_run_name, session_history_status_label,
-    ActivityEntry, ActivityStatus, AppState, Focus, OrchestrationTaskRow, OrchestrationTaskState,
-    ReviewSurface, RuntimeStateKind, StartupLauncherAction, Tab, ToolCallDisplayStatus,
+    session_history_artifact_label, session_history_lineage_label, session_history_profile_label,
+    session_history_provider_model_label, session_history_resumability_label,
+    session_history_run_name, session_history_status_label, ActivityEntry, ActivityStatus,
+    AppState, Focus, OrchestrationTaskRow, OrchestrationTaskState, ReviewSurface, RuntimeStateKind,
+    StartupLauncherAction, Tab, ToolCallDisplayStatus,
 };
 use crate::keybindings::Action;
 use crate::layout::{

@@ -149,6 +149,9 @@ pub struct SessionCatalogEntry {
     pub mode_source: SessionModeSource,
     pub is_resumable: bool,
     pub resume_disabled_reason: Option<String>,
+    pub artifact_count: usize,
+    pub child_session_count: usize,
+    pub parent_session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -293,6 +296,66 @@ impl SessionCatalogEntry {
             SessionModeSource::InteractiveLive | SessionModeSource::InteractiveMock
         )
     }
+}
+
+fn resume_plan_artifact_count(plan: &ResumePlan) -> usize {
+    let mut refs = BTreeSet::new();
+
+    for snapshot in plan.tool_calls.values() {
+        let Some(metadata) = snapshot.metadata.as_ref() else {
+            continue;
+        };
+
+        for artifact in &metadata.artifact_refs {
+            refs.insert((artifact.path.as_str(), artifact.digest.as_deref()));
+        }
+    }
+
+    refs.len()
+}
+
+fn resume_plan_child_session_count(plan: &ResumePlan) -> usize {
+    plan.child_sessions
+        .values()
+        .filter(|child| {
+            child.parent_session_id.is_some()
+                || child.parent_tool_call_id.is_some()
+                || child.parent_task_id.is_some()
+                || child.parent_request_id.is_some()
+        })
+        .count()
+}
+
+fn lineage_parent_session_id(lineage: Option<&TaskLineageMetadata>) -> Option<String> {
+    lineage
+        .and_then(|lineage| lineage.parent_session_id.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn parent_session_id_from_events(events: &[&EventEnvelopeV1]) -> Option<String> {
+    events.iter().find_map(|event| match &event.payload {
+        EventV1::TaskCompleted(payload) => lineage_parent_session_id(
+            payload
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.lineage.as_ref()),
+        ),
+        EventV1::ToolCallRequested(payload) => lineage_parent_session_id(
+            payload
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.lineage.as_ref()),
+        ),
+        EventV1::ToolCallFinished(payload) => lineage_parent_session_id(
+            payload
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.lineage.as_ref()),
+        ),
+        _ => None,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -1135,6 +1198,9 @@ pub fn project_session_catalog_entry<'a>(
 
     let resume_plan = project_resume_plan(collected.iter().copied(), fallback_run_id)?;
     let status = resume_plan.run_status();
+    let artifact_count = resume_plan_artifact_count(&resume_plan);
+    let child_session_count = resume_plan_child_session_count(&resume_plan);
+    let parent_session_id = parent_session_id_from_events(&collected);
 
     let resume_disabled_reason = resume_disabled_reason(
         mode_source,
@@ -1155,6 +1221,9 @@ pub fn project_session_catalog_entry<'a>(
         mode_source,
         is_resumable: resume_disabled_reason.is_none(),
         resume_disabled_reason,
+        artifact_count,
+        child_session_count,
+        parent_session_id,
     })
 }
 

@@ -811,6 +811,25 @@ fn tui_cli_root_help_only_shows_minimal_interactive_overrides() {
 }
 
 #[test]
+fn tui_subcommand_help_surfaces_direct_continue_recovery_flag() {
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args(["tui", "--help"])
+        .output()
+        .expect("run harness tui help");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("--continue <SESSION>"));
+    assert!(stdout.contains("--replay <REPLAY>"));
+}
+
+#[test]
 fn command_palette_includes_task5_session_actions() {
     let palette_commands = Action::palette_commands();
     let palette_surface = palette_commands

@@ -53,10 +53,13 @@ pub struct TuiCommand {
     #[arg(long, conflicts_with = "scenario")]
     pub replay: Option<PathBuf>,
 
+    #[arg(long = "continue", value_name = "SESSION", conflicts_with_all = ["replay", "scenario"])]
+    pub continue_session: Option<PathBuf>,
+
     #[arg(long, value_enum, conflicts_with = "replay")]
     pub scenario: Option<ScenarioName>,
 
-    #[arg(long, default_value_t = false, conflicts_with_all = ["replay", "scenario"])]
+    #[arg(long, default_value_t = false, conflicts_with_all = ["replay", "continue_session", "scenario"])]
     pub mock: bool,
 
     #[arg(long, default_value_t = false)]
@@ -120,6 +123,10 @@ enum ResolvedTuiMode {
     Replay {
         run_dir: PathBuf,
     },
+    Continue {
+        settings: LiveSettings,
+        run_dir: PathBuf,
+    },
     Interactive {
         settings: LiveSettings,
     },
@@ -162,6 +169,9 @@ pub fn execute(
 
     let run_result = match mode {
         ResolvedTuiMode::Replay { .. } => Ok(()),
+        ResolvedTuiMode::Continue { settings, run_dir } => {
+            runtime.block_on(run_direct_continue_mode(&cmd, &settings, false, run_dir))
+        }
         ResolvedTuiMode::Interactive { settings } => {
             runtime.block_on(run_interactive_mode(&cmd, &settings, false))
         }
@@ -228,6 +238,13 @@ fn resolve_tui_mode(
 
     if let Some(scenario) = cmd.scenario {
         return Ok(ResolvedTuiMode::Scenario { settings, scenario });
+    }
+
+    if let Some(run_dir) = &cmd.continue_session {
+        return Ok(ResolvedTuiMode::Continue {
+            settings,
+            run_dir: run_dir.clone(),
+        });
     }
 
     if cmd.mock {
@@ -353,6 +370,7 @@ async fn run_interactive_mode(
     ));
 
     run_interactive_workflow_loop(
+        InteractiveWorkflow::Startup,
         {
             let launch_selection = Arc::clone(&launch_selection);
             move || {
@@ -409,6 +427,7 @@ async fn run_interactive_workflow_loop<
     ContinueFuture,
     ReplayFuture,
 >(
+    initial_workflow: InteractiveWorkflow,
     mut load_startup_entries: LoadStartupEntries,
     mut run_startup: StartupRunner,
     mut run_new_session: NewSessionRunner,
@@ -426,7 +445,7 @@ where
     ReplayRunner: FnMut(PathBuf) -> ReplayFuture,
     ReplayFuture: Future<Output = Result<InteractiveWorkflow, String>>,
 {
-    let mut workflow = InteractiveWorkflow::Startup;
+    let mut workflow = initial_workflow;
     loop {
         workflow = match workflow {
             InteractiveWorkflow::Startup => run_startup(load_startup_entries()?).await?,
@@ -438,6 +457,78 @@ where
             InteractiveWorkflow::Quit => return Ok(()),
         };
     }
+}
+
+async fn run_direct_continue_mode(
+    cmd: &TuiCommand,
+    settings: &LiveSettings,
+    demo_mode: bool,
+    run_dir: PathBuf,
+) -> Result<(), String> {
+    fs::create_dir_all(&settings.session_dir)
+        .map_err(|err| format!("failed to create session dir: {err}"))?;
+
+    let launch_selection = Arc::new(Mutex::new(
+        settings.launch_metadata.clone().without_mode_label(),
+    ));
+    let run_id = run_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            format!(
+                "continue session requires a run directory path, got {}",
+                run_dir.display()
+            )
+        })?
+        .to_string();
+
+    run_interactive_workflow_loop(
+        InteractiveWorkflow::Continue { run_id, run_dir },
+        {
+            let launch_selection = Arc::clone(&launch_selection);
+            move || {
+                set_pending_live_launch_metadata(launch_metadata_for_mode(
+                    settings,
+                    &launch_selection,
+                ));
+                load_startup_session_history_entries(&settings.session_dir)
+            }
+        },
+        {
+            let launch_selection = Arc::clone(&launch_selection);
+            move |session_history_entries| {
+                run_startup_launcher(
+                    cmd.exit_on_finish,
+                    session_history_entries,
+                    Arc::clone(&launch_selection),
+                )
+            }
+        },
+        {
+            let launch_selection = Arc::clone(&launch_selection);
+            move || run_new_live_session(cmd, settings, demo_mode, Arc::clone(&launch_selection))
+        },
+        {
+            let launch_selection = Arc::clone(&launch_selection);
+            move |run_id, run_dir| {
+                run_continue_session_bootstrap(
+                    cmd,
+                    settings,
+                    demo_mode,
+                    run_id,
+                    run_dir,
+                    Arc::clone(&launch_selection),
+                )
+            }
+        },
+        |run_dir| async move {
+            run_replay_tui(run_dir, cmd.exit_on_finish).await?;
+            Ok(InteractiveWorkflow::Startup)
+        },
+    )
+    .await
 }
 
 fn load_startup_session_history_entries(
