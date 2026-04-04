@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::agent_ops::{select_profile_name, AgentOpsExecutor, AgentSpawnRequest, BatchCall};
-use crate::code_lsp::{CodeLspExecutor, CodeLspRequest};
+use crate::code_lsp::{code_lsp_parameters_json_schema, parse_code_lsp_request, CodeLspExecutor};
 use crate::control_plane::{ControlPlaneExecutor, QuestionPrompt, TodoItem};
 use crate::network::{
     CodeSearchRequest, NetworkExecutor, WebFetchFormat, WebFetchRequest, WebSearchRequest,
@@ -327,16 +327,6 @@ struct QuestionArgs {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct PlanExitArgs {}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct LspArgs {
-    operation: String,
-    #[serde(rename = "filePath")]
-    file_path: String,
-    line: i32,
-    character: i32,
-}
 
 #[async_trait]
 impl Tool for ReadCompatTool {
@@ -906,7 +896,7 @@ impl Tool for LspCompatTool {
     }
 
     fn parameters_json_schema(&self) -> Value {
-        super::json_schema_for::<LspArgs>()
+        code_lsp_parameters_json_schema()
     }
 
     fn capability(&self) -> ToolCapability {
@@ -914,18 +904,8 @@ impl Tool for LspCompatTool {
     }
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: LspArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
         self.executor
-            .execute(
-                &ctx,
-                CodeLspRequest {
-                    operation: args.operation,
-                    file_path: args.file_path,
-                    line: args.line,
-                    character: args.character,
-                },
-            )
+            .execute(&ctx, parse_code_lsp_request(args_json)?)
             .await
     }
 }
