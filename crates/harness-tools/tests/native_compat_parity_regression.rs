@@ -13,7 +13,7 @@ use harness_core::config::{PermissionMode, ShellAllowlist};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle, RunInfo};
 use harness_core::event::{
     ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionDecision as EventPermissionDecision,
-    TaskCompletedEvent, ToolCallFinishedEvent,
+    TaskCompletedEvent, ToolCallFinishedEvent, UserMessageSubmittedEvent,
 };
 use harness_core::perm::{PermissionDecision, PermissionPolicy};
 use harness_core::redact::DefaultRedactor;
@@ -134,6 +134,18 @@ fn find_task_completed(
             _ => None,
         })
         .expect("task completed event")
+}
+
+fn find_user_message(events: &[EventEnvelopeV1], request_id: &str) -> UserMessageSubmittedEvent {
+    events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::UserMessageSubmitted(payload) if payload.request_id == request_id => {
+                Some(payload.clone())
+            }
+            _ => None,
+        })
+        .expect("user message submitted event")
 }
 
 fn permission_flow(events: &[EventEnvelopeV1], tool_call_id: &str) -> Vec<(String, String)> {
@@ -655,6 +667,34 @@ async fn native_and_compat_aliases_match_output_json_artifacts_and_permissions()
             &compat_task,
         )
     );
+
+    let native_child_request_id = native_spawn_finished
+        .output_json
+        .as_ref()
+        .and_then(|output| output.get("child_request_id"))
+        .and_then(Value::as_str)
+        .expect("native child request id");
+    let compat_child_request_id = compat_task_finished
+        .output_json
+        .as_ref()
+        .and_then(|output| output.get("child_request_id"))
+        .and_then(Value::as_str)
+        .expect("compat child request id");
+    let native_child_prompt = find_user_message(&events, native_child_request_id);
+    let compat_child_prompt = find_user_message(&events, compat_child_request_id);
+    assert_eq!(
+        normalize_string(&native_child_prompt.text, &native_spawn),
+        normalize_string(&compat_child_prompt.text, &compat_task),
+    );
+    assert!(native_child_prompt
+        .text
+        .contains("Load and apply these skills before starting: rust-best-practices"));
+    assert!(native_child_prompt
+        .text
+        .contains("Treat this command as required execution context: delegate-native"));
+    assert!(native_child_prompt
+        .text
+        .contains("Task:\nSay hello from native child"));
 
     let native_batch_finished = find_finished(&events, &native_batch);
     let compat_batch_finished = find_finished(&events, &compat_batch);

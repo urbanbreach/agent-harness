@@ -47,7 +47,7 @@ impl AgentOpsExecutor {
         };
         let request_id = ctx
             .coordinator
-            .request_agent_turn(supervisor, agent_id.clone(), request.prompt.clone())
+            .request_agent_turn(supervisor, agent_id.clone(), build_child_prompt(&request))
             .await
             .map_err(|err| ToolError::Execution(format!("failed to request agent turn: {err}")))?;
 
@@ -522,6 +522,27 @@ fn normalize_batch_calls(args: BatchArgs) -> Result<Vec<BatchCall>, ToolError> {
         .collect()
 }
 
+fn build_child_prompt(request: &AgentSpawnRequest) -> String {
+    if request.load_skills.is_empty() && request.command.is_none() {
+        return request.prompt.clone();
+    }
+
+    let mut prompt = String::from("Delegation context from parent:\n");
+    if !request.load_skills.is_empty() {
+        prompt.push_str("- Load and apply these skills before starting: ");
+        prompt.push_str(&request.load_skills.join(", "));
+        prompt.push('\n');
+    }
+    if let Some(command) = request.command.as_deref() {
+        prompt.push_str("- Treat this command as required execution context: ");
+        prompt.push_str(command);
+        prompt.push('\n');
+    }
+    prompt.push_str("\nTask:\n");
+    prompt.push_str(&request.prompt);
+    prompt
+}
+
 #[async_trait]
 impl Tool for AgentSpawnTool {
     fn id(&self) -> &str {
@@ -529,7 +550,7 @@ impl Tool for AgentSpawnTool {
     }
 
     fn description(&self) -> &str {
-        "Spawns a child agent and optionally waits for completion."
+        "Spawns a child agent and optionally waits for completion. `load_skills`/`skills` and `command` are prepended to the child prompt as explicit delegation instructions."
     }
 
     fn parameters_json_schema(&self) -> Value {
