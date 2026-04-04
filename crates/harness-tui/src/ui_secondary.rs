@@ -299,7 +299,10 @@ pub(crate) fn exact_test_operator_rail_section_model_builds_pinned_summary() {
     let model = build_operator_rail_model(&app);
 
     assert_eq!(model.pinned_summary.run_identity, "run run_fixture");
-    assert_eq!(model.pinned_summary.share_label, "Share unavailable");
+    assert_eq!(
+        model.pinned_summary.share_label,
+        "Export bundle · run_fixture/"
+    );
     assert_eq!(
         model.pinned_summary.runtime_summary,
         "Current runtime: worker · model-1"
@@ -312,6 +315,10 @@ pub(crate) fn exact_test_operator_rail_section_model_builds_pinned_summary() {
     assert_eq!(model.pinned_summary.pending_permission_count, 0);
     assert_eq!(model.pinned_summary.active_todo_count, 1);
     assert_eq!(model.pinned_summary.modified_file_count, 1);
+    assert!(model.body.sections[0]
+        .items()
+        .iter()
+        .any(|item| item == "Bundle keeps events.jsonl and artifacts/"));
 }
 
 #[cfg(test)]
@@ -341,6 +348,10 @@ pub(crate) fn exact_test_operator_rail_section_model_hides_empty_sources_but_pre
             .map(OperatorRailBodySection::heading)
             .collect::<Vec<_>>(),
         vec!["Context".to_string()]
+    );
+    assert_eq!(
+        empty_model.pinned_summary.share_label,
+        "Export bundle pending"
     );
 }
 
@@ -444,7 +455,7 @@ fn operator_rail_test_app() -> AppState {
             .with_mode_label("Demo"),
     );
 
-    let mut app = AppState::new_live(None, false, None);
+    let mut app = AppState::new_live(Some("/tmp/sessions/run_fixture".into()), false, None);
     app.ingest_event(operator_rail_test_event(
         1,
         harness_core::event::EventActor::new(
@@ -490,7 +501,7 @@ fn operator_rail_modified_file_only_app() -> AppState {
             .with_mode_label("Demo"),
     );
 
-    let mut app = AppState::new_live(None, false, None);
+    let mut app = AppState::new_live(Some("/tmp/sessions/run_fixture".into()), false, None);
     app.ingest_event(operator_rail_test_event(
         1,
         harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
@@ -912,6 +923,9 @@ fn operator_sidebar_context_lines(
         if !runtime_state.summary.trim().is_empty() {
             items.push(runtime_state.summary.clone());
         }
+        if operator_sidebar_export_bundle_name(app).is_some() {
+            items.push("Bundle keeps events.jsonl and artifacts/".to_string());
+        }
         items.push(
             "Replay is read-only — inspect recorded context and use replay navigation.".to_string(),
         );
@@ -940,10 +954,33 @@ fn operator_sidebar_context_lines(
             items.push(detail.to_string());
         }
     }
+    if operator_sidebar_export_bundle_name(app).is_some() {
+        items.push("Bundle keeps events.jsonl and artifacts/".to_string());
+    }
     if let Some(window) = operator_sidebar_context_window_line(app) {
         items.push(window);
     }
     items
+}
+
+fn operator_sidebar_export_bundle_name(app: &AppState) -> Option<String> {
+    app.session_path.as_ref()?;
+    app.run_id()
+        .filter(|run_id| !run_id.trim().is_empty())
+        .map(|run_id| run_id.to_string())
+        .or_else(|| {
+            app.session_path.as_ref().and_then(|path| {
+                path.file_name()
+                    .map(|value| value.to_string_lossy().trim().to_string())
+                    .filter(|value| !value.is_empty())
+            })
+        })
+}
+
+fn operator_sidebar_export_label(app: &AppState) -> String {
+    operator_sidebar_export_bundle_name(app)
+        .map(|bundle| format!("Export bundle · {bundle}/"))
+        .unwrap_or_else(|| "Export bundle pending".to_string())
 }
 
 fn operator_sidebar_tool_status_text(status: crate::app::ToolCallDisplayStatus) -> &'static str {
@@ -1139,7 +1176,7 @@ fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
     OperatorRailModel {
         pinned_summary: OperatorRailPinnedSummary {
             run_identity: app.operator_sidebar_run_identity(),
-            share_label: "Share unavailable".to_string(),
+            share_label: operator_sidebar_export_label(app),
             runtime_summary,
             provider_context,
             state_label: app.operator_sidebar_state_label(),

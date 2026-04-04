@@ -1,14 +1,14 @@
 
   ┃                                                                                                                     Live · run run_fixture
-  ┃  Hello from PTY                                                                                                     Share unavailable
+  ┃  Hello from PTY                                                                                                     Export bundle · run_fixture/
   ┃                                                                                                                     Current runtime: default · model-1
                                                                                                                         Provider mock
      Hello world                                                                                                        0 active todos · 0 modified files
      ● Assistant · model-1 · 4ms
                                                                                                                         Context
                                                                                                                         turn 1 · ready for next turn
-
-
+                                                                                                                        Bundle keeps events.jsonl and
+                                                                                                                        artifacts/
 
 
 

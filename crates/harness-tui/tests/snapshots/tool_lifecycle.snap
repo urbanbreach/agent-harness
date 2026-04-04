@@ -1,20 +1,20 @@
 
   ┃                                                                                                                                                                                 Live · run run_fixture
-                                                                                                                                                                                    Share unavailable
+                                                                                                                                                                                    Export bundle · run_fixture/
      Tool summaries are now easier to scan, and edits stay inline.                                                                                                                  Current runtime: default · model-1
      ● Assistant · model-1 · 14ms                                                                                                                                                   Provider mock
                                                                                                                                                                                     0 active todos · 1 modified file
      → Read src/ui.rs [offset=1, limit=24] · 2ms
       ↳ Loaded src/ui.rs                                                                                                                                                            Context
      ┃ ▸ ← Patched crates/harness-tui/src/ui.rs · 4ms                                                                                                                               turn 1 · ready for next turn
-      crates/harness-tui/src/ui.rs · +1 -1
-      @@ -44,8 +44,7 @@                                                                                                                                                             MCP · 1
-        use ui_secondary::{                                                                 │   use ui_secondary::{                                                                 edit.hashline_apply · completed
-
+      crates/harness-tui/src/ui.rs · +1 -1                                                                                                                                          Bundle keeps events.jsonl and
+      @@ -44,8 +44,7 @@                                                                                                                                                             artifacts/
+        use ui_secondary::{                                                                 │   use ui_secondary::{
+                                                                                                                                                                                    MCP · 1
+                                                                                                                                                                                    edit.hashline_apply · completed
+      -     render_diff_tab, render_events_tab, render_help_tab,                            │ +     render_events_tab, render_help_tab, render_live_details_overlay,
                                                                                                                                                                                     Modified Files · 1
-      -     render_diff_tab, render_events_tab, render_help_tab,                            │ +     render_events_tab, render_help_tab, render_live_details_overlay,                crates/harness-tui/src/ui.rs
-
-
+                                                                                                                                                                                    crates/harness-tui/src/ui.rs
             render_operator_sidebar,                                                        │       render_operator_sidebar,
 
 
