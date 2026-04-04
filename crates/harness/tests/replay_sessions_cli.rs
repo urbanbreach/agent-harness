@@ -571,6 +571,299 @@ fn session_history_flags_non_resumable_sessions_with_reason() {
 }
 
 #[test]
+fn sessions_list_cli_prints_json_entries() {
+    let session_dir = tempdir().expect("tempdir");
+    let run_dir = session_dir.path().join("run_json");
+    std::fs::create_dir_all(&run_dir).expect("create run dir");
+
+    write_events_jsonl(
+        &run_dir,
+        &[
+            envelope(
+                "run_json",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                "run_json",
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_1".to_string(),
+                    profile: "worker".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                "run_json",
+                3,
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_1".to_string(),
+                    provider_id: "openai".to_string(),
+                    model_id: "gpt-5.4-mini".to_string(),
+                    prompt_summary: "hello".to_string(),
+                    request_digest: "digest-1".to_string(),
+                }),
+            ),
+            envelope(
+                "run_json",
+                4,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "list",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions list json");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let rows: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("sessions json output should parse");
+    assert_eq!(rows.as_array().map(Vec::len), Some(1));
+    let row = &rows[0];
+    assert_eq!(row["run_dir"], run_dir.to_str().expect("run dir utf-8"));
+    assert_eq!(row["run_id"], "run_json");
+    assert_eq!(row["run_name"], "interactive");
+    assert_eq!(row["status"], "finished");
+    assert_eq!(row["profile_preset"], "worker");
+    assert_eq!(row["provider_model"], "openai/gpt-5.4-mini");
+    assert_eq!(row["mode_source"], "interactive_live");
+    assert_eq!(row["is_resumable"], true);
+}
+
+#[test]
+fn sessions_list_cli_filters_machine_readable_selectors() {
+    let session_dir = tempdir().expect("tempdir");
+    let resumable_dir = session_dir.path().join("run_resumable");
+    let prompt_dir = session_dir.path().join("run_prompt");
+    let failed_dir = session_dir.path().join("run_failed");
+    std::fs::create_dir_all(&resumable_dir).expect("create resumable run dir");
+    std::fs::create_dir_all(&prompt_dir).expect("create prompt run dir");
+    std::fs::create_dir_all(&failed_dir).expect("create failed run dir");
+
+    write_events_jsonl(
+        &resumable_dir,
+        &[
+            envelope(
+                "run_resumable",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                "run_resumable",
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_1".to_string(),
+                    profile: "worker".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                "run_resumable",
+                3,
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_1".to_string(),
+                    provider_id: "openai".to_string(),
+                    model_id: "gpt-5.4-mini".to_string(),
+                    prompt_summary: "hello".to_string(),
+                    request_digest: "digest-1".to_string(),
+                }),
+            ),
+            envelope(
+                "run_resumable",
+                4,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    write_events_jsonl(
+        &prompt_dir,
+        &[
+            envelope(
+                "run_prompt_filtered",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "prompt".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                "run_prompt_filtered",
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_1".to_string(),
+                    profile: "worker".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                "run_prompt_filtered",
+                3,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    write_events_jsonl(
+        &failed_dir,
+        &[
+            envelope(
+                "run_failed_filtered",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                "run_failed_filtered",
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_1".to_string(),
+                    profile: "reviewer".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                "run_failed_filtered",
+                3,
+                EventV1::RunFailed(RunFailedEvent {
+                    error: "boom".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "list",
+            "--json",
+            "--status",
+            "finished",
+            "--profile",
+            "worker",
+            "--resumable",
+            "false",
+        ])
+        .output()
+        .expect("run harness sessions list with filters");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let rows: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("filtered sessions json should parse");
+    assert_eq!(rows.as_array().map(Vec::len), Some(1));
+    let row = &rows[0];
+    assert_eq!(
+        row["run_dir"],
+        prompt_dir.to_str().expect("prompt dir utf-8")
+    );
+    assert_eq!(row["run_id"], "run_prompt_filtered");
+    assert_eq!(row["run_name"], "prompt");
+    assert_eq!(row["status"], "finished");
+    assert_eq!(row["workspace_root"], "/tmp/workspace");
+    assert_eq!(row["profile_preset"], "worker");
+    assert_eq!(row["provider_model"], serde_json::Value::Null);
+    assert_eq!(row["mode_source"], "prompt");
+    assert_eq!(row["is_resumable"], false);
+    assert_eq!(
+        row["resume_disabled_reason"],
+        "prompt runs are not resumable"
+    );
+    assert!(row["last_updated_at"].is_string());
+}
+
+#[test]
+fn sessions_list_cli_supports_run_id_sorting() {
+    let session_dir = tempdir().expect("tempdir");
+    for run_id in ["run_b", "run_c", "run_a"] {
+        let run_dir = session_dir.path().join(run_id);
+        std::fs::create_dir_all(&run_dir).expect("create run dir");
+        write_events_jsonl(
+            &run_dir,
+            &[
+                envelope(
+                    run_id,
+                    1,
+                    EventV1::RunStarted(RunStartedEvent {
+                        run_name: format!("{run_id}-name"),
+                        workspace_root: "/tmp/workspace".to_string(),
+                    }),
+                ),
+                envelope(
+                    run_id,
+                    2,
+                    EventV1::RunFinished(RunFinishedEvent {
+                        summary: "done".to_string(),
+                    }),
+                ),
+            ],
+        );
+    }
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "list",
+            "--json",
+            "--sort",
+            "run_id_asc",
+        ])
+        .output()
+        .expect("run harness sessions list with run_id sort");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let rows: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("sorted sessions json should parse");
+    let run_ids = rows
+        .as_array()
+        .expect("sessions json array")
+        .iter()
+        .map(|row| row["run_id"].as_str().expect("run_id string"))
+        .collect::<Vec<_>>();
+    assert_eq!(run_ids, vec!["run_a", "run_b", "run_c"]);
+}
+
+#[test]
 fn replay_cli_fails_when_events_are_missing() {
     let run_dir = tempdir().expect("tempdir");
     let output = Command::new(env!("CARGO_BIN_EXE_harness"))
