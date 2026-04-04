@@ -1,0 +1,247 @@
+{
+  $schema: "../harness.schema.json",
+
+  // The starter skill pack ships in `.agents/skills` so users can override any
+  // bundled skill by placing a same-named skill earlier in the search order
+  // (`.opencode/skills` or `.claude/skills`) without editing the shipped files.
+  skills: {
+    project_roots: [".opencode/skills", ".claude/skills", ".agents/skills"],
+    global_roots: ["~/.config/opencode/skills", "~/.claude/skills", "~/.agents/skills"],
+    walk_to_git_root: true,
+    permissions: {
+      "*": "allow",
+      "internal-*": "deny",
+      "experimental-*": "ask",
+    },
+  },
+
+  providers: {
+    default: {
+      type: "openai_compatible",
+      base_url: "http://127.0.0.1:8317/v1",
+      api_key: "${OPENAI_API_KEY:-sk-zerolimit}",
+      api_mode: "responses",
+      timeout_ms: 60000,
+      models: {
+        "gpt-5.4-mini": {
+          display_name: "GPT-5.4 Mini",
+          metadata: {
+            family: "gpt-5",
+            release_stage: "stable",
+            context_window_tokens: 128000,
+            supports_tool_calls: true,
+            supports_reasoning_summaries: true,
+          },
+          max_input_tokens: 128000,
+          max_output_tokens: 16384,
+          variants: {
+            deterministic: {
+              display_name: "Deterministic",
+              max_output_tokens: 4096,
+              metadata: {
+                description: "Deterministic tool-audit baseline",
+                reasoning_effort: "minimal",
+                text_verbosity: "low",
+                recommended_for: "tool_audit",
+              },
+            },
+            creative: {
+              display_name: "Creative",
+              metadata: {
+                description: "Higher-verbosity exploratory mode",
+                reasoning_effort: "high",
+                text_verbosity: "high",
+                recommended_for: "writer",
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+
+  profiles: {
+    deep: {
+      description: "Default native execution profile",
+      model_ref: "default:gpt-5.4-mini",
+      tools: [
+        "fs.read",
+        "fs.list",
+        "fs.glob",
+        "fs.grep",
+        "shell.exec",
+        "fs.write",
+        "edit.apply_patch",
+        "web.fetch",
+        "todo.write",
+        "todo.read",
+        "agent.spawn",
+        "tool.batch",
+        "skill.load",
+        "user.question",
+        "web.search",
+        "code.search",
+        "code.lsp",
+        "tool.invalid",
+      ],
+    },
+
+    tool_audit: {
+      description: "Evidence-first signoff profile for native tool coverage",
+      model_ref: "default:gpt-5.4-mini",
+      variant: "deterministic",
+      max_iters: 20,
+      tool_failure_mode: "continue_as_tool_message",
+      tools: [
+        "fs.read",
+        "fs.list",
+        "fs.glob",
+        "fs.grep",
+        "shell.exec",
+        "fs.write",
+        "edit.apply_patch",
+        "web.fetch",
+        "todo.write",
+        "todo.read",
+        "agent.spawn",
+        "tool.batch",
+        "skill.load",
+        "user.question",
+        "web.search",
+        "code.search",
+        "code.lsp",
+        "tool.invalid",
+      ],
+      system_prompt: "Gather evidence before signoff. Use skills when useful, verify question flow with HARNESS_QUESTION_ANSWERS, capture hooks evidence and LSP evidence, and mention subagent, variants, and model metadata when auditing tool behavior.",
+    },
+
+    deep_compat: {
+      description: "OpenCode-compatible parity profile",
+      model_ref: "default:gpt-5.4-mini",
+      tool_surface: "compat",
+      tools: [
+        "read",
+        "list",
+        "glob",
+        "grep",
+        "bash",
+        "write",
+        "apply_patch",
+        "webfetch",
+        "todowrite",
+        "todoread",
+        "task",
+        "batch",
+        "skill",
+        "question",
+        "websearch",
+        "codesearch",
+        "lsp",
+        "invalid",
+      ],
+    },
+  },
+
+  hooks: {
+    lifecycle: [
+      {
+        event: "run_started",
+        command: ["bash", "-lc", "printf 'run started\\n'"],
+        timeout_ms: 4000,
+        critical: false,
+        env: {
+          HARNESS_HOOK_SOURCE: "example-config",
+        },
+      },
+      {
+        event: "tool_call_finished",
+        command: ["bash", "-lc", "printf 'tool done\\n'"],
+        timeout_ms: 4000,
+        critical: false,
+      },
+    ],
+  },
+
+  lsp: {
+    disabled: false,
+    servers: {
+      rust: {
+        disabled: false,
+        command: ["rust-analyzer"],
+        extensions: [".rs"],
+        env: {
+          RUST_LOG: "warn",
+        },
+        initialization: {
+          cargo: {
+            allFeatures: true,
+          },
+        },
+      },
+      typescript: {
+        disabled: false,
+        command: ["typescript-language-server", "--stdio"],
+        extensions: [".ts", ".tsx", ".js", ".jsx"],
+        initialization: {
+          preferences: {
+            importModuleSpecifierPreference: "relative",
+          },
+        },
+      },
+    },
+  },
+
+  permissions: {
+    defaults: {
+      edit: "allow",
+      shell: "allow",
+      network: "allow",
+      question: "ask",
+      task: "ask",
+      webfetch: "deny",
+      websearch: "deny",
+      codesearch: "deny",
+      lsp: "allow",
+    },
+    shell_allowlist: {
+      executables: ["git", "bash", "sh"],
+      cwd_roots: ["."],
+    },
+  },
+
+  runtime: {
+    background_tasks: {
+      default_concurrency: 2,
+      provider_concurrency: 2,
+      model_concurrency: 2,
+      stale_timeout_ms: 30000,
+      message_staleness_timeout_ms: 10000,
+    },
+    session_dir: ".agent-harness/sessions",
+    deterministic: {
+      enabled: false,
+      seed: 42,
+    },
+  },
+
+  integrations: {
+    remote_search: {
+      endpoint: "https://mcp.exa.ai/mcp",
+    },
+  },
+
+  ui: {
+    default_profile: "deep",
+    parity: {
+      variant_cycle_enabled: true,
+      child_session_navigation_enabled: true,
+      keybindings: {
+        variant_cycle: "tab",
+        session_child_first: "ctrl+]",
+        session_child_cycle: "]",
+        session_child_cycle_reverse: "[",
+        session_parent: "ctrl+[",
+      },
+    },
+  },
+}

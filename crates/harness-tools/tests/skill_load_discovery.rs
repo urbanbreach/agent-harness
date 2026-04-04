@@ -68,6 +68,32 @@ fn tool_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
     }
 }
 
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .canonicalize()
+        .expect("canonical repo root")
+}
+
+struct CurrentDirGuard {
+    previous_cwd: PathBuf,
+}
+
+impl CurrentDirGuard {
+    fn set(cwd: &Path) -> Self {
+        let previous_cwd = env::current_dir().expect("capture cwd");
+        env::set_current_dir(cwd).expect("set cwd");
+        Self { previous_cwd }
+    }
+}
+
+impl Drop for CurrentDirGuard {
+    fn drop(&mut self) {
+        env::set_current_dir(&self.previous_cwd).expect("restore cwd");
+    }
+}
+
 fn write_skill(root: &Path, name: &str, description: &str, body: &str) {
     let skill_dir = root.join(name);
     fs::create_dir_all(&skill_dir).expect("create skill dir");
@@ -366,6 +392,38 @@ async fn skill_load_hides_denied_or_invalid_skills() {
 #[test]
 fn skill_permissions_hide_denied_and_reject_invalid_frontmatter() {
     skill_load_hides_denied_or_invalid_skills();
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
+)]
+async fn shipped_starter_skill_pack_is_discoverable_from_repo_checkout() {
+    let _guard = SKILL_DISCOVERY_ENV_LOCK.lock().expect("env test lock");
+    let repo = repo_root();
+    let _cwd = CurrentDirGuard::set(&repo);
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let native = registry.get("skill.load").expect("skill.load tool");
+    let skill = native
+        .call(
+            tool_context(&repo, "toolcall-shipped-rust-best-practices"),
+            json!({"name": "rust-best-practices"}),
+        )
+        .await
+        .expect("shipped rust-best-practices skill");
+    assert!(skill.display_text.contains("# Skill: rust-best-practices"));
+    assert!(skill.display_text.contains("cargo fmt --all -- --check"));
+    assert_eq!(
+        skill
+            .structured_json
+            .as_ref()
+            .and_then(|value| value.get("location")),
+        Some(&json!(repo
+            .join(".agents/skills/rust-best-practices/SKILL.md")
+            .display()
+            .to_string()))
+    );
 }
 
 #[tokio::test]

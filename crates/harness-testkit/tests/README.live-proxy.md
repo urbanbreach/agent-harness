@@ -53,8 +53,13 @@ This lane exercises a real model against prepared live profiles for:
 - `question`
 - `skill`
 
-The prompt chat-control lane assumes the `rust-best-practices` skill is installed in the configured
-skill directories because the live provider is asked to load it through the `skill` tool.
+The repo now ships `rust-best-practices` in `.agents/skills`, so a fresh checkout already has the
+starter skill expected by the `skill` tool. You can still override it by placing a same-named skill
+earlier in the configured project-root search order.
+
+The live lane examples below use `configs/harness.example.jsonc` explicitly via
+`HARNESS_LIVE_PROXY_CONFIG`; the harness CLI does not auto-discover that file unless you copy it to
+`./harness.jsonc`.
 
 Then run the file-edit / visual lane:
 
