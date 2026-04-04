@@ -183,6 +183,32 @@ pub fn golden_path_provider() -> MockProvider {
         ],
     );
 
+    let interactive_request_with_tools = CompletionRequest {
+        model_id: "model-1".to_string(),
+        messages: interactive_request.messages.clone(),
+        temperature: interactive_request.temperature,
+        max_tokens: interactive_request.max_tokens,
+        tools: Some(vec![demo_hashline_apply_tool_def()]),
+        tool_choice: Some(ToolChoice::Auto),
+        stream: interactive_request.stream,
+    };
+
+    scripted_events.insert(
+        request_digest(&interactive_request_with_tools),
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("Hello".to_string()),
+            ProviderStreamEvent::TextDelta(" world".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 4,
+                    completion_tokens: 2,
+                    total_tokens: 6,
+                },
+            },
+        ],
+    );
+
     let shell_parity_request = CompletionRequest {
         model_id: "model-1".to_string(),
         messages: vec![
