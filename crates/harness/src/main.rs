@@ -120,7 +120,7 @@ fn main() -> ExitCode {
         Commands::Run(command) => run::execute(command, config, session_dir),
         Commands::Prompt(command) => prompt::execute(command, config, session_dir),
         Commands::Replay(command) => replay::execute(command),
-        Commands::Sessions { command } => sessions::execute(command, session_dir),
+        Commands::Sessions { command } => sessions::execute(command, config, session_dir),
         Commands::Schema => match harness_schema_pretty_json() {
             Ok(schema) => {
                 println!("{schema}");

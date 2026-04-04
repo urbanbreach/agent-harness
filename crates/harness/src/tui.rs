@@ -53,7 +53,12 @@ pub struct TuiCommand {
     #[arg(long, conflicts_with = "scenario")]
     pub replay: Option<PathBuf>,
 
-    #[arg(long = "continue", value_name = "SESSION", conflicts_with_all = ["replay", "scenario"])]
+    #[arg(
+        long = "continue",
+        alias = "continue-session",
+        value_name = "SESSION",
+        conflicts_with_all = ["replay", "scenario", "mock"]
+    )]
     pub continue_session: Option<PathBuf>,
 
     #[arg(long, value_enum, conflicts_with = "replay")]
@@ -236,15 +241,15 @@ fn resolve_tui_mode(
 
     let settings = resolve_live_settings(cmd, config_path, global_session_dir)?;
 
-    if let Some(scenario) = cmd.scenario {
-        return Ok(ResolvedTuiMode::Scenario { settings, scenario });
-    }
-
     if let Some(run_dir) = &cmd.continue_session {
         return Ok(ResolvedTuiMode::Continue {
             settings,
             run_dir: run_dir.clone(),
         });
+    }
+
+    if let Some(scenario) = cmd.scenario {
+        return Ok(ResolvedTuiMode::Scenario { settings, scenario });
     }
 
     if cmd.mock {

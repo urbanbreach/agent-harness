@@ -1179,6 +1179,28 @@ fn sessions_list_surfaces_artifact_and_lineage_columns() {
 }
 
 #[test]
+fn sessions_help_lists_lifecycle_subcommands() {
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args(["sessions", "--help"])
+        .output()
+        .expect("run harness sessions help");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("list"));
+    assert!(stdout.contains("inspect"));
+    assert!(stdout.contains("reopen"));
+    assert!(stdout.contains("replay"));
+    assert!(stdout.contains("continue"));
+    assert!(stdout.contains("export"));
+}
+
+#[test]
 fn sessions_list_cli_prints_json_entries() {
     let session_dir = tempdir().expect("tempdir");
     let run_dir = session_dir.path().join("run_json");
@@ -1483,9 +1505,10 @@ fn sessions_list_cli_filters_machine_readable_selectors() {
                     parent_agent_id: None,
                 }),
             ),
-            envelope(
+            envelope_with_actor(
                 "run_resumable",
                 3,
+                EventActor::new(ActorKind::Worker, Some("agent_1".to_string())),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
                     request_id: "req_1".to_string(),
                     provider_id: "openai".to_string(),
@@ -1518,21 +1541,28 @@ fn sessions_list_cli_filters_machine_readable_selectors() {
             envelope(
                 "run_prompt_filtered",
                 2,
-                EventV1::AgentSpawned(AgentSpawnedEvent {
-                    agent_id: "agent_1".to_string(),
-                    profile: "worker".to_string(),
-                    parent_agent_id: None,
-                }),
-            ),
-            envelope(
-                "run_prompt_filtered",
-                3,
                 EventV1::RunFinished(RunFinishedEvent {
                     summary: "done".to_string(),
                 }),
             ),
         ],
     );
+    std::fs::write(
+        prompt_dir.join("meta.json"),
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "run_id": "run_prompt_filtered",
+                "run_name": "prompt",
+                "workspace_root": "/tmp/workspace",
+                "profile_preset": "worker",
+                "mode_source": "prompt",
+                "created_at": "1710000000000"
+            }))
+            .expect("serialize prompt catalog metadata")
+        ),
+    )
+    .expect("write prompt catalog metadata");
 
     write_events_jsonl(
         &failed_dir,
@@ -1549,7 +1579,7 @@ fn sessions_list_cli_filters_machine_readable_selectors() {
                 "run_failed_filtered",
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
-                    agent_id: "agent_1".to_string(),
+                    agent_id: "agent_2".to_string(),
                     profile: "reviewer".to_string(),
                     parent_agent_id: None,
                 }),
@@ -1608,6 +1638,176 @@ fn sessions_list_cli_filters_machine_readable_selectors() {
         "prompt runs are not resumable"
     );
     assert!(row["last_updated_at"].is_string());
+}
+
+#[test]
+fn sessions_inspect_cli_accepts_positional_session_selector() {
+    let session_dir = tempdir().expect("tempdir");
+    let run_dir = session_dir.path().join("directory_name_differs");
+    std::fs::create_dir_all(&run_dir).expect("create run dir");
+
+    write_events_jsonl(
+        &run_dir,
+        &[
+            envelope(
+                "run_inspect_positional",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "inspectable".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                "run_inspect_positional",
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_1".to_string(),
+                    profile: "worker".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                "run_inspect_positional",
+                3,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "inspect",
+            "directory_name_differs",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions inspect with positional selector");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let inspected: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("sessions inspect json should parse");
+    assert_eq!(inspected["catalog"]["run_id"], "run_inspect_positional");
+    assert_eq!(inspected["replay"]["run_name"], "inspectable");
+    assert_eq!(
+        inspected["run_dir"],
+        run_dir.to_str().expect("run dir utf-8")
+    );
+}
+
+#[test]
+fn sessions_replay_cli_resolves_run_id_from_session_catalog() {
+    let session_dir = tempdir().expect("tempdir");
+    let run_dir = session_dir.path().join("directory_name_differs");
+    std::fs::create_dir_all(&run_dir).expect("create run dir");
+
+    write_events_jsonl(
+        &run_dir,
+        &[
+            envelope(
+                "run_resolved",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "resolved".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                "run_resolved",
+                2,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "replay",
+            "run_resolved",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions replay");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let summary: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("replay json output should parse");
+    assert_eq!(summary["run_id"], "run_resolved");
+    assert_eq!(summary["run_name"], "resolved");
+}
+
+#[test]
+fn sessions_export_cli_writes_json_bundle() {
+    let session_dir = tempdir().expect("tempdir");
+    let run_dir = session_dir.path().join("run_export");
+    std::fs::create_dir_all(&run_dir).expect("create run dir");
+
+    write_events_jsonl(
+        &run_dir,
+        &[
+            envelope(
+                "run_export",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "exportable".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                "run_export",
+                2,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let export_path = session_dir.path().join("session-export.json");
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "export",
+            "run_export",
+            "--output",
+            export_path.to_str().expect("export path utf-8"),
+        ])
+        .output()
+        .expect("run harness sessions export");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let bundle: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&export_path).expect("read exported session bundle"))
+            .expect("export bundle should parse");
+    assert_eq!(bundle["catalog"]["run_id"], "run_export");
+    assert_eq!(bundle["replay"]["run_name"], "exportable");
+    assert_eq!(bundle["events"].as_array().map(Vec::len), Some(2));
 }
 
 #[test]
