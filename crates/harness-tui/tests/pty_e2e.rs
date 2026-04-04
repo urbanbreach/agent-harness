@@ -551,7 +551,7 @@ fn operator_sidebar_matches_opencode_information_architecture() {
             "Export bundle · run_fixture/",
             "Provider openai",
             "Context",
-            "Web/Search · 1",
+            "Web · 1",
             "LSP · 1",
             "Batch · 1",
             "▼ Todo · 3",
@@ -624,11 +624,21 @@ fn pty_live_orchestration_drawer_and_status() {
         &helper.output_rx,
         completed_initial_screen,
     );
-    assert_screen_contains_all(&completed_screen, &["Context", "ready for next turn"]);
+    assert_screen_contains_all(
+        &completed_screen,
+        &[
+            "Context",
+            "MCP · idle",
+            "Web · idle",
+            "LSP · idle",
+            "Batch · idle",
+            "ready for next turn",
+        ],
+    );
     assert!(!completed_screen.contains("Todo ·"));
-    assert!(!completed_screen.contains("Web/Search ·"));
-    assert!(!completed_screen.contains("Batch ·"));
-    assert!(!completed_screen.contains("LSP ·"));
+    assert!(!completed_screen.contains("Web · 1"));
+    assert!(!completed_screen.contains("Batch · 1"));
+    assert!(!completed_screen.contains("LSP · 1"));
     assert!(!completed_screen.contains("orch 0a 0q 0r 0s"));
 
     terminate_child(helper.child);
