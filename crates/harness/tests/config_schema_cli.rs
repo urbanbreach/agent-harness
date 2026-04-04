@@ -257,6 +257,41 @@ fn schema_cli_prints_json_schema() {
 }
 
 #[test]
+fn schema_cli_documents_current_integrations_boundary() {
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .arg("schema")
+        .output()
+        .expect("run harness schema");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let schema: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("schema output should be json");
+    let integrations = &schema["definitions"]["IntegrationsConfig"];
+    let integration_properties = integrations["properties"]
+        .as_object()
+        .expect("integrations properties object");
+    assert_eq!(integration_properties.len(), 1);
+    assert!(integration_properties.contains_key("remote_search"));
+
+    let integrations_description = integrations["description"]
+        .as_str()
+        .expect("integrations description");
+    assert!(integrations_description.contains("remote search transport"));
+    assert!(integrations_description.contains("Generic MCP server registration"));
+
+    let remote_search_description = schema["definitions"]["RemoteSearchConfig"]["description"]
+        .as_str()
+        .expect("remote search description");
+    assert!(remote_search_description.contains("Exa-compatible MCP endpoint"));
+    assert!(remote_search_description.contains("`web_search` and `code_search`"));
+}
+
+#[test]
 fn config_validate_cli_reports_missing_config() {
     let temp = tempdir().expect("tempdir");
     let output = Command::new(env!("CARGO_BIN_EXE_harness"))

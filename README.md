@@ -2,6 +2,13 @@
 
 Rust workspace for an event-sourced agent harness with:
 
+## Configuration
+
+The current public integration surface is documented in [`docs/config.md`](docs/config.md).
+At the moment, Agent Harness exposes only `integrations.remote_search` for the built-in
+`web_search` and `code_search` tools; generic `integrations.mcp.servers` configuration
+is not part of the public runtime contract yet.
+
 - a CLI entrypoint
 - coordinator/runtime core
 - provider adapters
