@@ -1,5 +1,21 @@
 # Agent harness
 
+## Headless session recovery
+
+The CLI now exposes a headless recovery path for saved interactive sessions:
+
+```bash
+# inspect a saved run without opening the TUI
+harness sessions reopen --session <run-id-or-path>
+
+# machine-readable recovery context
+harness sessions reopen --session <run-id-or-path> --json
+
+# continue a resumable interactive session from the shell
+harness prompt --resume <run-id-or-path> --text "continue from the last stopping point"
+```
+
+`sessions reopen` surfaces the recent prompt context, resumability, child-session lineage, and tool artifacts so you can decide whether to continue, replay, or debug the run before sending the next prompt.
 
 
 ## Getting started

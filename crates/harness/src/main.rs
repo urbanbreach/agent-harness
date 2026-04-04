@@ -14,6 +14,7 @@ use harness_core::config::{
 mod bootstrap;
 mod logging;
 mod prompt;
+mod recovery;
 mod replay;
 mod run;
 mod scenarios;

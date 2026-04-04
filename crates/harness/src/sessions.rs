@@ -2,9 +2,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::Subcommand;
+use clap::{Args, Subcommand};
 use harness_core::proj::{RunStatus, SessionModeSource};
 
+use crate::recovery::{inspect_session_recovery, resolve_session_run_dir, SessionRecoverySummary};
 use crate::replay::inspect_session_catalog;
 
 const DEFAULT_SESSION_DIR: &str = ".agent-harness/sessions";
@@ -12,11 +13,22 @@ const DEFAULT_SESSION_DIR: &str = ".agent-harness/sessions";
 #[derive(Debug, Subcommand, Clone)]
 pub enum SessionsCommand {
     List,
+    Reopen(ReopenCommand),
+}
+
+#[derive(Debug, Args, Clone)]
+pub struct ReopenCommand {
+    #[arg(long, value_name = "RUN_ID_OR_PATH")]
+    pub session: String,
+
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
 }
 
 pub fn execute(command: SessionsCommand, global_session_dir: Option<PathBuf>) -> ExitCode {
     match command {
         SessionsCommand::List => list_sessions(global_session_dir),
+        SessionsCommand::Reopen(command) => reopen_session(command, global_session_dir),
     }
 }
 
@@ -90,6 +102,38 @@ fn list_sessions(global_session_dir: Option<PathBuf>) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+fn reopen_session(command: ReopenCommand, global_session_dir: Option<PathBuf>) -> ExitCode {
+    let session_dir = global_session_dir.unwrap_or_else(|| PathBuf::from(DEFAULT_SESSION_DIR));
+    let run_dir = match resolve_session_run_dir(&command.session, &session_dir) {
+        Ok(run_dir) => run_dir,
+        Err(err) => {
+            eprintln!("session reopen failed: {err}");
+            return ExitCode::from(1);
+        }
+    };
+    let summary = match inspect_session_recovery(&run_dir) {
+        Ok(summary) => summary,
+        Err(err) => {
+            eprintln!("session reopen failed: {err}");
+            return ExitCode::from(1);
+        }
+    };
+
+    if command.json {
+        match serde_json::to_string_pretty(&summary) {
+            Ok(body) => println!("{body}"),
+            Err(err) => {
+                eprintln!("session reopen failed: failed to serialize recovery summary: {err}");
+                return ExitCode::from(1);
+            }
+        }
+    } else {
+        print_recovery_summary(&summary);
+    }
+
+    ExitCode::SUCCESS
+}
+
 fn status_label(status: Option<RunStatus>) -> &'static str {
     match status {
         Some(RunStatus::Running) => "running",
@@ -107,5 +151,104 @@ fn mode_source_label(mode_source: SessionModeSource) -> &'static str {
         SessionModeSource::ScenarioFixture => "scenario_fixture",
         SessionModeSource::ReplayOnly => "replay_only",
         SessionModeSource::Unknown => "<unavailable>",
+    }
+}
+
+fn print_recovery_summary(summary: &SessionRecoverySummary) {
+    println!("run_id: {}", summary.run_id);
+    println!(
+        "run_name: {}",
+        summary.run_name.as_deref().unwrap_or("<unknown>")
+    );
+    println!("run_dir: {}", summary.run_dir.display());
+    println!(
+        "workspace_root: {}",
+        summary.workspace_root.as_deref().unwrap_or("<unknown>")
+    );
+    println!("status: {}", status_label(summary.status));
+    println!(
+        "profile: {}",
+        summary.profile.as_deref().unwrap_or("<unavailable>")
+    );
+    println!(
+        "provider/model: {}",
+        summary.provider_model.as_deref().unwrap_or("<unavailable>")
+    );
+    println!("mode: {}", mode_source_label(summary.mode));
+    println!(
+        "resumable: {}",
+        if summary.resumable { "yes" } else { "no" }
+    );
+    if let Some(reason) = &summary.resume_disabled_reason {
+        println!("resume_disabled_reason: {reason}");
+    }
+    if let Some(agent_id) = &summary.resume_agent_id {
+        println!("resume_agent_id: {agent_id}");
+    }
+    if let Some(last_error) = &summary.last_error {
+        println!("last_error: {last_error}");
+    }
+    if let Some(continue_hint) = &summary.continue_hint {
+        println!("continue_hint: {continue_hint}");
+    }
+    println!("total_events: {}", summary.total_events);
+
+    if !summary.pending_permissions.is_empty() {
+        println!("pending_permissions:");
+        for permission_id in &summary.pending_permissions {
+            println!("  - {permission_id}");
+        }
+    }
+    if !summary.tasks_in_flight.is_empty() {
+        println!("tasks_in_flight:");
+        for task_id in &summary.tasks_in_flight {
+            println!("  - {task_id}");
+        }
+    }
+    if !summary.prompt_context.is_empty() {
+        println!("prompt_context:");
+        for entry in &summary.prompt_context {
+            println!(
+                "  - seq={} kind={} request={} agent={} text={}",
+                entry.seq,
+                entry.kind,
+                entry.request_id.as_deref().unwrap_or("<unknown>"),
+                entry.agent_id.as_deref().unwrap_or("<unknown>"),
+                entry.text
+            );
+        }
+    }
+    if !summary.child_sessions.is_empty() {
+        println!("child_sessions:");
+        for child in &summary.child_sessions {
+            println!(
+                "  - {} profile={} provider/model={} child_request={} state={} elapsed_ms={}",
+                child.agent_id,
+                child.profile.as_deref().unwrap_or("<unavailable>"),
+                child.provider_model.as_deref().unwrap_or("<unavailable>"),
+                child
+                    .latest_child_request_id
+                    .as_deref()
+                    .unwrap_or("<unavailable>"),
+                child.terminal_state.as_deref().unwrap_or("<unavailable>"),
+                child
+                    .elapsed_ms
+                    .map(|value| value.to_string())
+                    .as_deref()
+                    .unwrap_or("<unavailable>")
+            );
+        }
+    }
+    if !summary.artifacts.is_empty() {
+        println!("artifacts:");
+        for artifact in &summary.artifacts {
+            println!(
+                "  - tool_call={} tool={} path={} digest={}",
+                artifact.tool_call_id,
+                artifact.tool_id.as_deref().unwrap_or("<unavailable>"),
+                artifact.path,
+                artifact.digest.as_deref().unwrap_or("<unavailable>")
+            );
+        }
     }
 }

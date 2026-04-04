@@ -10,9 +10,14 @@ use harness_core::clock::{Clock, FakeClock, RealClock};
 use harness_core::config::resolve_config_path;
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1};
+use harness_core::proj::inspect_resume_plan;
 use harness_core::redact::DefaultRedactor;
+use harness_tui::load_events_from_run_dir;
 use uuid::Uuid;
 
+use crate::recovery::{
+    inspect_session_recovery, latest_run_name, resolve_session_run_dir, select_resume_agent_id,
+};
 use crate::{bootstrap, logging};
 
 const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -24,8 +29,11 @@ pub struct PromptCommand {
     #[arg(long)]
     pub text: String,
 
-    #[arg(long)]
+    #[arg(long, conflicts_with = "resume")]
     pub profile: Option<String>,
+
+    #[arg(long, value_name = "RUN_ID_OR_PATH", conflicts_with = "profile")]
+    pub resume: Option<String>,
 
     #[arg(long)]
     pub out: Option<PathBuf>,
@@ -129,6 +137,10 @@ async fn run_prompt(
     cmd: &PromptCommand,
     settings: &PromptSettings,
 ) -> Result<PromptOutcome, String> {
+    if let Some(selector) = &cmd.resume {
+        return run_resumed_prompt(cmd, settings, selector).await;
+    }
+
     let mut coordinator_config = settings.coordinator_config.clone();
     coordinator_config.deterministic_store = settings.deterministic;
     coordinator_config.hook_runtime_config.suppress_execution = settings.deterministic;
@@ -196,6 +208,88 @@ async fn run_prompt(
 
     let request_id = coordinator
         .request_agent_turn(user_actor(), agent_id, cmd.text.clone())
+        .await
+        .map_err(|err| err.to_string())?;
+
+    let wait_timeout = prompt_wait_timeout();
+    let wait_result = wait_for_prompt_completion(&run.events_path, &request_id, wait_timeout).await;
+    let stop_result = coordinator.stop_run().await;
+
+    wait_result?;
+    stop_result.map_err(|err| err.to_string())?;
+
+    Ok(PromptOutcome {
+        run_dir: run.run_dir,
+        events_path: run.events_path,
+    })
+}
+
+async fn run_resumed_prompt(
+    cmd: &PromptCommand,
+    settings: &PromptSettings,
+    selector: &str,
+) -> Result<PromptOutcome, String> {
+    let mut coordinator_config = settings.coordinator_config.clone();
+    coordinator_config.deterministic_store = settings.deterministic;
+    coordinator_config.hook_runtime_config.suppress_execution = settings.deterministic;
+    coordinator_config.config_digest = settings.config_digest.clone();
+    coordinator_config.harness_version = env!("CARGO_PKG_VERSION").to_string();
+    coordinator_config.run_id_override = None;
+
+    let run_dir = resolve_session_run_dir(selector, &coordinator_config.session_dir)?;
+    let recovery = inspect_session_recovery(&run_dir)?;
+    if !recovery.resumable {
+        let reason = recovery
+            .resume_disabled_reason
+            .clone()
+            .unwrap_or_else(|| "resume unavailable without reason".to_string());
+        return Err(format!(
+            "resume is disabled for {}: {reason}",
+            recovery.run_id
+        ));
+    }
+
+    let resume_plan = inspect_resume_plan(&run_dir);
+    let historical_events = load_events_from_run_dir(&run_dir).map_err(|err| err.to_string())?;
+    let resume_agent_id =
+        select_resume_agent_id(&resume_plan, &historical_events, &recovery.run_id)?;
+    let run_name = recovery
+        .run_name
+        .clone()
+        .or_else(|| latest_run_name(&historical_events))
+        .unwrap_or_else(|| "interactive".to_string());
+
+    let session_dir = run_dir.parent().ok_or_else(|| {
+        format!(
+            "failed to resolve parent session directory for {}",
+            run_dir.display()
+        )
+    })?;
+    fs::create_dir_all(session_dir)
+        .map_err(|err| format!("failed to create session dir: {err}"))?;
+    coordinator_config.session_dir = session_dir.to_path_buf();
+
+    let clock: Arc<dyn Clock + Send + Sync> = if settings.deterministic {
+        Arc::new(FakeClock::new())
+    } else {
+        Arc::new(RealClock::new())
+    };
+
+    let coordinator = spawn_coordinator(
+        coordinator_config,
+        clock,
+        Arc::new(DefaultRedactor::default()),
+    );
+
+    let run = coordinator
+        .resume_run(recovery.run_id.clone(), run_name)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    logging::init_logging(&settings.config, &run.artifacts_dir)?;
+
+    let request_id = coordinator
+        .request_agent_turn(user_actor(), resume_agent_id, cmd.text.clone())
         .await
         .map_err(|err| err.to_string())?;
 
