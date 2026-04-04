@@ -1,6 +1,12 @@
 # Agent harness
 
+## `agent.spawn` / `task`
 
+- `agent.spawn` is the native child-delegation tool; `task` is its compat alias.
+- `prompt` is the task body delivered to the child.
+- `skills` and `load_skills` are equivalent aliases for the same list.
+- `command`, when provided, is prepended to the child prompt as delegation context.
+- Skill/command context is delivered as prompt instructions before the original task body.
 
 ## Getting started
 

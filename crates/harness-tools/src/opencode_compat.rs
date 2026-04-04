@@ -675,7 +675,7 @@ impl Tool for TaskCompatTool {
     }
 
     fn description(&self) -> &str {
-        "Delegates work to another configured harness category/profile."
+        "Delegates work to another configured harness category/profile. `load_skills` and `command` are prepended to the child prompt as explicit delegation instructions."
     }
 
     fn parameters_json_schema(&self) -> Value {
