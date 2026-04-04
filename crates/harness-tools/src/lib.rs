@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use harness_core::config::ShellAllowlist;
+use harness_core::config::{McpConfig, ShellAllowlist};
 use harness_core::event::ActorKind;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 use schemars::JsonSchema;
@@ -36,6 +36,8 @@ use workspace_edit::{FsWriteTool, WorkspaceEditExecutor};
 
 mod network;
 use network::{NetworkExecutor, SearchCodeTool, SearchWebTool, WebFetchTool};
+
+mod mcp;
 
 mod control_plane;
 use control_plane::{
@@ -66,6 +68,13 @@ pub use harness_core::tool::{
 };
 
 pub fn coordinator_registry(shell_allowlist: ShellAllowlist) -> ToolRegistry {
+    coordinator_registry_with_mcp(shell_allowlist, McpConfig::default())
+}
+
+pub fn coordinator_registry_with_mcp(
+    shell_allowlist: ShellAllowlist,
+    mcp_config: McpConfig,
+) -> ToolRegistry {
     let agent_ops_executor = Arc::new(AgentOpsExecutor::new());
     let control_plane_executor = Arc::new(ControlPlaneExecutor::new());
     let network_executor = Arc::new(NetworkExecutor::new());
@@ -130,11 +139,19 @@ pub fn coordinator_registry(shell_allowlist: ShellAllowlist) -> ToolRegistry {
     registry.register(Arc::new(LspCompatTool::new(code_lsp_executor)));
     registry.register(Arc::new(InvalidTool::new(control_plane_executor.clone())));
     registry.register(Arc::new(InvalidCompatTool::new(control_plane_executor)));
+    mcp::register_mcp_tools(&mut registry, mcp_config);
     registry
 }
 
 pub fn worker_registry(shell_allowlist: ShellAllowlist) -> ToolRegistry {
-    let coordinator = coordinator_registry(shell_allowlist);
+    worker_registry_with_mcp(shell_allowlist, McpConfig::default())
+}
+
+pub fn worker_registry_with_mcp(
+    shell_allowlist: ShellAllowlist,
+    mcp_config: McpConfig,
+) -> ToolRegistry {
+    let coordinator = coordinator_registry_with_mcp(shell_allowlist, mcp_config);
     let mut worker = ToolRegistry::new();
     for tool in coordinator.filter_for_actor(ActorKind::Worker) {
         worker.register(tool);

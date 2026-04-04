@@ -1094,7 +1094,7 @@ fn tool_prefers_generic_output_block(display_tool_id: &str) -> bool {
     matches!(
         display_tool_id,
         "web.fetch" | "search.web" | "search.code" | "tool.batch" | "code.lsp"
-    )
+    ) || display_tool_id.starts_with("mcp.")
 }
 
 fn tool_path_display(tool_call: &crate::app::ToolCallEntry) -> Option<String> {

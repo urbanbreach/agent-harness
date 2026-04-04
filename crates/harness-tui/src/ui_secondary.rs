@@ -400,6 +400,66 @@ pub(crate) fn exact_test_operator_rail_low_activity_presentation_prefers_primary
 }
 
 #[cfg(test)]
+pub(crate) fn exact_test_operator_rail_section_model_counts_generic_mcp_activity() {
+    let mut app = operator_rail_test_app();
+    let worker = harness_core::event::EventActor::new(
+        harness_core::event::ActorKind::Worker,
+        Some("w1".to_string()),
+    );
+    app.ingest_event(operator_rail_test_event(
+        4,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::User, None),
+        harness_core::event::EventV1::UserMessageSubmitted(
+            harness_core::event::UserMessageSubmittedEvent {
+                request_id: "req-mcp".to_string(),
+                text: "Use the MCP fixture".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event(
+        5,
+        worker.clone(),
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_mcp_1".to_string(),
+                tool_id: "mcp.fixture.tool.call".to_string(),
+                args_summary: r#"{"tool":"echo"}"#.to_string(),
+                args_digest: "digest-mcp-1".to_string(),
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("mcp.fixture.tool.call".to_string()),
+                    ..harness_core::event::ToolCallMetadata::default()
+                }),
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event(
+        6,
+        worker,
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tool_call_mcp_1".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("fixture ok".to_string()),
+                output_digest: Some("digest-output-mcp-1".to_string()),
+                output_json: None,
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("mcp.fixture.tool.call".to_string()),
+                    ..harness_core::event::ToolCallMetadata::default()
+                }),
+            },
+        ),
+    ));
+
+    let model = build_operator_rail_model(&app);
+
+    assert_eq!(model.body.sections[1].heading(), "MCP · 1");
+    assert_eq!(
+        model.body.sections[1].items(),
+        ["mcp.fixture.tool.call · completed".to_string()]
+    );
+}
+
+#[cfg(test)]
 fn operator_rail_test_app() -> AppState {
     crate::app::set_pending_live_launch_metadata(
         crate::app::LaunchMetadata::from_model_ref("worker", "mock:model-1")
@@ -859,10 +919,10 @@ where
 
 fn operator_sidebar_mcp_lines(app: &AppState) -> Vec<String> {
     let items = operator_sidebar_collect_tool_lines(app, |tool_call| {
-        matches!(
+        (matches!(
             tool_call.canonical_tool_id(),
             "web.fetch" | "search.web" | "search.code" | "tool.batch"
-        )
+        ) || tool_call.canonical_tool_id().starts_with("mcp."))
         .then(|| operator_sidebar_mcp_item(tool_call))
     });
     if items.is_empty() {

@@ -947,6 +947,8 @@ pub struct DeterministicConfig {
 pub struct IntegrationsConfig {
     #[serde(default, alias = "remoteSearch")]
     pub remote_search: RemoteSearchConfig,
+    #[serde(default)]
+    pub mcp: McpConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -978,6 +980,43 @@ impl Default for RemoteSearchConfig {
             timeout_secs: default_remote_search_timeout_secs(),
             max_retries: default_remote_search_max_retries(),
             retry_backoff_ms: default_remote_search_retry_backoff_ms(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
+pub struct McpConfig {
+    #[serde(default)]
+    pub servers: BTreeMap<String, McpServerConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "transport", rename_all = "snake_case", deny_unknown_fields)]
+pub enum McpServerConfig {
+    Stdio {
+        command: Vec<String>,
+        #[serde(default)]
+        env: BTreeMap<String, String>,
+        #[serde(default)]
+        cwd: Option<PathBuf>,
+        #[serde(default = "default_mcp_timeout_secs", alias = "timeoutSecs")]
+        timeout_secs: u64,
+    },
+    #[serde(alias = "streamable_http")]
+    Http {
+        endpoint: String,
+        #[serde(default)]
+        headers: BTreeMap<String, String>,
+        #[serde(default = "default_mcp_timeout_secs", alias = "timeoutSecs")]
+        timeout_secs: u64,
+    },
+}
+
+impl McpServerConfig {
+    pub fn timeout_secs(&self) -> u64 {
+        match self {
+            Self::Stdio { timeout_secs, .. } | Self::Http { timeout_secs, .. } => *timeout_secs,
         }
     }
 }
@@ -1060,6 +1099,10 @@ fn default_remote_search_max_retries() -> u32 {
 
 fn default_remote_search_retry_backoff_ms() -> u64 {
     250
+}
+
+fn default_mcp_timeout_secs() -> u64 {
+    30
 }
 
 fn default_provider_timeout_ms() -> u64 {

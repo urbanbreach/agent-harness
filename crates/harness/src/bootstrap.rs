@@ -14,7 +14,7 @@ use harness_providers::openai::{
     OpenAiApiMode as ProviderOpenAiApiMode, OpenAiCompatibleProvider,
     OpenAiCompatibleProviderConfig,
 };
-use harness_tools::coordinator_registry;
+use harness_tools::coordinator_registry_with_mcp;
 
 const DEFAULT_PROVIDER_ID: &str = "default";
 const DEFAULT_INTERACTIVE_PROFILE: &str = "deep";
@@ -40,8 +40,9 @@ pub fn build_interactive_coordinator_config(
 ) -> Result<CoordinatorConfig, String> {
     let mut coordinator_config = CoordinatorConfig::new(cfg.paths.session_dir.clone());
     coordinator_config.permission_policy = PermissionPolicy::from_config(cfg);
-    coordinator_config.tool_registry = Arc::new(coordinator_registry(
+    coordinator_config.tool_registry = Arc::new(coordinator_registry_with_mcp(
         cfg.permissions.shell_allowlist.clone(),
+        cfg.integrations.mcp.clone(),
     ));
     coordinator_config.tool_concurrency = cfg.background_task.default_concurrency;
     coordinator_config.provider_model_concurrency = cfg.background_task.model_concurrency;
