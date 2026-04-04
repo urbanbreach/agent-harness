@@ -551,8 +551,9 @@ fn operator_sidebar_matches_opencode_information_architecture() {
             "Share unavailable",
             "Provider openai",
             "Context",
-            "MCP · 2",
+            "Web/Search · 1",
             "LSP · 1",
+            "Batch · 1",
             "▼ Todo · 3",
             "▼ Modified Files · 3",
         ],
@@ -614,17 +615,19 @@ fn pty_live_orchestration_drawer_and_status() {
         &["Todo · 1", "ready for next turn  ·  orch 1a 0q 1r 0s"],
     );
 
-    let completed_screen = wait_for_screen_contains(
+    thread::sleep(ORCHESTRATION_EVENT_DELAY + STABLE_WINDOW);
+    drain_output(&mut helper.parser, &helper.output_rx);
+    let completed_initial_screen = helper.parser.screen().contents();
+    let completed_screen = stabilize_screen(
         &mut helper.parser,
         &helper.output_rx,
-        "MCP · idle",
-        MARKER_TIMEOUT,
-    )
-    .expect("wait for completed orchestration state");
-    assert_screen_contains_all(
-        &completed_screen,
-        &["Context", "MCP · idle", "LSP · idle", "ready for next turn"],
+        completed_initial_screen,
     );
+    assert_screen_contains_all(&completed_screen, &["Context", "ready for next turn"]);
+    assert!(!completed_screen.contains("Todo ·"));
+    assert!(!completed_screen.contains("Web/Search ·"));
+    assert!(!completed_screen.contains("Batch ·"));
+    assert!(!completed_screen.contains("LSP ·"));
     assert!(!completed_screen.contains("orch 0a 0q 0r 0s"));
 
     terminate_child(helper.child);

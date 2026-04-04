@@ -178,6 +178,7 @@ pub(crate) use ui_secondary::{
     exact_test_operator_rail_low_activity_presentation_prefers_primary_stack,
     exact_test_operator_rail_section_model_builds_pinned_summary,
     exact_test_operator_rail_section_model_hides_empty_sources_but_preserves_order,
+    exact_test_operator_rail_section_model_separates_tool_families,
     exact_test_operator_rail_section_model_surfaces_pending_permissions_first,
 };
 #[cfg(test)]
