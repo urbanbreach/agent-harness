@@ -942,26 +942,49 @@ pub struct DeterministicConfig {
     pub seed: u64,
 }
 
+/// Current public integration settings.
+///
+/// Agent Harness currently exposes only the native remote search transport used
+/// by the built-in `web_search` and `code_search` tools. Generic MCP server
+/// registration is not part of the public config contract yet.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
 pub struct IntegrationsConfig {
+    /// Configuration for the currently supported built-in external integrations.
+    ///
+    /// Agent Harness currently exposes only the native remote search transport
+    /// used by the built-in `web_search` and `code_search` tools. Generic MCP
+    /// server registration is not part of the public config contract yet.
     #[serde(default, alias = "remoteSearch")]
     pub remote_search: RemoteSearchConfig,
 }
 
+/// Settings for the built-in remote search bridge.
+///
+/// The current runtime expects an Exa-compatible MCP endpoint for native
+/// `web_search` and `code_search` requests.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RemoteSearchConfig {
+    /// Endpoint used by the built-in remote search bridge.
+    ///
+    /// The current runtime expects an Exa-compatible MCP endpoint for native
+    /// `web_search` and `code_search` requests.
     #[serde(default = "default_remote_search_endpoint")]
     pub endpoint: String,
+    /// Optional bearer token for the remote search endpoint.
     #[serde(default, alias = "authToken")]
     pub auth_token: Option<String>,
+    /// Require an auth token before the native search tools make requests.
     #[serde(default, alias = "requireAuth")]
     pub require_auth: bool,
+    /// Request timeout for native remote search calls.
     #[serde(default = "default_remote_search_timeout_secs", alias = "timeoutSecs")]
     pub timeout_secs: u64,
+    /// Maximum retry attempts for retryable remote search failures.
     #[serde(default = "default_remote_search_max_retries", alias = "maxRetries")]
     pub max_retries: u32,
+    /// Backoff, in milliseconds, between retry attempts.
     #[serde(
         default = "default_remote_search_retry_backoff_ms",
         alias = "retryBackoffMs"
