@@ -7,7 +7,7 @@ ready for next turn: true
 Context: true
 Enter send: true
 focus_marker: Continued · run
-focus_pixels_blake3: bf455556201642a56610c1a7b10574b72f59ca919ec8c2c9898a2e42216734d6
+focus_pixels_blake3: 02ffbc9151f41a65df5a390c5852116fe5da14b91a0a86519d1816938e3f8afa
 focus_region_cells: row=1, col=120, height=1, width=18
 image: pty_continue_quiescent_session.png
 manifest_json: pty-manifests/continue_session/manifest.json

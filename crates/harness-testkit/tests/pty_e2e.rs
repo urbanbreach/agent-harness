@@ -2239,20 +2239,22 @@ fn pty_signoff_helpers_cover_primary_and_minimum_geometries() {
 }
 
 #[test]
-fn pty_visual_ttf_antialias_defaults_to_enabled() {
-    assert!(parse_ttf_antialias_env(None));
-    assert!(parse_ttf_antialias_env(Some("1")));
-    assert!(parse_ttf_antialias_env(Some("true")));
-    assert!(parse_ttf_antialias_env(Some("on")));
-    assert!(parse_ttf_antialias_env(Some("unexpected")));
+fn pty_visual_ttf_antialias_defaults_to_disabled() {
+    assert!(!parse_ttf_antialias_env(None));
+    for value in ["0", "false", "off", " False ", " OFF ", "unexpected"] {
+        assert!(
+            !parse_ttf_antialias_env(Some(value)),
+            "expected {value:?} to keep PTY TTF anti-aliasing disabled"
+        );
+    }
 }
 
 #[test]
-fn pty_visual_ttf_antialias_honors_explicit_opt_out() {
-    for value in ["0", "false", "off", " False ", " OFF "] {
+fn pty_visual_ttf_antialias_honors_explicit_opt_in() {
+    for value in ["1", "true", "on", " True ", " ON "] {
         assert!(
-            !parse_ttf_antialias_env(Some(value)),
-            "expected {value:?} to disable PTY TTF anti-aliasing"
+            parse_ttf_antialias_env(Some(value)),
+            "expected {value:?} to enable PTY TTF anti-aliasing"
         );
     }
 }

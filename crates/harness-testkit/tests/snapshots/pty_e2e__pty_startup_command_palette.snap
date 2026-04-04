@@ -7,7 +7,7 @@ New session: true
 Continue session: true
 Replay session: true
 focus_marker: Command palette
-focus_pixels_blake3: fb20ee4e8da3c04c68a8a4c296ad40da253fcfa471533544067c62a13579eeee
+focus_pixels_blake3: 9462f093fbeb4d280b7e3ae3ac2c1c39c65aeda5723aefba04bd92fceb57c804
 focus_region_cells: row=20, col=47, height=5, width=28
 image: pty_startup_command_palette.png
 manifest_json: pty-manifests/startup_command_palette/manifest.json

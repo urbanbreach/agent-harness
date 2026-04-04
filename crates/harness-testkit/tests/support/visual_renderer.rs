@@ -151,11 +151,13 @@ pub(crate) fn parse_ttf_antialias_env(value: Option<&str>) -> bool {
     value
         .map(|value| {
             let normalized = value.trim();
-            !(normalized == "0"
-                || normalized.eq_ignore_ascii_case("false")
-                || normalized.eq_ignore_ascii_case("off"))
+            normalized == "1"
+                || normalized.eq_ignore_ascii_case("true")
+                || normalized.eq_ignore_ascii_case("on")
         })
-        .unwrap_or(true)
+        // Keep the default renderer fully deterministic across hosts; opt in to
+        // host-font anti-aliasing only when a test run explicitly requests it.
+        .unwrap_or(false)
 }
 
 fn draw_cell(image: &mut RgbImage, context: &CellRenderContext<'_>, row: u16, col: u16) {
@@ -541,12 +543,14 @@ fn font_candidates(
     if let Ok(path) = std::env::var(env_var) {
         candidates.push(path);
     }
+    // Prefer pinned fallback paths before asking fontconfig so hosts that do
+    // have the baseline font installed converge on the same raster source.
+    candidates.extend(fallback_paths.iter().map(|path| (*path).to_string()));
     if let Some(path) = fontconfig_match(fontconfig_pattern) {
         if !candidates.iter().any(|candidate| candidate == &path) {
             candidates.push(path);
         }
     }
-    candidates.extend(fallback_paths.iter().map(|path| (*path).to_string()));
     candidates
 }
 
