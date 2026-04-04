@@ -752,10 +752,12 @@ impl Tool for SkillCompatTool {
         ToolCapability::ReadFs
     }
 
-    async fn call(&self, _ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
+    async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: SkillArgs = serde_json::from_value(args_json)
             .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
-        self.executor.load_skill(&args.name, args.user_message)
+        self.executor
+            .load_skill(&ctx, &args.name, args.user_message)
+            .await
     }
 }
 
