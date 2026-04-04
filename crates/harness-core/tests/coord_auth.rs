@@ -208,6 +208,7 @@ fn worker_profile(category: &str, toolset: Vec<String>) -> AgentProfile {
         category: category.to_string(),
         model_ref: "mock:model-1".to_string(),
         system_prompt: "worker-prompt".to_string(),
+        temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         tool_surface: ToolSurface::Native,
         toolset,

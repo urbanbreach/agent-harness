@@ -17,12 +17,13 @@ use crate::tool::{
     ToolSurface,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AgentProfile {
     pub name: String,
     pub category: String,
     pub model_ref: String,
     pub system_prompt: String,
+    pub temperature: Option<f32>,
     pub tool_failure_mode: ToolFailureMode,
     #[serde(default)]
     pub tool_surface: ToolSurface,
@@ -36,6 +37,7 @@ impl AgentProfile {
             category: name.clone(),
             model_ref: "default:default".to_string(),
             system_prompt: String::new(),
+            temperature: None,
             tool_failure_mode: ToolFailureMode::FailTurn,
             tool_surface: ToolSurface::Native,
             toolset: Vec::new(),
@@ -143,15 +145,13 @@ where
 {
     let model = AgentModelRef::parse(&request.model_ref);
     let messages = build_provider_context_messages(profile, prior_turns, &request.prompt);
-    let completion_request = CompletionRequest {
-        model_id: model.model_id.clone(),
+    let completion_request = build_completion_request(
+        model.model_id.clone(),
         messages,
-        temperature: Some(0.0),
-        max_tokens: None,
-        tools: None,
-        tool_choice: None,
-        stream: true,
-    };
+        profile.temperature,
+        None,
+        None,
+    );
 
     emit(AgentRuntimeEvent::ProviderRequestStarted(
         ProviderRequestStarted {
@@ -252,15 +252,13 @@ where
     for _iter in 1..=MAX_ITERS {
         let turn_request_id = request_id.clone();
 
-        let completion_request = CompletionRequest {
-            model_id: model.model_id.clone(),
-            messages: messages.clone(),
-            temperature: Some(0.0),
-            max_tokens: None,
-            tools: (!tool_defs.is_empty()).then(|| tool_defs.clone()),
-            tool_choice: (!tool_defs.is_empty()).then_some(ToolChoice::Auto),
-            stream: true,
-        };
+        let completion_request = build_completion_request(
+            model.model_id.clone(),
+            messages.clone(),
+            profile.temperature,
+            (!tool_defs.is_empty()).then(|| tool_defs.clone()),
+            (!tool_defs.is_empty()).then_some(ToolChoice::Auto),
+        );
 
         emit(AgentRuntimeEvent::ProviderRequestStarted(
             ProviderRequestStarted {
@@ -530,6 +528,24 @@ fn tool_result_to_message_content(result: &ToolResult) -> String {
     serde_json::to_string(result).unwrap_or_else(|_| result.display_text.clone())
 }
 
+fn build_completion_request(
+    model_id: String,
+    messages: Vec<CompletionMessage>,
+    temperature: Option<f32>,
+    tools: Option<Vec<ToolDef>>,
+    tool_choice: Option<ToolChoice>,
+) -> CompletionRequest {
+    CompletionRequest {
+        model_id,
+        messages,
+        temperature,
+        max_tokens: None,
+        tools,
+        tool_choice,
+        stream: true,
+    }
+}
+
 fn truncate_summary(text: &str, max_chars: usize) -> String {
     if text.chars().count() <= max_chars {
         return text.to_string();
@@ -571,8 +587,9 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        build_provider_tool_defs, run_multi_turn_streaming, tool_result_to_message_content,
-        AgentProfile, AgentRequest, AgentTurnOutcome, MultiTurnStreamingRequest,
+        build_provider_tool_defs, run_multi_turn_streaming, run_single_turn_streaming,
+        tool_result_to_message_content, AgentProfile, AgentRequest, AgentTurnOutcome,
+        MultiTurnStreamingRequest,
     };
     use crate::config::ToolFailureMode;
     use crate::tool::{
@@ -597,6 +614,7 @@ mod tests {
                 completion_system_message("sys"),
                 completion_user_message("Use a tool"),
             ],
+            profile.temperature,
             &tool_defs,
         );
         let second_request = completion_request(
@@ -612,6 +630,7 @@ mod tests {
                 ),
                 completion_tool_message(&tool_result_message, &function_name, "call_1"),
             ],
+            profile.temperature,
             &tool_defs,
         );
 
@@ -707,6 +726,7 @@ mod tests {
                 completion_system_message("sys"),
                 completion_user_message("Use a tool"),
             ],
+            profile.temperature,
             &tool_defs,
         );
 
@@ -782,6 +802,7 @@ mod tests {
                 completion_system_message("sys"),
                 completion_user_message("Use a tool"),
             ],
+            profile.temperature,
             &tool_defs,
         );
 
@@ -878,6 +899,7 @@ mod tests {
                 completion_system_message("sys"),
                 completion_user_message("Use a tool"),
             ],
+            profile.temperature,
             &tool_defs,
         );
 
@@ -937,10 +959,113 @@ mod tests {
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             system_prompt: "sys".to_string(),
+            temperature: Some(0.1),
             tool_failure_mode: ToolFailureMode::FailTurn,
             tool_surface: ToolSurface::Native,
             toolset: vec!["fs.read".to_string()],
         }
+    }
+
+    #[tokio::test]
+    async fn single_turn_runner_uses_profile_temperature() {
+        let profile = AgentProfile {
+            temperature: Some(0.7),
+            ..test_profile()
+        };
+        let request = AgentRequest {
+            agent_id: "agent_1".to_string(),
+            prompt: "Hello".to_string(),
+            model_ref: "mock:model-1".to_string(),
+        };
+        let requests = Arc::new(Mutex::new(
+            Vec::<harness_providers::CompletionRequest>::new(),
+        ));
+        let provider = Arc::new(RecordingProvider::new(
+            requests.clone(),
+            vec![vec![
+                harness_providers::ProviderStreamEvent::Start,
+                harness_providers::ProviderStreamEvent::TextDelta("hi".to_string()),
+                harness_providers::ProviderStreamEvent::Done {
+                    usage: CompletionUsage {
+                        prompt_tokens: 1,
+                        completion_tokens: 1,
+                        total_tokens: 2,
+                    },
+                },
+            ]],
+        ));
+
+        let outcome = run_single_turn_streaming(
+            provider,
+            &profile,
+            "req_000006".to_string(),
+            request,
+            &[],
+            |_event| async {},
+        )
+        .await;
+
+        assert_eq!(
+            outcome,
+            AgentTurnOutcome::Succeeded {
+                output: "hi".to_string(),
+            }
+        );
+
+        let requests = requests.lock().expect("lock requests");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].temperature, Some(0.7));
+    }
+
+    #[tokio::test]
+    async fn single_turn_runner_omits_temperature_when_profile_leaves_it_unset() {
+        let profile = AgentProfile {
+            temperature: None,
+            ..test_profile()
+        };
+        let request = AgentRequest {
+            agent_id: "agent_1".to_string(),
+            prompt: "Hello".to_string(),
+            model_ref: "mock:model-1".to_string(),
+        };
+        let requests = Arc::new(Mutex::new(
+            Vec::<harness_providers::CompletionRequest>::new(),
+        ));
+        let provider = Arc::new(RecordingProvider::new(
+            requests.clone(),
+            vec![vec![
+                harness_providers::ProviderStreamEvent::Start,
+                harness_providers::ProviderStreamEvent::TextDelta("hi".to_string()),
+                harness_providers::ProviderStreamEvent::Done {
+                    usage: CompletionUsage {
+                        prompt_tokens: 1,
+                        completion_tokens: 1,
+                        total_tokens: 2,
+                    },
+                },
+            ]],
+        ));
+
+        let outcome = run_single_turn_streaming(
+            provider,
+            &profile,
+            "req_000007".to_string(),
+            request,
+            &[],
+            |_event| async {},
+        )
+        .await;
+
+        assert_eq!(
+            outcome,
+            AgentTurnOutcome::Succeeded {
+                output: "hi".to_string(),
+            }
+        );
+
+        let requests = requests.lock().expect("lock requests");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].temperature, None);
     }
 
     fn continue_profile() -> AgentProfile {
@@ -1010,6 +1135,7 @@ mod tests {
                 completion_system_message("sys"),
                 completion_user_message("Use a tool"),
             ],
+            profile.temperature,
             &tool_defs,
         );
         let second_request = completion_request(
@@ -1039,6 +1165,7 @@ mod tests {
                     "call_1",
                 ),
             ],
+            profile.temperature,
             &tool_defs,
         );
 
@@ -1114,12 +1241,13 @@ mod tests {
     fn completion_request(
         model_id: &str,
         messages: Vec<harness_providers::CompletionMessage>,
+        temperature: Option<f32>,
         tool_defs: &[harness_providers::ToolDef],
     ) -> harness_providers::CompletionRequest {
         harness_providers::CompletionRequest {
             model_id: model_id.to_string(),
             messages,
-            temperature: Some(0.0),
+            temperature,
             max_tokens: None,
             tools: Some(tool_defs.to_vec()),
             tool_choice: Some(ToolChoice::Auto),

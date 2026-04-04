@@ -110,6 +110,7 @@ pub fn interactive_agent_profiles(
                     "You are the {category_name} agent. {}",
                     category_cfg.description
                 ),
+                temperature: category_cfg.temperature,
                 tool_failure_mode: category_cfg.tool_failure_mode,
                 tool_surface: category_cfg.tool_surface,
                 toolset: resolve_tool_ids_for_surface(
@@ -136,4 +137,92 @@ fn interactive_plan_profiles(cfg: &HarnessConfig) -> BTreeMap<String, PlanProfil
             )
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::interactive_agent_profiles;
+    use harness_core::config::load_config_from_str;
+
+    #[test]
+    fn interactive_agent_profiles_preserve_configured_temperature_or_provider_default() {
+        let cfg = load_config_from_str(
+            r#"
+            {
+              providers: {
+                default: {
+                  type: "openai_compatible",
+                  base_url: "http://127.0.0.1:8317/v1",
+                  api_key: "sk-test",
+                  api_mode: "responses",
+                  timeout_ms: 60000,
+                  models: {
+                    "gpt-5.4-mini": {
+                      display_name: "GPT-5.4 mini",
+                    },
+                  },
+                },
+              },
+              profiles: {
+                deep: {
+                  description: "Deep work",
+                  model_ref: "default:gpt-5.4-mini",
+                  temperature: 0.7,
+                },
+                tool_audit: {
+                  description: "Tool audit",
+                  model_ref: "default:gpt-5.4-mini",
+                },
+              },
+              permissions: {
+                defaults: {
+                  edit: "ask",
+                  shell: "ask",
+                  network: "deny",
+                  question: "ask",
+                  task: "ask",
+                  webfetch: "deny",
+                  websearch: "deny",
+                  codesearch: "deny",
+                  lsp: "allow",
+                },
+                shell_allowlist: {
+                  executables: ["git"],
+                  cwd_roots: ["."],
+                },
+              },
+              runtime: {
+                background_tasks: {
+                  default_concurrency: 2,
+                  provider_concurrency: 2,
+                  model_concurrency: 2,
+                  stale_timeout_ms: 15000,
+                  message_staleness_timeout_ms: 5000,
+                },
+                session_dir: ".agent-harness/sessions",
+                permissions: {
+                  ask_timeout_ms: 45000,
+                },
+                prompt: {
+                  wait_timeout_ms: 15000,
+                },
+                deterministic: {
+                  enabled: false,
+                  seed: 42,
+                },
+              },
+              integrations: {
+                remote_search: {
+                  endpoint: "https://mcp.exa.ai/mcp",
+                },
+              },
+            }
+            "#,
+        )
+        .expect("config should parse");
+
+        let profiles = interactive_agent_profiles(&cfg).expect("profiles should build");
+        assert_eq!(profiles["deep"].temperature, Some(0.7));
+        assert_eq!(profiles["tool_audit"].temperature, None);
+    }
 }
