@@ -53,7 +53,7 @@ pub enum PolicyDecision {
 #[derive(Debug, Clone)]
 pub struct PermissionPolicy {
     defaults: DefaultPermissionModes,
-    category_overrides: BTreeMap<String, CategoryPermissions>,
+    profile_overrides: BTreeMap<String, CategoryPermissions>,
     ask_timeout_ms: u64,
 }
 
@@ -132,11 +132,11 @@ impl DefaultPermissionModes {
 
 impl PermissionPolicy {
     pub fn from_config(config: &HarnessConfig) -> Self {
-        let category_overrides = config
-            .categories
+        let profile_overrides = config
+            .profiles
             .iter()
-            .filter_map(|(name, category)| {
-                category
+            .filter_map(|(name, profile)| {
+                profile
                     .permissions
                     .clone()
                     .map(|permissions| (name.clone(), permissions))
@@ -145,7 +145,7 @@ impl PermissionPolicy {
 
         Self {
             defaults: DefaultPermissionModes::from_config(config),
-            category_overrides,
+            profile_overrides,
             ask_timeout_ms: DEFAULT_ASK_TIMEOUT_MS,
         }
     }
@@ -153,7 +153,7 @@ impl PermissionPolicy {
     pub fn new(edit: PermissionMode, shell: PermissionMode, network: PermissionMode) -> Self {
         Self {
             defaults: DefaultPermissionModes::from_legacy_defaults(edit, shell, network),
-            category_overrides: BTreeMap::new(),
+            profile_overrides: BTreeMap::new(),
             ask_timeout_ms: DEFAULT_ASK_TIMEOUT_MS,
         }
     }
@@ -168,13 +168,13 @@ impl PermissionPolicy {
         category: impl Into<String>,
         permissions: CategoryPermissions,
     ) -> Self {
-        self.category_overrides.insert(category.into(), permissions);
+        self.profile_overrides.insert(category.into(), permissions);
         self
     }
 
-    pub fn evaluate(&self, category: Option<&str>, kind: PermissionKind) -> PolicyDecision {
-        let effective_mode = category
-            .and_then(|name| self.category_overrides.get(name))
+    pub fn evaluate(&self, profile: Option<&str>, kind: PermissionKind) -> PolicyDecision {
+        let effective_mode = profile
+            .and_then(|name| self.profile_overrides.get(name))
             .and_then(|permissions| mode_for_kind(permissions, kind).cloned())
             .unwrap_or_else(|| self.default_mode(kind).clone());
 
