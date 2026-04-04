@@ -162,6 +162,10 @@ fn permission_policy_supports_native_tool_permission_kinds() {
         Some(PermissionKind::Lsp)
     );
     assert_eq!(permission_kind_for_tool("lsp"), Some(PermissionKind::Lsp));
+    assert_eq!(
+        permission_kind_for_tool("code.lsp.rename"),
+        Some(PermissionKind::EditFs)
+    );
     assert_eq!(permission_kind_for_tool("tool.batch"), None);
     assert_eq!(permission_kind_for_tool("batch"), None);
     assert_eq!(permission_kind_for_tool("todo.write"), None);

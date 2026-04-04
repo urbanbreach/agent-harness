@@ -416,6 +416,13 @@ pub const NATIVE_TOOL_PARITY_MATRIX: &[NativeToolParityEntry] = &[
         migration_status: NativeToolMigrationStatus::NativeUpgradeInProgress,
     },
     NativeToolParityEntry {
+        canonical_id: "code.lsp.rename",
+        aliases: &[],
+        permission_class: NativeToolPermissionClass::WorkspaceWrite,
+        provider_exposure: NativeToolProviderExposure::ExplicitOptIn,
+        migration_status: NativeToolMigrationStatus::NativeStable,
+    },
+    NativeToolParityEntry {
         canonical_id: "tool.batch",
         aliases: &["batch"],
         permission_class: NativeToolPermissionClass::ControlPlane,
