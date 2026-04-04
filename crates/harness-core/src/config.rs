@@ -808,6 +808,8 @@ pub struct ProfileConfig {
     pub permissions: Option<ProfilePermissions>,
     #[serde(default, alias = "toolSurface")]
     pub tool_surface: ToolSurface,
+    /// Per-profile multi-turn budget enforced directly by the runtime.
+    /// There is no separate hardcoded runtime iteration cap beyond this setting.
     #[serde(default = "default_max_iters", alias = "maxIters")]
     pub max_iters: usize,
     #[serde(default, alias = "toolFailureMode")]
