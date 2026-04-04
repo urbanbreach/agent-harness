@@ -1357,7 +1357,8 @@ fn prepare_live_prompt_compat_edit_run_config_builds_restricted_profile() {
 
 #[test]
 fn example_tool_audit_profile_covers_signoff_surface_and_gpt_5_4_mini_baseline() {
-    let config = load_json5_config(&repo_root().join("configs").join("harness.example.jsonc"))
+    let repo_root = repo_root();
+    let config = load_json5_config(&repo_root.join("configs").join("harness.example.jsonc"))
         .expect("load shipped example config");
 
     let tool_audit = config
@@ -1460,6 +1461,30 @@ fn example_tool_audit_profile_covers_signoff_surface_and_gpt_5_4_mini_baseline()
             .and_then(|metadata| metadata.get("recommended_for"))
             .and_then(Value::as_str),
         Some("tool_audit")
+    );
+
+    let skills = config
+        .get("skills")
+        .and_then(Value::as_object)
+        .expect("example config skills object present");
+    let project_roots = skills
+        .get("project_roots")
+        .and_then(Value::as_array)
+        .expect("example config project_roots present");
+    assert_eq!(
+        project_roots,
+        &vec![
+            Value::String(".opencode/skills".to_string()),
+            Value::String(".claude/skills".to_string()),
+            Value::String(".agents/skills".to_string()),
+        ]
+    );
+
+    let starter_skill = repo_root.join(".agents/skills/rust-best-practices/SKILL.md");
+    assert!(
+        starter_skill.exists(),
+        "expected shipped starter skill at {}",
+        starter_skill.display()
     );
 }
 
