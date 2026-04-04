@@ -321,7 +321,7 @@ fn interactive_launch_metadata(
 ) -> Result<LaunchMetadata, String> {
     let Some(selected_profile) = agent_profiles.get(profile) else {
         return Err(format!(
-            "interactive mode requires a configured profile/category named `{profile}`"
+            "interactive mode requires a configured profile named `{profile}`"
         ));
     };
 

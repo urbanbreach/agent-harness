@@ -675,7 +675,7 @@ impl Tool for TaskCompatTool {
     }
 
     fn description(&self) -> &str {
-        "Delegates work to another configured harness category/profile."
+        "Delegates work to another configured harness profile (legacy `category` alias supported)."
     }
 
     fn parameters_json_schema(&self) -> Value {

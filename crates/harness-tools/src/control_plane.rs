@@ -167,9 +167,7 @@ impl ControlPlaneExecutor {
             .as_deref()
             .filter(|value| !value.trim().is_empty())
             .ok_or_else(|| {
-                ToolError::Execution(
-                    "plan.exit requires an active category/profile context".to_string(),
-                )
+                ToolError::Execution("plan.exit requires an active profile context".to_string())
             })?;
         if !ctx.plan_mode {
             return Err(ToolError::Execution(format!(

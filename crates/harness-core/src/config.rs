@@ -204,7 +204,7 @@ impl HarnessConfig {
         }
     }
 
-    fn sync_legacy_runtime_sections(&mut self) {
+    fn sync_derived_runtime_sections(&mut self) {
         self.background_task = self.runtime.background_tasks.clone();
         self.paths.session_dir = self.runtime.session_dir.clone();
         self.deterministic = self.runtime.deterministic.clone();
@@ -815,7 +815,7 @@ pub struct ProfileConfig {
     pub tools: Vec<String>,
 }
 
-/// Legacy alias kept for migration-only compatibility shims.
+/// Legacy compatibility alias kept for migration shims and older category-named call sites.
 pub type CategoryConfig = ProfileConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
@@ -841,7 +841,7 @@ pub struct ProfilePermissions {
     pub lsp: Option<PermissionMode>,
 }
 
-/// Legacy alias kept for category-scoped runtime permission surfaces.
+/// Legacy compatibility alias kept for older category-scoped permission call sites.
 pub type CategoryPermissions = ProfilePermissions;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
@@ -1534,7 +1534,7 @@ pub fn load_config_from_str(raw: &str) -> Result<HarnessConfig, ConfigError> {
 
     let mut parsed: HarnessConfig =
         json5::from_str(raw).map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
-    parsed.sync_legacy_runtime_sections();
+    parsed.sync_derived_runtime_sections();
     parsed.apply_env_substitutions()?;
     parsed.validate_references()?;
     refresh_hook_runtime_config_registry(&parsed);
