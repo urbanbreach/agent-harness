@@ -1356,9 +1356,87 @@ fn prepare_live_prompt_compat_edit_run_config_builds_restricted_profile() {
 }
 
 #[test]
-fn example_tool_audit_profile_covers_signoff_surface_and_gpt_5_4_mini_baseline() {
+fn example_config_ships_canonical_plan_build_and_audit_profiles() {
     let config = load_json5_config(&repo_root().join("configs").join("harness.example.jsonc"))
         .expect("load shipped example config");
+
+    assert_eq!(
+        config
+            .get("ui")
+            .and_then(|ui| ui.get("default_profile"))
+            .and_then(Value::as_str),
+        Some("plan")
+    );
+
+    let plan = config
+        .get("profiles")
+        .and_then(Value::as_object)
+        .and_then(|profiles| profiles.get("plan"))
+        .and_then(Value::as_object)
+        .expect("plan profile present in example config");
+    assert_eq!(plan.get("plan_mode").and_then(Value::as_bool), Some(true));
+    assert_eq!(
+        plan.get("exit_target_profile").and_then(Value::as_str),
+        Some("build")
+    );
+    assert_eq!(
+        plan.get("model_ref").and_then(Value::as_str),
+        Some("default:gpt-5.4")
+    );
+    let plan_tools = plan
+        .get("tools")
+        .and_then(Value::as_array)
+        .expect("plan tools array present");
+    for required_tool in [
+        "plan.exit",
+        "todo.write",
+        "todo.read",
+        "user.question",
+        "search.web",
+        "web.fetch",
+        "search.code",
+        "code.lsp",
+        "agent.spawn",
+    ] {
+        assert!(
+            plan_tools.contains(&Value::String(required_tool.to_string())),
+            "plan should expose {required_tool} in the shipped example config"
+        );
+    }
+    let plan_prompt = plan
+        .get("system_prompt")
+        .and_then(Value::as_str)
+        .expect("plan system prompt present");
+    assert!(plan_prompt.contains("plan.exit"));
+    assert!(plan_prompt.contains("hand off"));
+
+    let build = config
+        .get("profiles")
+        .and_then(Value::as_object)
+        .and_then(|profiles| profiles.get("build"))
+        .and_then(Value::as_object)
+        .expect("build profile present in example config");
+    assert_eq!(
+        build.get("model_ref").and_then(Value::as_str),
+        Some("default:gpt-5.4-mini")
+    );
+    let build_tools = build
+        .get("tools")
+        .and_then(Value::as_array)
+        .expect("build tools array present");
+    for required_tool in [
+        "fs.write",
+        "shell.run",
+        "edit.hashline_apply",
+        "edit.hashline_scan",
+        "tool.batch",
+        "agent.spawn",
+    ] {
+        assert!(
+            build_tools.contains(&Value::String(required_tool.to_string())),
+            "build should expose {required_tool} in the shipped example config"
+        );
+    }
 
     let tool_audit = config
         .get("profiles")
@@ -1460,6 +1538,17 @@ fn example_tool_audit_profile_covers_signoff_surface_and_gpt_5_4_mini_baseline()
             .and_then(|metadata| metadata.get("recommended_for"))
             .and_then(Value::as_str),
         Some("tool_audit")
+    );
+
+    let deep_compat = config
+        .get("profiles")
+        .and_then(Value::as_object)
+        .and_then(|profiles| profiles.get("deep_compat"))
+        .and_then(Value::as_object)
+        .expect("deep_compat profile present in example config");
+    assert_eq!(
+        deep_compat.get("tool_surface").and_then(Value::as_str),
+        Some("compat")
     );
 }
 

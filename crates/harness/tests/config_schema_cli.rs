@@ -268,6 +268,34 @@ fn config_validate_cli_reports_missing_config() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("no config file found"));
+    assert!(stderr.contains("configs/harness.example.jsonc"));
+}
+
+#[test]
+fn config_validate_cli_accepts_shipped_example_config() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+    let config_path = repo_root.join("configs").join("harness.example.jsonc");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(&repo_root)
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "config",
+            "validate",
+        ])
+        .output()
+        .expect("run harness config validate with shipped example config");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("config valid:"));
+    assert!(stdout.contains("configs/harness.example.jsonc"));
 }
 
 #[test]

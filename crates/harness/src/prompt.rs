@@ -97,7 +97,7 @@ fn resolve_settings(
     global_session_dir: Option<PathBuf>,
 ) -> Result<PromptSettings, String> {
     let explicit_config = resolve_config_path(config_path.as_deref()).ok_or_else(|| {
-        "prompt mode requires a config file; pass --config <path> or create harness.jsonc"
+        "prompt mode requires a config file; pass --config <path> or create harness.jsonc. A starting point lives at configs/harness.example.jsonc"
             .to_string()
     })?;
 
