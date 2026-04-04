@@ -630,14 +630,12 @@ fn pty_live_orchestration_drawer_and_status() {
         &[
             "Context",
             "MCP · idle",
-            "Web · idle",
             "LSP · idle",
-            "Batch · idle",
             "ready for next turn",
         ],
     );
     assert!(!completed_screen.contains("Todo ·"));
-    assert!(!completed_screen.contains("Web · 1"));
+    assert!(!completed_screen.contains("Network · 1"));
     assert!(!completed_screen.contains("Batch · 1"));
     assert!(!completed_screen.contains("LSP · 1"));
     assert!(!completed_screen.contains("orch 0a 0q 0r 0s"));

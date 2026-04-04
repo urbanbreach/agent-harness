@@ -413,9 +413,7 @@ pub(crate) fn exact_test_operator_rail_section_model_surfaces_pending_permission
         vec![
             "Context".to_string(),
             "MCP · idle".to_string(),
-            "Web · idle".to_string(),
             "LSP · idle".to_string(),
-            "Batch · idle".to_string(),
             "Todo · 1".to_string(),
             "Modified Files · 1".to_string(),
         ]
@@ -559,6 +557,7 @@ pub(crate) fn exact_test_operator_rail_section_model_keeps_native_prefix_tools_o
 
 #[cfg(test)]
 pub(crate) fn exact_test_operator_rail_low_activity_presentation_prefers_primary_stack() {
+    exact_test_operator_rail_section_model_keeps_native_prefix_tools_out_of_mcp();
     exact_test_operator_rail_section_model_separates_mcp_from_native_tool_activity();
 
     let app = operator_rail_modified_file_only_app();
@@ -734,7 +733,7 @@ fn operator_rail_activity_test_app() -> AppState {
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
                 tool_call_id: "tool_call_mcp".to_string(),
-                tool_id: "mcp.exa.search".to_string(),
+                tool_id: "exa.search".to_string(),
                 args_summary: r#"{"query":"ratatui sidebar"}"#.to_string(),
                 args_digest: "digest-tool-mcp".to_string(),
                 metadata: None,
@@ -1388,6 +1387,29 @@ fn operator_sidebar_tool_activity_item(tool_call: &crate::app::ToolCallEntry) ->
     }
 }
 
+fn operator_sidebar_mcp_item(tool_call: &crate::app::ToolCallEntry) -> String {
+    let label = tool_call
+        .canonical_tool_id()
+        .strip_prefix("mcp.")
+        .unwrap_or(tool_call.canonical_tool_id())
+        .to_string();
+    let detail = tool_call
+        .output_summary
+        .as_deref()
+        .and_then(|summary| summary.lines().next())
+        .map(operator_sidebar_collapse_whitespace)
+        .filter(|summary| !summary.is_empty() && summary.len() <= 48);
+    match detail {
+        Some(detail) if tool_call.status == crate::app::ToolCallDisplayStatus::Failed => {
+            format!("{label} · failed · {detail}")
+        }
+        _ => format!(
+            "{label} · {}",
+            operator_sidebar_tool_status_text(tool_call.status)
+        ),
+    }
+}
+
 fn operator_sidebar_section_count(items: &[String], empty_state: &str) -> usize {
     items
         .iter()
@@ -1482,9 +1504,8 @@ impl OperatorRailToolActivityGroup {
     fn format_item(self, tool_call: &crate::app::ToolCallEntry) -> String {
         match self {
             Self::Lsp => operator_sidebar_lsp_item(tool_call),
-            Self::Mcp | Self::Network | Self::Batch => {
-                operator_sidebar_tool_activity_item(tool_call)
-            }
+            Self::Mcp => operator_sidebar_mcp_item(tool_call),
+            Self::Network | Self::Batch => operator_sidebar_tool_activity_item(tool_call),
         }
     }
 }

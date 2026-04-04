@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
+use std::env;
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use harness_core::agent::AgentProfile;
 use harness_core::clock::RealClock;
@@ -15,6 +17,38 @@ use harness_core::tool::ToolSurface;
 use harness_tools::coordinator_registry;
 use serde_json::json;
 use tokio::time::{sleep, Duration, Instant};
+
+static SKILL_DISCOVERY_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+struct EnvTestContext {
+    previous_cwd: PathBuf,
+    previous_home: Option<OsString>,
+}
+
+impl EnvTestContext {
+    fn new(cwd: &Path, home: &Path) -> Self {
+        let previous_cwd = env::current_dir().expect("capture current dir");
+        let previous_home = env::var_os("HOME");
+
+        env::set_current_dir(cwd).expect("set test current dir");
+        env::set_var("HOME", home);
+
+        Self {
+            previous_cwd,
+            previous_home,
+        }
+    }
+}
+
+impl Drop for EnvTestContext {
+    fn drop(&mut self) {
+        env::set_current_dir(&self.previous_cwd).expect("restore current dir");
+        match &self.previous_home {
+            Some(value) => env::set_var("HOME", value),
+            None => env::remove_var("HOME"),
+        }
+    }
+}
 
 fn actor(agent_id: &str) -> EventActor {
     EventActor::new(ActorKind::Worker, Some(agent_id.to_string()))
@@ -94,6 +128,16 @@ fn todo_state_file(run: &RunInfo) -> PathBuf {
         .join("todos.json")
 }
 
+fn write_skill(root: &Path, name: &str, description: &str, body: &str) {
+    let skill_dir = root.join(name);
+    fs::create_dir_all(&skill_dir).expect("create skill dir");
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        format!("---\nname: {name}\ndescription: {description}\n---\n\n{body}\n"),
+    )
+    .expect("write skill file");
+}
+
 fn read_events(path: &Path) -> Vec<EventEnvelopeV1> {
     fs::read_to_string(path)
         .expect("read events")
@@ -129,10 +173,25 @@ async fn wait_for_question_permission(path: &Path, previous: Option<&str>) -> St
 }
 
 #[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
+)]
 async fn native_control_plane_tools_cover_invalid_todo_skill_and_plan_exit() {
+    let _guard = SKILL_DISCOVERY_ENV_LOCK.lock().expect("env test lock");
     let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("home");
     let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&home).expect("home");
     fs::create_dir_all(&workspace).expect("workspace");
+    fs::create_dir_all(workspace.join(".git")).expect("git dir");
+    let _env = EnvTestContext::new(&workspace, &home);
+    write_skill(
+        &workspace.join(".opencode/skills"),
+        "rust-best-practices",
+        "Rust best practices",
+        "Prefer iterators when they improve clarity.",
+    );
 
     let toolset = control_plane_toolset();
     let agent_profiles = BTreeMap::from([

@@ -1,20 +1,24 @@
+use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use harness_core::agent::AgentProfile;
 use harness_core::clock::RealClock;
 use harness_core::config::{
     refresh_skills_config_registry, registered_skills_config, HarnessConfig, PermissionMode,
-    ShellAllowlist, SkillsConfig,
+    ShellAllowlist, SkillsConfig, ToolFailureMode,
 };
-use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
-use harness_core::event::{ActorKind, EventActor};
+use harness_core::coord::{spawn_coordinator, CoordinatorConfig, PlanProfileConfig, RunInfo};
+use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1};
+use harness_core::perm::{PermissionDecision, PermissionPolicy};
 use harness_core::redact::DefaultRedactor;
-use harness_core::tool::ToolContext;
+use harness_core::tool::{ToolContext, ToolSurface};
 use harness_tools::coordinator_registry;
 use serde_json::json;
+use tokio::time::{sleep, Duration, Instant};
 
 static SKILL_DISCOVERY_ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -44,6 +48,28 @@ impl Drop for EnvTestContext {
         match &self.previous_home {
             Some(value) => env::set_var("HOME", value),
             None => env::remove_var("HOME"),
+        }
+    }
+}
+
+struct ScopedEnvVar {
+    key: &'static str,
+    previous: Option<OsString>,
+}
+
+impl ScopedEnvVar {
+    fn set(key: &'static str, value: &str) -> Self {
+        let previous = env::var_os(key);
+        env::set_var(key, value);
+        Self { key, previous }
+    }
+}
+
+impl Drop for ScopedEnvVar {
+    fn drop(&mut self) {
+        match &self.previous {
+            Some(value) => env::set_var(self.key, value),
+            None => env::remove_var(self.key),
         }
     }
 }
@@ -114,6 +140,97 @@ fn write_invalid_skill(root: &Path, name: &str) {
         ),
     )
     .expect("write invalid skill file");
+}
+
+fn actor(agent_id: &str) -> EventActor {
+    EventActor::new(ActorKind::Worker, Some(agent_id.to_string()))
+}
+
+fn worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
+    AgentProfile {
+        name: name.to_string(),
+        category: name.to_string(),
+        model_ref: format!("default:{name}"),
+        system_prompt: format!("{name} prompt"),
+        tool_failure_mode: ToolFailureMode::FailTurn,
+        tool_surface: ToolSurface::Native,
+        toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
+    }
+}
+
+async fn spawn_worker_run(
+    workspace: &Path,
+    profile_name: &str,
+    agent_profiles: BTreeMap<String, AgentProfile>,
+) -> (harness_core::coord::CoordinatorHandle, RunInfo, String) {
+    let session_dir = workspace.join("session-dir");
+    fs::create_dir_all(&session_dir).expect("session dir");
+
+    let mut config = CoordinatorConfig::new(session_dir);
+    config.permission_policy = PermissionPolicy::new(
+        PermissionMode::Allow,
+        PermissionMode::Allow,
+        PermissionMode::Allow,
+    );
+    config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
+    config.agent_profiles = agent_profiles;
+    config.plan_profiles =
+        BTreeMap::from([(profile_name.to_string(), PlanProfileConfig::default())]);
+
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(RealClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("skill_load_discovery", workspace)
+        .await
+        .expect("start run");
+    let worker_id = handle
+        .spawn_agent(
+            EventActor::new(ActorKind::Supervisor, None),
+            profile_name,
+            None,
+        )
+        .await
+        .expect("spawn worker");
+    (handle, run, worker_id)
+}
+
+fn read_events(path: &Path) -> Vec<EventEnvelopeV1> {
+    fs::read_to_string(path)
+        .expect("read events")
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("parse event"))
+        .collect()
+}
+
+async fn wait_for_question_permission(path: &Path, previous: Option<&str>) -> String {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(permission_id) =
+            read_events(path)
+                .into_iter()
+                .rev()
+                .find_map(|event| match event.payload {
+                    EventV1::PermissionRequested(data)
+                        if data.kind == "question"
+                            && previous.is_none_or(|value| value != data.permission_id) =>
+                    {
+                        Some(data.permission_id)
+                    }
+                    _ => None,
+                })
+        {
+            return permission_id;
+        }
+
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for question permission"
+        );
+        sleep(Duration::from_millis(20)).await;
+    }
 }
 
 fn harness_config_with_skills(skills: SkillsConfig) -> HarnessConfig {
@@ -366,16 +483,16 @@ async fn skill_load_hides_denied_or_invalid_skills() {
         .expect_err("compat denied skill should be hidden");
     assert_eq!(denied.to_string(), compat_denied.to_string());
 
-    let blocked = native
+    let _answers = ScopedEnvVar::set("HARNESS_QUESTION_ANSWERS", r#"[["Yes"]]"#);
+    let approved = native
         .call(
             tool_context(&repo, "toolcall-ask-skill"),
             json!({"name": "experimental-preview"}),
         )
         .await
-        .expect_err("ask skill should require approval");
-    assert!(blocked
-        .to_string()
-        .contains("Skill \"experimental-preview\" requires approval before loading"));
+        .expect("ask skill should load after approval");
+    assert!(approved.display_text.contains("Ask description"));
+    assert!(approved.display_text.contains("Ask body"));
 
     let invalid = native
         .call(
@@ -499,16 +616,15 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
             .to_string()))
     );
 
+    let _answers = ScopedEnvVar::set("HARNESS_QUESTION_ANSWERS", r#"[["Yes"]]"#);
     let gated = native
         .call(
             tool_context(&repo, "toolcall-custom-ask"),
             json!({"name": "team-secret"}),
         )
         .await
-        .expect_err("exact permission override should require approval");
-    assert!(gated
-        .to_string()
-        .contains("Skill \"team-secret\" requires approval before loading"));
+        .expect("exact permission override should load after approval");
+    assert!(gated.display_text.contains("Team secret description"));
 
     let repo_hidden = native
         .call(
@@ -531,4 +647,105 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
     assert!(global_visible
         .display_text
         .contains("Global visible description"));
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
+)]
+async fn skill_load_ask_permissions_use_question_approval_flow_for_native_and_compat() {
+    let _guard = SKILL_DISCOVERY_ENV_LOCK.lock().expect("env test lock");
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("home");
+    let repo = temp_dir.path().join("repo");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&repo).expect("repo dir");
+    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    let _env = EnvTestContext::new(&repo, &home);
+    let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
+        permissions: BTreeMap::from([
+            ("*".to_string(), PermissionMode::Allow),
+            ("experimental-*".to_string(), PermissionMode::Ask),
+        ]),
+        ..SkillsConfig::default()
+    });
+
+    write_skill(
+        &repo.join(".opencode/skills"),
+        "experimental-preview",
+        "Ask description",
+        "Ask body",
+    );
+
+    let toolset = ["skill.load", "skill"];
+    let agent_profiles = BTreeMap::from([("deep".to_string(), worker_profile("deep", &toolset))]);
+    let (handle, run, worker_id) = spawn_worker_run(&repo, "deep", agent_profiles).await;
+
+    let native_task = {
+        let handle = handle.clone();
+        let worker_id = worker_id.clone();
+        tokio::spawn(async move {
+            handle
+                .execute_agent_tool_call(
+                    actor(&worker_id),
+                    Some("deep".to_string()),
+                    "skill.load",
+                    json!({"name": "experimental-preview"}),
+                )
+                .await
+        })
+    };
+    let native_permission_id = wait_for_question_permission(&run.events_path, None).await;
+    handle
+        .resolve_permission(
+            native_permission_id.clone(),
+            PermissionDecision::Allow,
+            Some(r#"[["Yes"]]"#.to_string()),
+        )
+        .await
+        .expect("approve native skill.load");
+    let native = native_task
+        .await
+        .expect("join native skill.load")
+        .expect("native skill.load result");
+
+    let compat_task = {
+        let handle = handle.clone();
+        let worker_id = worker_id.clone();
+        tokio::spawn(async move {
+            handle
+                .execute_agent_tool_call(
+                    actor(&worker_id),
+                    Some("deep".to_string()),
+                    "skill",
+                    json!({"name": "experimental-preview"}),
+                )
+                .await
+        })
+    };
+    let compat_permission_id =
+        wait_for_question_permission(&run.events_path, Some(&native_permission_id)).await;
+    handle
+        .resolve_permission(
+            compat_permission_id,
+            PermissionDecision::Allow,
+            Some(r#"[["Yes"]]"#.to_string()),
+        )
+        .await
+        .expect("approve compat skill");
+    let compat = compat_task
+        .await
+        .expect("join compat skill")
+        .expect("compat skill result");
+
+    assert_eq!(native.display_text, compat.display_text);
+    assert_eq!(native.structured_json, compat.structured_json);
+    assert!(native.display_text.contains("Ask description"));
+    assert!(native.display_text.contains("Ask body"));
+    assert!(native
+        .display_text
+        .contains("# Skill: experimental-preview"));
+
+    handle.stop_run().await.expect("stop run");
 }

@@ -20,6 +20,8 @@ const PLAN_EXIT_CONFIRM_YES: &str = "Yes";
 const PLAN_EXIT_CONFIRM_NO: &str = "No";
 const PLAN_EXIT_SYNTHETIC_PROMPT: &str =
     "The plan has been approved, you can now edit files. Execute the plan.";
+const SKILL_LOAD_CONFIRM_YES: &str = "Yes";
+const SKILL_LOAD_CONFIRM_NO: &str = "No";
 
 pub(crate) struct ControlPlaneExecutor;
 
@@ -53,8 +55,9 @@ impl ControlPlaneExecutor {
         })
     }
 
-    pub(crate) fn load_skill(
+    pub(crate) async fn load_skill(
         &self,
+        ctx: &ToolContext,
         name: &str,
         user_message: Option<String>,
     ) -> Result<ToolResult, ToolError> {
@@ -65,9 +68,8 @@ impl ControlPlaneExecutor {
             DiscoveredSkill::Visible(skill) => match skill.permission {
                 PermissionMode::Allow => skill,
                 PermissionMode::Ask => {
-                    return Err(ToolError::Execution(format!(
-                        "Skill \"{name}\" requires approval before loading"
-                    )));
+                    self.request_skill_load_approval(ctx, name).await?;
+                    skill
                 }
                 PermissionMode::Deny => {
                     return Err(ToolError::Execution(format!("Skill \"{name}\" not found")));
@@ -102,6 +104,44 @@ impl ControlPlaneExecutor {
             })),
             artifacts: Vec::new(),
         })
+    }
+
+    async fn request_skill_load_approval(
+        &self,
+        ctx: &ToolContext,
+        name: &str,
+    ) -> Result<(), ToolError> {
+        let questions = vec![skill_load_confirmation_question(name)];
+        let answers = match read_question_answers_from_env()? {
+            Some(answers) => answers,
+            None => ctx
+                .coordinator
+                .request_question(
+                    ctx.actor.clone(),
+                    ctx.tool_call_id.clone(),
+                    json!({ "questions": questions }),
+                )
+                .await
+                .map_err(|err| {
+                    ToolError::Execution(format!(
+                        "Skill \"{name}\" approval failed before loading: {err}"
+                    ))
+                })?,
+        };
+        let answers =
+            validate_question_answers(&questions, answers).map_err(ToolError::Execution)?;
+        let approved = answers
+            .first()
+            .and_then(|answer| answer.first())
+            .is_some_and(|answer| answer == SKILL_LOAD_CONFIRM_YES);
+
+        if approved {
+            Ok(())
+        } else {
+            Err(ToolError::Execution(format!(
+                "Skill \"{name}\" load cancelled by user confirmation"
+            )))
+        }
     }
 
     pub(crate) fn invalid_tool(&self, tool: &str, error: &str) -> ToolResult {
@@ -388,10 +428,12 @@ impl Tool for SkillLoadTool {
         ToolCapability::ReadFs
     }
 
-    async fn call(&self, _ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
+    async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: SkillLoadArgs = serde_json::from_value(args_json)
             .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
-        self.executor.load_skill(&args.name, args.user_message)
+        self.executor
+            .load_skill(&ctx, &args.name, args.user_message)
+            .await
     }
 }
 
@@ -667,6 +709,26 @@ fn plan_exit_confirmation_question(target_profile: &str) -> QuestionPrompt {
             QuestionOption {
                 label: PLAN_EXIT_CONFIRM_NO.to_string(),
                 description: "Stay in the current planning session".to_string(),
+            },
+        ],
+        multiple: Some(false),
+    }
+}
+
+fn skill_load_confirmation_question(skill_name: &str) -> QuestionPrompt {
+    QuestionPrompt {
+        question: format!("Would you like to load the `{skill_name}` skill?"),
+        header: "Load Skill".to_string(),
+        options: vec![
+            QuestionOption {
+                label: SKILL_LOAD_CONFIRM_YES.to_string(),
+                description: format!(
+                    "Load the `{skill_name}` skill and make its instructions available to the agent"
+                ),
+            },
+            QuestionOption {
+                label: SKILL_LOAD_CONFIRM_NO.to_string(),
+                description: format!("Do not load the `{skill_name}` skill"),
             },
         ],
         multiple: Some(false),
