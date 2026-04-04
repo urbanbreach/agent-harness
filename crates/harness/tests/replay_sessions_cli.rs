@@ -8,6 +8,7 @@ use harness_core::event::{
     PermissionRequestedEvent, ProviderRequestStartedEvent, RunFailedEvent, RunFinishedEvent,
     RunStartedEvent, TaskScheduleState, TaskScheduledEvent, SCHEMA_VERSION,
 };
+use harness_core::proj::RunMetadata;
 use tempfile::tempdir;
 
 fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
@@ -38,6 +39,11 @@ fn write_events_jsonl(run_dir: &std::path::Path, events: &[EventEnvelopeV1]) {
 fn write_events_lines(run_dir: &std::path::Path, lines: &[&str]) {
     let body = lines.join("\n");
     std::fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).expect("write events");
+}
+
+fn write_meta_json(run_dir: &std::path::Path, metadata: &RunMetadata) {
+    let body = serde_json::to_string_pretty(metadata).expect("serialize metadata");
+    std::fs::write(run_dir.join("meta.json"), format!("{body}\n")).expect("write metadata");
 }
 
 fn events_modified(run_dir: &std::path::Path) -> SystemTime {
@@ -568,6 +574,219 @@ fn session_history_flags_non_resumable_sessions_with_reason() {
     assert!(stdout.contains("run_prompt"));
     assert!(stdout.contains("no"));
     assert!(stdout.contains("prompt runs are not resumable"));
+}
+
+#[test]
+fn sessions_help_lists_lifecycle_subcommands() {
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args(["sessions", "--help"])
+        .output()
+        .expect("run harness sessions help");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("inspect"));
+    assert!(stdout.contains("replay"));
+    assert!(stdout.contains("continue"));
+    assert!(stdout.contains("export"));
+}
+
+#[test]
+fn sessions_inspect_cli_prints_detailed_summary() {
+    let session_dir = tempdir().expect("tempdir");
+    let run_dir = session_dir.path().join("run_inspect");
+    std::fs::create_dir_all(&run_dir).expect("create run dir");
+
+    write_events_jsonl(
+        &run_dir,
+        &[
+            envelope(
+                "run_inspect",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "inspectable".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                "run_inspect",
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_1".to_string(),
+                    profile: "worker".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                "run_inspect",
+                3,
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_1".to_string(),
+                    provider_id: "openai".to_string(),
+                    model_id: "gpt-5.4-mini".to_string(),
+                    prompt_summary: "hello".to_string(),
+                    request_digest: "digest-1".to_string(),
+                }),
+            ),
+            envelope(
+                "run_inspect",
+                4,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    write_meta_json(
+        &run_dir,
+        &RunMetadata {
+            run_id: "run_inspect".to_string(),
+            run_name: "inspectable".to_string(),
+            workspace_root: "/tmp/workspace".to_string(),
+            created_at: Some("1710000000000".to_string()),
+            config_digest: "digest-xyz".to_string(),
+            harness_version: "0.1.0-test".to_string(),
+            recorded_runtime_context: None,
+        },
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "inspect",
+            "run_inspect",
+        ])
+        .output()
+        .expect("run harness sessions inspect");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("run_id: run_inspect"));
+    assert!(stdout.contains("run_dir:"));
+    assert!(stdout.contains("mode:"));
+    assert!(stdout.contains("resumable:"));
+    assert!(stdout.contains("provider_model: openai/gpt-5.4-mini"));
+    assert!(stdout.contains("harness_version: 0.1.0-test"));
+    assert!(stdout.contains("total_events: 4"));
+}
+
+#[test]
+fn sessions_replay_cli_resolves_run_id_from_session_catalog() {
+    let session_dir = tempdir().expect("tempdir");
+    let run_dir = session_dir.path().join("directory_name_differs");
+    std::fs::create_dir_all(&run_dir).expect("create run dir");
+
+    write_events_jsonl(
+        &run_dir,
+        &[
+            envelope(
+                "run_resolved",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "resolved".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                "run_resolved",
+                2,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "replay",
+            "run_resolved",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions replay");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let summary: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("replay json output should parse");
+    assert_eq!(summary["run_id"], "run_resolved");
+    assert_eq!(summary["run_name"], "resolved");
+}
+
+#[test]
+fn sessions_export_cli_writes_json_bundle() {
+    let session_dir = tempdir().expect("tempdir");
+    let run_dir = session_dir.path().join("run_export");
+    std::fs::create_dir_all(&run_dir).expect("create run dir");
+
+    write_events_jsonl(
+        &run_dir,
+        &[
+            envelope(
+                "run_export",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "exportable".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                "run_export",
+                2,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let export_path = session_dir.path().join("session-export.json");
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "export",
+            "run_export",
+            "--output",
+            export_path.to_str().expect("export path utf-8"),
+        ])
+        .output()
+        .expect("run harness sessions export");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let bundle: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&export_path).expect("read exported session bundle"))
+            .expect("export bundle should parse");
+    assert_eq!(bundle["catalog"]["run_id"], "run_export");
+    assert_eq!(bundle["replay"]["run_name"], "exportable");
+    assert_eq!(bundle["events"].as_array().map(Vec::len), Some(2));
 }
 
 #[test]

@@ -53,6 +53,9 @@ pub struct TuiCommand {
     #[arg(long, conflicts_with = "scenario")]
     pub replay: Option<PathBuf>,
 
+    #[arg(long, conflicts_with_all = ["replay", "scenario", "mock"])]
+    pub continue_session: Option<PathBuf>,
+
     #[arg(long, value_enum, conflicts_with = "replay")]
     pub scenario: Option<ScenarioName>,
 
@@ -120,6 +123,10 @@ enum ResolvedTuiMode {
     Replay {
         run_dir: PathBuf,
     },
+    Continue {
+        settings: LiveSettings,
+        run_dir: PathBuf,
+    },
     Interactive {
         settings: LiveSettings,
     },
@@ -162,6 +169,9 @@ pub fn execute(
 
     let run_result = match mode {
         ResolvedTuiMode::Replay { .. } => Ok(()),
+        ResolvedTuiMode::Continue { settings, run_dir } => {
+            runtime.block_on(run_continue_mode(&cmd, &settings, run_dir, false))
+        }
         ResolvedTuiMode::Interactive { settings } => {
             runtime.block_on(run_interactive_mode(&cmd, &settings, false))
         }
@@ -225,6 +235,13 @@ fn resolve_tui_mode(
     }
 
     let settings = resolve_live_settings(cmd, config_path, global_session_dir)?;
+
+    if let Some(run_dir) = &cmd.continue_session {
+        return Ok(ResolvedTuiMode::Continue {
+            settings,
+            run_dir: run_dir.clone(),
+        });
+    }
 
     if let Some(scenario) = cmd.scenario {
         return Ok(ResolvedTuiMode::Scenario { settings, scenario });
@@ -396,6 +413,27 @@ async fn run_interactive_mode(
         },
     )
     .await
+}
+
+async fn run_continue_mode(
+    cmd: &TuiCommand,
+    settings: &LiveSettings,
+    run_dir: PathBuf,
+    demo_mode: bool,
+) -> Result<(), String> {
+    fs::create_dir_all(&settings.session_dir)
+        .map_err(|err| format!("failed to create session dir: {err}"))?;
+
+    let launch_selection = Arc::new(Mutex::new(
+        settings.launch_metadata.clone().without_mode_label(),
+    ));
+    let run_id = inspect_resume_plan(&run_dir).run_id;
+
+    let _ =
+        run_continue_session_bootstrap(cmd, settings, demo_mode, run_id, run_dir, launch_selection)
+            .await?;
+
+    Ok(())
 }
 
 async fn run_interactive_workflow_loop<
