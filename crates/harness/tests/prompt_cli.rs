@@ -1,6 +1,11 @@
 use std::fs;
 use std::process::Command;
 
+use harness_core::event::{
+    ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1,
+    ProviderRequestFinishedEvent, ProviderRequestStartedEvent, RunFinishedEvent, RunStartedEvent,
+    UserMessageSubmittedEvent, SCHEMA_VERSION,
+};
 use tempfile::tempdir;
 use wiremock::matchers::{body_string_contains, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -118,6 +123,76 @@ async fn prompt_cli_calls_responses_endpoint() {
         requests.iter().any(|req| req.url.path() == "/v1/responses"),
         "expected prompt CLI to call /v1/responses"
     );
+}
+
+#[tokio::test]
+async fn prompt_cli_resume_flag_continues_existing_session() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .and(body_string_contains("Continue from the saved session."))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    deterministic_responses_sse_transcript(),
+                    "text/event-stream",
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.resume.jsonc");
+    let session_dir = temp.path().join("sessions");
+    let resume_dir = session_dir.join("run_resume_cli");
+    fs::create_dir_all(&resume_dir).expect("create resume run dir");
+    fs::create_dir_all(temp.path().join("workspace")).expect("create workspace");
+    fs::write(
+        &config_path,
+        prompt_cli_config(&format!("{}/v1", server.uri()), &session_dir, &[]),
+    )
+    .expect("write config");
+    write_resume_fixture_events(&resume_dir);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "prompt",
+            "--resume",
+            "run_resume_cli",
+            "--text",
+            "Continue from the saved session.",
+            "--print-run-dir",
+        ])
+        .output()
+        .expect("run harness prompt resume");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("run_resume_cli"),
+        "expected resumed run dir in stdout, got:\n{stdout}"
+    );
+
+    let events_body =
+        fs::read_to_string(resume_dir.join("events.jsonl")).expect("read resumed events");
+    assert!(events_body.contains("\"request_id\":\"req_000002\""));
+    assert!(events_body.contains("Continue from the saved session."));
+
+    let requests = server
+        .received_requests()
+        .await
+        .expect("request recording must be enabled");
+    assert_eq!(requests.len(), 1, "expected one resumed provider request");
 }
 
 #[tokio::test]
@@ -582,4 +657,84 @@ fn tool_call_fs_grep_sse_transcript() -> String {
         "data: [DONE]\n\n",
     ]
     .concat()
+}
+
+fn write_resume_fixture_events(run_dir: &std::path::Path) {
+    let events = [
+        resume_envelope(
+            "run_resume_cli",
+            1,
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "interactive".to_string(),
+                workspace_root: "/tmp/workspace".to_string(),
+            }),
+        ),
+        resume_envelope(
+            "run_resume_cli",
+            2,
+            EventV1::AgentSpawned(AgentSpawnedEvent {
+                agent_id: "agent_000001".to_string(),
+                profile: "deep".to_string(),
+                parent_agent_id: None,
+            }),
+        ),
+        resume_envelope(
+            "run_resume_cli",
+            3,
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_000001".to_string(),
+                text: "Original prompt".to_string(),
+            }),
+        ),
+        resume_envelope(
+            "run_resume_cli",
+            4,
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_000001".to_string(),
+                provider_id: "default".to_string(),
+                model_id: "gpt-4o-mini".to_string(),
+                prompt_summary: "Original prompt".to_string(),
+                request_digest: "digest-original".to_string(),
+            }),
+        ),
+        resume_envelope(
+            "run_resume_cli",
+            5,
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: "req_000001".to_string(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some("digest-output".to_string()),
+            }),
+        ),
+        resume_envelope(
+            "run_resume_cli",
+            6,
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: "done".to_string(),
+            }),
+        ),
+    ];
+
+    let body = events
+        .iter()
+        .map(|event| serde_json::to_string(event).expect("serialize resume fixture event"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).expect("write events");
+}
+
+fn resume_envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
+    EventEnvelopeV1 {
+        schema_version: SCHEMA_VERSION,
+        event_id: format!("evt-{seq:04}"),
+        seq,
+        run_id: run_id.to_string(),
+        mono_ms: seq,
+        ts: None,
+        actor: EventActor::new(ActorKind::Supervisor, Some("resume-test".to_string())),
+        correlation_id: None,
+        causation_id: None,
+        stream_key: Some(format!("run:{run_id}")),
+        payload,
+    }
 }

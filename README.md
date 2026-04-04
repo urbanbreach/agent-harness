@@ -2,6 +2,27 @@
 
 `agent-harness` is a Rust workspace for an event-sourced agent runtime with a CLI entrypoint, coordinator/runtime core, provider adapters, built-in tools, a Ratatui TUI, and deterministic PTY/live verification.
 
+## Session discovery and recovery
+
+The CLI now supports both public session discovery and headless recovery for saved interactive runs:
+
+```bash
+# catalog saved runs with resumability, artifacts, child sessions, session path, and parent lineage
+harness sessions list
+
+# inspect a saved run's replay summary without opening the TUI
+harness sessions inspect --run <run-id> --json
+
+# inspect resumability, recent prompt context, child-session lineage, and tool artifacts
+harness sessions reopen --session <run-id-or-path>
+harness sessions reopen --session <run-id-or-path> --json
+
+# continue a resumable interactive session from the shell
+harness prompt --resume <run-id-or-path> --text "continue from the last stopping point"
+```
+
+Use `sessions inspect` when you want the replay/session summary, and `sessions reopen` when you need recovery-specific resume context before continuing a saved interactive session.
+
 ## Workspace map
 - `crates/harness` — CLI entrypoint, startup/replay orchestration, interactive mode wiring
 - `crates/harness-core` — events, coordinator, scheduler, permissions, projections, config
