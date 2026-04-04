@@ -98,9 +98,19 @@ struct OperatorRailBody {
 enum OperatorRailBodySection {
     Context { items: Vec<String> },
     Mcp { count: usize, items: Vec<String> },
+    Network { count: usize, items: Vec<String> },
+    Batch { count: usize, items: Vec<String> },
     Lsp { count: usize, items: Vec<String> },
     Todo { count: usize, items: Vec<String> },
     ModifiedFiles { count: usize, items: Vec<String> },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OperatorRailToolActivityGroup {
+    Mcp,
+    Network,
+    Batch,
+    Lsp,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,6 +129,8 @@ impl OperatorRailBodySection {
         match self {
             Self::Context { .. } => "Context".to_string(),
             Self::Mcp { count, .. } => operator_sidebar_section_heading("MCP", *count),
+            Self::Network { count, .. } => operator_sidebar_section_heading("Network", *count),
+            Self::Batch { count, .. } => operator_sidebar_section_heading("Batch", *count),
             Self::Lsp { count, .. } => operator_sidebar_section_heading("LSP", *count),
             Self::Todo { count, .. } => {
                 if self.expandable() {
@@ -141,6 +153,8 @@ impl OperatorRailBodySection {
         match self {
             Self::Context { .. }
             | Self::Mcp { .. }
+            | Self::Network { .. }
+            | Self::Batch { .. }
             | Self::Lsp { .. }
             | Self::Todo { .. }
             | Self::ModifiedFiles { .. } => Style::default()
@@ -153,6 +167,8 @@ impl OperatorRailBodySection {
         match self {
             Self::Context { items }
             | Self::Mcp { items, .. }
+            | Self::Network { items, .. }
+            | Self::Batch { items, .. }
             | Self::Lsp { items, .. }
             | Self::Todo { items, .. }
             | Self::ModifiedFiles { items, .. } => items,
@@ -163,6 +179,8 @@ impl OperatorRailBodySection {
         match self {
             Self::Context { items } => items.len(),
             Self::Mcp { count, .. }
+            | Self::Network { count, .. }
+            | Self::Batch { count, .. }
             | Self::Lsp { count, .. }
             | Self::Todo { count, .. }
             | Self::ModifiedFiles { count, .. } => *count,
@@ -181,6 +199,9 @@ fn operator_sidebar_section_heading(label: &str, count: usize) -> String {
         _ => format!("▼ {label} · {count}"),
     }
 }
+
+const NO_MCP_ACTIVITY_LABEL: &str = "No MCP activity yet";
+const NO_LSP_ACTIVITY_LABEL: &str = "LSPs will activate as files are read";
 
 pub(super) fn render_operator_sidebar(
     frame: &mut Frame,
@@ -318,11 +339,11 @@ pub(crate) fn exact_test_operator_rail_section_model_hides_empty_sources_but_pre
     );
     assert_eq!(
         populated_model.body.sections[1].items(),
-        ["No MCP activity yet".to_string()]
+        [NO_MCP_ACTIVITY_LABEL.to_string()]
     );
     assert_eq!(
         populated_model.body.sections[2].items(),
-        ["LSPs will activate as files are read".to_string()]
+        [NO_LSP_ACTIVITY_LABEL.to_string()]
     );
 
     let empty_model = build_operator_rail_model(&AppState::new_live(None, false, None));
@@ -338,6 +359,228 @@ pub(crate) fn exact_test_operator_rail_section_model_hides_empty_sources_but_pre
             "MCP · idle".to_string(),
             "LSP · idle".to_string(),
         ]
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_operator_rail_section_model_separates_mcp_from_native_tool_activity() {
+    let mut app = operator_rail_test_app();
+    let request_id = "req_tool_taxonomy";
+
+    app.ingest_event(operator_rail_test_event(
+        4,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
+        harness_core::event::EventV1::ProviderRequestStarted(
+            harness_core::event::ProviderRequestStartedEvent {
+                request_id: request_id.to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5.4".to_string(),
+                prompt_summary: "Inspect the operator sidebar".to_string(),
+                request_digest: "digest-operator-rail-tools".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event(
+        5,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_mcp".to_string(),
+                tool_id: "exa.search".to_string(),
+                args_summary: serde_json::json!({"query": "operator sidebar"}).to_string(),
+                args_digest: "digest-operator-rail-mcp".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event(
+        6,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tool_call_mcp".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("Fetched MCP-backed results".to_string()),
+                output_digest: Some("digest-operator-rail-mcp-output".to_string()),
+                output_json: None,
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event(
+        7,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_network".to_string(),
+                tool_id: "search.web".to_string(),
+                args_summary: serde_json::json!({"query": "operator sidebar"}).to_string(),
+                args_digest: "digest-operator-rail-network".to_string(),
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("search.web".to_string()),
+                    ..Default::default()
+                }),
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event(
+        8,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tool_call_network".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("Fetched native web search results".to_string()),
+                output_digest: Some("digest-operator-rail-network-output".to_string()),
+                output_json: None,
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("search.web".to_string()),
+                    ..Default::default()
+                }),
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event(
+        9,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_batch".to_string(),
+                tool_id: "tool.batch".to_string(),
+                args_summary: serde_json::json!({"requested_call_count": 2}).to_string(),
+                args_digest: "digest-operator-rail-batch".to_string(),
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("tool.batch".to_string()),
+                    ..Default::default()
+                }),
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event(
+        10,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
+        harness_core::event::EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
+            tool_call_id: "tool_call_batch".to_string(),
+        }),
+    ));
+    app.ingest_event(operator_rail_test_event(
+        11,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_lsp".to_string(),
+                tool_id: "code.lsp".to_string(),
+                args_summary: serde_json::json!({
+                    "operation": "goto_definition",
+                    "path": "src/ui_secondary.rs"
+                })
+                .to_string(),
+                args_digest: "digest-operator-rail-lsp".to_string(),
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("code.lsp".to_string()),
+                    ..Default::default()
+                }),
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event(
+        12,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tool_call_lsp".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("Found definition in src/ui_secondary.rs".to_string()),
+                output_digest: Some("digest-operator-rail-lsp-output".to_string()),
+                output_json: None,
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("code.lsp".to_string()),
+                    ..Default::default()
+                }),
+            },
+        ),
+    ));
+
+    let model = build_operator_rail_model(&app);
+    let headings = model
+        .body
+        .sections
+        .iter()
+        .map(OperatorRailBodySection::heading)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        headings,
+        vec![
+            "Context".to_string(),
+            "MCP · 1".to_string(),
+            "Network · 1".to_string(),
+            "Batch · 1".to_string(),
+            "LSP · 1".to_string(),
+            "Todo · 1".to_string(),
+            "Modified Files · 1".to_string(),
+        ]
+    );
+    assert_eq!(model.body.sections[1].items(), ["exa.search · completed"]);
+    assert_eq!(model.body.sections[2].items(), ["search.web · completed"]);
+    assert_eq!(model.body.sections[3].items(), ["tool.batch · running"]);
+    assert_eq!(
+        model.body.sections[4].items(),
+        ["goto_definition · src/ui_secondary.rs · completed"]
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_operator_rail_section_model_keeps_native_prefix_tools_out_of_mcp() {
+    let mut app = operator_rail_test_app();
+
+    app.ingest_event(operator_rail_test_event(
+        4,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
+        harness_core::event::EventV1::ProviderRequestStarted(
+            harness_core::event::ProviderRequestStartedEvent {
+                request_id: "req_native_prefix_tool".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5.4".to_string(),
+                prompt_summary: "Apply the sidebar patch".to_string(),
+                request_digest: "digest-native-prefix-tool".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event(
+        5,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_edit".to_string(),
+                tool_id: "edit.hashline_apply".to_string(),
+                args_summary: serde_json::json!({"path": "src/ui_secondary.rs"}).to_string(),
+                args_digest: "digest-native-prefix-edit".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event(
+        6,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tool_call_edit".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("Applied inline hashline edit".to_string()),
+                output_digest: Some("digest-native-prefix-edit-output".to_string()),
+                output_json: None,
+                metadata: None,
+            },
+        ),
+    ));
+
+    let model = build_operator_rail_model(&app);
+
+    assert_eq!(model.body.sections[1].heading(), "MCP · idle");
+    assert_eq!(
+        model.body.sections[1].items(),
+        [NO_MCP_ACTIVITY_LABEL.to_string()]
     );
 }
 
@@ -857,30 +1100,94 @@ where
     items
 }
 
-fn operator_sidebar_mcp_lines(app: &AppState) -> Vec<String> {
-    let items = operator_sidebar_collect_tool_lines(app, |tool_call| {
-        matches!(
-            tool_call.canonical_tool_id(),
-            "web.fetch" | "search.web" | "search.code" | "tool.batch"
-        )
-        .then(|| operator_sidebar_mcp_item(tool_call))
-    });
-    if items.is_empty() {
-        vec!["No MCP activity yet".to_string()]
-    } else {
-        items
+impl OperatorRailToolActivityGroup {
+    fn is_known_native_tool(tool_call: &crate::app::ToolCallEntry) -> bool {
+        const NATIVE_TOOL_PREFIXES: &[&str] = &[
+            "agent.",
+            "background.",
+            "code.",
+            "edit.",
+            "fs.",
+            "net.",
+            "network.",
+            "plan.",
+            "search.",
+            "shell.",
+            "skill.",
+            "todo.",
+            "tool.",
+            "user.",
+            "web.",
+        ];
+        const NATIVE_TOOL_IDS: &[&str] = &[
+            "plan.exit",
+            "skill.load",
+            "todo.read",
+            "todo.write",
+            "tool.invalid",
+        ];
+
+        let known_identity = |tool_id: &str| {
+            harness_core::tool::canonical_tool_id_for(tool_id).is_some()
+                || harness_core::perm::permission_kind_for_tool(tool_id).is_some()
+                || NATIVE_TOOL_IDS.contains(&tool_id)
+                || NATIVE_TOOL_PREFIXES
+                    .iter()
+                    .any(|prefix| tool_id.starts_with(prefix))
+        };
+
+        known_identity(tool_call.tool_id.as_str()) || known_identity(tool_call.canonical_tool_id())
+    }
+
+    fn empty_label(self) -> Option<&'static str> {
+        match self {
+            Self::Mcp => Some(NO_MCP_ACTIVITY_LABEL),
+            Self::Lsp => Some(NO_LSP_ACTIVITY_LABEL),
+            Self::Network | Self::Batch => None,
+        }
+    }
+
+    fn matches(self, tool_call: &crate::app::ToolCallEntry) -> bool {
+        match self {
+            Self::Mcp => !Self::is_known_native_tool(tool_call),
+            Self::Network => matches!(
+                tool_call.canonical_tool_id(),
+                "web.fetch" | "search.web" | "search.code"
+            ),
+            Self::Batch => tool_call.canonical_tool_id() == "tool.batch",
+            Self::Lsp => tool_call.canonical_tool_id() == "code.lsp",
+        }
+    }
+
+    fn format_item(self, tool_call: &crate::app::ToolCallEntry) -> String {
+        match self {
+            Self::Lsp => operator_sidebar_lsp_item(tool_call),
+            Self::Mcp | Self::Network | Self::Batch => operator_sidebar_mcp_item(tool_call),
+        }
     }
 }
 
-fn operator_sidebar_lsp_lines(app: &AppState) -> Vec<String> {
+fn operator_sidebar_lines_for_group(
+    app: &AppState,
+    group: OperatorRailToolActivityGroup,
+) -> Vec<String> {
     let items = operator_sidebar_collect_tool_lines(app, |tool_call| {
-        (tool_call.canonical_tool_id() == "code.lsp").then(|| operator_sidebar_lsp_item(tool_call))
+        group
+            .matches(tool_call)
+            .then(|| group.format_item(tool_call))
     });
-    if items.is_empty() {
-        vec!["LSPs will activate as files are read".to_string()]
-    } else {
-        items
+
+    match group.empty_label() {
+        Some(label) if items.is_empty() => vec![label.to_string()],
+        Some(_) | None => items,
     }
+}
+
+fn operator_sidebar_section_count(items: &[String], empty_label: Option<&str>) -> usize {
+    items
+        .iter()
+        .filter(|item| Some(item.as_str()) != empty_label)
+        .count()
 }
 
 fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
@@ -890,8 +1197,11 @@ fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
     let runtime_state = app.runtime_state();
     let context_lines =
         operator_sidebar_context_lines(app, &runtime_state, &pending_permission_lines);
-    let mcp_lines = operator_sidebar_mcp_lines(app);
-    let lsp_lines = operator_sidebar_lsp_lines(app);
+    let mcp_lines = operator_sidebar_lines_for_group(app, OperatorRailToolActivityGroup::Mcp);
+    let network_lines =
+        operator_sidebar_lines_for_group(app, OperatorRailToolActivityGroup::Network);
+    let batch_lines = operator_sidebar_lines_for_group(app, OperatorRailToolActivityGroup::Batch);
+    let lsp_lines = operator_sidebar_lines_for_group(app, OperatorRailToolActivityGroup::Lsp);
     let runtime_summary = app.runtime_context_primary_summary();
     let provider_context = app.runtime_context_provider_display();
 
@@ -900,20 +1210,26 @@ fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
             items: context_lines,
         },
         OperatorRailBodySection::Mcp {
-            count: mcp_lines
-                .iter()
-                .filter(|item| item.as_str() != "No MCP activity yet")
-                .count(),
+            count: operator_sidebar_section_count(&mcp_lines, Some(NO_MCP_ACTIVITY_LABEL)),
             items: mcp_lines,
         },
-        OperatorRailBodySection::Lsp {
-            count: lsp_lines
-                .iter()
-                .filter(|item| item.as_str() != "LSPs will activate as files are read")
-                .count(),
-            items: lsp_lines,
-        },
     ];
+    if !network_lines.is_empty() {
+        sections.push(OperatorRailBodySection::Network {
+            count: operator_sidebar_section_count(&network_lines, None),
+            items: network_lines,
+        });
+    }
+    if !batch_lines.is_empty() {
+        sections.push(OperatorRailBodySection::Batch {
+            count: operator_sidebar_section_count(&batch_lines, None),
+            items: batch_lines,
+        });
+    }
+    sections.push(OperatorRailBodySection::Lsp {
+        count: operator_sidebar_section_count(&lsp_lines, Some(NO_LSP_ACTIVITY_LABEL)),
+        items: lsp_lines,
+    });
     if !todo_lines.is_empty() {
         sections.push(OperatorRailBodySection::Todo {
             count: todo_lines.len(),
