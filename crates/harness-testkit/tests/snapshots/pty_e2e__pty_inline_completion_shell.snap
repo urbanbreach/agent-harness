@@ -6,7 +6,7 @@ run finished: true
 session shell preserved: true
 Tab focus: true
 focus_marker: run finished
-focus_pixels_blake3: c986fa1326bdb95173e35090261456d5051e559822c4b4fa841bd9a979aae8f8
+focus_render_state_blake3: cf982056266af457118ba7a41594b1b8336a75ec8dd65530fa228e85eaa3658e
 focus_region_cells: row=23, col=14, height=1, width=20
 image: pty_inline_completion_shell.png
 manifest_json: pty-manifests/live_shell/manifest.json

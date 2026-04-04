@@ -6,7 +6,7 @@ Harness: true
 Ctrl+p open: true
 open a fresh session in this directory: true
 focus_marker: Harness
-focus_pixels_blake3: 2c2a1fd6f4565fe9fe70d6b804dfd288351bc94fdb6f718cf679119ee4a6f47b
+focus_render_state_blake3: 1889ae010680676d982284dfec9a59a252797d9261065312432689fffaa7021d
 focus_region_cells: row=13, col=8, height=5, width=24
 image: pty_startup_home_dense.png
 manifest_json: pty-manifests/startup_shell/manifest.json

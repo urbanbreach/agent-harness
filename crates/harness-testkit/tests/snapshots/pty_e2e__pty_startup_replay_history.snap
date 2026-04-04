@@ -6,7 +6,7 @@ Replay session: true
 Read-only replays: true
 interactive and prompt runs stay available: true
 focus_marker: Replay session
-focus_pixels_blake3: 61c698c2e25dfb054dea102e12cec68516073ad264ca8b1db038b6111fcebbea
+focus_render_state_blake3: abe5ef4d1c766d030d8dddce1bf1acc9278741a29f097081b3fa05adedb45c87
 focus_region_cells: row=22, col=35, height=3, width=28
 image: pty_startup_replay_history.png
 manifest_json: pty-manifests/startup_session_history/manifest.json

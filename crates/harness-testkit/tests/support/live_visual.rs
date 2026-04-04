@@ -6,7 +6,10 @@ use std::time::SystemTime;
 use time::{macros::format_description, OffsetDateTime};
 use vt100::Parser as VtParser;
 
-use super::visual_renderer::{extract_region_pixels, render_parser_to_image, TerminalRenderConfig};
+use super::visual_renderer::{
+    extract_region_pixels, extract_region_render_state, render_parser_to_image,
+    TerminalRenderConfig,
+};
 
 pub const CHECKPOINT_STARTUP: &str = "startup";
 pub const CHECKPOINT_PERMISSION_REQUESTED: &str = "permission_requested";
@@ -244,6 +247,12 @@ impl LiveVisualRun {
             "full_frame_fallback"
         };
         let focus_pixels_blake3 = blake3::hash(&focus_pixels).to_hex().to_string();
+        let focus_render_state_blake3 = blake3::hash(&extract_region_render_state(
+            parser.screen(),
+            focus_region_cells,
+        ))
+        .to_hex()
+        .to_string();
         let manifest_entry = VisualManifestEntry::new(VisualManifestEntrySpec {
             checkpoint_id,
             captured_at_stage: checkpoint_id,
@@ -254,6 +263,7 @@ impl LiveVisualRun {
             focus_marker_found,
             focus_scope,
             focus_pixels_blake3: &focus_pixels_blake3,
+            focus_render_state_blake3: &focus_render_state_blake3,
             focus_region_cells,
             image_size: (image.width(), image.height()),
             metadata: metadata.as_ref(),
@@ -293,6 +303,7 @@ pub struct VisualManifestEntrySpec<'a> {
     pub focus_marker_found: bool,
     pub focus_scope: &'a str,
     pub focus_pixels_blake3: &'a str,
+    pub focus_render_state_blake3: &'a str,
     pub focus_region_cells: (u16, u16, u16, u16),
     pub image_size: (u32, u32),
     pub metadata: Option<&'a Value>,
@@ -319,9 +330,10 @@ impl VisualManifestEntry {
                 "focus": {
                     "marker": spec.focus_marker,
                     "found": spec.focus_marker_found,
-                    "scope": spec.focus_scope,
-                    "pixels_blake3": spec.focus_pixels_blake3,
-                },
+                "scope": spec.focus_scope,
+                "pixels_blake3": spec.focus_pixels_blake3,
+                "render_state_blake3": spec.focus_render_state_blake3,
+            },
                 "region": {
                     "row": spec.focus_region_cells.0,
                     "col": spec.focus_region_cells.1,

@@ -38,7 +38,8 @@ use pty_process::{spawn_pty_process, SpawnedPtyProcess};
 use visual_contracts::OFFLINE_VISUAL_EVIDENCE_CONTRACTS;
 
 use visual_renderer::{
-    extract_region_pixels, parse_ttf_antialias_env, render_parser_to_image, TerminalRenderConfig,
+    extract_region_pixels, extract_region_render_state, parse_ttf_antialias_env,
+    render_parser_to_image, TerminalRenderConfig,
 };
 
 const VISUAL_MANIFEST_JSON_FILE: &str = "manifest.json";
@@ -2257,6 +2258,22 @@ fn pty_visual_ttf_antialias_honors_explicit_opt_out() {
     }
 }
 
+#[test]
+fn focus_render_state_hash_tracks_cell_styles() {
+    let mut plain = VtParser::new(1, 4, 0);
+    plain.process(b"AB");
+
+    let mut styled = VtParser::new(1, 4, 0);
+    styled.process(b"\x1b[31;1mA\x1b[0mB");
+
+    let plain_hash =
+        blake3::hash(&extract_region_render_state(plain.screen(), (0, 0, 1, 2))).to_hex();
+    let styled_hash =
+        blake3::hash(&extract_region_render_state(styled.screen(), (0, 0, 1, 2))).to_hex();
+
+    assert_ne!(plain_hash, styled_hash);
+}
+
 fn write_wiremock_tui_config(session_dir: &Path, wiremock_uri: &str) -> PathBuf {
     let config_path = session_dir.join("wiremock-tui-config.jsonc");
     let body = json!({
@@ -2528,6 +2545,7 @@ struct VisualCheckpoint {
     manifest_jsonl_path: PathBuf,
     focus_marker_found: bool,
     focus_pixels_blake3: String,
+    focus_render_state_blake3: String,
     focus_marker: String,
     focus_region_cells: (u16, u16, u16, u16),
     size_px: (u32, u32),
@@ -2567,9 +2585,12 @@ impl FocusCapture {
 fn checkpoint_visual_snapshot(screen: &str, markers: &[&str], visual: &VisualCheckpoint) -> String {
     let mut lines = marker_presence_lines(screen, markers);
     lines.push(format!("focus_marker: {}", visual.focus_marker));
+    // Keep the raster PNG + pixel hash in the manifest for manual visual review,
+    // but snapshot the terminal render state here so one-cell raster drift does
+    // not destabilize the deterministic PTY contract.
     lines.push(format!(
-        "focus_pixels_blake3: {}",
-        visual.focus_pixels_blake3
+        "focus_render_state_blake3: {}",
+        visual.focus_render_state_blake3
     ));
     lines.push(format!(
         "focus_region_cells: row={}, col={}, height={}, width={}",
@@ -2647,6 +2668,7 @@ fn write_family_manifest_entry(
                 "full_frame_fallback"
             },
             "pixels_blake3": checkpoint.focus_pixels_blake3,
+            "render_state_blake3": checkpoint.focus_render_state_blake3,
         },
         "region": {
             "row": checkpoint.focus_region_cells.0,
@@ -2789,6 +2811,7 @@ fn capture_visual_checkpoint(
     let focus_marker_found = find_marker_cell(parser.screen(), focus.marker).is_some();
 
     let focus_pixels = extract_region_pixels(&image, focus_region, PTY_RENDER_CONFIG);
+    let focus_render_state = extract_region_render_state(parser.screen(), focus_region);
 
     Ok(VisualCheckpoint {
         file_name,
@@ -2796,6 +2819,7 @@ fn capture_visual_checkpoint(
         manifest_jsonl_path: PathBuf::new(),
         focus_marker_found,
         focus_pixels_blake3: blake3::hash(&focus_pixels).to_hex().to_string(),
+        focus_render_state_blake3: blake3::hash(&focus_render_state).to_hex().to_string(),
         focus_marker: focus.marker.to_string(),
         focus_region_cells: focus_region,
         size_px: (image.width(), image.height()),

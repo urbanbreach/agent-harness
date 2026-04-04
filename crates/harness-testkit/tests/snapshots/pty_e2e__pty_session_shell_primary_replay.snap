@@ -8,7 +8,7 @@ shell parity task: true
 Context: true
 Replay is read-only.: true
 focus_marker: Replay · read-only
-focus_pixels_blake3: 84ee939929c5766816557cb361edad3e2c1c04c988c98d40b891098825141059
+focus_render_state_blake3: cc7f8b9e99a4e88f8e37982b9a4649c4484304efb1a0b89c1c56369f7c1920fd
 focus_region_cells: row=0, col=0, height=2, width=20
 image: pty_session_shell_primary_replay.png
 manifest_json: pty-manifests/replay_shell/manifest.json
