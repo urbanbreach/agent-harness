@@ -50,7 +50,7 @@ impl CodeLspExecutor {
                 .await
                 .map_err(|err| ToolError::Execution(format!("lsp task failed: {err}")))??;
                 build_result(
-                    operation.as_str(),
+                    operation,
                     &file_path,
                     json!({
                         "line": line,
@@ -79,7 +79,7 @@ impl CodeLspExecutor {
                 })
                 .await
                 .map_err(|err| ToolError::Execution(format!("lsp task failed: {err}")))??;
-                build_result(operation.as_str(), &file_path, json!({}), response)
+                build_result(operation, &file_path, json!({}), response)
             }
             CodeLspRequest::Query {
                 operation,
@@ -105,7 +105,7 @@ impl CodeLspExecutor {
                 .await
                 .map_err(|err| ToolError::Execution(format!("lsp task failed: {err}")))??;
                 build_result(
-                    operation.as_str(),
+                    operation,
                     &file_path,
                     json!({
                         "query": query,
@@ -281,9 +281,17 @@ fn lsp_result_is_empty(value: &Value) -> bool {
 }
 
 fn render_display_text(
-    operation_name: &str,
+    operation: LspOperation,
     response: &LspOperationResponse,
 ) -> Result<String, ToolError> {
+    if matches!(
+        operation,
+        LspOperation::FileDiagnostics | LspOperation::WorkspaceDiagnostics
+    ) {
+        return render_diagnostics_only_display_text(response);
+    }
+
+    let operation_name = operation.as_str();
     let mut text = if lsp_result_is_empty(&response.result) {
         format!("No results found for {operation_name}")
     } else {
@@ -301,12 +309,13 @@ fn render_display_text(
 }
 
 fn build_result(
-    operation_name: &str,
+    operation: LspOperation,
     file_path: &Path,
     extra_args: Value,
     response: LspOperationResponse,
 ) -> Result<ToolResult, ToolError> {
-    let display_text = render_display_text(operation_name, &response)?;
+    let operation_name = operation.as_str();
+    let display_text = render_display_text(operation, &response)?;
     let mut structured_json = json!({
         "operation": operation_name,
         "filePath": file_path.display().to_string(),
@@ -326,6 +335,23 @@ fn build_result(
         structured_json: Some(structured_json),
         artifacts: Vec::new(),
     })
+}
+
+fn render_diagnostics_only_display_text(
+    response: &LspOperationResponse,
+) -> Result<String, ToolError> {
+    let target = response
+        .result
+        .get("filePath")
+        .or_else(|| response.result.get("workspaceRoot"))
+        .and_then(Value::as_str)
+        .unwrap_or("requested target");
+    let diagnostics = format_diagnostics(&response.diagnostics);
+    if diagnostics.is_empty() {
+        Ok(format!("No diagnostics found for {target}"))
+    } else {
+        Ok(format!("Diagnostics for {target}:\n{diagnostics}"))
+    }
 }
 
 fn format_diagnostics(reports: &[LspDiagnosticReport]) -> String {

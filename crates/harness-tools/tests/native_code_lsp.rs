@@ -54,6 +54,8 @@ fn setup_workspace() -> tempfile::TempDir {
         "fn helper() {}\n\nfn caller() {\n    helper();\n}\n",
     )
     .expect("write rust fixture");
+    fs::write(workspace.join("src/extra.rs"), "pub fn extra() {}\n")
+        .expect("write extra rust fixture");
     fs::write(
         workspace.join("package.json"),
         "{\"name\":\"code-lsp-test\"}\n",
@@ -153,6 +155,7 @@ impl Drop for LspConfigGuard {
 struct FakeLspSpec<'a> {
     result_uri: &'a str,
     diagnostic_message: &'a str,
+    empty_diagnostics: bool,
     env_key: &'a str,
     env_value: &'a str,
     expected_language_id: &'a str,
@@ -173,6 +176,7 @@ EXPECT_ENV_VALUE = __EXPECT_ENV_VALUE__
 EXPECT_LANGUAGE_ID = __EXPECT_LANGUAGE_ID__
 EXPECT_INIT_PATH = __EXPECT_INIT_PATH__
 EXPECT_INIT_VALUE = __EXPECT_INIT_VALUE__
+EMPTY_DIAGNOSTICS = __EMPTY_DIAGNOSTICS__
 
 opened_uri = None
 opened_language_id = None
@@ -216,6 +220,31 @@ def lookup(obj, path):
     return cur
 
 
+def diagnostics_payload(method, target_uri, env_ok, language_ok, init_ok):
+    diagnostics = []
+    if not EMPTY_DIAGNOSTICS:
+        message = f"{DIAGNOSTIC_MESSAGE}; env_ok={env_ok}; init_ok={init_ok}"
+        if EXPECT_LANGUAGE_ID != "":
+            message = f"{DIAGNOSTIC_MESSAGE}; env_ok={env_ok}; lang_ok={language_ok}; init_ok={init_ok}"
+        diagnostics = [{
+            "range": {
+                "start": {"line": 0, "character": 0},
+                "end": {"line": 0, "character": 3}
+            },
+            "severity": 1,
+            "source": method,
+            "message": message
+        }]
+    return {
+        "jsonrpc": "2.0",
+        "method": "textDocument/publishDiagnostics",
+        "params": {
+            "uri": target_uri,
+            "diagnostics": diagnostics
+        }
+    }
+
+
 while True:
     message = read_message()
     if message is None:
@@ -228,6 +257,11 @@ while True:
     if method == "textDocument/didOpen":
         opened_uri = params.get("textDocument", {}).get("uri")
         opened_language_id = params.get("textDocument", {}).get("languageId")
+        env_ok = EXPECT_ENV_KEY == "" or os.environ.get(EXPECT_ENV_KEY) == EXPECT_ENV_VALUE
+        language_ok = EXPECT_LANGUAGE_ID == "" or opened_language_id == EXPECT_LANGUAGE_ID
+        init_value = lookup(initialization_options, EXPECT_INIT_PATH)
+        init_ok = EXPECT_INIT_PATH == "" or str(init_value).lower() == EXPECT_INIT_VALUE.lower()
+        send(diagnostics_payload(method, opened_uri or "file:///workspace/unknown", env_ok, language_ok, init_ok))
         continue
 
     if method == "initialize" and message_id is not None:
@@ -243,22 +277,7 @@ while True:
     init_value = lookup(initialization_options, EXPECT_INIT_PATH)
     init_ok = EXPECT_INIT_PATH == "" or str(init_value).lower() == EXPECT_INIT_VALUE.lower()
     target_uri = params.get("textDocument", {}).get("uri") or opened_uri or "file:///workspace/unknown"
-    send({
-        "jsonrpc": "2.0",
-        "method": "textDocument/publishDiagnostics",
-        "params": {
-            "uri": target_uri,
-            "diagnostics": [{
-                "range": {
-                    "start": {"line": 0, "character": 0},
-                    "end": {"line": 0, "character": 3}
-                },
-                "severity": 1,
-                "source": method,
-                "message": f"{DIAGNOSTIC_MESSAGE}; env_ok={env_ok}; lang_ok={language_ok}; init_ok={init_ok}"
-            }]
-        }
-    })
+    send(diagnostics_payload(method, target_uri, env_ok, language_ok, init_ok))
     position = params.get("position", {})
     line = position.get("line", 0)
     character = position.get("character", 0)
@@ -275,13 +294,15 @@ while True:
             "query": query
         }]
     })
-    break
+    if method not in ("textDocument/diagnostic", "workspace/diagnostic"):
+        break
 "#
     .replace("__RESULT_URI__", &serde_json::to_string(spec.result_uri).expect("result uri json"))
     .replace(
         "__DIAGNOSTIC_MESSAGE__",
         &serde_json::to_string(spec.diagnostic_message).expect("diagnostic json"),
     )
+    .replace("__EMPTY_DIAGNOSTICS__", if spec.empty_diagnostics { "True" } else { "False" })
     .replace(
         "__EXPECT_ENV_KEY__",
         &serde_json::to_string(spec.env_key).expect("env key json"),
@@ -344,6 +365,7 @@ async fn native_code_lsp_supports_configured_custom_servers() {
         &FakeLspSpec {
             result_uri: "file:///fake/rust-definition.rs",
             diagnostic_message: "rust override diagnostic",
+            empty_diagnostics: false,
             env_key: "RUST_LOG",
             env_value: "trace",
             expected_language_id: "rust",
@@ -357,6 +379,7 @@ async fn native_code_lsp_supports_configured_custom_servers() {
         &FakeLspSpec {
             result_uri: "file:///fake/typescript-definition.ts",
             diagnostic_message: "typescript override diagnostic",
+            empty_diagnostics: false,
             env_key: "TS_SERVER_LOG",
             env_value: "verbose",
             expected_language_id: "typescript",
@@ -370,9 +393,10 @@ async fn native_code_lsp_supports_configured_custom_servers() {
         &FakeLspSpec {
             result_uri: "file:///fake/custom-definition.foo",
             diagnostic_message: "custom server diagnostic",
+            empty_diagnostics: false,
             env_key: "CUSTOM_LSP_MODE",
             env_value: "enabled",
-            expected_language_id: "",
+            expected_language_id: "foo",
             initialization_path: "feature.mode",
             initialization_value: "custom",
         },
@@ -538,6 +562,7 @@ async fn native_code_lsp_supports_additional_builtin_server_presets() {
         &FakeLspSpec {
             result_uri: "file:///fake/python-definition.py",
             diagnostic_message: "python preset diagnostic",
+            empty_diagnostics: false,
             env_key: "PYRIGHT_PYTHON_FORCE_VERSION",
             env_value: "latest",
             expected_language_id: "python",
@@ -551,6 +576,7 @@ async fn native_code_lsp_supports_additional_builtin_server_presets() {
         &FakeLspSpec {
             result_uri: "file:///fake/go-definition.go",
             diagnostic_message: "go preset diagnostic",
+            empty_diagnostics: false,
             env_key: "GOPLS_LOG",
             env_value: "debug",
             expected_language_id: "go",
@@ -564,6 +590,7 @@ async fn native_code_lsp_supports_additional_builtin_server_presets() {
         &FakeLspSpec {
             result_uri: "file:///fake/json-definition.json",
             diagnostic_message: "json preset diagnostic",
+            empty_diagnostics: false,
             env_key: "JSON_LSP_TRACE",
             env_value: "verbose",
             expected_language_id: "json",
@@ -577,6 +604,7 @@ async fn native_code_lsp_supports_additional_builtin_server_presets() {
         &FakeLspSpec {
             result_uri: "file:///fake/yaml-definition.yaml",
             diagnostic_message: "yaml preset diagnostic",
+            empty_diagnostics: false,
             env_key: "YAML_LSP_TRACE",
             env_value: "verbose",
             expected_language_id: "yaml",
@@ -733,8 +761,6 @@ async fn native_code_lsp_supports_additional_builtin_server_presets() {
             json!({
                 "operation": "documentSymbol",
                 "filePath": "config/service.yaml",
-                "line": 1,
-                "character": 1,
             }),
         )
         .await
@@ -748,6 +774,180 @@ async fn native_code_lsp_supports_additional_builtin_server_presets() {
     assert!(
         first_diagnostic_message(&yaml_json).contains("env_ok=True; lang_ok=True; init_ok=True")
     );
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global test lock intentionally serializes PATH and LSP registry mutations across awaits"
+)]
+async fn native_code_lsp_supports_direct_file_and_workspace_diagnostics() {
+    let _lock = test_lock().lock().expect("test lock");
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let fake_bin = temp_dir.path().join("fake-lsp-bin");
+    fs::create_dir_all(&fake_bin).expect("fake bin dir");
+    install_fake_lsp_binary(
+        &fake_bin,
+        "custom-rust-analyzer",
+        &FakeLspSpec {
+            result_uri: "file:///fake/rust-definition.rs",
+            diagnostic_message: "rust direct diagnostic",
+            empty_diagnostics: false,
+            env_key: "RUST_LOG",
+            env_value: "trace",
+            expected_language_id: "rust",
+            initialization_path: "cargo.allFeatures",
+            initialization_value: "true",
+        },
+    );
+    let _path_guard = PathEnvGuard::prepend(&fake_bin);
+    let _config_guard = LspConfigGuard::install(LspConfig {
+        disabled: false,
+        servers: BTreeMap::from([(
+            "rust".to_string(),
+            LspServerConfig {
+                disabled: false,
+                command: Some(vec!["custom-rust-analyzer".to_string()]),
+                extensions: None,
+                env: BTreeMap::from([("RUST_LOG".to_string(), "trace".to_string())]),
+                initialization: Some(json!({
+                    "cargo": {
+                        "allFeatures": true,
+                    }
+                })),
+            },
+        )]),
+    });
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let native = registry.get("code.lsp").expect("code.lsp tool");
+    let compat = registry.get("lsp").expect("lsp alias tool");
+
+    let file_result = native
+        .call(
+            test_context(&workspace, "direct-file-diagnostics"),
+            json!({
+                "operation": "fileDiagnostics",
+                "filePath": "src/lib.rs",
+            }),
+        )
+        .await
+        .expect("file diagnostics request");
+    assert!(file_result.display_text.contains("Diagnostics for"));
+    assert!(file_result
+        .display_text
+        .contains("src/lib.rs:1:1 Error rust direct diagnostic"));
+    let file_json = file_result
+        .structured_json
+        .clone()
+        .expect("file diagnostics structured json");
+    assert_eq!(file_json["result"]["scope"], json!("file"));
+    assert_eq!(file_json["result"]["diagnosticCount"], json!(1));
+    assert!(file_json["diagnostics"][0]["file_path"]
+        .as_str()
+        .expect("file diagnostic path")
+        .ends_with("src/lib.rs"));
+    assert!(
+        first_diagnostic_message(&file_json).contains("env_ok=True; lang_ok=True; init_ok=True")
+    );
+
+    let workspace_result = compat
+        .call(
+            test_context(&workspace, "direct-workspace-diagnostics"),
+            json!({
+                "operation": "workspaceDiagnostics",
+                "filePath": "src/lib.rs",
+            }),
+        )
+        .await
+        .expect("workspace diagnostics request");
+    assert!(workspace_result.display_text.contains("Diagnostics for"));
+    assert!(workspace_result
+        .display_text
+        .contains("src/lib.rs:1:1 Error rust direct diagnostic"));
+    assert!(workspace_result
+        .display_text
+        .contains("src/extra.rs:1:1 Error rust direct diagnostic"));
+    let workspace_json = workspace_result
+        .structured_json
+        .expect("workspace diagnostics structured json");
+    assert_eq!(workspace_json["result"]["scope"], json!("workspace"));
+    assert_eq!(workspace_json["result"]["filesScanned"], json!(2));
+    assert_eq!(workspace_json["result"]["diagnosticCount"], json!(2));
+    assert_eq!(
+        workspace_json["diagnostics"]
+            .as_array()
+            .expect("workspace diagnostics array")
+            .len(),
+        2
+    );
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global test lock intentionally serializes PATH and LSP registry mutations across awaits"
+)]
+async fn native_code_lsp_reports_empty_direct_diagnostics_cleanly() {
+    let _lock = test_lock().lock().expect("test lock");
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let fake_bin = temp_dir.path().join("fake-lsp-bin");
+    fs::create_dir_all(&fake_bin).expect("fake bin dir");
+    install_fake_lsp_binary(
+        &fake_bin,
+        "custom-rust-analyzer",
+        &FakeLspSpec {
+            result_uri: "file:///fake/rust-definition.rs",
+            diagnostic_message: "unused because diagnostics are empty",
+            empty_diagnostics: true,
+            env_key: "",
+            env_value: "",
+            expected_language_id: "rust",
+            initialization_path: "",
+            initialization_value: "",
+        },
+    );
+    let _path_guard = PathEnvGuard::prepend(&fake_bin);
+    let _config_guard = LspConfigGuard::install(LspConfig {
+        disabled: false,
+        servers: BTreeMap::from([(
+            "rust".to_string(),
+            LspServerConfig {
+                disabled: false,
+                command: Some(vec!["custom-rust-analyzer".to_string()]),
+                extensions: None,
+                env: BTreeMap::new(),
+                initialization: None,
+            },
+        )]),
+    });
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let native = registry.get("code.lsp").expect("code.lsp tool");
+
+    let result = native
+        .call(
+            test_context(&workspace, "empty-file-diagnostics"),
+            json!({
+                "operation": "fileDiagnostics",
+                "filePath": "src/lib.rs",
+            }),
+        )
+        .await
+        .expect("empty file diagnostics request");
+    let expected_path = workspace.join("src/lib.rs").display().to_string();
+    assert_eq!(
+        result.display_text,
+        format!("No diagnostics found for {expected_path}")
+    );
+    let result_json = result
+        .structured_json
+        .expect("empty file diagnostics structured json");
+    assert_eq!(result_json["result"]["scope"], json!("file"));
+    assert_eq!(result_json["result"]["diagnosticCount"], json!(0));
+    assert_eq!(result_json["diagnostics"][0]["diagnostics"], json!([]));
 }
 
 #[tokio::test]
@@ -910,8 +1110,10 @@ async fn native_code_lsp_supports_non_position_operations_without_cursor_placeho
         &FakeLspSpec {
             result_uri: "file:///fake/rust-symbol.rs",
             diagnostic_message: "rust symbol diagnostic",
+            empty_diagnostics: false,
             env_key: "",
             env_value: "",
+            expected_language_id: "rust",
             initialization_path: "",
             initialization_value: "",
         },
