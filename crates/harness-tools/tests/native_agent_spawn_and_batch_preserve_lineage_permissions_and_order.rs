@@ -29,6 +29,7 @@ fn worker_profile(toolset: &[&str]) -> AgentProfile {
         model_ref: "default:deep".to_string(),
         system_prompt: "deep prompt".to_string(),
         max_iters: 12,
+        temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         tool_surface: ToolSurface::Native,
         toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),

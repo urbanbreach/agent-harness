@@ -3758,6 +3758,7 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             model_ref: "mock:model-1".to_string(),
             system_prompt: "alpha-prompt".to_string(),
             max_iters: 12,
+            temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             tool_surface: ToolSurface::Native,
             toolset: vec![],
@@ -3771,6 +3772,7 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             model_ref: "mock:model-1".to_string(),
             system_prompt: "beta-prompt".to_string(),
             max_iters: 12,
+            temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             tool_surface: ToolSurface::Native,
             toolset: vec![],
@@ -3784,7 +3786,6 @@ fn test_mock_provider() -> MockProvider {
 
     for prompt in ["alpha-prompt", "beta-prompt"] {
         let request = CompletionRequest {
-            provider_id: Some("mock".to_string()),
             model_id: "model-1".to_string(),
             messages: vec![
                 CompletionMessage {
@@ -3802,6 +3803,7 @@ fn test_mock_provider() -> MockProvider {
                     assistant_tool_calls: None,
                 },
             ],
+            max_iters: 12,
             temperature: Some(0.0),
             max_tokens: None,
             tools: None,

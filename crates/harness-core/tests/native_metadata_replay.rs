@@ -432,6 +432,7 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             model_ref: "mock:model-1".to_string(),
             system_prompt: "alpha-prompt".to_string(),
             max_iters: 12,
+            temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             tool_surface: ToolSurface::Native,
             toolset: vec![],

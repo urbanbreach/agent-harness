@@ -255,6 +255,7 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             model_ref: MODEL_REF.to_string(),
             system_prompt: "system prompt".to_string(),
             max_iters: 12,
+            temperature: Some(0.0),
             tool_failure_mode: ToolFailureMode::FailTurn,
             tool_surface: ToolSurface::Native,
             toolset: Vec::new(),

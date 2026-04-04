@@ -17,12 +17,14 @@ use crate::tool::{
     ToolSurface,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AgentProfile {
     pub name: String,
     pub category: String,
     pub model_ref: String,
     pub system_prompt: String,
+    #[serde(default)]
+    pub temperature: Option<f32>,
     #[serde(default = "default_agent_profile_max_iters")]
     pub max_iters: usize,
     pub tool_failure_mode: ToolFailureMode,
@@ -38,6 +40,7 @@ impl AgentProfile {
             category: name.clone(),
             model_ref: "default:default".to_string(),
             system_prompt: String::new(),
+            temperature: None,
             max_iters: default_agent_profile_max_iters(),
             tool_failure_mode: ToolFailureMode::FailTurn,
             tool_surface: ToolSurface::Native,
@@ -149,16 +152,14 @@ where
 {
     let model = AgentModelRef::parse(&request.model_ref);
     let messages = build_provider_context_messages(profile, prior_turns, &request.prompt);
-    let completion_request = CompletionRequest {
-        provider_id: Some(model.provider_id.clone()),
-        model_id: model.model_id.clone(),
+    let completion_request = build_completion_request(
+        Some(model.provider_id.clone()),
+        model.model_id.clone(),
         messages,
-        temperature: Some(0.0),
-        max_tokens: None,
-        tools: None,
-        tool_choice: None,
-        stream: true,
-    };
+        profile.temperature,
+        None,
+        None,
+    );
 
     emit(AgentRuntimeEvent::ProviderRequestStarted(
         ProviderRequestStarted {
@@ -259,16 +260,14 @@ where
     for _iter in 1..=profile.max_iters {
         let turn_request_id = request_id.clone();
 
-        let completion_request = CompletionRequest {
-            provider_id: Some(model.provider_id.clone()),
-            model_id: model.model_id.clone(),
-            messages: messages.clone(),
-            temperature: Some(0.0),
-            max_tokens: None,
-            tools: (!tool_defs.is_empty()).then(|| tool_defs.clone()),
-            tool_choice: (!tool_defs.is_empty()).then_some(ToolChoice::Auto),
-            stream: true,
-        };
+        let completion_request = build_completion_request(
+            Some(model.provider_id.clone()),
+            model.model_id.clone(),
+            messages.clone(),
+            profile.temperature,
+            (!tool_defs.is_empty()).then(|| tool_defs.clone()),
+            (!tool_defs.is_empty()).then_some(ToolChoice::Auto),
+        );
 
         emit(AgentRuntimeEvent::ProviderRequestStarted(
             ProviderRequestStarted {
@@ -539,6 +538,26 @@ pub fn build_provider_tool_defs(
 
 fn tool_result_to_message_content(result: &ToolResult) -> String {
     serde_json::to_string(result).unwrap_or_else(|_| result.display_text.clone())
+}
+
+fn build_completion_request(
+    provider_id: Option<String>,
+    model_id: String,
+    messages: Vec<CompletionMessage>,
+    temperature: Option<f32>,
+    tools: Option<Vec<ToolDef>>,
+    tool_choice: Option<ToolChoice>,
+) -> CompletionRequest {
+    CompletionRequest {
+        provider_id,
+        model_id,
+        messages,
+        temperature,
+        max_tokens: None,
+        tools,
+        tool_choice,
+        stream: true,
+    }
 }
 
 fn truncate_summary(text: &str, max_chars: usize) -> String {
@@ -953,6 +972,7 @@ mod tests {
             model_ref: "mock:model-1".to_string(),
             system_prompt: "sys".to_string(),
             max_iters,
+            temperature: Some(0.1),
             tool_failure_mode: ToolFailureMode::FailTurn,
             tool_surface: ToolSurface::Native,
             toolset: vec!["fs.read".to_string()],
@@ -1234,10 +1254,10 @@ mod tests {
         tool_defs: &[harness_providers::ToolDef],
     ) -> harness_providers::CompletionRequest {
         harness_providers::CompletionRequest {
-            provider_id: None,
+            provider_id: Some("mock".to_string()),
             model_id: model_id.to_string(),
             messages,
-            temperature: Some(0.0),
+            temperature: Some(0.1),
             max_tokens: None,
             tools: Some(tool_defs.to_vec()),
             tool_choice: Some(ToolChoice::Auto),

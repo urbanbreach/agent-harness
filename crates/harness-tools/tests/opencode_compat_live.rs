@@ -88,6 +88,7 @@ fn example_profiles(
                     model_ref: profile.model_ref.clone(),
                     system_prompt: profile.description.clone(),
                     max_iters: profile.max_iters,
+                    temperature: profile.temperature,
                     tool_failure_mode: profile.tool_failure_mode,
                     tool_surface: profile.tool_surface,
                     toolset: resolve_tool_ids_for_surface(

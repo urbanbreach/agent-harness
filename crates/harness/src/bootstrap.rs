@@ -116,6 +116,7 @@ pub fn interactive_agent_profiles(
                     profile_cfg.description
                 ),
                 max_iters: profile_cfg.max_iters,
+                temperature: profile_cfg.temperature,
                 tool_failure_mode: profile_cfg.tool_failure_mode,
                 tool_surface: profile_cfg.tool_surface,
                 toolset: resolve_tool_ids_for_surface(
@@ -150,18 +151,20 @@ mod tests {
     use harness_core::config::load_config_from_str;
 
     #[test]
-    fn interactive_agent_profiles_preserve_default_and_custom_max_iters() {
+    fn interactive_agent_profiles_preserve_default_max_iters_and_temperature() {
         let cfg = load_config_from_str(
             r#"
             {
               providers: {
                 default: {
                   type: "openai_compatible",
-                  base_url: "https://example.invalid/v1",
-                  api_key: "test-key",
+                  base_url: "http://127.0.0.1:8317/v1",
+                  api_key: "sk-test",
+                  api_mode: "responses",
+                  timeout_ms: 60000,
                   models: {
                     "gpt-5.4-mini": {
-                      display_name: "GPT-5.4 mini"
+                      display_name: "GPT-5.4 mini",
                     }
                   }
                 }
@@ -170,6 +173,7 @@ mod tests {
                 deep: {
                   description: "Default iteration budget",
                   model_ref: "default:gpt-5.4-mini",
+                  temperature: 0.7,
                   tools: ["fs.read"]
                 },
                 tool_audit: {
@@ -225,6 +229,8 @@ mod tests {
         let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles should build");
 
         assert_eq!(profiles["deep"].max_iters, 12);
+        assert_eq!(profiles["deep"].temperature, Some(0.7));
         assert_eq!(profiles["tool_audit"].max_iters, 20);
+        assert_eq!(profiles["tool_audit"].temperature, None);
     }
 }

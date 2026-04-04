@@ -798,6 +798,8 @@ pub struct ProfileConfig {
     #[serde(default)]
     pub variant: Option<String>,
     #[serde(default)]
+    /// When unset, the runtime omits `temperature` from provider requests so
+    /// the provider default applies.
     pub temperature: Option<f32>,
     #[serde(default)]
     pub permissions: Option<ProfilePermissions>,
