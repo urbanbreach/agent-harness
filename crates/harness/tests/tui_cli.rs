@@ -19,6 +19,8 @@ use harness_tui::app::{
 };
 use harness_tui::{load_events_from_run_dir, Action};
 use tempfile::tempdir;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[allow(dead_code)]
 #[path = "../src/bootstrap.rs"]
@@ -36,6 +38,94 @@ mod tui_impl;
 fn startup_draft_test_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn multi_provider_interactive_config(
+    default_base_url: &str,
+    ops_base_url: &str,
+    session_dir: &std::path::Path,
+) -> String {
+    serde_json::json!({
+        "providers": {
+            "default": {
+                "type": "openai_compatible",
+                "base_url": default_base_url,
+                "api_key": "DUMMY",
+                "api_mode": "responses",
+                "timeout_ms": 60000,
+                "models": {
+                    "gpt-4o-mini": {
+                        "display_name": "GPT-4o mini"
+                    }
+                }
+            },
+            "anthropic": {
+                "type": "openai_compatible",
+                "base_url": ops_base_url,
+                "api_key": "DUMMY",
+                "api_mode": "responses",
+                "timeout_ms": 60000,
+                "models": {
+                    "claude-3.7": {
+                        "display_name": "Claude 3.7"
+                    }
+                }
+            }
+        },
+        "profiles": {
+            "deep": {
+                "description": "Deep profile",
+                "model_ref": "default:gpt-4o-mini",
+                "tools": []
+            },
+            "ops": {
+                "description": "Ops profile",
+                "model_ref": "anthropic:claude-3.7",
+                "tools": []
+            }
+        },
+        "permissions": {
+            "defaults": {
+                "edit": "allow",
+                "shell": "allow",
+                "network": "allow"
+            }
+        },
+        "runtime": {
+            "background_tasks": {
+                "default_concurrency": 2,
+                "provider_concurrency": 2,
+                "model_concurrency": 2,
+                "stale_timeout_ms": 30000,
+                "message_staleness_timeout_ms": 10000
+            },
+            "session_dir": session_dir,
+            "deterministic": {
+                "enabled": false,
+                "seed": 42
+            }
+        },
+        "integrations": {
+            "remote_search": {
+                "endpoint": "https://mcp.exa.ai/mcp"
+            }
+        },
+        "ui": {
+            "default_profile": "deep"
+        }
+    })
+    .to_string()
+}
+
+fn deterministic_responses_sse_transcript() -> String {
+    [
+        "event: response.output_text.delta\n",
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\n",
+        "event: response.completed\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":1,\"total_tokens\":6}}}\n\n",
+        "data: [DONE]\n\n",
+    ]
+    .concat()
 }
 
 fn write_events_jsonl(run_dir: &std::path::Path, events: &[EventEnvelopeV1]) {
@@ -204,6 +294,117 @@ async fn tui_new_live_bootstrap_stays_idle_until_first_user_prompt() {
         1,
         "interactive bootstrap should only create one provider request after the user's first prompt"
     );
+}
+
+#[tokio::test]
+async fn interactive_runtime_routes_non_default_profile_to_matching_provider() {
+    let default_server = MockServer::start().await;
+    let ops_server = MockServer::start().await;
+    for server in [&default_server, &ops_server] {
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(
+                        deterministic_responses_sse_transcript(),
+                        "text/event-stream",
+                    ),
+            )
+            .mount(server)
+            .await;
+    }
+
+    let temp = tempdir().expect("tempdir");
+    let session_dir = temp.path().join("sessions");
+    let workspace = temp.path().join("workspace");
+    std::fs::create_dir_all(&workspace).expect("create workspace");
+
+    let config_path = temp.path().join("harness.multi-provider.jsonc");
+    std::fs::write(
+        &config_path,
+        multi_provider_interactive_config(
+            &format!("{}/v1", default_server.uri()),
+            &format!("{}/v1", ops_server.uri()),
+            &session_dir,
+        ),
+    )
+    .expect("write config");
+
+    let config = bootstrap::load_harness_config(&config_path).expect("load config");
+    let coordinator = spawn_coordinator(
+        bootstrap::build_interactive_coordinator_config(&config)
+            .expect("build multi-provider interactive config"),
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+
+    let run = coordinator
+        .start_run("interactive", &workspace)
+        .await
+        .expect("start interactive run");
+    let agent_id = coordinator
+        .spawn_agent_idle(
+            EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string())),
+            "ops",
+            None,
+        )
+        .await
+        .expect("spawn non-default provider agent");
+    let request_id = coordinator
+        .request_agent_turn(
+            EventActor::new(ActorKind::User, Some("interactive-user".to_string())),
+            agent_id,
+            "Hello from ops",
+        )
+        .await
+        .expect("submit prompt");
+
+    for _ in 0..50 {
+        if !ops_server
+            .received_requests()
+            .await
+            .expect("ops request recording must be enabled")
+            .is_empty()
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    coordinator.stop_run().await.expect("stop interactive run");
+
+    let default_requests = default_server
+        .received_requests()
+        .await
+        .expect("default request recording must be enabled");
+    let ops_requests = ops_server
+        .received_requests()
+        .await
+        .expect("ops request recording must be enabled");
+    assert!(
+        default_requests.is_empty(),
+        "interactive runtime should not hit providers.default for ops profile"
+    );
+    assert_eq!(
+        ops_requests
+            .iter()
+            .filter(|req| req.url.path() == "/v1/responses")
+            .count(),
+        1,
+        "interactive runtime should hit the selected provider exactly once"
+    );
+
+    let events = load_events_from_run_dir(&run.run_dir).expect("load interactive events");
+    let provider_started = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::ProviderRequestStarted(data) if data.request_id == request_id => Some(data),
+            _ => None,
+        })
+        .expect("provider request should be recorded");
+    assert_eq!(provider_started.provider_id, "anthropic");
+    assert_eq!(provider_started.model_id, "claude-3.7");
 }
 
 #[tokio::test]

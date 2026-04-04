@@ -144,6 +144,7 @@ where
     let model = AgentModelRef::parse(&request.model_ref);
     let messages = build_provider_context_messages(profile, prior_turns, &request.prompt);
     let completion_request = CompletionRequest {
+        provider_id: Some(model.provider_id.clone()),
         model_id: model.model_id.clone(),
         messages,
         temperature: Some(0.0),
@@ -253,6 +254,7 @@ where
         let turn_request_id = request_id.clone();
 
         let completion_request = CompletionRequest {
+            provider_id: Some(model.provider_id.clone()),
             model_id: model.model_id.clone(),
             messages: messages.clone(),
             temperature: Some(0.0),
@@ -1117,6 +1119,7 @@ mod tests {
         tool_defs: &[harness_providers::ToolDef],
     ) -> harness_providers::CompletionRequest {
         harness_providers::CompletionRequest {
+            provider_id: None,
             model_id: model_id.to_string(),
             messages,
             temperature: Some(0.0),

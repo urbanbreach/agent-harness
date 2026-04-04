@@ -159,6 +159,7 @@ struct FixtureCompletionRequest {
 impl From<FixtureCompletionRequest> for CompletionRequest {
     fn from(value: FixtureCompletionRequest) -> Self {
         Self {
+            provider_id: None,
             model_id: value.model_id,
             messages: value.messages,
             temperature: value.temperature,
@@ -267,6 +268,7 @@ mod tests {
     async fn unknown_digest_returns_deterministic_error() {
         let provider = load_fixture_provider();
         let request = CompletionRequest {
+            provider_id: None,
             model_id: "model-unknown".to_string(),
             messages: vec![CompletionMessage {
                 role: MessageRole::User,
@@ -342,6 +344,7 @@ mod tests {
 
     fn fixture_known_request() -> CompletionRequest {
         CompletionRequest {
+            provider_id: None,
             model_id: "model-mock-1".to_string(),
             messages: vec![
                 CompletionMessage {
@@ -369,6 +372,7 @@ mod tests {
 
     fn fixture_tool_call_request() -> CompletionRequest {
         CompletionRequest {
+            provider_id: None,
             model_id: "model-mock-1".to_string(),
             messages: vec![
                 CompletionMessage {

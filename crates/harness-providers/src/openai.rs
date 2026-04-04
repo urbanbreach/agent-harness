@@ -863,6 +863,7 @@ struct OpenAiChatCompletionsRequest {
 impl From<CompletionRequest> for OpenAiChatCompletionsRequest {
     fn from(request: CompletionRequest) -> Self {
         let CompletionRequest {
+            provider_id: _,
             model_id,
             messages,
             temperature,
@@ -992,6 +993,7 @@ struct OpenAiResponsesRequest {
 impl From<CompletionRequest> for OpenAiResponsesRequest {
     fn from(request: CompletionRequest) -> Self {
         let CompletionRequest {
+            provider_id: _,
             model_id,
             messages,
             temperature,
@@ -1398,6 +1400,7 @@ mod tests {
     #[test]
     fn openai_responses_request_replays_assistant_tool_call_before_function_call_output() {
         let request = CompletionRequest {
+            provider_id: None,
             model_id: "gpt-4o-mini".to_string(),
             messages: vec![
                 CompletionMessage {
@@ -1525,6 +1528,7 @@ mod tests {
     #[test]
     fn openai_chat_request_replays_assistant_tool_call_in_tool_calls_field() {
         let request = CompletionRequest {
+            provider_id: None,
             model_id: "gpt-4o-mini".to_string(),
             messages: vec![
                 CompletionMessage {
@@ -1870,6 +1874,7 @@ mod tests {
 
     fn basic_request(model_id: &str) -> CompletionRequest {
         CompletionRequest {
+            provider_id: None,
             model_id: model_id.to_string(),
             messages: vec![CompletionMessage {
                 role: MessageRole::User,
@@ -1888,6 +1893,7 @@ mod tests {
 
     fn request_with_single_tool(model_id: &str) -> CompletionRequest {
         CompletionRequest {
+            provider_id: None,
             model_id: model_id.to_string(),
             messages: vec![CompletionMessage {
                 role: MessageRole::User,

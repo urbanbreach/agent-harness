@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use harness_core::agent::{AgentModelRef, AgentProfile};
+use harness_core::agent::AgentProfile;
 use harness_core::config::{
     load_config_from_file, refresh_profile_model_metadata_registry, HarnessConfig,
     OpenAiApiMode as CoreOpenAiApiMode, ProviderConfig,
@@ -14,9 +14,9 @@ use harness_providers::openai::{
     OpenAiApiMode as ProviderOpenAiApiMode, OpenAiCompatibleProvider,
     OpenAiCompatibleProviderConfig,
 };
+use harness_providers::{Provider, ProviderRouter};
 use harness_tools::coordinator_registry;
 
-const DEFAULT_PROVIDER_ID: &str = "default";
 const DEFAULT_INTERACTIVE_PROFILE: &str = "deep";
 
 const CONFIG_SEARCH_LOCATIONS: [&str; 2] = [
@@ -46,7 +46,7 @@ pub fn build_interactive_coordinator_config(
     coordinator_config.tool_concurrency = cfg.background_task.default_concurrency;
     coordinator_config.provider_model_concurrency = cfg.background_task.model_concurrency;
     coordinator_config.stale_timeout_ms = cfg.background_task.stale_timeout_ms;
-    coordinator_config.provider = Arc::new(build_default_provider(cfg)?);
+    coordinator_config.provider = Arc::new(build_provider_router(cfg)?);
     coordinator_config.agent_profiles = interactive_agent_profiles(cfg)?;
     coordinator_config.plan_profiles = interactive_plan_profiles(cfg);
     Ok(coordinator_config)
@@ -59,11 +59,22 @@ pub fn interactive_profile_name(cfg: &HarnessConfig) -> String {
         .unwrap_or_else(|| DEFAULT_INTERACTIVE_PROFILE.to_string())
 }
 
-fn build_default_provider(cfg: &HarnessConfig) -> Result<OpenAiCompatibleProvider, String> {
-    let Some(provider) = cfg.providers.get(DEFAULT_PROVIDER_ID) else {
-        return Err("interactive mode requires providers.default".to_string());
-    };
+fn build_provider_router(cfg: &HarnessConfig) -> Result<ProviderRouter, String> {
+    let providers = cfg
+        .providers
+        .iter()
+        .map(|(provider_id, provider)| {
+            build_provider(provider_id, provider).map(|provider| (provider_id.clone(), provider))
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
 
+    Ok(ProviderRouter::new(providers))
+}
+
+fn build_provider(
+    provider_id: &str,
+    provider: &ProviderConfig,
+) -> Result<Arc<dyn Provider>, String> {
     let ProviderConfig::OpenAiCompatible(provider) = provider;
 
     OpenAiCompatibleProvider::new(OpenAiCompatibleProviderConfig {
@@ -73,7 +84,8 @@ fn build_default_provider(cfg: &HarnessConfig) -> Result<OpenAiCompatibleProvide
         timeout_ms: provider.timeout_ms,
         headers: provider.headers.clone(),
     })
-    .map_err(|err| format!("failed to build providers.default: {err}"))
+    .map(|provider| Arc::new(provider) as Arc<dyn Provider>)
+    .map_err(|err| format!("failed to build provider `{provider_id}`: {err}"))
 }
 
 fn map_openai_api_mode(mode: CoreOpenAiApiMode) -> ProviderOpenAiApiMode {
@@ -92,14 +104,6 @@ pub fn interactive_agent_profiles(
     let mut profiles = BTreeMap::new();
 
     for (category_name, category_cfg) in &cfg.profiles {
-        let model_ref = AgentModelRef::parse(&category_cfg.model_ref);
-        if model_ref.provider_id != DEFAULT_PROVIDER_ID {
-            return Err(format!(
-                "category `{category_name}` must use provider_id `default` (got `{}`)",
-                model_ref.provider_id
-            ));
-        }
-
         profiles.insert(
             category_name.clone(),
             AgentProfile {
