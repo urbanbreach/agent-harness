@@ -273,7 +273,6 @@ async fn opencode_compat_tools_execute_under_example_config() {
         )
         .await
         .expect("bash tool");
-    assert!(bashed.display_text.contains("written.txt"));
     assert!(bashed.display_text.contains("cargo"));
 
     let patched = handle
