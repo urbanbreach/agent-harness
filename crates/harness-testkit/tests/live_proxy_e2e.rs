@@ -21,9 +21,9 @@ use support::live_events::{resolve_tagged_run_dir, ToolFlowEvidence};
 use support::live_vision::{self, LiveVisionProxyConfig};
 use support::live_visual::{
     assert_checkpoint_markers, default_live_run_metadata, selected_live_viewport, FocusCapture,
-    LiveVisualRun, LiveVisualRunOptions, CHECKPOINT_DRAFT_VISIBLE, CHECKPOINT_FILE_WRITE_FINISHED,
+    LiveVisualRun, LiveVisualRunOptions, CHECKPOINT_DRAFT_VISIBLE,
     CHECKPOINT_HASHLINE_SCAN_FINISHED, CHECKPOINT_PERMISSION_REQUESTED, CHECKPOINT_RUN_FINISHED,
-    CHECKPOINT_STARTUP,
+    CHECKPOINT_SHELL_CREATE_FINISHED, CHECKPOINT_STARTUP,
 };
 use support::pty_process::{spawn_pty_process, SpawnedPtyProcess};
 use vt100::Parser as VtParser;
@@ -66,8 +66,6 @@ const LIVE_PROXY_VISUAL_VERIFIER_TEST_NAME: &str = "live_proxy_e2e_visual_verifi
 const LIVE_TOOL_FLOW_RELATIVE_PATH: &str = "tmp/live_tool_flow.md";
 const LIVE_TOOL_FLOW_DRAFT_MARKER: &str =
     "You must use tools only. Use exactly tmp/live_tool_flow.md.";
-const LIVE_TOOL_FLOW_BOOTSTRAP_TOOL_ID: &str = "fs.write";
-const LIVE_PROXY_CAPTURE_STRATEGY: &str = "in-process PTY rendered to PNG";
 const LIVE_TOOL_FLOW_FINAL_CONTENT: &str = "alpha\nBETA\ngamma\n";
 const LIVE_TOOL_FLOW_APPLY_EDIT_ID: &str = "live-tool-flow-apply";
 const LIVE_CHAT_TODO_CONTENT: &str = "live chat todo item";
@@ -126,9 +124,8 @@ const LIVE_COMPAT_EDIT_DELETE_PROMPT: &str = concat!(
 );
 const LIVE_TOOL_FLOW_CREATE_PROMPT: &str = concat!(
     "You must use tools only. Use exactly tmp/live_tool_flow.md. ",
-    "Now perform only step 1: call fs.write with this exact payload shape: ",
-    r#"{"path":"tmp/live_tool_flow.md","content":"alpha\nbeta\ngamma\n"}"#,
-    ". Return exactly one fs.write tool call and zero prose. Do not call any other tool."
+    "Now perform only step 1: call shell.run with cmd=sh and args=[-lc, \"mkdir -p tmp && printf 'alpha\\nbeta\\ngamma\\n' > tmp/live_tool_flow.md\"] to create the file. ",
+    "Return exactly one tool call and zero prose. Do not call any other tool."
 );
 const LIVE_TOOL_FLOW_READ_PROMPT: &str = concat!(
     "Now perform only step 2 on the same file: call fs.read with path=tmp/live_tool_flow.md. ",
@@ -256,7 +253,7 @@ struct LiveToolFlowArtifacts {
     manifest_jsonl_path: PathBuf,
     startup_png: PathBuf,
     draft_visible_png: PathBuf,
-    file_write_finished_png: PathBuf,
+    shell_create_finished_png: PathBuf,
     hashline_scan_finished_png: PathBuf,
     run_finished_png: PathBuf,
 }
@@ -321,8 +318,6 @@ struct LiveProxyPreflightReport {
     socket_address: String,
     harness_bin: PathBuf,
     viewport_preset: &'static str,
-    capture_strategy: &'static str,
-    tool_flow_bootstrap_tool: &'static str,
 }
 
 impl LiveProxyPreflightReport {
@@ -339,8 +334,6 @@ impl LiveProxyPreflightReport {
             format!("  reachable socket: {}", self.socket_address),
             format!("  harness bin: {}", self.harness_bin.display()),
             format!("  viewport preset: {}", self.viewport_preset),
-            format!("  capture strategy: {}", self.capture_strategy),
-            format!("  tool-flow bootstrap: {}", self.tool_flow_bootstrap_tool),
         ]
         .join("\n")
     }
@@ -355,7 +348,7 @@ impl ToolFlowStage {
     fn tools(self) -> &'static [&'static str] {
         match self {
             Self::Full => &[
-                "fs.write",
+                "shell.run",
                 "fs.read",
                 "edit.hashline_scan",
                 "edit.hashline_apply",
@@ -367,7 +360,7 @@ impl ToolFlowStage {
         match self {
             Self::Full => concat!(
                 "Execute the full live tool-flow task in one session. ",
-                "Use only fs.write, fs.read, edit.hashline_scan, and edit.hashline_apply against tmp/live_tool_flow.md."
+                "Use only shell.run, fs.read, edit.hashline_scan, and edit.hashline_apply against tmp/live_tool_flow.md."
             ),
         }
     }
@@ -443,7 +436,7 @@ fn live_proxy_preflight() {
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 fn live_proxy_e2e_tui_prompt_responses_smoke() {
-    if env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
+    if !cfg!(target_os = "linux") || env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
         return;
     }
 
@@ -466,7 +459,7 @@ fn live_proxy_e2e_tui_prompt_responses_smoke() {
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 fn live_proxy_e2e_tui_tool_flow() {
-    if env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
+    if !cfg!(target_os = "linux") || env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
         return;
     }
 
@@ -824,7 +817,7 @@ fn run_live_proxy_tui_tool_flow_once(
 #[tokio::test(flavor = "current_thread")]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 async fn live_proxy_e2e_visual_verifier() {
-    if env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
+    if !cfg!(target_os = "linux") || env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
         return;
     }
 
@@ -1123,8 +1116,21 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
         tool_flow_config
             .get("permissions")
             .and_then(Value::as_object)
-            .and_then(|permissions| permissions.get("shell_allowlist")),
-        None
+            .and_then(|permissions| permissions.get("shell_allowlist"))
+            .and_then(Value::as_object)
+            .and_then(|allowlist| allowlist.get("executables"))
+            .and_then(Value::as_array),
+        Some(&vec![Value::String("sh".to_string())])
+    );
+    assert_eq!(
+        tool_flow_config
+            .get("permissions")
+            .and_then(Value::as_object)
+            .and_then(|permissions| permissions.get("shell_allowlist"))
+            .and_then(Value::as_object)
+            .and_then(|allowlist| allowlist.get("cwd_roots"))
+            .and_then(Value::as_array),
+        Some(&vec![Value::String(".".to_string())])
     );
     assert_eq!(
         tool_flow_config
@@ -1148,7 +1154,7 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
     assert_eq!(
         tool_flow_profile.get("tools").and_then(Value::as_array),
         Some(&vec![
-            Value::String("fs.write".to_string()),
+            Value::String("shell.run".to_string()),
             Value::String("fs.read".to_string()),
             Value::String("edit.hashline_scan".to_string()),
             Value::String("edit.hashline_apply".to_string()),
@@ -1164,7 +1170,7 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
     );
     assert_eq!(
         profile_permissions.get("shell").and_then(Value::as_str),
-        Some("deny")
+        Some("allow")
     );
     assert_eq!(
         profile_permissions.get("network").and_then(Value::as_str),
@@ -1350,10 +1356,87 @@ fn prepare_live_prompt_compat_edit_run_config_builds_restricted_profile() {
 }
 
 #[test]
-fn example_tool_audit_profile_covers_signoff_surface_and_gpt_5_4_mini_baseline() {
-    let repo_root = repo_root();
-    let config = load_json5_config(&repo_root.join("configs").join("harness.example.jsonc"))
+fn example_config_ships_canonical_plan_build_and_audit_profiles() {
+    let config = load_json5_config(&repo_root().join("configs").join("harness.example.jsonc"))
         .expect("load shipped example config");
+
+    assert_eq!(
+        config
+            .get("ui")
+            .and_then(|ui| ui.get("default_profile"))
+            .and_then(Value::as_str),
+        Some("plan")
+    );
+
+    let plan = config
+        .get("profiles")
+        .and_then(Value::as_object)
+        .and_then(|profiles| profiles.get("plan"))
+        .and_then(Value::as_object)
+        .expect("plan profile present in example config");
+    assert_eq!(plan.get("plan_mode").and_then(Value::as_bool), Some(true));
+    assert_eq!(
+        plan.get("exit_target_profile").and_then(Value::as_str),
+        Some("build")
+    );
+    assert_eq!(
+        plan.get("model_ref").and_then(Value::as_str),
+        Some("default:gpt-5.4")
+    );
+    let plan_tools = plan
+        .get("tools")
+        .and_then(Value::as_array)
+        .expect("plan tools array present");
+    for required_tool in [
+        "plan.exit",
+        "todo.write",
+        "todo.read",
+        "user.question",
+        "search.web",
+        "web.fetch",
+        "search.code",
+        "code.lsp",
+        "agent.spawn",
+    ] {
+        assert!(
+            plan_tools.contains(&Value::String(required_tool.to_string())),
+            "plan should expose {required_tool} in the shipped example config"
+        );
+    }
+    let plan_prompt = plan
+        .get("system_prompt")
+        .and_then(Value::as_str)
+        .expect("plan system prompt present");
+    assert!(plan_prompt.contains("plan.exit"));
+    assert!(plan_prompt.contains("hand off"));
+
+    let build = config
+        .get("profiles")
+        .and_then(Value::as_object)
+        .and_then(|profiles| profiles.get("build"))
+        .and_then(Value::as_object)
+        .expect("build profile present in example config");
+    assert_eq!(
+        build.get("model_ref").and_then(Value::as_str),
+        Some("default:gpt-5.4-mini")
+    );
+    let build_tools = build
+        .get("tools")
+        .and_then(Value::as_array)
+        .expect("build tools array present");
+    for required_tool in [
+        "fs.write",
+        "shell.run",
+        "edit.hashline_apply",
+        "edit.hashline_scan",
+        "tool.batch",
+        "agent.spawn",
+    ] {
+        assert!(
+            build_tools.contains(&Value::String(required_tool.to_string())),
+            "build should expose {required_tool} in the shipped example config"
+        );
+    }
 
     let tool_audit = config
         .get("profiles")
@@ -1457,52 +1540,16 @@ fn example_tool_audit_profile_covers_signoff_surface_and_gpt_5_4_mini_baseline()
         Some("tool_audit")
     );
 
-    let skills = config
-        .get("skills")
+    let deep_compat = config
+        .get("profiles")
         .and_then(Value::as_object)
-        .expect("example config skills object present");
-    let project_roots = skills
-        .get("project_roots")
-        .and_then(Value::as_array)
-        .expect("example config project_roots present");
+        .and_then(|profiles| profiles.get("deep_compat"))
+        .and_then(Value::as_object)
+        .expect("deep_compat profile present in example config");
     assert_eq!(
-        project_roots,
-        &vec![
-            Value::String(".opencode/skills".to_string()),
-            Value::String(".claude/skills".to_string()),
-            Value::String(".agents/skills".to_string()),
-        ]
+        deep_compat.get("tool_surface").and_then(Value::as_str),
+        Some("compat")
     );
-
-    let starter_skill = repo_root.join(".agents/skills/rust-best-practices/SKILL.md");
-    assert!(
-        starter_skill.exists(),
-        "expected shipped starter skill at {}",
-        starter_skill.display()
-    );
-}
-
-#[test]
-fn live_proxy_preflight_report_summary_mentions_portable_visual_baseline() {
-    let report = LiveProxyPreflightReport {
-        source_config_path: PathBuf::from("configs/harness.example.jsonc"),
-        provider_name: "default".to_string(),
-        model_id: "gpt-5.4-mini".to_string(),
-        vision_model_id: "gpt-5.4-mini".to_string(),
-        profile: LIVE_PROXY_TOOL_FLOW_PROFILE.to_string(),
-        endpoint_path: RESPONSES_ENDPOINT_PATH,
-        base_url: "http://127.0.0.1:4242/v1".to_string(),
-        socket_address: "127.0.0.1:4242".to_string(),
-        harness_bin: PathBuf::from("target/debug/harness"),
-        viewport_preset: "desktop",
-        capture_strategy: LIVE_PROXY_CAPTURE_STRATEGY,
-        tool_flow_bootstrap_tool: LIVE_TOOL_FLOW_BOOTSTRAP_TOOL_ID,
-    };
-
-    let summary = report.summary_text();
-
-    assert!(summary.contains(LIVE_PROXY_CAPTURE_STRATEGY));
-    assert!(summary.contains(LIVE_TOOL_FLOW_BOOTSTRAP_TOOL_ID));
 }
 
 #[test]
@@ -1560,14 +1607,17 @@ fn tool_flow_evidence_detects_ordered_same_file_sequence() {
     let events_body = vec![
         requested(
             1,
-            "call-write",
-            "fs.write",
+            "call-shell",
+            "shell.run",
             json!({
-                "path": LIVE_TOOL_FLOW_RELATIVE_PATH,
-                "content": "alpha\nbeta\ngamma\n",
+                "cmd": "sh",
+                "args": [
+                    "-lc",
+                    format!("printf 'alpha\\nbeta\\ngamma\\n' > {LIVE_TOOL_FLOW_RELATIVE_PATH}")
+                ],
             }),
         ),
-        finished(2, "call-write"),
+        finished(2, "call-shell"),
         requested(
             3,
             "call-read-1",
@@ -1728,14 +1778,17 @@ fn tool_flow_evidence_collect_many_merges_stage_runs() {
         vec![
             requested(
                 1,
-                "call-write",
-                "fs.write",
+                "call-shell",
+                "shell.run",
                 json!({
-                    "path": LIVE_TOOL_FLOW_RELATIVE_PATH,
-                    "content": "alpha\nbeta\ngamma\n",
+                    "cmd": "sh",
+                    "args": [
+                        "-lc",
+                        format!("printf 'alpha\\nbeta\\ngamma\\n' > {LIVE_TOOL_FLOW_RELATIVE_PATH}")
+                    ],
                 }),
             ),
-            finished(2, "call-write"),
+            finished(2, "call-shell"),
         ],
     );
     let first_read_run = write_run(
@@ -1994,23 +2047,23 @@ fn live_tui_smoke_helpers_reuse_cliproxy_config_and_endpoint_rules() {
         Some("Prepared override-model")
     );
 
-    let profiles = prepared_config
+    let categories = prepared_config
         .get("profiles")
         .and_then(Value::as_object)
         .expect("prepared config profiles object");
     assert_eq!(
-        profiles
+        categories
             .get("deep")
             .and_then(Value::as_object)
-            .and_then(|profile| profile.get("model_ref"))
+            .and_then(|category| category.get("model_ref"))
             .and_then(Value::as_str),
         Some("default:configured-model")
     );
     assert_eq!(
-        profiles
+        categories
             .get("tui_smoke_profile")
             .and_then(Value::as_object)
-            .and_then(|profile| profile.get("model_ref"))
+            .and_then(|category| category.get("model_ref"))
             .and_then(Value::as_str),
         Some("default:override-model")
     );
@@ -3024,6 +3077,12 @@ fn vision_verdict_satisfies(status: &str) -> bool {
 }
 
 fn run_live_proxy_preflight(repo_root: &Path) -> Result<LiveProxyPreflightReport, String> {
+    if !cfg!(target_os = "linux") {
+        return Err(
+            "live proxy preflight currently expects Linux for the TUI live lane".to_string(),
+        );
+    }
+
     let request = resolve_live_prompt_request(repo_root)?;
     let run_config = prepare_live_prompt_run_config(&request)?;
     let config = load_json5_config(&request.source_config_path)?;
@@ -3058,8 +3117,6 @@ fn run_live_proxy_preflight(repo_root: &Path) -> Result<LiveProxyPreflightReport
         socket_address,
         harness_bin: resolve_harness_bin(),
         viewport_preset: selected_live_viewport().name,
-        capture_strategy: LIVE_PROXY_CAPTURE_STRATEGY,
-        tool_flow_bootstrap_tool: LIVE_TOOL_FLOW_BOOTSTRAP_TOOL_ID,
     })
 }
 
@@ -3107,7 +3164,7 @@ fn prepare_prompt_run_config_with_contract(
     let selected_model = selected_model.trim().to_string();
 
     rewrite_selected_provider_to_default(&mut config, provider_name)?;
-    normalize_profile_model_refs_to_default(&mut config)?;
+    normalize_category_model_refs_to_default(&mut config)?;
     ensure_provider_model_entry(&mut config, &selected_model)?;
     ensure_profile_model_ref(&mut config, profile_name, &selected_model)?;
     disable_prepared_determinism(&mut config)?;
@@ -3404,9 +3461,9 @@ fn run_live_tui_tool_flow(
         &run_config.tool_flow.session_dir,
         &run_config.canonical_relative_path,
         &tool_flow_namespace,
-        LIVE_TOOL_FLOW_BOOTSTRAP_TOOL_ID,
+        "shell.run",
         1,
-        remaining_before(deadline, "fs.write tool completion")?,
+        remaining_before(deadline, "shell.run tool completion")?,
     )?;
     let create_events = wait_for_tui_provider_turn_count(
         &run_config.tool_flow.session_dir,
@@ -3419,22 +3476,22 @@ fn run_live_tui_tool_flow(
     wait_for_screen_contains(
         &mut stage.parser,
         &stage.output_rx,
-        LIVE_TOOL_FLOW_BOOTSTRAP_TOOL_ID,
+        "shell.run",
         Duration::from_secs(5),
     )?;
-    let file_write_finished_checkpoint = live_visual.capture_checkpoint_with_metadata(
-        CHECKPOINT_FILE_WRITE_FINISHED,
+    let shell_create_finished_checkpoint = live_visual.capture_checkpoint_with_metadata(
+        CHECKPOINT_SHELL_CREATE_FINISHED,
         &stage.parser,
         &[
             LIVE_TUI_READY_MARKER,
-            LIVE_TOOL_FLOW_BOOTSTRAP_TOOL_ID,
+            "shell.run",
             LIVE_TOOL_FLOW_RELATIVE_PATH,
         ],
-        &FocusCapture::anchored_exact(LIVE_TOOL_FLOW_BOOTSTRAP_TOOL_ID, 28, 5),
+        &FocusCapture::anchored_exact("shell.run", 28, 5),
         Some(json!({
             "purpose": "tool-flow-stage-finished",
             "stage": "create",
-            "stage_tool": LIVE_TOOL_FLOW_BOOTSTRAP_TOOL_ID,
+            "stage_tool": "shell.run",
             "session_dir": run_config.tool_flow.session_dir.display().to_string(),
         })),
     )?;
@@ -3606,7 +3663,7 @@ fn run_live_tui_tool_flow(
         manifest_jsonl_path: run_finished_checkpoint.manifest_jsonl_path().to_path_buf(),
         startup_png: startup_checkpoint.png_path().to_path_buf(),
         draft_visible_png: draft_visible_checkpoint.png_path().to_path_buf(),
-        file_write_finished_png: file_write_finished_checkpoint.png_path().to_path_buf(),
+        shell_create_finished_png: shell_create_finished_checkpoint.png_path().to_path_buf(),
         hashline_scan_finished_png: hashline_scan_finished_checkpoint.png_path().to_path_buf(),
         run_finished_png: run_finished_checkpoint.png_path().to_path_buf(),
     })
@@ -3834,10 +3891,10 @@ fn live_vision_checkpoint_contracts() -> &'static [LiveVisionCheckpointContract]
             expected_markers: &[LIVE_TOOL_FLOW_DRAFT_MARKER],
         },
         LiveVisionCheckpointContract {
-            checkpoint_id: CHECKPOINT_FILE_WRITE_FINISHED,
+            checkpoint_id: CHECKPOINT_SHELL_CREATE_FINISHED,
             expected_markers: &[
                 "UI shows file-creation progress for tmp/live_tool_flow.md.",
-                LIVE_TOOL_FLOW_BOOTSTRAP_TOOL_ID,
+                "shell.run",
                 LIVE_TOOL_FLOW_RELATIVE_PATH,
             ],
         },
@@ -4144,7 +4201,7 @@ fn tool_call_targets_path(tool_id: &str, args_summary: &str, canonical_path: &st
     let args_json = serde_json::from_str::<Value>(args_summary).ok();
 
     match tool_id {
-        "fs.write" | "fs.read" | "edit.hashline_scan" | "edit.hashline_apply" => args_json
+        "fs.read" | "edit.hashline_scan" | "edit.hashline_apply" => args_json
             .as_ref()
             .and_then(|value| value.get("path"))
             .and_then(Value::as_str)
@@ -4774,23 +4831,23 @@ fn rewrite_selected_provider_to_default(
     Ok(())
 }
 
-fn normalize_profile_model_refs_to_default(config: &mut Value) -> Result<(), String> {
+fn normalize_category_model_refs_to_default(config: &mut Value) -> Result<(), String> {
     let root = config
         .as_object_mut()
         .ok_or_else(|| "config root must be a JSON object".to_string())?;
-    let profiles = root
+    let categories = root
         .get_mut("profiles")
         .and_then(Value::as_object_mut)
         .ok_or_else(|| "config.profiles must be an object".to_string())?;
 
-    for (profile_name, profile_value) in profiles.iter_mut() {
-        let Some(profile_obj) = profile_value.as_object_mut() else {
-            return Err(format!("profile `{profile_name}` must be an object"));
+    for (category_name, category_value) in categories.iter_mut() {
+        let Some(category_obj) = category_value.as_object_mut() else {
+            return Err(format!("profile `{category_name}` must be an object"));
         };
 
-        let model_ref = profile_obj
+        let model_ref = category_obj
             .get("model_ref")
-            .or_else(|| profile_obj.get("modelRef"))
+            .or_else(|| category_obj.get("modelRef"))
             .and_then(Value::as_str)
             .map(str::trim)
             .unwrap_or_default();
@@ -4807,7 +4864,7 @@ fn normalize_profile_model_refs_to_default(config: &mut Value) -> Result<(), Str
             continue;
         }
 
-        profile_obj.insert(
+        category_obj.insert(
             "model_ref".to_string(),
             Value::String(format!("default:{model_id}")),
         );
@@ -4825,13 +4882,13 @@ fn ensure_profile_model_ref(
         .as_object_mut()
         .ok_or_else(|| "config root must be a JSON object".to_string())?;
 
-    let profiles = root
+    let categories = root
         .entry("profiles".to_string())
         .or_insert_with(|| Value::Object(serde_json::Map::new()))
         .as_object_mut()
         .ok_or_else(|| "config.profiles must be an object".to_string())?;
 
-    let mut profile = profiles.get(profile_name).cloned().unwrap_or_else(|| {
+    let mut profile = categories.get(profile_name).cloned().unwrap_or_else(|| {
         json!({
             "description": "Live proxy smoke profile",
             "tools": []
@@ -4852,7 +4909,7 @@ fn ensure_profile_model_ref(
         .entry("tools".to_string())
         .or_insert_with(|| Value::Array(Vec::new()));
 
-    profiles.insert(profile_name.to_string(), profile);
+    categories.insert(profile_name.to_string(), profile);
     Ok(())
 }
 
@@ -5013,6 +5070,19 @@ fn apply_tool_flow_contract(
     let root = config
         .as_object_mut()
         .ok_or_else(|| "config root must be a JSON object".to_string())?;
+    let permissions = root
+        .entry("permissions".to_string())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()))
+        .as_object_mut()
+        .ok_or_else(|| "config.permissions must be an object".to_string())?;
+    permissions.insert(
+        "shell_allowlist".to_string(),
+        json!({
+            "executables": ["sh"],
+            "cwd_roots": ["."],
+        }),
+    );
+
     let categories = root
         .get_mut("profiles")
         .and_then(Value::as_object_mut)
@@ -5029,7 +5099,7 @@ fn apply_tool_flow_contract(
         "permissions".to_string(),
         json!({
             "edit": "allow",
-            "shell": "deny",
+            "shell": "allow",
             "network": "allow",
             "question": "allow",
         }),
@@ -5057,11 +5127,11 @@ fn apply_restricted_tools_contract(
     let root = config
         .as_object_mut()
         .ok_or_else(|| "config root must be a JSON object".to_string())?;
-    let profiles = root
+    let categories = root
         .get_mut("profiles")
         .and_then(Value::as_object_mut)
         .ok_or_else(|| "config.profiles must be an object".to_string())?;
-    let profile = profiles
+    let profile = categories
         .get_mut(profile_name)
         .and_then(Value::as_object_mut)
         .ok_or_else(|| format!("profile `{profile_name}` must be present and be an object"))?;
@@ -5480,8 +5550,8 @@ fn build_live_proxy_test_config(
         }),
     );
 
-    let mut profiles = serde_json::Map::new();
-    profiles.insert(
+    let mut categories = serde_json::Map::new();
+    categories.insert(
         "deep".to_string(),
         json!({
             "description": "Deep profile",
@@ -5492,7 +5562,7 @@ fn build_live_proxy_test_config(
 
     json!({
         "providers": providers,
-        "profiles": profiles,
+        "profiles": categories,
         "permissions": {
             "defaults": {
                 "edit": "allow",

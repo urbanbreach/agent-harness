@@ -30,7 +30,7 @@ pub fn load_harness_config(path: &Path) -> Result<HarnessConfig, String> {
 
 pub fn interactive_config_guidance() -> String {
     format!(
-        "interactive mode requires a config file; pass --config <path> or create {}. If you want the demo/mock UI instead, re-run with --mock",
+        "interactive mode requires a config file; pass --config <path> or create {}. A starting point lives at configs/harness.example.jsonc and defaults to the plan -> build handoff. If you want the demo/mock UI instead, re-run with --mock",
         CONFIG_SEARCH_LOCATIONS.join(" or ")
     )
 }

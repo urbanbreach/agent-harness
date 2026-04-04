@@ -135,7 +135,7 @@ fn main() -> ExitCode {
             ConfigCommands::Validate => {
                 let Some(config_path) = resolve_config_path(config.as_deref()) else {
                     eprintln!(
-                        "no config file found; pass --config <path> or create ./harness.jsonc or $XDG_CONFIG_HOME/harness/config.jsonc"
+                        "no config file found; pass --config <path> or create ./harness.jsonc or $XDG_CONFIG_HOME/harness/config.jsonc. A starting point lives at configs/harness.example.jsonc"
                     );
                     return ExitCode::from(2);
                 };

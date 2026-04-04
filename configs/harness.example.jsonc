@@ -1,28 +1,28 @@
 {
-  $schema: "../harness.schema.json",
-
-  // The starter skill pack ships in `.agents/skills` so users can override any
-  // bundled skill by placing a same-named skill earlier in the search order
-  // (`.opencode/skills` or `.claude/skills`) without editing the shipped files.
-  skills: {
-    project_roots: [".opencode/skills", ".claude/skills", ".agents/skills"],
-    global_roots: ["~/.config/opencode/skills", "~/.claude/skills", "~/.agents/skills"],
-    walk_to_git_root: true,
-    permissions: {
-      "*": "allow",
-      "internal-*": "deny",
-      "experimental-*": "ask",
-    },
-  },
-
+  // Canonical first-run workflow:
+  //   1. start in `plan`
+  //   2. approve the plan
+  //   3. let `plan.exit` hand off into `build`
   providers: {
     default: {
       type: "openai_compatible",
-      base_url: "http://127.0.0.1:8317/v1",
+      base_url: "https://api.openai.com/v1",
       api_key: "${OPENAI_API_KEY:-sk-zerolimit}",
       api_mode: "responses",
       timeout_ms: 60000,
       models: {
+        "gpt-5.4": {
+          display_name: "GPT-5.4",
+          metadata: {
+            family: "gpt-5",
+            release_stage: "stable",
+            context_window_tokens: 400000,
+            supports_tool_calls: true,
+            supports_reasoning_summaries: true,
+          },
+          max_input_tokens: 400000,
+          max_output_tokens: 32768,
+        },
         "gpt-5.4-mini": {
           display_name: "GPT-5.4 Mini",
           metadata: {
@@ -39,19 +39,10 @@
               display_name: "Deterministic",
               max_output_tokens: 4096,
               metadata: {
-                description: "Deterministic tool-audit baseline",
+                description: "Low-variance evidence collection profile.",
                 reasoning_effort: "minimal",
                 text_verbosity: "low",
                 recommended_for: "tool_audit",
-              },
-            },
-            creative: {
-              display_name: "Creative",
-              metadata: {
-                description: "Higher-verbosity exploratory mode",
-                reasoning_effort: "high",
-                text_verbosity: "high",
-                recommended_for: "writer",
               },
             },
           },
@@ -59,66 +50,106 @@
       },
     },
   },
-
   profiles: {
-    deep: {
-      description: "Default native execution profile",
-      model_ref: "default:gpt-5.4-mini",
+    plan: {
+      description: "Planning lane: produce an approved plan and hand off to build.",
+      system_prompt: "Stay in planning mode until the user approves the plan. Use read-only investigation tools, capture the plan in todos or questions when helpful, and call plan.exit only after the user explicitly approves implementation so the harness can hand off to build.",
+      model_ref: "default:gpt-5.4",
+      tool_surface: "native",
+      plan_mode: true,
+      exit_target_profile: "build",
+      max_iters: 16,
+      permissions: {
+        edit: "deny",
+        shell: "deny",
+        network: "allow",
+        question: "allow",
+        task: "allow",
+        webfetch: "allow",
+        websearch: "allow",
+        codesearch: "allow",
+        lsp: "allow",
+      },
       tools: [
-        "fs.read",
-        "fs.list",
-        "fs.glob",
-        "fs.grep",
-        "shell.exec",
-        "fs.write",
-        "edit.apply_patch",
-        "web.fetch",
         "todo.write",
         "todo.read",
-        "agent.spawn",
-        "tool.batch",
-        "skill.load",
         "user.question",
-        "web.search",
-        "code.search",
+        "skill.load",
+        "search.web",
+        "web.fetch",
+        "search.code",
         "code.lsp",
-        "tool.invalid",
+        "fs.read",
+        "fs.glob",
+        "fs.grep",
+        "fs.ls",
+        "tool.batch",
+        "agent.spawn",
+        "plan.exit",
       ],
     },
-
+    build: {
+      description: "Implementation lane: execute an approved plan and verify the result.",
+      system_prompt: "Implement the approved plan after the plan.exit handoff. Edit files, run verification, use subagents when they materially help, and finish with concrete evidence, changed files, and remaining risks.",
+      model_ref: "default:gpt-5.4-mini",
+      tool_surface: "native",
+      max_iters: 24,
+      permissions: {
+        edit: "allow",
+        shell: "allow",
+        network: "allow",
+        question: "allow",
+        task: "allow",
+        webfetch: "allow",
+        websearch: "allow",
+        codesearch: "allow",
+        lsp: "allow",
+      },
+      tools: [
+        "todo.write",
+        "todo.read",
+        "user.question",
+        "skill.load",
+        "search.web",
+        "web.fetch",
+        "search.code",
+        "code.lsp",
+        "fs.read",
+        "fs.glob",
+        "fs.grep",
+        "fs.ls",
+        "fs.write",
+        "shell.run",
+        "edit.hashline_apply",
+        "edit.hashline_scan",
+        "tool.batch",
+        "agent.spawn",
+      ],
+    },
     tool_audit: {
-      description: "Evidence-first signoff profile for native tool coverage",
+      description: "Evidence-first signoff profile for validating the shipped tool surface.",
+      system_prompt: "Collect signoff evidence across skills, question flow, hooks evidence, LSP evidence, subagent execution, variants, model metadata, and HARNESS_QUESTION_ANSWERS handling before declaring the config healthy.",
       model_ref: "default:gpt-5.4-mini",
       variant: "deterministic",
+      tool_surface: "native",
       max_iters: 20,
       tool_failure_mode: "continue_as_tool_message",
       tools: [
-        "fs.read",
-        "fs.list",
-        "fs.glob",
-        "fs.grep",
-        "shell.exec",
-        "fs.write",
-        "edit.apply_patch",
-        "web.fetch",
-        "todo.write",
-        "todo.read",
-        "agent.spawn",
-        "tool.batch",
         "skill.load",
         "user.question",
-        "web.search",
-        "code.search",
         "code.lsp",
+        "agent.spawn",
+        "tool.batch",
         "tool.invalid",
+        "todo.write",
+        "todo.read",
       ],
-      system_prompt: "Gather evidence before signoff. Use skills when useful, verify question flow with HARNESS_QUESTION_ANSWERS, capture hooks evidence and LSP evidence, and mention subagent, variants, and model metadata when auditing tool behavior.",
     },
-
     deep_compat: {
-      description: "OpenCode-compatible parity profile",
+      description: "Compat-surface regression profile for parity coverage.",
       model_ref: "default:gpt-5.4-mini",
       tool_surface: "compat",
+      max_iters: 20,
       tools: [
         "read",
         "list",
@@ -141,12 +172,47 @@
       ],
     },
   },
-
+  permissions: {
+    defaults: {
+      edit: "ask",
+      shell: "ask",
+      network: "ask",
+      question: "ask",
+      task: "ask",
+      webfetch: "ask",
+      websearch: "ask",
+      codesearch: "ask",
+      lsp: "ask",
+    },
+    shell_allowlist: {
+      executables: ["bash", "git", "cargo", "ls", "rg"],
+      cwd_roots: ["."],
+    },
+  },
+  runtime: {
+    background_tasks: {
+      default_concurrency: 2,
+      provider_concurrency: 2,
+      model_concurrency: 2,
+      stale_timeout_ms: 30000,
+      message_staleness_timeout_ms: 10000,
+    },
+    session_dir: "./.harness/sessions",
+    deterministic: {
+      enabled: false,
+      seed: 42,
+    },
+  },
+  integrations: {
+    remote_search: {
+      endpoint: "https://mcp.exa.ai/mcp",
+    },
+  },
   hooks: {
     lifecycle: [
       {
         event: "run_started",
-        command: ["bash", "-lc", "printf 'run started\\n'"],
+        command: ["bash", "-lc", "printf 'run started\n'"],
         timeout_ms: 4000,
         critical: false,
         env: {
@@ -155,13 +221,22 @@
       },
       {
         event: "tool_call_finished",
-        command: ["bash", "-lc", "printf 'tool done\\n'"],
+        command: ["bash", "-lc", "printf 'tool finished\n'"],
         timeout_ms: 4000,
         critical: false,
       },
     ],
   },
-
+  skills: {
+    project_roots: [".opencode/skills", ".claude/skills", ".agents/skills"],
+    global_roots: ["~/.config/opencode/skills", "~/.claude/skills", "~/.agents/skills"],
+    walk_to_git_root: true,
+    permissions: {
+      "*": "allow",
+      "internal-*": "deny",
+      "experimental-*": "ask",
+    },
+  },
   lsp: {
     disabled: false,
     servers: {
@@ -178,60 +253,10 @@
           },
         },
       },
-      typescript: {
-        disabled: false,
-        command: ["typescript-language-server", "--stdio"],
-        extensions: [".ts", ".tsx", ".js", ".jsx"],
-        initialization: {
-          preferences: {
-            importModuleSpecifierPreference: "relative",
-          },
-        },
-      },
     },
   },
-
-  permissions: {
-    defaults: {
-      edit: "allow",
-      shell: "allow",
-      network: "allow",
-      question: "ask",
-      task: "ask",
-      webfetch: "deny",
-      websearch: "deny",
-      codesearch: "deny",
-      lsp: "allow",
-    },
-    shell_allowlist: {
-      executables: ["git", "bash", "sh"],
-      cwd_roots: ["."],
-    },
-  },
-
-  runtime: {
-    background_tasks: {
-      default_concurrency: 2,
-      provider_concurrency: 2,
-      model_concurrency: 2,
-      stale_timeout_ms: 30000,
-      message_staleness_timeout_ms: 10000,
-    },
-    session_dir: ".agent-harness/sessions",
-    deterministic: {
-      enabled: false,
-      seed: 42,
-    },
-  },
-
-  integrations: {
-    remote_search: {
-      endpoint: "https://mcp.exa.ai/mcp",
-    },
-  },
-
   ui: {
-    default_profile: "deep",
+    default_profile: "plan",
     parity: {
       variant_cycle_enabled: true,
       child_session_navigation_enabled: true,
@@ -243,5 +268,8 @@
         session_parent: "ctrl+[",
       },
     },
+  },
+  logging: {
+    level: "info",
   },
 }

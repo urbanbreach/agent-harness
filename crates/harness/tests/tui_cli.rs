@@ -675,6 +675,10 @@ fn tui_cli_without_config_prints_config_guidance() {
         "expected XDG config location, got:\n{stderr}"
     );
     assert!(
+        stderr.contains("configs/harness.example.jsonc"),
+        "expected shipped example config hint, got:\n{stderr}"
+    );
+    assert!(
         stderr.contains("--mock"),
         "expected explicit --mock escape hatch, got:\n{stderr}"
     );
