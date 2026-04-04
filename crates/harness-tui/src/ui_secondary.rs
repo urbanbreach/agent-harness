@@ -545,6 +545,7 @@ pub(crate) fn exact_test_operator_rail_section_model_keeps_native_prefix_tools_o
         vec![
             "Context".to_string(),
             "MCP · idle".to_string(),
+            "LSP · idle".to_string(),
             "Todo · 1".to_string(),
             "Modified Files · 1".to_string(),
         ]
@@ -629,7 +630,7 @@ pub(crate) fn exact_test_operator_rail_section_model_counts_generic_mcp_activity
     assert_eq!(model.body.sections[1].heading(), "MCP · 1");
     assert_eq!(
         model.body.sections[1].items(),
-        ["mcp.fixture.tool.call · completed".to_string()]
+        ["fixture.tool.call · completed".to_string()]
     );
 }
 

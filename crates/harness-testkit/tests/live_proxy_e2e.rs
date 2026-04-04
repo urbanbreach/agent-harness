@@ -23,7 +23,7 @@ use support::live_visual::{
     assert_checkpoint_markers, default_live_run_metadata, selected_live_viewport, FocusCapture,
     LiveVisualRun, LiveVisualRunOptions, CHECKPOINT_DRAFT_VISIBLE,
     CHECKPOINT_HASHLINE_SCAN_FINISHED, CHECKPOINT_PERMISSION_REQUESTED, CHECKPOINT_RUN_FINISHED,
-    CHECKPOINT_SHELL_CREATE_FINISHED, CHECKPOINT_STARTUP,
+    CHECKPOINT_FILE_WRITE_FINISHED, CHECKPOINT_STARTUP,
 };
 use support::pty_process::{spawn_pty_process, SpawnedPtyProcess};
 use vt100::Parser as VtParser;
@@ -3480,7 +3480,7 @@ fn run_live_tui_tool_flow(
         Duration::from_secs(5),
     )?;
     let shell_create_finished_checkpoint = live_visual.capture_checkpoint_with_metadata(
-        CHECKPOINT_SHELL_CREATE_FINISHED,
+        CHECKPOINT_FILE_WRITE_FINISHED,
         &stage.parser,
         &[
             LIVE_TUI_READY_MARKER,
@@ -3891,7 +3891,7 @@ fn live_vision_checkpoint_contracts() -> &'static [LiveVisionCheckpointContract]
             expected_markers: &[LIVE_TOOL_FLOW_DRAFT_MARKER],
         },
         LiveVisionCheckpointContract {
-            checkpoint_id: CHECKPOINT_SHELL_CREATE_FINISHED,
+            checkpoint_id: CHECKPOINT_FILE_WRITE_FINISHED,
             expected_markers: &[
                 "UI shows file-creation progress for tmp/live_tool_flow.md.",
                 "shell.run",
