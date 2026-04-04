@@ -395,6 +395,20 @@ pub const NATIVE_TOOL_PARITY_MATRIX: &[NativeToolParityEntry] = &[
         migration_status: NativeToolMigrationStatus::NativeUpgradeInProgress,
     },
     NativeToolParityEntry {
+        canonical_id: "github.issue",
+        aliases: &[],
+        permission_class: NativeToolPermissionClass::Network,
+        provider_exposure: NativeToolProviderExposure::ExplicitOptIn,
+        migration_status: NativeToolMigrationStatus::NativeStable,
+    },
+    NativeToolParityEntry {
+        canonical_id: "github.pull_request",
+        aliases: &[],
+        permission_class: NativeToolPermissionClass::Network,
+        provider_exposure: NativeToolProviderExposure::ExplicitOptIn,
+        migration_status: NativeToolMigrationStatus::NativeStable,
+    },
+    NativeToolParityEntry {
         canonical_id: "code.lsp",
         aliases: &["lsp"],
         permission_class: NativeToolPermissionClass::ReadOnly,

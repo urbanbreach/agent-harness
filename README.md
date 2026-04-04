@@ -2,6 +2,96 @@
 
 `agent-harness` is a Rust workspace for an event-sourced agent runtime with a CLI entrypoint, coordinator/runtime core, provider adapters, built-in tools, a Ratatui TUI, and deterministic PTY/live verification.
 
+Built-in GitHub issue and pull request support is available through the native `github.issue` and `github.pull_request` tools.
+
+## GitHub integration
+
+The harness now ships a first-class GitHub REST integration for common issue and PR workflows.
+
+### Tool coverage
+
+- `github.issue`: `get`, `list`, `comment`, `close`, `reopen`
+- `github.pull_request`: `get`, `list`, `comment`, `create`
+
+### Authentication and repository selection
+
+The tools resolve configuration from environment variables:
+
+- `HARNESS_GITHUB_TOKEN` (preferred)
+- `GITHUB_TOKEN` or `GH_TOKEN`
+- `HARNESS_GITHUB_REPOSITORY` (`owner/repo`)
+- `GITHUB_REPOSITORY` (`owner/repo`)
+- `HARNESS_GITHUB_API_BASE_URL` for GitHub Enterprise or proxies
+
+Read operations can run without a token against public repositories. Write operations require a token.
+
+### Permissions
+
+Both tools are native network tools, so they run through the harness network permission gate and should be added explicitly to the profile toolset that needs them.
+
+Example profile snippet:
+
+```jsonc
+{
+  "profiles": {
+    "deep": {
+      "description": "Deep work with GitHub support",
+      "model_ref": "default:gpt-5.4",
+      "tools": [
+        "fs.read",
+        "fs.grep",
+        "shell.run",
+        "github.issue",
+        "github.pull_request"
+      ]
+    }
+  }
+}
+```
+
+### Workflow examples
+
+Read an issue:
+
+```json
+{
+  "operation": "get",
+  "issue_number": 19
+}
+```
+
+Comment on an issue:
+
+```json
+{
+  "operation": "comment",
+  "issue_number": 19,
+  "body": "Implemented in commit abc1234."
+}
+```
+
+Close an issue:
+
+```json
+{
+  "operation": "close",
+  "issue_number": 19
+}
+```
+
+Create a pull request:
+
+```json
+{
+  "operation": "create",
+  "title": "Add first-class GitHub integration",
+  "body": "Implements native GitHub issue and PR tools.",
+  "head": "feature/github-tools",
+  "base": "main",
+  "draft": true
+}
+```
+
 ## Session discovery and recovery
 
 The CLI now supports both public session discovery and headless recovery for saved interactive runs:
