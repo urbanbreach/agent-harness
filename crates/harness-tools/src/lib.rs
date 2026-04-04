@@ -49,6 +49,9 @@ use agent_ops::{AgentOpsExecutor, AgentSpawnTool, ToolBatchTool};
 mod code_lsp;
 use code_lsp::{CodeLspExecutor, CodeLspTool};
 
+mod github;
+use github::{GitHubExecutor, GitHubIssueTool, GitHubPullRequestTool};
+
 mod lsp_support;
 
 mod opencode_compat;
@@ -70,6 +73,7 @@ pub fn coordinator_registry(shell_allowlist: ShellAllowlist) -> ToolRegistry {
     let control_plane_executor = Arc::new(ControlPlaneExecutor::new());
     let network_executor = Arc::new(NetworkExecutor::new());
     let code_lsp_executor = Arc::new(CodeLspExecutor::new());
+    let github_executor = Arc::new(GitHubExecutor::new());
     let workspace_edit_executor = Arc::new(WorkspaceEditExecutor::new());
 
     let mut registry = ToolRegistry::new();
@@ -102,6 +106,8 @@ pub fn coordinator_registry(shell_allowlist: ShellAllowlist) -> ToolRegistry {
     registry.register(Arc::new(CodeSearchCompatTool::new(
         network_executor.clone(),
     )));
+    registry.register(Arc::new(GitHubIssueTool::new(github_executor.clone())));
+    registry.register(Arc::new(GitHubPullRequestTool::new(github_executor)));
     registry.register(Arc::new(TodoWriteTool::new(control_plane_executor.clone())));
     registry.register(Arc::new(TodoWriteCompatTool::new(
         control_plane_executor.clone(),
@@ -550,6 +556,8 @@ mod tests {
             "fs.glob",
             "fs.ls",
             "fs.grep",
+            "github.issue",
+            "github.pull_request",
             "shell.run",
             "edit.hashline_apply",
             "edit.hashline_scan",
