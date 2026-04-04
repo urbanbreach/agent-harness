@@ -25,7 +25,23 @@ impl CodeLspExecutor {
         request: CodeLspRequest,
     ) -> Result<ToolResult, ToolError> {
         let operation = LspOperation::parse(&request.operation)?;
-        let position = LspPosition::from_one_based(request.line, request.character)?;
+        let position = if operation.requires_position() {
+            let line = request.line.ok_or_else(|| {
+                ToolError::InvalidArguments(format!(
+                    "line and character are required for {}",
+                    operation.as_str()
+                ))
+            })?;
+            let character = request.character.ok_or_else(|| {
+                ToolError::InvalidArguments(format!(
+                    "line and character are required for {}",
+                    operation.as_str()
+                ))
+            })?;
+            Some(LspPosition::from_one_based(line, character)?)
+        } else {
+            None
+        };
         let file_path = resolve_existing_path(ctx, &request.file_path)?;
         let response = tokio::task::spawn_blocking({
             let workspace_root = ctx.workspace_root.clone();
@@ -42,7 +58,7 @@ impl CodeLspExecutor {
         .await
         .map_err(|err| ToolError::Execution(format!("lsp task failed: {err}")))??;
         let operation_name = operation.as_str();
-        let display_text = render_display_text(operation_name, &response)?;
+        let display_text = render_display_text(operation, &response)?;
         Ok(ToolResult {
             display_text,
             structured_json: Some(json!({
@@ -76,8 +92,8 @@ impl CodeLspTool {
 pub(crate) struct CodeLspRequest {
     pub(crate) operation: String,
     pub(crate) file_path: String,
-    pub(crate) line: i32,
-    pub(crate) character: i32,
+    pub(crate) line: Option<i32>,
+    pub(crate) character: Option<i32>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -86,8 +102,8 @@ struct CodeLspArgs {
     operation: String,
     #[serde(rename = "filePath")]
     file_path: String,
-    line: i32,
-    character: i32,
+    line: Option<i32>,
+    character: Option<i32>,
 }
 
 #[async_trait]
@@ -101,16 +117,7 @@ impl Tool for CodeLspTool {
     }
 
     fn parameters_json_schema(&self) -> Value {
-        let mut schema = super::json_schema_for::<CodeLspArgs>();
-        if let Some(operation_schema) = schema
-            .get_mut("properties")
-            .and_then(Value::as_object_mut)
-            .and_then(|properties| properties.get_mut("operation"))
-            .and_then(Value::as_object_mut)
-        {
-            operation_schema.insert("enum".to_string(), json!(LspOperation::supported_names()));
-        }
-        schema
+        lsp_parameters_json_schema()
     }
 
     fn capability(&self) -> ToolCapability {
@@ -142,10 +149,70 @@ fn lsp_result_is_empty(value: &Value) -> bool {
     }
 }
 
+pub(crate) fn lsp_parameters_json_schema() -> Value {
+    let mut schema = super::json_schema_for::<CodeLspArgs>();
+    if let Some(properties) = schema.get_mut("properties").and_then(Value::as_object_mut) {
+        if let Some(operation_schema) = properties
+            .get_mut("operation")
+            .and_then(Value::as_object_mut)
+        {
+            operation_schema.insert("enum".to_string(), json!(LspOperation::supported_names()));
+        }
+        if let Some(line_schema) = properties.get_mut("line").and_then(Value::as_object_mut) {
+            line_schema.insert("minimum".to_string(), json!(1));
+        }
+        if let Some(character_schema) = properties
+            .get_mut("character")
+            .and_then(Value::as_object_mut)
+        {
+            character_schema.insert("minimum".to_string(), json!(1));
+        }
+    }
+
+    schema["oneOf"] = json!([
+        {
+            "type": "object",
+            "required": ["operation", "filePath"],
+            "properties": {
+                "operation": { "enum": ["fileDiagnostics", "workspaceDiagnostics"] }
+            }
+        },
+        {
+            "type": "object",
+            "required": ["operation", "filePath", "line", "character"],
+            "properties": {
+                "operation": {
+                    "enum": [
+                        "goToDefinition",
+                        "findReferences",
+                        "hover",
+                        "documentSymbol",
+                        "workspaceSymbol",
+                        "goToImplementation",
+                        "prepareCallHierarchy",
+                        "incomingCalls",
+                        "outgoingCalls"
+                    ]
+                }
+            }
+        }
+    ]);
+
+    schema
+}
+
 fn render_display_text(
-    operation_name: &str,
+    operation: LspOperation,
     response: &LspOperationResponse,
 ) -> Result<String, ToolError> {
+    if matches!(
+        operation,
+        LspOperation::FileDiagnostics | LspOperation::WorkspaceDiagnostics
+    ) {
+        return render_diagnostics_only_display_text(response);
+    }
+
+    let operation_name = operation.as_str();
     let mut text = if lsp_result_is_empty(&response.result) {
         format!("No results found for {operation_name}")
     } else {
@@ -160,6 +227,23 @@ fn render_display_text(
     }
 
     Ok(text)
+}
+
+fn render_diagnostics_only_display_text(
+    response: &LspOperationResponse,
+) -> Result<String, ToolError> {
+    let target = response
+        .result
+        .get("filePath")
+        .or_else(|| response.result.get("workspaceRoot"))
+        .and_then(Value::as_str)
+        .unwrap_or("requested target");
+    let diagnostics = format_diagnostics(&response.diagnostics);
+    if diagnostics.is_empty() {
+        Ok(format!("No diagnostics found for {target}"))
+    } else {
+        Ok(format!("Diagnostics for {target}:\n{diagnostics}"))
+    }
 }
 
 fn format_diagnostics(reports: &[LspDiagnosticReport]) -> String {

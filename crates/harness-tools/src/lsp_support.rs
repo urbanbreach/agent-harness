@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -10,6 +10,7 @@ use harness_core::config::{registered_lsp_config, LspConfig, LspServerConfig};
 use harness_core::tool::ToolError;
 use serde::Serialize;
 use serde_json::{json, Value};
+use walkdir::{DirEntry, WalkDir};
 
 const DEFAULT_LSP_BOOT_DELAY_MS: u64 = 150;
 const DEFAULT_LSP_RETRY_ATTEMPTS: usize = 8;
@@ -24,7 +25,11 @@ const SUPPORTED_LSP_OPERATION_NAMES: &[&str] = &[
     "prepareCallHierarchy",
     "incomingCalls",
     "outgoingCalls",
+    "fileDiagnostics",
+    "workspaceDiagnostics",
 ];
+
+const WORKSPACE_DIAGNOSTICS_SKIPPED_DIR_NAMES: &[&str] = &[".git", "target", "node_modules"];
 
 const RUST_ROOT_MARKERS: &[&str] = &["Cargo.toml", "rust-project.json"];
 const TYPESCRIPT_ROOT_MARKERS: &[&str] = &[
@@ -47,6 +52,8 @@ pub(crate) enum LspOperation {
     PrepareCallHierarchy,
     IncomingCalls,
     OutgoingCalls,
+    FileDiagnostics,
+    WorkspaceDiagnostics,
 }
 
 impl LspOperation {
@@ -61,6 +68,8 @@ impl LspOperation {
             "prepareCallHierarchy" => Ok(Self::PrepareCallHierarchy),
             "incomingCalls" => Ok(Self::IncomingCalls),
             "outgoingCalls" => Ok(Self::OutgoingCalls),
+            "fileDiagnostics" => Ok(Self::FileDiagnostics),
+            "workspaceDiagnostics" => Ok(Self::WorkspaceDiagnostics),
             _ => Err(ToolError::InvalidArguments(format!(
                 "unsupported code.lsp operation: {value}; supported operations: {}",
                 SUPPORTED_LSP_OPERATION_NAMES.join(", ")
@@ -79,11 +88,17 @@ impl LspOperation {
             Self::PrepareCallHierarchy => "prepareCallHierarchy",
             Self::IncomingCalls => "incomingCalls",
             Self::OutgoingCalls => "outgoingCalls",
+            Self::FileDiagnostics => "fileDiagnostics",
+            Self::WorkspaceDiagnostics => "workspaceDiagnostics",
         }
     }
 
     pub(crate) fn supported_names() -> &'static [&'static str] {
         SUPPORTED_LSP_OPERATION_NAMES
+    }
+
+    pub(crate) fn requires_position(self) -> bool {
+        !matches!(self, Self::FileDiagnostics | Self::WorkspaceDiagnostics)
     }
 }
 
@@ -119,7 +134,7 @@ impl LspPosition {
 pub(crate) struct LspOperationRequest<'a> {
     pub(crate) operation: LspOperation,
     pub(crate) file_path: &'a Path,
-    pub(crate) position: LspPosition,
+    pub(crate) position: Option<LspPosition>,
     pub(crate) workspace_root: &'a Path,
 }
 
@@ -153,13 +168,58 @@ pub(crate) fn execute_lsp_operation(
     let spec = server_for_path(&file_path, &cfg)?;
     let root = project_root(&file_path, request.workspace_root, spec.root_markers);
     let mut session = LspSession::start(&spec, &root)?;
-    session.open_file(&file_path, spec.name.as_str())?;
+    let server = LspServerMetadata {
+        name: spec.name.clone(),
+        command: spec.command.clone(),
+    };
 
+    match request.operation {
+        LspOperation::FileDiagnostics => {
+            session.open_file(&file_path, spec.name.as_str())?;
+            refresh_diagnostics_after_open(
+                &mut session,
+                "textDocument/diagnostic",
+                json!({
+                    "textDocument": { "uri": path_to_uri(&file_path) },
+                }),
+            )?;
+            let diagnostics = vec![session.diagnostics_for(&file_path)];
+            return Ok(LspOperationResponse {
+                server,
+                result: file_diagnostics_result(&file_path, &diagnostics),
+                diagnostics,
+            });
+        }
+        LspOperation::WorkspaceDiagnostics => {
+            let opened_files = open_workspace_files_for_diagnostics(&mut session, &root, &spec)?;
+            refresh_diagnostics_after_open(
+                &mut session,
+                "workspace/diagnostic",
+                json!({
+                    "previousResultIds": [],
+                }),
+            )?;
+            let diagnostics = session.diagnostics();
+            return Ok(LspOperationResponse {
+                server,
+                result: workspace_diagnostics_result(&root, opened_files, &diagnostics),
+                diagnostics,
+            });
+        }
+        _ => session.open_file(&file_path, spec.name.as_str())?,
+    }
+
+    let position = request.position.ok_or_else(|| {
+        ToolError::InvalidArguments(format!(
+            "line and character are required for {}",
+            request.operation.as_str()
+        ))
+    })?;
     let position = json!({
         "textDocument": { "uri": path_to_uri(&file_path) },
         "position": {
-            "line": request.position.line(),
-            "character": request.position.character(),
+            "line": position.line(),
+            "character": position.character(),
         },
     });
 
@@ -198,10 +258,7 @@ pub(crate) fn execute_lsp_operation(
                 request_with_retry(&mut session, "textDocument/prepareCallHierarchy", position)?;
             let Some(item) = prepared.as_array().and_then(|items| items.first()).cloned() else {
                 return Ok(LspOperationResponse {
-                    server: LspServerMetadata {
-                        name: spec.name.clone(),
-                        command: spec.command.clone(),
-                    },
+                    server: server.clone(),
                     result: Value::Array(Vec::new()),
                     diagnostics: session.diagnostics(),
                 });
@@ -217,10 +274,7 @@ pub(crate) fn execute_lsp_operation(
                 request_with_retry(&mut session, "textDocument/prepareCallHierarchy", position)?;
             let Some(item) = prepared.as_array().and_then(|items| items.first()).cloned() else {
                 return Ok(LspOperationResponse {
-                    server: LspServerMetadata {
-                        name: spec.name.clone(),
-                        command: spec.command.clone(),
-                    },
+                    server: server.clone(),
                     result: Value::Array(Vec::new()),
                     diagnostics: session.diagnostics(),
                 });
@@ -231,16 +285,106 @@ pub(crate) fn execute_lsp_operation(
                 json!({ "item": item }),
             )
         }
+        LspOperation::FileDiagnostics | LspOperation::WorkspaceDiagnostics => {
+            unreachable!("diagnostics-first operations return before navigation dispatch")
+        }
     }?;
 
     Ok(LspOperationResponse {
-        server: LspServerMetadata {
-            name: spec.name,
-            command: spec.command,
-        },
+        server,
         result,
         diagnostics: session.diagnostics(),
     })
+}
+
+fn file_diagnostics_result(file_path: &Path, diagnostics: &[LspDiagnosticReport]) -> Value {
+    json!({
+        "scope": "file",
+        "filePath": file_path.display().to_string(),
+        "reports": diagnostics,
+        "diagnosticCount": diagnostic_count(diagnostics),
+    })
+}
+
+fn workspace_diagnostics_result(
+    workspace_root: &Path,
+    files_scanned: usize,
+    diagnostics: &[LspDiagnosticReport],
+) -> Value {
+    json!({
+        "scope": "workspace",
+        "workspaceRoot": workspace_root.display().to_string(),
+        "filesScanned": files_scanned,
+        "reports": diagnostics,
+        "diagnosticCount": diagnostic_count(diagnostics),
+    })
+}
+
+fn diagnostic_count(reports: &[LspDiagnosticReport]) -> usize {
+    reports.iter().map(|report| report.diagnostics.len()).sum()
+}
+
+fn refresh_diagnostics_after_open(
+    session: &mut LspSession,
+    method: &str,
+    params: Value,
+) -> Result<(), ToolError> {
+    match request_with_retry(session, method, params) {
+        Ok(_) => Ok(()),
+        Err(ToolError::Execution(message)) if is_unsupported_diagnostic_request(&message) => Ok(()),
+        Err(err) => Err(err),
+    }
+}
+
+fn is_unsupported_diagnostic_request(message: &str) -> bool {
+    let normalized = message.to_ascii_lowercase();
+    normalized.contains("method not found")
+        || normalized.contains("not implemented")
+        || normalized.contains("-32601")
+}
+
+fn open_workspace_files_for_diagnostics(
+    session: &mut LspSession,
+    root: &Path,
+    spec: &LspServerSpec,
+) -> Result<usize, ToolError> {
+    let mut files = WalkDir::new(root)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|entry| !should_skip_workspace_diagnostics_entry(entry))
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| entry.into_path())
+        .filter(|path| matches_lsp_extension(path, &spec.extensions))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    files.sort();
+    for path in &files {
+        session.open_file(path, spec.name.as_str())?;
+    }
+    Ok(files.len())
+}
+
+fn should_skip_workspace_diagnostics_entry(entry: &DirEntry) -> bool {
+    if entry.depth() == 0 {
+        return false;
+    }
+    entry.file_type().is_dir()
+        && entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| WORKSPACE_DIAGNOSTICS_SKIPPED_DIR_NAMES.contains(&name))
+}
+
+fn matches_lsp_extension(path: &Path, supported_extensions: &[String]) -> bool {
+    let Some(extension) = path.extension().and_then(|value| value.to_str()) else {
+        return false;
+    };
+    let normalized = format!(".{}", extension.to_ascii_lowercase());
+    supported_extensions
+        .iter()
+        .any(|supported| supported.eq_ignore_ascii_case(&normalized))
 }
 
 #[derive(Debug, Clone)]
@@ -762,6 +906,14 @@ impl LspSession {
                 diagnostics: diagnostics.clone(),
             })
             .collect()
+    }
+
+    fn diagnostics_for(&self, file_path: &Path) -> LspDiagnosticReport {
+        let key = file_path.display().to_string();
+        LspDiagnosticReport {
+            file_path: key.clone(),
+            diagnostics: self.diagnostics.get(&key).cloned().unwrap_or_default(),
+        }
     }
 }
 

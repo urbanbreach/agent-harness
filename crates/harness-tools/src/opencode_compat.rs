@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::agent_ops::{select_profile_name, AgentOpsExecutor, AgentSpawnRequest, BatchCall};
-use crate::code_lsp::{CodeLspExecutor, CodeLspRequest};
+use crate::code_lsp::{lsp_parameters_json_schema, CodeLspExecutor, CodeLspRequest};
 use crate::control_plane::{ControlPlaneExecutor, QuestionPrompt, TodoItem};
 use crate::network::{
     CodeSearchRequest, NetworkExecutor, WebFetchFormat, WebFetchRequest, WebSearchRequest,
@@ -334,8 +334,8 @@ struct LspArgs {
     operation: String,
     #[serde(rename = "filePath")]
     file_path: String,
-    line: i32,
-    character: i32,
+    line: Option<i32>,
+    character: Option<i32>,
 }
 
 #[async_trait]
@@ -906,7 +906,7 @@ impl Tool for LspCompatTool {
     }
 
     fn parameters_json_schema(&self) -> Value {
-        super::json_schema_for::<LspArgs>()
+        lsp_parameters_json_schema()
     }
 
     fn capability(&self) -> ToolCapability {
