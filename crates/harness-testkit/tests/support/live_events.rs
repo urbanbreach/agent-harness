@@ -395,7 +395,7 @@ fn tool_targets_canonical_path(tool_id: &str, args_summary: &str, canonical_path
     let args_json = serde_json::from_str::<Value>(args_summary).ok();
 
     match tool_id {
-        "fs.read" | "edit.hashline_scan" | "edit.hashline_apply" => args_json
+        "fs.write" | "fs.read" | "edit.hashline_scan" | "edit.hashline_apply" => args_json
             .as_ref()
             .and_then(|value| value.get("path"))
             .and_then(Value::as_str)
@@ -424,8 +424,8 @@ fn json_value_contains_path(value: &Value, canonical_path: &str) -> bool {
 
 fn expected_same_file_sequence() -> Vec<(String, ToolFlowPhase)> {
     vec![
-        ("shell.run".to_string(), ToolFlowPhase::Requested),
-        ("shell.run".to_string(), ToolFlowPhase::Finished),
+        ("fs.write".to_string(), ToolFlowPhase::Requested),
+        ("fs.write".to_string(), ToolFlowPhase::Finished),
         ("fs.read".to_string(), ToolFlowPhase::Requested),
         ("fs.read".to_string(), ToolFlowPhase::Finished),
         ("edit.hashline_scan".to_string(), ToolFlowPhase::Requested),

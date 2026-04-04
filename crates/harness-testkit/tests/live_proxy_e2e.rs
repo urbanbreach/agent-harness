@@ -21,9 +21,9 @@ use support::live_events::{resolve_tagged_run_dir, ToolFlowEvidence};
 use support::live_vision::{self, LiveVisionProxyConfig};
 use support::live_visual::{
     assert_checkpoint_markers, default_live_run_metadata, selected_live_viewport, FocusCapture,
-    LiveVisualRun, LiveVisualRunOptions, CHECKPOINT_DRAFT_VISIBLE,
+    LiveVisualRun, LiveVisualRunOptions, CHECKPOINT_DRAFT_VISIBLE, CHECKPOINT_FILE_WRITE_FINISHED,
     CHECKPOINT_HASHLINE_SCAN_FINISHED, CHECKPOINT_PERMISSION_REQUESTED, CHECKPOINT_RUN_FINISHED,
-    CHECKPOINT_SHELL_CREATE_FINISHED, CHECKPOINT_STARTUP,
+    CHECKPOINT_STARTUP,
 };
 use support::pty_process::{spawn_pty_process, SpawnedPtyProcess};
 use vt100::Parser as VtParser;
@@ -66,6 +66,8 @@ const LIVE_PROXY_VISUAL_VERIFIER_TEST_NAME: &str = "live_proxy_e2e_visual_verifi
 const LIVE_TOOL_FLOW_RELATIVE_PATH: &str = "tmp/live_tool_flow.md";
 const LIVE_TOOL_FLOW_DRAFT_MARKER: &str =
     "You must use tools only. Use exactly tmp/live_tool_flow.md.";
+const LIVE_TOOL_FLOW_BOOTSTRAP_TOOL_ID: &str = "fs.write";
+const LIVE_PROXY_CAPTURE_STRATEGY: &str = "in-process PTY rendered to PNG";
 const LIVE_TOOL_FLOW_FINAL_CONTENT: &str = "alpha\nBETA\ngamma\n";
 const LIVE_TOOL_FLOW_APPLY_EDIT_ID: &str = "live-tool-flow-apply";
 const LIVE_CHAT_TODO_CONTENT: &str = "live chat todo item";
@@ -124,8 +126,9 @@ const LIVE_COMPAT_EDIT_DELETE_PROMPT: &str = concat!(
 );
 const LIVE_TOOL_FLOW_CREATE_PROMPT: &str = concat!(
     "You must use tools only. Use exactly tmp/live_tool_flow.md. ",
-    "Now perform only step 1: call shell.run with cmd=sh and args=[-lc, \"mkdir -p tmp && printf 'alpha\\nbeta\\ngamma\\n' > tmp/live_tool_flow.md\"] to create the file. ",
-    "Return exactly one tool call and zero prose. Do not call any other tool."
+    "Now perform only step 1: call fs.write with this exact payload shape: ",
+    r#"{"path":"tmp/live_tool_flow.md","content":"alpha\nbeta\ngamma\n"}"#,
+    ". Return exactly one fs.write tool call and zero prose. Do not call any other tool."
 );
 const LIVE_TOOL_FLOW_READ_PROMPT: &str = concat!(
     "Now perform only step 2 on the same file: call fs.read with path=tmp/live_tool_flow.md. ",
@@ -253,7 +256,7 @@ struct LiveToolFlowArtifacts {
     manifest_jsonl_path: PathBuf,
     startup_png: PathBuf,
     draft_visible_png: PathBuf,
-    shell_create_finished_png: PathBuf,
+    file_write_finished_png: PathBuf,
     hashline_scan_finished_png: PathBuf,
     run_finished_png: PathBuf,
 }
@@ -318,6 +321,8 @@ struct LiveProxyPreflightReport {
     socket_address: String,
     harness_bin: PathBuf,
     viewport_preset: &'static str,
+    capture_strategy: &'static str,
+    tool_flow_bootstrap_tool: &'static str,
 }
 
 impl LiveProxyPreflightReport {
@@ -334,6 +339,8 @@ impl LiveProxyPreflightReport {
             format!("  reachable socket: {}", self.socket_address),
             format!("  harness bin: {}", self.harness_bin.display()),
             format!("  viewport preset: {}", self.viewport_preset),
+            format!("  capture strategy: {}", self.capture_strategy),
+            format!("  tool-flow bootstrap: {}", self.tool_flow_bootstrap_tool),
         ]
         .join("\n")
     }
@@ -348,7 +355,7 @@ impl ToolFlowStage {
     fn tools(self) -> &'static [&'static str] {
         match self {
             Self::Full => &[
-                "shell.run",
+                "fs.write",
                 "fs.read",
                 "edit.hashline_scan",
                 "edit.hashline_apply",
@@ -360,7 +367,7 @@ impl ToolFlowStage {
         match self {
             Self::Full => concat!(
                 "Execute the full live tool-flow task in one session. ",
-                "Use only shell.run, fs.read, edit.hashline_scan, and edit.hashline_apply against tmp/live_tool_flow.md."
+                "Use only fs.write, fs.read, edit.hashline_scan, and edit.hashline_apply against tmp/live_tool_flow.md."
             ),
         }
     }
@@ -436,7 +443,7 @@ fn live_proxy_preflight() {
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 fn live_proxy_e2e_tui_prompt_responses_smoke() {
-    if !cfg!(target_os = "linux") || env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
+    if env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
         return;
     }
 
@@ -459,7 +466,7 @@ fn live_proxy_e2e_tui_prompt_responses_smoke() {
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 fn live_proxy_e2e_tui_tool_flow() {
-    if !cfg!(target_os = "linux") || env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
+    if env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
         return;
     }
 
@@ -817,7 +824,7 @@ fn run_live_proxy_tui_tool_flow_once(
 #[tokio::test(flavor = "current_thread")]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 async fn live_proxy_e2e_visual_verifier() {
-    if !cfg!(target_os = "linux") || env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
+    if env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
         return;
     }
 
@@ -1116,21 +1123,8 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
         tool_flow_config
             .get("permissions")
             .and_then(Value::as_object)
-            .and_then(|permissions| permissions.get("shell_allowlist"))
-            .and_then(Value::as_object)
-            .and_then(|allowlist| allowlist.get("executables"))
-            .and_then(Value::as_array),
-        Some(&vec![Value::String("sh".to_string())])
-    );
-    assert_eq!(
-        tool_flow_config
-            .get("permissions")
-            .and_then(Value::as_object)
-            .and_then(|permissions| permissions.get("shell_allowlist"))
-            .and_then(Value::as_object)
-            .and_then(|allowlist| allowlist.get("cwd_roots"))
-            .and_then(Value::as_array),
-        Some(&vec![Value::String(".".to_string())])
+            .and_then(|permissions| permissions.get("shell_allowlist")),
+        None
     );
     assert_eq!(
         tool_flow_config
@@ -1154,7 +1148,7 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
     assert_eq!(
         tool_flow_profile.get("tools").and_then(Value::as_array),
         Some(&vec![
-            Value::String("shell.run".to_string()),
+            Value::String("fs.write".to_string()),
             Value::String("fs.read".to_string()),
             Value::String("edit.hashline_scan".to_string()),
             Value::String("edit.hashline_apply".to_string()),
@@ -1170,7 +1164,7 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
     );
     assert_eq!(
         profile_permissions.get("shell").and_then(Value::as_str),
-        Some("allow")
+        Some("deny")
     );
     assert_eq!(
         profile_permissions.get("network").and_then(Value::as_str),
@@ -1464,6 +1458,29 @@ fn example_tool_audit_profile_covers_signoff_surface_and_gpt_5_4_mini_baseline()
 }
 
 #[test]
+fn live_proxy_preflight_report_summary_mentions_portable_visual_baseline() {
+    let report = LiveProxyPreflightReport {
+        source_config_path: PathBuf::from("configs/harness.example.jsonc"),
+        provider_name: "default".to_string(),
+        model_id: "gpt-5.4-mini".to_string(),
+        vision_model_id: "gpt-5.4-mini".to_string(),
+        profile: LIVE_PROXY_TOOL_FLOW_PROFILE.to_string(),
+        endpoint_path: RESPONSES_ENDPOINT_PATH,
+        base_url: "http://127.0.0.1:4242/v1".to_string(),
+        socket_address: "127.0.0.1:4242".to_string(),
+        harness_bin: PathBuf::from("target/debug/harness"),
+        viewport_preset: "desktop",
+        capture_strategy: LIVE_PROXY_CAPTURE_STRATEGY,
+        tool_flow_bootstrap_tool: LIVE_TOOL_FLOW_BOOTSTRAP_TOOL_ID,
+    };
+
+    let summary = report.summary_text();
+
+    assert!(summary.contains(LIVE_PROXY_CAPTURE_STRATEGY));
+    assert!(summary.contains(LIVE_TOOL_FLOW_BOOTSTRAP_TOOL_ID));
+}
+
+#[test]
 fn tool_flow_evidence_detects_ordered_same_file_sequence() {
     let workspace_root = unique_temp_dir("live-proxy-tool-flow-evidence-workspace");
     fs::create_dir_all(workspace_root.join("tmp")).expect("create tool-flow tmp dir");
@@ -1518,17 +1535,14 @@ fn tool_flow_evidence_detects_ordered_same_file_sequence() {
     let events_body = vec![
         requested(
             1,
-            "call-shell",
-            "shell.run",
+            "call-write",
+            "fs.write",
             json!({
-                "cmd": "sh",
-                "args": [
-                    "-lc",
-                    format!("printf 'alpha\\nbeta\\ngamma\\n' > {LIVE_TOOL_FLOW_RELATIVE_PATH}")
-                ],
+                "path": LIVE_TOOL_FLOW_RELATIVE_PATH,
+                "content": "alpha\nbeta\ngamma\n",
             }),
         ),
-        finished(2, "call-shell"),
+        finished(2, "call-write"),
         requested(
             3,
             "call-read-1",
@@ -1689,17 +1703,14 @@ fn tool_flow_evidence_collect_many_merges_stage_runs() {
         vec![
             requested(
                 1,
-                "call-shell",
-                "shell.run",
+                "call-write",
+                "fs.write",
                 json!({
-                    "cmd": "sh",
-                    "args": [
-                        "-lc",
-                        format!("printf 'alpha\\nbeta\\ngamma\\n' > {LIVE_TOOL_FLOW_RELATIVE_PATH}")
-                    ],
+                    "path": LIVE_TOOL_FLOW_RELATIVE_PATH,
+                    "content": "alpha\nbeta\ngamma\n",
                 }),
             ),
-            finished(2, "call-shell"),
+            finished(2, "call-write"),
         ],
     );
     let first_read_run = write_run(
@@ -2988,12 +2999,6 @@ fn vision_verdict_satisfies(status: &str) -> bool {
 }
 
 fn run_live_proxy_preflight(repo_root: &Path) -> Result<LiveProxyPreflightReport, String> {
-    if !cfg!(target_os = "linux") {
-        return Err(
-            "live proxy preflight currently expects Linux for the TUI live lane".to_string(),
-        );
-    }
-
     let request = resolve_live_prompt_request(repo_root)?;
     let run_config = prepare_live_prompt_run_config(&request)?;
     let config = load_json5_config(&request.source_config_path)?;
@@ -3028,6 +3033,8 @@ fn run_live_proxy_preflight(repo_root: &Path) -> Result<LiveProxyPreflightReport
         socket_address,
         harness_bin: resolve_harness_bin(),
         viewport_preset: selected_live_viewport().name,
+        capture_strategy: LIVE_PROXY_CAPTURE_STRATEGY,
+        tool_flow_bootstrap_tool: LIVE_TOOL_FLOW_BOOTSTRAP_TOOL_ID,
     })
 }
 
@@ -3372,9 +3379,9 @@ fn run_live_tui_tool_flow(
         &run_config.tool_flow.session_dir,
         &run_config.canonical_relative_path,
         &tool_flow_namespace,
-        "shell.run",
+        LIVE_TOOL_FLOW_BOOTSTRAP_TOOL_ID,
         1,
-        remaining_before(deadline, "shell.run tool completion")?,
+        remaining_before(deadline, "fs.write tool completion")?,
     )?;
     let create_events = wait_for_tui_provider_turn_count(
         &run_config.tool_flow.session_dir,
@@ -3387,22 +3394,22 @@ fn run_live_tui_tool_flow(
     wait_for_screen_contains(
         &mut stage.parser,
         &stage.output_rx,
-        "shell.run",
+        LIVE_TOOL_FLOW_BOOTSTRAP_TOOL_ID,
         Duration::from_secs(5),
     )?;
-    let shell_create_finished_checkpoint = live_visual.capture_checkpoint_with_metadata(
-        CHECKPOINT_SHELL_CREATE_FINISHED,
+    let file_write_finished_checkpoint = live_visual.capture_checkpoint_with_metadata(
+        CHECKPOINT_FILE_WRITE_FINISHED,
         &stage.parser,
         &[
             LIVE_TUI_READY_MARKER,
-            "shell.run",
+            LIVE_TOOL_FLOW_BOOTSTRAP_TOOL_ID,
             LIVE_TOOL_FLOW_RELATIVE_PATH,
         ],
-        &FocusCapture::anchored_exact("shell.run", 28, 5),
+        &FocusCapture::anchored_exact(LIVE_TOOL_FLOW_BOOTSTRAP_TOOL_ID, 28, 5),
         Some(json!({
             "purpose": "tool-flow-stage-finished",
             "stage": "create",
-            "stage_tool": "shell.run",
+            "stage_tool": LIVE_TOOL_FLOW_BOOTSTRAP_TOOL_ID,
             "session_dir": run_config.tool_flow.session_dir.display().to_string(),
         })),
     )?;
@@ -3574,7 +3581,7 @@ fn run_live_tui_tool_flow(
         manifest_jsonl_path: run_finished_checkpoint.manifest_jsonl_path().to_path_buf(),
         startup_png: startup_checkpoint.png_path().to_path_buf(),
         draft_visible_png: draft_visible_checkpoint.png_path().to_path_buf(),
-        shell_create_finished_png: shell_create_finished_checkpoint.png_path().to_path_buf(),
+        file_write_finished_png: file_write_finished_checkpoint.png_path().to_path_buf(),
         hashline_scan_finished_png: hashline_scan_finished_checkpoint.png_path().to_path_buf(),
         run_finished_png: run_finished_checkpoint.png_path().to_path_buf(),
     })
@@ -3802,10 +3809,10 @@ fn live_vision_checkpoint_contracts() -> &'static [LiveVisionCheckpointContract]
             expected_markers: &[LIVE_TOOL_FLOW_DRAFT_MARKER],
         },
         LiveVisionCheckpointContract {
-            checkpoint_id: CHECKPOINT_SHELL_CREATE_FINISHED,
+            checkpoint_id: CHECKPOINT_FILE_WRITE_FINISHED,
             expected_markers: &[
                 "UI shows file-creation progress for tmp/live_tool_flow.md.",
-                "shell.run",
+                LIVE_TOOL_FLOW_BOOTSTRAP_TOOL_ID,
                 LIVE_TOOL_FLOW_RELATIVE_PATH,
             ],
         },
@@ -4112,7 +4119,7 @@ fn tool_call_targets_path(tool_id: &str, args_summary: &str, canonical_path: &st
     let args_json = serde_json::from_str::<Value>(args_summary).ok();
 
     match tool_id {
-        "fs.read" | "edit.hashline_scan" | "edit.hashline_apply" => args_json
+        "fs.write" | "fs.read" | "edit.hashline_scan" | "edit.hashline_apply" => args_json
             .as_ref()
             .and_then(|value| value.get("path"))
             .and_then(Value::as_str)
@@ -4981,24 +4988,11 @@ fn apply_tool_flow_contract(
     let root = config
         .as_object_mut()
         .ok_or_else(|| "config root must be a JSON object".to_string())?;
-    let permissions = root
-        .entry("permissions".to_string())
-        .or_insert_with(|| Value::Object(serde_json::Map::new()))
-        .as_object_mut()
-        .ok_or_else(|| "config.permissions must be an object".to_string())?;
-    permissions.insert(
-        "shell_allowlist".to_string(),
-        json!({
-            "executables": ["sh"],
-            "cwd_roots": ["."],
-        }),
-    );
-
-    let profiles = root
+    let categories = root
         .get_mut("profiles")
         .and_then(Value::as_object_mut)
         .ok_or_else(|| "config.profiles must be an object".to_string())?;
-    let profile = profiles
+    let profile = categories
         .get_mut(profile_name)
         .and_then(Value::as_object_mut)
         .ok_or_else(|| format!("profile `{profile_name}` must be present and be an object"))?;
@@ -5010,7 +5004,7 @@ fn apply_tool_flow_contract(
         "permissions".to_string(),
         json!({
             "edit": "allow",
-            "shell": "allow",
+            "shell": "deny",
             "network": "allow",
             "question": "allow",
         }),

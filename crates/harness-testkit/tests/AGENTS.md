@@ -46,7 +46,8 @@ The TUI implements a strict surface hierarchy that tests must respect:
 - Key shell contract terms: compose-first, transcript-first, operator sidebar, no default tab chrome, no debug inspector in primary path.
 - Respect `HARNESS_VISUAL_ARTIFACT_DIR` for screenshot output. This env var sets the root for all visual artifacts in both PTY and live-proxy lanes.
 - Respect live env gates: `HARNESS_LIVE_PROXY`, `HARNESS_LIVE_PROXY_CONFIG`, `HARNESS_LIVE_PROXY_PROVIDER`, `HARNESS_LIVE_PROXY_MODEL`.
-- `live_proxy_preflight` is Linux-only because it validates the live TUI lane setup.
+- `live_proxy_preflight` validates the live TUI lane via the bundled PTY→PNG capture path; do not
+  assume a KDE desktop or desktop screenshot tools.
 - `live_proxy_prompt_chat_tool_flow` depends on the `rust-best-practices` skill being available to the `skill` tool.
 - Artifact retention and viewport presets are documented in `README.live-proxy.md`, not in crate root docs.
 
