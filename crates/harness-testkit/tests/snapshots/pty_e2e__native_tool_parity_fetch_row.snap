@@ -7,7 +7,7 @@ Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifac
 exit code: 1: true
 stderr: snapshot mismatch: true
 focus_marker: Fetch https://example.test/report.pdf
-focus_render_state_blake3: f48d635a745b2e6b0e426b2a0f9bb3b9b8c8b1c637a53dfede173919f2e3ae15
+focus_render_state_blake3: ea1511514f433d1c6b0d55f49e704c63865b92e55124322ba81fbb07ac501d81
 focus_region_cells: row=20, col=9, height=7, width=42
 image: pty_native_tool_parity_fetch_row.png
 manifest_json: pty-manifests/transcript_shell/manifest.json

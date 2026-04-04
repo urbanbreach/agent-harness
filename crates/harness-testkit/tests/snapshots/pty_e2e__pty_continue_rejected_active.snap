@@ -5,7 +5,7 @@ expression: "checkpoint_visual_snapshot(&active_screen,\n&[STARTUP_CONTINUE_HIST
 Continue session: true
 tasks are still in flight: true
 focus_marker: tasks are still in flight
-focus_render_state_blake3: 9d54b9ca92580d7eeb18b332fc2c1c89524d1ec0a208161992fb9deda6fab7bb
+focus_render_state_blake3: 557baed97a8919225d9244d92e9c98d753b34bbe1c34b3be4a329db81360be44
 focus_region_cells: row=23, col=48, height=1, width=28
 image: pty_continue_rejected_active.png
 manifest_json: pty-manifests/continue_session/manifest.json

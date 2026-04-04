@@ -5,7 +5,7 @@ expression: "checkpoint_visual_snapshot(&startup_checkpoint,\nLIVE_STATE_FIXTURE
 Hello from PTY: true
 Ctrl+p open: true
 focus_marker: Hello from PTY
-focus_render_state_blake3: b80c32a7f88b5158d2ee214095873faa3de220343aaa2b8db66cfae6e71ddf24
+focus_render_state_blake3: a0acd623c06e245f7d2e0691b6cc952ae5887d8415ecfbfe3db7f9b61bbecfc6
 focus_region_cells: row=14, col=3, height=4, width=24
 image: pty_interactive_type_first_startup.png
 manifest_json: pty-manifests/live_shell/manifest.json

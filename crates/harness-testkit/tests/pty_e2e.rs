@@ -1620,23 +1620,21 @@ fn pty_e2e_opencode_sidebar_session_parity() {
         &mut harness.parser,
         &harness.output_rx,
         harness.writer.as_mut(),
-        "LSP · idle",
+        "Bundle keeps events.jsonl and",
     );
     let sidebar_visual = capture_manifest_backed_visual_checkpoint(
         "operator_sidebar",
         "opencode_sidebar_session_parity",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("MCP · idle", 18, 8),
+        FocusCapture::anchored_exact("Bundle keeps events.jsonl and", 18, 8),
         &[
             "shell parity task",
             "Shell parity looks good.",
             LIVE_OPERATOR_TODOS_MARKER,
             LIVE_OPERATOR_EMPTY_MARKER,
-            "MCP · idle",
-            "No MCP activity yet",
-            "LSP · idle",
-            "LSPs will activate as files are read",
+            "Bundle keeps events.jsonl and",
+            "artifacts/",
             LIVE_READY_NEXT_TURN_MARKER,
             "Enter send",
         ],
@@ -1647,10 +1645,8 @@ fn pty_e2e_opencode_sidebar_session_parity() {
     assert!(sidebar_screen.contains("Shell parity looks good."));
     assert!(sidebar_screen.contains(LIVE_OPERATOR_TODOS_MARKER));
     assert!(sidebar_screen.contains(LIVE_OPERATOR_EMPTY_MARKER));
-    assert!(sidebar_screen.contains("MCP · idle"));
-    assert!(sidebar_screen.contains("No MCP activity yet"));
-    assert!(sidebar_screen.contains("LSP · idle"));
-    assert!(sidebar_screen.contains("LSPs will activate as files are read"));
+    assert!(sidebar_screen.contains("Bundle keeps events.jsonl and"));
+    assert!(sidebar_screen.contains("artifacts/"));
     assert!(sidebar_screen.contains(LIVE_READY_NEXT_TURN_MARKER));
     assert!(sidebar_screen.contains("Enter send"));
     assert!(!sidebar_screen.contains("Tabs"));
@@ -2240,20 +2236,22 @@ fn pty_signoff_helpers_cover_primary_and_minimum_geometries() {
 }
 
 #[test]
-fn pty_visual_ttf_antialias_defaults_to_enabled() {
-    assert!(parse_ttf_antialias_env(None));
-    assert!(parse_ttf_antialias_env(Some("1")));
-    assert!(parse_ttf_antialias_env(Some("true")));
-    assert!(parse_ttf_antialias_env(Some("on")));
-    assert!(parse_ttf_antialias_env(Some("unexpected")));
+fn pty_visual_ttf_antialias_defaults_to_disabled() {
+    assert!(!parse_ttf_antialias_env(None));
+    for value in ["0", "false", "off", " False ", " OFF ", "unexpected"] {
+        assert!(
+            !parse_ttf_antialias_env(Some(value)),
+            "expected {value:?} to keep PTY TTF anti-aliasing disabled"
+        );
+    }
 }
 
 #[test]
-fn pty_visual_ttf_antialias_honors_explicit_opt_out() {
-    for value in ["0", "false", "off", " False ", " OFF "] {
+fn pty_visual_ttf_antialias_honors_explicit_opt_in() {
+    for value in ["1", "true", "on", " True ", " ON "] {
         assert!(
-            !parse_ttf_antialias_env(Some(value)),
-            "expected {value:?} to disable PTY TTF anti-aliasing"
+            parse_ttf_antialias_env(Some(value)),
+            "expected {value:?} to enable PTY TTF anti-aliasing"
         );
     }
 }
