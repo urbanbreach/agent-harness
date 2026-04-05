@@ -7,16 +7,16 @@
      ● Assistant · model-1 · 4ms
                                                                                                                         Context
                                                                                                                         turn 1 · ready for next turn
+
+                                                                                                                        Recovery · 1
                                                                                                                         Bundle keeps events.jsonl and
                                                                                                                         artifacts/
-                                                                                                                        MCP · idle
-                                                                                                                        No MCP activity yet
-                                                                                                                        Web · idle
-                                                                                                                        No web activity yet
-                                                                                                                        LSP · idle
-                                                                                                                        LSPs will activate as files are read
-                                                                                                                        Batch · idle
-                                                                                                                        No batch activity yet
+
+
+
+
+
+
 
 
 

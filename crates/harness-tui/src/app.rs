@@ -930,28 +930,25 @@ pub(crate) fn session_history_resumability_label(entry: &SessionHistoryEntry) ->
     }
 }
 
-pub(crate) fn session_history_artifact_label(entry: &SessionHistoryEntry) -> String {
-    match entry.catalog.artifact_count {
+fn artifact_count_label(count: usize) -> String {
+    match count {
         0 => "no artifacts".to_string(),
         1 => "1 artifact".to_string(),
         count => format!("{count} artifacts"),
     }
 }
 
-pub(crate) fn session_history_lineage_label(entry: &SessionHistoryEntry) -> String {
+fn lineage_label(child_session_count: usize, parent_session_id: Option<&str>) -> String {
     let mut parts = Vec::new();
-    if entry.catalog.child_session_count > 0 {
-        let child_label = if entry.catalog.child_session_count == 1 {
+    if child_session_count > 0 {
+        let child_label = if child_session_count == 1 {
             "1 child".to_string()
         } else {
-            format!("{} children", entry.catalog.child_session_count)
+            format!("{child_session_count} children")
         };
         parts.push(child_label);
     }
-    if let Some(parent_session_id) = entry
-        .catalog
-        .parent_session_id
-        .as_deref()
+    if let Some(parent_session_id) = parent_session_id
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
@@ -963,6 +960,17 @@ pub(crate) fn session_history_lineage_label(entry: &SessionHistoryEntry) -> Stri
     } else {
         parts.join(" · ")
     }
+}
+
+pub(crate) fn session_history_artifact_label(entry: &SessionHistoryEntry) -> String {
+    artifact_count_label(entry.catalog.artifact_count)
+}
+
+pub(crate) fn session_history_lineage_label(entry: &SessionHistoryEntry) -> String {
+    lineage_label(
+        entry.catalog.child_session_count,
+        entry.catalog.parent_session_id.as_deref(),
+    )
 }
 
 fn session_history_entry_matches_action(
@@ -3345,6 +3353,77 @@ impl AppState {
             .collect()
     }
 
+    fn operator_sidebar_artifact_paths(&self) -> Vec<String> {
+        let mut seen = BTreeSet::new();
+        let mut artifact_paths = Vec::new();
+
+        for event in self.events.iter().rev() {
+            if let EventV1::EditApplied(edit) = &event.payload {
+                if let Some(diff_rel_path) = edit
+                    .diff_rel_path
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+                {
+                    if seen.insert(diff_rel_path.clone()) {
+                        artifact_paths.push(diff_rel_path);
+                    }
+                }
+            }
+        }
+
+        for activity in self.activities.iter().rev() {
+            for tool_call in activity.tool_calls.iter().rev() {
+                for artifact_ref in tool_call.artifact_refs.iter().rev() {
+                    let path = artifact_ref.path.trim();
+                    if !path.is_empty() && seen.insert(path.to_string()) {
+                        artifact_paths.push(path.to_string());
+                    }
+                }
+            }
+        }
+
+        artifact_paths
+    }
+
+    pub fn operator_sidebar_recovery_lines(&self) -> Vec<String> {
+        let artifact_paths = self.operator_sidebar_artifact_paths();
+        let child_session_ids = self.child_session_ids();
+        let parent_session_id = self.current_parent_session_id();
+        let has_bundle = self.session_path.is_some() && !self.events.is_empty();
+        let show_section = has_bundle
+            || !artifact_paths.is_empty()
+            || !child_session_ids.is_empty()
+            || parent_session_id.is_some();
+        let mut lines = Vec::new();
+
+        if !show_section {
+            return lines;
+        }
+
+        if self.replay_mode {
+            lines.push(
+                "Replay is read-only — inspect recorded context and use replay navigation."
+                    .to_string(),
+            );
+        }
+        if let Some(parent_session_id) = parent_session_id {
+            lines.push(format!("Parent session · {parent_session_id}"));
+        }
+        for child_session_id in child_session_ids {
+            lines.push(format!("Child session · {child_session_id}"));
+        }
+        if has_bundle {
+            lines.push("Bundle keeps events.jsonl and artifacts/".to_string());
+        }
+        for path in artifact_paths {
+            lines.push(format!("Artifact · {path}"));
+        }
+
+        lines
+    }
+
     pub fn operator_sidebar_modified_files(&self) -> Vec<String> {
         let mut seen = BTreeSet::new();
         let mut files = Vec::new();
@@ -3352,7 +3431,15 @@ impl AppState {
         for event in self.events.iter().rev() {
             if let EventV1::EditApplied(edit) = &event.payload {
                 if seen.insert(edit.path.clone()) {
-                    files.push(edit.path.clone());
+                    let diff_rel_path = edit
+                        .diff_rel_path
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty());
+                    files.push(match diff_rel_path {
+                        Some(diff_rel_path) => format!("{} · diff {diff_rel_path}", edit.path),
+                        None => edit.path.clone(),
+                    });
                 }
             }
         }
@@ -3830,12 +3917,13 @@ impl AppState {
 
     fn operator_rail_has_sections(&self) -> bool {
         !self.operator_sidebar_pending_permission_lines().is_empty()
+            || !self.operator_sidebar_recovery_lines().is_empty()
             || !self.operator_sidebar_todo_lines().is_empty()
             || !self.operator_sidebar_modified_files().is_empty()
     }
 
     fn session_shell_operator_rail_interactive(&self) -> bool {
-        self.details_drawer_open() || self.operator_rail_has_sections()
+        self.details_drawer_open() || (!self.replay_mode && self.operator_rail_has_sections())
     }
 
     pub fn review_surface(&self) -> Option<ReviewSurface> {

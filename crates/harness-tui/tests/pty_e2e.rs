@@ -551,12 +551,12 @@ fn operator_sidebar_matches_opencode_information_architecture() {
             "Export bundle · run_fixture/",
             "Provider openai",
             "Context",
-            "MCP · idle",
+            "▼ Modified Files · 3",
+            "Recovery · 1",
+            "▼ Todo · 3",
             "Network · 1",
             "Batch · 1",
             "LSP · 1",
-            "▼ Todo · 3",
-            "▼ Modified Files · 3",
         ],
     );
     assert!(screen.contains("Current runtime: default · gpt-5.4-mini"));
@@ -627,11 +627,18 @@ fn pty_live_orchestration_drawer_and_status() {
     );
     assert_screen_contains_all(
         &completed_screen,
-        &["Context", "MCP · idle", "LSP · idle", "ready for next turn"],
+        &[
+            "Context",
+            "Recovery · 1",
+            "Bundle keeps events.jsonl and",
+            "ready for next turn",
+        ],
     );
     assert!(!completed_screen.contains("Todo ·"));
+    assert!(!completed_screen.contains("MCP · idle"));
     assert!(!completed_screen.contains("Network · 1"));
     assert!(!completed_screen.contains("Batch · 1"));
+    assert!(!completed_screen.contains("LSP · idle"));
     assert!(!completed_screen.contains("LSP · 1"));
     assert!(!completed_screen.contains("orch 0a 0q 0r 0s"));
 

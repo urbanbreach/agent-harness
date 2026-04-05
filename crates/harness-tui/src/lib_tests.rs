@@ -349,6 +349,11 @@ fn operator_sidebar_width_stays_fixed_when_todo_or_modified_files_exist() {
         live_empty_width,
     );
     assert_operator_sidebar_expanded(
+        &operator_sidebar_child_navigation_replay_app(),
+        "▼ Recovery · 5",
+        replay_empty_width,
+    );
+    assert_operator_sidebar_expanded(
         &operator_sidebar_todo_replay_app(),
         "Todo · 1",
         replay_empty_width,
@@ -8079,8 +8084,8 @@ fn operator_sidebar_edit_only_event(seq: u64) -> harness_core::event::EventEnvel
             edit_id: format!("edit_{seq}"),
             path: "src/ui_secondary.rs".to_string(),
             new_file_digest: format!("digest-edit-{seq}"),
-            diff_rel_path: None,
-            diff_digest: None,
+            diff_rel_path: Some(format!("artifacts/edit-{seq}.diff")),
+            diff_digest: Some(format!("digest-edit-artifact-{seq}")),
         }),
     )
 }
@@ -8121,6 +8126,52 @@ fn operator_sidebar_modified_files_replay_app() -> app::AppState {
         PathBuf::from("/tmp/replay-session"),
         vec![operator_sidebar_edit_only_event(1)],
     )
+}
+
+#[cfg(test)]
+fn operator_sidebar_child_navigation_replay_app() -> app::AppState {
+    let mut events = session_view_events();
+    let metadata = harness_core::event::ToolCallMetadata {
+        canonical_tool_id: Some("task".to_string()),
+        lineage: Some(harness_core::event::TaskLineageMetadata {
+            parent_session_id: Some("parent_run".to_string()),
+            child_session_id: Some("child_run".to_string()),
+            ..harness_core::event::TaskLineageMetadata::default()
+        }),
+        artifact_refs: vec![harness_core::event::EventArtifactRef {
+            path: "artifacts/toolcalls/task/result.json".to_string(),
+            digest: Some("digest-task-artifact".to_string()),
+        }],
+        ..harness_core::event::ToolCallMetadata::default()
+    };
+    events.push(envelope(
+        11,
+        Some("req_001"),
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_child_nav".to_string(),
+                tool_id: "task".to_string(),
+                args_summary: r#"{"title":"inspect child session"}"#.to_string(),
+                args_digest: "digest-tool-child-nav".to_string(),
+                metadata: Some(metadata.clone()),
+            },
+        ),
+    ));
+    events.push(envelope(
+        12,
+        Some("req_001"),
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tool_call_child_nav".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("child session recorded".to_string()),
+                output_digest: Some("digest-tool-child-nav-output".to_string()),
+                output_json: None,
+                metadata: Some(metadata),
+            },
+        ),
+    ));
+    app::AppState::new_replay(PathBuf::from("/tmp/child_run"), events)
 }
 
 #[cfg(test)]
@@ -9051,6 +9102,41 @@ fn operator_sidebar_uses_explicit_empty_states() {
     assert!(sidebar.contains("Context"));
     assert!(sidebar.contains("0 active todos · 0 modified files"));
     assert!(!lines.iter().any(|line| matches!(*line, "MCP" | "LSP")));
+}
+
+#[cfg(test)]
+#[test]
+fn operator_sidebar_recovery_section_surfaces_artifacts_and_navigation_hints() {
+    let sidebar = operator_sidebar_text(&operator_sidebar_child_navigation_replay_app());
+
+    assert_markers_in_order(
+        &sidebar,
+        &[
+            "Context",
+            "▼ Recovery · 5",
+            "Replay is read-only — inspect recorded context and use replay navigation.",
+            "Parent session · parent_run",
+            "Child session · child_run",
+            "Bundle keeps events.jsonl and artifacts/",
+            "Artifact · artifacts/toolcalls/task/result.json",
+        ],
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn operator_sidebar_modified_files_include_diff_artifact_paths() {
+    let sidebar = operator_sidebar_text(&operator_sidebar_modified_files_live_app());
+
+    assert_markers_in_order(
+        &sidebar,
+        &[
+            "Modified Files · 1",
+            "src/ui_secondary.rs · diff artifacts/edit-1.diff",
+            "Recovery · 1",
+            "Artifact · artifacts/edit-1.diff",
+        ],
+    );
 }
 
 #[cfg(test)]
