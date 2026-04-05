@@ -167,6 +167,23 @@ fn compact_footer_hints(
         return hints.to_vec();
     }
 
+    if max_hints == 2 {
+        let mut compact = hints
+            .iter()
+            .find(|hint| hint.action == Action::Palette)
+            .copied()
+            .or_else(|| hints.first().copied())
+            .into_iter()
+            .collect::<Vec<_>>();
+        if let Some(last) = hints.last().copied() {
+            if !compact.contains(&last) {
+                compact.push(last);
+            }
+        }
+        compact.truncate(max_hints);
+        return compact;
+    }
+
     let keep_head = max_hints.saturating_sub(1).max(1);
     let mut compact = hints.iter().take(keep_head).copied().collect::<Vec<_>>();
     if let Some(last) = hints.last().copied() {
@@ -265,6 +282,7 @@ fn render_control_dock_status_band(
     area: Rect,
     theme: &Theme,
     dock: &crate::view_model::ControlDockViewModel,
+    disclosure_visible: bool,
 ) {
     let surface = control_dock_status_surface(theme, dock.variant);
     let base_style = Style::default().fg(theme.text.secondary).bg(surface);
@@ -275,8 +293,13 @@ fn render_control_dock_status_band(
         live_footer_status_candidates(app, usize::from(area.width), theme)
     };
 
-    let (status_text, hint_text) =
-        control_dock_row_content(app, usize::from(area.width), theme, status_candidates);
+    let (status_text, hint_text) = control_dock_row_content(
+        app,
+        usize::from(area.width),
+        theme,
+        status_candidates,
+        disclosure_visible,
+    );
     render_live_footer_row(
         frame,
         area,
@@ -340,7 +363,14 @@ pub(super) fn render_unified_bottom_dock(
     );
 
     if let Some(status_area) = dock_layout.status {
-        render_control_dock_status_band(frame, app, status_area, theme, &dock);
+        render_control_dock_status_band(
+            frame,
+            app,
+            status_area,
+            theme,
+            &dock,
+            dock_layout.disclosure.is_some(),
+        );
     }
 
     if dock.variant == crate::view_model::ControlDockVariant::ReplayReadOnly {
@@ -908,7 +938,9 @@ fn build_control_dock_view_model(
         );
     }
 
-    app.control_dock_view_model()
+    let mut dock = app.control_dock_view_model();
+    dock.composer_disclosure = composer_shortcut_hints(app, dock.composer_disabled);
+    dock
 }
 
 fn control_dock_summary_segment(
@@ -1742,13 +1774,16 @@ fn composer_shortcut_hints(app: &AppState, composer_disabled: bool) -> String {
     }
 
     if composer_disabled || app.completed_session_shell_active() {
-        return app
-            .keymap
-            .get_binding_label(Action::Palette, "commands")
-            .to_ascii_lowercase();
+        return app.keymap.get_binding_label(Action::Palette, "commands");
     }
 
-    format!("{newline} newline").to_ascii_lowercase()
+    let send = app.keymap.get_binding_label(Action::SubmitPrompt, "send");
+    let history = composer_history_binding_hint(app);
+    if history == "-" {
+        format!("{send} · {newline} newline")
+    } else {
+        format!("{send} · {newline} newline · {history} history")
+    }
 }
 
 fn composer_newline_binding_hint(app: &AppState) -> String {
@@ -1760,26 +1795,65 @@ fn composer_newline_binding_hint(app: &AppState) -> String {
     }
 }
 
+fn composer_history_binding_hint(app: &AppState) -> String {
+    let up = app
+        .keymap
+        .get_binding_strs(Action::HistoryUp)
+        .into_iter()
+        .next();
+    let down = app
+        .keymap
+        .get_binding_strs(Action::HistoryDown)
+        .into_iter()
+        .next();
+    match (up, down) {
+        (Some(up), Some(down)) => format!("{up}/{down}"),
+        (Some(up), None) => up,
+        (None, Some(down)) => down,
+        (None, None) => "-".to_string(),
+    }
+}
+
 fn control_dock_row_content(
     app: &AppState,
     max_width: usize,
     theme: &Theme,
     status_candidates: Vec<String>,
+    disclosure_visible: bool,
 ) -> (String, String) {
     if max_width == 0 {
         return (String::new(), String::new());
     }
 
-    let hints = app.footer_hints_view_model().hints;
+    let mut hints = app.footer_hints_view_model().hints;
+    let under_input_shortcuts_visible =
+        disclosure_visible || (!app.startup_shell_visible() && app.events.is_empty());
+    if under_input_shortcuts_visible {
+        hints.retain(|hint| {
+            if app.completed_session_shell_active() || app.runtime_state().composer_disabled {
+                hint.action != Action::Palette
+            } else {
+                hint.action != Action::SubmitPrompt
+            }
+        });
+    }
+    let palette_only = hints
+        .iter()
+        .find(|hint| hint.action == Action::Palette)
+        .copied()
+        .map(|hint| vec![hint])
+        .unwrap_or_default();
+    let last_only = hints
+        .last()
+        .copied()
+        .map(|hint| vec![hint])
+        .unwrap_or_default();
     let variants = [
         hints.clone(),
         compact_footer_hints(&hints, 4),
         compact_footer_hints(&hints, 2),
-        hints
-            .last()
-            .copied()
-            .map(|hint| vec![hint])
-            .unwrap_or_default(),
+        palette_only,
+        last_only,
     ];
 
     let separator = " ".repeat(theme.live_shell.rhythm.status_separator as usize);
@@ -2064,7 +2138,12 @@ fn completed_session_status_summary(
 pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
     use ratatui::{backend::TestBackend, Terminal};
 
-    let app = AppState::new_live(None, false, None);
+    let mut app = AppState::new_live(None, false, None);
+    let mut events = crate::lib_tests::session_view_events();
+    events.pop();
+    for event in events {
+        app.ingest_event(event);
+    }
     let theme = Theme::default();
     let width = 100;
     let height = 30;
@@ -2074,9 +2153,9 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
     let composer = dock.composer;
 
     assert_eq!(dock.status, Some(Rect::new(0, 29, 100, 1)));
-    assert_eq!(dock.shell.height, composer.height.saturating_add(1));
+    assert_eq!(dock.shell.height, composer.height.saturating_add(2));
     assert_eq!(dock.shell.y, composer.y);
-    assert_eq!(dock.disclosure, None);
+    assert_eq!(dock.disclosure, Some(Rect::new(0, 28, 100, 1)));
 
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).expect("create live shell terminal");
@@ -2125,9 +2204,14 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
 pub(crate) fn exact_test_live_control_dock_collapses_disclosure_before_status() {
     use ratatui::{backend::TestBackend, Terminal};
 
-    let app = AppState::new_live(None, false, None);
-    let width = 80;
-    let height = 24;
+    let mut app = AppState::new_live(None, false, None);
+    let mut events = crate::lib_tests::session_view_events();
+    events.pop();
+    for event in events {
+        app.ingest_event(event);
+    }
+    let width = 60;
+    let height = 18;
 
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).expect("create live shell terminal");
@@ -2143,30 +2227,6 @@ pub(crate) fn exact_test_live_control_dock_collapses_disclosure_before_status() 
         .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
         .collect::<Vec<_>>()
         .join("\n");
-    let lines = rendered.lines().collect::<Vec<_>>();
-    let composer_row = lines
-        .iter()
-        .position(|line| {
-            let trimmed = line.trim_start();
-            trimmed.starts_with('▎') || trimmed.starts_with('┃')
-        })
-        .expect("composer row");
-    let mut composer_last_row = composer_row;
-    while composer_last_row + 1 < lines.len() && {
-        let trimmed = lines[composer_last_row + 1].trim_start();
-        trimmed.starts_with('▎') || trimmed.starts_with('┃') || trimmed.starts_with('╹')
-    } {
-        composer_last_row += 1;
-    }
-    let footer_row = lines
-        .iter()
-        .enumerate()
-        .skip(composer_last_row + 1)
-        .find_map(|(index, line)| line.contains("Ctrl+p commands").then_some(index))
-        .expect("footer row");
-    assert_eq!(
-        footer_row,
-        composer_last_row + 1,
-        "tight live shells should place footer hints immediately after the live composer\n{rendered}"
-    );
+    assert!(!rendered.contains("↑/↓ history"));
+    assert!(rendered.contains("q quit"));
 }

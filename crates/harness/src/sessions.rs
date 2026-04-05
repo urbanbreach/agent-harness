@@ -754,6 +754,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    #[allow(clippy::too_many_arguments)]
     fn sample_entry(
         run_id: &str,
         sort_unix_ms: u128,

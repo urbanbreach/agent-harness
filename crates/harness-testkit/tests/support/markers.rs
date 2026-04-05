@@ -18,4 +18,4 @@ pub(crate) const LIVE_SUCCESS_COMPOSER_MARKER: &str = "Worker · model-1";
 pub(crate) const LIVE_READY_NEXT_TURN_MARKER: &str = "ready for next turn";
 pub(crate) const OPERATOR_FILES_MARKER: &str = "Modified Files";
 pub(crate) const RUN_FINISHED_SHELL_MARKERS: &[&str] =
-    &["run finished", "session shell preserved", "Tab focus"];
+    &["run finished", "session shell preserved", "Ctrl+p commands"];

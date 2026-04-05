@@ -1,6 +1,5 @@
 ---
 source: crates/harness-tui/src/tests.rs
-assertion_line: 1343
 expression: normalized
 ---
 Buffer {
@@ -29,7 +28,7 @@ Buffer {
         "  â                                                                             ",
         "  â  default Â· mock/model-1                                                     ",
         "  â¹âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ  ",
-        "  Success  Â·  run finished Â· session shell preserved         Tab focus  q quit  ",
+        "  Success  Â·  run finished Â· session shell preserved   Ctrl+p commands  q quit  ",
     ],
     styles: [
         x: 0, y: 0, fg: Reset, bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,

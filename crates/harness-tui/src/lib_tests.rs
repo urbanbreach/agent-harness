@@ -482,7 +482,7 @@ fn completed_sessions_show_inline_completion_state_instead_of_handoff_card() {
     assert!(app.completed_session_shell_active());
     assert!(!app.post_run_handoff_visible());
     assert!(status_row.contains("run finished · session shell preserved"));
-    assert!(rendered.contains("Ctrl+p commands"));
+    assert!(rendered.contains("Tab focus"));
     assert!(!rendered.contains("Next action"));
     assert!(!rendered.contains("Continue this session"));
 }
@@ -613,20 +613,16 @@ fn live_shell_footer_is_shortcuts_only() {
     let primary_footer_row = find_last_line_containing(&primary_lines, "q quit")
         .map(|row| primary_lines[row].trim_end().to_string())
         .expect("primary footer row");
-    assert_markers_in_order(
-        &primary_footer_row,
-        &["Enter send", "Ctrl+p commands", "q quit"],
-    );
+    assert_markers_in_order(&primary_footer_row, &["Ctrl+p commands", "q quit"]);
+    assert!(!primary_footer_row.contains("Enter send"));
 
     let reduced_render = render_live_lines(&live, 80, 24);
     let reduced_lines = reduced_render.lines().collect::<Vec<_>>();
     let reduced_footer_row = find_last_line_containing(&reduced_lines, "q quit")
         .map(|row| reduced_lines[row].trim_end().to_string())
         .expect("reduced footer row");
-    assert_markers_in_order(
-        &reduced_footer_row,
-        &["Enter send", "Ctrl+p commands", "q quit"],
-    );
+    assert_markers_in_order(&reduced_footer_row, &["Ctrl+p commands", "q quit"]);
+    assert!(!reduced_footer_row.contains("Enter send"));
     assert!(
         !reduced_footer_row.contains("shortcuts"),
         "reduced footer should compress hint count by width tier\n{reduced_footer_row}"
@@ -637,9 +633,9 @@ fn live_shell_footer_is_shortcuts_only() {
     let minimal_footer_row = find_last_line_containing(&minimal_lines, "q quit")
         .map(|row| minimal_lines[row].trim_end().to_string())
         .expect("minimal footer row");
-    assert_markers_in_order(&minimal_footer_row, &["Enter send", "q quit"]);
+    assert_markers_in_order(&minimal_footer_row, &["Ctrl+p commands", "q quit"]);
+    assert!(!minimal_footer_row.contains("Enter send"));
     assert!(!minimal_footer_row.contains("nl"));
-    assert!(!minimal_footer_row.contains("commands"));
     assert!(!minimal_footer_row.contains("shortcuts"));
 
     for footer_row in [
@@ -2020,12 +2016,15 @@ fn layout_plan_primary_geometry_matches_shell_contract() {
     assert_eq!(plan.status, Some(ratatui::layout::Rect::new(0, 29, 100, 1)));
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(0, 24, 100, 5))
+        Some(ratatui::layout::Rect::new(0, 24, 100, 4))
     );
     assert_eq!(dock.shell, ratatui::layout::Rect::new(0, 24, 100, 6));
     assert_eq!(dock.status, plan.status);
     assert_eq!(dock.composer, plan.composer.expect("primary composer"));
-    assert_eq!(dock.disclosure, None);
+    assert_eq!(
+        dock.disclosure,
+        Some(ratatui::layout::Rect::new(0, 28, 100, 1))
+    );
     assert_eq!(plan.disclosure, dock.disclosure);
 }
 
@@ -2646,6 +2645,38 @@ fn live_shell_composer_progressive_disclosure_by_width() {
     assert_live_shell_document_composer_contract(&ready, 80, 24, None, None, "Ctrl+p commands");
 
     assert_live_shell_document_composer_contract(&ready, 60, 18, None, None, "q quit");
+}
+
+#[cfg(test)]
+#[test]
+fn live_run_shell_places_under_input_controls_above_the_status_strip() {
+    let mut app = app::AppState::new_live(None, false, None);
+    let mut events = session_view_events();
+    events.pop();
+    for event in events {
+        app.ingest_event(event);
+    }
+
+    assert_live_shell_document_composer_contract(
+        &app,
+        100,
+        30,
+        None,
+        Some("↑/↓ history"),
+        "Enter send",
+    );
+    assert_live_shell_document_composer_contract(
+        &app,
+        80,
+        24,
+        None,
+        Some("↑/↓ history"),
+        "Enter send",
+    );
+
+    let dense = render_live_lines(&app, 60, 18);
+    assert!(!dense.contains("↑/↓ history"));
+    assert!(dense.contains("Ctrl+p commands"));
 }
 
 #[cfg(test)]
@@ -3583,7 +3614,7 @@ fn orchestration_projection_retains_only_recent_terminal_rows() {
 }
 
 #[cfg(test)]
-fn session_view_events() -> Vec<harness_core::event::EventEnvelopeV1> {
+pub(crate) fn session_view_events() -> Vec<harness_core::event::EventEnvelopeV1> {
     vec![
         envelope(
             1,
@@ -7554,7 +7585,7 @@ fn live_shell_orchestration_status_strip_snapshot() {
 
     insta::assert_snapshot!(
         status_row,
-        @"Ready  ·  ready for first turn  ·  orch 2a 1q 1r 1s · warn stale for 3001 ms      Enter send  Ctrl+p commands  q quit"
+        @"Ready  ·  ready for first turn  ·  orch 2a 1q 1r 1s · warn stale for 3001 ms                  Ctrl+p commands  q quit"
     );
 }
 
@@ -8300,9 +8331,12 @@ fn layout_plan_primary_geometry_docks_live_details_sidebar() {
     assert_eq!(plan.status, Some(ratatui::layout::Rect::new(0, 29, 100, 1)));
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(0, 24, 100, 5))
+        Some(ratatui::layout::Rect::new(0, 24, 100, 4))
     );
-    assert_eq!(plan.disclosure, None);
+    assert_eq!(
+        plan.disclosure,
+        Some(ratatui::layout::Rect::new(0, 28, 100, 1))
+    );
 }
 
 #[cfg(test)]
@@ -8329,6 +8363,7 @@ fn layout_plan_minimum_geometry_stacks_live_details_drawer() {
         plan.composer,
         Some(ratatui::layout::Rect::new(2, 18, 76, 5))
     );
+    assert_eq!(plan.disclosure, None);
 }
 
 #[cfg(test)]
@@ -8478,7 +8513,7 @@ fn replay_and_completed_states_preserve_read_only_and_session_preserved_copy() {
     let completed_render = render_live_lines(&completed, 100, 30);
     let status_row = live_status_strip_row(&completed, 100, 30, "session shell preserved");
     assert!(status_row.contains("run finished · session shell preserved"));
-    assert!(completed_render.contains("Ctrl+p commands"));
+    assert!(completed_render.contains("Tab focus"));
     assert!(completed_render.contains("q quit"));
 }
 
@@ -8567,8 +8602,11 @@ fn assert_live_shell_document_composer_contract(
             composer_first_row
         }
     };
+    let footer_search_start = disclosure_row
+        .map(|row| row + 1)
+        .unwrap_or_else(|| composer_last_row + 1);
     let global_footer_row =
-        find_line_containing_from(&lines, composer_last_row + 1, global_footer_marker)
+        find_line_containing_from(&lines, footer_search_start, global_footer_marker)
             .or_else(|| find_line_containing_from(&lines, composer_last_row + 1, "q quit"))
             .unwrap_or_else(|| {
                 panic!(

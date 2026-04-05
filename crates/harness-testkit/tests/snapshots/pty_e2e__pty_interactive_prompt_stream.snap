@@ -1,11 +1,12 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
+assertion_line: 1211
 expression: "checkpoint_visual_snapshot(&prompt_checkpoint,\nLIVE_STATE_FIXTURES.draft.snapshot_markers, &prompt_visual)"
 ---
 Hello world: true
 ready for next turn: true
 focus_marker: Hello world
-focus_render_state_blake3: 5b6c540c9180a9613b8f553a572e665201ab5dd1867d16fcd0d946c5c5bd64f8
+focus_render_state_blake3: 41878c6892cc2e566b71354200f7cf6b8cbd673a2a251f953ebd1740fe1e1802
 focus_region_cells: row=3, col=5, height=6, width=28
 image: pty_interactive_prompt_stream.png
 manifest_json: pty-manifests/live_shell/manifest.json

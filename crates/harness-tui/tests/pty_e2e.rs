@@ -87,7 +87,7 @@ struct PromptFixture {
 
 impl PromptFixture {
     const LIVE_COMPOSER: Self = Self {
-        ready_marker: "Enter send",
+        ready_marker: "Ctrl+p commands",
     };
 }
 
@@ -493,13 +493,13 @@ fn pty_live_details_drawer_remains_reachable() {
             let screen = wait_for_screen_contains(
                 &mut helper.parser,
                 &helper.output_rx,
-                "q quit",
+                "Ctrl+p commands",
                 MARKER_TIMEOUT,
             )
             .expect("wait for dense session shell after sidebar toggle");
 
             assert!(!screen.contains("Context"));
-            assert!(screen.contains("Enter send"));
+            assert!(screen.contains("Ctrl+p commands"));
         } else {
             let screen = wait_for_screen_contains(
                 &mut helper.parser,
