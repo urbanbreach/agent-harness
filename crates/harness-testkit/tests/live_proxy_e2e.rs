@@ -1134,6 +1134,13 @@ async fn live_proxy_prompt_wiremock_smoke_uses_responses_and_model_override() {
                 run_config.endpoint.path()
             )
         });
+    let authorization = responses_request
+        .headers
+        .get("authorization")
+        .expect("authorization header")
+        .to_str()
+        .expect("authorization header must be utf-8");
+    assert_eq!(authorization, "Bearer test-key");
     assert!(
         !requests
             .iter()
@@ -1147,6 +1154,124 @@ async fn live_proxy_prompt_wiremock_smoke_uses_responses_and_model_override() {
     assert_eq!(
         request_body.get("model"),
         Some(&Value::String(overridden_model.to_string()))
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn live_proxy_prompt_wiremock_falls_back_to_chat_on_cliproxy_400() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(RESPONSES_ENDPOINT_PATH))
+        .respond_with(ResponseTemplate::new(400))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(deterministic_chat_sse_fixture(), "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let provider_name = "proxy";
+    let configured_model = "configured-model";
+    let namespace = LiveNamespaceAllocation::allocate("live-proxy-wiremock-fallback")
+        .expect("allocate fallback namespace");
+    let session_dir = namespace.session_dir("wiremock-session");
+    let source_config_path = namespace.artifact_file("source-config", "jsonc");
+    let source_config = build_live_proxy_test_config(
+        provider_name,
+        &server.uri(),
+        "auto",
+        configured_model,
+        &session_dir,
+    );
+    fs::write(
+        &source_config_path,
+        serde_json::to_string_pretty(&source_config).expect("serialize fallback config"),
+    )
+    .expect("write fallback config");
+
+    let run_config = prepare_prompt_run_config(
+        &source_config_path,
+        provider_name,
+        configured_model,
+        None,
+        "wiremock_live_profile",
+    )
+    .expect("prepare fallback prompt run config");
+
+    let harness_bin = resolve_harness_bin();
+    let events_path = namespace.artifact_file("events", "jsonl");
+
+    let harness_bin_for_run = harness_bin.clone();
+    let events_path_for_run = events_path.clone();
+    let run_config_for_run = run_config.clone();
+    let output = tokio::task::spawn_blocking(move || {
+        Command::new(&harness_bin_for_run)
+            .arg("prompt")
+            .arg("--text")
+            .arg("Return hello from fallback wiremock")
+            .arg("--profile")
+            .arg(&run_config_for_run.profile)
+            .arg("--config")
+            .arg(&run_config_for_run.config_path)
+            .arg("--out")
+            .arg(&events_path_for_run)
+            .env(
+                "HARNESS_PROMPT_WAIT_TIMEOUT_MS",
+                DEFAULT_LIVE_PROXY_WAIT_TIMEOUT_MS,
+            )
+            .current_dir(&run_config_for_run.workspace_root)
+            .output()
+            .expect("spawn harness prompt fallback")
+    })
+    .await
+    .expect("join blocking harness fallback run");
+
+    assert!(
+        output.status.success(),
+        "fallback wiremock harness prompt failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let events_body = fs::read_to_string(&events_path)
+        .unwrap_or_else(|err| panic!("failed reading {}: {err}", events_path.display()));
+    assert_events_show_successful_provider_turn(provider_name, &events_body);
+
+    let requests = server
+        .received_requests()
+        .await
+        .expect("request recording must be enabled");
+    assert!(
+        requests
+            .iter()
+            .any(|request| request.url.path() == RESPONSES_ENDPOINT_PATH),
+        "expected the initial /v1/responses attempt"
+    );
+    let chat_request = requests
+        .iter()
+        .find(|request| request.url.path() == "/v1/chat/completions")
+        .expect("expected fallback /v1/chat/completions request");
+    let authorization = chat_request
+        .headers
+        .get("authorization")
+        .expect("authorization header")
+        .to_str()
+        .expect("authorization header must be utf-8");
+    assert_eq!(authorization, "Bearer test-key");
+
+    let request_body: Value = chat_request
+        .body_json()
+        .expect("fallback chat request body must be JSON");
+    assert_eq!(
+        request_body.get("model"),
+        Some(&Value::String(configured_model.to_string()))
     );
 }
 
@@ -2248,6 +2373,26 @@ fn resolve_tagged_run_dir_rejects_collisions() {
         err.contains("found 2"),
         "collision error should include the matching run-dir count: {err}"
     );
+}
+
+#[test]
+fn tool_flow_tool_call_state_recognizes_fs_write_same_file_success() {
+    let events = concat!(
+        r#"{"payload":{"event_type":"tool_call_requested","data":{"tool_call_id":"toolcall_000001","tool_id":"fs.write","args_summary":"{\"content\":\"alpha\\nbeta\\ngamma\\n\",\"path\":\"tmp/live_tool_flow.md\"}"}}}"#,
+        "\n",
+        r#"{"payload":{"event_type":"tool_call_finished","data":{"tool_call_id":"toolcall_000001","status":"succeeded"}}}"#,
+        "\n"
+    );
+
+    let state = tool_flow_tool_call_state(
+        events,
+        Path::new(LIVE_TOOL_FLOW_RELATIVE_PATH),
+        "fs.write",
+        1,
+    )
+    .expect("fs.write tool-flow state should parse");
+
+    assert_eq!(state, ToolFlowToolCallState::Succeeded);
 }
 
 #[test]
@@ -4821,7 +4966,7 @@ fn tool_call_targets_path(tool_id: &str, args_summary: &str, canonical_path: &st
     let args_json = serde_json::from_str::<Value>(args_summary).ok();
 
     match tool_id {
-        "fs.read" | "edit.hashline_scan" | "edit.hashline_apply" => args_json
+        "fs.write" | "fs.read" | "edit.hashline_scan" | "edit.hashline_apply" => args_json
             .as_ref()
             .and_then(|value| value.get("path"))
             .and_then(Value::as_str)
@@ -6315,6 +6460,16 @@ fn deterministic_responses_sse_fixture() -> String {
         "data: {\"type\":\"response.output_text.delta\",\"delta\":\" world\"}\n\n",
         "event: response.completed\n",
         "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":2,\"total_tokens\":6}}}\n\n",
+        "data: [DONE]\n\n"
+    )
+    .to_string()
+}
+
+fn deterministic_chat_sse_fixture() -> String {
+    concat!(
+        "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}],\"usage\":null}\n\n",
+        "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" world\"},\"finish_reason\":null}],\"usage\":null}\n\n",
+        "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":2,\"total_tokens\":6}}\n\n",
         "data: [DONE]\n\n"
     )
     .to_string()
