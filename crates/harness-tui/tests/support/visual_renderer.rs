@@ -542,12 +542,12 @@ fn font_candidates(
     if let Ok(path) = std::env::var(env_var) {
         candidates.push(path);
     }
+    candidates.extend(fallback_paths.iter().map(|path| (*path).to_string()));
     if let Some(path) = fontconfig_match(fontconfig_pattern) {
         if !candidates.iter().any(|candidate| candidate == &path) {
             candidates.push(path);
         }
     }
-    candidates.extend(fallback_paths.iter().map(|path| (*path).to_string()));
     candidates
 }
 

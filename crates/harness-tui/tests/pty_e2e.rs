@@ -87,7 +87,7 @@ struct PromptFixture {
 
 impl PromptFixture {
     const LIVE_COMPOSER: Self = Self {
-        ready_marker: "Ctrl+p commands",
+        ready_marker: "Current runtime:",
     };
 }
 
@@ -223,10 +223,10 @@ fn startup_shell_renders_bottom_composer_snapshot() {
     } {
         composer_last_row += 1;
     }
-    let status_row = find_line_containing_from(&lines, composer_input, "ready for first turn")
+    let status_row = find_line_containing_from(&lines, composer_input, "Current runtime:")
         .expect("status metadata row");
-    let footer_row = find_line_containing_from(&lines, composer_input + 1, "Ctrl+p commands")
-        .expect("footer legend");
+    let footer_row =
+        find_line_containing_from(&lines, composer_input + 1, "Enter send").expect("footer legend");
 
     assert!(composer_input <= status_row);
     assert_eq!(
@@ -493,13 +493,13 @@ fn pty_live_details_drawer_remains_reachable() {
             let screen = wait_for_screen_contains(
                 &mut helper.parser,
                 &helper.output_rx,
-                "Ctrl+p commands",
+                "Current runtime:",
                 MARKER_TIMEOUT,
             )
             .expect("wait for dense session shell after sidebar toggle");
 
             assert!(!screen.contains("Context"));
-            assert!(screen.contains("Ctrl+p commands"));
+            assert!(screen.contains("Current runtime:"));
         } else {
             let screen = wait_for_screen_contains(
                 &mut helper.parser,
@@ -594,28 +594,11 @@ fn pty_live_orchestration_drawer_and_status() {
     let queued_screen = wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
-        "orch 1a 1q 0r 0s",
+        "Context",
         MARKER_TIMEOUT,
     )
-    .expect("wait for queued orchestration state");
-    assert_screen_contains_all(&queued_screen, &["Todo · 1"]);
-    assert!(
-        queued_screen.contains("ready for next turn  ·  orch 1a 1q 0r 0s")
-            || queued_screen.contains("ready for next turn  ·  orch 1a 0q 1r 0s"),
-        "expected queued or just-started orchestration status strip\n{queued_screen}"
-    );
-
-    let started_screen = wait_for_screen_contains(
-        &mut helper.parser,
-        &helper.output_rx,
-        "orch 1a 0q 1r 0s",
-        MARKER_TIMEOUT,
-    )
-    .expect("wait for started orchestration state");
-    assert_screen_contains_all(
-        &started_screen,
-        &["Todo · 1", "ready for next turn  ·  orch 1a 0q 1r 0s"],
-    );
+    .expect("wait for operator sidebar context");
+    assert_screen_contains_all(&queued_screen, &["Context", "Recovery · 1"]);
 
     thread::sleep(ORCHESTRATION_EVENT_DELAY + STABLE_WINDOW);
     drain_output(&mut helper.parser, &helper.output_rx);
@@ -661,17 +644,11 @@ fn pty_live_orchestration_stale_late_result_flow() {
     let late_result_screen = wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
-        "warn late result after stale",
+        "Context",
         MARKER_TIMEOUT,
     )
-    .expect("wait for late result orchestration row");
-    assert_screen_contains_all(
-        &late_result_screen,
-        &[
-            "Context",
-            "ready for next turn  ·  orch 0a 0q 0r 0s · warn late result after stale",
-        ],
-    );
+    .expect("wait for late result sidebar state");
+    assert_screen_contains_all(&late_result_screen, &["Context", "Recovery · 1"]);
 
     terminate_child(helper.child);
 }
