@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::net::IpAddr;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -99,6 +100,19 @@ impl OpenAiCompatibleProvider {
         format!("{base}/responses")
     }
 
+    fn is_loopback_base_url(&self) -> bool {
+        reqwest::Url::parse(self.base_url.trim())
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_owned))
+            .is_some_and(|host| {
+                host.eq_ignore_ascii_case("localhost")
+                    || host
+                        .parse::<IpAddr>()
+                        .map(|ip| ip.is_loopback())
+                        .unwrap_or(false)
+            })
+    }
+
     async fn send_request<T: Serialize>(
         &self,
         endpoint: String,
@@ -128,6 +142,52 @@ impl OpenAiCompatibleProvider {
     ) -> Result<reqwest::Response, String> {
         self.send_request(self.responses_endpoint(), request).await
     }
+
+    async fn non_success_status_message(&self, response: reqwest::Response) -> String {
+        let status = response.status();
+        let body = response.text().await.ok();
+        format_non_success_status_message(status.as_u16(), body.as_deref(), &self.api_key)
+    }
+}
+
+fn format_non_success_status_message(status: u16, body: Option<&str>, api_key: &str) -> String {
+    let detail = body
+        .and_then(extract_provider_error_detail)
+        .or_else(|| {
+            body.map(str::trim)
+                .filter(|body| !body.is_empty())
+                .map(str::to_string)
+        })
+        .map(|body| sanitize_provider_error_detail(&body, api_key))
+        .filter(|body| !body.is_empty());
+
+    match detail {
+        Some(detail) => format!("openai_compatible request failed with status {status}: {detail}"),
+        None => format!("openai_compatible request failed with status {status}"),
+    }
+}
+
+fn extract_provider_error_detail(body: &str) -> Option<String> {
+    let parsed: serde_json::Value = serde_json::from_str(body).ok()?;
+    parsed
+        .get("error")
+        .and_then(|error| error.get("message"))
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| parsed.get("message").and_then(serde_json::Value::as_str))
+        .map(str::to_string)
+}
+
+fn sanitize_provider_error_detail(detail: &str, api_key: &str) -> String {
+    if detail.to_ascii_lowercase().contains("authorization") {
+        return "provider error body redacted because it contained sensitive auth material"
+            .to_string();
+    }
+
+    if api_key.is_empty() {
+        return detail.to_string();
+    }
+
+    detail.replace(api_key, "[REDACTED]")
 }
 
 fn map_tools<T>(tools: Option<Vec<ToolDef>>) -> Option<Vec<T>>
@@ -176,7 +236,9 @@ impl Provider for OpenAiCompatibleProvider {
                     }
                 };
 
-                if matches!(response.status().as_u16(), 404 | 405) {
+                if matches!(response.status().as_u16(), 404 | 405)
+                    || (response.status().as_u16() == 400 && self.is_loopback_base_url())
+                {
                     match self.send_chat_request(&chat_request).await {
                         Ok(fallback_response) => {
                             (OpenAiApiMode::ChatCompletions, fallback_response)
@@ -195,12 +257,8 @@ impl Provider for OpenAiCompatibleProvider {
 
         let status = response.status();
         if !status.is_success() {
-            return Box::pin(stream::iter(vec![ProviderStreamEvent::Error {
-                message: format!(
-                    "openai_compatible request failed with status {}",
-                    status.as_u16()
-                ),
-            }]));
+            let message = self.non_success_status_message(response).await;
+            return Box::pin(stream::iter(vec![ProviderStreamEvent::Error { message }]));
         }
 
         let (tx, rx) = mpsc::channel(64);
@@ -1375,6 +1433,14 @@ mod tests {
             .expect("request recording must be enabled");
         assert_eq!(requests.len(), 1);
 
+        let authorization = requests[0]
+            .headers
+            .get("authorization")
+            .expect("authorization header")
+            .to_str()
+            .expect("authorization header is utf-8");
+        assert_eq!(authorization, "Bearer test-secret-key");
+
         let body: serde_json::Value = requests[0].body_json().expect("request body must be JSON");
         assert_eq!(
             body.get("tool_choice"),
@@ -1395,6 +1461,58 @@ mod tests {
             Some(&serde_json::Value::String("filesystem_read".to_string()))
         );
         assert!(tools[0].get("function").is_none());
+    }
+
+    #[tokio::test]
+    async fn openai_auto_loopback_falls_back_to_chat_completions_on_400() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(ResponseTemplate::new(400))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(deterministic_sse_transcript(), "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = provider_for_base_url_with_mode(
+            format!("{}/v1", server.uri()),
+            "test-secret-key",
+            OpenAiApiMode::Auto,
+        );
+        let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
+
+        assert_eq!(
+            events,
+            vec![
+                ProviderStreamEvent::Start,
+                ProviderStreamEvent::TextDelta("Hello".to_string()),
+                ProviderStreamEvent::TextDelta(" world".to_string()),
+                ProviderStreamEvent::Done {
+                    usage: CompletionUsage {
+                        prompt_tokens: 4,
+                        completion_tokens: 2,
+                        total_tokens: 6,
+                    }
+                },
+            ]
+        );
+
+        let requests = server
+            .received_requests()
+            .await
+            .expect("request recording must be enabled");
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].url.path(), "/v1/responses");
+        assert_eq!(requests[1].url.path(), "/v1/chat/completions");
     }
 
     #[test]
@@ -1780,8 +1898,36 @@ mod tests {
             panic!("expected an error event for non-success response")
         };
 
+        assert!(message.contains("status 401"));
         assert!(!message.contains(api_key));
         assert!(!message.to_ascii_lowercase().contains("authorization"));
+    }
+
+    #[tokio::test]
+    async fn openai_compatible_errors_include_response_body_detail() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+                "error": {
+                    "message": "Invalid schema for function 'plan_exit': object schema missing properties"
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let provider = provider_for_base_url(format!("{}/v1", server.uri()), "test-secret-key");
+        let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
+
+        assert_eq!(events.len(), 1);
+        let ProviderStreamEvent::Error { message } = &events[0] else {
+            panic!("expected an error event for non-success response")
+        };
+
+        assert!(message.contains("status 400"));
+        assert!(message.contains("Invalid schema for function 'plan_exit'"));
+        assert!(message.contains("object schema missing properties"));
     }
 
     #[tokio::test]
@@ -2006,12 +2152,65 @@ mod tests {
             return value.to_string();
         }
 
-        let key = &value[2..value.len() - 1];
-        if key.is_empty() {
+        let reference = &value[2..value.len() - 1];
+        if reference.is_empty() {
             return value.to_string();
         }
 
-        env::var(key).unwrap_or_else(|_| value.to_string())
+        if let Some((key, fallback)) = reference.split_once(":-") {
+            if key.is_empty() {
+                return value.to_string();
+            }
+            return env::var(key)
+                .ok()
+                .filter(|resolved| !resolved.is_empty())
+                .unwrap_or_else(|| fallback.to_string());
+        }
+
+        env::var(reference).unwrap_or_else(|_| value.to_string())
+    }
+
+    #[allow(unsafe_code)]
+    fn with_env_var_state<T>(name: &str, value: Option<&str>, run: impl FnOnce() -> T) -> T {
+        let previous = env::var_os(name);
+
+        match value {
+            Some(value) => unsafe { env::set_var(name, value) },
+            None => unsafe { env::remove_var(name) },
+        }
+
+        let result = run();
+
+        match previous {
+            Some(value) => unsafe { env::set_var(name, value) },
+            None => unsafe { env::remove_var(name) },
+        }
+
+        result
+    }
+
+    #[test]
+    fn live_smoke_env_reference_supports_default_fallback_syntax() {
+        with_env_var_state("HARNESS_PROVIDER_TEST_API_KEY", None, || {
+            assert_eq!(
+                resolve_env_reference("${HARNESS_PROVIDER_TEST_API_KEY:-sk-zerolimit}"),
+                "sk-zerolimit"
+            );
+        });
+
+        with_env_var_state("HARNESS_PROVIDER_TEST_API_KEY", Some(""), || {
+            assert_eq!(
+                resolve_env_reference("${HARNESS_PROVIDER_TEST_API_KEY:-sk-zerolimit}"),
+                "sk-zerolimit"
+            );
+        });
+
+        with_env_var_state("HARNESS_PROVIDER_TEST_API_KEY", Some("real-key"), || {
+            assert_eq!(
+                resolve_env_reference("${HARNESS_PROVIDER_TEST_API_KEY:-sk-zerolimit}"),
+                "real-key"
+            );
+        });
     }
 
     fn default_timeout_ms() -> u64 {
