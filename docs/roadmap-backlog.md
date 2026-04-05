@@ -110,6 +110,12 @@ Included queue items: RB-27, RB-28, RB-29, RB-30
   - docs/roadmap.md: TUI and UX parity
   - docs/parity-scorecard.md: ranked gap list tied to concrete UX/runtime evidence
   - opencode-parity-audit.md
+- Current evidence-driven follow-on order:
+  1. **RB-03** — map each canonical journey to deterministic PTY/live signoff before more UI churn
+  2. **RB-10** — close the transcript disclosure, metadata, timing, and tool-state blocker for journeys 2 and 5
+  3. **RB-11** — close the recovery/reopen/artifact-discovery blocker for journey 4
+  4. **RB-07** and **RB-13** — raise first-run, permission, and HUD/status clarity once the transcript and recovery blockers are ordered
+  5. **RB-06**, **RB-08**, and **RB-09** — finish the remaining sidebar, shell-layout, and thinking-trace polish after the blocker/high items
 ### RB-03 — Map canonical journeys to deterministic PTY and live signoff
 - GitHub issue: [#70](https://github.com/urbanbreach/agent-harness/issues/70)
 - Milestone batch: Batch 1 — Core parity target and verification baseline
