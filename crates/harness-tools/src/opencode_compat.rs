@@ -646,7 +646,12 @@ impl Tool for TodoReadCompatTool {
     }
 
     fn parameters_json_schema(&self) -> Value {
-        json!({"type": "object", "additionalProperties": false})
+        json!({
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+        })
     }
 
     fn capability(&self) -> ToolCapability {

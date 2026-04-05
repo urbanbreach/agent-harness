@@ -529,9 +529,45 @@ impl Tool for ShellRunTool {
 }
 
 fn json_schema_for<T: JsonSchema>() -> serde_json::Value {
-    match serde_json::to_value(schemars::schema_for!(T).schema) {
-        Ok(schema) => schema,
-        Err(_) => json!({"type": "object"}),
+    let mut schema = serde_json::to_value(schemars::schema_for!(T).schema)
+        .unwrap_or_else(|_| empty_object_json_schema());
+    normalize_top_level_object_schema(&mut schema);
+    schema
+}
+
+fn empty_object_json_schema() -> serde_json::Value {
+    json!({
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+    })
+}
+
+fn normalize_top_level_object_schema(schema: &mut serde_json::Value) {
+    if schema.get("type").and_then(serde_json::Value::as_str) != Some("object") {
+        return;
+    }
+
+    let Some(object) = schema.as_object_mut() else {
+        return;
+    };
+
+    object
+        .entry("properties".to_string())
+        .or_insert_with(|| json!({}));
+    object
+        .entry("additionalProperties".to_string())
+        .or_insert_with(|| json!(false));
+
+    if object
+        .get("properties")
+        .and_then(serde_json::Value::as_object)
+        .is_some_and(|properties| properties.is_empty())
+    {
+        object
+            .entry("required".to_string())
+            .or_insert_with(|| json!([]));
     }
 }
 
@@ -544,6 +580,8 @@ mod tests {
     use harness_core::event::{ActorKind, EventActor};
     use harness_core::redact::DefaultRedactor;
     use harness_core::tool::{Tool, ToolContext, ToolError};
+    use schemars::JsonSchema;
+    use serde::Deserialize;
     use serde_json::json;
     use std::collections::BTreeSet;
     use std::path::Path;
@@ -574,24 +612,60 @@ mod tests {
 
         for tool_id in [
             "agent.spawn",
+            "code.lsp",
+            "code.lsp.rename",
             "fs.read",
             "fs.glob",
             "fs.ls",
             "fs.grep",
             "github.issue",
             "github.pull_request",
+            "lsp",
+            "plan.exit",
+            "plan_exit",
             "shell.run",
+            "todo.read",
+            "todoread",
             "edit.hashline_apply",
             "edit.hashline_scan",
         ] {
             let tool = registry
                 .get(tool_id)
                 .unwrap_or_else(|| panic!("missing tool {tool_id}"));
-            assert!(
-                tool.parameters_json_schema().is_object(),
-                "schema for {tool_id} must be an object"
+            let schema = tool.parameters_json_schema();
+            assert!(schema.is_object(), "schema for {tool_id} must be an object");
+            assert_eq!(
+                schema.get("type").and_then(serde_json::Value::as_str),
+                Some("object"),
+                "schema for {tool_id} must declare top-level type=object"
             );
+            assert!(
+                schema
+                    .get("properties")
+                    .and_then(serde_json::Value::as_object)
+                    .is_some(),
+                "schema for {tool_id} must declare top-level properties"
+            );
+            for forbidden in ["oneOf", "anyOf", "allOf", "enum", "not"] {
+                assert!(
+                    schema.get(forbidden).is_none(),
+                    "schema for {tool_id} must not use top-level {forbidden}"
+                );
+            }
         }
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
+    #[serde(deny_unknown_fields)]
+    struct EmptyObjectArgs {}
+
+    #[test]
+    fn json_schema_for_empty_object_includes_explicit_properties() {
+        let schema = super::json_schema_for::<EmptyObjectArgs>();
+        assert_eq!(schema.get("type"), Some(&json!("object")));
+        assert_eq!(schema.get("properties"), Some(&json!({})));
+        assert_eq!(schema.get("required"), Some(&json!([])));
+        assert_eq!(schema.get("additionalProperties"), Some(&json!(false)));
     }
 
     #[test]
