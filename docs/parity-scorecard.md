@@ -153,7 +153,7 @@ Using the shipped parity docs and current native PTY/live evidence as the source
    - **Why ranked here:** parity claims are supposed to be provable with both deterministic PTY evidence and live-provider validation, but the shipped live guidance is still narrower than the five canonical journeys.
    - **Proof today:**
      - the roadmap still calls for live-provider tool verification, CLIProxy-backed live tests, CLI+TUI parity coverage, and provider-difference tracking (`docs/roadmap.md:32-37`)
-     - the testing guide documents a broad offline PTY evidence set, but only additive live visual/chat-control signoff lanes (`docs/testing.md:62-145,193-227`)
+     - the testing guide documents a broad offline PTY evidence set, additive live visual/chat-control signoff lanes, and the still-explicit live gaps in the journey matrix (`docs/testing.md`, sections `Agent-visible visual artifacts`, `Additive live visual signoff`, `Live chat-control signoff`, and `Canonical journey signoff expectations`)
      - the shipped live-proxy guide centers on `live_proxy_prompt_chat_tool_flow`, `live_proxy_e2e_tui_tool_flow`, and `live_proxy_e2e_visual_verifier`; it does not yet map the five canonical journeys to live signoff artifacts (`crates/harness-testkit/tests/README.live-proxy.md:38-73,116-126,148-159`)
    - **Follow-on lanes:** RB-03, then RB-04 and RB-05.
 
@@ -164,7 +164,7 @@ Using the shipped parity docs and current native PTY/live evidence as the source
      - the scorecard says first-run success requires an obvious default path plus legible startup, tool activity, permissions, and completion state (`docs/parity-scorecard.md:25-35`)
      - the startup PTY snapshot proves only the current draft-first shell and `Ctrl+p open` affordance (`crates/harness-testkit/tests/snapshots/pty_e2e__pty_interactive_type_first_startup.snap:5-12`)
      - the roadmap still leaves the sidebar, under-input area, commands menu, and command discovery unchecked (`docs/roadmap.md:42-49,74-77`)
-     - the testing guide lists startup and command-palette checkpoints, but not a richer first-run parity contract yet (`docs/testing.md:66-84,140-143`)
+     - the testing guide lists startup and command-palette checkpoints and now spells out the first-run signoff expectation, while still calling out the missing end-to-end live oracle for the whole journey (`docs/testing.md`, sections `Agent-visible visual artifacts` and `Canonical journey signoff expectations`)
    - **Follow-on lanes:** RB-07 first, then RB-12 and RB-06.
 
 5. **Polish — keep improving transcript layout richness and tool/title semantics, not the already-landed transcript-first structure.**
@@ -188,6 +188,21 @@ Using the shipped parity docs and current native PTY/live evidence as the source
 - map each canonical journey to existing deterministic PTY/live signoff where possible
 - add missing signoff coverage for the top parity-critical journeys
 - make visual and transcript evidence part of the acceptance criteria
+
+#### Canonical journey signoff map
+
+`docs/testing.md` owns the detailed CLI/TUI signoff matrix. The current journey-level map is:
+
+| Journey | Deterministic PTY baseline | Existing live signoff | Explicit gap |
+| --- | --- | --- | --- |
+| 1. First successful prompt run | `startup_shell`, `startup_command_palette`, `live_shell` | CLI `live_proxy_prompt_responses_smoke`; TUI `live_proxy_preflight`, `live_proxy_e2e_tui_prompt_responses_smoke`, `live_proxy_e2e_visual_verifier` | No live lane yet proves first-run command palette/sidebar/under-input discoverability. |
+| 2. Transcript-first live session | `transcript_shell` | CLI `live_proxy_prompt_chat_tool_flow`; TUI `live_proxy_preflight`, `live_proxy_e2e_tui_tool_flow`, `live_proxy_e2e_visual_verifier` | No dedicated live dense-transcript oracle yet matches the PTY disclosure/state/diff contract. |
+| 3. Permission-handling flow | `permission` | No current live CLI or TUI permission ask/allow/deny lane | Missing live CLI and live TUI permission-request coverage. |
+| 4. Continue-session and recovery flow | `startup_session_history`, `continue_session`, `replay_shell`, `replay`, `operator_sidebar` | No current live CLI or TUI continue/replay/reopen lane | Recovery, replay, artifact discovery, and child-session navigation are still PTY-only for parity signoff. |
+| 5. Tool-heavy run inspection | `transcript_shell`, `replay_shell`, `operator_sidebar` | CLI `live_proxy_prompt_chat_tool_flow`; TUI `live_proxy_preflight`, `live_proxy_e2e_tui_tool_flow`, `live_proxy_e2e_visual_verifier` | No dedicated live replay/inspection lane yet covers dense tool disclosure, diff presentation, or child-session/tool-artifact inspection. |
+
+For parity-critical changes, PTY PNG/snapshot evidence and live transcript/manifest artifacts are
+acceptance criteria, not debugging extras.
 
 ## What should wait
 

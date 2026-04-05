@@ -31,6 +31,8 @@ Secondary/supporting profiles:
 
 ## Core parity and verification
 
+- [ ] Keep the canonical journey signoff map in `docs/testing.md` current, including explicit CLI/TUI expectations and any live-coverage gaps.
+- [ ] Treat PTY PNG/snapshot evidence and live transcript/manifest artifacts as acceptance criteria for parity-critical changes.
 - [ ] Reach tool parity and make sure tests verify actual tool functionality against live providers.
 - [ ] Flesh out tests to run against live providers via CLIProxyAPI using `gpt-5.4-mini` with low reasoning.
 - [ ] Expand live verification so parity-critical flows are tested through both CLI and TUI paths.

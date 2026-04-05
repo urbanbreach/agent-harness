@@ -2,7 +2,7 @@
 
 Tracked roadmap execution queue for the `claw-dev` line.
 
-> Source-of-truth note: this worktree does not currently contain `docs/roadmap.md`, `docs/architecture.md`, `docs/testing.md`, or `docs/parity-scorecard.md`. This backlog is derived from the source files in `/srv/samba/code/accela/agent-harness/docs/` and is kept here so future issue lanes can work from a tracked in-repo queue.
+> Source-of-truth note: this backlog stays tracked in-repo so isolated issue lanes can work from a stable queue. The RB-03 canonical journey signoff matrix lives in `docs/testing.md`, with the shorter parity summary in `docs/parity-scorecard.md`.
 
 ## Recommended first implementation slice
 
@@ -128,6 +128,7 @@ Included queue items: RB-27, RB-28, RB-29, RB-30
   - Each canonical journey has a documented signoff path.
   - Missing coverage is called out before implementation lanes start.
   - The signoff map references the existing harness-testkit lanes rather than inventing new verification categories.
+  - PTY PNG/snapshot evidence and live transcript/manifest artifacts are named as acceptance criteria, not optional debugging output.
 - Roadmap anchors:
   - docs/roadmap.md: core parity and verification
   - docs/parity-scorecard.md: top journeys have matching signoff plans
