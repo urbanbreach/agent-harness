@@ -276,42 +276,6 @@ fn header_identity_text(app: &AppState, header_mode: SessionHeaderMode) -> Strin
     }
 }
 
-fn render_control_dock_status_band(
-    frame: &mut Frame,
-    app: &AppState,
-    area: Rect,
-    theme: &Theme,
-    dock: &crate::view_model::ControlDockViewModel,
-    disclosure_visible: bool,
-) {
-    let surface = control_dock_status_surface(theme, dock.variant);
-    let base_style = Style::default().fg(theme.text.secondary).bg(surface);
-    frame.render_widget(control_dock_status_section(theme, dock.variant), area);
-    let status_candidates = if dock.variant == crate::view_model::ControlDockVariant::Startup {
-        Vec::new()
-    } else {
-        live_footer_status_candidates(app, usize::from(area.width), theme)
-    };
-
-    let (status_text, hint_text) = control_dock_row_content(
-        app,
-        usize::from(area.width),
-        theme,
-        status_candidates,
-        disclosure_visible,
-    );
-    render_live_footer_row(
-        frame,
-        area,
-        base_style,
-        (!status_text.is_empty())
-            .then_some(status_text)
-            .into_iter()
-            .collect(),
-        hint_text,
-    );
-}
-
 fn control_dock_summary_segment_text_for_width(
     segment: &crate::view_model::ControlDockSummarySegment,
     width: u16,
@@ -361,17 +325,6 @@ pub(super) fn render_unified_bottom_dock(
         theme,
         dock.variant,
     );
-
-    if let Some(status_area) = dock_layout.status {
-        render_control_dock_status_band(
-            frame,
-            app,
-            status_area,
-            theme,
-            &dock,
-            dock_layout.disclosure.is_some(),
-        );
-    }
 
     if dock.variant == crate::view_model::ControlDockVariant::ReplayReadOnly {
         render_replay_read_only_composer_content(frame, dock_layout.composer, theme, &dock);
@@ -584,20 +537,6 @@ pub(super) fn control_dock_section(
     variant: crate::view_model::ControlDockVariant,
 ) -> Block<'static> {
     unified_bottom_dock(theme, variant)
-}
-
-pub(super) fn control_dock_status_section(
-    theme: &Theme,
-    variant: crate::view_model::ControlDockVariant,
-) -> Block<'static> {
-    Block::default().style(Style::default().bg(control_dock_status_surface(theme, variant)))
-}
-
-pub(super) fn control_dock_status_surface(
-    theme: &Theme,
-    variant: crate::view_model::ControlDockVariant,
-) -> Color {
-    control_dock_surface(theme, variant)
 }
 
 pub(super) fn chromeless_shell_section(theme: &Theme) -> Block<'static> {
@@ -1235,6 +1174,19 @@ fn composer_metadata_line(
     theme: &Theme,
     surface: Color,
 ) -> Line<'static> {
+    let footer_hints = inline_footer_hint_text(app, max_width, theme);
+    if !footer_hints.is_empty() {
+        return Line::from(Span::styled(
+            footer_hints,
+            Style::default()
+                .fg(composer_metadata_color(
+                    ComposerMetadataTone::Secondary,
+                    theme,
+                ))
+                .bg(surface),
+        ));
+    }
+
     let candidates = composer_metadata_candidates(app, dock);
     let segments = candidates
         .iter()
@@ -1668,6 +1620,77 @@ fn composer_metadata_text(
     )
 }
 
+fn inline_footer_hint_text(app: &AppState, max_width: usize, theme: &Theme) -> String {
+    if max_width == 0 {
+        return String::new();
+    }
+
+    if app.startup_shell_visible() {
+        return String::new();
+    }
+
+    if !app.completed_session_shell_active() && !app.runtime_state().composer_disabled {
+        return String::new();
+    }
+
+    let mut hints = app.footer_hints_view_model().hints;
+    if hints.is_empty() {
+        return String::new();
+    }
+
+    let under_input_shortcuts_visible = !app.startup_shell_visible() && app.events.is_empty();
+    if under_input_shortcuts_visible {
+        hints.retain(|hint| {
+            if app.completed_session_shell_active() || app.runtime_state().composer_disabled {
+                hint.action != Action::Palette
+            } else {
+                hint.action != Action::SubmitPrompt
+            }
+        });
+    }
+
+    let palette_only = hints
+        .iter()
+        .find(|hint| hint.action == Action::Palette)
+        .copied()
+        .map(|hint| vec![hint])
+        .unwrap_or_default();
+    let last_only = hints
+        .last()
+        .copied()
+        .map(|hint| vec![hint])
+        .unwrap_or_default();
+    let separator = " ".repeat(theme.live_shell.rhythm.status_separator as usize);
+    let candidates = [
+        hints.clone(),
+        compact_footer_hints(&hints, 4),
+        compact_footer_hints(&hints, 2),
+        palette_only,
+        last_only,
+    ]
+    .into_iter()
+    .filter(|variant_hints| !variant_hints.is_empty())
+    .map(|variant_hints| {
+        variant_hints
+            .iter()
+            .map(|hint| app.keymap.get_binding_label(hint.action, hint.label))
+            .collect::<Vec<_>>()
+            .join(&separator)
+    })
+    .collect::<Vec<_>>();
+
+    candidates
+        .iter()
+        .find(|candidate| candidate.chars().count() <= max_width)
+        .cloned()
+        .unwrap_or_else(|| {
+            truncate_plain_text(
+                candidates.first().map(String::as_str).unwrap_or(""),
+                max_width,
+            )
+        })
+}
+
 fn best_fit_text(options: &[String], max_width: usize) -> String {
     options
         .iter()
@@ -1812,105 +1835,6 @@ fn composer_history_binding_hint(app: &AppState) -> String {
         (None, Some(down)) => down,
         (None, None) => "-".to_string(),
     }
-}
-
-fn control_dock_row_content(
-    app: &AppState,
-    max_width: usize,
-    theme: &Theme,
-    status_candidates: Vec<String>,
-    disclosure_visible: bool,
-) -> (String, String) {
-    if max_width == 0 {
-        return (String::new(), String::new());
-    }
-
-    let mut hints = app.footer_hints_view_model().hints;
-    let under_input_shortcuts_visible =
-        disclosure_visible || (!app.startup_shell_visible() && app.events.is_empty());
-    if under_input_shortcuts_visible {
-        hints.retain(|hint| {
-            if app.completed_session_shell_active() || app.runtime_state().composer_disabled {
-                hint.action != Action::Palette
-            } else {
-                hint.action != Action::SubmitPrompt
-            }
-        });
-    }
-    let palette_only = hints
-        .iter()
-        .find(|hint| hint.action == Action::Palette)
-        .copied()
-        .map(|hint| vec![hint])
-        .unwrap_or_default();
-    let last_only = hints
-        .last()
-        .copied()
-        .map(|hint| vec![hint])
-        .unwrap_or_default();
-    let variants = [
-        hints.clone(),
-        compact_footer_hints(&hints, 4),
-        compact_footer_hints(&hints, 2),
-        palette_only,
-        last_only,
-    ];
-
-    let separator = " ".repeat(theme.live_shell.rhythm.status_separator as usize);
-    let candidates = variants
-        .into_iter()
-        .filter(|variant_hints| !variant_hints.is_empty())
-        .map(|variant_hints| {
-            variant_hints
-                .iter()
-                .map(|hint| app.keymap.get_binding_label(hint.action, hint.label))
-                .collect::<Vec<_>>()
-                .join(&separator)
-        })
-        .collect::<Vec<_>>();
-
-    if status_candidates.is_empty() {
-        let hint = candidates
-            .iter()
-            .find(|candidate| candidate.chars().count() <= max_width)
-            .cloned()
-            .unwrap_or_else(|| {
-                truncate_plain_text(
-                    candidates.first().map(String::as_str).unwrap_or(""),
-                    max_width,
-                )
-            });
-        return (String::new(), hint);
-    }
-
-    for status in &status_candidates {
-        let status_width = status.chars().count();
-        for hint in &candidates {
-            let hint_width = hint.chars().count();
-            let gap = usize::from(status_width > 0 && hint_width > 0) * 2;
-            if status_width.saturating_add(hint_width).saturating_add(gap) <= max_width {
-                return (status.clone(), hint.clone());
-            }
-        }
-    }
-
-    for status in &status_candidates {
-        if status.chars().count() <= max_width {
-            return (status.clone(), String::new());
-        }
-    }
-
-    let hint = candidates
-        .iter()
-        .find(|candidate| candidate.chars().count() <= max_width)
-        .cloned()
-        .unwrap_or_else(|| {
-            truncate_plain_text(
-                candidates.first().map(String::as_str).unwrap_or(""),
-                max_width,
-            )
-        });
-    (String::new(), hint)
 }
 
 fn status_context(app: &AppState, theme: &Theme, state: RuntimeStateKind) -> (&'static str, Color) {
@@ -2152,10 +2076,10 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
     let dock = plan.dock.expect("live dock layout");
     let composer = dock.composer;
 
-    assert_eq!(dock.status, Some(Rect::new(0, 29, 100, 1)));
-    assert_eq!(dock.shell.height, composer.height.saturating_add(2));
+    assert_eq!(dock.status, None);
+    assert_eq!(dock.shell.height, composer.height.saturating_add(1));
     assert_eq!(dock.shell.y, composer.y);
-    assert_eq!(dock.disclosure, Some(Rect::new(0, 28, 100, 1)));
+    assert_eq!(dock.disclosure, Some(Rect::new(0, 29, 100, 1)));
 
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).expect("create live shell terminal");
@@ -2228,5 +2152,5 @@ pub(crate) fn exact_test_live_control_dock_collapses_disclosure_before_status() 
         .collect::<Vec<_>>()
         .join("\n");
     assert!(!rendered.contains("↑/↓ history"));
-    assert!(rendered.contains("q quit"));
+    assert!(!rendered.contains("q quit"));
 }

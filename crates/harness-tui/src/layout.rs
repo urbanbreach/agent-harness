@@ -416,28 +416,17 @@ pub(crate) fn session_shell_layout(
         control_dock_layout(main_chunks[1], None, main_chunks[1], None)
     } else {
         let shell_area = main_chunks[1];
-        let status_height = shell_tokens.spacing.heights.status.min(shell_area.height);
         let disclosure_height =
             control_dock_disclosure_rows(app, contract).min(shell_area.height.saturating_sub(1));
-        if status_height == 0 || shell_area.height <= status_height {
+        if disclosure_height == 0 {
             control_dock_layout(shell_area, None, shell_area, None)
-        } else if disclosure_height == 0 {
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Min(1), Constraint::Length(status_height)])
-                .split(shell_area);
-            control_dock_layout(shell_area, Some(rows[1]), rows[0], None)
         } else {
             let rows = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Min(1),
-                    Constraint::Length(disclosure_height),
-                    Constraint::Length(status_height),
-                ])
+                .constraints([Constraint::Min(1), Constraint::Length(disclosure_height)])
                 .split(shell_area);
             let disclosure = (disclosure_height > 0).then_some(rows[1]);
-            control_dock_layout(shell_area, Some(rows[2]), rows[0], disclosure)
+            control_dock_layout(shell_area, None, rows[0], disclosure)
         }
     };
     if app.startup_shell_visible() {
@@ -701,10 +690,9 @@ fn live_prompt_block_height(
 }
 
 fn control_dock_disclosure_rows(app: &AppState, contract: SessionGeometryContract) -> u16 {
-    if app.startup_shell_visible()
-        || app.replay_mode
+    if app.replay_mode
         || app.completed_session_shell_active()
-        || app.events.is_empty()
+        || (!app.startup_shell_visible() && app.events.is_empty() && app.prompt_buffer.is_empty())
         || app.runtime_state().composer_disabled
         || app.review_surface().is_some()
         || matches!(contract.footer_mode, SessionFooterMode::Minimal)
