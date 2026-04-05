@@ -85,9 +85,10 @@ This lane exercises a real model against prepared live profiles for:
 When the selected model exposes the documented `live_signoff` variant, the prepared signoff
 profiles prefer it automatically so `gpt-5.4-mini` stays on the low-reasoning parity path.
 
-The repo now ships `rust-best-practices` in `.agents/skills`, so a fresh checkout already has the
-starter skill expected by the `skill` tool. You can still override it by placing a same-named skill
-earlier in the configured project-root search order.
+The repo now ships `rust-best-practices` in `.agents/skills`, and the prepared live chat-tool lane
+copies that skill into its temporary workspace before the `skill` stage runs. A fresh checkout
+therefore does not depend on an externally installed skill. You can still override it by placing a
+same-named skill earlier in the configured project-root search order.
 
 The live lane examples below use `configs/harness.example.jsonc` explicitly via
 `HARNESS_LIVE_PROXY_CONFIG`; the harness CLI does not auto-discover that file unless you copy it to

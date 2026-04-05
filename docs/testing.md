@@ -242,7 +242,7 @@ adding CLI coverage for the same `fs.write` → `fs.read` → `edit.hashline_sca
 
 Note: `live_proxy_preflight` is currently Linux-only because it validates the live TUI lane, and
 `live_proxy_prompt_chat_tool_flow` seeds the repo-bundled `rust-best-practices` skill into its
-temporary `.harness/skills` workspace, so a fresh checkout does not depend on an externally
+temporary `.agents/skills` project root, so a fresh checkout does not depend on an externally
 installed skill.
 
 ### Batch 1 live parity signoff

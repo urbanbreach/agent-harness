@@ -147,7 +147,6 @@ const RESPONSES_ENDPOINT_PATH: &str = "/v1/responses";
 const LIVE_TUI_READY_MARKER: &str = "Ask Harness anything…";
 const LIVE_TUI_STATUS_SUCCESS_MARKER: &str = "Success";
 const LIVE_TUI_FINISHED_MARKER: &str = "ready for next turn";
-const LIVE_TUI_ASSISTANT_DONE_MARKER: &str = "assistant · done";
 const LIVE_TUI_ASSISTANT_STREAMING_MARKER: &str = "assistant · streaming…";
 const LIVE_TUI_WAITING_FOR_RESPONSE_MARKER: &str = "Waiting for response…";
 const LIVE_TUI_READ_POLL_TIMEOUT: Duration = Duration::from_millis(50);
@@ -631,15 +630,21 @@ fn live_proxy_prompt_chat_tool_flow() {
     .unwrap_or_else(|err| panic!("live prompt skill stage failed: {err}"));
     assert_requested_tool_sequence(&skill_result.events_body, &["skill"])
         .unwrap_or_else(|err| panic!("skill-stage tool sequence mismatch: {err}"));
-    assert_requested_tool_args(
-        &skill_result.events_body,
-        "skill",
-        &json!({
-            "name": "rust-best-practices",
-            "user_message": LIVE_CHAT_SKILL_PROMPT,
-        }),
-    )
-    .unwrap_or_else(|err| panic!("skill-stage tool arguments mismatch: {err}"));
+    let skill_args = first_requested_tool_args(&skill_result.events_body, "skill")
+        .unwrap_or_else(|err| panic!("skill-stage tool arguments lookup failed: {err}"))
+        .unwrap_or_else(|| panic!("skill-stage tool arguments missing"));
+    assert_eq!(
+        skill_args.get("name").and_then(Value::as_str),
+        Some("rust-best-practices"),
+        "skill-stage tool name mismatch: {skill_args}"
+    );
+    assert!(
+        skill_args
+            .get("user_message")
+            .and_then(Value::as_str)
+            .is_some_and(|value| value.contains("Call skill with name=rust-best-practices.")),
+        "skill-stage tool arguments mismatch: {skill_args}"
+    );
     assert_tool_call_output_contains(
         &skill_result.events_body,
         "skill",
@@ -1026,7 +1031,8 @@ async fn live_proxy_e2e_visual_verifier() {
         CHECKPOINT_RUN_FINISHED,
         &[
             LIVE_TUI_READY_MARKER,
-            LIVE_TUI_ASSISTANT_DONE_MARKER,
+            LIVE_TUI_STATUS_SUCCESS_MARKER,
+            LIVE_TUI_FINISHED_MARKER,
             live_request.prompt_text.as_str(),
         ],
         &[],
@@ -1538,6 +1544,17 @@ fn prepare_live_prompt_chat_tool_run_config_builds_restricted_profiles() {
     assert_eq!(
         skill_profile.get("tools").and_then(Value::as_array),
         Some(&vec![Value::String("skill".to_string())])
+    );
+    assert!(
+        run_config
+            .skill
+            .workspace_root
+            .join(".agents")
+            .join("skills")
+            .join("rust-best-practices")
+            .join("SKILL.md")
+            .exists(),
+        "prepared chat tool workspace should seed rust-best-practices into a local project skill root"
     );
 }
 
@@ -2749,7 +2766,6 @@ fn live_visual_checkpoint_marker_assertions_respect_required_and_forbidden_state
         LIVE_TUI_READY_MARKER,
         LIVE_TUI_STATUS_SUCCESS_MARKER,
         LIVE_TUI_FINISHED_MARKER,
-        LIVE_TUI_ASSISTANT_DONE_MARKER,
         "fs.read",
     ]);
     let checkpoint = visual_run
@@ -2760,7 +2776,6 @@ fn live_visual_checkpoint_marker_assertions_respect_required_and_forbidden_state
                 LIVE_TUI_READY_MARKER,
                 LIVE_TUI_STATUS_SUCCESS_MARKER,
                 LIVE_TUI_FINISHED_MARKER,
-                LIVE_TUI_ASSISTANT_DONE_MARKER,
                 LIVE_TUI_ASSISTANT_STREAMING_MARKER,
             ],
             &FocusCapture::anchored_exact("fs.read", 28, 5),
@@ -2774,7 +2789,6 @@ fn live_visual_checkpoint_marker_assertions_respect_required_and_forbidden_state
             LIVE_TUI_READY_MARKER,
             LIVE_TUI_STATUS_SUCCESS_MARKER,
             LIVE_TUI_FINISHED_MARKER,
-            LIVE_TUI_ASSISTANT_DONE_MARKER,
         ],
         &[LIVE_TUI_ASSISTANT_STREAMING_MARKER],
     )
@@ -2803,15 +2817,15 @@ fn live_visual_manifest_orders_checkpoints_and_jsonl_by_stage() {
     let parser = parser_with_screen(&[
         LIVE_TUI_READY_MARKER,
         "permission marker",
-        LIVE_TUI_ASSISTANT_DONE_MARKER,
+        LIVE_TUI_FINISHED_MARKER,
     ]);
 
     visual_run
         .capture_checkpoint_with_metadata(
             CHECKPOINT_RUN_FINISHED,
             &parser,
-            &[LIVE_TUI_READY_MARKER, LIVE_TUI_ASSISTANT_DONE_MARKER],
-            &FocusCapture::anchored_exact(LIVE_TUI_ASSISTANT_DONE_MARKER, 24, 3),
+            &[LIVE_TUI_READY_MARKER, LIVE_TUI_FINISHED_MARKER],
+            &FocusCapture::anchored_exact(LIVE_TUI_FINISHED_MARKER, 24, 3),
             Some(json!({
                 "purpose": "ordered-run-finished",
                 "stage": CHECKPOINT_RUN_FINISHED,
@@ -3318,6 +3332,7 @@ fn prepare_live_prompt_chat_tool_run_config(
 ) -> Result<LivePromptChatToolRunConfig, String> {
     let namespace = LiveNamespaceAllocation::allocate("live-proxy-chat-tool-workspace")?;
     let workspace_root = namespace.root_dir().to_path_buf();
+    seed_project_skill(&workspace_root, "rust-best-practices")?;
 
     let todo_flow = prepare_prompt_run_config_with_contract(
         &request.source_config_path,
@@ -3377,6 +3392,53 @@ fn prepare_live_prompt_chat_tool_run_config(
         question,
         skill,
     })
+}
+
+fn seed_project_skill(workspace_root: &Path, skill_name: &str) -> Result<(), String> {
+    let source_root = repo_root().join(".agents").join("skills").join(skill_name);
+    if !source_root.exists() {
+        return Err(format!(
+            "required skill `{skill_name}` not found at {}",
+            source_root.display()
+        ));
+    }
+
+    let dest_root = workspace_root
+        .join(".agents")
+        .join("skills")
+        .join(skill_name);
+    copy_dir_recursive(&source_root, &dest_root)
+}
+
+fn copy_dir_recursive(source: &Path, dest: &Path) -> Result<(), String> {
+    fs::create_dir_all(dest)
+        .map_err(|err| format!("failed to create {}: {err}", dest.display()))?;
+    for entry in
+        fs::read_dir(source).map_err(|err| format!("failed to read {}: {err}", source.display()))?
+    {
+        let entry = entry
+            .map_err(|err| format!("failed to read entry under {}: {err}", source.display()))?;
+        let source_path = entry.path();
+        let dest_path = dest.join(entry.file_name());
+        let file_type = entry.file_type().map_err(|err| {
+            format!(
+                "failed to inspect {} while copying skill fixture: {err}",
+                source_path.display()
+            )
+        })?;
+        if file_type.is_dir() {
+            copy_dir_recursive(&source_path, &dest_path)?;
+        } else if file_type.is_file() {
+            fs::copy(&source_path, &dest_path).map_err(|err| {
+                format!(
+                    "failed to copy {} to {}: {err}",
+                    source_path.display(),
+                    dest_path.display()
+                )
+            })?;
+        }
+    }
+    Ok(())
 }
 
 fn prepare_live_prompt_native_tool_flow_run_config(
@@ -3838,12 +3900,7 @@ fn run_live_tui_smoke(
     wait_for_screen_state(
         &mut process.parser,
         &process.output_rx,
-        &[
-            LIVE_TUI_READY_MARKER,
-            LIVE_TUI_STATUS_SUCCESS_MARKER,
-            LIVE_TUI_FINISHED_MARKER,
-            LIVE_TUI_ASSISTANT_DONE_MARKER,
-        ],
+        &[LIVE_TUI_STATUS_SUCCESS_MARKER, LIVE_TUI_FINISHED_MARKER],
         &[
             LIVE_TUI_ASSISTANT_STREAMING_MARKER,
             LIVE_TUI_WAITING_FOR_RESPONSE_MARKER,
@@ -3854,10 +3911,8 @@ fn run_live_tui_smoke(
         CHECKPOINT_RUN_FINISHED,
         &process.parser,
         &[
-            LIVE_TUI_READY_MARKER,
             LIVE_TUI_STATUS_SUCCESS_MARKER,
             LIVE_TUI_FINISHED_MARKER,
-            LIVE_TUI_ASSISTANT_DONE_MARKER,
             LIVE_TUI_ASSISTANT_STREAMING_MARKER,
             LIVE_TUI_WAITING_FOR_RESPONSE_MARKER,
             request.prompt_text.as_str(),
