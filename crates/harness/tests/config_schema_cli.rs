@@ -12,6 +12,7 @@ fn openai_api_key_env_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
+#[allow(unsafe_code)]
 fn with_env_var_state<T>(name: &str, value: Option<&str>, run: impl FnOnce() -> T) -> T {
     let _lock = openai_api_key_env_lock()
         .lock()
@@ -19,15 +20,15 @@ fn with_env_var_state<T>(name: &str, value: Option<&str>, run: impl FnOnce() -> 
     let previous = env::var_os(name);
 
     match value {
-        Some(value) => env::set_var(name, value),
-        None => env::remove_var(name),
+        Some(value) => unsafe { env::set_var(name, value) },
+        None => unsafe { env::remove_var(name) },
     }
 
     let result = run();
 
     match previous {
-        Some(value) => env::set_var(name, value),
-        None => env::remove_var(name),
+        Some(value) => unsafe { env::set_var(name, value) },
+        None => unsafe { env::remove_var(name) },
     }
 
     result

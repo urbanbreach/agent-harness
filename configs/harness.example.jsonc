@@ -7,8 +7,9 @@
     default: {
       type: "openai_compatible",
       // Blessed default path: local CLIProxy-compatible bridge.
-      // Keep the shipped first-run docs and live signoff lanes aligned to this
-      // loopback endpoint instead of a direct remote API.
+      // This shipped config intentionally pairs the explicit `sk-zerolimit`
+      // fallback with the loopback proxy endpoint so first-run docs and live
+      // signoff lanes stay aligned without pointing at a real remote API.
       base_url: "http://127.0.0.1:8317/v1",
       api_key: "${OPENAI_API_KEY:-sk-zerolimit}",
       api_mode: "auto",

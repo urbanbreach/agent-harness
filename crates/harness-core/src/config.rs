@@ -1653,6 +1653,29 @@ mod tests {
     use std::{ffi::OsString, sync::Mutex};
 
     static CONFIG_DISCOVERY_TEST_LOCK: Mutex<()> = Mutex::new(());
+    static CONFIG_ENV_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[allow(unsafe_code)]
+    fn with_env_var_state<T>(name: &str, value: Option<&str>, run: impl FnOnce() -> T) -> T {
+        let _lock = CONFIG_ENV_TEST_LOCK
+            .lock()
+            .expect("config env test lock should not be poisoned");
+        let previous = env::var_os(name);
+
+        match value {
+            Some(value) => unsafe { env::set_var(name, value) },
+            None => unsafe { env::remove_var(name) },
+        }
+
+        let result = run();
+
+        match previous {
+            Some(value) => unsafe { env::set_var(name, value) },
+            None => unsafe { env::remove_var(name) },
+        }
+
+        result
+    }
 
     struct DiscoveryTestContext {
         previous_cwd: PathBuf,
@@ -2479,17 +2502,38 @@ mod tests {
 
     #[test]
     fn env_var_default_fallback_works() {
-        let cfg = config_fixture(
-            &deep_profile(r#"tools: ["fs.read"],"#),
-            "${HARNESS_CONFIG_TEST_API_KEY_FALLBACK:-fallback-key}",
-            None,
-            None,
-        );
+        with_env_var_state("HARNESS_CONFIG_TEST_API_KEY_FALLBACK", None, || {
+            let cfg = config_fixture(
+                &deep_profile(r#"tools: ["fs.read"],"#),
+                "${HARNESS_CONFIG_TEST_API_KEY_FALLBACK:-fallback-key}",
+                None,
+                None,
+            );
 
-        let parsed =
-            load_config_from_str(&cfg).expect("config with fallback env reference must parse");
-        let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
-        assert_eq!(provider.api_key, "fallback-key");
+            let parsed =
+                load_config_from_str(&cfg).expect("config with fallback env reference must parse");
+            let ProviderConfig::OpenAiCompatible(provider) =
+                parsed.providers.get("default").unwrap();
+            assert_eq!(provider.api_key, "fallback-key");
+        });
+    }
+
+    #[test]
+    fn env_var_default_fallback_uses_fallback_for_empty_var() {
+        with_env_var_state("HARNESS_CONFIG_TEST_API_KEY_FALLBACK", Some(""), || {
+            let cfg = config_fixture(
+                &deep_profile(r#"tools: ["fs.read"],"#),
+                "${HARNESS_CONFIG_TEST_API_KEY_FALLBACK:-fallback-key}",
+                None,
+                None,
+            );
+
+            let parsed = load_config_from_str(&cfg)
+                .expect("config with empty fallback env reference must parse");
+            let ProviderConfig::OpenAiCompatible(provider) =
+                parsed.providers.get("default").unwrap();
+            assert_eq!(provider.api_key, "fallback-key");
+        });
     }
 
     #[test]

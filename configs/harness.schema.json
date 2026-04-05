@@ -1,0 +1,777 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HarnessConfig",
+  "type": "object",
+  "required": [
+    "integrations",
+    "permissions",
+    "profiles",
+    "providers",
+    "runtime"
+  ],
+  "properties": {
+    "$schema": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "integrations": {
+      "$ref": "#/definitions/IntegrationsConfig"
+    },
+    "logging": {
+      "default": {
+        "file": null,
+        "level": "info"
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/LoggingConfig"
+        }
+      ]
+    },
+    "permissions": {
+      "$ref": "#/definitions/PermissionsConfig"
+    },
+    "profiles": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/ProfileConfig"
+      }
+    },
+    "providers": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/ProviderConfig"
+      }
+    },
+    "runtime": {
+      "$ref": "#/definitions/RuntimeConfig"
+    },
+    "ui": {
+      "default": {
+        "default_profile": null,
+        "keybindings": {},
+        "maxEventsInMemory": 25000,
+        "maxTranscriptCharsInMemory": 200000
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/UiConfig"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "BackgroundTaskSettings": {
+      "type": "object",
+      "required": [
+        "defaultConcurrency",
+        "messageStalenessTimeoutMs",
+        "modelConcurrency",
+        "providerConcurrency",
+        "staleTimeoutMs"
+      ],
+      "properties": {
+        "defaultConcurrency": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "messageStalenessTimeoutMs": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "modelConcurrency": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "providerConcurrency": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "staleTimeoutMs": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "DeterministicConfig": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "seed": {
+          "default": 0,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "IntegrationsConfig": {
+      "type": "object",
+      "properties": {
+        "remote_search": {
+          "default": {
+            "auth_token": null,
+            "endpoint": "https://mcp.exa.ai/mcp",
+            "max_retries": 1,
+            "require_auth": false,
+            "retry_backoff_ms": 250,
+            "timeout_secs": 30
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/RemoteSearchConfig"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "LoggingConfig": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "level": {
+          "default": "info",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ModelConfig": {
+      "type": "object",
+      "required": [
+        "display_name"
+      ],
+      "properties": {
+        "display_name": {
+          "type": "string"
+        },
+        "max_input_tokens": {
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "max_output_tokens": {
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "variants": {
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/ModelVariantConfig"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ModelVariantConfig": {
+      "type": "object",
+      "properties": {
+        "display_name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_input_tokens": {
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "max_output_tokens": {
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "OpenAiApiMode": {
+      "type": "string",
+      "enum": [
+        "responses",
+        "chat_completions",
+        "auto"
+      ]
+    },
+    "PermissionDefaultsConfig": {
+      "type": "object",
+      "required": [
+        "edit",
+        "network",
+        "shell"
+      ],
+      "properties": {
+        "codesearch": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "edit": {
+          "$ref": "#/definitions/PermissionMode"
+        },
+        "lsp": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "network": {
+          "$ref": "#/definitions/PermissionMode"
+        },
+        "question": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shell": {
+          "$ref": "#/definitions/PermissionMode"
+        },
+        "task": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "webfetch": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "websearch": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "PermissionMode": {
+      "type": "string",
+      "enum": [
+        "allow",
+        "deny",
+        "ask"
+      ]
+    },
+    "PermissionsConfig": {
+      "type": "object",
+      "required": [
+        "defaults"
+      ],
+      "properties": {
+        "defaults": {
+          "$ref": "#/definitions/PermissionDefaultsConfig"
+        },
+        "shell_allowlist": {
+          "default": {
+            "cwd_roots": [],
+            "executables": []
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/ShellAllowlist"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ProfileConfig": {
+      "type": "object",
+      "required": [
+        "description",
+        "model_ref"
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "exit_target_profile": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_iters": {
+          "default": 12,
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "model_ref": {
+          "type": "string"
+        },
+        "permissions": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ProfilePermissions"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "plan_mode": {
+          "default": false,
+          "type": "boolean"
+        },
+        "system_prompt": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "temperature": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "tool_failure_mode": {
+          "default": "fail_turn",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ToolFailureMode"
+            }
+          ]
+        },
+        "tool_surface": {
+          "default": "native",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ToolSurface"
+            }
+          ]
+        },
+        "tools": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "variant": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ProfilePermissions": {
+      "type": "object",
+      "properties": {
+        "codesearch": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "edit": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lsp": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "network": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "question": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shell": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "task": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "webfetch": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "websearch": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "PromptRuntimeConfig": {
+      "type": "object",
+      "properties": {
+        "wait_timeout_ms": {
+          "default": 30000,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "ProviderConfig": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "api_key",
+            "base_url",
+            "type"
+          ],
+          "properties": {
+            "api_key": {
+              "type": "string"
+            },
+            "api_mode": {
+              "default": "auto",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/OpenAiApiMode"
+                }
+              ]
+            },
+            "base_url": {
+              "type": "string"
+            },
+            "headers": {
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "models": {
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/ModelConfig"
+              }
+            },
+            "timeout_ms": {
+              "default": 60000,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "openai_compatible"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "RemoteSearchConfig": {
+      "type": "object",
+      "properties": {
+        "auth_token": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "endpoint": {
+          "default": "https://mcp.exa.ai/mcp",
+          "type": "string"
+        },
+        "max_retries": {
+          "default": 1,
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "require_auth": {
+          "default": false,
+          "type": "boolean"
+        },
+        "retry_backoff_ms": {
+          "default": 250,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "timeout_secs": {
+          "default": 30,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "RuntimeConfig": {
+      "type": "object",
+      "required": [
+        "background_tasks"
+      ],
+      "properties": {
+        "background_tasks": {
+          "$ref": "#/definitions/BackgroundTaskSettings"
+        },
+        "deterministic": {
+          "default": {
+            "enabled": false,
+            "seed": 0
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/DeterministicConfig"
+            }
+          ]
+        },
+        "permissions": {
+          "default": {
+            "ask_timeout_ms": 30000
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/RuntimePermissionsConfig"
+            }
+          ]
+        },
+        "prompt": {
+          "default": {
+            "wait_timeout_ms": 30000
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/PromptRuntimeConfig"
+            }
+          ]
+        },
+        "session_dir": {
+          "default": ".agent-harness/sessions",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RuntimePermissionsConfig": {
+      "type": "object",
+      "properties": {
+        "ask_timeout_ms": {
+          "default": 30000,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "ShellAllowlist": {
+      "type": "object",
+      "properties": {
+        "cwd_roots": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "executables": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ToolFailureMode": {
+      "type": "string",
+      "enum": [
+        "fail_turn",
+        "continue_as_tool_message"
+      ]
+    },
+    "ToolSurface": {
+      "type": "string",
+      "enum": [
+        "native"
+      ]
+    },
+    "UiConfig": {
+      "type": "object",
+      "properties": {
+        "default_profile": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "keybindings": {
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "maxEventsInMemory": {
+          "default": 25000,
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "maxTranscriptCharsInMemory": {
+          "default": 200000,
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
