@@ -524,16 +524,38 @@ pub fn build_provider_tool_defs(
                 profile.name
             ));
         };
+        let parameters = tool.parameters_json_schema();
+        if let Err(reason) = validate_provider_parameters_schema(&parameters) {
+            return Err(format!(
+                "tool `{tool_id}` exported invalid parameters schema for provider use: {reason}"
+            ));
+        }
 
         tools.push(ToolDef {
             tool_id: tool_id.clone(),
             function_name: function_name.clone(),
             description: Some(tool.description().to_string()),
-            parameters: tool.parameters_json_schema(),
+            parameters,
         });
     }
 
     Ok(tools)
+}
+
+fn validate_provider_parameters_schema(parameters: &serde_json::Value) -> Result<(), &'static str> {
+    if parameters.get("type").and_then(serde_json::Value::as_str) != Some("object") {
+        return Err("expected top-level `type: object`");
+    }
+
+    for forbidden in ["oneOf", "anyOf", "allOf", "enum", "not"] {
+        if parameters.get(forbidden).is_some() {
+            return Err(
+                "top-level combinators (`oneOf`/`anyOf`/`allOf`/`enum`/`not`) are not allowed",
+            );
+        }
+    }
+
+    Ok(())
 }
 
 fn tool_result_to_message_content(result: &ToolResult) -> String {
@@ -1324,7 +1346,22 @@ mod tests {
         Arc::new(registry)
     }
 
+    fn broken_schema_profile() -> AgentProfile {
+        AgentProfile {
+            toolset: vec!["broken.tool".to_string()],
+            ..test_profile()
+        }
+    }
+
+    fn broken_schema_tool_registry() -> Arc<ToolRegistry> {
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(BrokenSchemaTool));
+        Arc::new(registry)
+    }
+
     struct TestFsReadTool;
+
+    struct BrokenSchemaTool;
 
     #[async_trait]
     impl Tool for TestFsReadTool {
@@ -1358,5 +1395,58 @@ mod tests {
         ) -> Result<ToolResult, ToolError> {
             Ok(ToolResult::text("unused"))
         }
+    }
+
+    #[async_trait]
+    impl Tool for BrokenSchemaTool {
+        fn id(&self) -> &str {
+            "broken.tool"
+        }
+
+        fn description(&self) -> &str {
+            "Broken provider schema test tool"
+        }
+
+        fn parameters_json_schema(&self) -> serde_json::Value {
+            json!({
+                "type": "object",
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "required": ["value"],
+                        "properties": {
+                            "value": {"type": "string"}
+                        }
+                    }
+                ]
+            })
+        }
+
+        fn capability(&self) -> ToolCapability {
+            ToolCapability::ReadFs
+        }
+
+        async fn call(
+            &self,
+            _ctx: ToolContext,
+            _args_json: serde_json::Value,
+        ) -> Result<ToolResult, ToolError> {
+            Ok(ToolResult::text("unused"))
+        }
+    }
+
+    #[test]
+    fn build_provider_tool_defs_rejects_top_level_combinator_schemas() {
+        let err = build_provider_tool_defs(
+            &broken_schema_profile(),
+            broken_schema_tool_registry().as_ref(),
+        )
+        .expect_err("provider tool defs should reject top-level combinator schemas");
+
+        assert!(err.contains("broken.tool"), "unexpected error: {err}");
+        assert!(
+            err.contains("top-level combinators"),
+            "unexpected error: {err}"
+        );
     }
 }
