@@ -218,13 +218,69 @@ cargo test -p harness-testkit live_proxy_prompt_chat_tool_flow -- --ignored --ex
 ```
 
 This lane exercises `todo.write`, `user.question`, and `skill.load` through `harness prompt`
-with prepared live profiles. It is the fastest live-config signoff for non-visual chat/tool-flow,
-skills, and question-routing changes.
+with prepared live profiles. When the selected model exposes the documented `live_signoff`
+variant, the prepared signoff profiles use it automatically so `gpt-5.4-mini` stays on the
+low-reasoning Batch 1 signoff path. It is the fastest live-config signoff for non-visual
+chat/tool-flow, skills, and question-routing changes.
+
+### Live native tool-flow signoff
+
+For CLI parity coverage of the same file/edit flow already exercised through the TUI lane, run the
+native prompt tool-flow signoff:
+
+```bash
+HARNESS_LIVE_PROXY=1 \
+HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
+HARNESS_LIVE_PROXY_PROVIDER=default \
+HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
+cargo test -p harness-testkit live_proxy_prompt_native_tool_flow -- --ignored --exact
+```
+
+This lane keeps the RB-04 signoff map tied to the existing `harness-testkit` live lanes while
+adding CLI coverage for the same `fs.write` → `fs.read` → `edit.hashline_scan` →
+`edit.hashline_apply` → `fs.read` path that the TUI live lane already proves visually.
 
 Note: `live_proxy_preflight` is currently Linux-only because it validates the live TUI lane, and
 `live_proxy_prompt_chat_tool_flow` seeds the repo-bundled `rust-best-practices` skill into its
 temporary `.harness/skills` workspace, so a fresh checkout does not depend on an externally
 installed skill.
+
+### Batch 1 live parity signoff
+
+For RB-04 / issue #71 signoff, prefer the composed wrappers around the shipped live lanes so the
+highest-priority Batch 1 journeys run through both CLI and TUI entrypoints without inventing a new
+verification taxonomy:
+
+```bash
+HARNESS_LIVE_PROXY=1 \
+HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
+HARNESS_LIVE_PROXY_PROVIDER=default \
+HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
+cargo test -p harness-testkit live_proxy_prompt_parity_signoff -- --ignored --exact
+
+HARNESS_LIVE_PROXY=1 \
+HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
+HARNESS_LIVE_PROXY_PROVIDER=default \
+HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
+HARNESS_VISUAL_ARTIFACT_DIR=target/pty-visual-artifacts \
+cargo test -p harness-testkit live_proxy_e2e_tui_parity_signoff -- --ignored --exact
+```
+
+The CLI wrapper chains:
+
+- `live_proxy_prompt_responses_smoke`
+- `live_proxy_prompt_chat_tool_flow`
+- `live_proxy_prompt_native_tool_flow`
+- `live_proxy_prompt_compat_edit_flow`
+
+The TUI wrapper chains:
+
+- `live_proxy_preflight`
+- `live_proxy_e2e_tui_prompt_responses_smoke`
+- `live_proxy_e2e_tui_tool_flow`
+
+Use the individual ignored tests while iterating on a single surface; use the composed wrappers for
+issue/PR closeout when the acceptance claim is Batch 1 parity-signoff breadth.
 
 ## Canonical journey signoff expectations
 
@@ -233,15 +289,15 @@ For parity-critical issues, a passing test alone is not signoff. Treat the manif
 ### 1. First successful prompt run
 
 - **Deterministic PTY baseline:** run `cargo test -p harness-testkit pty_e2e -- --test-threads=1`, then inspect the `startup_shell`, `startup_command_palette`, and `live_shell` artifacts, especially `pty_startup_home_primary.png`, `pty_startup_command_palette.png`, and `pty_interactive_type_first_startup.png`.
-- **CLI expectation:** run `live_proxy_prompt_responses_smoke` when the default provider/model path or first prompt-success flow changes; use the resulting event log as the live transcript proof.
-- **TUI expectation:** run `live_proxy_preflight`, then `live_proxy_e2e_tui_prompt_responses_smoke`; add `live_proxy_e2e_visual_verifier` when the startup shell, composer, or finished-state visuals change.
+- **CLI expectation:** run `live_proxy_prompt_responses_smoke` when the default provider/model path or first prompt-success flow changes; prefer `live_proxy_prompt_parity_signoff` for issue/PR closeout so the first-run proof stays aligned with the wider Batch 1 live signoff set.
+- **TUI expectation:** run `live_proxy_preflight`, then `live_proxy_e2e_tui_prompt_responses_smoke`; prefer `live_proxy_e2e_tui_parity_signoff` for issue/PR closeout, and add `live_proxy_e2e_visual_verifier` when the startup shell, composer, or finished-state visuals change.
 - **Current gap:** no single shipped live lane yet covers the entire first-run journey from startup through permission handling and completion.
 
 ### 2. Transcript-first live session
 
 - **Deterministic PTY baseline:** run `pty_e2e`, then review `transcript_shell` and `live_shell` artifacts such as `pty_native_tool_parity_dense.png`, `pty_native_tool_parity_task_row.png`, `pty_inline_completion_shell.png`, and `pty_interactive_prompt_stream.png`.
-- **CLI expectation:** run `live_proxy_prompt_chat_tool_flow` when native tool choice, tool metadata, question flow, or other headless transcript/event surfaces change.
-- **TUI expectation:** run `live_proxy_preflight`, then `live_proxy_e2e_tui_tool_flow`; use `live_proxy_e2e_visual_verifier` when the visual transcript shell is part of the acceptance claim.
+- **CLI expectation:** run `live_proxy_prompt_chat_tool_flow` for chat-control/state routing changes and `live_proxy_prompt_native_tool_flow` when the acceptance claim includes the native file/edit transcript path; prefer `live_proxy_prompt_parity_signoff` when the acceptance claim spans the Batch 1 signoff journeys instead of a single CLI surface.
+- **TUI expectation:** run `live_proxy_preflight`, then `live_proxy_e2e_tui_tool_flow`; prefer `live_proxy_e2e_tui_parity_signoff` for Batch 1 signoff, and use `live_proxy_e2e_visual_verifier` when the visual transcript shell is part of the acceptance claim.
 - **Current gap:** there is no shipped live dense-transcript oracle yet for disclosure depth, failure visibility, and transcript-heavy state changes.
 
 ### 3. Permission-handling flow
@@ -261,9 +317,9 @@ For parity-critical issues, a passing test alone is not signoff. Treat the manif
 ### 5. Tool-heavy run inspection
 
 - **Deterministic PTY baseline:** run `pty_e2e`, then inspect `transcript_shell`, `operator_sidebar`, and `live_shell` artifacts such as `pty_native_tool_parity_dense.png`, `pty_native_tool_parity_fetch_row.png`, `pty_operator_sidebar_primary.png`, and `pty_inline_completion_shell.png`.
-- **CLI expectation:** run `live_proxy_prompt_chat_tool_flow` for chat-control/native-tool workflow changes; use the resulting event log as the acceptance transcript.
-- **TUI expectation:** run `live_proxy_preflight`, then `live_proxy_e2e_tui_tool_flow`; add `live_proxy_e2e_visual_verifier` when screenshot-level transcript/tool-row parity is part of the claim.
-- **Current gap:** live signoff still does not cover shell/search/generic-tool breadth, richer diff presentation, or the full dense-tool transcript surface.
+- **CLI expectation:** run `live_proxy_prompt_chat_tool_flow` for chat-control/state routing changes, `live_proxy_prompt_native_tool_flow` for the native `fs.write`/`fs.read`/hashline path, and `live_proxy_prompt_compat_edit_flow` when the acceptance claim includes compat edit/read/apply coverage; prefer `live_proxy_prompt_parity_signoff` when closing out the Batch 1 parity map.
+- **TUI expectation:** run `live_proxy_preflight`, then `live_proxy_e2e_tui_tool_flow`; prefer `live_proxy_e2e_tui_parity_signoff` for Batch 1 closeout, and add `live_proxy_e2e_visual_verifier` when screenshot-level transcript/tool-row parity is part of the claim.
+- **Current gap:** live signoff still does not cover shell/search breadth, replay/artifact discovery, or the full dense-tool transcript surface.
 
 If a change touches multiple journeys, run the union of the matching lanes. When the matrix above says coverage is missing, record the gap explicitly in the issue/PR closeout instead of claiming signoff by analogy.
 
@@ -422,11 +478,29 @@ cargo test --workspace
 # HARNESS_LIVE_PROXY_PROVIDER defaults to "default"
 # OPENAI_API_KEY is optional for local CLIProxy when placeholder key fallback is used
 # HARNESS_LIVE_PROXY_MODEL can force a specific real provider model
+# HARNESS_LIVE_PROXY_VARIANT overrides the shipped live_signoff/low-reasoning signoff default
 # HARNESS_LIVE_PROXY_PROMPT customizes the smoke prompt text
 # HARNESS_LIVE_PROXY_WAIT_TIMEOUT_MS controls live smoke wait timeout (default 120000)
 # Native defaults live in `configs/harness.example.jsonc`, including native tool ids such as
 # `fs.tree`, `edit.apply_patch`, and native skill roots under `.harness/skills`.
-# Sign-off order: live_proxy_preflight -> live_proxy_prompt_chat_tool_flow -> live_proxy_e2e_tui_tool_flow
+# Sign-off order for Batch 1 parity breadth:
+#   1. live_proxy_prompt_parity_signoff
+#   2. live_proxy_e2e_tui_parity_signoff
+# Individual component lanes remain the right choice while iterating on a single surface.
+HARNESS_LIVE_PROXY=1 \
+HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
+HARNESS_LIVE_PROXY_PROVIDER=default \
+HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
+cargo test -p harness-testkit live_proxy_prompt_parity_signoff -- --ignored --exact
+
+HARNESS_LIVE_PROXY=1 \
+HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
+HARNESS_LIVE_PROXY_PROVIDER=default \
+HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
+HARNESS_VISUAL_ARTIFACT_DIR=target/pty-visual-artifacts \
+cargo test -p harness-testkit live_proxy_e2e_tui_parity_signoff -- --ignored --exact
+
+# Component live lanes for narrower iteration
 HARNESS_LIVE_PROXY=1 \
 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
 HARNESS_LIVE_PROXY_PROVIDER=default \
@@ -438,6 +512,18 @@ HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
 HARNESS_LIVE_PROXY_PROVIDER=default \
 HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
 cargo test -p harness-testkit live_proxy_prompt_chat_tool_flow -- --ignored --exact
+
+HARNESS_LIVE_PROXY=1 \
+HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
+HARNESS_LIVE_PROXY_PROVIDER=default \
+HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
+cargo test -p harness-testkit live_proxy_prompt_native_tool_flow -- --ignored --exact
+
+HARNESS_LIVE_PROXY=1 \
+HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
+HARNESS_LIVE_PROXY_PROVIDER=default \
+HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
+cargo test -p harness-testkit live_proxy_prompt_compat_edit_flow -- --ignored --exact
 
 HARNESS_LIVE_PROXY=1 \
 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \

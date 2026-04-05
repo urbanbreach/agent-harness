@@ -139,6 +139,7 @@ Included queue items: RB-27, RB-28, RB-29, RB-30
 - Dependency order: RB-03
 - Scope:
   - Extend the live-provider lanes so the highest-priority parity journeys run through both prompt/CLI and TUI flows.
+  - Prefer composed signoff wrappers around the shipped harness-testkit live lanes so Batch 1 closeout stays tied to the #70 signoff map instead of inventing new verification categories.
   - Use CLIProxyAPI with gpt-5.4-mini at low reasoning where the roadmap calls for live-provider parity verification.
   - Keep the live coverage aligned with the deterministic PTY contract instead of diverging into a second UX story.
 - Acceptance notes:

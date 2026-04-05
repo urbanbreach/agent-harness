@@ -48,6 +48,16 @@
                 recommended_for: "tool_audit",
               },
             },
+            live_signoff: {
+              display_name: "Live signoff",
+              max_output_tokens: 4096,
+              metadata: {
+                description: "Low-reasoning live-provider parity signoff profile.",
+                reasoning_effort: "low",
+                text_verbosity: "low",
+                recommended_for: "live_proxy",
+              },
+            },
           },
         },
       },

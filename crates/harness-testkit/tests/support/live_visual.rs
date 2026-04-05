@@ -770,6 +770,7 @@ fn prune_old_live_visual_runs(test_root: &Path, current_run_id: &str) -> Result<
 pub fn default_live_run_metadata(
     provider: &str,
     model: &str,
+    variant: Option<&str>,
     profile: &str,
     workspace_root: &Path,
     session_dir: &Path,
@@ -784,6 +785,7 @@ pub fn default_live_run_metadata(
         "created_at_utc": timestamp,
         "provider": provider,
         "model": model,
+        "variant": variant,
         "profile": profile,
         "workspace_root": workspace_root.display().to_string(),
         "session_dir": session_dir.display().to_string(),
