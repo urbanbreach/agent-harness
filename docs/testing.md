@@ -279,6 +279,11 @@ The TUI wrapper chains:
 - `live_proxy_e2e_tui_prompt_responses_smoke`
 - `live_proxy_e2e_tui_tool_flow`
 
+Treat each live closeout as valid only for the selected
+`HARNESS_LIVE_PROXY_PROVIDER` / model / variant tuple. The live parity helpers record the selected
+provider in manifest metadata and summarize observed provider-turn behavior in the run summary so
+provider-specific differences stay visible instead of being inferred from the blessed default path.
+
 Use the individual ignored tests while iterating on a single surface; use the composed wrappers for
 issue/PR closeout when the acceptance claim is Batch 1 parity-signoff breadth.
 

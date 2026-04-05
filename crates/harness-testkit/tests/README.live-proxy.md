@@ -64,6 +64,12 @@ These wrappers chain the shipped live lanes instead of inventing a second verifi
 - CLI: `live_proxy_prompt_responses_smoke` → `live_proxy_prompt_chat_tool_flow` → `live_proxy_prompt_native_tool_flow` → `live_proxy_prompt_compat_edit_flow`
 - TUI: `live_proxy_preflight` → `live_proxy_e2e_tui_prompt_responses_smoke` → `live_proxy_e2e_tui_tool_flow`
 
+Batch 1 live parity signoff is scoped to the selected
+`HARNESS_LIVE_PROXY_PROVIDER` / model / variant tuple. The live helpers record that tuple in the
+manifest metadata and summarize observed provider-turn behavior in `run_summary.json` /
+`run_summary.txt` so later provider work builds on explicit evidence instead of treating one
+provider run as universal proof.
+
 ## Main live tool-flow test
 
 Run the prompt-based chat-control lane first when the change is about tool orchestration, todo/question state, or agent workflow helpers:
@@ -217,3 +223,7 @@ Use this order while iterating:
 
 The tests are still live-model dependent, so retries are expected and already built into the
 TUI tool-flow lane.
+
+When provider behavior differs, record it under the selected provider name in the live summary
+evidence and, when it becomes part of signoff, in the provider-turn expectations helper instead of
+loosening assertions globally.

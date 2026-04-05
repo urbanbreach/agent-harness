@@ -18,6 +18,10 @@ mod support;
 use portable_pty::{CommandBuilder, PtySize};
 use serde_json::{json, Value};
 use support::live_events::{resolve_tagged_run_dir, ToolFlowEvidence};
+use support::live_provider_parity::{
+    assert_provider_turn_completed, assert_registered_provider_turn,
+    collect_provider_turn_observation, provider_turn_expectation, provider_turn_summary,
+};
 use support::live_vision::{self, LiveVisionProxyConfig};
 use support::live_visual::{
     assert_checkpoint_markers, default_live_run_metadata, selected_live_viewport, FocusCapture,
@@ -185,6 +189,7 @@ impl LiveSmokeEndpoint {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PromptRunConfig {
     config_path: PathBuf,
+    provider_name: String,
     profile: String,
     model_id: String,
     variant: Option<String>,
@@ -307,18 +312,6 @@ impl LiveNamespaceAllocation {
     }
 }
 
-#[derive(Debug, Default)]
-struct ProviderTurnEvidence {
-    request_id: Option<String>,
-    provider_task_id: Option<String>,
-    saw_started: bool,
-    saw_finished: bool,
-    delta_count: usize,
-    provider_task_completed: bool,
-    task_completed_summary: Option<String>,
-    run_failed: Option<String>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LiveProxyPreflightReport {
     source_config_path: PathBuf,
@@ -436,7 +429,7 @@ fn live_proxy_prompt_responses_smoke() {
 
     let events_body = fs::read_to_string(&events_path)
         .unwrap_or_else(|err| panic!("failed to read event log {}: {err}", events_path.display()));
-    assert_events_show_successful_provider_turn(&events_body);
+    assert_events_show_successful_provider_turn(&live_request.provider_name, &events_body);
 }
 
 #[test]
@@ -487,7 +480,7 @@ fn live_proxy_e2e_tui_prompt_responses_smoke() {
         live_tui_command_timeout(&live_request),
     )
     .unwrap_or_else(|err| panic!("live proxy TUI smoke failed: {err}"));
-    assert_events_show_successful_provider_turn(&smoke.events_body);
+    assert_events_show_successful_provider_turn(&live_request.provider_name, &smoke.events_body);
 }
 
 #[test]
@@ -988,7 +981,7 @@ async fn live_proxy_e2e_visual_verifier() {
         live_tui_command_timeout(&live_request),
     )
     .unwrap_or_else(|err| panic!("live proxy visual-verifier smoke failed: {err}"));
-    assert_events_show_successful_provider_turn(&smoke.events_body);
+    assert_events_show_successful_provider_turn(&live_request.provider_name, &smoke.events_body);
 
     for png_path in [
         &smoke.visual_artifacts.startup_png,
@@ -1125,7 +1118,8 @@ async fn live_proxy_prompt_wiremock_smoke_uses_responses_and_model_override() {
 
     let events_body = fs::read_to_string(&events_path)
         .unwrap_or_else(|err| panic!("failed reading {}: {err}", events_path.display()));
-    assert_events_show_successful_provider_turn(&events_body);
+    assert_provider_turn_completed(&collect_provider_turn_observation(&events_body))
+        .unwrap_or_else(|err| panic!("wiremock provider-turn evidence mismatch: {err}"));
 
     let requests = server
         .received_requests()
@@ -2469,6 +2463,7 @@ fn live_tui_smoke_helpers_reuse_cliproxy_config_and_endpoint_rules() {
     let run_config = prepare_live_prompt_run_config(&live_request)
         .expect("prepare auto-mode live TUI run config");
     assert_eq!(run_config.endpoint.path(), RESPONSES_ENDPOINT_PATH);
+    assert_eq!(run_config.provider_name, "proxy");
     assert_eq!(run_config.model_id, "override-model");
     assert_eq!(run_config.profile, "tui_smoke_profile");
     assert_eq!(
@@ -2545,6 +2540,44 @@ fn live_tui_smoke_helpers_reuse_cliproxy_config_and_endpoint_rules() {
         chat_err.contains("responses or auto"),
         "unexpected chat-mode error: {chat_err}"
     );
+}
+
+#[test]
+fn live_provider_turn_summary_marks_recorded_and_unrecorded_providers() {
+    let events_body = [
+        r#"{"payload":{"event_type":"provider_request_started","data":{"request_id":"req-1"}}}"#,
+        r#"{"payload":{"event_type":"task_scheduled","data":{"task_id":"task-1","queue_key":"provider_model:gpt-5.4-mini"}}}"#,
+        r#"{"payload":{"event_type":"provider_stream_delta","data":{"request_id":"req-1","delta":"hello"}}}"#,
+        r#"{"payload":{"event_type":"provider_request_finished","data":{"request_id":"req-1"}}}"#,
+        r#"{"payload":{"event_type":"task_completed","data":{"task_id":"task-1","result_summary":"done"}}}"#,
+    ]
+    .join("\n");
+    let observation = collect_provider_turn_observation(&events_body);
+
+    let default_summary =
+        provider_turn_summary(DEFAULT_LIVE_PROXY_PROVIDER, &observation).expect("default summary");
+    assert_eq!(
+        default_summary
+            .get("expectation_status")
+            .and_then(Value::as_str),
+        Some("recorded")
+    );
+    assert_eq!(
+        default_summary
+            .get("observation")
+            .and_then(|observation| observation.get("completion_mode"))
+            .and_then(Value::as_str),
+        Some("stream_delta_and_task_completion")
+    );
+
+    let proxy_summary = provider_turn_summary("proxy", &observation).expect("proxy summary");
+    assert_eq!(
+        proxy_summary
+            .get("expectation_status")
+            .and_then(Value::as_str),
+        Some("unrecorded")
+    );
+    assert_eq!(proxy_summary.get("expectation"), Some(&Value::Null));
 }
 
 #[test]
@@ -3583,7 +3616,7 @@ fn resolve_live_vision_proxy_config_for_run(
     ensure_provider_uses_responses_compatible_mode(&provider_api_mode(provider))?;
 
     LiveVisionProxyConfig::new(
-        DEFAULT_LIVE_PROXY_PROVIDER.to_string(),
+        run_config.provider_name.clone(),
         provider_base_url(provider)?,
         provider_api_key(provider)?,
         run_config.model_id.clone(),
@@ -3748,6 +3781,7 @@ fn prepare_prompt_run_config_with_contract(
 
     Ok(PromptRunConfig {
         config_path: paths.prepared_config_path,
+        provider_name: provider_name.trim().to_string(),
         profile: profile_name.to_string(),
         model_id: selected_model,
         variant: selected_variant.map(str::to_string),
@@ -3800,7 +3834,7 @@ fn run_live_prompt_stage(
     let events_path = run_dir.join("events.jsonl");
     let events_body = fs::read_to_string(&events_path)
         .map_err(|err| format!("failed to read {}: {err}", events_path.display()))?;
-    assert_events_show_successful_provider_turn(&events_body);
+    assert_events_show_successful_provider_turn(&run_config.provider_name, &events_body);
 
     Ok(LivePromptStageResult {
         run_dir,
@@ -3820,7 +3854,7 @@ fn run_live_tui_smoke(
         &live_run_id()?,
         LiveVisualRunOptions {
             run_metadata: default_live_run_metadata(
-                DEFAULT_LIVE_PROXY_PROVIDER,
+                &run_config.provider_name,
                 &run_config.model_id,
                 run_config.variant.as_deref(),
                 &run_config.profile,
@@ -3960,7 +3994,7 @@ fn run_live_tui_tool_flow(
         &live_run_id()?,
         LiveVisualRunOptions {
             run_metadata: default_live_run_metadata(
-                DEFAULT_LIVE_PROXY_PROVIDER,
+                &run_config.tool_flow.provider_name,
                 &run_config.tool_flow.model_id,
                 run_config.tool_flow.variant.as_deref(),
                 &run_config.tool_flow.profile,
@@ -4021,7 +4055,10 @@ fn run_live_tui_tool_flow(
         1,
         remaining_before(deadline, "create-stage provider turn completion")?,
     )?;
-    assert_events_show_successful_provider_turn(&create_events);
+    assert_events_show_successful_provider_turn(
+        &run_config.tool_flow.provider_name,
+        &create_events,
+    );
     let tool_flow_workspace_root = read_run_workspace_root(&tool_flow_run_dir)?;
     wait_for_screen_contains(
         &mut stage.parser,
@@ -4067,7 +4104,10 @@ fn run_live_tui_tool_flow(
         2,
         remaining_before(deadline, "first-read provider turn completion")?,
     )?;
-    assert_events_show_successful_provider_turn(&first_read_events);
+    assert_events_show_successful_provider_turn(
+        &run_config.tool_flow.provider_name,
+        &first_read_events,
+    );
     wait_for_live_tui_idle(
         &mut stage.parser,
         &stage.output_rx,
@@ -4096,7 +4136,7 @@ fn run_live_tui_tool_flow(
         3,
         remaining_before(deadline, "scan-stage provider turn completion")?,
     )?;
-    assert_events_show_successful_provider_turn(&scan_events);
+    assert_events_show_successful_provider_turn(&run_config.tool_flow.provider_name, &scan_events);
     let hashline_scan_finished_checkpoint = live_visual.capture_checkpoint_with_metadata(
         CHECKPOINT_HASHLINE_SCAN_FINISHED,
         &stage.parser,
@@ -4138,7 +4178,7 @@ fn run_live_tui_tool_flow(
         4,
         remaining_before(deadline, "apply-stage provider turn completion")?,
     )?;
-    assert_events_show_successful_provider_turn(&apply_events);
+    assert_events_show_successful_provider_turn(&run_config.tool_flow.provider_name, &apply_events);
     wait_for_live_tui_idle(
         &mut stage.parser,
         &stage.output_rx,
@@ -4161,7 +4201,10 @@ fn run_live_tui_tool_flow(
         5,
         remaining_before(deadline, "final-read provider turn completion")?,
     )?;
-    assert_events_show_successful_provider_turn(&final_read_events);
+    assert_events_show_successful_provider_turn(
+        &run_config.tool_flow.provider_name,
+        &final_read_events,
+    );
     wait_for_screen_contains(
         &mut stage.parser,
         &stage.output_rx,
@@ -4240,6 +4283,13 @@ fn write_live_tool_flow_summary_artifacts(
     evidence: &ToolFlowEvidence,
     run_config: &LiveToolFlowRunConfig,
 ) -> Result<(), String> {
+    let events_path = artifacts.tool_flow_run_dir.join("events.jsonl");
+    let events_body = fs::read_to_string(&events_path)
+        .map_err(|err| format!("failed to read {}: {err}", events_path.display()))?;
+    let provider_turn = provider_turn_summary(
+        &run_config.tool_flow.provider_name,
+        &collect_provider_turn_observation(&events_body),
+    )?;
     let summary_json = evidence.summary_json(std::slice::from_ref(&artifacts.tool_flow_run_dir))?;
     let summary_json = json!({
         "visual_run_dir": artifacts.visual_run_dir.display().to_string(),
@@ -4248,9 +4298,11 @@ fn write_live_tool_flow_summary_artifacts(
         "final_png": artifacts.run_finished_png.display().to_string(),
         "workspace_root": artifacts.tool_flow_workspace_root.display().to_string(),
         "canonical_relative_path": run_config.canonical_relative_path.display().to_string(),
-        "provider": DEFAULT_LIVE_PROXY_PROVIDER,
+        "provider": run_config.tool_flow.provider_name,
         "model": run_config.tool_flow.model_id.clone(),
+        "variant": run_config.tool_flow.variant.clone(),
         "profile": run_config.tool_flow.profile.clone(),
+        "provider_turn": provider_turn,
         "summary": summary_json,
     });
     let summary_json_path = artifacts.visual_run_dir.join(LIVE_TOOL_FLOW_SUMMARY_JSON);
@@ -4278,6 +4330,24 @@ fn write_live_tool_flow_summary_artifacts(
         format!(
             "Workspace file: {}",
             run_config.canonical_relative_path.display()
+        ),
+        format!("Provider: {}", run_config.tool_flow.provider_name),
+        format!("Model: {}", run_config.tool_flow.model_id),
+        format!(
+            "Variant: {}",
+            run_config
+                .tool_flow
+                .variant
+                .as_deref()
+                .unwrap_or("<primary>")
+        ),
+        format!(
+            "Provider turn: {}",
+            provider_turn
+                .get("observation")
+                .and_then(|observation| observation.get("completion_mode"))
+                .and_then(Value::as_str)
+                .unwrap_or("unknown")
         ),
         "Sequence:".to_string(),
         evidence
@@ -4812,14 +4882,15 @@ fn describe_session_events_state(session_dir: &Path, session_namespace: &str) ->
 
     match fs::read_to_string(&events_path) {
         Ok(events_body) => {
-            let provider = collect_provider_turn_evidence(&events_body);
+            let provider = collect_provider_turn_observation(&events_body);
             format!(
-                "latest run dir: {}\nevents: {}\nprovider_started={} provider_finished={} deltas={} task_completed_summary_present={} run_failed={}\nlast events:\n{}",
+                "latest run dir: {}\nevents: {}\nprovider_started={} provider_finished={} deltas={} completion_mode={} task_completed_summary_present={} run_failed={}\nlast events:\n{}",
                 run_dir.display(),
                 events_path.display(),
                 provider.saw_started,
                 provider.saw_finished,
                 provider.delta_count,
+                provider.completion_mode(),
                 provider
                     .task_completed_summary
                     .as_deref()
@@ -5092,8 +5163,8 @@ fn wait_for_tui_provider_turn_count(
                         events_path.display()
                     )
                 })?;
-                let evidence = collect_provider_turn_evidence(&events_body);
-                if let Some(run_failed) = evidence.run_failed.as_deref() {
+                let observation = collect_provider_turn_observation(&events_body);
+                if let Some(run_failed) = observation.run_failed.as_deref() {
                     return Err(format!(
                         "live TUI smoke run failed before provider completion: {run_failed}\n{}",
                         describe_session_events_state(session_dir, session_namespace)
@@ -5170,107 +5241,16 @@ fn completed_provider_task_count(events_body: &str) -> usize {
     completed
 }
 
-fn assert_events_show_successful_provider_turn(events_body: &str) {
-    let evidence = collect_provider_turn_evidence(events_body);
-
-    assert!(
-        evidence.run_failed.is_none(),
-        "run failed before provider completion: {}",
-        evidence
-            .run_failed
-            .unwrap_or_else(|| "unknown run failure".to_string())
-    );
-    assert!(
-        evidence.saw_started,
-        "expected provider_request_started event"
-    );
-    assert!(
-        evidence.saw_finished,
-        "expected provider_request_finished event"
-    );
-
-    assert!(
-        provider_turn_completed(&evidence),
-        "expected either provider_stream_delta events or a completed provider task for the provider request"
-    );
-}
-
-fn provider_turn_completed(evidence: &ProviderTurnEvidence) -> bool {
-    evidence.delta_count > 0 || evidence.provider_task_completed
-}
-
-fn collect_provider_turn_evidence(events_body: &str) -> ProviderTurnEvidence {
-    let mut evidence = ProviderTurnEvidence::default();
-
-    for (idx, line) in events_body.lines().enumerate() {
-        let event: Value = serde_json::from_str(line).unwrap_or_else(|err| {
-            panic!("events line {} is invalid JSON: {err}", idx + 1);
+fn assert_events_show_successful_provider_turn(provider_name: &str, events_body: &str) {
+    let observation = collect_provider_turn_observation(events_body);
+    assert_provider_turn_completed(&observation).unwrap_or_else(|err| {
+        panic!("provider turn evidence mismatch for `{provider_name}`: {err}")
+    });
+    if provider_turn_expectation(provider_name).is_some() {
+        assert_registered_provider_turn(provider_name, &observation).unwrap_or_else(|err| {
+            panic!("provider-specific parity expectation mismatch for `{provider_name}`: {err}")
         });
-
-        let event_type = event
-            .get("payload")
-            .and_then(|payload| payload.get("event_type"))
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-
-        let data = event
-            .get("payload")
-            .and_then(|payload| payload.get("data"))
-            .cloned()
-            .unwrap_or(Value::Null);
-
-        match event_type {
-            "provider_request_started" => {
-                evidence.request_id = data
-                    .get("request_id")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned);
-                evidence.saw_started = true;
-            }
-            "task_scheduled" => {
-                if evidence.provider_task_id.is_none()
-                    && data
-                        .get("queue_key")
-                        .and_then(Value::as_str)
-                        .is_some_and(|queue_key| queue_key.starts_with("provider_model:"))
-                {
-                    evidence.provider_task_id = data
-                        .get("task_id")
-                        .and_then(Value::as_str)
-                        .map(ToOwned::to_owned);
-                }
-            }
-            "provider_stream_delta" => {
-                evidence.delta_count += 1;
-            }
-            "provider_request_finished" => {
-                evidence.saw_finished = true;
-            }
-            "task_completed" => {
-                if evidence.provider_task_id.as_deref()
-                    == data.get("task_id").and_then(Value::as_str)
-                {
-                    evidence.provider_task_completed = true;
-                }
-                if evidence.task_completed_summary.is_none() {
-                    evidence.task_completed_summary = data
-                        .get("result_summary")
-                        .and_then(Value::as_str)
-                        .map(ToOwned::to_owned);
-                }
-            }
-            "run_failed" => {
-                evidence.run_failed = data
-                    .get("error")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned)
-                    .or_else(|| Some("run_failed event missing error detail".to_string()));
-            }
-            _ => {}
-        }
     }
-
-    evidence
 }
 
 fn load_json5_config(config_path: &Path) -> Result<Value, String> {
