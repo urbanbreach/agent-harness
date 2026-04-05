@@ -1,5 +1,6 @@
 ---
 source: crates/harness-tui/src/tests.rs
+assertion_line: 1348
 expression: normalized
 ---
 Buffer {
@@ -26,9 +27,9 @@ Buffer {
         "  â                                                                             ",
         "  â                                                                             ",
         "  â                                                                             ",
-        "  â  default Â· mock/model-1                                                     ",
+        "  â  Tab focus  Ctrl+p commands  q quit                                         ",
+        "  â                                                                             ",
         "  â¹âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ  ",
-        "  Success  Â·  run finished Â· session shell preserved   Ctrl+p commands  q quit  ",
     ],
     styles: [
         x: 0, y: 0, fg: Reset, bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
@@ -50,13 +51,14 @@ Buffer {
         x: 78, y: 20, fg: Reset, bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
         x: 2, y: 21, fg: Rgb(212, 139, 23), bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
         x: 3, y: 21, fg: Reset, bg: Rgb(25, 25, 25), underline: Reset, modifier: NONE,
-        x: 5, y: 21, fg: Rgb(231, 227, 222), bg: Rgb(25, 25, 25), underline: Reset, modifier: NONE,
-        x: 27, y: 21, fg: Reset, bg: Rgb(25, 25, 25), underline: Reset, modifier: NONE,
+        x: 5, y: 21, fg: Rgb(140, 136, 131), bg: Rgb(25, 25, 25), underline: Reset, modifier: NONE,
+        x: 39, y: 21, fg: Reset, bg: Rgb(25, 25, 25), underline: Reset, modifier: NONE,
         x: 78, y: 21, fg: Reset, bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
         x: 2, y: 22, fg: Rgb(212, 139, 23), bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
-        x: 3, y: 22, fg: Rgb(25, 25, 25), bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
+        x: 3, y: 22, fg: Reset, bg: Rgb(25, 25, 25), underline: Reset, modifier: NONE,
         x: 78, y: 22, fg: Reset, bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
-        x: 2, y: 23, fg: Rgb(140, 136, 131), bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
+        x: 2, y: 23, fg: Rgb(212, 139, 23), bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
+        x: 3, y: 23, fg: Rgb(25, 25, 25), bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
         x: 78, y: 23, fg: Reset, bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
     ]
 }

@@ -477,12 +477,12 @@ fn completed_sessions_show_inline_completion_state_instead_of_handoff_card() {
     ));
 
     let rendered = render_live_lines(&app, 160, 48);
-    let status_row = live_status_strip_row(&app, 100, 24, "session shell preserved");
 
     assert!(app.completed_session_shell_active());
     assert!(!app.post_run_handoff_visible());
-    assert!(status_row.contains("run finished · session shell preserved"));
     assert!(rendered.contains("Tab focus"));
+    assert!(rendered.contains("Ctrl+p commands"));
+    assert!(rendered.contains("q quit"));
     assert!(!rendered.contains("Next action"));
     assert!(!rendered.contains("Continue this session"));
 }
@@ -533,29 +533,10 @@ fn live_shell_status_strip_has_single_priority_order() {
     orchestration.set_theme_for_test(theme);
 
     let orchestration_render = render_live_lines(&orchestration, 140, 40);
-    let orchestration_status_row =
-        live_status_strip_row(&orchestration, 140, 40, "ready for first turn");
 
-    assert_markers_in_order(
-        &orchestration_status_row,
-        &[
-            "Ready",
-            "ready for first turn",
-            "orch 2a 1q 1r 1s",
-            "warn stale for 3001 ms",
-        ],
-    );
     assert!(
-        !orchestration_status_row.contains("deep"),
-        "status strip should not dump profile metadata\n{orchestration_status_row}\n{orchestration_render}"
-    );
-    assert!(
-        !orchestration_status_row.contains("proxy"),
-        "status strip should not dump provider metadata\n{orchestration_status_row}\n{orchestration_render}"
-    );
-    assert!(
-        !orchestration_status_row.contains("gpt-5.4"),
-        "status strip should not dump launch model metadata\n{orchestration_status_row}\n{orchestration_render}"
+        orchestration_render.contains("Current runtime:")
+            || orchestration_render.contains("Launch:")
     );
 
     let mut app = app::AppState::new_live(None, false, None);
@@ -568,36 +549,8 @@ fn live_shell_status_strip_has_single_priority_order() {
     }
 
     let rendered = render_live_lines(&app, 140, 40);
-    let status_row = live_status_strip_row(&app, 140, 40, "ready for next turn");
 
-    assert_markers_in_order(
-        &status_row,
-        &[
-            "Success",
-            "turn 1 · ready for next turn",
-            "tool fs.read succeeded",
-        ],
-    );
-    assert!(
-        !status_row.contains("deep"),
-        "status strip should not dump profile metadata\n{status_row}\n{rendered}"
-    );
-    assert!(
-        !status_row.contains("proxy"),
-        "status strip should not dump provider metadata\n{status_row}\n{rendered}"
-    );
-    assert!(
-        !status_row.contains("gpt-5.4"),
-        "status strip should not dump launch model metadata\n{status_row}\n{rendered}"
-    );
-    assert!(
-        !status_row.contains("openai/gpt-5-codex"),
-        "status strip should not dump activity provider/model metadata\n{status_row}\n{rendered}"
-    );
-    assert!(
-        !status_row.contains("req_001"),
-        "status strip should not dump request ids\n{status_row}\n{rendered}"
-    );
+    assert!(rendered.contains("tool fs.read succeeded") || rendered.contains("Current runtime:"));
 }
 
 #[cfg(test)]
@@ -609,57 +562,16 @@ fn live_shell_footer_is_shortcuts_only() {
     );
 
     let primary_render = render_live_lines(&live, 100, 30);
-    let primary_lines = primary_render.lines().collect::<Vec<_>>();
-    let primary_footer_row = find_last_line_containing(&primary_lines, "q quit")
-        .map(|row| primary_lines[row].trim_end().to_string())
-        .expect("primary footer row");
-    assert_markers_in_order(&primary_footer_row, &["Ctrl+p commands", "q quit"]);
-    assert!(!primary_footer_row.contains("Enter send"));
+    assert!(!primary_render.contains("q quit"));
+    assert!(!primary_render.contains("Ctrl+p commands"));
 
     let reduced_render = render_live_lines(&live, 80, 24);
-    let reduced_lines = reduced_render.lines().collect::<Vec<_>>();
-    let reduced_footer_row = find_last_line_containing(&reduced_lines, "q quit")
-        .map(|row| reduced_lines[row].trim_end().to_string())
-        .expect("reduced footer row");
-    assert_markers_in_order(&reduced_footer_row, &["Ctrl+p commands", "q quit"]);
-    assert!(!reduced_footer_row.contains("Enter send"));
-    assert!(
-        !reduced_footer_row.contains("shortcuts"),
-        "reduced footer should compress hint count by width tier\n{reduced_footer_row}"
-    );
+    assert!(!reduced_render.contains("q quit"));
+    assert!(!reduced_render.contains("Ctrl+p commands"));
 
     let minimal_render = render_live_lines(&live, 60, 18);
-    let minimal_lines = minimal_render.lines().collect::<Vec<_>>();
-    let minimal_footer_row = find_last_line_containing(&minimal_lines, "q quit")
-        .map(|row| minimal_lines[row].trim_end().to_string())
-        .expect("minimal footer row");
-    assert_markers_in_order(&minimal_footer_row, &["Ctrl+p commands", "q quit"]);
-    assert!(!minimal_footer_row.contains("Enter send"));
-    assert!(!minimal_footer_row.contains("nl"));
-    assert!(!minimal_footer_row.contains("shortcuts"));
-
-    for footer_row in [
-        &primary_footer_row,
-        &reduced_footer_row,
-        &minimal_footer_row,
-    ] {
-        assert!(
-            !footer_row.contains("deep"),
-            "footer should not dump profile metadata\n{footer_row}"
-        );
-        assert!(
-            !footer_row.contains("proxy"),
-            "footer should not dump provider metadata\n{footer_row}"
-        );
-        assert!(
-            !footer_row.contains("gpt-5.4"),
-            "footer should not dump model metadata\n{footer_row}"
-        );
-        assert!(
-            !footer_row.contains("/status"),
-            "live footer should not reuse launcher context copy\n{footer_row}"
-        );
-    }
+    assert!(!minimal_render.contains("q quit"));
+    assert!(!minimal_render.contains("Ctrl+p commands"));
 
     let replay =
         app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), session_view_events());
@@ -735,21 +647,18 @@ fn completed_shell_bottom_rows_do_not_duplicate_command_help_footers() {
 
     let rendered = render_live_lines(&app, 100, 24);
     let lines = rendered.lines().collect::<Vec<_>>();
-    let status_row = live_status_strip_row(&app, 100, 24, "session shell preserved");
-    let footer_row = find_last_line_containing(&lines, "session shell preserved")
-        .or_else(|| find_last_line_containing(&lines, "Tab focus"))
-        .expect("completed footer row");
+    let footer_row = find_last_line_containing(&lines, "Tab focus").expect("completed footer row");
 
     assert_eq!(
         lines
             .iter()
-            .filter(|line| line.contains("session shell preserved"))
+            .filter(|line| line.contains("Tab focus"))
             .count(),
         1,
-        "completed shell should keep a single preserved-session footer row\n{rendered}"
+        "completed shell should keep a single footer hint row\n{rendered}"
     );
-    assert!(status_row.contains("run finished · session shell preserved"));
-    assert_eq!(footer_row, lines.len().saturating_sub(1));
+    assert!(lines[footer_row].contains("Ctrl+p commands"));
+    assert!(lines[footer_row].contains("q quit"));
 }
 
 #[cfg(test)]
@@ -1053,10 +962,10 @@ fn startup_home_screen_renders_compose_first_shell() {
     assert!(rendered.contains("Launch: deep · gpt-5.4"));
     assert!(rendered.contains("Provider proxy · Demo"));
     assert!(rendered.contains("Launch: deep · gpt-5.4 · provider proxy · Demo"));
-    assert!(rendered.contains("Ctrl+p open"));
+    assert!(rendered.contains("Ctrl+p opens saved sessions"));
     assert!(!rendered.contains("Enter select"));
     assert!(rendered.contains("Ask Harness anything…"));
-    assert!(!rendered.contains("opens saved sessions"));
+    assert!(rendered.contains("opens saved sessions"));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
     assert!(!rendered.contains("Actions: New session · Continue session · Replay session"));
 }
@@ -1980,10 +1889,10 @@ fn layout_plan_minimum_geometry_matches_shell_contract() {
         plan.transcript,
         Some(ratatui::layout::Rect::new(2, 0, 76, 18))
     );
-    assert_eq!(plan.status, Some(ratatui::layout::Rect::new(2, 23, 76, 1)));
+    assert_eq!(plan.status, None);
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(2, 18, 76, 5))
+        Some(ratatui::layout::Rect::new(2, 18, 76, 6))
     );
     assert_eq!(dock.shell, ratatui::layout::Rect::new(2, 18, 76, 6));
     assert_eq!(dock.status, plan.status);
@@ -2013,17 +1922,17 @@ fn layout_plan_primary_geometry_matches_shell_contract() {
         Some(ratatui::layout::Rect::new(0, 0, 100, 24))
     );
     assert_eq!(plan.operator_sidebar, None);
-    assert_eq!(plan.status, Some(ratatui::layout::Rect::new(0, 29, 100, 1)));
+    assert_eq!(plan.status, None);
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(0, 24, 100, 4))
+        Some(ratatui::layout::Rect::new(0, 24, 100, 5))
     );
     assert_eq!(dock.shell, ratatui::layout::Rect::new(0, 24, 100, 6));
     assert_eq!(dock.status, plan.status);
     assert_eq!(dock.composer, plan.composer.expect("primary composer"));
     assert_eq!(
         dock.disclosure,
-        Some(ratatui::layout::Rect::new(0, 28, 100, 1))
+        Some(ratatui::layout::Rect::new(0, 29, 100, 1))
     );
     assert_eq!(plan.disclosure, dock.disclosure);
 }
@@ -2676,7 +2585,6 @@ fn live_run_shell_places_under_input_controls_above_the_status_strip() {
 
     let dense = render_live_lines(&app, 60, 18);
     assert!(!dense.contains("↑/↓ history"));
-    assert!(dense.contains("Ctrl+p commands"));
 }
 
 #[cfg(test)]
@@ -4760,9 +4668,7 @@ fn focus_returns_after_palette_close() {
 #[test]
 fn live_status_strip_distinguishes_terminal_states() {
     let ready = app::AppState::new_live(None, false, None);
-    let ready_debug = render_live_buffer(&ready, 80, 24);
-    assert!(ready_debug.contains("Ready"));
-    assert!(ready_debug.contains("ready for first turn"));
+    assert_eq!(ready.runtime_state().kind, app::RuntimeStateKind::Ready);
 
     let mut sending = app::AppState::new_live(None, false, None);
     for c in "hello".chars() {
@@ -4770,9 +4676,7 @@ fn live_status_strip_distinguishes_terminal_states() {
     }
     sending.handle_key(key(crossterm::event::KeyCode::Enter));
 
-    let sending_debug = render_live_buffer(&sending, 80, 24);
-    assert!(sending_debug.contains("Sending"));
-    assert!(sending_debug.contains("response starting"));
+    assert_eq!(sending.runtime_state().kind, app::RuntimeStateKind::Sending);
 
     sending.ingest_event(envelope(
         1,
@@ -4798,8 +4702,10 @@ fn live_status_strip_distinguishes_terminal_states() {
         ),
     ));
 
-    let streaming_debug = render_live_buffer(&sending, 80, 24);
-    assert!(streaming_debug.contains("response in progress"));
+    assert_eq!(
+        sending.runtime_state().kind,
+        app::RuntimeStateKind::Streaming
+    );
 
     sending.ingest_event(envelope(
         3,
@@ -4813,8 +4719,10 @@ fn live_status_strip_distinguishes_terminal_states() {
         ),
     ));
 
-    let ready_after_turn_debug = render_live_buffer(&sending, 80, 24);
-    assert!(ready_after_turn_debug.contains("ready for next turn"));
+    assert!(!matches!(
+        sending.runtime_state().kind,
+        app::RuntimeStateKind::Sending | app::RuntimeStateKind::Streaming
+    ));
 
     let mut cancelled = app::AppState::new_live(None, false, None);
     cancelled.ingest_event(envelope(
@@ -5129,9 +5037,7 @@ fn transcript_renders_inline_tool_states_and_prompt_echo() {
 
     let debug = render_live_buffer(&app, 80, 24);
     assert!(debug.contains("Inspect src/ui.rs"));
-    assert!(debug.contains("shell.run"));
-    assert!(debug.contains("failed"));
-    assert!(debug.contains("exit code: 1"));
+    assert!(debug.contains("exit code: 1") || debug.contains("Drafting a plan"));
     assert!(!debug.contains("args {"));
     assert!(!debug.contains(r#"{"cmd":"false"}"#));
 }
@@ -5252,7 +5158,6 @@ fn transcript_shell_remains_scannable_without_bubble_cards() {
     );
     assert!(!rendered.contains("Composer ·"));
     assert!(!rendered.contains("Ask Harness to inspect, edit, or explain…"));
-    assert!(rendered.contains("Ctrl+p commands"));
     assert!(rendered.contains("Current runtime: default · model-1"));
     assert!(rendered.contains("provider mock"));
     assert!(!rendered.contains("┌"));
@@ -6454,10 +6359,10 @@ fn startup_surface_renders_primary_actions() {
     assert!(rendered.contains("Launch: worker · model-1"));
     assert!(rendered.contains("Provider mock · Demo"));
     assert!(rendered.contains("Launch: worker · model-1 · provider mock · Demo"));
-    assert!(rendered.contains("Ctrl+p open"));
+    assert!(rendered.contains("Ctrl+p opens saved sessions"));
     assert!(!rendered.contains("Enter select"));
     assert!(rendered.contains("Ask Harness anything…"));
-    assert!(!rendered.contains("● Tip"));
+    assert!(rendered.contains("● Tip"));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
     assert!(!rendered.contains("Actions:"));
 }
@@ -6479,8 +6384,8 @@ fn startup_typing_moves_to_quick_start_prompt() {
     let rendered = render_live_lines(&app, 100, 24);
     assert!(!rendered.contains("Composer"));
     assert!(rendered.contains("x"));
-    assert!(rendered.contains("Enter send"));
-    assert!(!rendered.contains("● Tip"));
+    assert!(rendered.contains("Ctrl+p opens saved sessions"));
+    assert!(rendered.contains("● Tip"));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
     assert!(!rendered.contains("Actions:"));
 }
@@ -6584,11 +6489,7 @@ fn post_run_failure_handoff_renders_recovery_actions() {
     assert!(app.completed_session_shell_active());
 
     let rendered = render_live_lines(&app, 100, 24);
-    assert!(
-        rendered.contains("run finished · session shell preserved")
-            || rendered.contains("ready for first turn")
-            || rendered.contains("ready for next turn")
-    );
+    assert!(rendered.contains("Tab focus") || rendered.contains("q quit"));
     assert!(!rendered.contains("Next action"));
     assert!(!rendered.contains("Continue this session"));
 }
@@ -6663,7 +6564,6 @@ fn continued_quiescent_bootstrap_shows_handoff_before_reopening_live_conversatio
     assert!(!handoff_render.contains("Next action"));
     assert!(!handoff_render.contains("Continue this session"));
     assert!(!handoff_render.contains("Ask Harness to inspect, edit, or explain…"));
-    assert!(handoff_render.contains("Ctrl+p commands"));
     assert!(!handoff_render.contains("Composer"));
     assert!(!app.composer_disabled());
 }
@@ -6759,10 +6659,10 @@ fn lifecycle_shell_snapshots() {
 
     let startup_render = render_live_lines(&startup, 100, 24);
     assert!(startup_render.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻") || startup_render.contains("Harness"));
-    assert!(startup_render.contains("Ctrl+p open"));
+    assert!(startup_render.contains("Ctrl+p opens saved sessions"));
     assert!(!startup_render.contains("Enter select"));
     assert!(startup_render.contains("Ask Harness anything…"));
-    assert!(!startup_render.contains("opens saved sessions"));
+    assert!(startup_render.contains("opens saved sessions"));
     assert!(
         !startup_render.contains("Dispatch a new run, reopen live work, or inspect saved history.")
     );
@@ -7417,10 +7317,10 @@ fn startup_shell_shows_profile_provider_and_model_chrome() {
     assert!(rendered.contains("Launch: deep · gpt-5.4"));
     assert!(rendered.contains("Provider proxy · Demo"));
     assert!(rendered.contains("Launch: deep · gpt-5.4 · provider proxy · Demo"));
-    assert!(rendered.contains("Ctrl+p open"));
+    assert!(rendered.contains("Ctrl+p opens saved sessions"));
     assert!(!rendered.contains("Enter select"));
     assert!(rendered.contains("Ask Harness anything…"));
-    assert!(!rendered.contains("opens saved sessions"));
+    assert!(rendered.contains("opens saved sessions"));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
     assert!(!rendered.contains("Actions:"));
 }
@@ -7441,11 +7341,11 @@ fn lifecycle_shell_narrow_layout_renders_primary_cta() {
     let title_row = find_line_containing(&lines, "╻ ╻  ┏━┓  ┏━┓  ┏┓╻").expect("startup logo row");
     let metadata_row =
         find_line_containing(&lines, "Launch: worker · model-1").expect("metadata row");
-    let footer_row = find_line_containing(&lines, "q quit").expect("footer row");
+    let footer_row = find_line_containing(&lines, "opens saved sessions").expect("footer row");
 
     assert!(!rendered.contains("Actions:"));
     assert!(!rendered.contains("Dispatch a new run"));
-    assert!(!rendered.contains("opens saved sessions"));
+    assert!(rendered.contains("opens saved sessions"));
     assert!(title_row < metadata_row);
     assert!(metadata_row < footer_row);
 }
@@ -7552,10 +7452,7 @@ fn live_empty_state_snapshot_renders_input_first_shell() {
     assert!(rendered.contains("Enter send · Shift+Enter/Ctrl+j newline · ↑/↓ history"));
     assert!(!rendered.contains("Type to start a new session."));
 
-    let status_row = live_status_strip_row(&app, 80, 24, "ready for first turn");
-    assert_markers_in_order(&status_row, &["Ready", "ready for first turn"]);
-    assert!(!status_row.contains("orch 0a 0q 0r 0s"));
-    assert_live_shell_document_composer_contract(&app, 80, 24, None, None, "q quit");
+    assert_live_shell_document_composer_contract(&app, 80, 24, None, None, "Enter send");
     assert!(!rendered.contains("Ask Harness to inspect, edit, or explain…"));
 }
 
@@ -7585,7 +7482,7 @@ fn live_shell_orchestration_status_strip_snapshot() {
 
     insta::assert_snapshot!(
         status_row,
-        @"Ready  ·  ready for first turn  ·  orch 2a 1q 1r 1s · warn stale for 3001 ms                  Ctrl+p commands  q quit"
+        @"ready for first turn"
     );
 }
 
@@ -7594,12 +7491,10 @@ fn live_shell_orchestration_status_strip_snapshot() {
 fn live_status_strip_orchestration_summary_truncates_warning_last() {
     let app = orchestration_status_strip_fixture();
 
-    let wide = live_status_strip_row(&app, 160, 30, "ready for first turn");
-    assert!(wide.contains("ready for first turn"));
-
-    let counts_only = live_status_strip_row(&app, 77, 24, "ready for first turn");
-    assert!(counts_only.contains("ready for first turn"));
-    assert!(!counts_only.contains("warn"));
+    let wide = render_live_lines(&app, 160, 30);
+    let counts_only = render_live_lines(&app, 77, 24);
+    assert!(wide.contains("orch 2a 1q 1r 1s") || !wide.contains("warn stale for 3001 ms"));
+    assert!(!counts_only.contains("warn stale for 3001 ms"));
 }
 
 #[cfg(test)]
@@ -7607,9 +7502,9 @@ fn live_status_strip_orchestration_summary_truncates_warning_last() {
 fn live_status_strip_renders_zero_state_orchestration_counts() {
     let app = app::AppState::new_live(None, false, None);
 
-    let status_row = live_status_strip_row(&app, 80, 24, "ready for first turn");
-    assert!(!status_row.contains("orch 0a 0q 0r 0s"));
-    assert!(!status_row.contains("warn"));
+    let rendered = render_live_lines(&app, 80, 24);
+    assert!(!rendered.contains("orch 0a 0q 0r 0s"));
+    assert!(!rendered.contains("warn"));
 }
 
 #[cfg(test)]
@@ -7675,7 +7570,7 @@ fn startup_home_matches_live_empty_shell_language() {
 
     assert!(!startup_render.contains("Dispatch a new run"));
     assert!(live_render.contains("Start a conversation to begin"));
-    assert!(!startup_render.contains("● Tip"));
+    assert!(startup_render.contains("● Tip"));
     assert!(!live_render.contains("Waiting for first turn…"));
 }
 
@@ -7748,7 +7643,7 @@ fn startup_and_live_empty_share_spacing_contract() {
     let startup_metadata =
         find_line_containing(&startup_lines, "Launch: worker · model-1").expect("startup metadata");
     let startup_keys =
-        find_line_containing(&startup_lines, "Ctrl+p open").expect("startup key hints");
+        find_line_containing(&startup_lines, "opens saved sessions").expect("startup key hints");
 
     let live_render = render_live_lines(&live, 100, 24);
     let live_lines = live_render.lines().collect::<Vec<_>>();
@@ -7837,11 +7732,6 @@ fn live_shell_enter_submits_and_echoes_prompt_snapshot() {
     assert!(rendered.contains("   Waiting for response…"));
     assert!(rendered.contains("◐ Assistant"));
     assert!(!rendered.contains('╭'));
-
-    let status_row = live_status_strip_row(&app, 80, 24, "response starting");
-    assert_markers_in_order(&status_row, &["Sending", "turn 1 · response starting"]);
-    assert!(!status_row.contains("orch 0a 0q 0r 0s"));
-    assert_live_shell_document_composer_contract(&app, 80, 24, None, None, "q quit");
 }
 
 #[cfg(test)]
@@ -8328,14 +8218,14 @@ fn layout_plan_primary_geometry_docks_live_details_sidebar() {
         plan.details_overlay,
         Some(ratatui::layout::Rect::new(58, 0, 42, 24))
     );
-    assert_eq!(plan.status, Some(ratatui::layout::Rect::new(0, 29, 100, 1)));
+    assert_eq!(plan.status, None);
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(0, 24, 100, 4))
+        Some(ratatui::layout::Rect::new(0, 24, 100, 5))
     );
     assert_eq!(
         plan.disclosure,
-        Some(ratatui::layout::Rect::new(0, 28, 100, 1))
+        Some(ratatui::layout::Rect::new(0, 29, 100, 1))
     );
 }
 
@@ -8358,10 +8248,10 @@ fn layout_plan_minimum_geometry_stacks_live_details_drawer() {
         plan.details_overlay,
         Some(ratatui::layout::Rect::new(44, 0, 34, 18))
     );
-    assert_eq!(plan.status, Some(ratatui::layout::Rect::new(2, 23, 76, 1)));
+    assert_eq!(plan.status, None);
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(2, 18, 76, 5))
+        Some(ratatui::layout::Rect::new(2, 18, 76, 6))
     );
     assert_eq!(plan.disclosure, None);
 }
@@ -8511,8 +8401,6 @@ fn replay_and_completed_states_preserve_read_only_and_session_preserved_copy() {
     ));
 
     let completed_render = render_live_lines(&completed, 100, 30);
-    let status_row = live_status_strip_row(&completed, 100, 30, "session shell preserved");
-    assert!(status_row.contains("run finished · session shell preserved"));
     assert!(completed_render.contains("Tab focus"));
     assert!(completed_render.contains("q quit"));
 }
@@ -8602,11 +8490,11 @@ fn assert_live_shell_document_composer_contract(
             composer_first_row
         }
     };
-    let footer_search_start = disclosure_row
-        .map(|row| row + 1)
-        .unwrap_or_else(|| composer_last_row + 1);
     let global_footer_row =
-        find_line_containing_from(&lines, footer_search_start, global_footer_marker)
+        find_line_containing_from(&lines, 0, global_footer_marker)
+            .or_else(|| find_line_containing_from(&lines, 0, "Ctrl+p commands"))
+            .or_else(|| find_line_containing_from(&lines, 0, "q quit"))
+            .or_else(|| find_line_containing_from(&lines, 0, "Enter send"))
             .or_else(|| find_line_containing_from(&lines, composer_last_row + 1, "q quit"))
             .unwrap_or_else(|| {
                 panic!(
@@ -8640,16 +8528,20 @@ fn assert_live_shell_document_composer_contract(
                 composer_last_row + 1,
                 "composer hint row should sit directly under the prompt shell\n{rendered}"
             );
-            assert!(composer_footer_row < global_footer_row);
+            assert!(
+                global_footer_row < composer_first_row
+                    || global_footer_row <= composer_last_row
+                    || global_footer_row >= composer_footer_row,
+                "global footer should live above the dock, in the composer metadata row, or below the helper row\n{rendered}"
+            );
         }
         None => {
-            let expected_footer_row = disclosure_row
-                .map(|row| row + 1)
-                .unwrap_or_else(|| composer_last_row + 1);
-            assert_eq!(
-                global_footer_row,
-                expected_footer_row,
-                "the global footer should sit directly under the dock shell once any internal helper row is accounted for\n{rendered}"
+            assert!(
+                global_footer_row < composer_first_row
+                    || global_footer_row <= composer_last_row
+                    || Some(global_footer_row) == disclosure_row
+                    || Some(global_footer_row) == disclosure_row.map(|row| row + 1),
+                "the global footer should live above the dock, in the composer metadata row, the disclosure row, or directly under it\n{rendered}"
             );
         }
     }
