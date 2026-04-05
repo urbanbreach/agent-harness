@@ -208,18 +208,44 @@ impl Tool for CodeLspTool {
 
 pub(crate) fn code_lsp_parameters_json_schema() -> Value {
     json!({
-        "oneOf": [
-            schema_for_operation_shape::<CodeLspPositionArgs>(
-                LspOperation::supported_names_for(LspOperationInputKind::Position),
-            ),
-            schema_for_operation_shape::<CodeLspFileArgs>(
-                LspOperation::supported_names_for(LspOperationInputKind::File),
-            ),
-            schema_for_operation_shape::<CodeLspQueryArgs>(
-                LspOperation::supported_names_for(LspOperationInputKind::Query),
-            ),
-        ]
+        "type": "object",
+        "properties": {
+            "operation": {
+                "type": "string",
+                "enum": supported_operation_names(),
+            },
+            "filePath": {
+                "type": "string"
+            },
+            "line": {
+                "type": "integer",
+                "minimum": 1
+            },
+            "character": {
+                "type": "integer",
+                "minimum": 0
+            },
+            "query": {
+                "type": "string"
+            }
+        },
+        "required": ["operation", "filePath"],
+        "additionalProperties": false
     })
+}
+
+fn supported_operation_names() -> Vec<&'static str> {
+    let mut names = Vec::new();
+    names.extend_from_slice(LspOperation::supported_names_for(
+        LspOperationInputKind::Position,
+    ));
+    names.extend_from_slice(LspOperation::supported_names_for(
+        LspOperationInputKind::File,
+    ));
+    names.extend_from_slice(LspOperation::supported_names_for(
+        LspOperationInputKind::Query,
+    ));
+    names
 }
 
 pub(crate) fn parse_code_lsp_request(args_json: Value) -> Result<CodeLspRequest, ToolError> {
@@ -257,19 +283,6 @@ pub(crate) fn parse_code_lsp_request(args_json: Value) -> Result<CodeLspRequest,
             })
         }
     }
-}
-
-fn schema_for_operation_shape<T: JsonSchema>(operations: &[&str]) -> Value {
-    let mut schema = super::json_schema_for::<T>();
-    if let Some(operation_schema) = schema
-        .get_mut("properties")
-        .and_then(Value::as_object_mut)
-        .and_then(|properties| properties.get_mut("operation"))
-        .and_then(Value::as_object_mut)
-    {
-        operation_schema.insert("enum".to_string(), json!(operations));
-    }
-    schema
 }
 
 fn lsp_result_is_empty(value: &Value) -> bool {
@@ -550,12 +563,14 @@ mod tests {
     }
 
     #[test]
-    fn code_lsp_schema_exposes_per_operation_variants() {
+    fn code_lsp_schema_is_cliproxy_compatible() {
         let schema = code_lsp_parameters_json_schema();
-        let variants = schema["oneOf"].as_array().expect("oneOf variants");
-        assert_eq!(variants.len(), 3);
+        assert_eq!(schema["type"], json!("object"));
+        assert!(schema["properties"].is_object());
+        assert_eq!(schema["additionalProperties"], json!(false));
+        assert_eq!(schema["required"], json!(["operation", "filePath"]));
         assert_eq!(
-            variants[0]["properties"]["operation"]["enum"],
+            schema["properties"]["operation"]["enum"],
             json!([
                 "goToDefinition",
                 "findReferences",
@@ -564,12 +579,17 @@ mod tests {
                 "prepareCallHierarchy",
                 "incomingCalls",
                 "outgoingCalls",
+                "documentSymbol",
+                "fileDiagnostics",
+                "workspaceDiagnostics",
+                "workspaceSymbol",
             ])
         );
-        assert_eq!(variants[1]["required"], json!(["filePath", "operation"]));
-        assert_eq!(
-            variants[2]["required"],
-            json!(["filePath", "operation", "query"])
-        );
+        for forbidden in ["oneOf", "anyOf", "allOf", "enum", "not"] {
+            assert!(
+                schema.get(forbidden).is_none(),
+                "unexpected top-level {forbidden}"
+            );
+        }
     }
 }
