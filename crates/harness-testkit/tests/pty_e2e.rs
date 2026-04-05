@@ -2236,22 +2236,22 @@ fn pty_signoff_helpers_cover_primary_and_minimum_geometries() {
 }
 
 #[test]
-fn pty_visual_ttf_antialias_defaults_to_disabled() {
-    assert!(!parse_ttf_antialias_env(None));
-    for value in ["0", "false", "off", " False ", " OFF ", "unexpected"] {
+fn pty_visual_ttf_antialias_defaults_to_enabled() {
+    assert!(parse_ttf_antialias_env(None));
+    for value in ["1", "true", "on", " True ", " ON ", "unexpected"] {
         assert!(
-            !parse_ttf_antialias_env(Some(value)),
-            "expected {value:?} to keep PTY TTF anti-aliasing disabled"
+            parse_ttf_antialias_env(Some(value)),
+            "expected {value:?} to keep PTY TTF anti-aliasing enabled"
         );
     }
 }
 
 #[test]
-fn pty_visual_ttf_antialias_honors_explicit_opt_in() {
-    for value in ["1", "true", "on", " True ", " ON "] {
+fn pty_visual_ttf_antialias_honors_explicit_opt_out() {
+    for value in ["0", "false", "off", " False ", " OFF "] {
         assert!(
-            parse_ttf_antialias_env(Some(value)),
-            "expected {value:?} to enable PTY TTF anti-aliasing"
+            !parse_ttf_antialias_env(Some(value)),
+            "expected {value:?} to disable PTY TTF anti-aliasing"
         );
     }
 }

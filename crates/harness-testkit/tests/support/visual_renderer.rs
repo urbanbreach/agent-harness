@@ -187,13 +187,11 @@ pub(crate) fn parse_ttf_antialias_env(value: Option<&str>) -> bool {
     value
         .map(|value| {
             let normalized = value.trim();
-            normalized == "1"
-                || normalized.eq_ignore_ascii_case("true")
-                || normalized.eq_ignore_ascii_case("on")
+            !(normalized == "0"
+                || normalized.eq_ignore_ascii_case("false")
+                || normalized.eq_ignore_ascii_case("off"))
         })
-        // Keep the default renderer fully deterministic across hosts; opt in to
-        // host-font anti-aliasing only when a test run explicitly requests it.
-        .unwrap_or(false)
+        .unwrap_or(true)
 }
 
 fn draw_cell(image: &mut RgbImage, context: &CellRenderContext<'_>, row: u16, col: u16) {
