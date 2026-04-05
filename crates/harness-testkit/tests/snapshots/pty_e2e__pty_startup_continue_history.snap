@@ -6,7 +6,7 @@ Continue session: true
 continue ready: true
 Interactive histories: true
 focus_marker: continue ready
-focus_render_state_blake3: dcd0b37ddcaf37b429d064ef38cbf6204845768e6d58f698d5345bb32913141f
+focus_render_state_blake3: 47160956bfb9d52dd7b89bf28297834ba6796b03f503e34303e5722995634c64
 focus_region_cells: row=26, col=63, height=3, width=28
 image: pty_startup_continue_history.png
 manifest_json: pty-manifests/startup_session_history/manifest.json

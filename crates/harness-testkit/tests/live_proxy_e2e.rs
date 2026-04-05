@@ -18,12 +18,16 @@ mod support;
 use portable_pty::{CommandBuilder, PtySize};
 use serde_json::{json, Value};
 use support::live_events::{resolve_tagged_run_dir, ToolFlowEvidence};
+use support::live_provider_parity::{
+    assert_provider_turn_completed, assert_registered_provider_turn,
+    collect_provider_turn_observation, provider_turn_expectation, provider_turn_summary,
+};
 use support::live_vision::{self, LiveVisionProxyConfig};
 use support::live_visual::{
     assert_checkpoint_markers, default_live_run_metadata, selected_live_viewport, FocusCapture,
-    LiveVisualRun, LiveVisualRunOptions, CHECKPOINT_DRAFT_VISIBLE,
+    LiveVisualRun, LiveVisualRunOptions, CHECKPOINT_DRAFT_VISIBLE, CHECKPOINT_FILE_WRITE_FINISHED,
     CHECKPOINT_HASHLINE_SCAN_FINISHED, CHECKPOINT_PERMISSION_REQUESTED, CHECKPOINT_RUN_FINISHED,
-    CHECKPOINT_FILE_WRITE_FINISHED, CHECKPOINT_STARTUP,
+    CHECKPOINT_STARTUP,
 };
 use support::pty_process::{spawn_pty_process, SpawnedPtyProcess};
 use vt100::Parser as VtParser;
@@ -32,6 +36,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const DEFAULT_LIVE_PROXY_PROVIDER: &str = "default";
 const DEFAULT_LIVE_PROXY_MODEL: &str = "gpt-5.4-mini";
+const DEFAULT_LIVE_PROXY_VARIANT: &str = "live_signoff";
 const DEFAULT_LIVE_PROXY_PROFILE: &str = "live_proxy_smoke";
 const LIVE_PROXY_TOOL_FLOW_PROFILE: &str = "live_proxy_tool_flow";
 const LIVE_PROXY_CHAT_TODO_FLOW_PROFILE: &str = "live_proxy_chat_todo_flow";
@@ -124,8 +129,9 @@ const LIVE_COMPAT_EDIT_DELETE_PROMPT: &str = concat!(
 );
 const LIVE_TOOL_FLOW_CREATE_PROMPT: &str = concat!(
     "You must use tools only. Use exactly tmp/live_tool_flow.md. ",
-    "Now perform only step 1: call shell.run with cmd=sh and args=[-lc, \"mkdir -p tmp && printf 'alpha\\nbeta\\ngamma\\n' > tmp/live_tool_flow.md\"] to create the file. ",
-    "Return exactly one tool call and zero prose. Do not call any other tool."
+    "Now perform only step 1: call fs.write with this exact payload shape: ",
+    r#"{"path":"tmp/live_tool_flow.md","content":"alpha\nbeta\ngamma\n"}"#,
+    ". Return exactly one fs.write tool call and zero prose. Do not call any other tool."
 );
 const LIVE_TOOL_FLOW_READ_PROMPT: &str = concat!(
     "Now perform only step 2 on the same file: call fs.read with path=tmp/live_tool_flow.md. ",
@@ -145,7 +151,6 @@ const RESPONSES_ENDPOINT_PATH: &str = "/v1/responses";
 const LIVE_TUI_READY_MARKER: &str = "Ask Harness anything…";
 const LIVE_TUI_STATUS_SUCCESS_MARKER: &str = "Success";
 const LIVE_TUI_FINISHED_MARKER: &str = "ready for next turn";
-const LIVE_TUI_ASSISTANT_DONE_MARKER: &str = "assistant · done";
 const LIVE_TUI_ASSISTANT_STREAMING_MARKER: &str = "assistant · streaming…";
 const LIVE_TUI_WAITING_FOR_RESPONSE_MARKER: &str = "Waiting for response…";
 const LIVE_TUI_READ_POLL_TIMEOUT: Duration = Duration::from_millis(50);
@@ -161,6 +166,7 @@ struct LivePromptRequest {
     source_config_path: PathBuf,
     provider_name: String,
     primary_model: String,
+    primary_variant: Option<String>,
     vision_model: String,
     profile: String,
     prompt_text: String,
@@ -183,8 +189,10 @@ impl LiveSmokeEndpoint {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PromptRunConfig {
     config_path: PathBuf,
+    provider_name: String,
     profile: String,
     model_id: String,
+    variant: Option<String>,
     endpoint: LiveSmokeEndpoint,
     workspace_root: PathBuf,
     session_dir: PathBuf,
@@ -218,6 +226,16 @@ struct LivePromptChatToolRunConfig {
     todo_flow: PromptRunConfig,
     question: PromptRunConfig,
     skill: PromptRunConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LivePromptNativeToolFlowRunConfig {
+    create: PromptRunConfig,
+    first_read: PromptRunConfig,
+    scan: PromptRunConfig,
+    apply: PromptRunConfig,
+    final_read: PromptRunConfig,
+    canonical_relative_path: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -294,23 +312,12 @@ impl LiveNamespaceAllocation {
     }
 }
 
-#[derive(Debug, Default)]
-struct ProviderTurnEvidence {
-    request_id: Option<String>,
-    provider_task_id: Option<String>,
-    saw_started: bool,
-    saw_finished: bool,
-    delta_count: usize,
-    provider_task_completed: bool,
-    task_completed_summary: Option<String>,
-    run_failed: Option<String>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LiveProxyPreflightReport {
     source_config_path: PathBuf,
     provider_name: String,
     model_id: String,
+    variant: Option<String>,
     vision_model_id: String,
     profile: String,
     endpoint_path: &'static str,
@@ -327,6 +334,10 @@ impl LiveProxyPreflightReport {
             format!("  config: {}", self.source_config_path.display()),
             format!("  provider: {}", self.provider_name),
             format!("  model: {}", self.model_id),
+            format!(
+                "  variant: {}",
+                self.variant.as_deref().unwrap_or("<primary>")
+            ),
             format!("  vision model: {}", self.vision_model_id),
             format!("  profile: {}", self.profile),
             format!("  endpoint: {}", self.endpoint_path),
@@ -348,7 +359,7 @@ impl ToolFlowStage {
     fn tools(self) -> &'static [&'static str] {
         match self {
             Self::Full => &[
-                "shell.run",
+                "fs.write",
                 "fs.read",
                 "edit.hashline_scan",
                 "edit.hashline_apply",
@@ -360,7 +371,7 @@ impl ToolFlowStage {
         match self {
             Self::Full => concat!(
                 "Execute the full live tool-flow task in one session. ",
-                "Use only shell.run, fs.read, edit.hashline_scan, and edit.hashline_apply against tmp/live_tool_flow.md."
+                "Use only fs.write, fs.read, edit.hashline_scan, and edit.hashline_apply against tmp/live_tool_flow.md."
             ),
         }
     }
@@ -418,7 +429,23 @@ fn live_proxy_prompt_responses_smoke() {
 
     let events_body = fs::read_to_string(&events_path)
         .unwrap_or_else(|err| panic!("failed to read event log {}: {err}", events_path.display()));
-    assert_events_show_successful_provider_turn(&events_body);
+    assert_events_show_successful_provider_turn(&live_request.provider_name, &events_body);
+}
+
+#[test]
+#[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
+fn live_proxy_prompt_parity_signoff() {
+    if env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
+        return;
+    }
+
+    println!(
+        "CLI parity signoff: live_proxy_prompt_responses_smoke -> live_proxy_prompt_chat_tool_flow -> live_proxy_prompt_native_tool_flow -> live_proxy_prompt_compat_edit_flow"
+    );
+    live_proxy_prompt_responses_smoke();
+    live_proxy_prompt_chat_tool_flow();
+    live_proxy_prompt_native_tool_flow();
+    live_proxy_prompt_compat_edit_flow();
 }
 
 #[test]
@@ -453,7 +480,22 @@ fn live_proxy_e2e_tui_prompt_responses_smoke() {
         live_tui_command_timeout(&live_request),
     )
     .unwrap_or_else(|err| panic!("live proxy TUI smoke failed: {err}"));
-    assert_events_show_successful_provider_turn(&smoke.events_body);
+    assert_events_show_successful_provider_turn(&live_request.provider_name, &smoke.events_body);
+}
+
+#[test]
+#[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
+fn live_proxy_e2e_tui_parity_signoff() {
+    if !cfg!(target_os = "linux") || env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
+        return;
+    }
+
+    println!(
+        "TUI parity signoff: live_proxy_preflight -> live_proxy_e2e_tui_prompt_responses_smoke -> live_proxy_e2e_tui_tool_flow"
+    );
+    live_proxy_preflight();
+    live_proxy_e2e_tui_prompt_responses_smoke();
+    live_proxy_e2e_tui_tool_flow();
 }
 
 #[test]
@@ -581,15 +623,21 @@ fn live_proxy_prompt_chat_tool_flow() {
     .unwrap_or_else(|err| panic!("live prompt skill stage failed: {err}"));
     assert_requested_tool_sequence(&skill_result.events_body, &["skill"])
         .unwrap_or_else(|err| panic!("skill-stage tool sequence mismatch: {err}"));
-    assert_requested_tool_args(
-        &skill_result.events_body,
-        "skill",
-        &json!({
-            "name": "rust-best-practices",
-            "user_message": LIVE_CHAT_SKILL_PROMPT,
-        }),
-    )
-    .unwrap_or_else(|err| panic!("skill-stage tool arguments mismatch: {err}"));
+    let skill_args = first_requested_tool_args(&skill_result.events_body, "skill")
+        .unwrap_or_else(|err| panic!("skill-stage tool arguments lookup failed: {err}"))
+        .unwrap_or_else(|| panic!("skill-stage tool arguments missing"));
+    assert_eq!(
+        skill_args.get("name").and_then(Value::as_str),
+        Some("rust-best-practices"),
+        "skill-stage tool name mismatch: {skill_args}"
+    );
+    assert!(
+        skill_args
+            .get("user_message")
+            .and_then(Value::as_str)
+            .is_some_and(|value| value.contains("Call skill with name=rust-best-practices.")),
+        "skill-stage tool arguments mismatch: {skill_args}"
+    );
     assert_tool_call_output_contains(
         &skill_result.events_body,
         "skill",
@@ -598,6 +646,107 @@ fn live_proxy_prompt_chat_tool_flow() {
     .unwrap_or_else(|err| panic!("skill-stage skill output mismatch: {err}"));
     assert_event_log_contains(&skill_result.events_body, "LIVE_CHAT_SKILL_CONFIRMED")
         .unwrap_or_else(|err| panic!("skill-stage final confirmation mismatch: {err}"));
+}
+
+#[test]
+#[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
+fn live_proxy_prompt_native_tool_flow() {
+    if env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
+        return;
+    }
+
+    let repo_root = repo_root();
+    let live_request = resolve_live_prompt_request(&repo_root).unwrap_or_else(|err| {
+        panic!("failed to resolve live proxy native tool-flow inputs: {err}")
+    });
+    let run_config =
+        prepare_live_prompt_native_tool_flow_run_config(&live_request).unwrap_or_else(|err| {
+            panic!("failed to prepare live proxy native tool-flow config: {err}")
+        });
+
+    let create_result = run_live_prompt_stage(
+        &run_config.create,
+        LIVE_TOOL_FLOW_CREATE_PROMPT,
+        &live_request.wait_timeout_ms,
+        &[],
+    )
+    .unwrap_or_else(|err| panic!("live prompt native tool-flow create stage failed: {err}"));
+    assert_requested_tool_sequence(&create_result.events_body, &["fs.write"])
+        .unwrap_or_else(|err| panic!("native tool-flow create tool sequence mismatch: {err}"));
+    assert_run_records_live_runtime_context(
+        &create_result.run_dir,
+        &run_config.create.profile,
+        &live_request.primary_model,
+        live_request.primary_variant.as_deref(),
+    )
+    .unwrap_or_else(|err| panic!("native tool-flow create runtime context mismatch: {err}"));
+
+    let first_read_result = run_live_prompt_stage(
+        &run_config.first_read,
+        LIVE_TOOL_FLOW_READ_PROMPT,
+        &live_request.wait_timeout_ms,
+        &[],
+    )
+    .unwrap_or_else(|err| panic!("live prompt native tool-flow first-read stage failed: {err}"));
+    assert_requested_tool_sequence(&first_read_result.events_body, &["fs.read"])
+        .unwrap_or_else(|err| panic!("native tool-flow first-read tool sequence mismatch: {err}"));
+
+    let scan_result = run_live_prompt_stage(
+        &run_config.scan,
+        LIVE_TOOL_FLOW_SCAN_PROMPT,
+        &live_request.wait_timeout_ms,
+        &[],
+    )
+    .unwrap_or_else(|err| panic!("live prompt native tool-flow scan stage failed: {err}"));
+    assert_requested_tool_sequence(&scan_result.events_body, &["edit.hashline_scan"])
+        .unwrap_or_else(|err| panic!("native tool-flow scan tool sequence mismatch: {err}"));
+    let line_two_hash =
+        read_hashline_scan_line_hash(&scan_result.run_dir, &run_config.canonical_relative_path, 2)
+            .unwrap_or_else(|err| panic!("native tool-flow scan hash evidence mismatch: {err}"));
+
+    let apply_result = run_live_prompt_stage(
+        &run_config.apply,
+        &live_tool_flow_apply_prompt(&line_two_hash),
+        &live_request.wait_timeout_ms,
+        &[],
+    )
+    .unwrap_or_else(|err| panic!("live prompt native tool-flow apply stage failed: {err}"));
+    assert_requested_tool_sequence(&apply_result.events_body, &["edit.hashline_apply"])
+        .unwrap_or_else(|err| panic!("native tool-flow apply tool sequence mismatch: {err}"));
+
+    let final_read_result = run_live_prompt_stage(
+        &run_config.final_read,
+        LIVE_TOOL_FLOW_FINAL_READ_PROMPT,
+        &live_request.wait_timeout_ms,
+        &[],
+    )
+    .unwrap_or_else(|err| panic!("live prompt native tool-flow final-read stage failed: {err}"));
+    assert_requested_tool_sequence(&final_read_result.events_body, &["fs.read"])
+        .unwrap_or_else(|err| panic!("native tool-flow final-read tool sequence mismatch: {err}"));
+    assert_event_log_contains(&final_read_result.events_body, "BETA")
+        .unwrap_or_else(|err| panic!("native tool-flow final-read confirmation mismatch: {err}"));
+
+    let evidence = ToolFlowEvidence::collect_many(
+        &[
+            create_result.run_dir.clone(),
+            first_read_result.run_dir.clone(),
+            scan_result.run_dir.clone(),
+            apply_result.run_dir.clone(),
+            final_read_result.run_dir.clone(),
+        ],
+        &run_config.create.workspace_root,
+        &run_config.canonical_relative_path,
+    )
+    .unwrap_or_else(|err| panic!("native tool-flow evidence collection failed: {err}"));
+    evidence
+        .assert_run_succeeded()
+        .unwrap_or_else(|err| panic!("native tool-flow run did not succeed: {err}"));
+    evidence
+        .assert_ordered_same_file_sequence()
+        .unwrap_or_else(|err| panic!("native tool-flow same-file sequence mismatch: {err}"));
+    evidence
+        .assert_final_workspace_content(LIVE_TOOL_FLOW_FINAL_CONTENT)
+        .unwrap_or_else(|err| panic!("native tool-flow final workspace content mismatch: {err}"));
 }
 
 #[test]
@@ -832,7 +981,7 @@ async fn live_proxy_e2e_visual_verifier() {
         live_tui_command_timeout(&live_request),
     )
     .unwrap_or_else(|err| panic!("live proxy visual-verifier smoke failed: {err}"));
-    assert_events_show_successful_provider_turn(&smoke.events_body);
+    assert_events_show_successful_provider_turn(&live_request.provider_name, &smoke.events_body);
 
     for png_path in [
         &smoke.visual_artifacts.startup_png,
@@ -875,7 +1024,8 @@ async fn live_proxy_e2e_visual_verifier() {
         CHECKPOINT_RUN_FINISHED,
         &[
             LIVE_TUI_READY_MARKER,
-            LIVE_TUI_ASSISTANT_DONE_MARKER,
+            LIVE_TUI_STATUS_SUCCESS_MARKER,
+            LIVE_TUI_FINISHED_MARKER,
             live_request.prompt_text.as_str(),
         ],
         &[],
@@ -926,6 +1076,7 @@ async fn live_proxy_prompt_wiremock_smoke_uses_responses_and_model_override() {
         &source_config_path,
         provider_name,
         overridden_model,
+        None,
         "wiremock_live_profile",
     )
     .expect("prepare prompt run config");
@@ -967,7 +1118,8 @@ async fn live_proxy_prompt_wiremock_smoke_uses_responses_and_model_override() {
 
     let events_body = fs::read_to_string(&events_path)
         .unwrap_or_else(|err| panic!("failed reading {}: {err}", events_path.display()));
-    assert_events_show_successful_provider_turn(&events_body);
+    assert_provider_turn_completed(&collect_provider_turn_observation(&events_body))
+        .unwrap_or_else(|err| panic!("wiremock provider-turn evidence mismatch: {err}"));
 
     let requests = server
         .received_requests()
@@ -1015,13 +1167,51 @@ fn prepare_prompt_run_config_rejects_chat_completions_mode() {
     )
     .expect("write chat mode config");
 
-    let err =
-        prepare_prompt_run_config(&source_config_path, "default", "chat-model", "chat_profile")
-            .expect_err("chat_completions mode should be rejected for live CLI proxy test");
+    let err = prepare_prompt_run_config(
+        &source_config_path,
+        "default",
+        "chat-model",
+        None,
+        "chat_profile",
+    )
+    .expect_err("chat_completions mode should be rejected for live CLI proxy test");
 
     assert!(
         err.contains("responses or auto"),
         "unexpected error message: {err}"
+    );
+}
+
+#[test]
+fn prepare_live_prompt_run_config_applies_live_signoff_variant_when_available() {
+    let request = LivePromptRequest {
+        source_config_path: repo_root().join("configs").join("harness.example.jsonc"),
+        provider_name: DEFAULT_LIVE_PROXY_PROVIDER.to_string(),
+        primary_model: DEFAULT_LIVE_PROXY_MODEL.to_string(),
+        primary_variant: Some(DEFAULT_LIVE_PROXY_VARIANT.to_string()),
+        vision_model: DEFAULT_LIVE_PROXY_MODEL.to_string(),
+        profile: DEFAULT_LIVE_PROXY_PROFILE.to_string(),
+        prompt_text: DEFAULT_LIVE_PROXY_PROMPT.to_string(),
+        wait_timeout_ms: DEFAULT_LIVE_PROXY_WAIT_TIMEOUT_MS.to_string(),
+    };
+
+    let run_config =
+        prepare_live_prompt_run_config(&request).expect("prepare live prompt run config");
+    let prepared = load_json5_config(&run_config.config_path).expect("load prepared config");
+    let prepared_profile = prepared
+        .get("profiles")
+        .and_then(Value::as_object)
+        .and_then(|profiles| profiles.get(DEFAULT_LIVE_PROXY_PROFILE))
+        .and_then(Value::as_object)
+        .expect("prepared live smoke profile present");
+
+    assert_eq!(
+        prepared_profile.get("model_ref").and_then(Value::as_str),
+        Some("default:gpt-5.4-mini")
+    );
+    assert_eq!(
+        prepared_profile.get("variant").and_then(Value::as_str),
+        Some(DEFAULT_LIVE_PROXY_VARIANT)
     );
 }
 
@@ -1046,6 +1236,7 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
         source_config_path,
         provider_name: "default".to_string(),
         primary_model: DEFAULT_LIVE_PROXY_MODEL.to_string(),
+        primary_variant: None,
         vision_model: "vision-model".to_string(),
         profile: DEFAULT_LIVE_PROXY_PROFILE.to_string(),
         prompt_text: DEFAULT_LIVE_PROXY_PROMPT.to_string(),
@@ -1154,7 +1345,7 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
     assert_eq!(
         tool_flow_profile.get("tools").and_then(Value::as_array),
         Some(&vec![
-            Value::String("shell.run".to_string()),
+            Value::String("fs.write".to_string()),
             Value::String("fs.read".to_string()),
             Value::String("edit.hashline_scan".to_string()),
             Value::String("edit.hashline_apply".to_string()),
@@ -1179,6 +1370,90 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
 }
 
 #[test]
+fn prepare_live_prompt_native_tool_flow_run_config_builds_cli_parity_stages() {
+    let source_config_path = unique_temp_file("live-proxy-native-tool-flow", "jsonc");
+    let source_session_dir = unique_temp_dir("live-proxy-native-tool-flow-source-session");
+    let source_config = build_live_proxy_test_config(
+        "default",
+        "http://127.0.0.1:9999",
+        "responses",
+        DEFAULT_LIVE_PROXY_MODEL,
+        &source_session_dir,
+    );
+    fs::write(
+        &source_config_path,
+        serde_json::to_string_pretty(&source_config).expect("serialize native tool flow config"),
+    )
+    .expect("write native tool flow config");
+
+    let request = LivePromptRequest {
+        source_config_path,
+        provider_name: "default".to_string(),
+        primary_model: DEFAULT_LIVE_PROXY_MODEL.to_string(),
+        primary_variant: Some(DEFAULT_LIVE_PROXY_VARIANT.to_string()),
+        vision_model: "vision-model".to_string(),
+        profile: DEFAULT_LIVE_PROXY_PROFILE.to_string(),
+        prompt_text: DEFAULT_LIVE_PROXY_PROMPT.to_string(),
+        wait_timeout_ms: DEFAULT_LIVE_PROXY_WAIT_TIMEOUT_MS.to_string(),
+    };
+
+    let run_config = prepare_live_prompt_native_tool_flow_run_config(&request)
+        .expect("prepare native tool flow config");
+
+    assert_eq!(run_config.create.model_id, DEFAULT_LIVE_PROXY_MODEL);
+    assert_eq!(
+        run_config.create.variant.as_deref(),
+        Some(DEFAULT_LIVE_PROXY_VARIANT)
+    );
+    assert_eq!(
+        run_config.create.workspace_root,
+        run_config.first_read.workspace_root
+    );
+    assert_eq!(
+        run_config.create.workspace_root,
+        run_config.scan.workspace_root
+    );
+    assert_eq!(
+        run_config.create.workspace_root,
+        run_config.apply.workspace_root
+    );
+    assert_eq!(
+        run_config.create.workspace_root,
+        run_config.final_read.workspace_root
+    );
+    assert_ne!(
+        run_config.create.session_dir,
+        run_config.first_read.session_dir
+    );
+    assert_ne!(
+        run_config.first_read.session_dir,
+        run_config.scan.session_dir
+    );
+    assert_ne!(run_config.scan.session_dir, run_config.apply.session_dir);
+    assert_ne!(
+        run_config.apply.session_dir,
+        run_config.final_read.session_dir
+    );
+    assert_eq!(
+        run_config.canonical_relative_path,
+        PathBuf::from(LIVE_TOOL_FLOW_RELATIVE_PATH)
+    );
+
+    let prepared = load_json5_config(&run_config.create.config_path)
+        .expect("load native tool flow prepared config");
+    let profile = prepared
+        .get("profiles")
+        .and_then(Value::as_object)
+        .and_then(|profiles| profiles.get(LIVE_PROXY_TOOL_FLOW_PROFILE))
+        .and_then(Value::as_object)
+        .expect("native tool flow profile present");
+    assert_eq!(
+        profile.get("variant").and_then(Value::as_str),
+        Some(DEFAULT_LIVE_PROXY_VARIANT)
+    );
+}
+
+#[test]
 fn prepare_live_prompt_chat_tool_run_config_builds_restricted_profiles() {
     let source_config_path = unique_temp_file("live-proxy-chat-tool-config", "jsonc");
     let source_session_dir = unique_temp_dir("live-proxy-chat-tool-source-session");
@@ -1199,6 +1474,7 @@ fn prepare_live_prompt_chat_tool_run_config_builds_restricted_profiles() {
         source_config_path,
         provider_name: "default".to_string(),
         primary_model: DEFAULT_LIVE_PROXY_MODEL.to_string(),
+        primary_variant: None,
         vision_model: "vision-model".to_string(),
         profile: DEFAULT_LIVE_PROXY_PROFILE.to_string(),
         prompt_text: DEFAULT_LIVE_PROXY_PROMPT.to_string(),
@@ -1263,6 +1539,17 @@ fn prepare_live_prompt_chat_tool_run_config_builds_restricted_profiles() {
         skill_profile.get("tools").and_then(Value::as_array),
         Some(&vec![Value::String("skill".to_string())])
     );
+    assert!(
+        run_config
+            .skill
+            .workspace_root
+            .join(".agents")
+            .join("skills")
+            .join("rust-best-practices")
+            .join("SKILL.md")
+            .exists(),
+        "prepared chat tool workspace should seed rust-best-practices into a local project skill root"
+    );
 }
 
 #[test]
@@ -1286,6 +1573,7 @@ fn prepare_live_prompt_compat_edit_run_config_builds_restricted_profile() {
         source_config_path,
         provider_name: "default".to_string(),
         primary_model: DEFAULT_LIVE_PROXY_MODEL.to_string(),
+        primary_variant: None,
         vision_model: "vision-model".to_string(),
         profile: DEFAULT_LIVE_PROXY_PROFILE.to_string(),
         prompt_text: DEFAULT_LIVE_PROXY_PROMPT.to_string(),
@@ -1360,6 +1648,25 @@ fn example_config_ships_canonical_plan_build_and_audit_profiles() {
     let config = load_json5_config(&repo_root().join("configs").join("harness.example.jsonc"))
         .expect("load shipped example config");
 
+    let default_provider = config
+        .get("providers")
+        .and_then(Value::as_object)
+        .and_then(|providers| providers.get("default"))
+        .and_then(Value::as_object)
+        .expect("default provider present in example config");
+    assert_eq!(
+        default_provider.get("base_url").and_then(Value::as_str),
+        Some("http://127.0.0.1:8317/v1")
+    );
+    assert_eq!(
+        default_provider.get("api_key").and_then(Value::as_str),
+        Some("${OPENAI_API_KEY:-sk-zerolimit}")
+    );
+    assert_eq!(
+        default_provider.get("api_mode").and_then(Value::as_str),
+        Some("auto")
+    );
+
     assert_eq!(
         config
             .get("ui")
@@ -1381,7 +1688,7 @@ fn example_config_ships_canonical_plan_build_and_audit_profiles() {
     );
     assert_eq!(
         plan.get("model_ref").and_then(Value::as_str),
-        Some("default:gpt-5.4")
+        Some("default:gpt-5.4-mini")
     );
     let plan_tools = plan
         .get("tools")
@@ -1540,6 +1847,30 @@ fn example_config_ships_canonical_plan_build_and_audit_profiles() {
         Some("tool_audit")
     );
 
+    let live_signoff_variant = config
+        .get("providers")
+        .and_then(|providers| providers.get("default"))
+        .and_then(|provider| provider.get("models"))
+        .and_then(|models| models.get("gpt-5.4-mini"))
+        .and_then(|model| model.get("variants"))
+        .and_then(|variants| variants.get("live_signoff"))
+        .and_then(Value::as_object)
+        .expect("gpt-5.4-mini live_signoff variant present");
+    assert_eq!(
+        live_signoff_variant
+            .get("metadata")
+            .and_then(|metadata| metadata.get("reasoning_effort"))
+            .and_then(Value::as_str),
+        Some("low")
+    );
+    assert_eq!(
+        live_signoff_variant
+            .get("metadata")
+            .and_then(|metadata| metadata.get("recommended_for"))
+            .and_then(Value::as_str),
+        Some("live_proxy")
+    );
+
     let deep_compat = config
         .get("profiles")
         .and_then(Value::as_object)
@@ -1607,17 +1938,14 @@ fn tool_flow_evidence_detects_ordered_same_file_sequence() {
     let events_body = vec![
         requested(
             1,
-            "call-shell",
-            "shell.run",
+            "call-write",
+            "fs.write",
             json!({
-                "cmd": "sh",
-                "args": [
-                    "-lc",
-                    format!("printf 'alpha\\nbeta\\ngamma\\n' > {LIVE_TOOL_FLOW_RELATIVE_PATH}")
-                ],
+                "path": LIVE_TOOL_FLOW_RELATIVE_PATH,
+                "content": "alpha\nbeta\ngamma\n",
             }),
         ),
-        finished(2, "call-shell"),
+        finished(2, "call-write"),
         requested(
             3,
             "call-read-1",
@@ -1778,17 +2106,14 @@ fn tool_flow_evidence_collect_many_merges_stage_runs() {
         vec![
             requested(
                 1,
-                "call-shell",
-                "shell.run",
+                "call-write",
+                "fs.write",
                 json!({
-                    "cmd": "sh",
-                    "args": [
-                        "-lc",
-                        format!("printf 'alpha\\nbeta\\ngamma\\n' > {LIVE_TOOL_FLOW_RELATIVE_PATH}")
-                    ],
+                    "path": LIVE_TOOL_FLOW_RELATIVE_PATH,
+                    "content": "alpha\nbeta\ngamma\n",
                 }),
             ),
-            finished(2, "call-shell"),
+            finished(2, "call-write"),
         ],
     );
     let first_read_run = write_run(
@@ -1957,6 +2282,7 @@ fn resolve_live_request_defaults_vision_model_to_primary() {
                 "HARNESS_LIVE_PROXY_MODEL",
                 Some(OsStr::new(DEFAULT_LIVE_PROXY_MODEL)),
             ),
+            ("HARNESS_LIVE_PROXY_VARIANT", None),
             ("HARNESS_LIVE_PROXY_VISION_MODEL", None),
             ("HARNESS_LIVE_PROXY_PROFILE", None),
             ("HARNESS_LIVE_PROXY_PROMPT", None),
@@ -1966,7 +2292,118 @@ fn resolve_live_request_defaults_vision_model_to_primary() {
             let request =
                 resolve_live_prompt_request(&repo_root()).expect("resolve live prompt request");
             assert_eq!(request.primary_model, DEFAULT_LIVE_PROXY_MODEL);
+            assert_eq!(request.primary_variant.as_deref(), None);
             assert_eq!(request.vision_model, request.primary_model);
+        },
+    );
+}
+
+#[test]
+fn resolve_live_request_prefers_live_signoff_variant_for_documented_signoff_model() {
+    let _guard = live_proxy_env_lock()
+        .lock()
+        .expect("live proxy env test lock should not be poisoned");
+
+    let source_config_path = repo_root().join("configs").join("harness.example.jsonc");
+    with_live_proxy_env(
+        &[
+            (
+                "HARNESS_LIVE_PROXY_CONFIG",
+                Some(source_config_path.as_os_str()),
+            ),
+            ("HARNESS_LIVE_PROXY_PROVIDER", Some(OsStr::new("default"))),
+            (
+                "HARNESS_LIVE_PROXY_MODEL",
+                Some(OsStr::new(DEFAULT_LIVE_PROXY_MODEL)),
+            ),
+            ("HARNESS_LIVE_PROXY_VARIANT", None),
+            ("HARNESS_LIVE_PROXY_VISION_MODEL", None),
+            ("HARNESS_LIVE_PROXY_PROFILE", None),
+            ("HARNESS_LIVE_PROXY_PROMPT", None),
+            ("HARNESS_LIVE_PROXY_WAIT_TIMEOUT_MS", None),
+        ],
+        || {
+            let request =
+                resolve_live_prompt_request(&repo_root()).expect("resolve live prompt request");
+            assert_eq!(
+                request.primary_variant.as_deref(),
+                Some(DEFAULT_LIVE_PROXY_VARIANT)
+            );
+        },
+    );
+}
+
+#[test]
+fn resolve_live_request_prefers_documented_default_model_when_present() {
+    let _guard = live_proxy_env_lock()
+        .lock()
+        .expect("live proxy env test lock should not be poisoned");
+
+    let source_config_path = unique_temp_file("live-proxy-request-default-model", "jsonc");
+    let session_dir = unique_temp_dir("live-proxy-request-default-model-session");
+    let mut config = build_live_proxy_test_config(
+        "default",
+        "http://127.0.0.1:9999",
+        "auto",
+        "gpt-5.4",
+        &session_dir,
+    );
+    let provider_models = config
+        .get_mut("providers")
+        .and_then(Value::as_object_mut)
+        .and_then(|providers| providers.get_mut("default"))
+        .and_then(Value::as_object_mut)
+        .and_then(|provider| provider.get_mut("models"))
+        .and_then(Value::as_object_mut)
+        .expect("provider models object present");
+    provider_models.insert(
+        DEFAULT_LIVE_PROXY_MODEL.to_string(),
+        json!({
+            "display_name": "Documented default model"
+        }),
+    );
+    fs::write(
+        &source_config_path,
+        serde_json::to_string_pretty(&config).expect("serialize request default model config"),
+    )
+    .expect("write request default model config");
+
+    with_live_proxy_env(
+        &[
+            (
+                "HARNESS_LIVE_PROXY_CONFIG",
+                Some(source_config_path.as_os_str()),
+            ),
+            ("HARNESS_LIVE_PROXY_PROVIDER", Some(OsStr::new("default"))),
+            ("HARNESS_LIVE_PROXY_MODEL", None),
+            ("HARNESS_LIVE_PROXY_VARIANT", None),
+            ("HARNESS_LIVE_PROXY_VISION_MODEL", None),
+            ("HARNESS_LIVE_PROXY_PROFILE", None),
+            ("HARNESS_LIVE_PROXY_PROMPT", None),
+            ("HARNESS_LIVE_PROXY_WAIT_TIMEOUT_MS", None),
+        ],
+        || {
+            let request =
+                resolve_live_prompt_request(&repo_root()).expect("resolve live prompt request");
+            assert_eq!(request.primary_model, DEFAULT_LIVE_PROXY_MODEL);
+            assert_eq!(request.primary_variant.as_deref(), None);
+        },
+    );
+}
+
+#[test]
+fn resolve_env_reference_value_uses_fallback_for_empty_var() {
+    let _guard = live_proxy_env_lock()
+        .lock()
+        .expect("live proxy env test lock should not be poisoned");
+
+    with_live_proxy_env(
+        &[("HARNESS_LIVE_PROXY_EMPTY_API_KEY", Some(OsStr::new("")))],
+        || {
+            let resolved =
+                resolve_env_reference_value("${HARNESS_LIVE_PROXY_EMPTY_API_KEY:-sk-zerolimit}")
+                    .expect("empty env var should use fallback value");
+            assert_eq!(resolved, "sk-zerolimit");
         },
     );
 }
@@ -2016,6 +2453,7 @@ fn live_tui_smoke_helpers_reuse_cliproxy_config_and_endpoint_rules() {
         source_config_path: auto_config_path.clone(),
         provider_name: "proxy".to_string(),
         primary_model: "override-model".to_string(),
+        primary_variant: None,
         vision_model: "override-model".to_string(),
         profile: "tui_smoke_profile".to_string(),
         prompt_text: DEFAULT_LIVE_PROXY_PROMPT.to_string(),
@@ -2025,6 +2463,7 @@ fn live_tui_smoke_helpers_reuse_cliproxy_config_and_endpoint_rules() {
     let run_config = prepare_live_prompt_run_config(&live_request)
         .expect("prepare auto-mode live TUI run config");
     assert_eq!(run_config.endpoint.path(), RESPONSES_ENDPOINT_PATH);
+    assert_eq!(run_config.provider_name, "proxy");
     assert_eq!(run_config.model_id, "override-model");
     assert_eq!(run_config.profile, "tui_smoke_profile");
     assert_eq!(
@@ -2089,13 +2528,56 @@ fn live_tui_smoke_helpers_reuse_cliproxy_config_and_endpoint_rules() {
         serde_json::to_string_pretty(&chat_config).expect("serialize chat config"),
     )
     .expect("write chat config");
-    let chat_err =
-        prepare_prompt_run_config(&chat_config_path, "default", "chat-model", "chat_profile")
-            .expect_err("chat-completions mode should be rejected");
+    let chat_err = prepare_prompt_run_config(
+        &chat_config_path,
+        "default",
+        "chat-model",
+        None,
+        "chat_profile",
+    )
+    .expect_err("chat-completions mode should be rejected");
     assert!(
         chat_err.contains("responses or auto"),
         "unexpected chat-mode error: {chat_err}"
     );
+}
+
+#[test]
+fn live_provider_turn_summary_marks_recorded_and_unrecorded_providers() {
+    let events_body = [
+        r#"{"payload":{"event_type":"provider_request_started","data":{"request_id":"req-1"}}}"#,
+        r#"{"payload":{"event_type":"task_scheduled","data":{"task_id":"task-1","queue_key":"provider_model:gpt-5.4-mini"}}}"#,
+        r#"{"payload":{"event_type":"provider_stream_delta","data":{"request_id":"req-1","delta":"hello"}}}"#,
+        r#"{"payload":{"event_type":"provider_request_finished","data":{"request_id":"req-1"}}}"#,
+        r#"{"payload":{"event_type":"task_completed","data":{"task_id":"task-1","result_summary":"done"}}}"#,
+    ]
+    .join("\n");
+    let observation = collect_provider_turn_observation(&events_body);
+
+    let default_summary =
+        provider_turn_summary(DEFAULT_LIVE_PROXY_PROVIDER, &observation).expect("default summary");
+    assert_eq!(
+        default_summary
+            .get("expectation_status")
+            .and_then(Value::as_str),
+        Some("recorded")
+    );
+    assert_eq!(
+        default_summary
+            .get("observation")
+            .and_then(|observation| observation.get("completion_mode"))
+            .and_then(Value::as_str),
+        Some("stream_delta_and_task_completion")
+    );
+
+    let proxy_summary = provider_turn_summary("proxy", &observation).expect("proxy summary");
+    assert_eq!(
+        proxy_summary
+            .get("expectation_status")
+            .and_then(Value::as_str),
+        Some("unrecorded")
+    );
+    assert_eq!(proxy_summary.get("expectation"), Some(&Value::Null));
 }
 
 #[test]
@@ -2317,7 +2799,6 @@ fn live_visual_checkpoint_marker_assertions_respect_required_and_forbidden_state
         LIVE_TUI_READY_MARKER,
         LIVE_TUI_STATUS_SUCCESS_MARKER,
         LIVE_TUI_FINISHED_MARKER,
-        LIVE_TUI_ASSISTANT_DONE_MARKER,
         "fs.read",
     ]);
     let checkpoint = visual_run
@@ -2328,7 +2809,6 @@ fn live_visual_checkpoint_marker_assertions_respect_required_and_forbidden_state
                 LIVE_TUI_READY_MARKER,
                 LIVE_TUI_STATUS_SUCCESS_MARKER,
                 LIVE_TUI_FINISHED_MARKER,
-                LIVE_TUI_ASSISTANT_DONE_MARKER,
                 LIVE_TUI_ASSISTANT_STREAMING_MARKER,
             ],
             &FocusCapture::anchored_exact("fs.read", 28, 5),
@@ -2342,7 +2822,6 @@ fn live_visual_checkpoint_marker_assertions_respect_required_and_forbidden_state
             LIVE_TUI_READY_MARKER,
             LIVE_TUI_STATUS_SUCCESS_MARKER,
             LIVE_TUI_FINISHED_MARKER,
-            LIVE_TUI_ASSISTANT_DONE_MARKER,
         ],
         &[LIVE_TUI_ASSISTANT_STREAMING_MARKER],
     )
@@ -2371,15 +2850,15 @@ fn live_visual_manifest_orders_checkpoints_and_jsonl_by_stage() {
     let parser = parser_with_screen(&[
         LIVE_TUI_READY_MARKER,
         "permission marker",
-        LIVE_TUI_ASSISTANT_DONE_MARKER,
+        LIVE_TUI_FINISHED_MARKER,
     ]);
 
     visual_run
         .capture_checkpoint_with_metadata(
             CHECKPOINT_RUN_FINISHED,
             &parser,
-            &[LIVE_TUI_READY_MARKER, LIVE_TUI_ASSISTANT_DONE_MARKER],
-            &FocusCapture::anchored_exact(LIVE_TUI_ASSISTANT_DONE_MARKER, 24, 3),
+            &[LIVE_TUI_READY_MARKER, LIVE_TUI_FINISHED_MARKER],
+            &FocusCapture::anchored_exact(LIVE_TUI_FINISHED_MARKER, 24, 3),
             Some(json!({
                 "purpose": "ordered-run-finished",
                 "stage": CHECKPOINT_RUN_FINISHED,
@@ -2826,6 +3305,7 @@ fn prepare_live_prompt_run_config(request: &LivePromptRequest) -> Result<PromptR
         &request.source_config_path,
         &request.provider_name,
         &request.primary_model,
+        request.primary_variant.as_deref(),
         &request.profile,
     )
 }
@@ -2847,6 +3327,7 @@ fn prepare_live_tool_flow_run_config(
         &request.source_config_path,
         &request.provider_name,
         &request.primary_model,
+        request.primary_variant.as_deref(),
         LIVE_PROXY_TOOL_FLOW_PROFILE,
         PreparedLiveConfigContract::ToolFlow {
             paths: PreparedLiveConfigPaths {
@@ -2862,6 +3343,7 @@ fn prepare_live_tool_flow_run_config(
         &request.source_config_path,
         &request.provider_name,
         &request.vision_model,
+        None,
         LIVE_PROXY_VISION_VERIFIER_PROFILE,
         PreparedLiveConfigContract::VisionVerifier(PreparedLiveConfigPaths {
             workspace_root: workspace_root.clone(),
@@ -2883,11 +3365,13 @@ fn prepare_live_prompt_chat_tool_run_config(
 ) -> Result<LivePromptChatToolRunConfig, String> {
     let namespace = LiveNamespaceAllocation::allocate("live-proxy-chat-tool-workspace")?;
     let workspace_root = namespace.root_dir().to_path_buf();
+    seed_project_skill(&workspace_root, "rust-best-practices")?;
 
     let todo_flow = prepare_prompt_run_config_with_contract(
         &request.source_config_path,
         &request.provider_name,
         &request.primary_model,
+        request.primary_variant.as_deref(),
         LIVE_PROXY_CHAT_TODO_FLOW_PROFILE,
         PreparedLiveConfigContract::RestrictedTools {
             paths: PreparedLiveConfigPaths {
@@ -2905,6 +3389,7 @@ fn prepare_live_prompt_chat_tool_run_config(
         &request.source_config_path,
         &request.provider_name,
         &request.primary_model,
+        request.primary_variant.as_deref(),
         LIVE_PROXY_CHAT_QUESTION_PROFILE,
         PreparedLiveConfigContract::RestrictedTools {
             paths: PreparedLiveConfigPaths {
@@ -2921,6 +3406,7 @@ fn prepare_live_prompt_chat_tool_run_config(
         &request.source_config_path,
         &request.provider_name,
         &request.primary_model,
+        request.primary_variant.as_deref(),
         LIVE_PROXY_CHAT_SKILL_PROFILE,
         PreparedLiveConfigContract::RestrictedTools {
             paths: PreparedLiveConfigPaths {
@@ -2941,6 +3427,92 @@ fn prepare_live_prompt_chat_tool_run_config(
     })
 }
 
+fn seed_project_skill(workspace_root: &Path, skill_name: &str) -> Result<(), String> {
+    let source_root = repo_root().join(".agents").join("skills").join(skill_name);
+    if !source_root.exists() {
+        return Err(format!(
+            "required skill `{skill_name}` not found at {}",
+            source_root.display()
+        ));
+    }
+
+    let dest_root = workspace_root
+        .join(".agents")
+        .join("skills")
+        .join(skill_name);
+    copy_dir_recursive(&source_root, &dest_root)
+}
+
+fn copy_dir_recursive(source: &Path, dest: &Path) -> Result<(), String> {
+    fs::create_dir_all(dest)
+        .map_err(|err| format!("failed to create {}: {err}", dest.display()))?;
+    for entry in
+        fs::read_dir(source).map_err(|err| format!("failed to read {}: {err}", source.display()))?
+    {
+        let entry = entry
+            .map_err(|err| format!("failed to read entry under {}: {err}", source.display()))?;
+        let source_path = entry.path();
+        let dest_path = dest.join(entry.file_name());
+        let file_type = entry.file_type().map_err(|err| {
+            format!(
+                "failed to inspect {} while copying skill fixture: {err}",
+                source_path.display()
+            )
+        })?;
+        if file_type.is_dir() {
+            copy_dir_recursive(&source_path, &dest_path)?;
+        } else if file_type.is_file() {
+            fs::copy(&source_path, &dest_path).map_err(|err| {
+                format!(
+                    "failed to copy {} to {}: {err}",
+                    source_path.display(),
+                    dest_path.display()
+                )
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn prepare_live_prompt_native_tool_flow_run_config(
+    request: &LivePromptRequest,
+) -> Result<LivePromptNativeToolFlowRunConfig, String> {
+    let namespace = LiveNamespaceAllocation::allocate("live-proxy-native-tool-flow-workspace")?;
+    let workspace_root = namespace.root_dir().to_path_buf();
+    fs::create_dir_all(workspace_root.join("tmp")).map_err(|err| {
+        format!(
+            "failed to create native tool-flow workspace {}: {err}",
+            workspace_root.display()
+        )
+    })?;
+    let prepare_stage = |session_namespace: &str, config_stem: &str| {
+        prepare_prompt_run_config_with_contract(
+            &request.source_config_path,
+            &request.provider_name,
+            &request.primary_model,
+            request.primary_variant.as_deref(),
+            LIVE_PROXY_TOOL_FLOW_PROFILE,
+            PreparedLiveConfigContract::ToolFlow {
+                paths: PreparedLiveConfigPaths {
+                    workspace_root: workspace_root.clone(),
+                    session_dir: namespace.session_dir(session_namespace),
+                    prepared_config_path: namespace.artifact_file(config_stem, "jsonc"),
+                },
+                stage: ToolFlowStage::Full,
+            },
+        )
+    };
+
+    Ok(LivePromptNativeToolFlowRunConfig {
+        create: prepare_stage("native-tool-create", "native-tool-create-config")?,
+        first_read: prepare_stage("native-tool-first-read", "native-tool-first-read-config")?,
+        scan: prepare_stage("native-tool-scan", "native-tool-scan-config")?,
+        apply: prepare_stage("native-tool-apply", "native-tool-apply-config")?,
+        final_read: prepare_stage("native-tool-final-read", "native-tool-final-read-config")?,
+        canonical_relative_path: PathBuf::from(LIVE_TOOL_FLOW_RELATIVE_PATH),
+    })
+}
+
 fn prepare_live_prompt_compat_edit_run_config(
     request: &LivePromptRequest,
 ) -> Result<LivePromptCompatEditRunConfig, String> {
@@ -2951,6 +3523,7 @@ fn prepare_live_prompt_compat_edit_run_config(
             &request.source_config_path,
             &request.provider_name,
             &request.primary_model,
+            request.primary_variant.as_deref(),
             LIVE_PROXY_COMPAT_EDIT_PROFILE,
             PreparedLiveConfigContract::RestrictedTools {
                 paths: PreparedLiveConfigPaths {
@@ -2991,6 +3564,13 @@ fn resolve_live_prompt_request(repo_root: &Path) -> Result<LivePromptRequest, St
     let provider = provider_from_config(&config, &provider_name)?;
     let primary_model = resolve_trimmed_env_var("HARNESS_LIVE_PROXY_MODEL")
         .unwrap_or_else(|| first_model_from_provider(provider))?;
+    let default_variant = (source_config_path
+        == repo_root.join("configs").join("harness.example.jsonc"))
+    .then(|| resolve_live_proxy_variant(&config, &provider_name, &primary_model))
+    .flatten();
+    let primary_variant = resolve_trimmed_env_var("HARNESS_LIVE_PROXY_VARIANT")
+        .transpose()?
+        .or(default_variant);
     let vision_model = resolve_trimmed_env_var("HARNESS_LIVE_PROXY_VISION_MODEL")
         .unwrap_or_else(|| Ok(primary_model.clone()))?;
 
@@ -2998,6 +3578,7 @@ fn resolve_live_prompt_request(repo_root: &Path) -> Result<LivePromptRequest, St
         source_config_path,
         provider_name,
         primary_model,
+        primary_variant,
         vision_model,
         profile: env::var("HARNESS_LIVE_PROXY_PROFILE")
             .unwrap_or_else(|_| DEFAULT_LIVE_PROXY_PROFILE.into()),
@@ -3035,7 +3616,7 @@ fn resolve_live_vision_proxy_config_for_run(
     ensure_provider_uses_responses_compatible_mode(&provider_api_mode(provider))?;
 
     LiveVisionProxyConfig::new(
-        DEFAULT_LIVE_PROXY_PROVIDER.to_string(),
+        run_config.provider_name.clone(),
         provider_base_url(provider)?,
         provider_api_key(provider)?,
         run_config.model_id.clone(),
@@ -3110,6 +3691,7 @@ fn run_live_proxy_preflight(repo_root: &Path) -> Result<LiveProxyPreflightReport
         source_config_path: request.source_config_path,
         provider_name: request.provider_name,
         model_id: request.primary_model,
+        variant: request.primary_variant,
         vision_model_id: request.vision_model,
         profile: run_config.profile,
         endpoint_path: endpoint.path(),
@@ -3124,6 +3706,7 @@ fn prepare_prompt_run_config(
     source_config_path: &Path,
     provider_name: &str,
     selected_model: &str,
+    selected_variant: Option<&str>,
     profile_name: &str,
 ) -> Result<PromptRunConfig, String> {
     let namespace = LiveNamespaceAllocation::allocate("live-proxy-session")?;
@@ -3131,6 +3714,7 @@ fn prepare_prompt_run_config(
         source_config_path,
         provider_name,
         selected_model,
+        selected_variant,
         profile_name,
         PreparedLiveConfigContract::Standard(PreparedLiveConfigPaths {
             workspace_root: repo_root(),
@@ -3144,6 +3728,7 @@ fn prepare_prompt_run_config_with_contract(
     source_config_path: &Path,
     provider_name: &str,
     selected_model: &str,
+    selected_variant: Option<&str>,
     profile_name: &str,
     contract: PreparedLiveConfigContract,
 ) -> Result<PromptRunConfig, String> {
@@ -3166,7 +3751,9 @@ fn prepare_prompt_run_config_with_contract(
     rewrite_selected_provider_to_default(&mut config, provider_name)?;
     normalize_category_model_refs_to_default(&mut config)?;
     ensure_provider_model_entry(&mut config, &selected_model)?;
+    ensure_provider_model_variant(&mut config, &selected_model, selected_variant)?;
     ensure_profile_model_ref(&mut config, profile_name, &selected_model)?;
+    ensure_profile_variant(&mut config, profile_name, selected_variant)?;
     disable_prepared_determinism(&mut config)?;
 
     let paths = contract.paths().clone();
@@ -3194,8 +3781,10 @@ fn prepare_prompt_run_config_with_contract(
 
     Ok(PromptRunConfig {
         config_path: paths.prepared_config_path,
+        provider_name: provider_name.trim().to_string(),
         profile: profile_name.to_string(),
         model_id: selected_model,
+        variant: selected_variant.map(str::to_string),
         endpoint,
         workspace_root: paths.workspace_root,
         session_dir: paths.session_dir,
@@ -3245,7 +3834,7 @@ fn run_live_prompt_stage(
     let events_path = run_dir.join("events.jsonl");
     let events_body = fs::read_to_string(&events_path)
         .map_err(|err| format!("failed to read {}: {err}", events_path.display()))?;
-    assert_events_show_successful_provider_turn(&events_body);
+    assert_events_show_successful_provider_turn(&run_config.provider_name, &events_body);
 
     Ok(LivePromptStageResult {
         run_dir,
@@ -3265,8 +3854,9 @@ fn run_live_tui_smoke(
         &live_run_id()?,
         LiveVisualRunOptions {
             run_metadata: default_live_run_metadata(
-                DEFAULT_LIVE_PROXY_PROVIDER,
+                &run_config.provider_name,
                 &run_config.model_id,
+                run_config.variant.as_deref(),
                 &run_config.profile,
                 &run_config.workspace_root,
                 &run_config.session_dir,
@@ -3344,12 +3934,7 @@ fn run_live_tui_smoke(
     wait_for_screen_state(
         &mut process.parser,
         &process.output_rx,
-        &[
-            LIVE_TUI_READY_MARKER,
-            LIVE_TUI_STATUS_SUCCESS_MARKER,
-            LIVE_TUI_FINISHED_MARKER,
-            LIVE_TUI_ASSISTANT_DONE_MARKER,
-        ],
+        &[LIVE_TUI_STATUS_SUCCESS_MARKER, LIVE_TUI_FINISHED_MARKER],
         &[
             LIVE_TUI_ASSISTANT_STREAMING_MARKER,
             LIVE_TUI_WAITING_FOR_RESPONSE_MARKER,
@@ -3360,10 +3945,8 @@ fn run_live_tui_smoke(
         CHECKPOINT_RUN_FINISHED,
         &process.parser,
         &[
-            LIVE_TUI_READY_MARKER,
             LIVE_TUI_STATUS_SUCCESS_MARKER,
             LIVE_TUI_FINISHED_MARKER,
-            LIVE_TUI_ASSISTANT_DONE_MARKER,
             LIVE_TUI_ASSISTANT_STREAMING_MARKER,
             LIVE_TUI_WAITING_FOR_RESPONSE_MARKER,
             request.prompt_text.as_str(),
@@ -3411,8 +3994,9 @@ fn run_live_tui_tool_flow(
         &live_run_id()?,
         LiveVisualRunOptions {
             run_metadata: default_live_run_metadata(
-                DEFAULT_LIVE_PROXY_PROVIDER,
+                &run_config.tool_flow.provider_name,
                 &run_config.tool_flow.model_id,
+                run_config.tool_flow.variant.as_deref(),
                 &run_config.tool_flow.profile,
                 &run_config.tool_flow.workspace_root,
                 &run_config.tool_flow.session_dir,
@@ -3461,9 +4045,9 @@ fn run_live_tui_tool_flow(
         &run_config.tool_flow.session_dir,
         &run_config.canonical_relative_path,
         &tool_flow_namespace,
-        "shell.run",
+        "fs.write",
         1,
-        remaining_before(deadline, "shell.run tool completion")?,
+        remaining_before(deadline, "fs.write tool completion")?,
     )?;
     let create_events = wait_for_tui_provider_turn_count(
         &run_config.tool_flow.session_dir,
@@ -3471,12 +4055,15 @@ fn run_live_tui_tool_flow(
         1,
         remaining_before(deadline, "create-stage provider turn completion")?,
     )?;
-    assert_events_show_successful_provider_turn(&create_events);
+    assert_events_show_successful_provider_turn(
+        &run_config.tool_flow.provider_name,
+        &create_events,
+    );
     let tool_flow_workspace_root = read_run_workspace_root(&tool_flow_run_dir)?;
     wait_for_screen_contains(
         &mut stage.parser,
         &stage.output_rx,
-        "shell.run",
+        "fs.write",
         Duration::from_secs(5),
     )?;
     let shell_create_finished_checkpoint = live_visual.capture_checkpoint_with_metadata(
@@ -3484,14 +4071,14 @@ fn run_live_tui_tool_flow(
         &stage.parser,
         &[
             LIVE_TUI_READY_MARKER,
-            "shell.run",
+            "fs.write",
             LIVE_TOOL_FLOW_RELATIVE_PATH,
         ],
-        &FocusCapture::anchored_exact("shell.run", 28, 5),
+        &FocusCapture::anchored_exact("fs.write", 28, 5),
         Some(json!({
             "purpose": "tool-flow-stage-finished",
             "stage": "create",
-            "stage_tool": "shell.run",
+            "stage_tool": "fs.write",
             "session_dir": run_config.tool_flow.session_dir.display().to_string(),
         })),
     )?;
@@ -3517,7 +4104,10 @@ fn run_live_tui_tool_flow(
         2,
         remaining_before(deadline, "first-read provider turn completion")?,
     )?;
-    assert_events_show_successful_provider_turn(&first_read_events);
+    assert_events_show_successful_provider_turn(
+        &run_config.tool_flow.provider_name,
+        &first_read_events,
+    );
     wait_for_live_tui_idle(
         &mut stage.parser,
         &stage.output_rx,
@@ -3546,7 +4136,7 @@ fn run_live_tui_tool_flow(
         3,
         remaining_before(deadline, "scan-stage provider turn completion")?,
     )?;
-    assert_events_show_successful_provider_turn(&scan_events);
+    assert_events_show_successful_provider_turn(&run_config.tool_flow.provider_name, &scan_events);
     let hashline_scan_finished_checkpoint = live_visual.capture_checkpoint_with_metadata(
         CHECKPOINT_HASHLINE_SCAN_FINISHED,
         &stage.parser,
@@ -3588,7 +4178,7 @@ fn run_live_tui_tool_flow(
         4,
         remaining_before(deadline, "apply-stage provider turn completion")?,
     )?;
-    assert_events_show_successful_provider_turn(&apply_events);
+    assert_events_show_successful_provider_turn(&run_config.tool_flow.provider_name, &apply_events);
     wait_for_live_tui_idle(
         &mut stage.parser,
         &stage.output_rx,
@@ -3611,7 +4201,10 @@ fn run_live_tui_tool_flow(
         5,
         remaining_before(deadline, "final-read provider turn completion")?,
     )?;
-    assert_events_show_successful_provider_turn(&final_read_events);
+    assert_events_show_successful_provider_turn(
+        &run_config.tool_flow.provider_name,
+        &final_read_events,
+    );
     wait_for_screen_contains(
         &mut stage.parser,
         &stage.output_rx,
@@ -3690,6 +4283,13 @@ fn write_live_tool_flow_summary_artifacts(
     evidence: &ToolFlowEvidence,
     run_config: &LiveToolFlowRunConfig,
 ) -> Result<(), String> {
+    let events_path = artifacts.tool_flow_run_dir.join("events.jsonl");
+    let events_body = fs::read_to_string(&events_path)
+        .map_err(|err| format!("failed to read {}: {err}", events_path.display()))?;
+    let provider_turn = provider_turn_summary(
+        &run_config.tool_flow.provider_name,
+        &collect_provider_turn_observation(&events_body),
+    )?;
     let summary_json = evidence.summary_json(std::slice::from_ref(&artifacts.tool_flow_run_dir))?;
     let summary_json = json!({
         "visual_run_dir": artifacts.visual_run_dir.display().to_string(),
@@ -3698,9 +4298,11 @@ fn write_live_tool_flow_summary_artifacts(
         "final_png": artifacts.run_finished_png.display().to_string(),
         "workspace_root": artifacts.tool_flow_workspace_root.display().to_string(),
         "canonical_relative_path": run_config.canonical_relative_path.display().to_string(),
-        "provider": DEFAULT_LIVE_PROXY_PROVIDER,
+        "provider": run_config.tool_flow.provider_name,
         "model": run_config.tool_flow.model_id.clone(),
+        "variant": run_config.tool_flow.variant.clone(),
         "profile": run_config.tool_flow.profile.clone(),
+        "provider_turn": provider_turn,
         "summary": summary_json,
     });
     let summary_json_path = artifacts.visual_run_dir.join(LIVE_TOOL_FLOW_SUMMARY_JSON);
@@ -3728,6 +4330,24 @@ fn write_live_tool_flow_summary_artifacts(
         format!(
             "Workspace file: {}",
             run_config.canonical_relative_path.display()
+        ),
+        format!("Provider: {}", run_config.tool_flow.provider_name),
+        format!("Model: {}", run_config.tool_flow.model_id),
+        format!(
+            "Variant: {}",
+            run_config
+                .tool_flow
+                .variant
+                .as_deref()
+                .unwrap_or("<primary>")
+        ),
+        format!(
+            "Provider turn: {}",
+            provider_turn
+                .get("observation")
+                .and_then(|observation| observation.get("completion_mode"))
+                .and_then(Value::as_str)
+                .unwrap_or("unknown")
         ),
         "Sequence:".to_string(),
         evidence
@@ -3894,7 +4514,7 @@ fn live_vision_checkpoint_contracts() -> &'static [LiveVisionCheckpointContract]
             checkpoint_id: CHECKPOINT_FILE_WRITE_FINISHED,
             expected_markers: &[
                 "UI shows file-creation progress for tmp/live_tool_flow.md.",
-                "shell.run",
+                "fs.write",
                 LIVE_TOOL_FLOW_RELATIVE_PATH,
             ],
         },
@@ -4262,14 +4882,15 @@ fn describe_session_events_state(session_dir: &Path, session_namespace: &str) ->
 
     match fs::read_to_string(&events_path) {
         Ok(events_body) => {
-            let provider = collect_provider_turn_evidence(&events_body);
+            let provider = collect_provider_turn_observation(&events_body);
             format!(
-                "latest run dir: {}\nevents: {}\nprovider_started={} provider_finished={} deltas={} task_completed_summary_present={} run_failed={}\nlast events:\n{}",
+                "latest run dir: {}\nevents: {}\nprovider_started={} provider_finished={} deltas={} completion_mode={} task_completed_summary_present={} run_failed={}\nlast events:\n{}",
                 run_dir.display(),
                 events_path.display(),
                 provider.saw_started,
                 provider.saw_finished,
                 provider.delta_count,
+                provider.completion_mode(),
                 provider
                     .task_completed_summary
                     .as_deref()
@@ -4542,8 +5163,8 @@ fn wait_for_tui_provider_turn_count(
                         events_path.display()
                     )
                 })?;
-                let evidence = collect_provider_turn_evidence(&events_body);
-                if let Some(run_failed) = evidence.run_failed.as_deref() {
+                let observation = collect_provider_turn_observation(&events_body);
+                if let Some(run_failed) = observation.run_failed.as_deref() {
                     return Err(format!(
                         "live TUI smoke run failed before provider completion: {run_failed}\n{}",
                         describe_session_events_state(session_dir, session_namespace)
@@ -4620,107 +5241,16 @@ fn completed_provider_task_count(events_body: &str) -> usize {
     completed
 }
 
-fn assert_events_show_successful_provider_turn(events_body: &str) {
-    let evidence = collect_provider_turn_evidence(events_body);
-
-    assert!(
-        evidence.run_failed.is_none(),
-        "run failed before provider completion: {}",
-        evidence
-            .run_failed
-            .unwrap_or_else(|| "unknown run failure".to_string())
-    );
-    assert!(
-        evidence.saw_started,
-        "expected provider_request_started event"
-    );
-    assert!(
-        evidence.saw_finished,
-        "expected provider_request_finished event"
-    );
-
-    assert!(
-        provider_turn_completed(&evidence),
-        "expected either provider_stream_delta events or a completed provider task for the provider request"
-    );
-}
-
-fn provider_turn_completed(evidence: &ProviderTurnEvidence) -> bool {
-    evidence.delta_count > 0 || evidence.provider_task_completed
-}
-
-fn collect_provider_turn_evidence(events_body: &str) -> ProviderTurnEvidence {
-    let mut evidence = ProviderTurnEvidence::default();
-
-    for (idx, line) in events_body.lines().enumerate() {
-        let event: Value = serde_json::from_str(line).unwrap_or_else(|err| {
-            panic!("events line {} is invalid JSON: {err}", idx + 1);
+fn assert_events_show_successful_provider_turn(provider_name: &str, events_body: &str) {
+    let observation = collect_provider_turn_observation(events_body);
+    assert_provider_turn_completed(&observation).unwrap_or_else(|err| {
+        panic!("provider turn evidence mismatch for `{provider_name}`: {err}")
+    });
+    if provider_turn_expectation(provider_name).is_some() {
+        assert_registered_provider_turn(provider_name, &observation).unwrap_or_else(|err| {
+            panic!("provider-specific parity expectation mismatch for `{provider_name}`: {err}")
         });
-
-        let event_type = event
-            .get("payload")
-            .and_then(|payload| payload.get("event_type"))
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-
-        let data = event
-            .get("payload")
-            .and_then(|payload| payload.get("data"))
-            .cloned()
-            .unwrap_or(Value::Null);
-
-        match event_type {
-            "provider_request_started" => {
-                evidence.request_id = data
-                    .get("request_id")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned);
-                evidence.saw_started = true;
-            }
-            "task_scheduled" => {
-                if evidence.provider_task_id.is_none()
-                    && data
-                        .get("queue_key")
-                        .and_then(Value::as_str)
-                        .is_some_and(|queue_key| queue_key.starts_with("provider_model:"))
-                {
-                    evidence.provider_task_id = data
-                        .get("task_id")
-                        .and_then(Value::as_str)
-                        .map(ToOwned::to_owned);
-                }
-            }
-            "provider_stream_delta" => {
-                evidence.delta_count += 1;
-            }
-            "provider_request_finished" => {
-                evidence.saw_finished = true;
-            }
-            "task_completed" => {
-                if evidence.provider_task_id.as_deref()
-                    == data.get("task_id").and_then(Value::as_str)
-                {
-                    evidence.provider_task_completed = true;
-                }
-                if evidence.task_completed_summary.is_none() {
-                    evidence.task_completed_summary = data
-                        .get("result_summary")
-                        .and_then(Value::as_str)
-                        .map(ToOwned::to_owned);
-                }
-            }
-            "run_failed" => {
-                evidence.run_failed = data
-                    .get("error")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned)
-                    .or_else(|| Some("run_failed event missing error detail".to_string()));
-            }
-            _ => {}
-        }
     }
-
-    evidence
 }
 
 fn load_json5_config(config_path: &Path) -> Result<Value, String> {
@@ -4805,9 +5335,30 @@ fn first_model_from_provider(provider: &Value) -> Result<String, String> {
         );
     };
 
+    if models.contains_key(DEFAULT_LIVE_PROXY_MODEL) {
+        return Ok(DEFAULT_LIVE_PROXY_MODEL.to_string());
+    }
+
     models.keys().next().cloned().ok_or_else(|| {
         "provider config has an empty `models` map; set HARNESS_LIVE_PROXY_MODEL".to_string()
     })
+}
+
+fn resolve_live_proxy_variant(
+    config: &Value,
+    provider_name: &str,
+    model_id: &str,
+) -> Option<String> {
+    let provider = provider_from_config(config, provider_name).ok()?;
+    provider
+        .get("models")
+        .and_then(Value::as_object)
+        .and_then(|models| models.get(model_id))
+        .and_then(Value::as_object)
+        .and_then(|model| model.get("variants"))
+        .and_then(Value::as_object)
+        .filter(|variants| variants.contains_key(DEFAULT_LIVE_PROXY_VARIANT))
+        .map(|_| DEFAULT_LIVE_PROXY_VARIANT.to_string())
 }
 
 fn rewrite_selected_provider_to_default(
@@ -4913,6 +5464,38 @@ fn ensure_profile_model_ref(
     Ok(())
 }
 
+fn ensure_profile_variant(
+    config: &mut Value,
+    profile_name: &str,
+    selected_variant: Option<&str>,
+) -> Result<(), String> {
+    let root = config
+        .as_object_mut()
+        .ok_or_else(|| "config root must be a JSON object".to_string())?;
+    let categories = root
+        .get_mut("profiles")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| "config.profiles must be an object".to_string())?;
+    let profile = categories
+        .get_mut(profile_name)
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| format!("profile `{profile_name}` must be an object"))?;
+
+    match selected_variant {
+        Some(variant) if !variant.trim().is_empty() => {
+            profile.insert(
+                "variant".to_string(),
+                Value::String(variant.trim().to_string()),
+            );
+        }
+        _ => {
+            profile.remove("variant");
+        }
+    }
+
+    Ok(())
+}
+
 fn ensure_provider_model_entry(config: &mut Value, model_id: &str) -> Result<(), String> {
     let root = config
         .as_object_mut()
@@ -4950,6 +5533,67 @@ fn ensure_provider_model_entry(config: &mut Value, model_id: &str) -> Result<(),
         Value::String(format!("Prepared {model_id}")),
     );
     models.insert(model_id.to_string(), prepared_model);
+    Ok(())
+}
+
+fn ensure_provider_model_variant(
+    config: &mut Value,
+    model_id: &str,
+    selected_variant: Option<&str>,
+) -> Result<(), String> {
+    let Some(selected_variant) = selected_variant
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(());
+    };
+
+    if selected_variant != DEFAULT_LIVE_PROXY_VARIANT {
+        return Ok(());
+    }
+
+    let root = config
+        .as_object_mut()
+        .ok_or_else(|| "config root must be a JSON object".to_string())?;
+    let providers = root
+        .get_mut("providers")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| "config.providers must be an object".to_string())?;
+    let provider = providers
+        .get_mut(DEFAULT_LIVE_PROXY_PROVIDER)
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| format!("provider `{DEFAULT_LIVE_PROXY_PROVIDER}` must be an object"))?;
+    let models = provider
+        .get_mut("models")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| {
+            format!("provider `{DEFAULT_LIVE_PROXY_PROVIDER}` models must be an object")
+        })?;
+    let model = models
+        .get_mut(model_id)
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| {
+            format!("provider `{DEFAULT_LIVE_PROXY_PROVIDER}` is missing model `{model_id}`")
+        })?;
+    let variants = model
+        .entry("variants".to_string())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()))
+        .as_object_mut()
+        .ok_or_else(|| format!("model `{model_id}` variants must be an object"))?;
+
+    variants
+        .entry(DEFAULT_LIVE_PROXY_VARIANT.to_string())
+        .or_insert_with(|| {
+            json!({
+                "display_name": "Live signoff",
+                "metadata": {
+                    "reasoning_effort": "low",
+                    "text_verbosity": "low",
+                    "recommended_for": "live_proxy",
+                }
+            })
+        });
+
     Ok(())
 }
 
@@ -5281,6 +5925,59 @@ fn assert_requested_tool_sequence(
     Ok(())
 }
 
+fn assert_run_records_live_runtime_context(
+    run_dir: &Path,
+    expected_profile: &str,
+    expected_model: &str,
+    expected_variant: Option<&str>,
+) -> Result<(), String> {
+    let meta_path = run_dir.join("meta.json");
+    let meta = read_required_json(&meta_path)?;
+    let context = meta
+        .get("recorded_runtime_context")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            format!(
+                "expected recorded_runtime_context in {}",
+                meta_path.display()
+            )
+        })?;
+
+    if context.get("profile").and_then(Value::as_str) != Some(expected_profile) {
+        return Err(format!(
+            "expected runtime context profile `{expected_profile}` in {}; found {:?}",
+            meta_path.display(),
+            context.get("profile")
+        ));
+    }
+    if context.get("model").and_then(Value::as_str) != Some(expected_model) {
+        return Err(format!(
+            "expected runtime context model `{expected_model}` in {}; found {:?}",
+            meta_path.display(),
+            context.get("model")
+        ));
+    }
+    if context.get("variant").and_then(Value::as_str) != expected_variant {
+        return Err(format!(
+            "expected runtime context variant {:?} in {}; found {:?}",
+            expected_variant,
+            meta_path.display(),
+            context.get("variant")
+        ));
+    }
+    if expected_variant == Some(DEFAULT_LIVE_PROXY_VARIANT)
+        && context.get("reasoning_effort").and_then(Value::as_str) != Some("low")
+    {
+        return Err(format!(
+            "expected runtime context reasoning_effort `low` in {}; found {:?}",
+            meta_path.display(),
+            context.get("reasoning_effort")
+        ));
+    }
+
+    Ok(())
+}
+
 fn assert_todo_state_matches(run_dir: &Path) -> Result<(), String> {
     let todos_path = run_dir.join("opencode-compat").join("todos.json");
     let todos = read_required_json(&todos_path)?;
@@ -5462,7 +6159,10 @@ fn resolve_env_reference_value(value: &str) -> Result<String, String> {
         if key.is_empty() {
             return Ok(value.to_string());
         }
-        return Ok(env::var(key).unwrap_or_else(|_| fallback.to_string()));
+        return Ok(env::var(key)
+            .ok()
+            .filter(|resolved| !resolved.is_empty())
+            .unwrap_or_else(|| fallback.to_string()));
     }
 
     env::var(reference).map_err(|_| {
@@ -5544,7 +6244,17 @@ fn build_live_proxy_test_config(
             "timeout_ms": 60000,
             "models": {
                 configured_model: {
-                    "display_name": "Configured model"
+                    "display_name": "Configured model",
+                    "variants": {
+                        "live_signoff": {
+                            "display_name": "Live signoff",
+                            "metadata": {
+                                "reasoning_effort": "low",
+                                "text_verbosity": "low",
+                                "recommended_for": "live_proxy"
+                            }
+                        }
+                    }
                 }
             }
         }),

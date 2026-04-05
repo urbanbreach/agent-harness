@@ -349,6 +349,11 @@ fn operator_sidebar_width_stays_fixed_when_todo_or_modified_files_exist() {
         live_empty_width,
     );
     assert_operator_sidebar_expanded(
+        &operator_sidebar_child_navigation_replay_app(),
+        "▼ Recovery · 5",
+        replay_empty_width,
+    );
+    assert_operator_sidebar_expanded(
         &operator_sidebar_todo_replay_app(),
         "Todo · 1",
         replay_empty_width,
@@ -477,7 +482,7 @@ fn completed_sessions_show_inline_completion_state_instead_of_handoff_card() {
     assert!(app.completed_session_shell_active());
     assert!(!app.post_run_handoff_visible());
     assert!(status_row.contains("run finished · session shell preserved"));
-    assert!(rendered.contains("Ctrl+p commands"));
+    assert!(rendered.contains("Tab focus"));
     assert!(!rendered.contains("Next action"));
     assert!(!rendered.contains("Continue this session"));
 }
@@ -608,20 +613,16 @@ fn live_shell_footer_is_shortcuts_only() {
     let primary_footer_row = find_last_line_containing(&primary_lines, "q quit")
         .map(|row| primary_lines[row].trim_end().to_string())
         .expect("primary footer row");
-    assert_markers_in_order(
-        &primary_footer_row,
-        &["Enter send", "Ctrl+p commands", "q quit"],
-    );
+    assert_markers_in_order(&primary_footer_row, &["Ctrl+p commands", "q quit"]);
+    assert!(!primary_footer_row.contains("Enter send"));
 
     let reduced_render = render_live_lines(&live, 80, 24);
     let reduced_lines = reduced_render.lines().collect::<Vec<_>>();
     let reduced_footer_row = find_last_line_containing(&reduced_lines, "q quit")
         .map(|row| reduced_lines[row].trim_end().to_string())
         .expect("reduced footer row");
-    assert_markers_in_order(
-        &reduced_footer_row,
-        &["Enter send", "Ctrl+p commands", "q quit"],
-    );
+    assert_markers_in_order(&reduced_footer_row, &["Ctrl+p commands", "q quit"]);
+    assert!(!reduced_footer_row.contains("Enter send"));
     assert!(
         !reduced_footer_row.contains("shortcuts"),
         "reduced footer should compress hint count by width tier\n{reduced_footer_row}"
@@ -632,9 +633,9 @@ fn live_shell_footer_is_shortcuts_only() {
     let minimal_footer_row = find_last_line_containing(&minimal_lines, "q quit")
         .map(|row| minimal_lines[row].trim_end().to_string())
         .expect("minimal footer row");
-    assert_markers_in_order(&minimal_footer_row, &["Enter send", "q quit"]);
+    assert_markers_in_order(&minimal_footer_row, &["Ctrl+p commands", "q quit"]);
+    assert!(!minimal_footer_row.contains("Enter send"));
     assert!(!minimal_footer_row.contains("nl"));
-    assert!(!minimal_footer_row.contains("commands"));
     assert!(!minimal_footer_row.contains("shortcuts"));
 
     for footer_row in [
@@ -2015,12 +2016,15 @@ fn layout_plan_primary_geometry_matches_shell_contract() {
     assert_eq!(plan.status, Some(ratatui::layout::Rect::new(0, 29, 100, 1)));
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(0, 24, 100, 5))
+        Some(ratatui::layout::Rect::new(0, 24, 100, 4))
     );
     assert_eq!(dock.shell, ratatui::layout::Rect::new(0, 24, 100, 6));
     assert_eq!(dock.status, plan.status);
     assert_eq!(dock.composer, plan.composer.expect("primary composer"));
-    assert_eq!(dock.disclosure, None);
+    assert_eq!(
+        dock.disclosure,
+        Some(ratatui::layout::Rect::new(0, 28, 100, 1))
+    );
     assert_eq!(plan.disclosure, dock.disclosure);
 }
 
@@ -2641,6 +2645,38 @@ fn live_shell_composer_progressive_disclosure_by_width() {
     assert_live_shell_document_composer_contract(&ready, 80, 24, None, None, "Ctrl+p commands");
 
     assert_live_shell_document_composer_contract(&ready, 60, 18, None, None, "q quit");
+}
+
+#[cfg(test)]
+#[test]
+fn live_run_shell_places_under_input_controls_above_the_status_strip() {
+    let mut app = app::AppState::new_live(None, false, None);
+    let mut events = session_view_events();
+    events.pop();
+    for event in events {
+        app.ingest_event(event);
+    }
+
+    assert_live_shell_document_composer_contract(
+        &app,
+        100,
+        30,
+        None,
+        Some("↑/↓ history"),
+        "Enter send",
+    );
+    assert_live_shell_document_composer_contract(
+        &app,
+        80,
+        24,
+        None,
+        Some("↑/↓ history"),
+        "Enter send",
+    );
+
+    let dense = render_live_lines(&app, 60, 18);
+    assert!(!dense.contains("↑/↓ history"));
+    assert!(dense.contains("Ctrl+p commands"));
 }
 
 #[cfg(test)]
@@ -3578,7 +3614,7 @@ fn orchestration_projection_retains_only_recent_terminal_rows() {
 }
 
 #[cfg(test)]
-fn session_view_events() -> Vec<harness_core::event::EventEnvelopeV1> {
+pub(crate) fn session_view_events() -> Vec<harness_core::event::EventEnvelopeV1> {
     vec![
         envelope(
             1,
@@ -7549,7 +7585,7 @@ fn live_shell_orchestration_status_strip_snapshot() {
 
     insta::assert_snapshot!(
         status_row,
-        @"Ready  ·  ready for first turn  ·  orch 2a 1q 1r 1s · warn stale for 3001 ms      Enter send  Ctrl+p commands  q quit"
+        @"Ready  ·  ready for first turn  ·  orch 2a 1q 1r 1s · warn stale for 3001 ms                  Ctrl+p commands  q quit"
     );
 }
 
@@ -8079,8 +8115,8 @@ fn operator_sidebar_edit_only_event(seq: u64) -> harness_core::event::EventEnvel
             edit_id: format!("edit_{seq}"),
             path: "src/ui_secondary.rs".to_string(),
             new_file_digest: format!("digest-edit-{seq}"),
-            diff_rel_path: None,
-            diff_digest: None,
+            diff_rel_path: Some(format!("artifacts/edit-{seq}.diff")),
+            diff_digest: Some(format!("digest-edit-artifact-{seq}")),
         }),
     )
 }
@@ -8121,6 +8157,52 @@ fn operator_sidebar_modified_files_replay_app() -> app::AppState {
         PathBuf::from("/tmp/replay-session"),
         vec![operator_sidebar_edit_only_event(1)],
     )
+}
+
+#[cfg(test)]
+fn operator_sidebar_child_navigation_replay_app() -> app::AppState {
+    let mut events = session_view_events();
+    let metadata = harness_core::event::ToolCallMetadata {
+        canonical_tool_id: Some("task".to_string()),
+        lineage: Some(harness_core::event::TaskLineageMetadata {
+            parent_session_id: Some("parent_run".to_string()),
+            child_session_id: Some("child_run".to_string()),
+            ..harness_core::event::TaskLineageMetadata::default()
+        }),
+        artifact_refs: vec![harness_core::event::EventArtifactRef {
+            path: "artifacts/toolcalls/task/result.json".to_string(),
+            digest: Some("digest-task-artifact".to_string()),
+        }],
+        ..harness_core::event::ToolCallMetadata::default()
+    };
+    events.push(envelope(
+        11,
+        Some("req_001"),
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_child_nav".to_string(),
+                tool_id: "task".to_string(),
+                args_summary: r#"{"title":"inspect child session"}"#.to_string(),
+                args_digest: "digest-tool-child-nav".to_string(),
+                metadata: Some(metadata.clone()),
+            },
+        ),
+    ));
+    events.push(envelope(
+        12,
+        Some("req_001"),
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tool_call_child_nav".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("child session recorded".to_string()),
+                output_digest: Some("digest-tool-child-nav-output".to_string()),
+                output_json: None,
+                metadata: Some(metadata),
+            },
+        ),
+    ));
+    app::AppState::new_replay(PathBuf::from("/tmp/child_run"), events)
 }
 
 #[cfg(test)]
@@ -8249,9 +8331,12 @@ fn layout_plan_primary_geometry_docks_live_details_sidebar() {
     assert_eq!(plan.status, Some(ratatui::layout::Rect::new(0, 29, 100, 1)));
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(0, 24, 100, 5))
+        Some(ratatui::layout::Rect::new(0, 24, 100, 4))
     );
-    assert_eq!(plan.disclosure, None);
+    assert_eq!(
+        plan.disclosure,
+        Some(ratatui::layout::Rect::new(0, 28, 100, 1))
+    );
 }
 
 #[cfg(test)]
@@ -8278,6 +8363,7 @@ fn layout_plan_minimum_geometry_stacks_live_details_drawer() {
         plan.composer,
         Some(ratatui::layout::Rect::new(2, 18, 76, 5))
     );
+    assert_eq!(plan.disclosure, None);
 }
 
 #[cfg(test)]
@@ -8427,7 +8513,7 @@ fn replay_and_completed_states_preserve_read_only_and_session_preserved_copy() {
     let completed_render = render_live_lines(&completed, 100, 30);
     let status_row = live_status_strip_row(&completed, 100, 30, "session shell preserved");
     assert!(status_row.contains("run finished · session shell preserved"));
-    assert!(completed_render.contains("Ctrl+p commands"));
+    assert!(completed_render.contains("Tab focus"));
     assert!(completed_render.contains("q quit"));
 }
 
@@ -8516,8 +8602,11 @@ fn assert_live_shell_document_composer_contract(
             composer_first_row
         }
     };
+    let footer_search_start = disclosure_row
+        .map(|row| row + 1)
+        .unwrap_or_else(|| composer_last_row + 1);
     let global_footer_row =
-        find_line_containing_from(&lines, composer_last_row + 1, global_footer_marker)
+        find_line_containing_from(&lines, footer_search_start, global_footer_marker)
             .or_else(|| find_line_containing_from(&lines, composer_last_row + 1, "q quit"))
             .unwrap_or_else(|| {
                 panic!(
@@ -9051,6 +9140,41 @@ fn operator_sidebar_uses_explicit_empty_states() {
     assert!(sidebar.contains("Context"));
     assert!(sidebar.contains("0 active todos · 0 modified files"));
     assert!(!lines.iter().any(|line| matches!(*line, "MCP" | "LSP")));
+}
+
+#[cfg(test)]
+#[test]
+fn operator_sidebar_recovery_section_surfaces_artifacts_and_navigation_hints() {
+    let sidebar = operator_sidebar_text(&operator_sidebar_child_navigation_replay_app());
+
+    assert_markers_in_order(
+        &sidebar,
+        &[
+            "Context",
+            "▼ Recovery · 5",
+            "Replay is read-only — inspect recorded context and use replay navigation.",
+            "Parent session · parent_run",
+            "Child session · child_run",
+            "Bundle keeps events.jsonl and artifacts/",
+            "Artifact · artifacts/toolcalls/task/result.json",
+        ],
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn operator_sidebar_modified_files_include_diff_artifact_paths() {
+    let sidebar = operator_sidebar_text(&operator_sidebar_modified_files_live_app());
+
+    assert_markers_in_order(
+        &sidebar,
+        &[
+            "Modified Files · 1",
+            "src/ui_secondary.rs · diff artifacts/edit-1.diff",
+            "Recovery · 1",
+            "Artifact · artifacts/edit-1.diff",
+        ],
+    );
 }
 
 #[cfg(test)]

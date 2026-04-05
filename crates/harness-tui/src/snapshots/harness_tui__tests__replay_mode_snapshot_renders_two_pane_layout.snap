@@ -1,5 +1,6 @@
 ---
 source: crates/harness-tui/src/tests.rs
+assertion_line: 1353
 expression: normalized
 ---
 Buffer {
@@ -17,10 +18,10 @@ Buffer {
         "                                               Context Â· Recorded runtime Â· reâ¦ ",
         "                                               Provider local                   ",
         "                                               2 events loaded                  ",
-        "                                               Bundle keeps events.jsonl and    ",
-        "                                               artifacts/                       ",
+        "                                               Recovery Â· 2                     ",
         "                                               Replay is read-only â inspect    ",
         "                                               recorded context and use replay  ",
+        "                                               navigation.                      ",
         "                                                                                ",
         "                                               harness-tui Â· v0.1.0             ",
         "                                                                                ",
@@ -89,7 +90,8 @@ Buffer {
         x: 0, y: 12, fg: Reset, bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
         x: 2, y: 12, fg: Rgb(231, 227, 222), bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
         x: 46, y: 12, fg: Reset, bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
-        x: 47, y: 12, fg: Rgb(231, 227, 222), bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
+        x: 47, y: 12, fg: Rgb(231, 227, 222), bg: Rgb(17, 17, 17), underline: Reset, modifier: BOLD,
+        x: 59, y: 12, fg: Rgb(231, 227, 222), bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
         x: 79, y: 12, fg: Reset, bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
         x: 0, y: 13, fg: Reset, bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
         x: 2, y: 13, fg: Rgb(231, 227, 222), bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,

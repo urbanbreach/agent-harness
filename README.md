@@ -26,6 +26,23 @@ is not part of the public runtime contract yet.
 
 ## Quick start
 
+The current blessed default path is:
+
+- provider: `default` (`openai_compatible`) via the local CLIProxy-compatible loopback endpoint
+- default profile: `plan`
+- handoff profile: `build`
+- default model: `gpt-5.4-mini`
+
+Primary shipped profiles:
+
+- `plan` — default first-run planning lane
+- `build` — implementation lane after `plan.exit`
+
+Secondary shipped profiles:
+
+- `tool_audit` — evidence/signoff lane
+- `deep_compat` — compat-surface regression lane
+
 Validate the shipped example config:
 
 ```bash
@@ -39,6 +56,7 @@ cargo run -p harness -- --config configs/harness.example.jsonc
 ```
 
 The shipped config starts in the `plan` profile. After the user approves implementation, use `plan.exit` to hand off to `build`.
+The shipped `default` provider points at the local CLIProxy-compatible bridge (`http://127.0.0.1:8317/v1`) so the default flow stays aligned between docs, config, and live signoff lanes.
 
 ## Shipped workflow surfaces
 

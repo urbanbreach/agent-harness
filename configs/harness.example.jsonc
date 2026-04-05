@@ -6,9 +6,12 @@
   providers: {
     default: {
       type: "openai_compatible",
-      base_url: "https://api.openai.com/v1",
+      // Blessed default path: local CLIProxy-compatible bridge.
+      // Keep the shipped first-run docs and live signoff lanes aligned to this
+      // loopback endpoint instead of a direct remote API.
+      base_url: "http://127.0.0.1:8317/v1",
       api_key: "${OPENAI_API_KEY:-sk-zerolimit}",
-      api_mode: "responses",
+      api_mode: "auto",
       timeout_ms: 60000,
       models: {
         "gpt-5.4": {
@@ -45,16 +48,27 @@
                 recommended_for: "tool_audit",
               },
             },
+            live_signoff: {
+              display_name: "Live signoff",
+              max_output_tokens: 4096,
+              metadata: {
+                description: "Low-reasoning live-provider parity signoff profile.",
+                reasoning_effort: "low",
+                text_verbosity: "low",
+                recommended_for: "live_proxy",
+              },
+            },
           },
         },
       },
     },
   },
   profiles: {
+    // Primary shipped user path: start in `plan`, then hand off into `build`.
     plan: {
       description: "Planning lane: produce an approved plan and hand off to build.",
       system_prompt: "Stay in planning mode until the user approves the plan. Use read-only investigation tools, capture the plan in todos or questions when helpful, and call plan.exit only after the user explicitly approves implementation so the harness can hand off to build.",
-      model_ref: "default:gpt-5.4",
+      model_ref: "default:gpt-5.4-mini",
       tool_surface: "native",
       plan_mode: true,
       exit_target_profile: "build",
@@ -126,6 +140,7 @@
         "agent.spawn",
       ],
     },
+    // Secondary shipped signoff lane: evidence-first verification of the surface.
     tool_audit: {
       description: "Evidence-first signoff profile for validating the shipped tool surface.",
       system_prompt: "Collect signoff evidence across skills, question flow, hooks evidence, LSP evidence, subagent execution, variants, model metadata, and HARNESS_QUESTION_ANSWERS handling before declaring the config healthy.",
@@ -145,6 +160,7 @@
         "todo.read",
       ],
     },
+    // Secondary shipped compat lane: parity/regression coverage for compat ids.
     deep_compat: {
       description: "Compat-surface regression profile for parity coverage.",
       model_ref: "default:gpt-5.4-mini",

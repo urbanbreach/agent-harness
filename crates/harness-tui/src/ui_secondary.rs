@@ -100,6 +100,7 @@ struct OperatorRailBody {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum OperatorRailBodySection {
     Context { items: Vec<String> },
+    Recovery { count: usize, items: Vec<String> },
     Mcp { count: usize, items: Vec<String> },
     Network { count: usize, items: Vec<String> },
     Batch { count: usize, items: Vec<String> },
@@ -131,6 +132,7 @@ impl OperatorRailBodySection {
     fn heading(&self) -> String {
         match self {
             Self::Context { .. } => "Context".to_string(),
+            Self::Recovery { count, .. } => operator_sidebar_section_heading("Recovery", *count),
             Self::Mcp { count, .. } => operator_sidebar_section_heading("MCP", *count),
             Self::Network { count, .. } => operator_sidebar_section_heading("Network", *count),
             Self::Batch { count, .. } => operator_sidebar_section_heading("Batch", *count),
@@ -155,6 +157,7 @@ impl OperatorRailBodySection {
     fn heading_style(&self, theme: &Theme) -> Style {
         match self {
             Self::Context { .. }
+            | Self::Recovery { .. }
             | Self::Mcp { .. }
             | Self::Network { .. }
             | Self::Batch { .. }
@@ -169,6 +172,7 @@ impl OperatorRailBodySection {
     fn items(&self) -> &[String] {
         match self {
             Self::Context { items }
+            | Self::Recovery { items, .. }
             | Self::Mcp { items, .. }
             | Self::Network { items, .. }
             | Self::Batch { items, .. }
@@ -181,7 +185,8 @@ impl OperatorRailBodySection {
     fn count(&self) -> usize {
         match self {
             Self::Context { items } => items.len(),
-            Self::Mcp { count, .. }
+            Self::Recovery { count, .. }
+            | Self::Mcp { count, .. }
             | Self::Network { count, .. }
             | Self::Batch { count, .. }
             | Self::Lsp { count, .. }
@@ -327,10 +332,18 @@ pub(crate) fn exact_test_operator_rail_section_model_builds_pinned_summary() {
     assert_eq!(model.pinned_summary.pending_permission_count, 0);
     assert_eq!(model.pinned_summary.active_todo_count, 1);
     assert_eq!(model.pinned_summary.modified_file_count, 1);
-    assert!(model.body.sections[0]
+    assert_eq!(
+        model.body.sections[1].items(),
+        ["src/ui_secondary.rs · diff artifacts/edit-1.diff".to_string()]
+    );
+    assert!(model.body.sections[2]
         .items()
         .iter()
         .any(|item| item == "Bundle keeps events.jsonl and artifacts/"));
+    assert!(model.body.sections[2]
+        .items()
+        .iter()
+        .any(|item| item == "Artifact · artifacts/edit-1.diff"));
 }
 
 #[cfg(test)]
@@ -346,18 +359,19 @@ pub(crate) fn exact_test_operator_rail_section_model_hides_empty_sources_but_pre
             .collect::<Vec<_>>(),
         vec![
             "Context".to_string(),
+            "Modified Files · 1".to_string(),
+            "Recovery · 2".to_string(),
+            "Todo · 1".to_string(),
             "MCP · idle".to_string(),
             "LSP · idle".to_string(),
-            "Todo · 1".to_string(),
-            "Modified Files · 1".to_string(),
         ]
     );
     assert_eq!(
-        populated_model.body.sections[1].items(),
+        populated_model.body.sections[4].items(),
         [NO_MCP_ACTIVITY_LABEL.to_string()]
     );
     assert_eq!(
-        populated_model.body.sections[2].items(),
+        populated_model.body.sections[5].items(),
         [NO_LSP_ACTIVITY_LABEL.to_string()]
     );
 
@@ -412,10 +426,11 @@ pub(crate) fn exact_test_operator_rail_section_model_surfaces_pending_permission
             .collect::<Vec<_>>(),
         vec![
             "Context".to_string(),
+            "Modified Files · 1".to_string(),
+            "Recovery · 2".to_string(),
+            "Todo · 1".to_string(),
             "MCP · idle".to_string(),
             "LSP · idle".to_string(),
-            "Todo · 1".to_string(),
-            "Modified Files · 1".to_string(),
         ]
     );
     assert!(model.body.sections[0]
@@ -544,14 +559,15 @@ pub(crate) fn exact_test_operator_rail_section_model_keeps_native_prefix_tools_o
             .collect::<Vec<_>>(),
         vec![
             "Context".to_string(),
+            "Modified Files · 1".to_string(),
+            "Recovery · 2".to_string(),
+            "Todo · 1".to_string(),
             "MCP · idle".to_string(),
             "LSP · idle".to_string(),
-            "Todo · 1".to_string(),
-            "Modified Files · 1".to_string(),
         ]
     );
     assert_eq!(
-        model.body.sections[1].items(),
+        model.body.sections[4].items(),
         [NO_MCP_ACTIVITY_LABEL.to_string()]
     );
 }
@@ -627,9 +643,9 @@ pub(crate) fn exact_test_operator_rail_section_model_counts_generic_mcp_activity
 
     let model = build_operator_rail_model(&app);
 
-    assert_eq!(model.body.sections[1].heading(), "MCP · 1");
+    assert_eq!(model.body.sections[4].heading(), "MCP · 1");
     assert_eq!(
-        model.body.sections[1].items(),
+        model.body.sections[4].items(),
         ["fixture.tool.call · completed".to_string()]
     );
 }
@@ -673,8 +689,8 @@ fn operator_rail_test_app() -> AppState {
             edit_id: "edit_1".to_string(),
             path: "src/ui_secondary.rs".to_string(),
             new_file_digest: "digest-edit-1".to_string(),
-            diff_rel_path: None,
-            diff_digest: None,
+            diff_rel_path: Some("artifacts/edit-1.diff".to_string()),
+            diff_digest: Some("digest-edit-artifact-1".to_string()),
         }),
     ));
     app
@@ -695,8 +711,8 @@ fn operator_rail_modified_file_only_app() -> AppState {
             edit_id: "edit_1".to_string(),
             path: "demo.txt".to_string(),
             new_file_digest: "digest-edit-1".to_string(),
-            diff_rel_path: None,
-            diff_digest: None,
+            diff_rel_path: Some("artifacts/edit-1.diff".to_string()),
+            diff_digest: Some("digest-edit-artifact-1".to_string()),
         }),
     ));
     app
@@ -1251,12 +1267,6 @@ fn operator_sidebar_context_lines(
         if !runtime_state.summary.trim().is_empty() {
             items.push(runtime_state.summary.clone());
         }
-        if operator_sidebar_export_bundle_name(app).is_some() {
-            items.push("Bundle keeps events.jsonl and artifacts/".to_string());
-        }
-        items.push(
-            "Replay is read-only — inspect recorded context and use replay navigation.".to_string(),
-        );
         return items;
     }
 
@@ -1281,9 +1291,6 @@ fn operator_sidebar_context_lines(
         if !detail.is_empty() && detail != runtime_state.summary {
             items.push(detail.to_string());
         }
-    }
-    if operator_sidebar_export_bundle_name(app).is_some() {
-        items.push("Bundle keeps events.jsonl and artifacts/".to_string());
     }
     if let Some(window) = operator_sidebar_context_window_line(app) {
         items.push(window);
@@ -1531,6 +1538,7 @@ fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
     let pending_permission_lines = app.operator_sidebar_pending_permission_lines();
     let todo_lines = app.operator_sidebar_todo_lines();
     let modified_files = app.operator_sidebar_modified_files();
+    let recovery_lines = app.operator_sidebar_recovery_lines();
     let runtime_state = app.runtime_state();
     let context_lines =
         operator_sidebar_context_lines(app, &runtime_state, &pending_permission_lines);
@@ -1542,15 +1550,31 @@ fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
     let runtime_summary = app.runtime_context_primary_summary();
     let provider_context = app.runtime_context_provider_display();
 
-    let mut sections = vec![
-        OperatorRailBodySection::Context {
-            items: context_lines,
-        },
-        OperatorRailBodySection::Mcp {
-            count: operator_sidebar_section_count(&mcp_lines, NO_MCP_ACTIVITY_LABEL),
-            items: mcp_lines,
-        },
-    ];
+    let mut sections = vec![OperatorRailBodySection::Context {
+        items: context_lines,
+    }];
+    if !modified_files.is_empty() {
+        sections.push(OperatorRailBodySection::ModifiedFiles {
+            count: modified_files.len(),
+            items: modified_files.clone(),
+        });
+    }
+    if !recovery_lines.is_empty() {
+        sections.push(OperatorRailBodySection::Recovery {
+            count: recovery_lines.len(),
+            items: recovery_lines,
+        });
+    }
+    if !todo_lines.is_empty() {
+        sections.push(OperatorRailBodySection::Todo {
+            count: todo_lines.len(),
+            items: todo_lines.clone(),
+        });
+    }
+    sections.push(OperatorRailBodySection::Mcp {
+        count: operator_sidebar_section_count(&mcp_lines, NO_MCP_ACTIVITY_LABEL),
+        items: mcp_lines,
+    });
     if !network_lines.is_empty() {
         sections.push(OperatorRailBodySection::Network {
             count: network_lines.len(),
@@ -1567,18 +1591,6 @@ fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
         count: operator_sidebar_section_count(&lsp_lines, NO_LSP_ACTIVITY_LABEL),
         items: lsp_lines,
     });
-    if !todo_lines.is_empty() {
-        sections.push(OperatorRailBodySection::Todo {
-            count: todo_lines.len(),
-            items: todo_lines.clone(),
-        });
-    }
-    if !modified_files.is_empty() {
-        sections.push(OperatorRailBodySection::ModifiedFiles {
-            count: modified_files.len(),
-            items: modified_files.clone(),
-        });
-    }
 
     OperatorRailModel {
         pinned_summary: OperatorRailPinnedSummary {

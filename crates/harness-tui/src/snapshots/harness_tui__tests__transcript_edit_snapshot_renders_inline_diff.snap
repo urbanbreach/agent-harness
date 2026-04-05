@@ -1,5 +1,6 @@
 ---
 source: crates/harness-tui/src/tests.rs
+assertion_line: 1353
 expression: normalized
 ---
 Buffer {
@@ -19,8 +20,8 @@ Buffer {
         "      @@ -1,3 +1,3 @@                          tool finished Â· waiting for      ",
         "        alpha                                  final response Â·                 ",
         "      - beta                                   edit.hashline_apply              ",
-        "      + BETA                                   Bundle keeps events.jsonl and    ",
-        "        gamma                                  artifacts/                       ",
+        "      + BETA                                   Modified Files Â· 1 Â· demo.txt Â·â¦ ",
+        "        gamma                                  â¼ Recovery Â· 3                   ",
         "                                                                                ",
         "                                               harness-tui Â· v0.1.0             ",
         "                                                                                ",
@@ -118,14 +119,15 @@ Buffer {
         x: 6, y: 14, fg: Rgb(115, 192, 107), bg: Rgb(17, 17, 17), underline: Reset, modifier: BOLD,
         x: 12, y: 14, fg: Rgb(231, 227, 222), bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
         x: 46, y: 14, fg: Reset, bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
-        x: 47, y: 14, fg: Rgb(231, 227, 222), bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
+        x: 47, y: 14, fg: Rgb(231, 227, 222), bg: Rgb(17, 17, 17), underline: Reset, modifier: BOLD,
         x: 79, y: 14, fg: Reset, bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
         x: 0, y: 15, fg: Reset, bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
         x: 2, y: 15, fg: Rgb(231, 227, 222), bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
         x: 6, y: 15, fg: Rgb(140, 136, 131), bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
         x: 13, y: 15, fg: Rgb(231, 227, 222), bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
         x: 46, y: 15, fg: Reset, bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
-        x: 47, y: 15, fg: Rgb(231, 227, 222), bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
+        x: 47, y: 15, fg: Rgb(231, 227, 222), bg: Rgb(17, 17, 17), underline: Reset, modifier: BOLD,
+        x: 61, y: 15, fg: Rgb(231, 227, 222), bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
         x: 79, y: 15, fg: Reset, bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
         x: 0, y: 16, fg: Reset, bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
         x: 46, y: 16, fg: Reset, bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,

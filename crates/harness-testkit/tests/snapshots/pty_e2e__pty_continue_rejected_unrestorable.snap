@@ -5,7 +5,7 @@ expression: "checkpoint_visual_snapshot(&unrestorable_screen,\n&[STARTUP_CONTINU
 Continue session: true
 events unavailable: true
 focus_marker: events unavailable
-focus_render_state_blake3: c062ea459c9a77d6620da5cf72e837fa7f00888a747ba82576f12ae4df7b64bc
+focus_render_state_blake3: 1f2e009060d276c1ecab4336adfdc31fc7606f0d56432ea57c17b05520192d54
 focus_region_cells: row=23, col=48, height=1, width=28
 image: pty_continue_rejected_unrestorable.png
 manifest_json: pty-manifests/continue_session/manifest.json

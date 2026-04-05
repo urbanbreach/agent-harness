@@ -7,7 +7,7 @@ Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s: true
 Spawn researcher · audit transcript parity · 14:36 · 1.6s: true
 foreground · agent_worker · req_child · completed · 3 child tool calls: true
 focus_marker: Spawn researcher
-focus_render_state_blake3: 4b061d3d9b071e93c7073650b4c61d35c935f684f6d80eb5ec410bdaf72b66d4
+focus_render_state_blake3: 687386a6721d5c003918b422f99eb52d131080924e4ece1d36335a7579474274
 focus_region_cells: row=16, col=9, height=6, width=34
 image: pty_native_tool_parity_task_row.png
 manifest_json: pty-manifests/transcript_shell/manifest.json

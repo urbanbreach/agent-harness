@@ -7,16 +7,16 @@
      → Read src/ui.rs [offset=1, limit=24] · 2ms
       ↳ Loaded src/ui.rs                                                                                                                                                            Context
      ┃ ▸ ← Patched crates/harness-tui/src/ui.rs · 4ms                                                                                                                               turn 1 · ready for next turn
-      crates/harness-tui/src/ui.rs · +1 -1                                                                                                                                          Bundle keeps events.jsonl and
-      @@ -44,8 +44,7 @@                                                                                                                                                             artifacts/
-        use ui_secondary::{                                                                 │   use ui_secondary::{                                                                 Modified Files · 1
-                                                                                                                                                                                    crates/harness-tui/src/ui.rs
+      crates/harness-tui/src/ui.rs · +1 -1
+      @@ -44,8 +44,7 @@                                                                                                                                                             Modified Files · 1
+        use ui_secondary::{                                                                 │   use ui_secondary::{                                                                 crates/harness-tui/src/ui.rs · diff
+                                                                                                                                                                                    artifacts/tool-lifecycle-inline.diff
 
-      -     render_diff_tab, render_events_tab, render_help_tab,                            │ +     render_events_tab, render_help_tab, render_live_details_overlay,
-
-
-            render_operator_sidebar,                                                        │       render_operator_sidebar,
-
+      -     render_diff_tab, render_events_tab, render_help_tab,                            │ +     render_events_tab, render_help_tab, render_live_details_overlay,                Recovery · 2
+                                                                                                                                                                                    Bundle keeps events.jsonl and
+                                                                                                                                                                                    artifacts/
+            render_operator_sidebar,                                                        │       render_operator_sidebar,                                                        Artifact ·
+                                                                                                                                                                                    artifacts/tool-lifecycle-inline.diff
 
         };                                                                                  │   };
 
@@ -24,7 +24,7 @@
 
 ┃
 ┃
-┃
 ┃  Current runtime: default · model-1 · provider mock
-╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀   harness-tui · v0.1.0
+╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+  Enter send · Shift+Enter/Ctrl+j newline · ↑/↓ history                                                                                                                             harness-tui · v0.1.0
 Success  ·  turn 1 · ready for next turn
