@@ -21,9 +21,9 @@ use support::live_events::{resolve_tagged_run_dir, ToolFlowEvidence};
 use support::live_vision::{self, LiveVisionProxyConfig};
 use support::live_visual::{
     assert_checkpoint_markers, default_live_run_metadata, selected_live_viewport, FocusCapture,
-    LiveVisualRun, LiveVisualRunOptions, CHECKPOINT_DRAFT_VISIBLE,
+    LiveVisualRun, LiveVisualRunOptions, CHECKPOINT_DRAFT_VISIBLE, CHECKPOINT_FILE_WRITE_FINISHED,
     CHECKPOINT_HASHLINE_SCAN_FINISHED, CHECKPOINT_PERMISSION_REQUESTED, CHECKPOINT_RUN_FINISHED,
-    CHECKPOINT_SHELL_CREATE_FINISHED, CHECKPOINT_STARTUP,
+    CHECKPOINT_STARTUP,
 };
 use support::pty_process::{spawn_pty_process, SpawnedPtyProcess};
 use vt100::Parser as VtParser;
@@ -1360,6 +1360,25 @@ fn example_config_ships_canonical_plan_build_and_audit_profiles() {
     let config = load_json5_config(&repo_root().join("configs").join("harness.example.jsonc"))
         .expect("load shipped example config");
 
+    let default_provider = config
+        .get("providers")
+        .and_then(Value::as_object)
+        .and_then(|providers| providers.get("default"))
+        .and_then(Value::as_object)
+        .expect("default provider present in example config");
+    assert_eq!(
+        default_provider.get("base_url").and_then(Value::as_str),
+        Some("http://127.0.0.1:8317/v1")
+    );
+    assert_eq!(
+        default_provider.get("api_key").and_then(Value::as_str),
+        Some("${OPENAI_API_KEY:-sk-zerolimit}")
+    );
+    assert_eq!(
+        default_provider.get("api_mode").and_then(Value::as_str),
+        Some("auto")
+    );
+
     assert_eq!(
         config
             .get("ui")
@@ -1381,7 +1400,7 @@ fn example_config_ships_canonical_plan_build_and_audit_profiles() {
     );
     assert_eq!(
         plan.get("model_ref").and_then(Value::as_str),
-        Some("default:gpt-5.4")
+        Some("default:gpt-5.4-mini")
     );
     let plan_tools = plan
         .get("tools")
@@ -1967,6 +1986,79 @@ fn resolve_live_request_defaults_vision_model_to_primary() {
                 resolve_live_prompt_request(&repo_root()).expect("resolve live prompt request");
             assert_eq!(request.primary_model, DEFAULT_LIVE_PROXY_MODEL);
             assert_eq!(request.vision_model, request.primary_model);
+        },
+    );
+}
+
+#[test]
+fn resolve_live_request_prefers_documented_default_model_when_present() {
+    let _guard = live_proxy_env_lock()
+        .lock()
+        .expect("live proxy env test lock should not be poisoned");
+
+    let source_config_path = unique_temp_file("live-proxy-request-default-model", "jsonc");
+    let session_dir = unique_temp_dir("live-proxy-request-default-model-session");
+    let mut config = build_live_proxy_test_config(
+        "default",
+        "http://127.0.0.1:9999",
+        "auto",
+        "gpt-5.4",
+        &session_dir,
+    );
+    let provider_models = config
+        .get_mut("providers")
+        .and_then(Value::as_object_mut)
+        .and_then(|providers| providers.get_mut("default"))
+        .and_then(Value::as_object_mut)
+        .and_then(|provider| provider.get_mut("models"))
+        .and_then(Value::as_object_mut)
+        .expect("provider models object present");
+    provider_models.insert(
+        DEFAULT_LIVE_PROXY_MODEL.to_string(),
+        json!({
+            "display_name": "Documented default model"
+        }),
+    );
+    fs::write(
+        &source_config_path,
+        serde_json::to_string_pretty(&config).expect("serialize request default model config"),
+    )
+    .expect("write request default model config");
+
+    with_live_proxy_env(
+        &[
+            (
+                "HARNESS_LIVE_PROXY_CONFIG",
+                Some(source_config_path.as_os_str()),
+            ),
+            ("HARNESS_LIVE_PROXY_PROVIDER", Some(OsStr::new("default"))),
+            ("HARNESS_LIVE_PROXY_MODEL", None),
+            ("HARNESS_LIVE_PROXY_VISION_MODEL", None),
+            ("HARNESS_LIVE_PROXY_PROFILE", None),
+            ("HARNESS_LIVE_PROXY_PROMPT", None),
+            ("HARNESS_LIVE_PROXY_WAIT_TIMEOUT_MS", None),
+        ],
+        || {
+            let request =
+                resolve_live_prompt_request(&repo_root()).expect("resolve live prompt request");
+            assert_eq!(request.primary_model, DEFAULT_LIVE_PROXY_MODEL);
+        },
+    );
+}
+
+#[test]
+fn resolve_env_reference_value_uses_fallback_for_empty_var() {
+    let _guard = live_proxy_env_lock()
+        .lock()
+        .expect("live proxy env test lock should not be poisoned");
+
+    with_live_proxy_env(
+        &[("HARNESS_LIVE_PROXY_EMPTY_API_KEY", Some(OsStr::new("")))],
+        || {
+            let resolved =
+                resolve_env_reference_value("${HARNESS_LIVE_PROXY_EMPTY_API_KEY:-sk-zerolimit}")
+                    .expect("empty env var should use fallback value");
+            assert_eq!(resolved, "sk-zerolimit");
         },
     );
 }
@@ -3480,7 +3572,7 @@ fn run_live_tui_tool_flow(
         Duration::from_secs(5),
     )?;
     let shell_create_finished_checkpoint = live_visual.capture_checkpoint_with_metadata(
-        CHECKPOINT_SHELL_CREATE_FINISHED,
+        CHECKPOINT_FILE_WRITE_FINISHED,
         &stage.parser,
         &[
             LIVE_TUI_READY_MARKER,
@@ -3891,7 +3983,7 @@ fn live_vision_checkpoint_contracts() -> &'static [LiveVisionCheckpointContract]
             expected_markers: &[LIVE_TOOL_FLOW_DRAFT_MARKER],
         },
         LiveVisionCheckpointContract {
-            checkpoint_id: CHECKPOINT_SHELL_CREATE_FINISHED,
+            checkpoint_id: CHECKPOINT_FILE_WRITE_FINISHED,
             expected_markers: &[
                 "UI shows file-creation progress for tmp/live_tool_flow.md.",
                 "shell.run",
@@ -4805,6 +4897,10 @@ fn first_model_from_provider(provider: &Value) -> Result<String, String> {
         );
     };
 
+    if models.contains_key(DEFAULT_LIVE_PROXY_MODEL) {
+        return Ok(DEFAULT_LIVE_PROXY_MODEL.to_string());
+    }
+
     models.keys().next().cloned().ok_or_else(|| {
         "provider config has an empty `models` map; set HARNESS_LIVE_PROXY_MODEL".to_string()
     })
@@ -5462,7 +5558,10 @@ fn resolve_env_reference_value(value: &str) -> Result<String, String> {
         if key.is_empty() {
             return Ok(value.to_string());
         }
-        return Ok(env::var(key).unwrap_or_else(|_| fallback.to_string()));
+        return Ok(env::var(key)
+            .ok()
+            .filter(|resolved| !resolved.is_empty())
+            .unwrap_or_else(|| fallback.to_string()));
     }
 
     env::var(reference).map_err(|_| {

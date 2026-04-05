@@ -7,6 +7,22 @@ The shipped example config now exposes the intended user-facing split:
 - `tool_audit`: signoff/profile-surface verification
 - `deep_compat`: compat-path parity regression coverage
 
+Primary profiles:
+
+- `plan` — default first-run lane
+- `build` — post-approval implementation lane
+
+Secondary profiles:
+
+- `tool_audit` — evidence-first signoff lane
+- `deep_compat` — compat-path parity regression lane
+
+Blessed default path:
+
+- provider: `default` via the local CLIProxy-compatible endpoint at `http://127.0.0.1:8317/v1`
+- model: `gpt-5.4-mini`
+- entrypoint: `cargo run -p harness -- --config configs/harness.example.jsonc`
+
 ## First run
 
 Validate the shipped config:
@@ -22,6 +38,7 @@ cargo run -p harness -- --config configs/harness.example.jsonc
 ```
 
 `ui.default_profile` is `plan`, so the first session starts in planning mode.
+The shipped `plan` profile uses `default:gpt-5.4-mini`, and `plan.exit` hands off into the `build` profile on the same default provider/model family.
 
 ## Handoff contract
 

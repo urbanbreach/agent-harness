@@ -1,8 +1,37 @@
+use std::env;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
 
+use harness_core::config::{load_config_from_file, OpenAiApiMode, ProviderConfig};
 use tempfile::tempdir;
+
+fn openai_api_key_env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn with_env_var_state<T>(name: &str, value: Option<&str>, run: impl FnOnce() -> T) -> T {
+    let _lock = openai_api_key_env_lock()
+        .lock()
+        .expect("openai api key env lock poisoned");
+    let previous = env::var_os(name);
+
+    match value {
+        Some(value) => env::set_var(name, value),
+        None => env::remove_var(name),
+    }
+
+    let result = run();
+
+    match previous {
+        Some(value) => env::set_var(name, value),
+        None => env::remove_var(name),
+    }
+
+    result
+}
 
 fn write_config(path: &Path, config: &serde_json::Value) {
     fs::write(
@@ -332,6 +361,44 @@ fn config_validate_cli_accepts_shipped_example_config() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("config valid:"));
     assert!(stdout.contains("configs/harness.example.jsonc"));
+}
+
+#[test]
+fn shipped_example_config_resolves_loopback_placeholder_key_without_openai_api_key() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+    let config_path = repo_root.join("configs").join("harness.example.jsonc");
+
+    with_env_var_state("OPENAI_API_KEY", None, || {
+        let parsed = load_config_from_file(&config_path)
+            .expect("shipped example config should resolve without OPENAI_API_KEY on loopback");
+        let ProviderConfig::OpenAiCompatible(provider) = parsed
+            .providers
+            .get("default")
+            .expect("default provider present in shipped example config");
+
+        assert_eq!(provider.base_url, "http://127.0.0.1:8317/v1");
+        assert_eq!(provider.api_key, "sk-zerolimit");
+        assert!(matches!(provider.api_mode, OpenAiApiMode::Auto));
+    });
+}
+
+#[test]
+fn shipped_example_config_uses_placeholder_key_when_openai_api_key_is_empty() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+    let config_path = repo_root.join("configs").join("harness.example.jsonc");
+
+    with_env_var_state("OPENAI_API_KEY", Some(""), || {
+        let parsed = load_config_from_file(&config_path)
+            .expect("shipped example config should use fallback key when OPENAI_API_KEY is empty");
+        let ProviderConfig::OpenAiCompatible(provider) = parsed
+            .providers
+            .get("default")
+            .expect("default provider present in shipped example config");
+
+        assert_eq!(provider.base_url, "http://127.0.0.1:8317/v1");
+        assert_eq!(provider.api_key, "sk-zerolimit");
+        assert!(matches!(provider.api_mode, OpenAiApiMode::Auto));
+    });
 }
 
 #[test]

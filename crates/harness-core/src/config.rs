@@ -1172,7 +1172,10 @@ fn resolve_env_reference(value: &str) -> Result<String, ConfigError> {
         if key.is_empty() {
             return Ok(value.to_string());
         }
-        return Ok(env::var(key).unwrap_or_else(|_| fallback.to_string()));
+        return Ok(env::var(key)
+            .ok()
+            .filter(|resolved| !resolved.is_empty())
+            .unwrap_or_else(|| fallback.to_string()));
     }
 
     match env::var(reference) {
@@ -2487,6 +2490,25 @@ mod tests {
             load_config_from_str(&cfg).expect("config with fallback env reference must parse");
         let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
         assert_eq!(provider.api_key, "fallback-key");
+    }
+
+    #[test]
+    fn empty_env_var_uses_default_fallback() {
+        let cfg = config_fixture(
+            &deep_profile(r#"tools: ["fs.read"],"#),
+            "${HARNESS_CONFIG_TEST_API_KEY_EMPTY:-fallback-key}",
+            None,
+            None,
+        );
+
+        env::set_var("HARNESS_CONFIG_TEST_API_KEY_EMPTY", "");
+
+        let parsed = load_config_from_str(&cfg)
+            .expect("config with empty env reference should use fallback value");
+        let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
+        assert_eq!(provider.api_key, "fallback-key");
+
+        env::remove_var("HARNESS_CONFIG_TEST_API_KEY_EMPTY");
     }
 
     #[test]
