@@ -143,6 +143,70 @@ fn prompt_cli_multi_provider_config(
     .to_string()
 }
 
+fn prompt_cli_multi_model_config(base_url: &str, session_dir: &std::path::Path) -> String {
+    serde_json::json!({
+        "providers": {
+            "default": {
+                "type": "openai_compatible",
+                "base_url": base_url,
+                "api_key": "DUMMY",
+                "api_mode": "responses",
+                "timeout_ms": 60000,
+                "models": {
+                    "gpt-5.4-mini": {
+                        "display_name": "GPT-5.4 Mini"
+                    },
+                    "gpt-5.4": {
+                        "display_name": "GPT-5.4"
+                    }
+                }
+            }
+        },
+        "profiles": {
+            "plan": {
+                "description": "Plan profile",
+                "model_ref": "default:gpt-5.4-mini",
+                "tools": []
+            },
+            "build": {
+                "description": "Build profile",
+                "model_ref": "default:gpt-5.4",
+                "tools": []
+            }
+        },
+        "permissions": {
+            "defaults": {
+                "edit": "allow",
+                "shell": "allow",
+                "network": "allow"
+            }
+        },
+        "runtime": {
+            "background_tasks": {
+                "default_concurrency": 2,
+                "provider_concurrency": 2,
+                "model_concurrency": 2,
+                "stale_timeout_ms": 30000,
+                "message_staleness_timeout_ms": 10000
+            },
+            "session_dir": session_dir,
+            "deterministic": {
+                "enabled": false,
+                "seed": 42
+            }
+        },
+        "integrations": {
+            "remote_search": {
+                "endpoint": "https://mcp.exa.ai/mcp"
+            }
+        },
+        "ui": {
+            "default_profile": "plan"
+        }
+    })
+    .to_string()
+}
+
 #[tokio::test]
 async fn prompt_cli_calls_responses_endpoint() {
     let server = MockServer::start().await;
@@ -386,6 +450,66 @@ async fn prompt_cli_routes_non_default_profile_to_matching_provider() {
             .count(),
         1,
         "expected prompt CLI to hit the selected non-default provider exactly once"
+    );
+}
+
+#[tokio::test]
+async fn prompt_cli_uses_selected_config_model_for_same_provider() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    deterministic_responses_sse_transcript(),
+                    "text/event-stream",
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.multi-model.jsonc");
+    let session_dir = temp.path().join("sessions");
+    fs::write(
+        &config_path,
+        prompt_cli_multi_model_config(&format!("{}/v1", server.uri()), &session_dir),
+    )
+    .expect("write config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "prompt",
+            "--profile",
+            "build",
+            "--text",
+            "Hello from build",
+        ])
+        .output()
+        .expect("run harness prompt with alternate config model");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let requests = server
+        .received_requests()
+        .await
+        .expect("request recording must be enabled");
+    assert_eq!(requests.len(), 1, "expected one provider request");
+
+    let request_body: serde_json::Value =
+        serde_json::from_slice(&requests[0].body).expect("request body json");
+    assert_eq!(
+        request_body.get("model"),
+        Some(&serde_json::Value::String("gpt-5.4".to_string()))
     );
 }
 

@@ -55,7 +55,7 @@ Secondary/supporting profiles:
 
 ## Models, providers, and config
 
-- [ ] Support model selection in harness from config.
+- [x] Support model selection in harness from config.
 - [ ] Support reasoning/thinking preset selection from config.
 - [ ] Figure out actual prompt and token caching behavior for OpenAI, Google, Anthropic, Qwen, Kimi, GLM, and Minimax from their available documentation, then implement provider-aware handling.
 - [ ] Add provider capability detection so unsupported features degrade cleanly instead of failing late.

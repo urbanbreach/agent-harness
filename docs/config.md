@@ -37,6 +37,106 @@ Use `harness config validate` to check a file and `harness schema` to print the 
 | `ui` | `UiConfig` | Optional. UI defaults and parity keybindings. |
 | `logging` | `LoggingConfig` | Optional. Defaults to `level = "info"`. |
 
+## `providers`
+
+`providers` is the public model-catalog surface. Each provider entry defines the transport plus the
+set of model ids that profiles are allowed to reference.
+
+### `providers.<name>`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `type` | `"openai_compatible"` | Current shipped provider type. |
+| `base_url` / `baseUrl` | `string` | OpenAI-compatible endpoint. |
+| `api_key` / `apiKey` | `string` | API key or `${ENV_VAR}` substitution. |
+| `api_mode` / `apiMode` | `"auto" \| "responses" \| "chat_completions"` | Transport mode. |
+| `timeout_ms` / `timeoutMs` | `integer` | Request timeout in milliseconds. |
+| `headers` | `object<string, string>` | Optional extra HTTP headers. |
+| `models` | `object<string, ModelConfig>` | Public model catalog for this provider. |
+
+### `providers.<name>.models.<model>`
+
+Model entries are keyed by the exact provider model id used at request time.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `display_name` / `displayName` | `string` | Friendly label shown in UI metadata. |
+| `metadata` | `object` | Optional model metadata such as family and context window. |
+| `max_input_tokens` / `maxInputTokens` | `integer \| null` | Optional input token cap. |
+| `max_output_tokens` / `maxOutputTokens` | `integer \| null` | Optional output token cap. |
+| `variants` | `object<string, ModelVariantConfig>` | Optional named presets layered onto the base model. |
+
+### Model-selection example
+
+The supported issue-#81 path is:
+
+1. declare the allowed models under `providers.<provider>.models`
+2. point a profile at one of them with `profiles.<name>.model_ref`
+3. choose the default interactive profile with `ui.default_profile` or override it per run with `--profile`
+
+```jsonc
+{
+  "providers": {
+    "default": {
+      "type": "openai_compatible",
+      "base_url": "http://127.0.0.1:8317/v1",
+      "api_key": "${OPENAI_API_KEY:-sk-zerolimit}",
+      "models": {
+        "gpt-5.4-mini": {
+          "display_name": "GPT-5.4 Mini"
+        },
+        "gpt-5.4": {
+          "display_name": "GPT-5.4"
+        }
+      }
+    }
+  },
+  "profiles": {
+    "plan": {
+      "description": "Primary planning lane",
+      "model_ref": "default:gpt-5.4-mini",
+      "tools": []
+    },
+    "build": {
+      "description": "Higher-capacity implementation lane",
+      "model_ref": "default:gpt-5.4",
+      "tools": []
+    }
+  },
+  "ui": {
+    "default_profile": "plan"
+  }
+}
+```
+
+With that config, `harness prompt --profile build --text "..."` uses `gpt-5.4`, while the blessed
+default `plan -> build` path can keep `plan` on `gpt-5.4-mini`.
+
+Broken references fail early during `harness config validate`; profiles cannot point at a provider
+or model id that is missing from the configured catalog.
+
+## `profiles`
+
+`profiles` is the public agent-profile surface. Each profile names its tool lane and selects one
+configured provider/model pair through `model_ref`.
+
+### `profiles.<name>`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `description` | `string` | Required profile summary. |
+| `system_prompt` / `systemPrompt` | `string \| null` | Optional custom system prompt. |
+| `model_ref` / `modelRef` | `string` | Required `<provider>:<model>` reference into `providers.*.models`. |
+| `variant` | `string \| null` | Optional named preset under the selected model. |
+| `temperature` | `number \| null` | Optional provider temperature override. |
+| `permissions` | `object \| null` | Optional per-profile permission overrides. |
+| `tool_surface` / `toolSurface` | `"native" \| "compat"` | Tool-id surface for the profile. |
+| `max_iters` / `maxIters` | `integer` | Per-profile iteration cap. |
+| `tool_failure_mode` / `toolFailureMode` | enum | Runtime behavior for tool failures. |
+| `plan_mode` / `planMode` | `bool` | Marks the profile as a planning lane. |
+| `exit_target_profile` / `exitTargetProfile` | `string \| null` | Optional handoff profile for `plan.exit`. |
+| `tools` | `array<string>` | Allowed tool ids for the profile. |
+
 ## `integrations`
 
 `integrations` currently exposes the built-in remote-search bridge plus configured MCP servers.

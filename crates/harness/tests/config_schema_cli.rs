@@ -759,6 +759,30 @@ fn config_validate_cli_rejects_unknown_provider_reference() {
 }
 
 #[test]
+fn config_validate_cli_rejects_unknown_model_reference() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    let mut config = valid_config_value("invalid-model", &temp.path().join("sessions"));
+    config["profiles"]["deep"]["model_ref"] =
+        serde_json::Value::String("default:gpt-4.1".to_string());
+    write_config(&config_path, &config);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args(["config", "validate"])
+        .output()
+        .expect("run harness config validate with invalid model ref");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("config validation failed:"));
+    assert!(stderr.contains(
+        "profile `deep` references unknown model `gpt-4.1` in `model_ref` `default:gpt-4.1`"
+    ));
+    assert!(stderr.contains("available models for provider `default`: gpt-4o-mini"));
+}
+
+#[test]
 fn config_validate_cli_rejects_invalid_hook_or_variant_refs() {
     let temp = tempdir().expect("tempdir");
 

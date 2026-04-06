@@ -64,4 +64,11 @@ fn config_docs_top_level_keys_match_generated_schema() {
             "expected `{key}` example"
         );
     }
+
+    for snippet in ["\"models\": {", "\"model_ref\":", "\"default_profile\":"] {
+        assert!(
+            doc.contains(snippet),
+            "expected docs/config.md to include `{snippet}` in the public config examples"
+        );
+    }
 }
