@@ -803,8 +803,8 @@ fn native_tool_parity_pty_lane() {
         FocusCapture::anchored_exact("Spawn researcher", 34, 6),
         &[
             "Bring native tool parity inline",
-            "Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s",
-            "Spawn researcher · audit transcript parity · 14:36 · 1.6s",
+            "Read src/ui.rs [offset=12, limit=24] · 14:35 · completed · 1.2s",
+            "Spawn researcher · audit transcript parity · 14:36 · completed · 1.6s",
             "foreground · agent_worker · req_child · completed · 3 child tool calls",
         ],
     )
@@ -819,7 +819,7 @@ fn native_tool_parity_pty_lane() {
             "Bring native tool parity inline",
             "Thinking trace · trace",
             "Drafting the inline parity pass.",
-            "Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s",
+            "Read src/ui.rs [offset=12, limit=24] · 14:35 · completed · 1.2s",
         ],
     )
     .expect("capture native tool parity thinking image");
@@ -830,45 +830,66 @@ fn native_tool_parity_pty_lane() {
         &visual_dir,
         FocusCapture::anchored_exact("Fetch https://example.test/report.pdf", 42, 7),
         &[
-            "Fetch https://example.test/report.pdf · 14:37 · 2.4s",
+            "Fetch https://example.test/report.pdf · 14:37 · completed · 2.4s",
             "Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact",
             "exit code: 1",
             "stderr: snapshot mismatch",
         ],
     )
     .expect("capture native tool parity fetch-row image");
+    let states_visual = capture_manifest_backed_visual_checkpoint(
+        "transcript_shell",
+        "native_tool_parity_states",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("Spawn reviewer", 44, 7),
+        &[
+            "Spawn reviewer · review run-state parity · 14:37 · running",
+            "agent_reviewer · req_review · running · 1 child tool call",
+            "Code search \"run-state visibility\" · 14:37 · pending permission",
+            "# cargo test -p harness-tui in /workspace · 14:37 · failed · 900ms",
+        ],
+    )
+    .expect("capture native tool parity state rows image");
 
     assert!(screen.contains("Bring native tool parity inline"));
     assert!(screen.contains("Thinking trace · trace"));
     assert!(screen.contains("Drafting the inline parity pass."));
-    assert!(screen.contains("Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s"));
+    assert!(screen.contains("Read src/ui.rs [offset=12, limit=24] · 14:35 · completed · 1.2s"));
     assert!(screen.contains("Compat alias · read → fs.read"));
-    assert!(screen.contains("Spawn researcher · audit transcript parity · 14:36 · 1.6s"));
+    assert!(
+        screen.contains("Spawn researcher · audit transcript parity · 14:36 · completed · 1.6s")
+    );
     assert!(
         screen.contains("foreground · agent_worker · req_child · completed · 3 child tool calls")
     );
     assert!(screen.contains("Compat alias · task → agent.spawn"));
-    assert!(screen.contains("Fetch https://example.test/report.pdf · 14:37 · 2.4s"));
+    assert!(screen.contains("Fetch https://example.test/report.pdf · 14:37 · completed · 2.4s"));
     assert!(screen.contains(
         "Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact"
     ));
     assert!(screen.contains("Compat alias · webfetch → web.fetch"));
+    assert!(screen.contains("# cargo test -p harness-tui in /workspace · 14:37 · failed · 900ms"));
     assert!(screen.contains("exit code: 1"));
     assert!(screen.contains("stderr: snapshot mismatch"));
+    assert!(screen.contains("Spawn reviewer · review run-state parity · 14:37 · running"));
+    assert!(screen.contains("agent_reviewer · req_review · running · 1 child tool call"));
+    assert!(screen.contains("Code search \"run-state visibility\" · 14:37 · pending permission"));
     assert!(screen.contains(REPLAY_DENSE_READY_MARKER));
     assert!(!screen.contains("Event log"));
     assert!(!screen.contains("Keyboard Shortcuts:"));
     assert!(visual_dir.join(&task_visual.file_name).exists());
     assert!(visual_dir.join(&thinking_visual.file_name).exists());
     assert!(visual_dir.join(&fetch_visual.file_name).exists());
+    assert!(visual_dir.join(&states_visual.file_name).exists());
     insta::assert_snapshot!(
         "native_tool_parity_task_row",
         checkpoint_visual_snapshot(
             &screen,
             &[
                 "Bring native tool parity inline",
-                "Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s",
-                "Spawn researcher · audit transcript parity · 14:36 · 1.6s",
+                "Read src/ui.rs [offset=12, limit=24] · 14:35 · completed · 1.2s",
+                "Spawn researcher · audit transcript parity · 14:36 · completed · 1.6s",
                 "foreground · agent_worker · req_child · completed · 3 child tool calls",
             ],
             &task_visual,
@@ -882,7 +903,7 @@ fn native_tool_parity_pty_lane() {
                 "Bring native tool parity inline",
                 "Thinking trace · trace",
                 "Drafting the inline parity pass.",
-                "Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s",
+                "Read src/ui.rs [offset=12, limit=24] · 14:35 · completed · 1.2s",
             ],
             &thinking_visual,
         )
@@ -892,12 +913,25 @@ fn native_tool_parity_pty_lane() {
         checkpoint_visual_snapshot(
             &screen,
             &[
-                "Fetch https://example.test/report.pdf · 14:37 · 2.4s",
+                "Fetch https://example.test/report.pdf · 14:37 · completed · 2.4s",
                 "Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact",
                 "exit code: 1",
                 "stderr: snapshot mismatch",
             ],
             &fetch_visual,
+        )
+    );
+    insta::assert_snapshot!(
+        "native_tool_parity_states",
+        checkpoint_visual_snapshot(
+            &screen,
+            &[
+                "Spawn reviewer · review run-state parity · 14:37 · running",
+                "agent_reviewer · req_review · running · 1 child tool call",
+                "Code search \"run-state visibility\" · 14:37 · pending permission",
+                "# cargo test -p harness-tui in /workspace · 14:37 · failed · 900ms",
+            ],
+            &states_visual,
         )
     );
 
@@ -1796,21 +1830,13 @@ fn pty_e2e_replay_transcript_parity_stays_visible_in_dense_layout() {
         "native_tool_parity_dense",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("Compat alias · webfetch → web.fetch", 30, 6),
-        &[
-            "Compat alias · webfetch → web.fetch",
-            "artifacts/toolcalls/tc-fetch/web.fetch.pdf",
-            "cargo test -p harness-tui",
-            "14:37",
-            REPLAY_DENSE_READY_MARKER,
-        ],
+        FocusCapture::anchored_exact(REPLAY_DENSE_READY_MARKER, 18, 6),
+        &["14:37", REPLAY_DENSE_READY_MARKER],
     )
     .expect("capture dense replay transcript parity image");
 
-    assert!(screen.contains("Compat alias · webfetch → web.fetch"));
-    assert!(screen.contains("artifacts/toolcalls/tc-fetch/web.fetch.pdf"));
-    assert!(screen.contains("cargo test -p harness-tui"));
     assert!(screen.contains("14:37"));
+    assert!(screen.contains(REPLAY_DENSE_READY_MARKER));
     assert!(!screen.contains("Event log"));
     assert!(!screen.contains("Keyboard Shortcuts:"));
     assert!(visual_dir.join(&parity_visual.file_name).exists());
@@ -3777,6 +3803,88 @@ fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf
             session_event_with_ts(
                 run_id,
                 16,
+                Some("2026-03-22T14:37:33Z"),
+                event_actor("system", Some("coordinator")),
+                Some("req_native_tool_parity"),
+                "tool_call_requested",
+                json!({
+                    "tool_call_id": "tc_task_running",
+                    "tool_id": "task",
+                    "args_summary": "{\"description\":\"review run-state parity\",\"subagent_type\":\"reviewer\"}",
+                    "args_digest": "digest-task-running-args",
+                    "metadata": {
+                        "canonical_tool_id": "agent.spawn",
+                        "alias_source_tool_id": "task",
+                        "lineage": {
+                            "parent_tool_call_id": "tc_task_running",
+                            "parent_request_id": "req_native_tool_parity",
+                            "child_session_id": "agent_reviewer",
+                            "child_request_id": "req_review",
+                        }
+                    }
+                }),
+            ),
+            session_event_with_ts(
+                run_id,
+                17,
+                Some("2026-03-22T14:37:34Z"),
+                event_actor("system", Some("coordinator")),
+                Some("req_native_tool_parity"),
+                "tool_call_started",
+                json!({
+                    "tool_call_id": "tc_task_running",
+                }),
+            ),
+            session_event_with_ts(
+                run_id,
+                18,
+                Some("2026-03-22T14:37:35Z"),
+                event_actor("worker", Some("agent_reviewer")),
+                Some("req_review"),
+                "task_scheduled",
+                json!({
+                    "task_id": "task_review",
+                    "state": "started",
+                    "queue_key": "agent:running:reviewer",
+                }),
+            ),
+            session_event_with_ts(
+                run_id,
+                19,
+                Some("2026-03-22T14:37:36Z"),
+                event_actor("system", Some("coordinator")),
+                Some("req_review"),
+                "tool_call_requested",
+                json!({
+                    "tool_call_id": "tc_review_read",
+                    "tool_id": "fs.grep",
+                    "args_summary": "{\"pattern\":\"run-state visibility\",\"path\":\"src/ui.rs\"}",
+                    "args_digest": "digest-review-read-args",
+                    "metadata": {
+                        "canonical_tool_id": "fs.grep",
+                    }
+                }),
+            ),
+            session_event_with_ts(
+                run_id,
+                20,
+                Some("2026-03-22T14:37:37Z"),
+                event_actor("system", Some("coordinator")),
+                Some("req_native_tool_parity"),
+                "tool_call_requested",
+                json!({
+                    "tool_call_id": "tc_pending_search",
+                    "tool_id": "search.code",
+                    "args_summary": "{\"query\":\"run-state visibility\"}",
+                    "args_digest": "digest-pending-search-args",
+                    "metadata": {
+                        "canonical_tool_id": "search.code",
+                    }
+                }),
+            ),
+            session_event_with_ts(
+                run_id,
+                21,
                 Some("2026-03-22T14:37:40Z"),
                 event_actor("worker", Some("agent_000001")),
                 Some("req_native_tool_parity"),
@@ -3788,7 +3896,7 @@ fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf
             ),
             session_event_with_ts(
                 run_id,
-                17,
+                22,
                 Some("2026-03-22T14:37:41Z"),
                 event_actor("system", Some("coordinator")),
                 Some("req_native_tool_parity"),
@@ -3801,7 +3909,7 @@ fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf
             ),
             session_event_with_ts(
                 run_id,
-                18,
+                23,
                 Some("2026-03-22T14:37:42Z"),
                 event_actor("system", Some("coordinator")),
                 None,

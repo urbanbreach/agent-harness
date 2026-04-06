@@ -4,9 +4,9 @@
   ╭─ Tool summaries are now easier to scan, and edits stay inline.                                                                                                                  Current runtime: default · model-1
   ╰─ ● Assistant · model-1 · 14ms                                                                                                                                                   Provider mock
                                                                                                                                                                                     0 active todos · 1 modified file
-     → Read src/ui.rs [offset=1, limit=24] · 2ms
+     → Read src/ui.rs [offset=1, limit=24] · completed · 2ms
       ↳ Loaded src/ui.rs                                                                                                                                                            Context
-     ┃ ▸ ← Patched crates/harness-tui/src/ui.rs · 4ms                                                                                                                               turn 1 · ready for next turn
+     ┃ ▸ ← Patched crates/harness-tui/src/ui.rs · completed · 4ms                                                                                                                   turn 1 · ready for next turn
       crates/harness-tui/src/ui.rs · +1 -1
       @@ -44,8 +44,7 @@                                                                                                                                                             Modified Files · 1
         use ui_secondary::{                                                                 │   use ui_secondary::{                                                                 crates/harness-tui/src/ui.rs · diff

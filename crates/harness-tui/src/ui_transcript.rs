@@ -1323,6 +1323,7 @@ fn decorate_tool_call_title(
                 suffixes.push("late result".to_string())
             }
             crate::app::OrchestrationTaskState::Completed => {
+                suffixes.push("completed".to_string());
                 if let Some(duration_ms) = task_row.duration_ms() {
                     suffixes.push(format_duration_ms(duration_ms));
                 }
@@ -1335,7 +1336,14 @@ fn decorate_tool_call_title(
             }
             ToolCallDisplayStatus::Queued => suffixes.push("queued".to_string()),
             ToolCallDisplayStatus::Running => suffixes.push("running".to_string()),
-            ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed => {
+            ToolCallDisplayStatus::Succeeded => {
+                suffixes.push("completed".to_string());
+                if let Some(duration_ms) = tool_call.duration_ms() {
+                    suffixes.push(format_duration_ms(duration_ms));
+                }
+            }
+            ToolCallDisplayStatus::Failed => {
+                suffixes.push("failed".to_string());
                 if let Some(duration_ms) = tool_call.duration_ms() {
                     suffixes.push(format_duration_ms(duration_ms));
                 }
@@ -3548,7 +3556,7 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
         TranscriptToolCallSection {
             header: TranscriptToolCallHeader {
                 tool_id: "shell.run".to_string(),
-                title: "# false · 1ms".to_string(),
+                title: "# false · failed · 1ms".to_string(),
                 icon: None,
                 status: ToolCallDisplayStatus::Failed,
                 visual_style: TranscriptToolCallVisualStyle::Block,
@@ -4055,7 +4063,8 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
         theme.surface.panel,
     );
     let task_text = transcript_test_line_texts(task_lines).join("\n");
-    assert!(task_text.contains("▸ Spawn researcher · audit transcript parity · 14:36 · 1.6s"));
+    assert!(task_text
+        .contains("▸ Spawn researcher · audit transcript parity · 14:36 · completed · 1.6s"));
     assert!(task_text
         .contains("foreground · agent_worker · req_child · completed · 3 child tool calls"));
     assert!(task_text.contains("Found the inline transcript path."));
@@ -4094,7 +4103,9 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
         theme.surface.panel,
     );
     let fetch_text = transcript_test_line_texts(fetch_lines).join("\n");
-    assert!(fetch_text.contains("▸ Fetch https://example.test/report.pdf · 14:37 · 2.4s"));
+    assert!(
+        fetch_text.contains("▸ Fetch https://example.test/report.pdf · 14:37 · completed · 2.4s")
+    );
     assert!(fetch_text.contains("report ready"));
     assert!(!fetch_text.contains("stored inline artifact"));
     assert!(fetch_text.contains("↳ 1 more line hidden"));
@@ -4102,6 +4113,32 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
         "Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact"
     ));
     assert!(fetch_text.contains("Compat alias · webfetch → web.fetch"));
+
+    let mut shell_fail = transcript_section_model_test_tool_call("tc-shell-fail", "shell.run");
+    shell_fail.args_summary =
+        r#"{"cmd":"cargo test -p harness-tui","cwd":"/workspace"}"#.to_string();
+    shell_fail.status = ToolCallDisplayStatus::Failed;
+    shell_fail.output_summary = Some("exit code: 1\nstderr: snapshot mismatch".to_string());
+    shell_fail.truncated_output = shell_fail.output_summary.clone();
+    shell_fail.timing_elapsed_ms = Some(900);
+    shell_fail.last_mono_ms = 900;
+    shell_fail.last_timestamp = Some("2026-03-22T14:37:31Z".to_string());
+
+    let shell_fail_section =
+        build_opencode_tool_call_section(&shell_fail, None, true, false, false, false, None);
+    let mut shell_fail_lines = Vec::new();
+    append_tool_call_section_lines(
+        &mut shell_fail_lines,
+        &shell_fail_section,
+        &theme,
+        120,
+        theme.surface.panel,
+    );
+    let shell_fail_text = transcript_test_line_texts(shell_fail_lines).join("\n");
+    assert!(shell_fail_text.contains("# cargo test -p harness-tui"));
+    assert!(shell_fail_text.contains("failed · 900ms"));
+    assert!(shell_fail_text.contains("exit code: 1"));
+    assert!(shell_fail_text.contains("stderr: snapshot mismatch"));
 
     let mut generic_call = transcript_section_model_test_tool_call("tc-generic", "vendor.magic");
     generic_call.args_summary =
@@ -4112,7 +4149,7 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
         build_opencode_tool_call_section(&generic_call, None, true, false, false, false, None);
     assert_eq!(
         generic_section.header.title,
-        "vendor.magic · limit=3 · path=notes.md · query=child parity · 800ms"
+        "vendor.magic · limit=3 · path=notes.md · query=child parity · completed · 800ms"
     );
 }
 
@@ -4360,7 +4397,8 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         Theme::default().surface.panel,
     );
     let completed_text = transcript_test_line_texts(completed_lines).join("\n");
-    assert!(completed_text.contains("Spawn researcher · audit transcript parity · 14:36 · 1.6s"));
+    assert!(completed_text
+        .contains("Spawn researcher · audit transcript parity · 14:36 · completed · 1.6s"));
     assert!(completed_text.contains("agent_worker · req_child · completed · 2 child tool calls"));
     assert!(completed_text.contains("Found the inline transcript path."));
     assert!(!completed_text.contains("child session finished"));

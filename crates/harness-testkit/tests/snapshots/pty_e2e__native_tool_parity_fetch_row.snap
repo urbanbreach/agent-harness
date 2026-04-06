@@ -1,8 +1,8 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-expression: "checkpoint_visual_snapshot(&screen,\n&[\"Fetch https://example.test/report.pdf · 14:37 · 2.4s\",\n\"Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact\",\n\"exit code: 1\", \"stderr: snapshot mismatch\",], &fetch_visual,)"
+expression: "checkpoint_visual_snapshot(&screen,\n&[\"Fetch https://example.test/report.pdf · 14:37 · completed · 2.4s\",\n\"Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact\",\n\"exit code: 1\", \"stderr: snapshot mismatch\",], &fetch_visual,)"
 ---
-Fetch https://example.test/report.pdf · 14:37 · 2.4s: true
+Fetch https://example.test/report.pdf · 14:37 · completed · 2.4s: true
 Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact: true
 exit code: 1: true
 stderr: snapshot mismatch: true

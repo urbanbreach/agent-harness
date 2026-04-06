@@ -1,8 +1,8 @@
   events · run_fixture
 
-     events   15 recorded · selected seq 15 · follow on
+     events   15 recorded · selected seq 15 · follow ond · 2ms
     Event log · j/k active · Event details
-       ┃ ▸ ← Patched crates/harness-tui/src/ui.rs · 4ms
+       ┃ ▸ ← Patched crates/harness-tui/src/ui.rs · completed · 4ms
          1ates/harness-tui/src{ui.rs · +1 -1
      UserMessageSubmitted(U   "schema_version": 1,
      serMessageSubmittedEve:{ "event_id": "evt-0015",
@@ -11,7 +11,7 @@
     rProviderRequestStartedrla"mono_ms": 15,
      (ProviderRequestStarteor_"actor": {
      dEvent { request_id      "kind": "system",
-         3 cargo test -p harne"agent_id": "pty-helper"ms
+         3 cargo test -p harne"agent_id": "pty-helper"ailed · 2ms
      ToolCallRequested(Toolnes},tui
      CallRequestedEvent {     "correlation_id": "req_tool_lifecycle",
      tool_call_idnapshot misma"stream_key": "run:run_fixture",

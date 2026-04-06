@@ -1,0 +1,15 @@
+---
+source: crates/harness-testkit/tests/pty_e2e.rs
+expression: "checkpoint_visual_snapshot(&screen,\n&[\"Spawn reviewer · review run-state parity · 14:37 · running\",\n\"agent_reviewer · req_review · running · 1 child tool call\",\n\"Code search \\\"run-state visibility\\\" · 14:37 · pending permission\",\n\"# cargo test -p harness-tui in /workspace · 14:37 · failed · 900ms\",],\n&states_visual,)"
+---
+Spawn reviewer · review run-state parity · 14:37 · running: true
+agent_reviewer · req_review · running · 1 child tool call: true
+Code search "run-state visibility" · 14:37 · pending permission: true
+# cargo test -p harness-tui in /workspace · 14:37 · failed · 900ms: true
+focus_marker: Spawn reviewer
+focus_render_state_blake3: df6a2617b17ee0f9505d8ec8c3b6f0124d89224ca4968a8b45935c40a0f525df
+focus_region_cells: row=31, col=9, height=7, width=44
+image: pty_native_tool_parity_states.png
+manifest_json: pty-manifests/transcript_shell/manifest.json
+manifest_jsonl: pty-manifests/transcript_shell/manifest.jsonl
+size_px: 2560x1440

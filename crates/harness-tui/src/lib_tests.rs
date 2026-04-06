@@ -5442,6 +5442,7 @@ fn failed_tool_rows_still_surface_error_summary() {
     ));
 
     let transcript = render_live_lines(&app, 120, 36);
+    assert!(transcript.contains("# false in /tmp/demo · failed"));
     assert!(transcript.contains("$ false"));
     assert!(transcript.contains("exit code: 1 stderr: permission denied"));
     assert!(!transcript.contains(r#"{"cmd":"false","cwd":"/tmp/demo"}"#));
