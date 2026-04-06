@@ -44,16 +44,6 @@ use pending_live::{
 const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS: usize = 72;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS: usize = 3;
-pub(crate) const SLASH_COMMANDS: [(&str, &str); 8] = [
-    ("new", "Return to the home shell"),
-    ("resume", "Continue a saved session"),
-    ("replay", "Replay a saved session"),
-    ("model", "Switch model"),
-    ("events", "Open the event log review"),
-    ("shell", "Return to the session shell"),
-    ("follow", "Toggle follow mode"),
-    ("exit", "Quit Harness"),
-];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolCallDisplayStatus {
@@ -3616,6 +3606,10 @@ impl AppState {
         (!query.chars().any(char::is_whitespace)).then_some(query)
     }
 
+    fn command_palette_seed_input(&self) -> String {
+        self.active_slash_query().unwrap_or_default().to_string()
+    }
+
     fn clear_slash_menu(&mut self) {
         self.slash_visible = false;
         self.slash_filtered.clear();
@@ -3645,15 +3639,15 @@ impl AppState {
         let slash_query = self.active_slash_query().unwrap_or_default().to_lowercase();
 
         self.slash_visible = true;
-        self.slash_filtered = SLASH_COMMANDS
-            .iter()
+        self.slash_filtered = Action::slash_commands()
+            .into_iter()
             .filter(|(command, _)| self.slash_command_available(command))
             .filter(|(command, description)| {
                 slash_query.is_empty()
                     || command.starts_with(&slash_query)
                     || description.to_lowercase().contains(&slash_query)
             })
-            .map(|(command, _)| (*command).to_string())
+            .map(|(command, _)| command.to_string())
             .collect();
         self.slash_selected = self
             .slash_selected
@@ -3665,8 +3659,8 @@ impl AppState {
             .trim()
             .strip_prefix('/')
             .and_then(|command| {
-                SLASH_COMMANDS.iter().find_map(|(name, _)| {
-                    (*name == command && self.slash_command_available(name)).then_some(*name)
+                Action::slash_commands().into_iter().find_map(|(name, _)| {
+                    (name == command && self.slash_command_available(name)).then_some(name)
                 })
             })
     }
@@ -4092,6 +4086,7 @@ impl AppState {
             details_drawer_open: self.details_drawer_open(),
             palette_visible: self.palette_visible,
             session_history_visible: self.session_history_visible,
+            model_switcher_visible: self.model_switcher_visible,
             permission_pending: self.active_permission().is_some(),
         })
     }
@@ -4793,15 +4788,26 @@ impl AppState {
                 let id = palette_command.id.to_lowercase();
                 let description = palette_command.description.to_lowercase();
                 let section = palette_command.section.label().to_lowercase();
+                let typed_commands = palette_command
+                    .typed_commands
+                    .iter()
+                    .map(|typed_command| typed_command.to_lowercase())
+                    .collect::<Vec<_>>();
                 let prefix_match = input.is_empty()
                     || label.starts_with(&input)
                     || id.starts_with(&input)
-                    || section.starts_with(&input);
+                    || section.starts_with(&input)
+                    || typed_commands
+                        .iter()
+                        .any(|typed_command| typed_command.starts_with(&input));
                 let contains_match = prefix_match
                     || label.contains(&input)
                     || id.contains(&input)
                     || description.contains(&input)
-                    || section.contains(&input);
+                    || section.contains(&input)
+                    || typed_commands
+                        .iter()
+                        .any(|typed_command| typed_command.contains(&input));
                 contains_match.then_some((
                     prefix_match,
                     palette_command.section,
@@ -5014,16 +5020,11 @@ impl AppState {
         self.palette_visible = true;
         self.session_history_visible = false;
         self.model_switcher_visible = false;
-        self.palette_input.clear();
-        self.palette_cursor = 0;
-        self.palette_filtered = self
-            .palette_commands()
-            .iter()
-            .map(|palette_command| palette_command.id.to_string())
-            .collect();
+        self.palette_input = self.command_palette_seed_input();
+        self.palette_cursor = self.palette_input.chars().count();
+        self.update_palette_filter();
         self.session_history_filtered.clear();
         self.model_filtered.clear();
-        self.palette_selected = 0;
         self.sync_slash_overlay();
     }
 
@@ -5037,13 +5038,13 @@ impl AppState {
 
     fn palette_command_available(&self, command_id: &str) -> bool {
         if command_id == "switch_model" {
-            return false;
+            return !self.replay_mode;
         }
 
         if self.startup_shell_visible() {
             matches!(
                 command_id,
-                "new_session" | "resume_session" | "replay_session" | "quit"
+                "new_session" | "resume_session" | "replay_session" | "switch_model" | "quit"
             )
         } else if matches!(command_id, "show_timestamps" | "hide_timestamps") {
             self.active_review_surface.is_none()

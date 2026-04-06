@@ -1194,6 +1194,27 @@ fn command_palette_preserves_typed_slash_input() {
 }
 
 #[cfg(test)]
+#[test]
+fn command_palette_seeds_existing_slash_query() {
+    let mut app = app::AppState::new_live(None, false, None);
+    for ch in "/re".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+
+    assert_eq!(app.prompt_buffer, "/re");
+    assert_eq!(app.palette_input, "re");
+    assert_eq!(
+        app.palette_filtered,
+        vec!["replay_session".to_string(), "resume_session".to_string()]
+    );
+}
+
+#[cfg(test)]
 fn exact_test_key(code: crossterm::event::KeyCode) -> crossterm::event::KeyEvent {
     crossterm::event::KeyEvent::new(code, crossterm::event::KeyModifiers::NONE)
 }
@@ -5878,6 +5899,7 @@ fn command_palette_renders_and_filters() {
             "resume_session".to_string(),
             "replay_session".to_string(),
             "open_event_log".to_string(),
+            "switch_model".to_string(),
             "toggle_follow".to_string(),
             "hide_thinking".to_string(),
             "show_timestamps".to_string(),
@@ -5892,6 +5914,8 @@ fn command_palette_renders_and_filters() {
     println!("OPEN\n{open_debug}");
     assert!(open_debug.contains("Command palette"));
     assert!(open_debug.contains("New session"));
+    assert!(open_debug.contains("/new"));
+    assert!(open_debug.contains("/model"));
     assert!(open_debug.contains("Open the review event log surface"));
 
     app.handle_key(key(crossterm::event::KeyCode::Char('n')));
@@ -5948,6 +5972,40 @@ fn command_palette_includes_session_history_entry() {
     assert!(rendered.contains("New session"));
     assert!(rendered.contains("Continue session"));
     assert!(rendered.contains("Replay session"));
+}
+
+#[cfg(test)]
+#[test]
+fn command_palette_switch_model_opens_visible_overlay() {
+    let mut app = app::AppState::new_startup(Vec::new(), None);
+    app.set_launch_metadata(
+        app::LaunchMetadata::from_model_ref("deep", "proxy:gpt-5.4")
+            .with_available_models(vec![
+                app::ModelOption::from_model_ref("deep", "proxy:gpt-5.4"),
+                app::ModelOption::from_model_ref("planner", "proxy:gpt-5.4-mini"),
+            ])
+            .with_mode_label("Demo"),
+    );
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "model".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    assert!(app.model_switcher_visible);
+    assert_eq!(
+        app.overlay_stack().top(),
+        Some(overlay::OverlayKind::CommandPalette)
+    );
+
+    let rendered = render_live_lines(&app, 120, 30);
+    assert!(rendered.contains("Switch model"));
+    assert!(rendered.contains("gpt-5.4"));
+    assert!(rendered.contains("Current first"));
 }
 
 #[cfg(test)]

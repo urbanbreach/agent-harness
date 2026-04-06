@@ -31,6 +31,7 @@ pub struct PaletteCommand {
     pub label: &'static str,
     pub description: &'static str,
     pub shortcut: &'static str,
+    pub typed_commands: &'static [&'static str],
     pub section: PaletteCommandSection,
 }
 
@@ -101,35 +102,40 @@ impl Action {
                 id: "new_session",
                 label: "New session",
                 description: "Start a fresh live session",
-                shortcut: "new",
+                shortcut: "",
+                typed_commands: &["/new"],
                 section: PaletteCommandSection::Suggested,
             },
             PaletteCommand {
                 id: "resume_session",
                 label: "Continue session",
                 description: "Continue a prior session when resumable",
-                shortcut: "resume",
+                shortcut: "",
+                typed_commands: &["/resume"],
                 section: PaletteCommandSection::Session,
             },
             PaletteCommand {
                 id: "replay_session",
                 label: "Replay session",
                 description: "Replay a previous session as read-only",
-                shortcut: "replay",
+                shortcut: "",
+                typed_commands: &["/replay"],
                 section: PaletteCommandSection::Session,
             },
             PaletteCommand {
                 id: "switch_model",
                 label: "Switch model",
                 description: "Browse available provider/model options",
-                shortcut: "model",
+                shortcut: "",
+                typed_commands: &["/model"],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "close_review_surface",
                 label: "Session shell",
                 description: "Return to the transcript-first session shell",
-                shortcut: "esc",
+                shortcut: "Esc",
+                typed_commands: &["/shell"],
                 section: PaletteCommandSection::Session,
             },
             PaletteCommand {
@@ -137,13 +143,15 @@ impl Action {
                 label: "Event log",
                 description: "Open the review event log surface",
                 shortcut: "",
+                typed_commands: &["/events"],
                 section: PaletteCommandSection::Session,
             },
             PaletteCommand {
                 id: "toggle_follow",
                 label: "Toggle follow",
                 description: "Toggle follow mode",
-                shortcut: "space",
+                shortcut: "Space",
+                typed_commands: &["/follow"],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -151,6 +159,7 @@ impl Action {
                 label: "Show thinking",
                 description: "Restore inline thinking rows in the transcript",
                 shortcut: "",
+                typed_commands: &[],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -158,6 +167,7 @@ impl Action {
                 label: "Hide thinking",
                 description: "Hide inline thinking rows in the transcript",
                 shortcut: "",
+                typed_commands: &[],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -165,6 +175,7 @@ impl Action {
                 label: "Show timestamps",
                 description: "Reveal user message timestamps in the transcript",
                 shortcut: "",
+                typed_commands: &[],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -172,6 +183,7 @@ impl Action {
                 label: "Hide timestamps",
                 description: "Hide user message timestamps in the transcript",
                 shortcut: "",
+                typed_commands: &[],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -179,6 +191,7 @@ impl Action {
                 label: "Show tool details",
                 description: "Show completed successful tools in the transcript",
                 shortcut: "",
+                typed_commands: &[],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -186,6 +199,7 @@ impl Action {
                 label: "Hide tool details",
                 description: "Hide completed successful tools in the transcript",
                 shortcut: "",
+                typed_commands: &[],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -193,6 +207,7 @@ impl Action {
                 label: "Show generic tool output",
                 description: "Expand generic tool payload blocks in the transcript",
                 shortcut: "",
+                typed_commands: &[],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -200,6 +215,7 @@ impl Action {
                 label: "Hide generic tool output",
                 description: "Collapse generic tool payload blocks in the transcript",
                 shortcut: "",
+                typed_commands: &[],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -207,6 +223,7 @@ impl Action {
                 label: "Expand turn results",
                 description: "Expand overflow tool output in the selected turn",
                 shortcut: "",
+                typed_commands: &[],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -214,6 +231,7 @@ impl Action {
                 label: "Collapse turn results",
                 description: "Collapse overflow tool output in the selected turn",
                 shortcut: "",
+                typed_commands: &[],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -221,6 +239,7 @@ impl Action {
                 label: "Use stacked diffs",
                 description: "Force unified stacked transcript diffs",
                 shortcut: "",
+                typed_commands: &[],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -228,13 +247,15 @@ impl Action {
                 label: "Use split diffs",
                 description: "Allow side-by-side transcript diffs when wide",
                 shortcut: "",
+                typed_commands: &[],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "quit",
                 label: "Quit",
                 description: "Quit the application",
-                shortcut: "q",
+                shortcut: "Q",
+                typed_commands: &["/exit"],
                 section: PaletteCommandSection::System,
             },
         ]
@@ -370,6 +391,15 @@ impl Action {
             .unwrap_or("")
     }
 
+    pub fn palette_command_typed_commands(command: &str) -> &'static [&'static str] {
+        Self::grouped_palette_commands()
+            .iter()
+            .find_map(|palette_command| {
+                (palette_command.id == command).then_some(palette_command.typed_commands)
+            })
+            .unwrap_or(&[])
+    }
+
     pub fn palette_command_section(command: &str) -> Option<PaletteCommandSection> {
         Self::grouped_palette_commands()
             .iter()
@@ -380,6 +410,22 @@ impl Action {
 
     pub fn grouped_palette_commands_for_overlay() -> &'static [PaletteCommand] {
         Self::grouped_palette_commands()
+    }
+
+    pub fn slash_commands() -> Vec<(&'static str, &'static str)> {
+        Self::grouped_palette_commands()
+            .iter()
+            .filter_map(|palette_command| {
+                palette_command
+                    .typed_commands
+                    .iter()
+                    .find_map(|typed_command| {
+                        typed_command
+                            .strip_prefix('/')
+                            .map(|command| (command, palette_command.description))
+                    })
+            })
+            .collect()
     }
 }
 

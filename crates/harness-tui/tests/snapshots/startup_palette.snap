@@ -7,14 +7,15 @@
 
 
 
-
-
-                 Command palette
+                 Command palette · 5 matches
 
                    > █
+                   Filter label, /command, section, or description · 5 typed com…
                    Suggested
-                   › New session  Start a fresh live session                  new
+                   › New session  Start a fresh live session                 /new
                    Session
-                     Continue session  Continue a prior session when res…  resume
-                     Replay session  Replay a previous session as read-o…  replay
+                     Continue session  Continue a prior session when re…  /resume
+                     Replay session  Replay a previous session as read-…  /replay
+                   Agent
+                     Switch model  Browse available provider/model optio…  /model
                    System

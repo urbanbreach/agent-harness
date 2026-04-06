@@ -38,8 +38,10 @@ fn render_command_palette_overlay(
 
     let title = if app.session_history_visible {
         session_history_overlay_title(app)
+    } else if app.model_switcher_visible {
+        model_switcher_overlay_title(app)
     } else {
-        "Command palette".to_string()
+        command_palette_overlay_title(app)
     };
     let Some(inner) = render_overlay_surface(frame, theme, overlay, &title) else {
         return;
@@ -49,14 +51,44 @@ fn render_command_palette_overlay(
 
     if app.session_history_visible {
         render_session_history_overlay(frame, app, theme, inner, card_surface);
-    } else {
+    } else if app.model_switcher_visible {
         let sections = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Min(0)])
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Min(0),
+            ])
             .split(inner);
 
         render_command_palette_input(frame, app, theme, sections[0]);
-        render_command_palette_list(frame, app, theme, sections[1]);
+        render_overlay_scope_line(
+            frame,
+            theme,
+            sections[1],
+            card_surface,
+            &model_switcher_scope_line(app),
+        );
+        render_model_switcher_list(frame, app, theme, sections[2]);
+    } else {
+        let sections = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Min(0),
+            ])
+            .split(inner);
+
+        render_command_palette_input(frame, app, theme, sections[0]);
+        render_overlay_scope_line(
+            frame,
+            theme,
+            sections[1],
+            card_surface,
+            &command_palette_scope_line(app),
+        );
+        render_command_palette_list(frame, app, theme, sections[2]);
     }
 }
 
@@ -170,6 +202,63 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
     frame.render_widget(Paragraph::new(line), area);
 }
 
+fn render_overlay_scope_line(
+    frame: &mut Frame,
+    theme: &Theme,
+    area: Rect,
+    card_surface: Color,
+    text: &str,
+) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    frame.render_widget(
+        Paragraph::new(truncate_plain_text(text, usize::from(area.width)))
+            .style(Style::default().fg(theme.text.secondary).bg(card_surface)),
+        area,
+    );
+}
+
+fn command_palette_overlay_title(app: &AppState) -> String {
+    let total = app.palette_filtered.len();
+    format!(
+        "Command palette · {total} match{}",
+        if total == 1 { "" } else { "es" }
+    )
+}
+
+fn command_palette_scope_line(app: &AppState) -> String {
+    let typed_surface = app
+        .palette_filtered
+        .iter()
+        .filter(|command| !Action::palette_command_typed_commands(command.as_str()).is_empty())
+        .count();
+    if typed_surface == 0 {
+        "Filter label, section, or description · Enter run · Esc close".to_string()
+    } else {
+        format!(
+            "Filter label, /command, section, or description · {typed_surface} typed command{} visible · Enter run · Esc close",
+            if typed_surface == 1 { "" } else { "s" }
+        )
+    }
+}
+
+fn model_switcher_overlay_title(app: &AppState) -> String {
+    let total = app.model_filtered.len();
+    format!(
+        "Switch model · {total} option{}",
+        if total == 1 { "" } else { "s" }
+    )
+}
+
+fn model_switcher_scope_line(app: &AppState) -> String {
+    let current = app.current_model_label();
+    format!(
+        "Current first: {current} · filter profile/provider/model/variant · Enter switch · Esc close"
+    )
+}
+
 fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
     if area.width == 0 || area.height == 0 {
         return;
@@ -178,7 +267,7 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
     if app.palette_filtered.is_empty() {
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
-                "No commands",
+                "No commands match this filter.",
                 Style::default().fg(theme.text.secondary),
             ))),
             area,
@@ -231,7 +320,7 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
                     Paragraph::new(command_palette_row(
                         Action::palette_command_label(command),
                         palette_command_description(command),
-                        Action::palette_command_shortcut(command),
+                        &command_palette_hints(command),
                         is_selected,
                         theme,
                         row_area.width,
@@ -240,6 +329,65 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
                 );
             }
         }
+    }
+}
+
+fn render_model_switcher_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    if app.model_filtered.is_empty() {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                "No models match this filter.",
+                Style::default().fg(theme.text.secondary),
+            ))),
+            area,
+        );
+        return;
+    }
+
+    let visible_rows = usize::from(area.height);
+    let selected = app
+        .model_selected
+        .min(app.model_filtered.len().saturating_sub(1));
+    let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
+
+    for (visible_index, entry_index) in app
+        .model_filtered
+        .iter()
+        .enumerate()
+        .skip(scroll)
+        .take(visible_rows)
+    {
+        let Some(model) = app.model_options.get(*entry_index) else {
+            continue;
+        };
+
+        let row_y = area
+            .y
+            .saturating_add(u16::try_from(visible_index - scroll).unwrap_or(u16::MAX));
+        let row_area = Rect::new(area.x, row_y, area.width, 1);
+        let is_selected = visible_index == selected;
+        if is_selected {
+            frame.render_widget(
+                Block::default().style(ui_chrome::overlay_focus_row_style(theme)),
+                row_area,
+            );
+        }
+
+        frame.render_widget(
+            Paragraph::new(command_palette_row(
+                model.display_label().unwrap_or(model.model.as_str()),
+                &model_switcher_description(model, app.is_current_model_option(model)),
+                "",
+                is_selected,
+                theme,
+                row_area.width,
+            )),
+            row_area,
+        );
     }
 }
 
@@ -270,6 +418,34 @@ fn palette_overlay_rows(app: &AppState) -> Vec<PaletteOverlayRow<'_>> {
     }
 
     rows
+}
+
+fn command_palette_hints(command: &str) -> String {
+    let mut hints = Vec::new();
+    let shortcut = Action::palette_command_shortcut(command);
+    if !shortcut.is_empty() {
+        hints.push(shortcut.to_string());
+    }
+    hints.extend(
+        Action::palette_command_typed_commands(command)
+            .iter()
+            .map(|typed_command| typed_command.to_string()),
+    );
+    hints.join(" · ")
+}
+
+fn model_switcher_description(model: &crate::app::ModelOption, is_current: bool) -> String {
+    let mut segments = vec![model.profile.clone(), model.provider.clone()];
+    if let Some(variant) = model.variant() {
+        segments.push(variant.to_string());
+    }
+    if let Some(token_window) = model.token_window_label() {
+        segments.push(token_window.to_string());
+    }
+    if is_current {
+        segments.push("current".to_string());
+    }
+    segments.join(" · ")
 }
 
 fn command_palette_row(
