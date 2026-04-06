@@ -105,6 +105,12 @@ pub(crate) const OFFLINE_VISUAL_EVIDENCE_CONTRACTS: &[OfflineVisualEvidenceContr
     },
     OfflineVisualEvidenceContract {
         family: "transcript_shell",
+        state: "thinking_trace",
+        png: "pty_native_tool_parity_thinking.png",
+        snapshot: Some("native_tool_parity_thinking"),
+    },
+    OfflineVisualEvidenceContract {
+        family: "transcript_shell",
         state: "happy_path",
         png: "pty_native_tool_parity_fetch_row.png",
         snapshot: Some("native_tool_parity_fetch_row"),

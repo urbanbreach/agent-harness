@@ -79,6 +79,7 @@ PTY E2E renders terminal cells to deterministic PNG images at explicit lifecycle
 - `pty_operator_sidebar_primary.png`
 - `pty_operator_sidebar_session_native.png`
 - `pty_native_tool_parity_task_row.png`
+- `pty_native_tool_parity_thinking.png`
 - `pty_native_tool_parity_fetch_row.png`
 - `pty_native_tool_parity_dense.png`
 - `pty_replay_read_only.png`

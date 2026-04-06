@@ -203,29 +203,30 @@ fn transcript_turn_sections_keep_nested_tool_details() {
         .unwrap_or_else(|| panic!("assistant body row\n{rendered}"));
     let assistant_footer = find_line_containing_from(&lines, body_row + 1, "Assistant")
         .unwrap_or_else(|| panic!("assistant footer\n{rendered}"));
-    let thinking_row = find_line_containing_all_from(
-        &lines,
-        assistant_footer + 1,
-        &["Thinking:", "tool planning"],
-    )
-    .unwrap_or_else(|| panic!("thinking row\n{rendered}"));
-    let tool_row = find_line_containing_all_from(&lines, thinking_row + 1, &["$ false"])
+    let thinking_header_row =
+        find_line_containing_all_from(&lines, assistant_footer + 1, &["Thinking trace", "trace"])
+            .unwrap_or_else(|| panic!("thinking header row\n{rendered}"));
+    let thinking_body_row =
+        find_line_containing_from(&lines, thinking_header_row + 1, "tool planning")
+            .unwrap_or_else(|| panic!("thinking body row\n{rendered}"));
+    let tool_row = find_line_containing_all_from(&lines, thinking_body_row + 1, &["$ false"])
         .unwrap_or_else(|| panic!("tool row\n{rendered}"));
     let error_row =
         find_line_containing_all_from(&lines, tool_row + 1, &["error", "tool call failed"])
             .unwrap_or_else(|| panic!("tool error row\n{rendered}"));
 
     assert!(body_row < assistant_footer);
-    assert!(assistant_footer < thinking_row);
-    assert!(body_row < thinking_row);
-    assert!(thinking_row < tool_row);
+    assert!(assistant_footer < thinking_header_row);
+    assert!(thinking_header_row < thinking_body_row);
+    assert!(body_row < thinking_header_row);
+    assert!(thinking_body_row < tool_row);
     assert!(tool_row < error_row);
     assert!(body_row < error_row);
 
     let assistant_body_column = first_alphanumeric_column(lines[body_row]);
     let assistant_body_rail = first_non_whitespace_column(lines[body_row]);
     let assistant_footer_column = first_alphanumeric_column(lines[assistant_footer]);
-    let nested_detail_columns = [thinking_row, tool_row, error_row]
+    let nested_detail_columns = [tool_row, error_row]
         .into_iter()
         .map(|row| first_alphanumeric_column(lines[row]))
         .collect::<Vec<_>>();
@@ -236,6 +237,11 @@ fn transcript_turn_sections_keep_nested_tool_details() {
             .iter()
             .all(|column| *column > assistant_body_column),
         "nested tool details and error rows should remain deeper than the assistant body rail\n{rendered}"
+    );
+    assert!(
+        first_non_whitespace_column(lines[thinking_header_row]) >= assistant_body_rail
+            && first_non_whitespace_column(lines[thinking_body_row]) >= assistant_body_rail,
+        "thinking trace card should stay aligned with the assistant turn chrome\n{rendered}"
     );
 }
 
@@ -4546,7 +4552,7 @@ fn module_live_shell_redesign_preserves_replay_overlay_and_permission_parity() {
             });
     let user_row = find_line_containing(&replay_lines, "Explain the refactor")
         .unwrap_or_else(|| panic!("replay shell should preserve the user turn\n{replay_render}"));
-    let thinking_row = find_line_containing_from(&replay_lines, user_row + 1, "Thinking:")
+    let thinking_row = find_line_containing_from(&replay_lines, user_row + 1, "Thinking trace")
         .unwrap_or_else(|| {
             panic!("replay shell should preserve nested reasoning\n{replay_render}")
         });
@@ -5224,25 +5230,27 @@ fn transcript_shell_remains_scannable_without_bubble_cards() {
         "Found the transcript renderer and the composer chrome.",
     )
     .expect("assistant body row");
-    let thinking_row = find_line_containing_all_from(
-        &lines,
-        body_row + 1,
-        &["Thinking:", "Drafting a document-like plan"],
-    )
-    .expect("thinking row");
+    let thinking_row =
+        find_line_containing_all_from(&lines, body_row + 1, &["Thinking trace", "trace"])
+            .expect("thinking header row");
+    let thinking_body_row =
+        find_line_containing_from(&lines, thinking_row + 1, "Drafting a document-like plan")
+            .expect("thinking body row");
     let tool_row = find_line_containing_all_from(
         &lines,
-        thinking_row + 1,
+        thinking_body_row + 1,
         &["Read src/ui.rs", "[offset=1, limit=24]"],
     )
     .expect("tool row");
 
     assert!(prompt_row < body_row);
     assert!(body_row < thinking_row);
-    assert!(thinking_row < tool_row);
+    assert!(thinking_row < thinking_body_row);
+    assert!(thinking_body_row < tool_row);
     assert!(
-        first_alphanumeric_column(lines[thinking_row]) > first_alphanumeric_column(lines[body_row]),
-        "inline thinking should remain nested deeper than the assistant body rail\n{rendered}"
+        first_non_whitespace_column(lines[thinking_row])
+            >= first_non_whitespace_column(lines[body_row]),
+        "thinking trace header should stay aligned with the assistant turn chrome\n{rendered}"
     );
     assert!(
         first_alphanumeric_column(lines[tool_row]) > first_alphanumeric_column(lines[body_row]),
@@ -5318,26 +5326,27 @@ fn nested_transcript_rows_preserve_prefix_on_wrapped_continuations() {
         "Found the transcript renderer and the composer chrome.",
     )
     .expect("assistant body row");
-    let thinking_row = find_line_containing_all_from(
-        &lines,
-        body_row + 1,
-        &["Thinking:", "Drafting a document-like plan"],
-    )
-    .expect("wrapped thinking row");
-    let tool_row = find_line_containing_all_from(&lines, thinking_row + 1, &["Read src/ui.rs"])
-        .expect("tool row");
-    let continuation_row = (thinking_row + 1..tool_row)
+    let thinking_row =
+        find_line_containing_all_from(&lines, body_row + 1, &["Thinking trace", "trace"])
+            .expect("wrapped thinking header row");
+    let thinking_body_row =
+        find_line_containing_from(&lines, thinking_row + 1, "Drafting a document-like plan")
+            .expect("wrapped thinking body row");
+    let tool_row =
+        find_line_containing_all_from(&lines, thinking_body_row + 1, &["Read src/ui.rs"])
+            .expect("tool row");
+    let continuation_row = (thinking_body_row + 1..tool_row)
         .find(|row| !lines[*row].trim().is_empty())
         .expect("wrapped continuation row");
 
     assert!(
-        first_alphanumeric_column(lines[thinking_row]) > first_alphanumeric_column(lines[body_row]),
-        "initial nested thinking row should stay deeper than the assistant body\n{rendered}"
+        lines[thinking_body_row].trim_start().starts_with("│ "),
+        "wrapped thinking body should stay inside the card frame\n{rendered}"
     );
     assert_eq!(
-        first_alphanumeric_column(lines[thinking_row]),
-        first_alphanumeric_column(lines[continuation_row]),
-        "wrapped nested continuation should repeat the nested prefix and rail\n{rendered}"
+        first_non_whitespace_column(lines[thinking_body_row]),
+        first_non_whitespace_column(lines[continuation_row]),
+        "wrapped thinking continuation should repeat the same card frame column\n{rendered}"
     );
 }
 
@@ -5347,16 +5356,19 @@ fn thinking_visibility_toggle_hides_and_restores_inline_thinking_rows() {
     let mut app = rich_transcript_fixture_app();
 
     let initial = render_live_lines(&app, 120, 30);
-    assert!(initial.contains("Thinking: · Drafting a document-like plan"));
+    assert!(initial.contains("Thinking trace · trace"));
+    assert!(initial.contains("Drafting a document-like plan"));
 
     run_palette_command(&mut app, "hide thinking");
     let hidden = render_live_lines(&app, 120, 30);
-    assert!(!hidden.contains("Thinking: · Drafting a document-like plan"));
+    assert!(!hidden.contains("Thinking trace · trace"));
+    assert!(!hidden.contains("Drafting a document-like plan"));
     assert!(hidden.contains("Found the transcript renderer and the composer chrome."));
 
     run_palette_command(&mut app, "show thinking");
     let restored = render_live_lines(&app, 120, 30);
-    assert!(restored.contains("Thinking: · Drafting a document-like plan"));
+    assert!(restored.contains("Thinking trace · trace"));
+    assert!(restored.contains("Drafting a document-like plan"));
 }
 
 #[cfg(test)]

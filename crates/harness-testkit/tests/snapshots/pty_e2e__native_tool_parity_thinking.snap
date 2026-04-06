@@ -1,0 +1,15 @@
+---
+source: crates/harness-testkit/tests/pty_e2e.rs
+expression: "checkpoint_visual_snapshot(&screen,\n&[\"Bring native tool parity inline\", \"Thinking trace · trace\",\n\"Drafting the inline parity pass.\",\n\"Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s\",],\n&thinking_visual,)"
+---
+Bring native tool parity inline: true
+Thinking trace · trace: true
+Drafting the inline parity pass.: true
+Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s: true
+focus_marker: Thinking trace
+focus_render_state_blake3: 26bfd962909aa15029e5f8c4f142aa655edc0810292585351f8d6c0627e9bf59
+focus_region_cells: row=9, col=6, height=5, width=40
+image: pty_native_tool_parity_thinking.png
+manifest_json: pty-manifests/transcript_shell/manifest.json
+manifest_jsonl: pty-manifests/transcript_shell/manifest.jsonl
+size_px: 2560x1440

@@ -140,6 +140,7 @@ enum TranscriptBodyBlock {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TranscriptLabeledTextSection {
+    label: &'static str,
     text: String,
 }
 
@@ -217,6 +218,7 @@ const TRANSCRIPT_ASSISTANT_BODY_PREFIX: &str = "   ";
 const TRANSCRIPT_NESTED_INDENT: &str = "  ";
 const TRANSCRIPT_OPCODE_EDIT_INDENT: &str = "    ";
 const TRANSCRIPT_RAIL_GLYPH: &str = "┃";
+const THINKING_TRACE_LABEL: &str = "Thinking trace";
 
 pub(super) fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     if !app.replay_mode {
@@ -410,6 +412,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
 
     let thinking = (thinking_visible && !activity.thinking_text.trim().is_empty()).then(|| {
         TranscriptLabeledTextSection {
+            label: THINKING_TRACE_LABEL,
             text: activity.thinking_text.clone(),
         }
     });
@@ -1711,22 +1714,7 @@ fn build_assistant_render_surfaces(
     }
 
     if let Some(thinking) = &turn.thinking {
-        append_labeled_text_block(
-            &mut context_lines,
-            &thinking.text,
-            LabeledTextBlockStyle {
-                indent: TRANSCRIPT_NESTED_INDENT,
-                label: "Thinking:",
-                rail_color: transcript_nested_rail_color(theme),
-                surface: transcript_nested_surface(theme, base_surface),
-                label_style: Style::default()
-                    .fg(theme.text.secondary)
-                    .add_modifier(Modifier::ITALIC),
-                body_style: subdued_payload_style(theme),
-            },
-            theme,
-            width,
-        );
+        append_thinking_trace_block(&mut context_lines, thinking, theme, width, base_surface);
     }
 
     for tool_call in &turn.tool_calls {
@@ -1928,6 +1916,62 @@ fn append_tool_call_message_block(
             transcript_surface_content_width(width, false),
         );
     }
+}
+
+fn append_thinking_trace_block(
+    lines: &mut Vec<Line<'static>>,
+    thinking: &TranscriptLabeledTextSection,
+    theme: &Theme,
+    width: u16,
+    base_surface: Color,
+) {
+    let indent = TRANSCRIPT_OPCODE_EDIT_INDENT;
+    let content_width = transcript_surface_content_width(width, false);
+    let surface = thinking_trace_surface(theme, base_surface);
+    let rail_color = thinking_trace_rail_color(theme);
+    let mut block_lines = Vec::new();
+
+    append_surface_row(
+        &mut block_lines,
+        indent,
+        surface,
+        vec![
+            Span::raw(" "),
+            Span::styled(
+                thinking.label.to_string(),
+                Style::default()
+                    .fg(thinking_trace_label_color(theme))
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" · trace", muted_meta_style(theme)),
+        ],
+        content_width,
+    );
+
+    for row in thinking.text.split('\n') {
+        let spans = if row.is_empty() {
+            vec![Span::raw(" ")]
+        } else {
+            let mut spans = vec![Span::raw(" ")];
+            spans.extend(parse_inline_markdown_spans(
+                row,
+                subdued_payload_style(theme),
+                theme.text.secondary,
+                theme,
+            ));
+            spans
+        };
+        append_surface_row(&mut block_lines, indent, surface, spans, content_width);
+    }
+
+    decorate_card_surface_lines(
+        &mut block_lines,
+        theme,
+        rail_color,
+        surface,
+        surface_prefix_width(indent),
+    );
+    lines.extend(block_lines);
 }
 
 fn inline_tool_color(tool_call: &TranscriptToolCallSection, theme: &Theme) -> Color {
@@ -3073,6 +3117,18 @@ fn transcript_nested_surface(_theme: &Theme, base_surface: Color) -> Color {
     transcript_flat_surface(base_surface)
 }
 
+fn thinking_trace_label_color(theme: &Theme) -> Color {
+    theme.text.accent
+}
+
+fn thinking_trace_rail_color(theme: &Theme) -> Color {
+    thinking_trace_label_color(theme)
+}
+
+fn thinking_trace_surface(theme: &Theme, base_surface: Color) -> Color {
+    transcript_emphasized_surface(theme, base_surface)
+}
+
 fn build_user_surface_metadata_line(
     metadata: &str,
     theme: &Theme,
@@ -3472,8 +3528,11 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
     };
 
     assert_eq!(
-        turn.thinking.as_ref().map(|block| block.text.as_str()),
-        Some("tool planning")
+        turn.thinking.as_ref(),
+        Some(&TranscriptLabeledTextSection {
+            label: THINKING_TRACE_LABEL,
+            text: "tool planning".to_string(),
+        })
     );
     assert_eq!(
         turn.body_blocks,
@@ -3563,7 +3622,7 @@ pub(crate) fn exact_test_transcript_answer_precedes_nested_context() {
         .iter()
         .enumerate()
         .skip(answer_row + 1)
-        .find_map(|(index, line)| line.contains("Thinking:").then_some(index))
+        .find_map(|(index, line)| line.contains(THINKING_TRACE_LABEL).then_some(index))
         .expect("thinking row");
     let tool_row = lines
         .iter()
@@ -3574,6 +3633,49 @@ pub(crate) fn exact_test_transcript_answer_precedes_nested_context() {
 
     assert!(answer_row < thinking_row);
     assert!(thinking_row < tool_row);
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_transcript_thinking_trace_uses_nested_card_frame() {
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-thinking-frame",
+        ActivityStatus::Done,
+        "assistant answer",
+    );
+    entry.thinking_text = "working through the plan".to_string();
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+
+    let lines = build_transcript_lines_for_width(&app, &Theme::default(), 80)
+        .into_iter()
+        .map(|line| {
+            line.spans
+                .into_iter()
+                .map(|span| span.content.into_owned())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>();
+
+    let header_row = lines
+        .iter()
+        .position(|line| line.trim_start().starts_with("╭─  Thinking trace · trace"))
+        .expect("thinking trace header row");
+    let body_row = lines
+        .iter()
+        .position(|line| {
+            line.trim_start()
+                .starts_with("╰─  working through the plan")
+        })
+        .expect("thinking trace body row");
+
+    assert_eq!(body_row, header_row + 1);
+    assert!(
+        !lines
+            .iter()
+            .any(|line| line.contains("Thinking trace · working through the plan")),
+        "thinking trace should no longer render as a single labeled rail row\n{}",
+        lines.join("\n")
+    );
 }
 
 #[cfg(test)]
@@ -4352,6 +4454,11 @@ mod tests {
     #[test]
     fn transcript_answer_precedes_nested_context() {
         exact_test_transcript_answer_precedes_nested_context();
+    }
+
+    #[test]
+    fn transcript_thinking_trace_uses_nested_card_frame() {
+        exact_test_transcript_thinking_trace_uses_nested_card_frame();
     }
 
     #[test]

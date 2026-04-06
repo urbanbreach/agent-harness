@@ -809,6 +809,20 @@ fn native_tool_parity_pty_lane() {
         ],
     )
     .expect("capture native tool parity task-row image");
+    let thinking_visual = capture_manifest_backed_visual_checkpoint(
+        "transcript_shell",
+        "native_tool_parity_thinking",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("Thinking trace", 40, 5),
+        &[
+            "Bring native tool parity inline",
+            "Thinking trace · trace",
+            "Drafting the inline parity pass.",
+            "Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s",
+        ],
+    )
+    .expect("capture native tool parity thinking image");
     let fetch_visual = capture_manifest_backed_visual_checkpoint(
         "transcript_shell",
         "native_tool_parity_fetch_row",
@@ -825,6 +839,8 @@ fn native_tool_parity_pty_lane() {
     .expect("capture native tool parity fetch-row image");
 
     assert!(screen.contains("Bring native tool parity inline"));
+    assert!(screen.contains("Thinking trace · trace"));
+    assert!(screen.contains("Drafting the inline parity pass."));
     assert!(screen.contains("Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s"));
     assert!(screen.contains("Compat alias · read → fs.read"));
     assert!(screen.contains("Spawn researcher · audit transcript parity · 14:36 · 1.6s"));
@@ -843,6 +859,7 @@ fn native_tool_parity_pty_lane() {
     assert!(!screen.contains("Event log"));
     assert!(!screen.contains("Keyboard Shortcuts:"));
     assert!(visual_dir.join(&task_visual.file_name).exists());
+    assert!(visual_dir.join(&thinking_visual.file_name).exists());
     assert!(visual_dir.join(&fetch_visual.file_name).exists());
     insta::assert_snapshot!(
         "native_tool_parity_task_row",
@@ -855,6 +872,19 @@ fn native_tool_parity_pty_lane() {
                 "foreground · agent_worker · req_child · completed · 3 child tool calls",
             ],
             &task_visual,
+        )
+    );
+    insta::assert_snapshot!(
+        "native_tool_parity_thinking",
+        checkpoint_visual_snapshot(
+            &screen,
+            &[
+                "Bring native tool parity inline",
+                "Thinking trace · trace",
+                "Drafting the inline parity pass.",
+                "Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s",
+            ],
+            &thinking_visual,
         )
     );
     insta::assert_snapshot!(

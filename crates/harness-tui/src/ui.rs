@@ -909,12 +909,16 @@ mod tests {
             .find("Found the transcript renderer and the composer chrome.")
             .expect("answer text");
         let thinking_index = transcript
-            .find("Thinking: · Drafting a document-like plan")
-            .expect("thinking summary");
+            .find("Thinking trace · trace")
+            .expect("thinking header");
+        let thinking_body_index = transcript
+            .find("Drafting a document-like plan")
+            .expect("thinking body");
         let tool_index = transcript.find("Read src/ui.rs").expect("tool summary");
 
         assert!(answer_index < thinking_index);
-        assert!(thinking_index < tool_index);
+        assert!(thinking_index < thinking_body_index);
+        assert!(thinking_body_index < tool_index);
     }
 
     #[test]

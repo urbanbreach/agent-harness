@@ -187,14 +187,15 @@ Harness now covers these cases directly in the transcript layer:
 
 The remaining gap is narrower: Opencode still has richer per-tool iconography and some content-specific affordances beyond the current harness titles and follow-on rows.
 
-### 13. Harness thinking rows are still plainer than Opencode’s transcript treatment
+### 13. Harness thinking rows now read as a dedicated transcript callout, with narrower polish headroom
 
 This gap should be read narrowly. Opencode TUI also uses a global thinking toggle, so this is not a claim of completely different structure. The gap is in richness and presentation:
 
 - Opencode exposes explicit `thinking_visibility` state in the TUI route (`inspirations/opencode/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx:153-155`)
 - harness also supports show/hide thinking globally (`crates/harness-tui/src/app.rs:961-963`, `3205`, `3348-3350`)
+- harness now labels the block as `Thinking trace`, gives it a dedicated emphasized nested surface, and covers it in the deterministic PTY transcript-shell evidence lane (`crates/harness-tui/src/ui_transcript.rs`; `crates/harness-testkit/tests/pty_e2e.rs`)
 
-But harness thinking remains a plain labeled text section (`crates/harness-tui/src/ui_transcript.rs:374-378`, `1060+`) and reads less like a deliberate first-class transcript element than Opencode’s overall treatment.
+The remaining gap is narrower than before: harness thinking now reads as a first-class transcript element, but Opencode still has some content-specific polish headroom beyond the current label, surface, and spacing treatment.
 
 ## Cross-repo contradictions and verification debt
 

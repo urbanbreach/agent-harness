@@ -8,7 +8,7 @@ Spawn researcher · audit transcript parity · 14:36 · 1.6s: true
 foreground · agent_worker · req_child · completed · 3 child tool calls: true
 focus_marker: Spawn researcher
 focus_render_state_blake3: 687386a6721d5c003918b422f99eb52d131080924e4ece1d36335a7579474274
-focus_region_cells: row=15, col=9, height=6, width=34
+focus_region_cells: row=16, col=9, height=6, width=34
 image: pty_native_tool_parity_task_row.png
 manifest_json: pty-manifests/transcript_shell/manifest.json
 manifest_jsonl: pty-manifests/transcript_shell/manifest.jsonl
