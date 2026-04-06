@@ -131,6 +131,22 @@ impl Action {
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
+                id: "use_opencode_dark_theme",
+                label: "Use Opencode Dark theme",
+                description: "Switch the shell palette to the default parity theme",
+                shortcut: "",
+                typed_commands: &[],
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "use_graphite_dusk_theme",
+                label: "Use Graphite Dusk theme",
+                description: "Switch the shell palette to a cooler dusk variant",
+                shortcut: "",
+                typed_commands: &[],
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
                 id: "close_review_surface",
                 label: "Session shell",
                 description: "Return to the transcript-first session shell",
@@ -306,6 +322,14 @@ impl Action {
             ("resume_session", "Continue a prior session when resumable"),
             ("replay_session", "Replay a previous session as read-only"),
             ("switch_model", "Browse available provider/model options"),
+            (
+                "use_opencode_dark_theme",
+                "Switch the shell palette to the default parity theme",
+            ),
+            (
+                "use_graphite_dusk_theme",
+                "Switch the shell palette to a cooler dusk variant",
+            ),
             (
                 "close_review_surface",
                 "Return to the transcript-first session shell",

@@ -14,6 +14,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 
 use crate::app::{AppState, LaunchMetadata, SessionHistoryEntry, UiIntent};
 use crate::event::{self, poll};
+use crate::theme::ThemePreset;
 use crate::ui;
 
 fn recover_mutex_lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -61,6 +62,7 @@ pub struct TuiOptions {
     pub exit_on_finish: bool,
     pub on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
     pub keybindings: Option<std::collections::BTreeMap<String, String>>,
+    pub theme_preset: ThemePreset,
 }
 
 impl TuiOptions {
@@ -78,6 +80,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         exit_on_finish,
         on_ui_intent,
         keybindings: _,
+        theme_preset,
     } = options;
 
     let (mut app, live_updates) = match mode {
@@ -85,6 +88,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             session_history_entries,
         } => {
             let mut app = AppState::new_startup(session_history_entries, on_ui_intent);
+            app.set_theme_preset(theme_preset);
             if let Some(bindings) = keybindings.as_ref() {
                 app.apply_keybindings(bindings.clone());
             }
@@ -92,6 +96,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         }
         TuiMode::Replay { run_dir, events } => {
             let mut app = AppState::new_replay(run_dir, events);
+            app.set_theme_preset(theme_preset);
             if let Some(launch_metadata) = take_pending_replay_launch_metadata() {
                 app.set_launch_metadata(launch_metadata);
             }
@@ -106,6 +111,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             update_rx,
         } => {
             let mut app = AppState::new_live(Some(run_dir), exit_on_finish, on_ui_intent);
+            app.set_theme_preset(theme_preset);
             if let Some(bindings) = keybindings.as_ref() {
                 app.apply_keybindings(bindings.clone());
             }
@@ -242,6 +248,7 @@ pub fn run_tui() -> Result<()> {
         exit_on_finish: false,
         on_ui_intent: None,
         keybindings: None,
+        theme_preset: ThemePreset::OpencodeDark,
     })
 }
 

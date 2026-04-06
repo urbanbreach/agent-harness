@@ -1,5 +1,6 @@
 use harness_tui::theme::{
     ChromeMode, DividerIntensity, ShellBreakpoints, ShellGeometryTarget, SpacingDensity, Theme,
+    ThemePreset,
 };
 
 const UI_CHROME: &str = include_str!("../src/ui_chrome.rs");
@@ -88,6 +89,18 @@ fn default_theme_matches_opencode_dark_contract() {
 
     assert_eq!(default, opencode_dark);
     assert_eq!(default.token_families(), opencode_dark.token_families());
+}
+
+#[test]
+fn theme_presets_keep_geometry_but_change_palette() {
+    let default = ThemePreset::OpencodeDark.theme();
+    let graphite = ThemePreset::GraphiteDusk.theme();
+
+    assert_eq!(ThemePreset::OpencodeDark.label(), "Opencode Dark");
+    assert_eq!(ThemePreset::GraphiteDusk.label(), "Graphite Dusk");
+    assert_eq!(default.live_shell, graphite.live_shell);
+    assert_ne!(default.surface, graphite.surface);
+    assert_ne!(default.text, graphite.text);
 }
 
 #[test]

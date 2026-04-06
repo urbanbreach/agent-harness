@@ -3,28 +3,28 @@
                                                                                                                                                                                     Export bundle · run_fixture/
   ╭─ Tool summaries are now easier to scan, and edits stay inline.                                                                                                                  Current runtime: default · model-1
   ╰─ ● Assistant · model-1 · 14ms                                                                                                                                                   Provider mock
-                                                                                                                                                                                    0 active todos · 1 modified file
-     → Read src/ui.rs [offset=1, limit=24] · completed · 2ms
-      ↳ Loaded src/ui.rs                                                                                                                                                            Context
-     ┃ ▸ ← Patched crates/harness-tui/src/ui.rs · completed · 4ms                                                                                                                   turn 1 · ready for next turn
-      crates/harness-tui/src/ui.rs · +1 -1
-      @@ -44,8 +44,7 @@                                                                                                                                                             Modified Files · 1
-        use ui_secondary::{                                                                 │   use ui_secondary::{                                                                 crates/harness-tui/src/ui.rs · diff
+                                                                                                                                                                                    Theme Opencode Dark
+     → Read src/ui.rs [offset=1, limit=24] · completed · 2ms                                                                                                                        0 active todos · 1 modified file
+      ↳ Loaded src/ui.rs
+     ┃ ▸ ← Patched crates/harness-tui/src/ui.rs · completed · 4ms                                                                                                                   Context
+      crates/harness-tui/src/ui.rs · +1 -1                                                                                                                                          turn 1 · ready for next turn
+      @@ -44,8 +44,7 @@
+        use ui_secondary::{                                                                 │   use ui_secondary::{                                                                 Modified Files · 1
+                                                                                                                                                                                    crates/harness-tui/src/ui.rs · diff
+                                                                                                                                                                                    artifacts/tool-lifecycle-inline.diff
+      -     render_diff_tab, render_events_tab, render_help_tab,                            │ +     render_events_tab, render_help_tab, render_live_details_overlay,
+                                                                                                                                                                                    ▼ Recovery · 3
+                                                                                                                                                                                    Resume later · Ctrl+p commands opens
+            render_operator_sidebar,                                                        │       render_operator_sidebar,                                                        continue/replay history
+                                                                                                                                                                                    Bundle keeps events.jsonl and
+                                                                                                                                                                                    artifacts/
+        };                                                                                  │   };                                                                                  Artifact ·
                                                                                                                                                                                     artifacts/tool-lifecycle-inline.diff
 
-      -     render_diff_tab, render_events_tab, render_help_tab,                            │ +     render_events_tab, render_help_tab, render_live_details_overlay,                ▼ Recovery · 3
-                                                                                                                                                                                    Resume later · Ctrl+p commands opens
-                                                                                                                                                                                    continue/replay history
-            render_operator_sidebar,                                                        │       render_operator_sidebar,                                                        Bundle keeps events.jsonl and
-                                                                                                                                                                                    artifacts/
-                                                                                                                                                                                    Artifact ·
-        };                                                                                  │   };                                                                                  artifacts/tool-lifecycle-inline.diff
-
-
 
 ┃
 ┃
-┃  Current runtime: default · model-1 · provider mock
+┃  Current runtime: default · model-1 · provider mock · theme Opencode Dark
 ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
   Enter send · Shift+Enter/Ctrl+j newline · ↑/↓ history                                                                                                                             harness-tui · v0.1.0
 Success  ·  turn 1 · ready for next turn

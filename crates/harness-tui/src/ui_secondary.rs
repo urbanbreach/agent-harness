@@ -86,6 +86,7 @@ struct OperatorRailPinnedSummary {
     share_label: String,
     runtime_summary: String,
     provider_context: Option<String>,
+    theme_label: String,
     state_label: String,
     pending_permission_count: usize,
     active_todo_count: usize,
@@ -328,6 +329,7 @@ pub(crate) fn exact_test_operator_rail_section_model_builds_pinned_summary() {
         model.pinned_summary.provider_context,
         Some("mock".to_string())
     );
+    assert_eq!(model.pinned_summary.theme_label, "Opencode Dark");
     assert_eq!(model.pinned_summary.state_label, "Demo");
     assert_eq!(model.pinned_summary.pending_permission_count, 0);
     assert_eq!(model.pinned_summary.active_todo_count, 1);
@@ -1598,6 +1600,7 @@ fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
             share_label: operator_sidebar_export_label(app),
             runtime_summary,
             provider_context,
+            theme_label: app.theme_label().to_string(),
             state_label: app.operator_sidebar_state_label(),
             pending_permission_count: pending_permission_lines.len(),
             active_todo_count: todo_lines.len(),
@@ -1637,6 +1640,10 @@ fn build_operator_rail_summary_lines(
                     Style::default().fg(theme.text.secondary),
                 )));
             }
+            lines.push(Line::from(Span::styled(
+                format!("Theme {}", summary.theme_label),
+                Style::default().fg(theme.text.secondary),
+            )));
             lines.push(Line::from(Span::styled(
                 format!(
                     "{} active todo{} · {} modified file{}",

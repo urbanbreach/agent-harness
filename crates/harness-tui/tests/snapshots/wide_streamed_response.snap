@@ -3,7 +3,8 @@
   ╰─                                                                                                                    Export bundle · run_fixture/
                                                                                                                         Current runtime: default · model-1
   ╭─ Hello world                                                                                                        Provider mock
-  ╰─ ● Assistant · model-1 · 4ms                                                                                        0 active todos · 0 modified files
+  ╰─ ● Assistant · model-1 · 4ms                                                                                        Theme Opencode Dark
+                                                                                                                        0 active todos · 0 modified files
 
                                                                                                                         Context
                                                                                                                         turn 1 · ready for next turn
@@ -21,10 +22,9 @@
 
 
 
-
 ┃
 ┃
-┃  Current runtime: default · model-1 · provider mock
+┃  Current runtime: default · model-1 · provider mock · theme Opencode Dark
 ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
   Enter send · Shift+Enter/Ctrl+j newline · ↑/↓ history                                                                 harness-tui · v0.1.0
 Success  ·  turn 1 · ready for next turn

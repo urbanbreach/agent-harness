@@ -6,6 +6,44 @@ const fn rgb(red: u8, green: u8, blue: u8) -> Color {
     Color::Rgb(red, green, blue)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ThemePreset {
+    OpencodeDark,
+    GraphiteDusk,
+}
+
+impl ThemePreset {
+    pub const ALL: [Self; 2] = [Self::OpencodeDark, Self::GraphiteDusk];
+
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::OpencodeDark => "opencode_dark",
+            Self::GraphiteDusk => "graphite_dusk",
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::OpencodeDark => "Opencode Dark",
+            Self::GraphiteDusk => "Graphite Dusk",
+        }
+    }
+
+    pub const fn description(self) -> &'static str {
+        match self {
+            Self::OpencodeDark => "Default parity palette with warm accent contrast",
+            Self::GraphiteDusk => "Cooler dusk palette with the same shell geometry",
+        }
+    }
+
+    pub fn theme(self) -> Theme {
+        match self {
+            Self::OpencodeDark => Theme::opencode_dark(),
+            Self::GraphiteDusk => Theme::graphite_dusk(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShellGeometryTarget {
     Minimum,
@@ -782,6 +820,38 @@ impl Theme {
         }
     }
 
+    pub fn graphite_dusk() -> Self {
+        Self {
+            surface: SurfaceColors {
+                canvas: rgb(0x0D, 0x11, 0x17),
+                shell: rgb(0x0D, 0x11, 0x17),
+                panel: rgb(0x16, 0x1C, 0x24),
+                panel_elevated: rgb(0x1B, 0x23, 0x2D),
+                overlay: rgb(0x1B, 0x23, 0x2D),
+            },
+            border: BorderColors {
+                subtle: rgb(0x6E, 0x79, 0x8A),
+                strong: rgb(0x5E, 0xB2, 0xD1),
+                focus: rgb(0x7B, 0xD3, 0xF7),
+            },
+            text: TextColors {
+                primary: rgb(0xE6, 0xEC, 0xF2),
+                secondary: rgb(0x9B, 0xA7, 0xB8),
+                tertiary: rgb(0x7E, 0x89, 0x99),
+                accent: rgb(0x7B, 0xD3, 0xF7),
+                inverse: rgb(0x0D, 0x11, 0x17),
+            },
+            status: StatusColors {
+                success: rgb(0x76, 0xC7, 0x8A),
+                warning: rgb(0xE1, 0xB1, 0x59),
+                error: rgb(0xF0, 0x7A, 0x7A),
+                info: rgb(0x7B, 0xD3, 0xF7),
+                disabled: rgb(0x6E, 0x79, 0x8A),
+            },
+            live_shell: Self::OPENCODE_SHELL,
+        }
+    }
+
     pub const fn live_shell_layout(self, width: u16, height: u16) -> LiveShellLayout {
         self.live_shell.select(width, height)
     }
@@ -905,6 +975,21 @@ mod tests {
 
         assert_eq!(default, opencode_dark);
         assert_eq!(default.token_families(), opencode_dark.token_families());
+    }
+
+    #[test]
+    fn theme_presets_expose_distinct_palettes_without_changing_shell_geometry() {
+        let default = ThemePreset::OpencodeDark.theme();
+        let graphite = ThemePreset::GraphiteDusk.theme();
+
+        assert_eq!(ThemePreset::ALL.len(), 2);
+        assert_eq!(ThemePreset::OpencodeDark.id(), "opencode_dark");
+        assert_eq!(ThemePreset::GraphiteDusk.id(), "graphite_dusk");
+        assert_eq!(default.live_shell, graphite.live_shell);
+        assert_ne!(default.surface, graphite.surface);
+        assert_ne!(default.border, graphite.border);
+        assert_ne!(default.text, graphite.text);
+        assert_ne!(default.status, graphite.status);
     }
 
     #[test]

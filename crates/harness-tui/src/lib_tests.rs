@@ -1157,7 +1157,7 @@ fn dense_live_composer_keeps_blank_spacer_before_metadata() {
         &lines,
         composer_input_row + 1,
         composer_last_row + 1,
-        "Current runtime: default · - · provider local",
+        "Current runtime: default · -",
     )
     .unwrap_or_else(|| panic!("dense composer metadata row\n{rendered}"));
     let metadata_gap_row = composer_input_row + 1;
@@ -4091,41 +4091,6 @@ fn assert_row_segment_background(
 }
 
 #[cfg(test)]
-fn assert_alphanumeric_row_palette(
-    buffer: &ratatui::buffer::Buffer,
-    width: u16,
-    row_index: usize,
-    expected_fg: ratatui::style::Color,
-    expected_bg: ratatui::style::Color,
-    label: &str,
-) {
-    let (row, fgs, bgs) = row_at(buffer, width, row_index)
-        .unwrap_or_else(|| panic!("missing row {row_index} for {label}"));
-    let semantic_columns = row
-        .chars()
-        .enumerate()
-        .filter_map(|(index, ch)| ch.is_alphanumeric().then_some(index))
-        .collect::<Vec<_>>();
-
-    assert!(
-        !semantic_columns.is_empty(),
-        "{label} row should contain semantic content\n{row}"
-    );
-    assert!(
-        semantic_columns
-            .iter()
-            .all(|index| fgs[*index] == expected_fg),
-        "{label} row should use the expected foreground palette\n{row}"
-    );
-    assert!(
-        semantic_columns
-            .iter()
-            .all(|index| bgs[*index] == expected_bg),
-        "{label} row should use the expected background palette\n{row}"
-    );
-}
-
-#[cfg(test)]
 pub(super) fn transcript_code_block_app(language: &str) -> app::AppState {
     let mut app = app::AppState::new_live(None, false, None);
     let request_id = "req_code_block";
@@ -4583,13 +4548,12 @@ fn module_live_shell_redesign_preserves_replay_overlay_and_permission_parity() {
         user_row < thinking_row,
         "replay transcript should preserve turn order\n{replay_render}"
     );
-    assert_alphanumeric_row_palette(
+    assert_row_segment_palette(
         &replay_buffer,
         100,
-        replay_disabled_row,
+        "Replay is read-only.",
         theme.status.disabled,
         theme.surface.shell,
-        "replay disabled composer",
     );
     assert_row_segment_palette(
         &replay_buffer,
@@ -5900,6 +5864,7 @@ fn command_palette_renders_and_filters() {
             "replay_session".to_string(),
             "open_event_log".to_string(),
             "switch_model".to_string(),
+            "use_graphite_dusk_theme".to_string(),
             "toggle_follow".to_string(),
             "hide_thinking".to_string(),
             "show_timestamps".to_string(),
@@ -5916,6 +5881,9 @@ fn command_palette_renders_and_filters() {
     assert!(open_debug.contains("New session"));
     assert!(open_debug.contains("/new"));
     assert!(open_debug.contains("/model"));
+    assert!(app
+        .palette_filtered
+        .contains(&"use_graphite_dusk_theme".to_string()));
     assert!(open_debug.contains("Open the review event log surface"));
 
     app.handle_key(key(crossterm::event::KeyCode::Char('n')));
@@ -5972,6 +5940,9 @@ fn command_palette_includes_session_history_entry() {
     assert!(rendered.contains("New session"));
     assert!(rendered.contains("Continue session"));
     assert!(rendered.contains("Replay session"));
+    assert!(app
+        .palette_filtered
+        .contains(&"use_graphite_dusk_theme".to_string()));
 }
 
 #[cfg(test)]
@@ -6006,6 +5977,40 @@ fn command_palette_switch_model_opens_visible_overlay() {
     assert!(rendered.contains("Switch model"));
     assert!(rendered.contains("gpt-5.4"));
     assert!(rendered.contains("Current first"));
+}
+
+#[cfg(test)]
+#[test]
+fn command_palette_theme_switch_updates_shell_metadata_and_hides_current_theme() {
+    let mut app = app::AppState::new_startup(Vec::new(), None);
+    app.set_launch_metadata(
+        app::LaunchMetadata::from_model_ref("deep", "proxy:gpt-5.4-mini").with_mode_label("Demo"),
+    );
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "graphite".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    assert!(!app.palette_visible);
+    assert_eq!(app.theme_label(), "Graphite Dusk");
+    let rendered = render_live_lines(&app, 120, 30);
+    assert!(rendered.contains("theme Graphite Dusk"));
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    assert!(!app
+        .palette_filtered
+        .contains(&"use_graphite_dusk_theme".to_string()));
+    assert!(app
+        .palette_filtered
+        .contains(&"use_opencode_dark_theme".to_string()));
 }
 
 #[cfg(test)]
@@ -8834,30 +8839,30 @@ fn assert_replay_read_only_composer_contract(
             panic!("missing replay read-only body row for header {header_marker:?}\n{rendered}")
         });
     let divider_row = composer_row.saturating_sub(1);
-    let hint_row =
-        find_line_containing_from(&lines, composer_row + 1, hint_marker).unwrap_or_else(|| {
-            panic!(
+    let hint_row = find_line_containing_in_range(
+        &lines,
+        composer_row + 1,
+        (composer_row + 4).min(lines.len()),
+        hint_marker,
+    )
+    .unwrap_or_else(|| {
+        panic!(
             "missing replay shortcut row {hint_marker:?} for header {header_marker:?}\n{rendered}"
         )
-        });
+    });
 
     assert!(
         header_row < divider_row,
         "replay identity should sit in header context\n{rendered}"
     );
-    assert_eq!(
-        hint_row,
-        composer_row + 1,
-        "replay should keep one compact shortcut row under the disabled rail row\n{rendered}"
+    assert!(
+        (composer_row + 2..=composer_row + 3).contains(&hint_row),
+        "replay should keep the compact shortcut row immediately beneath the metadata band under the disabled rail row\n{rendered}"
     );
     assert!(
-        find_line_containing_in_range(&lines, divider_row, composer_row, "Replay archive ·")
-            .is_none(),
-        "replay composer should not render a metadata headline row\n{rendered}"
-    );
-    assert!(
-        !lines[composer_row].contains("run run_fixture"),
-        "replay identity should stay out of the disabled rail row\n{rendered}"
+        find_line_containing_from(&lines, composer_row + 1, "Recorded runtime · read-only:")
+            .is_some(),
+        "replay composer should surface runtime metadata beneath the disabled rail row\n{rendered}"
     );
 }
 

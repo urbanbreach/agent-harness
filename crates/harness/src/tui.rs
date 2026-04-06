@@ -31,7 +31,7 @@ use harness_tui::app::{
 };
 use harness_tui::{
     load_events_from_run_dir, run_tui_with_options, set_pending_replay_launch_metadata, LiveUpdate,
-    TuiMode, TuiOptions, UiIntent,
+    ThemePreset, TuiMode, TuiOptions, UiIntent,
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -109,6 +109,7 @@ enum InteractiveWorkflow {
 type SelectedWorkflow = Arc<Mutex<Option<InteractiveWorkflow>>>;
 type UiIntentSink = Arc<dyn Fn(UiIntent) + Send + Sync>;
 type LaunchSelection = Arc<Mutex<LaunchMetadata>>;
+type ThemeSelection = Arc<Mutex<ThemePreset>>;
 type LiveAgentTargetState = Arc<Mutex<LiveAgentTarget>>;
 
 fn recover_mutex_lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -220,6 +221,7 @@ fn execute_replay_mode(run_dir: &Path, exit_on_finish: bool) -> ExitCode {
         exit_on_finish,
         on_ui_intent: None,
         keybindings: None,
+        theme_preset: ThemePreset::OpencodeDark,
     }) {
         eprintln!("TUI error: {err}");
         return ExitCode::from(1);
@@ -358,6 +360,10 @@ fn record_launch_selection(selection: &LaunchSelection, launch_metadata: &Launch
     *recover_mutex_lock(selection) = launch_metadata.clone().without_mode_label();
 }
 
+fn record_theme_selection(selection: &ThemeSelection, theme_preset: ThemePreset) {
+    *recover_mutex_lock(selection) = theme_preset;
+}
+
 fn scenario_launch_metadata() -> LaunchMetadata {
     LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo")
 }
@@ -373,6 +379,7 @@ async fn run_interactive_mode(
     let launch_selection = Arc::new(Mutex::new(
         settings.launch_metadata.clone().without_mode_label(),
     ));
+    let theme_selection = Arc::new(Mutex::new(ThemePreset::OpencodeDark));
 
     run_interactive_workflow_loop(
         InteractiveWorkflow::Startup,
@@ -388,20 +395,32 @@ async fn run_interactive_mode(
         },
         {
             let launch_selection = Arc::clone(&launch_selection);
+            let theme_selection = Arc::clone(&theme_selection);
             move |session_history_entries| {
                 run_startup_launcher(
                     cmd.exit_on_finish,
                     session_history_entries,
                     Arc::clone(&launch_selection),
+                    Arc::clone(&theme_selection),
                 )
             }
         },
         {
             let launch_selection = Arc::clone(&launch_selection);
-            move || run_new_live_session(cmd, settings, demo_mode, Arc::clone(&launch_selection))
+            let theme_selection = Arc::clone(&theme_selection);
+            move || {
+                run_new_live_session(
+                    cmd,
+                    settings,
+                    demo_mode,
+                    Arc::clone(&launch_selection),
+                    Arc::clone(&theme_selection),
+                )
+            }
         },
         {
             let launch_selection = Arc::clone(&launch_selection);
+            let theme_selection = Arc::clone(&theme_selection);
             move |run_id, run_dir| {
                 run_continue_session_bootstrap(
                     cmd,
@@ -410,12 +429,20 @@ async fn run_interactive_mode(
                     run_id,
                     run_dir,
                     Arc::clone(&launch_selection),
+                    Arc::clone(&theme_selection),
                 )
             }
         },
-        |run_dir| async move {
-            run_replay_tui(run_dir, cmd.exit_on_finish).await?;
-            Ok(InteractiveWorkflow::Startup)
+        {
+            let theme_selection = Arc::clone(&theme_selection);
+            move |run_dir| {
+                let theme_selection = Arc::clone(&theme_selection);
+                let theme_preset = *recover_mutex_lock(&theme_selection);
+                async move {
+                    run_replay_tui(run_dir, cmd.exit_on_finish, theme_preset).await?;
+                    Ok(InteractiveWorkflow::Startup)
+                }
+            }
         },
     )
     .await
@@ -476,6 +503,7 @@ async fn run_direct_continue_mode(
     let launch_selection = Arc::new(Mutex::new(
         settings.launch_metadata.clone().without_mode_label(),
     ));
+    let theme_selection = Arc::new(Mutex::new(ThemePreset::OpencodeDark));
     let run_id = run_dir
         .file_name()
         .and_then(|name| name.to_str())
@@ -503,20 +531,32 @@ async fn run_direct_continue_mode(
         },
         {
             let launch_selection = Arc::clone(&launch_selection);
+            let theme_selection = Arc::clone(&theme_selection);
             move |session_history_entries| {
                 run_startup_launcher(
                     cmd.exit_on_finish,
                     session_history_entries,
                     Arc::clone(&launch_selection),
+                    Arc::clone(&theme_selection),
                 )
             }
         },
         {
             let launch_selection = Arc::clone(&launch_selection);
-            move || run_new_live_session(cmd, settings, demo_mode, Arc::clone(&launch_selection))
+            let theme_selection = Arc::clone(&theme_selection);
+            move || {
+                run_new_live_session(
+                    cmd,
+                    settings,
+                    demo_mode,
+                    Arc::clone(&launch_selection),
+                    Arc::clone(&theme_selection),
+                )
+            }
         },
         {
             let launch_selection = Arc::clone(&launch_selection);
+            let theme_selection = Arc::clone(&theme_selection);
             move |run_id, run_dir| {
                 run_continue_session_bootstrap(
                     cmd,
@@ -525,12 +565,20 @@ async fn run_direct_continue_mode(
                     run_id,
                     run_dir,
                     Arc::clone(&launch_selection),
+                    Arc::clone(&theme_selection),
                 )
             }
         },
-        |run_dir| async move {
-            run_replay_tui(run_dir, cmd.exit_on_finish).await?;
-            Ok(InteractiveWorkflow::Startup)
+        {
+            let theme_selection = Arc::clone(&theme_selection);
+            move |run_dir| {
+                let theme_selection = Arc::clone(&theme_selection);
+                let theme_preset = *recover_mutex_lock(&theme_selection);
+                async move {
+                    run_replay_tui(run_dir, cmd.exit_on_finish, theme_preset).await?;
+                    Ok(InteractiveWorkflow::Startup)
+                }
+            }
         },
     )
     .await
@@ -580,15 +628,22 @@ async fn run_startup_launcher(
     exit_on_finish: bool,
     session_history_entries: Vec<SessionHistoryEntry>,
     launch_selection: LaunchSelection,
+    theme_selection: ThemeSelection,
 ) -> Result<InteractiveWorkflow, String> {
     let selected_intent = Arc::new(Mutex::new(None::<UiIntent>));
     let selected_intent_sink = Arc::clone(&selected_intent);
+    let theme_selection_for_intents = Arc::clone(&theme_selection);
     let on_ui_intent = Arc::new(move |intent: UiIntent| {
         if let UiIntent::SwitchModel {
             launch_metadata, ..
         } = &intent
         {
             record_launch_selection(&launch_selection, launch_metadata);
+            return;
+        }
+
+        if let UiIntent::SwitchTheme { theme_preset } = &intent {
+            record_theme_selection(&theme_selection_for_intents, *theme_preset);
             return;
         }
 
@@ -616,6 +671,7 @@ async fn run_startup_launcher(
             exit_on_finish,
             on_ui_intent: Some(on_ui_intent),
             keybindings: None,
+            theme_preset: *recover_mutex_lock(&theme_selection),
         })
     })
     .await
@@ -644,11 +700,16 @@ fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> InteractiveWorkfl
         Some(UiIntent::QuitRequested)
         | None
         | Some(UiIntent::ResolvePermission { .. })
+        | Some(UiIntent::SwitchTheme { .. })
         | Some(UiIntent::SwitchModel { .. }) => InteractiveWorkflow::Quit,
     }
 }
 
-async fn run_replay_tui(run_dir: PathBuf, exit_on_finish: bool) -> Result<(), String> {
+async fn run_replay_tui(
+    run_dir: PathBuf,
+    exit_on_finish: bool,
+    theme_preset: ThemePreset,
+) -> Result<(), String> {
     let events = load_events_from_run_dir(&run_dir).map_err(|err| err.to_string())?;
     set_pending_replay_launch_metadata(Some(replay_launch_metadata_for_run(&run_dir, &events)));
     tokio::task::spawn_blocking(move || {
@@ -657,6 +718,7 @@ async fn run_replay_tui(run_dir: PathBuf, exit_on_finish: bool) -> Result<(), St
             exit_on_finish,
             on_ui_intent: None,
             keybindings: None,
+            theme_preset,
         })
     })
     .await
@@ -671,6 +733,7 @@ async fn run_continue_session_bootstrap(
     run_id: String,
     run_dir: PathBuf,
     launch_selection: LaunchSelection,
+    theme_selection: ThemeSelection,
 ) -> Result<InteractiveWorkflow, String> {
     let resume_plan = inspect_resume_plan(&run_dir);
     if !resume_plan.is_resumable {
@@ -770,8 +833,11 @@ async fn run_continue_session_bootstrap(
         .await
     });
 
-    let (selected_workflow, ui_intent_sender) =
-        build_live_ui_intent_router(intent_tx.clone(), Arc::clone(&launch_selection));
+    let (selected_workflow, ui_intent_sender) = build_live_ui_intent_router(
+        intent_tx.clone(),
+        Arc::clone(&launch_selection),
+        Arc::clone(&theme_selection),
+    );
 
     let exit_on_finish = cmd.exit_on_finish;
     set_pending_live_launch_metadata(continue_metadata);
@@ -783,6 +849,7 @@ async fn run_continue_session_bootstrap(
             live_update_rx,
             exit_on_finish,
             ui_intent_sender,
+            *recover_mutex_lock(&theme_selection),
         ))
     })
     .await
@@ -815,6 +882,7 @@ fn continue_live_tui_options(
     update_rx: std_mpsc::Receiver<LiveUpdate>,
     exit_on_finish: bool,
     ui_intent_sender: UiIntentSink,
+    theme_preset: ThemePreset,
 ) -> TuiOptions {
     TuiOptions {
         mode: TuiMode::Live {
@@ -825,6 +893,7 @@ fn continue_live_tui_options(
         exit_on_finish,
         on_ui_intent: Some(ui_intent_sender),
         keybindings: None,
+        theme_preset,
     }
 }
 
@@ -908,6 +977,7 @@ fn replay_launch_metadata(
 fn build_live_ui_intent_router(
     intent_tx: mpsc::UnboundedSender<UiIntent>,
     launch_selection: LaunchSelection,
+    theme_selection: ThemeSelection,
 ) -> (SelectedWorkflow, UiIntentSink) {
     let selected_workflow = Arc::new(Mutex::new(None::<InteractiveWorkflow>));
     let selected_workflow_sink = Arc::clone(&selected_workflow);
@@ -917,6 +987,10 @@ fn build_live_ui_intent_router(
         } = &intent
         {
             record_launch_selection(&launch_selection, launch_metadata);
+        }
+        if let UiIntent::SwitchTheme { theme_preset } = &intent {
+            record_theme_selection(&theme_selection, *theme_preset);
+            return;
         }
         if let Some(workflow) = live_workflow_from_intent(&intent) {
             capture_first_workflow(&selected_workflow_sink, workflow);
@@ -941,6 +1015,7 @@ fn live_workflow_from_intent(intent: &UiIntent) -> Option<InteractiveWorkflow> {
         }),
         UiIntent::QuitRequested => Some(InteractiveWorkflow::Quit),
         UiIntent::ResolvePermission { .. }
+        | UiIntent::SwitchTheme { .. }
         | UiIntent::SubmitPrompt { .. }
         | UiIntent::SwitchModel { .. } => None,
     }
@@ -1096,6 +1171,7 @@ async fn run_new_live_session(
     settings: &LiveSettings,
     demo_mode: bool,
     launch_selection: LaunchSelection,
+    theme_selection: ThemeSelection,
 ) -> Result<InteractiveWorkflow, String> {
     let run_id_override = if settings.deterministic {
         deterministic_run_id(settings.seed, ScenarioName::GoldenPathInteractive)
@@ -1194,8 +1270,11 @@ async fn run_new_live_session(
         .await
     });
 
-    let (selected_workflow, ui_intent_sender) =
-        build_live_ui_intent_router(intent_tx.clone(), Arc::clone(&launch_selection));
+    let (selected_workflow, ui_intent_sender) = build_live_ui_intent_router(
+        intent_tx.clone(),
+        Arc::clone(&launch_selection),
+        Arc::clone(&theme_selection),
+    );
 
     let exit_on_finish = cmd.exit_on_finish;
     set_pending_live_launch_metadata(launch_metadata);
@@ -1210,6 +1289,7 @@ async fn run_new_live_session(
             exit_on_finish,
             on_ui_intent: Some(ui_intent_sender),
             keybindings: None,
+            theme_preset: *recover_mutex_lock(&theme_selection),
         })
     })
     .await
@@ -1329,6 +1409,7 @@ async fn run_live_mode(
             exit_on_finish,
             on_ui_intent: Some(ui_intent_sender),
             keybindings: None,
+            theme_preset: ThemePreset::OpencodeDark,
         })
     })
     .await
@@ -1566,6 +1647,7 @@ async fn handle_ui_intents(
                 target.agent_id = Some(agent_id);
                 target.profile = profile;
             }
+            UiIntent::SwitchTheme { .. } => {}
             UiIntent::NewSession
             | UiIntent::ReplaySession { .. }
             | UiIntent::ContinueSession { .. } => {}

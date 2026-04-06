@@ -374,7 +374,7 @@ pub(super) fn render_unified_bottom_dock(
     }
 
     if dock.variant == crate::view_model::ControlDockVariant::ReplayReadOnly {
-        render_replay_read_only_composer_content(frame, dock_layout.composer, theme, &dock);
+        render_replay_read_only_composer_content(frame, app, dock_layout.composer, theme, &dock);
         return;
     }
 
@@ -1218,6 +1218,22 @@ fn render_document_composer_content(
             rows[3],
         );
     }
+
+    if rows[4].height > 0 && rows[4].width > 0 {
+        if let Some(status_model) = live_composer_status_view_model(app, context.dock) {
+            let status_area = Rect::new(rows[4].x, rows[4].y, rows[4].width, 1);
+            frame.render_widget(
+                Paragraph::new(live_composer_status_line(
+                    &status_model,
+                    usize::from(status_area.width),
+                    theme,
+                    composer_surface,
+                ))
+                .style(Style::default().bg(composer_surface)),
+                status_area,
+            );
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1262,7 +1278,6 @@ fn composer_metadata_line(
     )
 }
 
-#[allow(dead_code)]
 fn live_composer_status_line(
     dock: &crate::view_model::ControlDockViewModel,
     max_width: usize,
@@ -1299,7 +1314,6 @@ fn live_composer_status_line(
     )
 }
 
-#[allow(dead_code)]
 fn live_composer_status_candidates(
     dock: &crate::view_model::ControlDockViewModel,
     max_width: usize,
@@ -1390,7 +1404,6 @@ fn live_composer_status_candidates(
     ]
 }
 
-#[allow(dead_code)]
 fn live_composer_status_text(
     dock: &crate::view_model::ControlDockViewModel,
     max_width: usize,
@@ -1433,7 +1446,6 @@ fn live_composer_status_text(
     )
 }
 
-#[allow(dead_code)]
 fn runtime_kind_metadata_tone(kind: RuntimeStateKind) -> ComposerMetadataTone {
     match kind {
         RuntimeStateKind::Success => ComposerMetadataTone::Accent,
@@ -1450,7 +1462,6 @@ fn runtime_kind_metadata_tone(kind: RuntimeStateKind) -> ComposerMetadataTone {
     }
 }
 
-#[allow(dead_code)]
 fn control_dock_summary_tone_to_metadata_tone(
     tone: crate::view_model::ControlDockSummaryTone,
 ) -> ComposerMetadataTone {
@@ -1483,6 +1494,11 @@ fn composer_metadata_candidates(
     app: &AppState,
     dock: &crate::view_model::ControlDockViewModel,
 ) -> Vec<Vec<(String, ComposerMetadataTone)>> {
+    let theme_segment = (
+        format!("theme {}", app.theme_label()),
+        ComposerMetadataTone::Secondary,
+    );
+
     if app.startup_shell_visible() {
         let (launch_label, launch_identity) = dock
             .primary_summary
@@ -1520,6 +1536,8 @@ fn composer_metadata_candidates(
             full.push((" · ".to_string(), ComposerMetadataTone::Secondary));
             full.push((mode.to_string(), ComposerMetadataTone::Accent));
         }
+        full.push((" · ".to_string(), ComposerMetadataTone::Secondary));
+        full.push(theme_segment.clone());
 
         return vec![
             full,
@@ -1530,6 +1548,13 @@ fn composer_metadata_candidates(
                     format!("provider {}", app.active_provider()),
                     ComposerMetadataTone::Secondary,
                 ),
+                (" · ".to_string(), ComposerMetadataTone::Secondary),
+                theme_segment.clone(),
+            ],
+            vec![
+                (dock.primary_summary.clone(), ComposerMetadataTone::Primary),
+                (" · ".to_string(), ComposerMetadataTone::Secondary),
+                theme_segment.clone(),
             ],
             vec![(dock.primary_summary.clone(), ComposerMetadataTone::Primary)],
         ];
@@ -1540,7 +1565,17 @@ fn composer_metadata_candidates(
             app.runtime_context_identity_line(),
             ComposerMetadataTone::Primary,
         )];
+        let identity_with_theme = vec![
+            (
+                app.runtime_context_identity_line(),
+                ComposerMetadataTone::Primary,
+            ),
+            (" · ".to_string(), ComposerMetadataTone::Secondary),
+            theme_segment.clone(),
+        ];
         let mut with_disclosure = identity.clone();
+        with_disclosure.push((" · ".to_string(), ComposerMetadataTone::Secondary));
+        with_disclosure.push(theme_segment.clone());
         if !dock.composer_disclosure.trim().is_empty() {
             with_disclosure.push((" · ".to_string(), ComposerMetadataTone::Secondary));
             with_disclosure.push((
@@ -1551,6 +1586,7 @@ fn composer_metadata_candidates(
 
         return vec![
             with_disclosure,
+            identity_with_theme,
             identity,
             vec![(
                 app.runtime_context_identity_line(),
@@ -1576,6 +1612,8 @@ fn composer_metadata_candidates(
             ComposerMetadataTone::Secondary,
         ));
     }
+    full.push((" · ".to_string(), ComposerMetadataTone::Secondary));
+    full.push(theme_segment.clone());
 
     let mut summary_and_provider =
         vec![(dock.primary_summary.clone(), ComposerMetadataTone::Primary)];
@@ -1591,10 +1629,17 @@ fn composer_metadata_candidates(
             ComposerMetadataTone::Secondary,
         ));
     }
+    summary_and_provider.push((" · ".to_string(), ComposerMetadataTone::Secondary));
+    summary_and_provider.push(theme_segment.clone());
 
     vec![
         full,
         summary_and_provider,
+        vec![
+            (dock.primary_summary.clone(), ComposerMetadataTone::Primary),
+            (" · ".to_string(), ComposerMetadataTone::Secondary),
+            theme_segment,
+        ],
         vec![(dock.primary_summary.clone(), ComposerMetadataTone::Primary)],
         vec![(
             app.runtime_context_identity_line(),
@@ -1626,12 +1671,14 @@ fn composer_metadata_text(
 
     if app.completed_session_shell_active() {
         let identity = app.runtime_context_identity_line();
+        let with_theme = format!("{}  ·  theme {}", identity, app.theme_label());
         let with_disclosure = (!dock.composer_disclosure.trim().is_empty())
-            .then(|| format!("{}  ·  {}", identity, dock.composer_disclosure));
+            .then(|| format!("{with_theme}  ·  {}", dock.composer_disclosure));
 
         return best_fit_text(
             &[
                 with_disclosure,
+                Some(with_theme),
                 Some(identity),
                 Some(dock.composer_disclosure.clone()),
                 Some(app.current_model_label().to_string()),
@@ -1653,11 +1700,17 @@ fn composer_metadata_text(
         .map(str::trim)
         .filter(|provider| !provider.is_empty())
         .map(|provider| format!("{}  ·  provider {provider}", dock.primary_summary));
+    let with_theme = Some(format!(
+        "{}  ·  theme {}",
+        dock.primary_summary,
+        app.theme_label()
+    ));
 
     best_fit_text(
         &[
             with_next_turns,
             with_provider,
+            with_theme,
             Some(dock.primary_summary.clone()),
             Some(app.runtime_context_identity_line()),
         ]
@@ -1666,6 +1719,30 @@ fn composer_metadata_text(
         .collect::<Vec<_>>(),
         max_width,
     )
+}
+
+fn live_composer_status_view_model(
+    app: &AppState,
+    dock: &crate::view_model::ControlDockViewModel,
+) -> Option<crate::view_model::ControlDockViewModel> {
+    if app.startup_shell_visible() || app.replay_mode {
+        return None;
+    }
+
+    let runtime_state = app.runtime_state();
+    Some(crate::view_model::ControlDockViewModel {
+        variant: dock.variant,
+        runtime_context: Some(app.runtime_context_identity_line()),
+        runtime_badge: runtime_state.kind.label().to_string(),
+        runtime_kind: runtime_state.kind,
+        primary_summary: completed_session_status_summary(app, &runtime_state)
+            .unwrap_or_else(|| runtime_state.summary.clone()),
+        summary_segment: control_dock_summary_segment(app),
+        composer_body: String::new(),
+        composer_disclosure: String::new(),
+        composer_focused: dock.composer_focused,
+        composer_disabled: dock.composer_disabled,
+    })
 }
 
 fn best_fit_text(options: &[String], max_width: usize) -> String {
@@ -1940,6 +2017,7 @@ fn status_context(app: &AppState, theme: &Theme, state: RuntimeStateKind) -> (&'
 
 fn render_replay_read_only_composer_content(
     frame: &mut Frame,
+    app: &AppState,
     area: Rect,
     theme: &Theme,
     dock: &crate::view_model::ControlDockViewModel,
@@ -1956,10 +2034,15 @@ fn render_replay_read_only_composer_content(
         return;
     }
 
-    let hint_visible = content_area.height > 1;
+    let metadata_visible = content_area.height > 1;
+    let hint_visible = content_area.height > 2 && !dock.composer_disclosure.trim().is_empty();
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(u16::from(metadata_visible)),
+            Constraint::Min(0),
+        ])
         .split(content_area);
 
     let rail = "▎ ";
@@ -1975,7 +2058,21 @@ fn render_replay_read_only_composer_content(
         rows[0],
     );
 
-    if hint_visible && rows[1].height > 0 {
+    if metadata_visible && rows[1].height > 0 {
+        frame.render_widget(
+            Paragraph::new(composer_metadata_line(
+                app,
+                dock,
+                usize::from(rows[1].width),
+                theme,
+                surface,
+            ))
+            .style(Style::default().bg(surface)),
+            rows[1],
+        );
+    }
+
+    if hint_visible && rows[2].height > 0 {
         let hint_prefix = "  ";
         frame.render_widget(
             Paragraph::new(Line::from(vec![
@@ -1983,12 +2080,12 @@ fn render_replay_read_only_composer_content(
                 Span::styled(
                     truncate_plain_text(
                         &dock.composer_disclosure,
-                        usize::from(rows[1].width).saturating_sub(hint_prefix.chars().count()),
+                        usize::from(rows[2].width).saturating_sub(hint_prefix.chars().count()),
                     ),
                     Style::default().fg(theme.text.secondary).bg(surface),
                 ),
             ])),
-            rows[1],
+            rows[2],
         );
     }
 }

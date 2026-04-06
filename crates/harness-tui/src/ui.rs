@@ -85,6 +85,7 @@ pub(crate) fn exact_test_startup_shell_keeps_no_default_tab_chrome_after_runtime
 
     assert!(debug.contains("Launch: deep · GPT-5.4 Mini · Deterministic"));
     assert!(debug.contains("Provider default"));
+    assert!(debug.contains("theme Opencode Dark"));
     assert!(debug.contains("Ask Harness anything…"));
     assert!(!debug.contains("Tabs"));
     assert!(!debug.contains("Actions:"));

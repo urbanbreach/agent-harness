@@ -23,6 +23,6 @@ expression: "fallback_render.lines().map(str::trim_end).collect::<Vec<_>>().join
             ┃
             ┃
             ┃
-            ┃  default · local/-
+            ┃  default · local/- · theme Opencode Dark
             ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
             Ready  ·  run finished · session shell preserved     Ctrl+p commands  q quit

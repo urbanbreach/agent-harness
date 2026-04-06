@@ -7,7 +7,7 @@
 
 
 
-                 Command palette · 5 matches
+                 Command palette · 6 matches
 
                    > █
                    Filter label, /command, section, or description · 5 typed com…
@@ -18,4 +18,5 @@
                      Replay session  Replay a previous session as read-…  /replay
                    Agent
                      Switch model  Browse available provider/model optio…  /model
+                     Use Graphite Dusk theme  Switch the shell palette to a cool…
                    System

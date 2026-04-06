@@ -24,7 +24,7 @@ use serde::Deserialize;
 
 use crate::keybindings::{Action, KeyMap};
 use crate::overlay::{OverlayKind, OverlayStack, OverlayState};
-use crate::theme::Theme;
+use crate::theme::{Theme, ThemePreset};
 use crate::ui::WheelTarget;
 use crate::view_model;
 
@@ -770,6 +770,9 @@ pub enum UiIntent {
         permission_id: String,
         decision: PermissionDecision,
         reason: Option<String>,
+    },
+    SwitchTheme {
+        theme_preset: ThemePreset,
     },
     SwitchModel {
         profile: String,
@@ -1668,6 +1671,7 @@ pub struct AppState {
     slash_draft_snapshot: Option<String>,
     pub continue_disabled_banner: Option<String>,
     pub keymap: KeyMap,
+    theme_preset: ThemePreset,
     theme: Theme,
     launch_metadata: LaunchMetadata,
     runtime_context_metadata: Option<LaunchMetadata>,
@@ -1735,6 +1739,7 @@ impl Default for AppState {
             slash_draft_snapshot: None,
             continue_disabled_banner: None,
             keymap: KeyMap::default(),
+            theme_preset: ThemePreset::OpencodeDark,
             theme: Theme::default(),
             launch_metadata: LaunchMetadata::default(),
             runtime_context_metadata: None,
@@ -2603,6 +2608,34 @@ impl AppState {
 
     pub fn theme(&self) -> &Theme {
         &self.theme
+    }
+
+    pub fn theme_preset(&self) -> ThemePreset {
+        self.theme_preset
+    }
+
+    pub fn theme_label(&self) -> &'static str {
+        self.theme_preset.label()
+    }
+
+    pub fn theme_status_label(&self) -> String {
+        format!("Theme {}", self.theme_label())
+    }
+
+    pub fn set_theme_preset(&mut self, preset: ThemePreset) {
+        self.theme_preset = preset;
+        self.theme = preset.theme();
+    }
+
+    fn apply_theme_preset(&mut self, preset: ThemePreset) {
+        if self.theme_preset == preset {
+            return;
+        }
+        self.theme_preset = preset;
+        self.theme = preset.theme();
+        self.emit_ui_intent(UiIntent::SwitchTheme {
+            theme_preset: preset,
+        });
     }
 
     #[cfg(test)]
@@ -4087,6 +4120,7 @@ impl AppState {
             palette_visible: self.palette_visible,
             session_history_visible: self.session_history_visible,
             model_switcher_visible: self.model_switcher_visible,
+            theme_switcher_visible: false,
             permission_pending: self.active_permission().is_some(),
         })
     }
@@ -4897,6 +4931,8 @@ impl AppState {
             "switch_model" => {
                 self.open_model_switcher();
             }
+            "use_opencode_dark_theme" => self.apply_theme_preset(ThemePreset::OpencodeDark),
+            "use_graphite_dusk_theme" => self.apply_theme_preset(ThemePreset::GraphiteDusk),
             "close_review_surface" => self.execute_action(Action::CloseReviewSurface),
             "open_event_log" => self.execute_action(Action::OpenEventLog),
             "toggle_follow" => self.execute_action(Action::ToggleFollow),
@@ -5041,10 +5077,24 @@ impl AppState {
             return !self.replay_mode;
         }
 
+        if command_id == "use_opencode_dark_theme" {
+            return self.theme_preset != ThemePreset::OpencodeDark;
+        }
+
+        if command_id == "use_graphite_dusk_theme" {
+            return self.theme_preset != ThemePreset::GraphiteDusk;
+        }
+
         if self.startup_shell_visible() {
             matches!(
                 command_id,
-                "new_session" | "resume_session" | "replay_session" | "switch_model" | "quit"
+                "new_session"
+                    | "resume_session"
+                    | "replay_session"
+                    | "switch_model"
+                    | "use_opencode_dark_theme"
+                    | "use_graphite_dusk_theme"
+                    | "quit"
             )
         } else if matches!(command_id, "show_timestamps" | "hide_timestamps") {
             self.active_review_surface.is_none()

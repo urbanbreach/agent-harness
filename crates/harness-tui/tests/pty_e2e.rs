@@ -11,7 +11,7 @@ use harness_tui::app::{
     set_pending_live_launch_metadata, LaunchMetadata, SessionHistoryEntry,
     SessionHistoryRecoveryPreview,
 };
-use harness_tui::{run_tui_with_options, LiveUpdate, TuiMode, TuiOptions, UiIntent};
+use harness_tui::{run_tui_with_options, LiveUpdate, ThemePreset, TuiMode, TuiOptions, UiIntent};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::cmp;
 use std::fs;
@@ -19,7 +19,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{
     mpsc::{self, Receiver, RecvTimeoutError, Sender},
-    Arc, Mutex,
+    Arc, Mutex, MutexGuard, OnceLock,
 };
 use std::thread;
 use std::time::{Duration, Instant};
@@ -792,6 +792,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
                 exit_on_finish: false,
                 on_ui_intent,
                 keybindings: None,
+                theme_preset: ThemePreset::OpencodeDark,
             })
             .expect("run startup helper tui");
             return;
@@ -902,6 +903,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
                 exit_on_finish: false,
                 on_ui_intent,
                 keybindings: None,
+                theme_preset: ThemePreset::OpencodeDark,
             })
             .expect("run disconnected helper tui");
             return;
@@ -917,6 +919,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
                 exit_on_finish: false,
                 on_ui_intent: marker_path.map(replay_intent_handler),
                 keybindings: None,
+                theme_preset: ThemePreset::OpencodeDark,
             })
             .expect("run replay read-only helper tui");
             return;
@@ -933,6 +936,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
         exit_on_finish: false,
         on_ui_intent,
         keybindings: None,
+        theme_preset: ThemePreset::OpencodeDark,
     })
     .expect("run helper tui");
 }
@@ -1918,6 +1922,14 @@ struct SpawnedHelper {
     writer: Box<dyn Write + Send>,
     output_rx: Receiver<Vec<u8>>,
     parser: Parser,
+    _guard: MutexGuard<'static, ()>,
+}
+
+fn pty_test_guard() -> MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("lock harness-tui pty test mutex")
 }
 
 fn spawn_helper_pty(scenario: HelperScenario, geometry: PtyGeometry) -> SpawnedHelper {
@@ -1937,6 +1949,7 @@ fn spawn_helper_pty_with_optional_intent_marker(
     geometry: PtyGeometry,
     marker_path: Option<&Path>,
 ) -> SpawnedHelper {
+    let guard = pty_test_guard();
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(geometry.pty_size())
@@ -1974,6 +1987,7 @@ fn spawn_helper_pty_with_optional_intent_marker(
         writer,
         output_rx,
         parser: geometry.parser(),
+        _guard: guard,
     }
 }
 

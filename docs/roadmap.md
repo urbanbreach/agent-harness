@@ -49,8 +49,8 @@ Secondary/supporting profiles:
 - [ ] Make thinking traces look exactly like Opencode.
 - [ ] Flesh out the commands menu.
 - [ ] Polish the commands menu UI to match the level of fit and finish seen in Opencode.
-- [ ] Add theme support.
-- [ ] Add clearer HUD/status visibility for model, profile, tool, and run state so users always know what the harness is doing.
+- [x] Add theme support.
+- [x] Add clearer HUD/status visibility for model, profile, tool, and run state so users always know what the harness is doing.
 - [ ] Improve session recovery and reopen flow so returning to previous work feels obvious and low-friction.
 
 ## Models, providers, and config

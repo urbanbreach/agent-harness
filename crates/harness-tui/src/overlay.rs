@@ -11,12 +11,16 @@ pub struct OverlayState {
     pub palette_visible: bool,
     pub session_history_visible: bool,
     pub model_switcher_visible: bool,
+    pub theme_switcher_visible: bool,
     pub permission_pending: bool,
 }
 
 impl OverlayState {
     pub fn command_palette_channel_visible(self) -> bool {
-        self.palette_visible || self.session_history_visible || self.model_switcher_visible
+        self.palette_visible
+            || self.session_history_visible
+            || self.model_switcher_visible
+            || self.theme_switcher_visible
     }
 }
 

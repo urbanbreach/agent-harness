@@ -23,6 +23,6 @@ expression: "completed_shell_render.lines().map(str::trim_end).collect::<Vec<_>>
             ┃
             ┃  keep this draft
             ┃
-            ┃  default · local/-
+            ┃  default · local/- · theme Opencode Dark
             ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
             Ready  ·  run finished · session shell preserved     Ctrl+p commands  q quit
