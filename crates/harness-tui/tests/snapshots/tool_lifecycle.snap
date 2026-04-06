@@ -1,8 +1,8 @@
 
-  ┃                                                                                                                                                                                 Live · run run_fixture
+  ╰─                                                                                                                                                                                Live · run run_fixture
                                                                                                                                                                                     Export bundle · run_fixture/
-     Tool summaries are now easier to scan, and edits stay inline.                                                                                                                  Current runtime: default · model-1
-     ● Assistant · model-1 · 14ms                                                                                                                                                   Provider mock
+  ╭─ Tool summaries are now easier to scan, and edits stay inline.                                                                                                                  Current runtime: default · model-1
+  ╰─ ● Assistant · model-1 · 14ms                                                                                                                                                   Provider mock
                                                                                                                                                                                     0 active todos · 1 modified file
      → Read src/ui.rs [offset=1, limit=24] · 2ms
       ↳ Loaded src/ui.rs                                                                                                                                                            Context

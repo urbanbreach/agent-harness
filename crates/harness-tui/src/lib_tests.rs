@@ -70,31 +70,29 @@ fn transcript_turn_sections_render_open_rail_surfaces() {
     let assistant_body_column = first_alphanumeric_column(lines[assistant_body]);
 
     assert!(
-        assistant_body_rail > user_body_rail,
-        "assistant prose should sit on an inset canvas instead of reusing the user prompt rail\n{rendered}"
+        assistant_body_rail.abs_diff(user_body_rail) <= 1,
+        "top-level chat cards should share a consistent left edge\n{rendered}"
     );
     assert!(
         user_body_column.abs_diff(assistant_body_column) <= 1,
-        "top-level turn bodies should stay nearly aligned even after prompt padding changes\n{rendered}"
+        "top-level turn bodies should stay nearly aligned even after chat-box framing changes\n{rendered}"
     );
     assert_eq!(
         user_body_column.saturating_sub(user_body_rail),
         3,
-        "user message text should keep Opencode's single rail plus two-column left padding\n{rendered}"
+        "chat card text should keep the existing three-column inset after the frame glyphs\n{rendered}"
     );
     assert!(
-        user_body > 0
-            && lines[user_body - 1].contains('┃')
-            && !lines[user_body - 1].contains("You"),
-        "user message should use Opencode-style top padding without a synthetic header label\n{rendered}"
+        lines[user_body].trim_start().starts_with("╭─") && !lines[user_body].contains("You"),
+        "user message should use card framing without a synthetic header label\n{rendered}"
     );
     let (user_body_row, user_body_fgs, user_body_bgs) =
         row_at(&buffer, 80, user_body).expect("user body palette row");
     let (assistant_footer_row, assistant_footer_fgs, assistant_footer_bgs) =
         row_at(&buffer, 80, assistant_footer).expect("assistant footer palette row");
-    let user_rail_column = user_body_row.find('┃').expect("user rail");
+    let user_rail_column = user_body_row.find('╭').expect("user frame");
     assert_eq!(user_body_fgs[user_rail_column], theme.text.accent);
-    assert!(!assistant_footer_row.contains('┃'));
+    assert!(assistant_footer_row.contains('╰'));
     assert_eq!(
         assistant_footer_fgs[first_alphanumeric_column(lines[assistant_footer])],
         theme.status.success
@@ -111,7 +109,7 @@ fn transcript_turn_sections_render_open_rail_surfaces() {
         assistant_body - user_body <= 3,
         "turn stacking should stay compact\n{rendered}"
     );
-    assert!(!rendered.contains('╭') && !rendered.contains('╰') && !rendered.contains('│'));
+    assert!(rendered.contains('╭') && rendered.contains('╰'));
 
     let mut follow_app = app::AppState::new_live(None, false, None);
     follow_app.activities = std::collections::VecDeque::from(
@@ -7834,9 +7832,8 @@ fn live_shell_enter_submits_and_echoes_prompt_snapshot() {
     assert_live_shell_frame_invariants(&rendered, 80, 24);
     assert!(!rendered.contains("user (pending turn)"));
     assert!(rendered.contains("ship it"));
-    assert!(rendered.contains("   Waiting for response…"));
-    assert!(rendered.contains("◐ Assistant"));
-    assert!(!rendered.contains('╭'));
+    assert!(rendered.contains("╭─ Waiting for response…"));
+    assert!(rendered.contains("╰─ ◐ Assistant"));
 
     let status_row = live_status_strip_row(&app, 80, 24, "response starting");
     assert_markers_in_order(&status_row, &["Sending", "turn 1 · response starting"]);
@@ -7954,11 +7951,11 @@ fn narrow_transcript_wrapped_top_level_turns_keep_alignment() {
         .enumerate()
         .skip(user_first + 1)
         .find_map(|(index, line)| {
-            (line.contains('┃') && line.chars().any(char::is_alphanumeric)).then_some(index)
+            (line.contains('│') && line.chars().any(char::is_alphanumeric)).then_some(index)
         })
         .expect("wrapped user continuation row");
     let assistant_first =
-        find_line_containing_from(&lines, user_continuation + 1, "assistant reply wraps")
+        find_line_containing_from(&lines, user_continuation + 1, "╭─ assistant reply wraps")
             .expect("wrapped assistant first row");
     let assistant_footer = find_line_containing_from(&lines, assistant_first + 1, "Assistant")
         .expect("assistant footer row");
@@ -7967,7 +7964,9 @@ fn narrow_transcript_wrapped_top_level_turns_keep_alignment() {
         .enumerate()
         .skip(assistant_first + 1)
         .take(assistant_footer.saturating_sub(assistant_first + 1))
-        .find_map(|(index, line)| line.chars().any(char::is_alphanumeric).then_some(index))
+        .find_map(|(index, line)| {
+            (line.contains('│') && line.chars().any(char::is_alphanumeric)).then_some(index)
+        })
         .expect("wrapped assistant continuation row");
 
     assert_eq!(
@@ -7975,8 +7974,8 @@ fn narrow_transcript_wrapped_top_level_turns_keep_alignment() {
         first_alphanumeric_column(lines[user_continuation]),
         "wrapped user continuations should keep the same text column in narrow layouts\n{rendered}"
     );
-    assert!(lines[user_first].contains('┃'));
-    assert!(lines[user_continuation].contains('┃'));
+    assert!(lines[user_first].contains('╭'));
+    assert!(lines[user_continuation].contains('│'));
     assert_eq!(
         first_alphanumeric_column(lines[assistant_first]),
         first_alphanumeric_column(lines[assistant_continuation]),

@@ -8,7 +8,7 @@ exit code: 1: true
 stderr: snapshot mismatch: true
 focus_marker: Fetch https://example.test/report.pdf
 focus_render_state_blake3: f48d635a745b2e6b0e426b2a0f9bb3b9b8c8b1c637a53dfede173919f2e3ae15
-focus_region_cells: row=20, col=9, height=7, width=42
+focus_region_cells: row=19, col=9, height=7, width=42
 image: pty_native_tool_parity_fetch_row.png
 manifest_json: pty-manifests/transcript_shell/manifest.json
 manifest_jsonl: pty-manifests/transcript_shell/manifest.jsonl

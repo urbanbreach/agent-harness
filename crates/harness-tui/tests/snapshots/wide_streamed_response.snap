@@ -1,10 +1,10 @@
 
-  ┃                                                                                                                     Live · run run_fixture
-  ┃  Hello from PTY                                                                                                     Export bundle · run_fixture/
-  ┃                                                                                                                     Current runtime: default · model-1
-                                                                                                                        Provider mock
-     Hello world                                                                                                        0 active todos · 0 modified files
-     ● Assistant · model-1 · 4ms
+  ╭─ Hello from PTY                                                                                                     Live · run run_fixture
+  ╰─                                                                                                                    Export bundle · run_fixture/
+                                                                                                                        Current runtime: default · model-1
+  ╭─ Hello world                                                                                                        Provider mock
+  ╰─ ● Assistant · model-1 · 4ms                                                                                        0 active todos · 0 modified files
+
                                                                                                                         Context
                                                                                                                         turn 1 · ready for next turn
 
