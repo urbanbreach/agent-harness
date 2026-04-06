@@ -1,10 +1,13 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-expression: "checkpoint_visual_snapshot(&history_screen,\n&[STARTUP_CONTINUE_HISTORY_MARKER, STARTUP_CONTINUE_HISTORY_READY_MARKER,\n\"Interactive histories\",], &history_visual,)"
+assertion_line: 1415
+expression: "checkpoint_visual_snapshot(&history_screen,\n&[STARTUP_CONTINUE_HISTORY_MARKER, STARTUP_CONTINUE_HISTORY_READY_MARKER,\nrun_id, \"filter run/profile/model/artifact/child\", \"continue ready\",],\n&history_visual,)"
 ---
 Continue session: true
 continue ready: true
-Interactive histories: true
+run_resume_quiescent: true
+filter run/profile/model/artifact/child: true
+continue ready: true
 focus_marker: continue ready
 focus_render_state_blake3: 47160956bfb9d52dd7b89bf28297834ba6796b03f503e34303e5722995634c64
 focus_region_cells: row=26, col=63, height=3, width=28

@@ -12,13 +12,13 @@
         use ui_secondary::{                                                                 │   use ui_secondary::{                                                                 crates/harness-tui/src/ui.rs · diff
                                                                                                                                                                                     artifacts/tool-lifecycle-inline.diff
 
-      -     render_diff_tab, render_events_tab, render_help_tab,                            │ +     render_events_tab, render_help_tab, render_live_details_overlay,                Recovery · 2
-                                                                                                                                                                                    Bundle keeps events.jsonl and
+      -     render_diff_tab, render_events_tab, render_help_tab,                            │ +     render_events_tab, render_help_tab, render_live_details_overlay,                ▼ Recovery · 3
+                                                                                                                                                                                    Resume later · Ctrl+p commands opens
+                                                                                                                                                                                    continue/replay history
+            render_operator_sidebar,                                                        │       render_operator_sidebar,                                                        Bundle keeps events.jsonl and
                                                                                                                                                                                     artifacts/
-            render_operator_sidebar,                                                        │       render_operator_sidebar,                                                        Artifact ·
-                                                                                                                                                                                    artifacts/tool-lifecycle-inline.diff
-
-        };                                                                                  │   };
+                                                                                                                                                                                    Artifact ·
+        };                                                                                  │   };                                                                                  artifacts/tool-lifecycle-inline.diff
 
 
 

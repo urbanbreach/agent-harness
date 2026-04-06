@@ -20,12 +20,12 @@ Buffer {
         "      - beta                                   final response Â·                 ",
         "      + BETA                                   edit.hashline_apply              ",
         "        gamma                                  Modified Files Â· 1 Â· demo.txt Â·â¦ ",
-        "                                               â¼ Recovery Â· 3                   ",
+        "                                               â¼ Recovery Â· 4                   ",
         "                                                                                ",
         "                                               harness-tui Â· v0.1.0             ",
         "                                                                                ",
         "â Replay is read-only.                                                          ",
-        "  ? shortcuts  Â·  tab focus  Â·  r reload  Â·  q quit                             ",
+        "  ? shortcuts  Â·  3 event log  Â·  r reload  Â·  q quit                           ",
         "                                                                                ",
         "                                                                                ",
         "                                                                                ",
@@ -136,6 +136,6 @@ Buffer {
         x: 0, y: 19, fg: Rgb(140, 136, 131), bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
         x: 22, y: 19, fg: Reset, bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
         x: 2, y: 20, fg: Rgb(140, 136, 131), bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
-        x: 51, y: 20, fg: Reset, bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
+        x: 53, y: 20, fg: Reset, bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
     ]
 }

@@ -1300,7 +1300,10 @@ async fn pty_e2e_continue_quiescent_session() {
 
     let session_dir = create_temp_session_dir();
     let run_id = "run_resume_quiescent";
-    let run_dir = write_quiescent_resume_fixture(&session_dir, run_id);
+    let replay_parent_id = "run_replay_parent";
+    let replay_child_id = "run_replay_child";
+    let run_dir = write_quiescent_resume_diff_fixture(&session_dir, run_id);
+    write_child_navigation_fixture(&session_dir, replay_parent_id, replay_child_id);
     let events_path = run_dir.join("events.jsonl");
     let before_events = load_events_jsonl(&events_path);
     let config_path = write_wiremock_tui_config(&session_dir, &server.uri());
@@ -1328,13 +1331,21 @@ async fn pty_e2e_continue_quiescent_session() {
     .expect("capture startup launcher checkpoint image");
     assert!(visual_dir.join(&startup_visual.file_name).exists());
 
-    let replay_history_screen = open_startup_session_history(
+    open_startup_session_history(
         &mut harness.parser,
         &harness.output_rx,
         harness.writer.as_mut(),
         "replay",
         STARTUP_REPLAY_HISTORY_MARKER,
     );
+    type_text(harness.writer.as_mut(), replay_parent_id);
+    let replay_history_screen = wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        "saved replay ready",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for replay history recovery preview");
     let replay_history_visual = capture_manifest_backed_visual_checkpoint(
         "startup_session_history",
         "startup_replay_history",
@@ -1343,8 +1354,8 @@ async fn pty_e2e_continue_quiescent_session() {
         FocusCapture::anchored_exact(STARTUP_REPLAY_HISTORY_MARKER, 28, 3),
         &[
             STARTUP_REPLAY_HISTORY_MARKER,
-            "Read-only replays",
-            "interactive and prompt runs stay available",
+            replay_parent_id,
+            "saved replay ready",
         ],
     )
     .expect("capture startup replay history image");
@@ -1355,8 +1366,8 @@ async fn pty_e2e_continue_quiescent_session() {
             &replay_history_screen,
             &[
                 STARTUP_REPLAY_HISTORY_MARKER,
-                "Read-only replays",
-                "interactive and prompt runs stay available",
+                replay_parent_id,
+                "saved replay ready",
             ],
             &replay_history_visual,
         )
@@ -1370,13 +1381,21 @@ async fn pty_e2e_continue_quiescent_session() {
     )
     .expect("wait for startup launcher after closing replay history overlay");
 
-    let history_screen = open_startup_session_history(
+    open_startup_session_history(
         &mut harness.parser,
         &harness.output_rx,
         harness.writer.as_mut(),
         "resume",
         STARTUP_CONTINUE_HISTORY_READY_MARKER,
     );
+    type_text(harness.writer.as_mut(), run_id);
+    let history_screen = wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        "continue ready",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for continue history filter state");
     let history_visual = capture_manifest_backed_visual_checkpoint(
         "startup_session_history",
         "startup_continue_history",
@@ -1386,7 +1405,9 @@ async fn pty_e2e_continue_quiescent_session() {
         &[
             STARTUP_CONTINUE_HISTORY_MARKER,
             STARTUP_CONTINUE_HISTORY_READY_MARKER,
-            "Interactive histories",
+            run_id,
+            "filter run/profile/model/artifact/child",
+            "continue ready",
         ],
     )
     .expect("capture startup resume history image");
@@ -1398,7 +1419,9 @@ async fn pty_e2e_continue_quiescent_session() {
             &[
                 STARTUP_CONTINUE_HISTORY_MARKER,
                 STARTUP_CONTINUE_HISTORY_READY_MARKER,
-                "Interactive histories",
+                run_id,
+                "filter run/profile/model/artifact/child",
+                "continue ready",
             ],
             &history_visual,
         )
@@ -1470,7 +1493,8 @@ async fn pty_e2e_continue_quiescent_session() {
         }),
         "continued session should reopen the same run through the lifecycle handoff"
     );
-    assert_eq!(session_run_dirs(&session_dir), vec![run_dir]);
+    let run_dirs = session_run_dirs(&session_dir);
+    assert!(run_dirs.contains(&run_dir));
 }
 
 #[tokio::test(flavor = "current_thread")]

@@ -26,6 +26,9 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 #[path = "../src/bootstrap.rs"]
 mod bootstrap;
 #[allow(dead_code)]
+#[path = "../src/recovery.rs"]
+mod recovery;
+#[allow(dead_code)]
 #[path = "../src/replay.rs"]
 mod replay;
 #[allow(dead_code)]

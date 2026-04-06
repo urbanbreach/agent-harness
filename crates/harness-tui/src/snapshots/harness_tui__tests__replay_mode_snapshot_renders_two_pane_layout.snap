@@ -1,6 +1,5 @@
 ---
 source: crates/harness-tui/src/tests.rs
-assertion_line: 1353
 expression: normalized
 ---
 Buffer {
@@ -18,7 +17,7 @@ Buffer {
         "                                               Context Â· Recorded runtime Â· reâ¦ ",
         "                                               Provider local                   ",
         "                                               2 events loaded                  ",
-        "                                               Recovery Â· 2                     ",
+        "                                               â¼ Recovery Â· 3                   ",
         "                                               Replay is read-only â inspect    ",
         "                                               recorded context and use replay  ",
         "                                               navigation.                      ",
@@ -26,7 +25,7 @@ Buffer {
         "                                               harness-tui Â· v0.1.0             ",
         "                                                                                ",
         "â Replay is read-only.                                                          ",
-        "  ? shortcuts  Â·  tab focus  Â·  r reload  Â·  q quit                             ",
+        "  ? shortcuts  Â·  3 event log  Â·  r reload  Â·  q quit                           ",
         "                                                                                ",
         "                                                                                ",
         "                                                                                ",
@@ -91,7 +90,7 @@ Buffer {
         x: 2, y: 12, fg: Rgb(231, 227, 222), bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
         x: 46, y: 12, fg: Reset, bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
         x: 47, y: 12, fg: Rgb(231, 227, 222), bg: Rgb(17, 17, 17), underline: Reset, modifier: BOLD,
-        x: 59, y: 12, fg: Rgb(231, 227, 222), bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
+        x: 61, y: 12, fg: Rgb(231, 227, 222), bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
         x: 79, y: 12, fg: Reset, bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
         x: 0, y: 13, fg: Reset, bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
         x: 2, y: 13, fg: Rgb(231, 227, 222), bg: Rgb(17, 17, 17), underline: Reset, modifier: NONE,
@@ -119,6 +118,6 @@ Buffer {
         x: 0, y: 19, fg: Rgb(140, 136, 131), bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
         x: 22, y: 19, fg: Reset, bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
         x: 2, y: 20, fg: Rgb(140, 136, 131), bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
-        x: 51, y: 20, fg: Reset, bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
+        x: 53, y: 20, fg: Reset, bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
     ]
 }

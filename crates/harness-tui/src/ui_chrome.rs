@@ -2101,21 +2101,7 @@ fn startup_disclosure_width(spans: &[Span<'_>]) -> usize {
 }
 
 fn replay_read_only_shortcut_hints(app: &AppState) -> String {
-    [
-        app.keymap
-            .get_binding_label(Action::Help, "shortcuts")
-            .to_ascii_lowercase(),
-        app.keymap
-            .get_binding_label(Action::FocusNext, "focus")
-            .to_ascii_lowercase(),
-        app.keymap
-            .get_binding_label(Action::Reload, "reload")
-            .to_ascii_lowercase(),
-        app.keymap
-            .get_binding_label(Action::Quit, "quit")
-            .to_ascii_lowercase(),
-    ]
-    .join("  ·  ")
+    app.replay_recovery_shortcut_hint()
 }
 
 fn completed_session_status_summary(

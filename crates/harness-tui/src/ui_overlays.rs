@@ -101,7 +101,43 @@ fn render_session_history_overlay(
             .style(Style::default().fg(theme.text.secondary).bg(card_surface)),
         sections[2],
     );
-    render_session_history_list(frame, app, theme, sections[3]);
+    render_session_history_content(frame, app, theme, sections[3], card_surface);
+}
+
+fn render_session_history_content(
+    frame: &mut Frame,
+    app: &AppState,
+    theme: &Theme,
+    area: Rect,
+    card_surface: Color,
+) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let preview_lines = session_history_detail_lines(app);
+    if preview_lines.is_empty() {
+        render_session_history_list(frame, app, theme, area);
+        return;
+    }
+
+    if area.width >= 96 {
+        let columns = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(58), Constraint::Percentage(42)])
+            .split(area);
+        render_session_history_list(frame, app, theme, columns[0]);
+        render_session_history_detail(frame, theme, columns[1], card_surface, preview_lines);
+        return;
+    }
+
+    let preview_height = u16::try_from(preview_lines.len().min(6)).unwrap_or(6);
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(3), Constraint::Length(preview_height)])
+        .split(area);
+    render_session_history_list(frame, app, theme, rows[0]);
+    render_session_history_detail(frame, theme, rows[1], card_surface, preview_lines);
 }
 
 fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
@@ -420,11 +456,11 @@ fn session_history_scope_line(app: &AppState) -> String {
                 "Interactive histories only · blocked rows stay visible when they match".to_string()
             } else if blocked == 0 {
                 format!(
-                    "Interactive histories · {ready} ready · filter by run/profile/model/lineage"
+                    "Interactive histories · {ready} ready · filter run/profile/model/artifact/child"
                 )
             } else {
                 format!(
-                    "Interactive histories · {ready} ready · {blocked} blocked · filter by run/profile/model/lineage"
+                    "Interactive histories · {ready} ready · {blocked} blocked · filter run/profile/model/artifact/child"
                 )
             }
         }
@@ -443,12 +479,12 @@ fn session_history_scope_line(app: &AppState) -> String {
                 .count();
             if prompt_only > 0 {
                 format!(
-                    "Read-only replays · {} matching · {prompt_only} prompt-only still visible",
+                    "Read-only replays · {} matching · {prompt_only} prompt-only visible · filter run/profile/model/artifact/child",
                     app.session_history_filtered.len()
                 )
             } else {
                 format!(
-                    "Read-only replays · {} matching · interactive and prompt runs stay available",
+                    "Read-only replays · {} matching · prompt runs included · filter run/profile/model/artifact/child",
                     app.session_history_filtered.len()
                 )
             }
@@ -602,6 +638,49 @@ fn session_history_row(
     }
 
     Line::from(spans)
+}
+
+fn render_session_history_detail(
+    frame: &mut Frame,
+    theme: &Theme,
+    area: Rect,
+    card_surface: Color,
+    lines: Vec<Line<'static>>,
+) {
+    if area.width == 0 || area.height == 0 || lines.is_empty() {
+        return;
+    }
+
+    frame.render_widget(
+        Paragraph::new(Text::from(lines))
+            .style(Style::default().fg(theme.text.secondary).bg(card_surface))
+            .wrap(Wrap { trim: true }),
+        area,
+    );
+}
+
+fn session_history_detail_lines(app: &AppState) -> Vec<Line<'static>> {
+    let detail_style = Style::default().fg(app.theme().text.secondary);
+    let accent_style = Style::default()
+        .fg(app.theme().text.accent)
+        .add_modifier(Modifier::BOLD);
+
+    let Some(entry) = app.selected_session_history_entry() else {
+        return Vec::new();
+    };
+
+    crate::app::session_history_preview_lines(entry, app.startup_launcher_action)
+        .into_iter()
+        .enumerate()
+        .map(|(index, line)| {
+            let style = if index == 0 {
+                accent_style
+            } else {
+                detail_style
+            };
+            Line::from(vec![Span::styled(line, style)])
+        })
+        .collect()
 }
 
 fn append_session_history_segment(

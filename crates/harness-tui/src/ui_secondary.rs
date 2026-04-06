@@ -360,7 +360,7 @@ pub(crate) fn exact_test_operator_rail_section_model_hides_empty_sources_but_pre
         vec![
             "Context".to_string(),
             "Modified Files · 1".to_string(),
-            "Recovery · 2".to_string(),
+            "▼ Recovery · 3".to_string(),
             "Todo · 1".to_string(),
             "MCP · idle".to_string(),
             "LSP · idle".to_string(),
@@ -427,7 +427,7 @@ pub(crate) fn exact_test_operator_rail_section_model_surfaces_pending_permission
         vec![
             "Context".to_string(),
             "Modified Files · 1".to_string(),
-            "Recovery · 2".to_string(),
+            "▼ Recovery · 3".to_string(),
             "Todo · 1".to_string(),
             "MCP · idle".to_string(),
             "LSP · idle".to_string(),
@@ -560,7 +560,7 @@ pub(crate) fn exact_test_operator_rail_section_model_keeps_native_prefix_tools_o
         vec![
             "Context".to_string(),
             "Modified Files · 1".to_string(),
-            "Recovery · 2".to_string(),
+            "▼ Recovery · 3".to_string(),
             "Todo · 1".to_string(),
             "MCP · idle".to_string(),
             "LSP · idle".to_string(),

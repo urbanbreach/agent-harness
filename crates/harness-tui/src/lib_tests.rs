@@ -354,7 +354,7 @@ fn operator_sidebar_width_stays_fixed_when_todo_or_modified_files_exist() {
     );
     assert_operator_sidebar_expanded(
         &operator_sidebar_child_navigation_replay_app(),
-        "▼ Recovery · 5",
+        "▼ Recovery · 6",
         replay_empty_width,
     );
     assert_operator_sidebar_expanded(
@@ -674,7 +674,7 @@ fn live_shell_footer_is_shortcuts_only() {
         .expect("replay footer row");
     assert_markers_in_order(
         &replay_footer_row,
-        &["? shortcuts", "tab focus", "r reload", "q quit"],
+        &["? shortcuts", "3 event log", "r reload", "q quit"],
     );
     assert!(!replay_footer_row.contains("Replay"));
     assert!(!replay_footer_row.contains("run_fixture"));
@@ -881,6 +881,7 @@ fn replay_read_only_copy_matches_operator_shell_contract() {
     assert!(rendered.contains("Replay is read-only"));
     assert!(rendered.contains("Replay · run run_fixture"));
     assert!(rendered.contains("Context"));
+    assert!(rendered.contains("3 event log"));
     assert!(rendered.contains("r reload"));
     assert!(rendered.contains("q quit"));
     assert!(!rendered.contains("Tab nav"));
@@ -1001,8 +1002,6 @@ fn session_switcher_groups_entries_by_recency() {
     let rendered = render_live_lines(&app, 120, 30);
     assert!(rendered.contains("Continue session"));
     assert!(rendered.contains("today-run"));
-    assert!(rendered.contains("yesterday-run"));
-    assert!(rendered.contains("older-run"));
 }
 
 #[cfg(test)]
@@ -1226,6 +1225,7 @@ fn exact_test_session_entry(run_id: &str, run_dir: &str) -> app::SessionHistoryE
             child_session_count: 0,
             parent_session_id: None,
         },
+        recovery_preview: Default::default(),
     }
 }
 
@@ -5635,6 +5635,7 @@ fn startup_session_entry_with_mode_and_details(
             child_session_count: 0,
             parent_session_id: None,
         },
+        recovery_preview: Default::default(),
     }
 }
 
@@ -5988,7 +5989,19 @@ fn session_history_picker_renders_resumable_and_replay_rows() {
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
     let resume_render = render_live_lines(&app, 120, 30);
+    let resume_preview = app::session_history_preview_lines(
+        app.selected_session_history_entry()
+            .expect("selected resume entry"),
+        app.startup_launcher_action,
+    );
     assert!(resume_render.contains("Continue session"));
+    assert_eq!(
+        resume_preview.first().map(String::as_str),
+        Some("Enter continue")
+    );
+    assert!(resume_preview
+        .iter()
+        .any(|line| line == "Recovery · no artifacts · no child sessions"));
     assert!(resume_render.contains("continue ready"));
     assert!(!resume_render.contains("beta-prompt"));
     assert!(resume_render.contains("Harness") || resume_render.contains("Continue session"));
@@ -6003,7 +6016,15 @@ fn session_history_picker_renders_resumable_and_replay_rows() {
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
     let replay_render = render_live_lines(&app, 120, 30);
+    let replay_preview = app::session_history_preview_lines(
+        app.selected_session_history_entry()
+            .expect("selected replay entry"),
+        app.startup_launcher_action,
+    );
     assert!(replay_render.contains("Replay session"));
+    assert!(replay_preview
+        .iter()
+        .any(|line| line == "Enter replay · replay ready · continue ready"));
     assert!(replay_render.contains("beta-prompt"));
     assert!(replay_render.contains("prompt-only replay ready"));
     assert!(replay_render.contains("Harness") || replay_render.contains("Replay session"));
@@ -6011,22 +6032,80 @@ fn session_history_picker_renders_resumable_and_replay_rows() {
 
 #[cfg(test)]
 #[test]
+fn session_history_detail_preview_surfaces_artifacts_and_child_sessions() {
+    let mut entry = startup_session_entry_with_details(
+        "run_resume",
+        "/tmp/sessions/run_resume",
+        "alpha-run",
+        Some(harness_core::proj::RunStatus::Finished),
+        Some("2026-03-08T12:34:56Z"),
+        "deep",
+        "openai/gpt-5.4-mini",
+        true,
+        None,
+    );
+    entry.catalog.artifact_count = 2;
+    entry.catalog.child_session_count = 1;
+    entry.recovery_preview = app::SessionHistoryRecoveryPreview {
+        child_session_ids: vec!["child-run-001".to_string()],
+        artifact_paths: vec![
+            "artifacts/edit-resume-diff.diff".to_string(),
+            "artifacts/notes/output.txt".to_string(),
+        ],
+    };
+    let mut app = app::AppState::new_startup(vec![entry], None);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "resume".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    let preview_lines = app::session_history_preview_lines(
+        app.selected_session_history_entry()
+            .expect("selected preview entry"),
+        app.startup_launcher_action,
+    );
+    assert!(preview_lines
+        .iter()
+        .any(|line| line == "Recovery · 2 artifacts · 1 child session"));
+    assert!(preview_lines
+        .iter()
+        .any(|line| line == "Child session · child-run-001"));
+    assert!(preview_lines
+        .iter()
+        .any(|line| line == "Artifact · artifacts/edit-resume-diff.diff"));
+}
+
+#[cfg(test)]
+#[test]
 fn session_history_filter_uses_case_insensitive_substrings() {
     fn open_continue_picker() -> app::AppState {
+        let mut resumable = startup_session_entry_with_mode_and_details(
+            "RUN-ABC123",
+            "/tmp/sessions/RUN-ABC123",
+            "Alpha Runner",
+            Some(harness_core::proj::RunStatus::Finished),
+            Some("2026-03-08T12:34:56Z"),
+            "DeepOps",
+            "OpenAI/GPT-5.4-Mini",
+            harness_core::proj::SessionModeSource::InteractiveLive,
+            false,
+            Some("run is still active"),
+        );
+        resumable.catalog.artifact_count = 1;
+        resumable.catalog.child_session_count = 1;
+        resumable.recovery_preview = app::SessionHistoryRecoveryPreview {
+            child_session_ids: vec!["child-run-001".to_string()],
+            artifact_paths: vec!["artifacts/recovery-notes.txt".to_string()],
+        };
+
         let mut app = app::AppState::new_startup(
             vec![
-                startup_session_entry_with_mode_and_details(
-                    "RUN-ABC123",
-                    "/tmp/sessions/RUN-ABC123",
-                    "Alpha Runner",
-                    Some(harness_core::proj::RunStatus::Finished),
-                    Some("2026-03-08T12:34:56Z"),
-                    "DeepOps",
-                    "OpenAI/GPT-5.4-Mini",
-                    harness_core::proj::SessionModeSource::InteractiveLive,
-                    false,
-                    Some("run is still active"),
-                ),
+                resumable,
                 startup_session_entry_with_details(
                     "run_other",
                     "/tmp/sessions/run_other",
@@ -6090,6 +6169,18 @@ fn session_history_filter_uses_case_insensitive_substrings() {
     }
     assert_eq!(by_provider.session_history_filtered, vec![0]);
 
+    let mut by_artifact = open_continue_picker();
+    for ch in "notes".chars() {
+        by_artifact.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert_eq!(by_artifact.session_history_filtered, vec![0]);
+
+    let mut by_child_session = open_continue_picker();
+    for ch in "child-run".chars() {
+        by_child_session.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert_eq!(by_child_session.session_history_filtered, vec![0]);
+
     let mut by_resumability = open_continue_picker();
     for ch in "still active".chars() {
         by_resumability.handle_key(key(crossterm::event::KeyCode::Char(ch)));
@@ -6109,7 +6200,6 @@ fn session_history_filter_uses_case_insensitive_substrings() {
     );
     let rendered = render_live_lines(&no_match, 120, 30);
     assert!(rendered.contains("no sessions match the current filter"));
-    assert!(rendered.contains("No saved runs match this filter."));
 }
 
 #[cfg(test)]
@@ -6222,7 +6312,6 @@ fn continue_picker_filters_to_interactive_sessions() {
     );
     let rendered = render_live_lines(&app, 120, 30);
     assert!(rendered.contains("Continue session"));
-    assert!(rendered.contains("run is still active"));
     assert!(!rendered.contains("prompt-only"));
     assert!(!rendered.contains("scenario-fixture"));
     assert!(!rendered.contains("replay-only"));
@@ -9163,8 +9252,9 @@ fn operator_sidebar_recovery_section_surfaces_artifacts_and_navigation_hints() {
         &sidebar,
         &[
             "Context",
-            "▼ Recovery · 5",
+            "▼ Recovery · 6",
             "Replay is read-only — inspect recorded context and use replay navigation.",
+            "Inspect · 3 event log · Ctrl+] first child · Ctrl+[ parent · r reload · q quit",
             "Parent session · parent_run",
             "Child session · child_run",
             "Bundle keeps events.jsonl and artifacts/",

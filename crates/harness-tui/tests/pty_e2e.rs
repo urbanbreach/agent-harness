@@ -7,7 +7,10 @@ use harness_core::event::{
     ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
-use harness_tui::app::{set_pending_live_launch_metadata, LaunchMetadata, SessionHistoryEntry};
+use harness_tui::app::{
+    set_pending_live_launch_metadata, LaunchMetadata, SessionHistoryEntry,
+    SessionHistoryRecoveryPreview,
+};
 use harness_tui::{run_tui_with_options, LiveUpdate, TuiMode, TuiOptions, UiIntent};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::cmp;
@@ -552,7 +555,7 @@ fn operator_sidebar_matches_opencode_information_architecture() {
             "Provider openai",
             "Context",
             "▼ Modified Files · 3",
-            "Recovery · 1",
+            "Recovery · 2",
             "▼ Todo · 3",
             "Network · 1",
             "Batch · 1",
@@ -629,7 +632,7 @@ fn pty_live_orchestration_drawer_and_status() {
         &completed_screen,
         &[
             "Context",
-            "Recovery · 1",
+            "Recovery · 2",
             "Bundle keeps events.jsonl and",
             "ready for next turn",
         ],
@@ -2305,6 +2308,10 @@ fn startup_session_history_entries() -> Vec<SessionHistoryEntry> {
                 child_session_count: 1,
                 parent_session_id: None,
             },
+            recovery_preview: SessionHistoryRecoveryPreview {
+                child_session_ids: vec!["child-run-001".to_string()],
+                artifact_paths: vec!["artifacts/edit-resume-diff.diff".to_string()],
+            },
         },
         SessionHistoryEntry {
             run_dir: PathBuf::from("/tmp/sessions/run_blocked"),
@@ -2322,6 +2329,10 @@ fn startup_session_history_entries() -> Vec<SessionHistoryEntry> {
                 artifact_count: 1,
                 child_session_count: 0,
                 parent_session_id: Some("run_parent".to_string()),
+            },
+            recovery_preview: SessionHistoryRecoveryPreview {
+                child_session_ids: Vec::new(),
+                artifact_paths: vec!["artifacts/blocked-notes.txt".to_string()],
             },
         },
     ]

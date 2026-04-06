@@ -27,7 +27,7 @@ use harness_core::store::{EventStore, EventStoreError};
 use harness_tools::coordinator_registry;
 use harness_tui::app::{
     set_pending_live_launch_metadata, set_pending_live_prompt_auto_submit, LaunchMetadata,
-    ModelOption, SessionHistoryEntry,
+    ModelOption, SessionHistoryEntry, SessionHistoryRecoveryPreview,
 };
 use harness_tui::{
     load_events_from_run_dir, run_tui_with_options, set_pending_replay_launch_metadata, LiveUpdate,
@@ -544,11 +544,29 @@ fn load_startup_session_history_entries(
             .into_iter()
             .filter(startup_session_history_entry_visible)
             .map(|entry| SessionHistoryEntry {
+                recovery_preview: load_session_history_recovery_preview(&entry.run_dir),
                 run_dir: entry.run_dir,
                 catalog: entry.catalog,
             })
             .collect()
     })
+}
+
+fn load_session_history_recovery_preview(run_dir: &Path) -> SessionHistoryRecoveryPreview {
+    crate::recovery::inspect_session_recovery(run_dir)
+        .map(|summary| SessionHistoryRecoveryPreview {
+            child_session_ids: summary
+                .child_sessions
+                .into_iter()
+                .map(|child| child.agent_id)
+                .collect(),
+            artifact_paths: summary
+                .artifacts
+                .into_iter()
+                .map(|artifact| artifact.path)
+                .collect(),
+        })
+        .unwrap_or_default()
 }
 
 fn startup_session_history_entry_visible(entry: &crate::replay::SessionInspectionEntry) -> bool {

@@ -877,6 +877,13 @@ pub enum LifecycleShellState {
 pub struct SessionHistoryEntry {
     pub run_dir: PathBuf,
     pub catalog: SessionCatalogEntry,
+    pub recovery_preview: SessionHistoryRecoveryPreview,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SessionHistoryRecoveryPreview {
+    pub child_session_ids: Vec<String>,
+    pub artifact_paths: Vec<String>,
 }
 
 pub(crate) fn session_history_run_name(entry: &SessionHistoryEntry) -> &str {
@@ -973,6 +980,85 @@ pub(crate) fn session_history_lineage_label(entry: &SessionHistoryEntry) -> Stri
     )
 }
 
+pub(crate) fn session_history_preview_lines(
+    entry: &SessionHistoryEntry,
+    action: StartupLauncherAction,
+) -> Vec<String> {
+    let mut lines = vec![
+        match action {
+            StartupLauncherAction::ContinueSession | StartupLauncherAction::NewSession => {
+                if entry.catalog.is_resumable {
+                    "Enter continue".to_string()
+                } else {
+                    entry
+                        .catalog
+                        .resume_disabled_reason
+                        .as_deref()
+                        .map(|reason| format!("Continue blocked · {reason}"))
+                        .unwrap_or_else(|| "Continue blocked".to_string())
+                }
+            }
+            StartupLauncherAction::ReplaySession => {
+                let replay_label = match entry.catalog.mode_source {
+                    SessionModeSource::Prompt => "prompt-only replay ready".to_string(),
+                    SessionModeSource::InteractiveLive | SessionModeSource::InteractiveMock => {
+                        if entry.catalog.is_resumable {
+                            "replay ready · continue ready".to_string()
+                        } else {
+                            entry
+                                .catalog
+                                .resume_disabled_reason
+                                .as_deref()
+                                .map(|reason| format!("replay ready · blocked: {reason}"))
+                                .unwrap_or_else(|| "replay ready".to_string())
+                        }
+                    }
+                    SessionModeSource::ScenarioFixture => "fixture replay ready".to_string(),
+                    SessionModeSource::ReplayOnly => "replay artifact ready".to_string(),
+                    SessionModeSource::Unknown => "saved replay ready".to_string(),
+                };
+                format!("Enter replay · {replay_label}")
+            }
+        },
+        format!("Updated · {}", session_history_recency_label(entry)),
+        format!("Path · {}", entry.run_dir.display()),
+        format!(
+            "Profile · {} · Provider/model · {}",
+            session_history_profile_label(entry),
+            session_history_provider_model_label(entry)
+        ),
+    ];
+
+    let child_label = match entry.catalog.child_session_count {
+        0 => "no child sessions".to_string(),
+        1 => "1 child session".to_string(),
+        count => format!("{count} child sessions"),
+    };
+    lines.push(format!(
+        "Recovery · {} · {child_label}",
+        session_history_artifact_label(entry)
+    ));
+
+    if let Some(parent_session_id) = entry
+        .catalog
+        .parent_session_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        lines.push(format!("Parent session · {parent_session_id}"));
+    }
+
+    for child_session_id in entry.recovery_preview.child_session_ids.iter().take(3) {
+        lines.push(format!("Child session · {child_session_id}"));
+    }
+    for artifact_path in entry.recovery_preview.artifact_paths.iter().take(3) {
+        lines.push(format!("Artifact · {artifact_path}"));
+    }
+
+    lines
+}
+
 fn session_history_entry_matches_action(
     entry: &SessionHistoryEntry,
     action: StartupLauncherAction,
@@ -1015,9 +1101,10 @@ fn session_history_filter_matches(entry: &SessionHistoryEntry, input: &str) -> b
         return true;
     }
 
-    let candidates = [
+    let mut candidates = vec![
         session_history_run_name(entry).to_lowercase(),
         entry.catalog.run_id.to_lowercase(),
+        entry.run_dir.display().to_string().to_lowercase(),
         session_history_status_label(entry).to_string(),
         session_history_recency_label(entry).to_lowercase(),
         session_history_profile_label(entry).to_lowercase(),
@@ -1026,6 +1113,21 @@ fn session_history_filter_matches(entry: &SessionHistoryEntry, input: &str) -> b
         session_history_artifact_label(entry).to_lowercase(),
         session_history_lineage_label(entry).to_lowercase(),
     ];
+
+    candidates.extend(
+        entry
+            .recovery_preview
+            .child_session_ids
+            .iter()
+            .map(|value| value.to_lowercase()),
+    );
+    candidates.extend(
+        entry
+            .recovery_preview
+            .artifact_paths
+            .iter()
+            .map(|value| value.to_lowercase()),
+    );
 
     candidates.iter().any(|candidate| candidate.contains(input))
 }
@@ -3387,6 +3489,52 @@ impl AppState {
         artifact_paths
     }
 
+    fn replay_recovery_shortcut_parts(&self) -> Vec<String> {
+        let child_session_ids = self.child_session_ids();
+        let parent_session_id = self.current_parent_session_id();
+        let mut parts = vec![self
+            .keymap
+            .get_binding_label(Action::OpenEventLog, "event log")];
+
+        if !child_session_ids.is_empty() {
+            parts.push(
+                self.keymap
+                    .get_binding_label(Action::SessionChildFirst, "first child"),
+            );
+            if child_session_ids.len() > 1 {
+                parts.push(
+                    self.keymap
+                        .get_binding_label(Action::SessionChildCycle, "next child"),
+                );
+                parts.push(
+                    self.keymap
+                        .get_binding_label(Action::SessionChildCycleReverse, "prev child"),
+                );
+            }
+        }
+
+        if parent_session_id.is_some() {
+            parts.push(
+                self.keymap
+                    .get_binding_label(Action::SessionParent, "parent"),
+            );
+        }
+
+        parts.push(self.keymap.get_binding_label(Action::Reload, "reload"));
+        parts.push(self.keymap.get_binding_label(Action::Quit, "quit"));
+        parts
+    }
+
+    pub(crate) fn replay_recovery_shortcut_hint(&self) -> String {
+        let mut parts = vec![self.keymap.get_binding_label(Action::Help, "shortcuts")];
+        parts.extend(self.replay_recovery_shortcut_parts());
+        parts
+            .into_iter()
+            .map(|part| part.to_ascii_lowercase())
+            .collect::<Vec<_>>()
+            .join("  ·  ")
+    }
+
     pub fn operator_sidebar_recovery_lines(&self) -> Vec<String> {
         let artifact_paths = self.operator_sidebar_artifact_paths();
         let child_session_ids = self.child_session_ids();
@@ -3407,6 +3555,15 @@ impl AppState {
                 "Replay is read-only — inspect recorded context and use replay navigation."
                     .to_string(),
             );
+            lines.push(format!(
+                "Inspect · {}",
+                self.replay_recovery_shortcut_parts().join(" · ")
+            ));
+        } else if has_bundle {
+            lines.push(format!(
+                "Resume later · {} opens continue/replay history",
+                self.keymap.get_binding_label(Action::Palette, "commands")
+            ));
         }
         if let Some(parent_session_id) = parent_session_id {
             lines.push(format!("Parent session · {parent_session_id}"));

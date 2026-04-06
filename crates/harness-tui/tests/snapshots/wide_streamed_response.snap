@@ -8,11 +8,11 @@
                                                                                                                         Context
                                                                                                                         turn 1 · ready for next turn
 
-                                                                                                                        Recovery · 1
+                                                                                                                        Recovery · 2
+                                                                                                                        Resume later · Ctrl+p commands opens
+                                                                                                                        continue/replay history
                                                                                                                         Bundle keeps events.jsonl and
                                                                                                                         artifacts/
-
-
 
 
 
