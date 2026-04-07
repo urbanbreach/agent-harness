@@ -795,6 +795,21 @@ fn native_tool_parity_pty_lane() {
         "14:37",
     );
 
+    let thinking_visual = capture_manifest_backed_visual_checkpoint(
+        "transcript_shell",
+        "native_tool_parity_thinking",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("Thinking: Drafting the inline parity pass.", 40, 5),
+        &[
+            "Thinking: Drafting the inline parity pass.",
+            "Inline transcript parity is easier to scan now.",
+            "Bring native tool parity inline",
+            REPLAY_DENSE_READY_MARKER,
+        ],
+    )
+    .expect("capture native tool parity thinking image");
+
     let task_visual = capture_manifest_backed_visual_checkpoint(
         "transcript_shell",
         "native_tool_parity_task_row",
@@ -804,7 +819,8 @@ fn native_tool_parity_pty_lane() {
         &[
             "Bring native tool parity inline",
             "Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s",
-            "Spawn researcher · audit transcript parity · 14:36 · 1.6s",
+            "Spawn researcher · audit transcript parity",
+            "14:36 · 1.6s",
             "foreground · agent_worker · req_child · completed · 3 child tool calls",
         ],
     )
@@ -816,7 +832,8 @@ fn native_tool_parity_pty_lane() {
         &visual_dir,
         FocusCapture::anchored_exact("Fetch https://example.test/report.pdf", 42, 7),
         &[
-            "Fetch https://example.test/report.pdf · 14:37 · 2.4s",
+            "Fetch https://example.test/report.pdf",
+            "14:37 · 2.4s",
             "Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact",
             "exit code: 1",
             "stderr: snapshot mismatch",
@@ -825,14 +842,18 @@ fn native_tool_parity_pty_lane() {
     .expect("capture native tool parity fetch-row image");
 
     assert!(screen.contains("Bring native tool parity inline"));
+    assert!(screen.contains("Thinking: Drafting the inline parity pass."));
+    assert!(screen.contains("Inline transcript parity is easier to scan now."));
     assert!(screen.contains("Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s"));
     assert!(screen.contains("Compat alias · read → fs.read"));
-    assert!(screen.contains("Spawn researcher · audit transcript parity · 14:36 · 1.6s"));
+    assert!(screen.contains("Spawn researcher · audit transcript parity"));
+    assert!(screen.contains("14:36 · 1.6s"));
     assert!(
         screen.contains("foreground · agent_worker · req_child · completed · 3 child tool calls")
     );
     assert!(screen.contains("Compat alias · task → agent.spawn"));
-    assert!(screen.contains("Fetch https://example.test/report.pdf · 14:37 · 2.4s"));
+    assert!(screen.contains("Fetch https://example.test/report.pdf"));
+    assert!(screen.contains("14:37 · 2.4s"));
     assert!(screen.contains(
         "Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact"
     ));
@@ -842,8 +863,22 @@ fn native_tool_parity_pty_lane() {
     assert!(screen.contains(REPLAY_DENSE_READY_MARKER));
     assert!(!screen.contains("Event log"));
     assert!(!screen.contains("Keyboard Shortcuts:"));
+    assert!(visual_dir.join(&thinking_visual.file_name).exists());
     assert!(visual_dir.join(&task_visual.file_name).exists());
     assert!(visual_dir.join(&fetch_visual.file_name).exists());
+    insta::assert_snapshot!(
+        "native_tool_parity_thinking",
+        checkpoint_visual_snapshot(
+            &screen,
+            &[
+                "Thinking: Drafting the inline parity pass.",
+                "Inline transcript parity is easier to scan now.",
+                "Bring native tool parity inline",
+                REPLAY_DENSE_READY_MARKER,
+            ],
+            &thinking_visual,
+        )
+    );
     insta::assert_snapshot!(
         "native_tool_parity_task_row",
         checkpoint_visual_snapshot(
@@ -851,7 +886,8 @@ fn native_tool_parity_pty_lane() {
             &[
                 "Bring native tool parity inline",
                 "Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s",
-                "Spawn researcher · audit transcript parity · 14:36 · 1.6s",
+                "Spawn researcher · audit transcript parity",
+                "14:36 · 1.6s",
                 "foreground · agent_worker · req_child · completed · 3 child tool calls",
             ],
             &task_visual,
@@ -862,7 +898,8 @@ fn native_tool_parity_pty_lane() {
         checkpoint_visual_snapshot(
             &screen,
             &[
-                "Fetch https://example.test/report.pdf · 14:37 · 2.4s",
+                "Fetch https://example.test/report.pdf",
+                "14:37 · 2.4s",
                 "Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact",
                 "exit code: 1",
                 "stderr: snapshot mismatch",
@@ -2288,7 +2325,7 @@ fn write_wiremock_tui_config(session_dir: &Path, wiremock_uri: &str) -> PathBuf 
                 }
             }
         },
-        "profiles": {
+        "agents": {
             "deep": {
                 "description": "deep work agent",
                 "model_ref": "default:model-1",
@@ -3514,7 +3551,7 @@ fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf
                 Some("2026-03-22T14:35:14Z"),
                 event_actor("worker", Some("agent_000001")),
                 Some("req_native_tool_parity"),
-                "provider_stream_delta",
+                "provider_reasoning_delta",
                 json!({
                     "request_id": "req_native_tool_parity",
                     "delta": "Drafting the inline parity pass.",
