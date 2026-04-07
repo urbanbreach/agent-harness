@@ -187,12 +187,14 @@ pub(crate) use ui_secondary::{
 use ui_transcript::build_transcript_lines;
 #[cfg(test)]
 pub(crate) use ui_transcript::{
+    exact_test_block_tool_cards_skip_empty_subtitle_rows,
+    exact_test_inline_tool_rows_wrap_long_subtitles_cleanly,
     exact_test_native_tool_transcript_rows_show_disclosure_timestamps_and_task_metadata,
-    exact_test_transcript_answer_precedes_nested_context,
     exact_test_transcript_edit_tool_matches_opencode_inline_diff_shape,
     exact_test_transcript_follow_mode_uses_measured_surface_heights,
     exact_test_transcript_pending_permission_stays_after_last_activity,
     exact_test_transcript_proposed_edit_renders_opencode_header,
+    exact_test_transcript_reasoning_precedes_answer_and_tool_rows,
     exact_test_transcript_rejected_edit_surfaces_reason_inline,
     exact_test_transcript_section_model_keeps_nested_tool_and_error_blocks,
     exact_test_transcript_section_model_preserves_activity_order,
@@ -703,9 +705,10 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use harness_core::event::{
         ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
-        PermissionResolvedEvent, ProviderRequestFinishedEvent, ProviderRequestStartedEvent,
-        ProviderStreamDeltaEvent, ToolCallFinishedEvent, ToolCallRequestedEvent,
-        ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
+        PermissionResolvedEvent, ProviderReasoningDeltaEvent, ProviderRequestFinishedEvent,
+        ProviderRequestStartedEvent, ProviderStreamDeltaEvent, ToolCallFinishedEvent,
+        ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent,
+        SCHEMA_VERSION,
     };
 
     fn render_debug(app: &AppState, width: u16, height: u16) -> String {
@@ -858,7 +861,7 @@ mod tests {
         app.ingest_event(envelope(
             2,
             "req_answer_first",
-            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
                 request_id: "req_answer_first".to_string(),
                 delta: "Drafting a document-like plan".to_string(),
             }),
@@ -905,16 +908,16 @@ mod tests {
         ));
 
         let transcript = transcript_debug(&app);
+        let thinking_index = transcript
+            .find("Thinking: Drafting a document-like plan")
+            .expect("thinking summary");
         let answer_index = transcript
             .find("Found the transcript renderer and the composer chrome.")
             .expect("answer text");
-        let thinking_index = transcript
-            .find("Thinking: · Drafting a document-like plan")
-            .expect("thinking summary");
         let tool_index = transcript.find("Read src/ui.rs").expect("tool summary");
 
-        assert!(answer_index < thinking_index);
-        assert!(thinking_index < tool_index);
+        assert!(thinking_index < answer_index);
+        assert!(answer_index < tool_index);
     }
 
     #[test]
@@ -1067,7 +1070,7 @@ mod tests {
             recommended_for: None,
         };
         let alternate = ModelOption {
-            profile: "writer".to_string(),
+            profile: "deep".to_string(),
             provider: "default".to_string(),
             model: "gpt-5.4-mini".to_string(),
             variant: Some("creative".to_string()),
@@ -1093,7 +1096,7 @@ mod tests {
 
         assert_eq!(
             app.runtime_context_summary_segment_text(),
-            Some("Next turns: writer · GPT-5.4 Mini · Creative".to_string())
+            Some("Next turns: deep · GPT-5.4 Mini · Creative".to_string())
         );
 
         let debug = render_debug(&app, 160, 24);
@@ -1122,7 +1125,7 @@ mod tests {
             recommended_for: None,
         };
         let alternate = ModelOption {
-            profile: "writer".to_string(),
+            profile: "deep".to_string(),
             provider: "default".to_string(),
             model: "gpt-5.4-mini".to_string(),
             variant: Some("creative".to_string()),
@@ -1149,7 +1152,7 @@ mod tests {
 
         assert_eq!(
             app.runtime_context_summary_segment_text(),
-            Some("Next turns: writer · GPT-5.4 Mini · Creative".to_string())
+            Some("Next turns: deep · GPT-5.4 Mini · Creative".to_string())
         );
 
         let debug = render_debug(&app, 160, 24);

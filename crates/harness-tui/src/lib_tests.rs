@@ -20,13 +20,15 @@ delegate_test!(fenced_code_highlighting_uses_syntect_styles_for_known_languages 
 delegate_test!(fenced_code_highlighting_falls_back_to_plain_text_when_unknown => tests::module_fenced_code_highlighting_falls_back_to_plain_text_when_unknown);
 delegate_test!(transcript_section_model_preserves_activity_order => ui::exact_test_transcript_section_model_preserves_activity_order);
 delegate_test!(transcript_section_model_keeps_nested_tool_and_error_blocks => ui::exact_test_transcript_section_model_keeps_nested_tool_and_error_blocks);
-delegate_test!(transcript_answer_precedes_nested_context => ui::exact_test_transcript_answer_precedes_nested_context);
+delegate_test!(transcript_reasoning_precedes_answer_and_tool_rows => ui::exact_test_transcript_reasoning_precedes_answer_and_tool_rows);
 delegate_test!(transcript_edit_tool_matches_opencode_inline_diff_shape => ui::exact_test_transcript_edit_tool_matches_opencode_inline_diff_shape);
 delegate_test!(transcript_proposed_edit_renders_opencode_header => ui::exact_test_transcript_proposed_edit_renders_opencode_header);
 delegate_test!(transcript_rejected_edit_surfaces_reason_inline => ui::exact_test_transcript_rejected_edit_surfaces_reason_inline);
 delegate_test!(transcript_follow_mode_uses_measured_surface_heights => ui::exact_test_transcript_follow_mode_uses_measured_surface_heights);
 delegate_test!(native_tool_transcript_rows_show_disclosure_timestamps_and_task_metadata => ui::exact_test_native_tool_transcript_rows_show_disclosure_timestamps_and_task_metadata);
 delegate_test!(transcript_task_rows_show_child_status_duration_and_counts => ui::exact_test_transcript_task_rows_show_child_status_duration_and_counts);
+delegate_test!(block_tool_cards_skip_empty_subtitle_rows => ui::exact_test_block_tool_cards_skip_empty_subtitle_rows);
+delegate_test!(inline_tool_rows_wrap_long_subtitles_cleanly => ui::exact_test_inline_tool_rows_wrap_long_subtitles_cleanly);
 delegate_test!(transcript_pending_permission_stays_after_last_activity => ui::exact_test_transcript_pending_permission_stays_after_last_activity);
 
 #[cfg(test)]
@@ -199,35 +201,73 @@ fn transcript_turn_sections_keep_nested_tool_details() {
     app.activities = std::collections::VecDeque::from(vec![activity]);
     app.selected_activity_index = 0;
 
-    let rendered = render_live_lines(&app, 60, 18);
+    let rendered = render_live_lines(&app, 80, 20);
+    let buffer = render_live_cells(&app, 80, 20);
+    let theme = Theme::default();
     let lines = rendered.lines().collect::<Vec<_>>();
+    let reasoning_row = find_line_containing_all_from(&lines, 0, &["Thinking:", "tool planning"])
+        .unwrap_or_else(|| panic!("reasoning row\n{rendered}"));
     let body_row = find_line_containing(&lines, "Assistant body")
         .unwrap_or_else(|| panic!("assistant body row\n{rendered}"));
     let assistant_footer = find_line_containing_from(&lines, body_row + 1, "Assistant")
         .unwrap_or_else(|| panic!("assistant footer\n{rendered}"));
-    let thinking_row = find_line_containing_all_from(
-        &lines,
-        assistant_footer + 1,
-        &["Thinking:", "tool planning"],
-    )
-    .unwrap_or_else(|| panic!("thinking row\n{rendered}"));
-    let tool_row = find_line_containing_all_from(&lines, thinking_row + 1, &["$ false"])
+    let tool_row = find_line_containing_all_from(&lines, assistant_footer + 1, &["$ false"])
         .unwrap_or_else(|| panic!("tool row\n{rendered}"));
     let error_row =
         find_line_containing_all_from(&lines, tool_row + 1, &["error", "tool call failed"])
             .unwrap_or_else(|| panic!("tool error row\n{rendered}"));
 
+    assert!(reasoning_row < body_row);
+    assert!(reasoning_row + 1 < body_row);
     assert!(body_row < assistant_footer);
-    assert!(assistant_footer < thinking_row);
-    assert!(body_row < thinking_row);
-    assert!(thinking_row < tool_row);
+    assert!(assistant_footer < tool_row);
     assert!(tool_row < error_row);
     assert!(body_row < error_row);
 
     let assistant_body_column = first_alphanumeric_column(lines[body_row]);
     let assistant_body_rail = first_non_whitespace_column(lines[body_row]);
     let assistant_footer_column = first_alphanumeric_column(lines[assistant_footer]);
-    let nested_detail_columns = [thinking_row, tool_row, error_row]
+    let (reasoning_row_text, reasoning_row_fgs, _) =
+        row_at(&buffer, 80, reasoning_row).expect("reasoning palette row");
+    let reasoning_rail_column = reasoning_row_text.find('┃').expect("reasoning rail");
+    let thinking_label_start = reasoning_row_text[..reasoning_row_text
+        .find("Thinking:")
+        .expect("thinking label start")]
+        .chars()
+        .count();
+    let thinking_body_start = reasoning_row_text[..reasoning_row_text
+        .find("tool planning")
+        .expect("thinking body start")]
+        .chars()
+        .count();
+
+    assert!(
+        reasoning_row_text.contains("Thinking: tool planning"),
+        "thinking label and content should stay inline with a single space like Opencode\n{rendered}"
+    );
+    assert_eq!(
+        first_alphanumeric_column(lines[reasoning_row]),
+        assistant_body_column,
+        "thinking label should align with the assistant body instead of rendering as a nested labeled block\n{rendered}"
+    );
+    assert_eq!(
+        reasoning_row_fgs[reasoning_rail_column], theme.border.subtle,
+        "thinking rail should use the subtle border color\n{rendered}"
+    );
+    assert!(
+        reasoning_row_fgs[thinking_label_start..thinking_label_start + "Thinking:".chars().count()]
+            .iter()
+            .all(|color| *color == theme.text.secondary),
+        "thinking label should stay muted like Opencode\n{rendered}"
+    );
+    assert!(
+        reasoning_row_fgs
+            [thinking_body_start..thinking_body_start + "tool planning".chars().count()]
+            .iter()
+            .all(|color| *color == theme.text.secondary),
+        "thinking body should stay muted like Opencode\n{rendered}"
+    );
+    let nested_detail_columns = [tool_row, error_row]
         .into_iter()
         .map(|row| first_alphanumeric_column(lines[row]))
         .collect::<Vec<_>>();
@@ -4139,8 +4179,8 @@ fn rich_transcript_fixture_app() -> app::AppState {
     app.ingest_event(envelope(
         3,
         Some(request_id),
-        harness_core::event::EventV1::ProviderStreamDelta(
-            harness_core::event::ProviderStreamDeltaEvent {
+        harness_core::event::EventV1::ProviderReasoningDelta(
+            harness_core::event::ProviderReasoningDeltaEvent {
                 request_id: request_id.to_string(),
                 delta: "Drafting a document-like plan".to_string(),
             },
@@ -4456,10 +4496,14 @@ fn module_live_shell_redesign_preserves_replay_overlay_and_permission_parity() {
             });
     let user_row = find_line_containing(&replay_lines, "Explain the refactor")
         .unwrap_or_else(|| panic!("replay shell should preserve the user turn\n{replay_render}"));
-    let thinking_row = find_line_containing_from(&replay_lines, user_row + 1, "Thinking:")
-        .unwrap_or_else(|| {
-            panic!("replay shell should preserve nested reasoning\n{replay_render}")
-        });
+    let thinking_row = find_line_containing_all_from(
+        &replay_lines,
+        user_row + 1,
+        &["Thinking:", "Working through the steps."],
+    )
+    .unwrap_or_else(|| {
+        panic!("replay shell should preserve visible thinking text\n{replay_render}")
+    });
 
     assert!(replay_header_row < replay_disabled_row && replay_disabled_row < replay_shortcuts_row);
     assert!(
@@ -5126,31 +5170,32 @@ fn transcript_shell_remains_scannable_without_bubble_cards() {
     let lines = rendered.lines().collect::<Vec<_>>();
     let prompt_row =
         find_line_containing(&lines, "Restyle the transcript shell").expect("user prompt row");
-    let body_row = find_line_containing_from(
+    let thinking_row = find_line_containing_all_from(
         &lines,
         prompt_row + 1,
+        &["Thinking:", "Drafting a document-like plan"],
+    )
+    .expect("reasoning row");
+    let body_row = find_line_containing_from(
+        &lines,
+        thinking_row + 1,
         "Found the transcript renderer and the composer chrome.",
     )
     .expect("assistant body row");
-    let thinking_row = find_line_containing_all_from(
-        &lines,
-        body_row + 1,
-        &["Thinking:", "Drafting a document-like plan"],
-    )
-    .expect("thinking row");
     let tool_row = find_line_containing_all_from(
         &lines,
-        thinking_row + 1,
+        body_row + 1,
         &["Read src/ui.rs", "[offset=1, limit=24]"],
     )
     .expect("tool row");
 
     assert!(prompt_row < body_row);
-    assert!(body_row < thinking_row);
-    assert!(thinking_row < tool_row);
+    assert!(prompt_row < thinking_row);
+    assert!(thinking_row < body_row);
+    assert!(body_row < tool_row);
     assert!(
-        first_alphanumeric_column(lines[thinking_row]) > first_alphanumeric_column(lines[body_row]),
-        "inline thinking should remain nested deeper than the assistant body rail\n{rendered}"
+        first_alphanumeric_column(lines[thinking_row]) == first_alphanumeric_column(lines[body_row]),
+        "reasoning should align with the assistant body instead of using a deeper nested rail\n{rendered}"
     );
     assert!(
         first_alphanumeric_column(lines[tool_row]) > first_alphanumeric_column(lines[body_row]),
@@ -5220,32 +5265,32 @@ fn nested_transcript_rows_preserve_prefix_on_wrapped_continuations() {
 
     let rendered = render_live_lines(&app, 80, 24);
     let lines = rendered.lines().collect::<Vec<_>>();
+    let thinking_row =
+        find_line_containing_all_from(&lines, 0, &["Thinking:", "Drafting a document-like plan"])
+            .expect("wrapped reasoning row");
     let body_row = find_line_containing(
         &lines,
         "Found the transcript renderer and the composer chrome.",
     )
     .expect("assistant body row");
-    let thinking_row = find_line_containing_all_from(
-        &lines,
-        body_row + 1,
-        &["Thinking:", "Drafting a document-like plan"],
-    )
-    .expect("wrapped thinking row");
-    let tool_row = find_line_containing_all_from(&lines, thinking_row + 1, &["Read src/ui.rs"])
-        .expect("tool row");
-    let continuation_row = (thinking_row + 1..tool_row)
+    let continuation_row = (thinking_row + 1..body_row)
         .find(|row| !lines[*row].trim().is_empty())
         .expect("wrapped continuation row");
+    let answer_gap_row = (continuation_row + 1..body_row)
+        .find(|row| lines[*row].trim().is_empty())
+        .expect("blank gap row before assistant body");
 
     assert!(
-        first_alphanumeric_column(lines[thinking_row]) > first_alphanumeric_column(lines[body_row]),
-        "initial nested thinking row should stay deeper than the assistant body\n{rendered}"
+        first_alphanumeric_column(lines[thinking_row])
+            == first_alphanumeric_column(lines[body_row]),
+        "reasoning should align with the assistant body while wrapping\n{rendered}"
     );
     assert_eq!(
         first_alphanumeric_column(lines[thinking_row]),
         first_alphanumeric_column(lines[continuation_row]),
         "wrapped nested continuation should repeat the nested prefix and rail\n{rendered}"
     );
+    assert!(answer_gap_row < body_row);
 }
 
 #[cfg(test)]
@@ -5254,16 +5299,16 @@ fn thinking_visibility_toggle_hides_and_restores_inline_thinking_rows() {
     let mut app = rich_transcript_fixture_app();
 
     let initial = render_live_lines(&app, 120, 30);
-    assert!(initial.contains("Thinking: · Drafting a document-like plan"));
+    assert!(initial.contains("Thinking: Drafting a document-like plan"));
 
     run_palette_command(&mut app, "hide thinking");
     let hidden = render_live_lines(&app, 120, 30);
-    assert!(!hidden.contains("Thinking: · Drafting a document-like plan"));
+    assert!(!hidden.contains("Thinking: Drafting a document-like plan"));
     assert!(hidden.contains("Found the transcript renderer and the composer chrome."));
 
     run_palette_command(&mut app, "show thinking");
     let restored = render_live_lines(&app, 120, 30);
-    assert!(restored.contains("Thinking: · Drafting a document-like plan"));
+    assert!(restored.contains("Thinking: Drafting a document-like plan"));
 }
 
 #[cfg(test)]
@@ -5770,6 +5815,8 @@ fn command_palette_renders_and_filters() {
             "new_session".to_string(),
             "resume_session".to_string(),
             "replay_session".to_string(),
+            "switch_model".to_string(),
+            "cycle_variant".to_string(),
             "open_event_log".to_string(),
             "toggle_follow".to_string(),
             "hide_thinking".to_string(),
@@ -5782,10 +5829,8 @@ fn command_palette_renders_and_filters() {
     );
 
     let open_debug = render_live_screen(&app, 120, 36);
-    println!("OPEN\n{open_debug}");
     assert!(open_debug.contains("Command palette"));
     assert!(open_debug.contains("New session"));
-    assert!(open_debug.contains("Open the review event log surface"));
 
     app.handle_key(key(crossterm::event::KeyCode::Char('n')));
 
@@ -5794,7 +5839,6 @@ fn command_palette_renders_and_filters() {
     assert_eq!(app.palette_filtered, vec!["new_session".to_string()]);
 
     let filtered_debug = render_live_screen(&app, 120, 36);
-    println!("FILTERED\n{filtered_debug}");
     assert!(filtered_debug.contains("Command palette"));
     assert!(filtered_debug.contains("Start a fresh live session"));
     assert!(!filtered_debug.contains("Review diff artifact"));
@@ -6533,7 +6577,8 @@ fn post_run_handoff_disables_prompt_submission() {
     assert_eq!(
         &*intents,
         &[UiIntent::SubmitPrompt {
-            text: "blocked prompt".to_string()
+            text: "blocked prompt".to_string(),
+            launch_metadata: app::LaunchMetadata::default(),
         }]
     );
     assert!(!app.should_quit);
@@ -7109,6 +7154,7 @@ fn composer_enter_submits_and_shift_enter_inserts_newline() {
         intents.as_slice(),
         &[UiIntent::SubmitPrompt {
             text: "hello\nworld".to_string(),
+            launch_metadata: app::LaunchMetadata::default(),
         }]
     );
     drop(intents);
@@ -7204,6 +7250,7 @@ fn composer_preserves_draft_while_streaming() {
         intents.as_slice(),
         &[UiIntent::SubmitPrompt {
             text: "first".to_string(),
+            launch_metadata: app::LaunchMetadata::default(),
         }]
     );
     drop(intents);
@@ -7730,7 +7777,7 @@ fn live_shell_enter_submits_and_echoes_prompt_snapshot() {
     assert!(!rendered.contains("user (pending turn)"));
     assert!(rendered.contains("ship it"));
     assert!(rendered.contains("   Waiting for response…"));
-    assert!(rendered.contains("◐ Assistant"));
+    assert!(rendered.contains("⠋ Assistant"));
     assert!(!rendered.contains('╭'));
 }
 

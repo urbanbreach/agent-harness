@@ -20,6 +20,15 @@ struct LabeledTextBlockStyle<'a> {
     body_style: Style,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct TranscriptToolCardShell {
+    indent: &'static str,
+    rail_color: Color,
+    surface: Color,
+}
+
+const THINKING_TRACE_LABEL: &str = "Thinking:";
+
 struct SyntaxHighlightAssets {
     syntax_set: SyntaxSet,
     theme: SyntectTheme,
@@ -96,6 +105,7 @@ enum TranscriptSection {
 struct BuildTurnSectionArgs<'a> {
     activity: &'a ActivityEntry,
     is_selected: bool,
+    is_latest: bool,
     thinking_visible: bool,
     timestamps_visible: bool,
     show_tool_details: bool,
@@ -110,6 +120,9 @@ struct BuildTurnSectionArgs<'a> {
 struct TranscriptTurnSection {
     request_id: String,
     user_message: Option<TranscriptUserMessageSection>,
+    show_footer: bool,
+    footer_timestamp: Option<String>,
+    animation_phase: usize,
     header: TranscriptTurnHeader,
     body_blocks: Vec<TranscriptBodyBlock>,
     tool_calls: Vec<TranscriptToolCallSection>,
@@ -120,7 +133,6 @@ struct TranscriptTurnSection {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TranscriptUserMessageSection {
     text: String,
-    timestamp: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -140,6 +152,7 @@ enum TranscriptBodyBlock {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TranscriptLabeledTextSection {
+    label: &'static str,
     text: String,
 }
 
@@ -153,6 +166,7 @@ struct TranscriptToolCallSection {
 struct TranscriptToolCallHeader {
     tool_id: String,
     title: String,
+    subtitle: Option<String>,
     icon: Option<&'static str>,
     status: ToolCallDisplayStatus,
     visual_style: TranscriptToolCallVisualStyle,
@@ -214,9 +228,13 @@ const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
 const TRANSCRIPT_SURFACE_BODY_PREFIX: &str = " ";
 const TRANSCRIPT_USER_BODY_PREFIX: &str = "  ";
 const TRANSCRIPT_ASSISTANT_BODY_PREFIX: &str = "   ";
+const TRANSCRIPT_REASONING_BODY_PREFIX: &str = "  ";
 const TRANSCRIPT_NESTED_INDENT: &str = "  ";
 const TRANSCRIPT_OPCODE_EDIT_INDENT: &str = "    ";
 const TRANSCRIPT_RAIL_GLYPH: &str = "┃";
+const TRANSCRIPT_SECTION_GAP_HEIGHT: usize = 1;
+const TRANSCRIPT_BRAILLE_SPINNER_FRAMES: [&str; 10] =
+    ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 pub(super) fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     if !app.replay_mode {
@@ -361,6 +379,7 @@ fn build_transcript_sections(app: &AppState) -> Vec<TranscriptSection> {
             BuildTurnSectionArgs {
                 activity,
                 is_selected: index == app.selected_activity_index,
+                is_latest: index + 1 == app.activities.len(),
                 thinking_visible: app.transcript_thinking_visible(),
                 timestamps_visible: app.transcript_timestamps_visible(),
                 show_tool_details: app.tool_details_visible(),
@@ -386,6 +405,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
     let BuildTurnSectionArgs {
         activity,
         is_selected,
+        is_latest,
         thinking_visible,
         timestamps_visible,
         show_tool_details,
@@ -402,14 +422,11 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
             .as_ref()
             .map(|user_msg| TranscriptUserMessageSection {
                 text: user_msg.text.clone(),
-                timestamp: timestamps_visible
-                    .then_some(activity.user_timestamp.as_deref())
-                    .flatten()
-                    .map(format_transcript_timestamp),
             });
 
     let thinking = (thinking_visible && !activity.thinking_text.trim().is_empty()).then(|| {
         TranscriptLabeledTextSection {
+            label: THINKING_TRACE_LABEL,
             text: activity.thinking_text.clone(),
         }
     });
@@ -426,6 +443,12 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
     TranscriptTurnSection {
         request_id: activity.request_id.clone(),
         user_message,
+        show_footer: is_latest,
+        footer_timestamp: (is_latest && timestamps_visible)
+            .then_some(activity.user_timestamp.as_deref())
+            .flatten()
+            .map(format_transcript_timestamp),
+        animation_phase: app.transcript_animation_phase(),
         header: TranscriptTurnHeader {
             status: activity.status,
             is_selected,
@@ -774,7 +797,8 @@ fn build_opencode_tool_call_section(
     TranscriptToolCallSection {
         header: TranscriptToolCallHeader {
             tool_id: tool_call.tool_id.clone(),
-            title: decorate_tool_call_title(title, tool_call, task_row, timestamps_visible),
+            title,
+            subtitle: tool_call_header_subtitle(tool_call, task_row, timestamps_visible),
             icon,
             status: tool_call.status,
             visual_style,
@@ -1295,12 +1319,11 @@ fn push_collapsible_output_block(
     }
 }
 
-fn decorate_tool_call_title(
-    title: String,
+fn tool_call_header_subtitle(
     tool_call: &crate::app::ToolCallEntry,
     task_row: Option<&crate::app::OrchestrationTaskRow>,
     timestamps_visible: bool,
-) -> String {
+) -> Option<String> {
     let mut suffixes = Vec::new();
     if timestamps_visible {
         if let Some(timestamp) = task_row
@@ -1340,11 +1363,7 @@ fn decorate_tool_call_title(
         }
     }
 
-    if suffixes.is_empty() {
-        title
-    } else {
-        format!("{title} · {}", suffixes.join(" · "))
-    }
+    (!suffixes.is_empty()).then(|| suffixes.join(" · "))
 }
 
 fn tool_call_denied(tool_call: &crate::app::ToolCallEntry) -> bool {
@@ -1411,7 +1430,8 @@ fn measure_transcript_layout(
                 lines: surface.lines,
             });
         }
-        let leading_gap_height = 0;
+        let leading_gap_height =
+            usize::from(!measured_sections.is_empty()) * TRANSCRIPT_SECTION_GAP_HEIGHT;
         let kind = match section {
             TranscriptSection::Turn(_) => MeasuredTranscriptSectionKind::Turn,
             TranscriptSection::PendingPermission(_) => {
@@ -1613,14 +1633,6 @@ fn build_user_render_surface(
         surface,
         theme,
     );
-    if let Some(timestamp) = user_msg.timestamp.as_deref() {
-        lines.push(build_user_surface_metadata_line(
-            timestamp,
-            theme,
-            content_width,
-            surface,
-        ));
-    }
     lines.push(user_surface_line(
         Vec::new(),
         Style::default().fg(theme.text.primary),
@@ -1654,11 +1666,12 @@ fn build_assistant_render_surfaces(
     width: u16,
     base_surface: Color,
 ) -> Vec<TranscriptRenderSurface> {
+    let mut reasoning_lines = Vec::new();
     let mut answer_lines = Vec::new();
     let mut context_lines = Vec::new();
     let (assistant_icon, assistant_color, assistant_status) = match turn.header.status {
         ActivityStatus::Streaming => (
-            theme.live_shell.glyphs.streaming,
+            transcript_streaming_spinner_frame(turn.animation_phase),
             theme.status.info,
             "active",
         ),
@@ -1689,7 +1702,7 @@ fn build_assistant_render_surfaces(
         }
     }
 
-    if !answer_lines.is_empty() {
+    if turn.show_footer && (!answer_lines.is_empty() || turn.user_message.is_some()) {
         answer_lines.push(build_assistant_footer_line(
             turn,
             assistant_icon,
@@ -1700,22 +1713,16 @@ fn build_assistant_render_surfaces(
     }
 
     if let Some(thinking) = &turn.thinking {
-        append_labeled_text_block(
-            &mut context_lines,
-            &thinking.text,
-            LabeledTextBlockStyle {
-                indent: TRANSCRIPT_NESTED_INDENT,
-                label: "Thinking:",
-                rail_color: transcript_nested_rail_color(theme),
-                surface: transcript_nested_surface(theme, base_surface),
-                label_style: Style::default()
-                    .fg(theme.text.secondary)
-                    .add_modifier(Modifier::ITALIC),
-                body_style: subdued_payload_style(theme),
-            },
+        append_reasoning_block(
+            &mut reasoning_lines,
+            thinking,
             theme,
-            width,
+            transcript_surface_content_width(width, true),
         );
+    }
+
+    if !reasoning_lines.is_empty() && !answer_lines.is_empty() {
+        answer_lines.insert(0, Line::default());
     }
 
     for tool_call in &turn.tool_calls {
@@ -1739,12 +1746,21 @@ fn build_assistant_render_surfaces(
         );
     }
 
-    let mut surfaces = vec![TranscriptRenderSurface {
+    let mut surfaces = Vec::new();
+    if !reasoning_lines.is_empty() {
+        surfaces.push(TranscriptRenderSurface {
+            show_outer_rail: true,
+            rail_color: theme.border.subtle,
+            surface: transcript_flat_surface(base_surface),
+            lines: reasoning_lines,
+        });
+    }
+    surfaces.push(TranscriptRenderSurface {
         show_outer_rail: false,
         rail_color: assistant_primary_rail_color(turn, theme),
         surface: transcript_flat_surface(base_surface),
         lines: answer_lines,
-    }];
+    });
     if !context_lines.is_empty() {
         surfaces.push(TranscriptRenderSurface {
             show_outer_rail: false,
@@ -1754,6 +1770,58 @@ fn build_assistant_render_surfaces(
         });
     }
     surfaces
+}
+
+fn append_reasoning_block(
+    lines: &mut Vec<Line<'static>>,
+    thinking: &TranscriptLabeledTextSection,
+    theme: &Theme,
+    width: u16,
+) {
+    let label_style = Style::default()
+        .fg(theme.text.secondary)
+        .add_modifier(Modifier::DIM)
+        .add_modifier(Modifier::ITALIC);
+    let reasoning_style = Style::default()
+        .fg(theme.text.secondary)
+        .add_modifier(Modifier::DIM);
+    let mut rendered_any_line = false;
+
+    for (index, row) in thinking.text.lines().enumerate() {
+        let mut spans = Vec::new();
+        if index == 0 {
+            spans.push(Span::styled(thinking.label.to_string(), label_style));
+            if !row.is_empty() {
+                spans.push(Span::styled(" ".to_string(), reasoning_style));
+            }
+        }
+        if !row.is_empty() {
+            spans.extend(parse_inline_markdown_spans(
+                row,
+                reasoning_style,
+                theme.text.secondary,
+                theme,
+            ));
+        }
+        append_prefixed_wrapped_spans_line(
+            lines,
+            TRANSCRIPT_REASONING_BODY_PREFIX,
+            reasoning_style,
+            spans,
+            width,
+        );
+        rendered_any_line = true;
+    }
+
+    if !rendered_any_line {
+        append_prefixed_wrapped_spans_line(
+            lines,
+            TRANSCRIPT_REASONING_BODY_PREFIX,
+            reasoning_style,
+            vec![Span::styled(thinking.label.to_string(), label_style)],
+            width,
+        );
+    }
 }
 
 fn append_tool_call_section_lines(
@@ -1794,6 +1862,10 @@ fn append_opencode_inline_tool_section_lines(
         spans.push(Span::styled(format!("{icon} "), style));
     }
     spans.push(Span::styled(tool_call.header.title.clone(), style));
+    if let Some(subtitle) = tool_call.header.subtitle.as_deref() {
+        spans.push(Span::styled(" · ", muted_meta_style(theme)));
+        spans.push(Span::styled(subtitle.to_string(), muted_meta_style(theme)));
+    }
 
     append_surface_row(
         lines,
@@ -1803,7 +1875,7 @@ fn append_opencode_inline_tool_section_lines(
         transcript_surface_content_width(width, false),
     );
 
-    append_tool_call_detail_blocks(lines, tool_call, theme, width, base_surface, false);
+    append_tool_call_detail_blocks(lines, tool_call, theme, width, base_surface, None);
 }
 
 fn append_opencode_block_tool_section_lines(
@@ -1813,13 +1885,13 @@ fn append_opencode_block_tool_section_lines(
     width: u16,
     base_surface: Color,
 ) {
-    let active = tool_call_is_active(tool_call.header.status);
-    let surface = if active {
-        transcript_emphasized_surface(theme, base_surface)
-    } else {
-        transcript_flat_surface(base_surface)
+    let surface = transcript_emphasized_surface(theme, base_surface);
+    let rail_color = block_tool_rail_color(tool_call, theme);
+    let card_shell = TranscriptToolCardShell {
+        indent: TRANSCRIPT_ASSISTANT_BODY_PREFIX,
+        rail_color,
+        surface,
     };
-    let rail_color = transcript_nested_rail_color(theme);
     let title_style = tool_call_header_style(tool_call, block_tool_color(tool_call, theme));
 
     let mut title_spans = Vec::new();
@@ -1829,18 +1901,39 @@ fn append_opencode_block_tool_section_lines(
             title_style,
         ));
     }
+    if let Some(icon) = tool_call.header.icon {
+        title_spans.push(Span::styled(format!("{icon} "), title_style));
+    }
     title_spans.push(Span::styled(tool_call.header.title.clone(), title_style));
 
     append_nested_surface_row(
         lines,
-        TRANSCRIPT_ASSISTANT_BODY_PREFIX,
-        rail_color,
-        surface,
+        card_shell.indent,
+        card_shell.rail_color,
+        card_shell.surface,
         title_spans,
         transcript_surface_content_width(width, false),
     );
 
-    append_tool_call_detail_blocks(lines, tool_call, theme, width, base_surface, active);
+    if let Some(subtitle) = tool_call.header.subtitle.as_deref() {
+        append_nested_surface_row(
+            lines,
+            card_shell.indent,
+            card_shell.rail_color,
+            card_shell.surface,
+            vec![Span::styled(subtitle.to_string(), muted_meta_style(theme))],
+            transcript_surface_content_width(width, false),
+        );
+    }
+
+    append_tool_call_detail_blocks(
+        lines,
+        tool_call,
+        theme,
+        width,
+        base_surface,
+        Some(card_shell),
+    );
 }
 
 fn append_tool_call_detail_blocks(
@@ -1849,7 +1942,7 @@ fn append_tool_call_detail_blocks(
     theme: &Theme,
     width: u16,
     base_surface: Color,
-    block_surface: bool,
+    card_shell: Option<TranscriptToolCardShell>,
 ) {
     for detail_block in &tool_call.detail_blocks {
         match detail_block {
@@ -1861,7 +1954,7 @@ fn append_tool_call_detail_blocks(
                     theme,
                     width,
                     base_surface,
-                    block_surface,
+                    card_shell,
                 );
             }
             TranscriptToolCallDetailBlock::StructuredDiff {
@@ -1876,6 +1969,7 @@ fn append_tool_call_detail_blocks(
                 theme,
                 width,
                 base_surface,
+                card_shell,
             ),
         }
     }
@@ -1888,7 +1982,7 @@ fn append_tool_call_message_block(
     theme: &Theme,
     width: u16,
     base_surface: Color,
-    block_surface: bool,
+    card_shell: Option<TranscriptToolCardShell>,
 ) {
     let style = match tone {
         TranscriptToolCallDetailTone::Secondary => subdued_payload_style(theme),
@@ -1897,11 +1991,9 @@ fn append_tool_call_message_block(
 
     let indent = TRANSCRIPT_OPCODE_EDIT_INDENT;
 
-    let surface = if block_surface {
-        transcript_emphasized_surface(theme, base_surface)
-    } else {
-        transcript_flat_surface(base_surface)
-    };
+    let surface = card_shell
+        .map(|shell| shell.surface)
+        .unwrap_or_else(|| transcript_flat_surface(base_surface));
 
     for row in text.split('\n') {
         let spans = if row.is_empty() {
@@ -1909,13 +2001,24 @@ fn append_tool_call_message_block(
         } else {
             vec![Span::styled(row.to_string(), style)]
         };
-        append_surface_row(
-            lines,
-            indent,
-            surface,
-            spans,
-            transcript_surface_content_width(width, false),
-        );
+        if let Some(shell) = card_shell {
+            append_nested_surface_row(
+                lines,
+                shell.indent,
+                shell.rail_color,
+                shell.surface,
+                spans,
+                transcript_surface_content_width(width, false),
+            );
+        } else {
+            append_surface_row(
+                lines,
+                indent,
+                surface,
+                spans,
+                transcript_surface_content_width(width, false),
+            );
+        }
     }
 }
 
@@ -1939,6 +2042,16 @@ fn block_tool_color(tool_call: &TranscriptToolCallSection, theme: &Theme) -> Col
     }
 }
 
+fn block_tool_rail_color(tool_call: &TranscriptToolCallSection, theme: &Theme) -> Color {
+    match tool_call.header.status {
+        ToolCallDisplayStatus::PendingPermission => theme.status.warning,
+        ToolCallDisplayStatus::Queued => theme.text.secondary,
+        ToolCallDisplayStatus::Running => theme.status.info,
+        ToolCallDisplayStatus::Succeeded => theme.border.subtle,
+        ToolCallDisplayStatus::Failed => theme.status.error,
+    }
+}
+
 fn tool_call_header_style(tool_call: &TranscriptToolCallSection, color: Color) -> Style {
     let mut style = Style::default().fg(color);
     match tool_call.header.status {
@@ -1958,15 +2071,6 @@ fn tool_call_header_style(tool_call: &TranscriptToolCallSection, color: Color) -
     style
 }
 
-fn tool_call_is_active(status: ToolCallDisplayStatus) -> bool {
-    matches!(
-        status,
-        ToolCallDisplayStatus::PendingPermission
-            | ToolCallDisplayStatus::Queued
-            | ToolCallDisplayStatus::Running
-    )
-}
-
 fn disclosure_glyph(state: TranscriptToolCallDisclosureState) -> &'static str {
     match state {
         TranscriptToolCallDisclosureState::Collapsed => "▸",
@@ -1974,6 +2078,10 @@ fn disclosure_glyph(state: TranscriptToolCallDisclosureState) -> &'static str {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "tool diff rendering keeps transcript shell styling explicit at the call site"
+)]
 fn append_tool_call_diff_block(
     lines: &mut Vec<Line<'static>>,
     diff_content: &str,
@@ -1982,6 +2090,7 @@ fn append_tool_call_diff_block(
     theme: &Theme,
     width: u16,
     base_surface: Color,
+    card_shell: Option<TranscriptToolCardShell>,
 ) {
     let nested_width = transcript_surface_content_width(width, false);
     let content_width = transcript_surface_content_width(nested_width, false);
@@ -1993,13 +2102,45 @@ fn append_tool_call_diff_block(
         force_stacked,
         theme,
     ) {
-        append_prebuilt_surface_lines(
-            lines,
-            TRANSCRIPT_OPCODE_EDIT_INDENT,
-            transcript_nested_surface(theme, base_surface),
-            diff_lines,
-            nested_width,
-        );
+        if let Some(shell) = card_shell {
+            append_prebuilt_nested_surface_lines(
+                lines,
+                shell.indent,
+                shell.rail_color,
+                shell.surface,
+                diff_lines,
+                nested_width,
+            );
+        } else {
+            append_prebuilt_surface_lines(
+                lines,
+                TRANSCRIPT_OPCODE_EDIT_INDENT,
+                transcript_nested_surface(theme, base_surface),
+                diff_lines,
+                nested_width,
+            );
+        }
+    }
+}
+
+fn append_prebuilt_nested_surface_lines(
+    lines: &mut Vec<Line<'static>>,
+    indent: &str,
+    rail_color: Color,
+    surface: Color,
+    prebuilt: Vec<Line<'static>>,
+    width: u16,
+) {
+    let prefix = nested_surface_prefix(indent, rail_color, surface);
+    let prefix_width = nested_surface_prefix_width(indent);
+    for line in prebuilt {
+        lines.push(nested_surface_line(
+            prefix.clone(),
+            prefix_width,
+            line.spans,
+            width,
+            surface,
+        ));
     }
 }
 
@@ -2933,7 +3074,15 @@ fn build_assistant_footer_line(
             Style::default().fg(assistant_color),
         ));
     }
+    if let Some(timestamp) = turn.footer_timestamp.as_deref() {
+        spans.push(Span::styled(" · ", muted_meta_style(theme)));
+        spans.push(Span::styled(timestamp.to_string(), muted_meta_style(theme)));
+    }
     Line::from(spans)
+}
+
+fn transcript_streaming_spinner_frame(animation_phase: usize) -> &'static str {
+    TRANSCRIPT_BRAILLE_SPINNER_FRAMES[animation_phase % TRANSCRIPT_BRAILLE_SPINNER_FRAMES.len()]
 }
 
 fn titlecase_label(value: &str) -> String {
@@ -2975,20 +3124,6 @@ fn transcript_nested_rail_color(theme: &Theme) -> Color {
 
 fn transcript_nested_surface(_theme: &Theme, base_surface: Color) -> Color {
     transcript_flat_surface(base_surface)
-}
-
-fn build_user_surface_metadata_line(
-    metadata: &str,
-    theme: &Theme,
-    width: u16,
-    surface: Color,
-) -> Line<'static> {
-    user_surface_line(
-        vec![Span::styled(metadata.to_string(), muted_meta_style(theme))],
-        Style::default().fg(theme.text.primary),
-        width,
-        surface,
-    )
 }
 
 fn format_duration_ms(duration_ms: u64) -> String {
@@ -3393,7 +3528,8 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
         TranscriptToolCallSection {
             header: TranscriptToolCallHeader {
                 tool_id: "shell.run".to_string(),
-                title: "# false · 1ms".to_string(),
+                title: "# false".to_string(),
+                subtitle: Some("1ms".to_string()),
                 icon: None,
                 status: ToolCallDisplayStatus::Failed,
                 visual_style: TranscriptToolCallVisualStyle::Block,
@@ -3415,7 +3551,7 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_transcript_answer_precedes_nested_context() {
+pub(crate) fn exact_test_transcript_reasoning_precedes_answer_and_tool_rows() {
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-answer-first",
@@ -3459,25 +3595,24 @@ pub(crate) fn exact_test_transcript_answer_precedes_nested_context() {
         })
         .collect::<Vec<_>>();
 
+    let reasoning_row = lines
+        .iter()
+        .position(|line| line.contains("Thinking:") && line.contains("working through the plan"))
+        .expect("reasoning row");
     let answer_row = lines
         .iter()
         .position(|line| line.contains("assistant answer"))
         .expect("assistant answer row");
-    let thinking_row = lines
-        .iter()
-        .enumerate()
-        .skip(answer_row + 1)
-        .find_map(|(index, line)| line.contains("Thinking:").then_some(index))
-        .expect("thinking row");
     let tool_row = lines
         .iter()
         .enumerate()
-        .skip(thinking_row + 1)
+        .skip(answer_row + 1)
         .find_map(|(index, line)| line.contains("Read src/ui.rs").then_some(index))
         .expect("tool row");
 
-    assert!(answer_row < thinking_row);
-    assert!(thinking_row < tool_row);
+    assert!(reasoning_row < answer_row);
+    assert!(answer_row < tool_row);
+    assert!(lines.iter().any(|line| line.contains("Thinking:")));
 }
 
 #[cfg(test)]
@@ -3804,6 +3939,14 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
         native_read_section.header.visual_style,
         alias_read_section.header.visual_style
     );
+    assert_eq!(
+        native_read_section.header.subtitle.as_deref(),
+        Some("14:35 · 1.2s")
+    );
+    assert_eq!(
+        alias_read_section.header.subtitle.as_deref(),
+        Some("14:35 · 1.2s")
+    );
     assert_eq!(alias_read_section.header.disclosure_state, None);
     assert!(alias_read_section
         .detail_blocks
@@ -3857,9 +4000,10 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
         theme.surface.panel,
     );
     let task_text = transcript_test_line_texts(task_lines).join("\n");
-    assert!(task_text.contains("▸ Spawn researcher · audit transcript parity · 14:36 · 1.6s"));
+    assert!(task_text.contains("┃ ▸ ↗ Spawn researcher · audit transcript parity"));
+    assert!(task_text.contains("┃ 14:36 · 1.6s"));
     assert!(task_text
-        .contains("foreground · agent_worker · req_child · completed · 3 child tool calls"));
+        .contains("┃ foreground · agent_worker · req_child · completed · 3 child tool calls"));
     assert!(task_text.contains("Found the inline transcript path."));
     assert!(task_text.contains("Compat alias · task → agent.spawn"));
     assert!(!task_text.contains("Task audit transcript parity"));
@@ -3896,12 +4040,13 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
         theme.surface.panel,
     );
     let fetch_text = transcript_test_line_texts(fetch_lines).join("\n");
-    assert!(fetch_text.contains("▸ Fetch https://example.test/report.pdf · 14:37 · 2.4s"));
-    assert!(fetch_text.contains("report ready"));
+    assert!(fetch_text.contains("┃ ▸ ⇣ Fetch https://example.test/report.pdf"));
+    assert!(fetch_text.contains("┃ 14:37 · 2.4s"));
+    assert!(fetch_text.contains("┃ report ready"));
     assert!(!fetch_text.contains("stored inline artifact"));
-    assert!(fetch_text.contains("↳ 1 more line hidden"));
+    assert!(fetch_text.contains("┃ ↳ 1 more line hidden"));
     assert!(fetch_text.contains(
-        "Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact"
+        "┃ Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact"
     ));
     assert!(fetch_text.contains("Compat alias · webfetch → web.fetch"));
 
@@ -3914,8 +4059,9 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
         build_opencode_tool_call_section(&generic_call, None, true, false, false, false, None);
     assert_eq!(
         generic_section.header.title,
-        "vendor.magic · limit=3 · path=notes.md · query=child parity · 800ms"
+        "vendor.magic · limit=3 · path=notes.md · query=child parity"
     );
+    assert_eq!(generic_section.header.subtitle.as_deref(), Some("800ms"));
 }
 
 #[cfg(test)]
@@ -4072,8 +4218,12 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         Theme::default().surface.panel,
     );
     let running_text = transcript_test_line_texts(running_lines).join("\n");
-    assert!(running_text.contains("Spawn researcher · audit transcript parity · 14:36 · running"));
-    assert!(running_text.contains("agent_worker · req_child · running · 1 child tool call"));
+    assert!(running_text.contains("Spawn researcher · audit transcript parity"));
+    assert!(running_text.contains("14:36 · running"));
+    assert!(
+        running_text.contains("┃ agent_worker · req_child · running · 1 child tool call"),
+        "running task card should keep child-session context inside the card shell\n{running_text}"
+    );
 
     app.ingest_event(event(
         7,
@@ -4162,10 +4312,91 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         Theme::default().surface.panel,
     );
     let completed_text = transcript_test_line_texts(completed_lines).join("\n");
-    assert!(completed_text.contains("Spawn researcher · audit transcript parity · 14:36 · 1.6s"));
-    assert!(completed_text.contains("agent_worker · req_child · completed · 2 child tool calls"));
+    assert!(completed_text.contains("Spawn researcher · audit transcript parity"));
+    assert!(completed_text.contains("14:36 · 1.6s"));
+    assert!(
+        completed_text.contains("┃ agent_worker · req_child · completed · 2 child tool calls"),
+        "completed task card should keep child-session context inside the card shell\n{completed_text}"
+    );
     assert!(completed_text.contains("Found the inline transcript path."));
     assert!(!completed_text.contains("child session finished"));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_block_tool_cards_skip_empty_subtitle_rows() {
+    let theme = Theme::default();
+
+    let mut shell_call = transcript_section_model_test_tool_call("tc-shell-card", "shell.run");
+    shell_call.args_summary =
+        r#"{"cmd":"cargo test -p harness-tui","cwd":"/tmp/demo"}"#.to_string();
+    shell_call.status = ToolCallDisplayStatus::Failed;
+    shell_call.output_summary = Some("exit code: 1\nstderr: snapshot mismatch".to_string());
+    shell_call.truncated_output = shell_call.output_summary.clone();
+    shell_call.first_mono_ms = 10;
+    shell_call.last_mono_ms = 0;
+
+    let section =
+        build_opencode_tool_call_section(&shell_call, None, false, false, false, false, None);
+    assert_eq!(section.header.subtitle, None);
+
+    let mut lines = Vec::new();
+    append_tool_call_section_lines(&mut lines, &section, &theme, 120, theme.surface.panel);
+    let text_lines = transcript_test_line_texts(lines);
+
+    assert!(text_lines[0].contains("┃ # cargo test -p harness-tui in /tmp/demo"));
+    assert!(text_lines[1].contains("┃ $ cargo test -p harness-tui"));
+    assert!(text_lines[2].contains("┃ exit code: 1"));
+    assert!(text_lines[3].contains("┃ stderr: snapshot mismatch"));
+    assert!(
+        !text_lines.iter().take(4).any(|line| line.trim() == "┃"),
+        "block cards without subtitle metadata should flow directly from title into body"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_inline_tool_rows_wrap_long_subtitles_cleanly() {
+    let theme = Theme::default();
+    let section = TranscriptToolCallSection {
+        header: TranscriptToolCallHeader {
+            tool_id: "fs.read".to_string(),
+            title: "Read src/ui.rs [offset=12, limit=24]".to_string(),
+            subtitle: Some(
+                "14:35 · 1.2s · foreground · agent_worker · req_child · completed · 3 child tool calls"
+                    .to_string(),
+            ),
+            icon: None,
+            status: ToolCallDisplayStatus::Succeeded,
+            visual_style: TranscriptToolCallVisualStyle::Inline,
+            struck_out: false,
+            disclosure_state: None,
+        },
+        detail_blocks: Vec::new(),
+    };
+
+    let mut lines = Vec::new();
+    append_tool_call_section_lines(&mut lines, &section, &theme, 56, theme.surface.panel);
+    let text_lines = transcript_test_line_texts(lines);
+
+    assert!(
+        text_lines.len() >= 2,
+        "long inline subtitles should wrap in narrow widths"
+    );
+    assert!(text_lines[0].contains("Read src/ui.rs [offset=12, limit=24]"));
+    assert!(text_lines.iter().any(|line| line.contains("14:35 · 1.2s")));
+    assert!(text_lines
+        .iter()
+        .any(|line| line.contains("foreground · agent_worker")));
+    assert!(
+        text_lines.iter().any(|line| line.contains("completed · 3")),
+        "wrapped inline subtitle should preserve completion count metadata\n{text_lines:#?}"
+    );
+    assert!(
+        text_lines
+            .iter()
+            .any(|line| line.contains("child tool calls")),
+        "wrapped inline subtitle should preserve child-call wording after wrap\n{text_lines:#?}"
+    );
+    assert!(text_lines.iter().all(|line| line.starts_with("   ")));
 }
 
 #[cfg(test)]
@@ -4254,8 +4485,8 @@ mod tests {
 
     #[cfg(test)]
     #[test]
-    fn transcript_answer_precedes_nested_context() {
-        exact_test_transcript_answer_precedes_nested_context();
+    fn transcript_reasoning_precedes_answer_and_tool_rows() {
+        exact_test_transcript_reasoning_precedes_answer_and_tool_rows();
     }
 
     #[test]
@@ -4344,11 +4575,93 @@ mod tests {
         ));
 
         assert_eq!(lines[0], "   Waiting for response…");
-        assert_eq!(lines[1], "   ◐ Assistant · gpt-5.4-mini · active");
+        assert_eq!(lines[1], "   ⠋ Assistant · gpt-5.4-mini · active");
     }
 
     #[test]
-    fn user_message_surface_matches_opencode_panel_body_and_metadata() {
+    fn only_latest_turn_renders_footer_metadata() {
+        let mut app = AppState::default();
+        app.activities = std::collections::VecDeque::from(vec![
+            ActivityEntry {
+                request_id: "request-old-footer".to_string(),
+                model_id: "gpt-old".to_string(),
+                provider_id: "openai".to_string(),
+                status: ActivityStatus::Done,
+                user_message: Some(harness_core::event::UserMessageSubmittedEvent {
+                    request_id: "request-old-footer".to_string(),
+                    text: "first".to_string(),
+                }),
+                user_timestamp: Some("2026-03-19T09:44:00Z".to_string()),
+                request_data: None,
+                thinking_text: String::new(),
+                transcript_text: "first reply".to_string(),
+                error_message: None,
+                permissions: Vec::new(),
+                tool_calls: Vec::new(),
+                first_seq: 1,
+                last_seq: 1,
+                first_mono_ms: 1,
+                last_mono_ms: 1,
+            },
+            ActivityEntry {
+                request_id: "request-new-footer".to_string(),
+                model_id: "gpt-new".to_string(),
+                provider_id: "openai".to_string(),
+                status: ActivityStatus::Done,
+                user_message: Some(harness_core::event::UserMessageSubmittedEvent {
+                    request_id: "request-new-footer".to_string(),
+                    text: "second".to_string(),
+                }),
+                user_timestamp: Some("2026-03-19T09:45:00Z".to_string()),
+                request_data: None,
+                thinking_text: String::new(),
+                transcript_text: "second reply".to_string(),
+                error_message: None,
+                permissions: Vec::new(),
+                tool_calls: Vec::new(),
+                first_seq: 2,
+                last_seq: 2,
+                first_mono_ms: 2,
+                last_mono_ms: 2,
+            },
+        ]);
+        app.selected_activity_index = 1;
+        app.handle_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('p'),
+            crossterm::event::KeyModifiers::CONTROL,
+        ));
+        for ch in "show timestamps".chars() {
+            app.handle_key(crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char(ch),
+                crossterm::event::KeyModifiers::NONE,
+            ));
+        }
+        app.handle_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Enter,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+
+        let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+            &app,
+            &Theme::default(),
+            80,
+        ));
+
+        assert_eq!(
+            lines
+                .iter()
+                .filter(|line| line.contains("Assistant ·"))
+                .count(),
+            1
+        );
+        assert!(lines.iter().all(|line| !line.contains("gpt-old")));
+        assert!(lines.iter().any(|line| line.contains("gpt-new")));
+        assert!(lines.iter().all(|line| !line.contains("09:44")));
+        assert!(lines.iter().any(|line| line.contains("09:45")));
+    }
+
+    #[test]
+    fn user_message_surface_keeps_timestamp_in_latest_footer_only() {
         let mut app = AppState::default();
         app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
             request_id: "request-user-padding".to_string(),
@@ -4393,8 +4706,69 @@ mod tests {
         ));
 
         assert!(!lines.iter().any(|line| line.contains("› You")));
+        assert!(lines
+            .iter()
+            .all(|line| !(line.starts_with('┃') && line.contains("09:45"))));
         assert!(lines.iter().any(|line| line.contains("09:45")));
+        assert!(lines
+            .iter()
+            .any(|line| line == "   ● Assistant · gpt-5.4-mini · 0ms · 09:45"));
         assert!(lines.iter().any(|line| line.contains("hello")));
         assert!(lines.iter().any(|line| line.contains("reply")));
+    }
+
+    #[test]
+    fn transcript_turn_sections_keep_exactly_one_blank_row_between_sections() {
+        let mut app = AppState::default();
+        app.activities = std::collections::VecDeque::from(vec![
+            transcript_section_model_test_activity("request-a", ActivityStatus::Done, "first"),
+            transcript_section_model_test_activity("request-b", ActivityStatus::Done, "second"),
+        ]);
+        app.selected_activity_index = 1;
+
+        let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 80);
+
+        assert_eq!(layout.sections.len(), 2);
+        assert_eq!(layout.sections[0].leading_gap_height, 0);
+        assert_eq!(layout.sections[1].leading_gap_height, 1);
+    }
+
+    #[test]
+    fn streaming_assistant_footer_spinner_uses_deterministic_braille_frames() {
+        let mut app = AppState::default();
+        app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
+            request_id: "request-streaming-spinner".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
+            provider_id: "openai".to_string(),
+            status: ActivityStatus::Streaming,
+            user_message: None,
+            user_timestamp: None,
+            request_data: None,
+            thinking_text: String::new(),
+            transcript_text: String::new(),
+            error_message: None,
+            permissions: Vec::new(),
+            tool_calls: Vec::new(),
+            first_seq: 1,
+            last_seq: 1,
+            first_mono_ms: 1,
+            last_mono_ms: 1,
+        }]);
+        app.selected_activity_index = 0;
+
+        let first = transcript_test_line_texts(build_transcript_lines_for_width(
+            &app,
+            &Theme::default(),
+            80,
+        ));
+        app.advance_transcript_animation_phase();
+        let second = transcript_test_line_texts(build_transcript_lines_for_width(
+            &app,
+            &Theme::default(),
+            80,
+        ));
+
+        assert_eq!(first[1], "   ⠋ Assistant · gpt-5.4-mini · active");
+        assert_eq!(second[1], "   ⠙ Assistant · gpt-5.4-mini · active");
     }
 }
