@@ -5,8 +5,9 @@ use harness_core::event::{
     ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1, PermissionDecision,
     PermissionRequestedEvent, PermissionResolvedEvent, ProviderRequestStartedEvent,
     RunFinishedEvent, RunStartedEvent, TaskCompletedEvent, TaskLineageMetadata, TaskScheduleState,
-    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallRequestedEvent,
-    ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
+    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallLifecycleState, ToolCallMetadata,
+    ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent,
+    SCHEMA_VERSION,
 };
 use harness_core::proj::{inspect_resume_plan, LifecycleSegmentStatus};
 
@@ -143,6 +144,266 @@ fn resume_plan_reconstructs_sequence_and_id_watermarks() {
     assert_eq!(plan.provider_model.as_deref(), Some("default/gpt-5"));
     assert!(plan.is_resumable);
     assert_eq!(plan.resume_disabled_reason, None);
+}
+
+#[test]
+fn resume_plan_resolves_tool_identity_and_lifecycle_without_tui_inference() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let run_dir = temp_dir.path().join("run_tool_lifecycle_identity");
+    write_events(
+        &run_dir,
+        &[
+            envelope(
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/workspace/project".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                    tool_call_id: "toolcall_000101".to_string(),
+                    tool_id: "task".to_string(),
+                    args_summary: "{\"prompt\":\"delegate\"}".to_string(),
+                    args_digest: "digest-task-request".to_string(),
+                    metadata: Some(ToolCallMetadata {
+                        canonical_tool_id: Some("agent.spawn".to_string()),
+                        alias_source_tool_id: Some("task".to_string()),
+                        lineage: None,
+                        artifact_refs: Vec::new(),
+                        timing: None,
+                        hook_executions: Vec::new(),
+                    }),
+                }),
+            ),
+            envelope(
+                3,
+                EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                    tool_call_id: "toolcall_000102".to_string(),
+                    tool_id: "mcp.fixture.echo".to_string(),
+                    args_summary: "{\"text\":\"hello\"}".to_string(),
+                    args_digest: "digest-mcp-direct-request".to_string(),
+                    metadata: Some(ToolCallMetadata {
+                        canonical_tool_id: Some("mcp.fixture.echo".to_string()),
+                        alias_source_tool_id: None,
+                        lineage: None,
+                        artifact_refs: Vec::new(),
+                        timing: None,
+                        hook_executions: Vec::new(),
+                    }),
+                }),
+            ),
+            envelope(
+                4,
+                EventV1::ToolCallStarted(ToolCallStartedEvent {
+                    tool_call_id: "toolcall_000102".to_string(),
+                }),
+            ),
+            envelope(
+                5,
+                EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                    tool_call_id: "toolcall_000103".to_string(),
+                    tool_id: "mcp.fixture.tool.call".to_string(),
+                    args_summary: "{\"tool\":\"echo\"}".to_string(),
+                    args_digest: "digest-mcp-wrapper-request".to_string(),
+                    metadata: Some(ToolCallMetadata {
+                        canonical_tool_id: Some("mcp.fixture.echo".to_string()),
+                        alias_source_tool_id: None,
+                        lineage: None,
+                        artifact_refs: Vec::new(),
+                        timing: None,
+                        hook_executions: Vec::new(),
+                    }),
+                }),
+            ),
+            envelope(
+                6,
+                EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                    tool_call_id: "toolcall_000103".to_string(),
+                    status: ToolCallStatus::Failed,
+                    output_summary: Some("wrapper failed".to_string()),
+                    output_digest: Some("digest-mcp-wrapper-failed".to_string()),
+                    output_json: None,
+                    metadata: Some(ToolCallMetadata {
+                        canonical_tool_id: Some("mcp.fixture.echo".to_string()),
+                        alias_source_tool_id: None,
+                        lineage: None,
+                        artifact_refs: Vec::new(),
+                        timing: None,
+                        hook_executions: Vec::new(),
+                    }),
+                }),
+            ),
+            envelope(
+                7,
+                EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                    tool_call_id: "toolcall_000104".to_string(),
+                    tool_id: "agent.spawn".to_string(),
+                    args_summary: "{\"prompt\":\"native\"}".to_string(),
+                    args_digest: "digest-native-request".to_string(),
+                    metadata: Some(ToolCallMetadata {
+                        canonical_tool_id: Some("agent.spawn".to_string()),
+                        alias_source_tool_id: None,
+                        lineage: None,
+                        artifact_refs: Vec::new(),
+                        timing: None,
+                        hook_executions: Vec::new(),
+                    }),
+                }),
+            ),
+            envelope(
+                8,
+                EventV1::ToolCallStarted(ToolCallStartedEvent {
+                    tool_call_id: "toolcall_000104".to_string(),
+                }),
+            ),
+            envelope(
+                9,
+                EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                    tool_call_id: "toolcall_000104".to_string(),
+                    status: ToolCallStatus::Succeeded,
+                    output_summary: Some("native ok".to_string()),
+                    output_digest: Some("digest-native-ok".to_string()),
+                    output_json: None,
+                    metadata: Some(ToolCallMetadata {
+                        canonical_tool_id: Some("agent.spawn".to_string()),
+                        alias_source_tool_id: None,
+                        lineage: None,
+                        artifact_refs: Vec::new(),
+                        timing: None,
+                        hook_executions: Vec::new(),
+                    }),
+                }),
+            ),
+        ],
+    );
+
+    let plan = inspect_resume_plan(&run_dir);
+
+    let pending_alias = plan
+        .tool_calls
+        .get("toolcall_000101")
+        .expect("pending alias tool snapshot");
+    assert_eq!(
+        pending_alias.lifecycle_state,
+        Some(ToolCallLifecycleState::Pending)
+    );
+    assert_eq!(pending_alias.status, None);
+    assert_eq!(
+        pending_alias
+            .resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.invoked_tool_id.as_deref()),
+        Some("task")
+    );
+    assert_eq!(
+        pending_alias
+            .resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.effective_tool_id.as_deref()),
+        Some("agent.spawn")
+    );
+    assert_eq!(
+        pending_alias
+            .resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.canonical_tool_id.as_deref()),
+        Some("agent.spawn")
+    );
+    assert_eq!(
+        pending_alias
+            .resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.alias_source_tool_id.as_deref()),
+        Some("task")
+    );
+
+    let running_mcp_direct = plan
+        .tool_calls
+        .get("toolcall_000102")
+        .expect("running direct MCP tool snapshot");
+    assert_eq!(
+        running_mcp_direct.lifecycle_state,
+        Some(ToolCallLifecycleState::Running)
+    );
+    assert_eq!(running_mcp_direct.status, None);
+    assert_eq!(
+        running_mcp_direct
+            .resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.effective_tool_id.as_deref()),
+        Some("mcp.fixture.echo")
+    );
+    assert_eq!(
+        running_mcp_direct
+            .resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.canonical_tool_id.as_deref()),
+        None
+    );
+    assert_eq!(
+        running_mcp_direct
+            .resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.alias_source_tool_id.as_deref()),
+        None
+    );
+
+    let error_mcp_wrapper = plan
+        .tool_calls
+        .get("toolcall_000103")
+        .expect("failed wrapper MCP tool snapshot");
+    assert_eq!(
+        error_mcp_wrapper.lifecycle_state,
+        Some(ToolCallLifecycleState::Error)
+    );
+    assert_eq!(error_mcp_wrapper.status, Some(ToolCallStatus::Failed));
+    assert_eq!(
+        error_mcp_wrapper
+            .resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.invoked_tool_id.as_deref()),
+        Some("mcp.fixture.tool.call")
+    );
+    assert_eq!(
+        error_mcp_wrapper
+            .resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.effective_tool_id.as_deref()),
+        Some("mcp.fixture.echo")
+    );
+    assert_eq!(
+        error_mcp_wrapper
+            .resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.canonical_tool_id.as_deref()),
+        None
+    );
+
+    let completed_native = plan
+        .tool_calls
+        .get("toolcall_000104")
+        .expect("completed native tool snapshot");
+    assert_eq!(
+        completed_native.lifecycle_state,
+        Some(ToolCallLifecycleState::Completed)
+    );
+    assert_eq!(completed_native.status, Some(ToolCallStatus::Succeeded));
+    assert_eq!(
+        completed_native
+            .resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.effective_tool_id.as_deref()),
+        Some("agent.spawn")
+    );
+    assert_eq!(
+        completed_native
+            .resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.canonical_tool_id.as_deref()),
+        Some("agent.spawn")
+    );
 }
 
 #[test]

@@ -39,21 +39,12 @@ fn setup_workspace() -> tempfile::TempDir {
     temp_dir
 }
 
-fn install_fake_mcp_server(script_path: &Path) {
+fn install_fake_mcp_server_with_tools(script_path: &Path, tools_literal: &str) {
     let script = r#"#!/usr/bin/env python3
 import json
 import sys
 
-TOOLS = [{
-    "name": "echo",
-    "description": "Echoes text input",
-    "inputSchema": {
-        "type": "object",
-        "properties": {
-            "text": {"type": "string"}
-        }
-    }
-}]
+TOOLS = __TOOLS_LITERAL__
 RESOURCES = [{
     "uri": "fixture://alpha",
     "name": "Alpha fixture"
@@ -109,12 +100,13 @@ for raw in sys.stdin:
     elif method == "tools/call":
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
-        if tool_name == "echo":
+        known_tool_names = {tool["name"] for tool in TOOLS}
+        if tool_name in known_tool_names:
             send({
                 "jsonrpc": "2.0",
                 "id": message_id,
                 "result": {
-                    "content": [{"type": "text", "text": arguments.get("text", "") }],
+                    "content": [{"type": "text", "text": arguments.get("text", f"called {tool_name}") }],
                     "isError": False
                 }
             })
@@ -166,11 +158,28 @@ for raw in sys.stdin:
                 "message": f"unsupported method: {method}"
             }
         })
-"#;
+"#
+    .replace("__TOOLS_LITERAL__", tools_literal);
     fs::write(script_path, script).expect("write fake mcp server");
     let mut permissions = fs::metadata(script_path).expect("metadata").permissions();
     permissions.set_mode(0o755);
     fs::set_permissions(script_path, permissions).expect("chmod fake mcp server");
+}
+
+fn install_fake_mcp_server(script_path: &Path) {
+    install_fake_mcp_server_with_tools(
+        script_path,
+        r#"[{
+    "name": "echo",
+    "description": "Echoes text input",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "text": {"type": "string"}
+        }
+    }
+}]"#,
+    );
 }
 
 fn fake_mcp_config(script_path: &Path) -> McpConfig {
@@ -182,9 +191,59 @@ fn fake_mcp_config(script_path: &Path) -> McpConfig {
                 env: BTreeMap::new(),
                 cwd: None,
                 timeout_secs: 5,
+                enabled: true,
             },
         )]),
     }
+}
+
+fn assert_wrapped_tool_result_contract(
+    result: &harness_core::tool::ToolResult,
+    expected_tool: &str,
+    expected_text: &str,
+) {
+    let structured = result
+        .structured_json
+        .as_ref()
+        .expect("structured MCP result");
+    assert_eq!(
+        structured
+            .get("server")
+            .and_then(|value| value.get("id"))
+            .and_then(|value| value.as_str()),
+        Some("fixture")
+    );
+    assert_eq!(
+        structured
+            .get("protocolVersion")
+            .and_then(|value| value.as_str()),
+        Some("2025-06-18")
+    );
+    assert_eq!(
+        structured
+            .get("serverInfo")
+            .and_then(|value| value.get("name"))
+            .and_then(|value| value.as_str()),
+        Some("fixture")
+    );
+    assert_eq!(
+        structured
+            .get("payload")
+            .and_then(|value| value.get("tool"))
+            .and_then(|value| value.as_str()),
+        Some(expected_tool)
+    );
+    assert_eq!(
+        structured
+            .get("payload")
+            .and_then(|value| value.get("result"))
+            .and_then(|value| value.get("content"))
+            .and_then(|value| value.as_array())
+            .and_then(|entries| entries.first())
+            .and_then(|entry| entry.get("text"))
+            .and_then(|value| value.as_str()),
+        Some(expected_text)
+    );
 }
 
 #[tokio::test]
@@ -196,6 +255,7 @@ async fn generic_mcp_registry_exposes_server_scoped_tools() {
     let registry =
         coordinator_registry_with_mcp(ShellAllowlist::default(), fake_mcp_config(&script_path));
     for tool_id in [
+        "mcp.fixture.echo",
         "mcp.fixture.tools.list",
         "mcp.fixture.tool.call",
         "mcp.fixture.resources.list",
@@ -208,6 +268,31 @@ async fn generic_mcp_registry_exposes_server_scoped_tools() {
             "missing MCP tool {tool_id}"
         );
     }
+}
+
+#[tokio::test]
+async fn generic_mcp_registry_exposes_first_class_remote_tools() {
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let script_path = temp_dir.path().join("fake_mcp_server.py");
+    install_fake_mcp_server(&script_path);
+
+    let registry =
+        coordinator_registry_with_mcp(ShellAllowlist::default(), fake_mcp_config(&script_path));
+
+    let tool = registry
+        .get("mcp.fixture.echo")
+        .expect("first-class MCP tool");
+    let result = tool
+        .call(
+            test_context(&workspace, "mcp-first-class-tool-call"),
+            json!({ "text": "hello first-class" }),
+        )
+        .await
+        .expect("first-class MCP tool call");
+
+    assert_eq!(result.display_text, "hello first-class");
+    assert_wrapped_tool_result_contract(&result, "echo", "hello first-class");
 }
 
 #[tokio::test]
@@ -258,19 +343,7 @@ async fn generic_mcp_stdio_server_supports_tools_resources_and_prompts() {
         .await
         .expect("mcp tool.call");
     assert_eq!(tool_result.display_text, "hello from mcp");
-    assert_eq!(
-        tool_result
-            .structured_json
-            .as_ref()
-            .and_then(|value| value.get("payload"))
-            .and_then(|value| value.get("result"))
-            .and_then(|value| value.get("content"))
-            .and_then(|value| value.as_array())
-            .and_then(|entries| entries.first())
-            .and_then(|entry| entry.get("text"))
-            .and_then(|value| value.as_str()),
-        Some("hello from mcp")
-    );
+    assert_wrapped_tool_result_contract(&tool_result, "echo", "hello from mcp");
 
     let resources_list = registry
         .get("mcp.fixture.resources.list")
@@ -323,4 +396,102 @@ async fn generic_mcp_stdio_server_supports_tools_resources_and_prompts() {
         .await
         .expect("mcp prompt.get");
     assert_eq!(prompt_result.display_text, "user: Summarize MCP");
+}
+
+#[tokio::test]
+async fn generic_mcp_registry_reserves_wrapper_ids_for_colliding_first_class_tools() {
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let script_path = temp_dir.path().join("fake_mcp_server.py");
+    install_fake_mcp_server_with_tools(
+        &script_path,
+        r#"[
+    {
+        "name": "tool_call_2",
+        "description": "Looks like a disambiguated wrapper collision",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"}
+            }
+        }
+    },
+    {
+        "name": "tool.call",
+        "description": "Collides with the reserved tool.call wrapper id",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"}
+            }
+        }
+    },
+    {
+        "name": "tool_call",
+        "description": "Shares the same sanitized segment as tool.call",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"}
+            }
+        }
+    },
+    {
+        "name": "tools.list",
+        "description": "Collides with the reserved tools.list wrapper id",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"}
+            }
+        }
+    }
+]"#,
+    );
+
+    let registry =
+        coordinator_registry_with_mcp(ShellAllowlist::default(), fake_mcp_config(&script_path));
+
+    for tool_id in [
+        "mcp.fixture.tool.call",
+        "mcp.fixture.tools.list",
+        "mcp.fixture.tool_call_2",
+        "mcp.fixture.tool_call_3",
+        "mcp.fixture.tool_call_2_2",
+        "mcp.fixture.tools_list_2",
+    ] {
+        assert!(
+            registry.get(tool_id).is_some(),
+            "missing reserved/disambiguated MCP tool {tool_id}"
+        );
+    }
+
+    let reserved_tool = registry
+        .get("mcp.fixture.tool_call_2")
+        .expect("reserved collision tool.call first-class tool");
+    let reserved_result = reserved_tool
+        .call(
+            test_context(&workspace, "mcp-reserved-tool-call-direct"),
+            json!({ "text": "reserved tool.call" }),
+        )
+        .await
+        .expect("direct reserved tool.call first-class tool call");
+    assert_eq!(reserved_result.display_text, "reserved tool.call");
+    assert_wrapped_tool_result_contract(&reserved_result, "tool.call", "reserved tool.call");
+
+    let wrapper_tool = registry
+        .get("mcp.fixture.tool.call")
+        .expect("reserved wrapper tool.call tool");
+    let wrapper_result = wrapper_tool
+        .call(
+            test_context(&workspace, "mcp-reserved-tool-call-wrapper"),
+            json!({
+                "tool": "tool.call",
+                "arguments": { "text": "wrapper reserved tool.call" },
+            }),
+        )
+        .await
+        .expect("wrapper reserved tool.call call");
+    assert_eq!(wrapper_result.display_text, "wrapper reserved tool.call");
+    assert_wrapped_tool_result_contract(&wrapper_result, "tool.call", "wrapper reserved tool.call");
 }

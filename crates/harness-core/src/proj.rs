@@ -10,8 +10,8 @@ use crate::agent::AgentModelRef;
 use crate::config::{registered_profile_model_metadata, ResolvedProfileModelMetadata};
 use crate::event::{
     EventArtifactRef, EventEnvelopeV1, EventV1, ExecutionTimingMetadata, HookExecutionMetadata,
-    TaskCompletionMetadata, TaskLineageMetadata, TaskScheduleState, ToolCallMetadata,
-    ToolCallStatus,
+    ResolvedToolIdentity, TaskCompletionMetadata, TaskLineageMetadata, TaskScheduleState,
+    ToolCallLifecycleState, ToolCallMetadata, ToolCallStatus,
 };
 
 const EVENTS_FILE_NAME: &str = "events.jsonl";
@@ -187,6 +187,10 @@ pub struct ResumeIdWatermarks {
 pub struct ResumeToolCallSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_tool_identity: Option<ResolvedToolIdentity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lifecycle_state: Option<ToolCallLifecycleState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<ToolCallStatus>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -730,6 +734,14 @@ pub fn project_resume_plan<'a>(
                     "request",
                 )?;
             }
+            EventV1::ProviderReasoningDelta(payload) => {
+                update_id_watermark(
+                    &mut id_watermarks.max_request_id,
+                    &payload.request_id,
+                    REQUEST_ID_PREFIX,
+                    "request",
+                )?;
+            }
             EventV1::ProviderRequestFinished(payload) => {
                 update_id_watermark(
                     &mut id_watermarks.max_request_id,
@@ -749,6 +761,14 @@ pub fn project_resume_plan<'a>(
                     .entry(payload.tool_call_id.clone())
                     .or_insert_with(ResumeToolCallSnapshot::default);
                 tool_call.tool_id = Some(payload.tool_id.clone());
+                tool_call.lifecycle_state = Some(ToolCallLifecycleState::Pending);
+                merge_resolved_tool_identity(
+                    tool_call,
+                    ResolvedToolIdentity::from_tool_call(
+                        Some(payload.tool_id.as_str()),
+                        payload.metadata.as_ref(),
+                    ),
+                );
                 if let Some(metadata) = payload.metadata.as_ref() {
                     apply_child_session_metadata(
                         &mut child_sessions,
@@ -767,6 +787,10 @@ pub fn project_resume_plan<'a>(
                     TOOL_CALL_ID_PREFIX,
                     "tool call",
                 )?;
+                let tool_call = tool_calls
+                    .entry(payload.tool_call_id.clone())
+                    .or_insert_with(ResumeToolCallSnapshot::default);
+                tool_call.lifecycle_state = Some(ToolCallLifecycleState::Running);
             }
             EventV1::ToolCallFinished(payload) => {
                 update_id_watermark(
@@ -778,9 +802,18 @@ pub fn project_resume_plan<'a>(
                 let tool_call = tool_calls
                     .entry(payload.tool_call_id.clone())
                     .or_insert_with(ResumeToolCallSnapshot::default);
+                tool_call.lifecycle_state =
+                    Some(ToolCallLifecycleState::from_finish_status(payload.status));
                 tool_call.status = Some(payload.status);
                 tool_call.output_digest = payload.output_digest.clone();
                 tool_call.output_json = payload.output_json.clone();
+                merge_resolved_tool_identity(
+                    tool_call,
+                    ResolvedToolIdentity::from_tool_call(
+                        tool_call.tool_id.as_deref(),
+                        payload.metadata.as_ref(),
+                    ),
+                );
                 if let Some(metadata) = payload.metadata.as_ref() {
                     apply_child_session_metadata(
                         &mut child_sessions,
@@ -797,6 +830,16 @@ pub fn project_resume_plan<'a>(
                     let tool_call = tool_calls
                         .entry(tool_call_id.clone())
                         .or_insert_with(ResumeToolCallSnapshot::default);
+                    if let Some(tool_metadata) = payload.tool_metadata.as_ref() {
+                        let invoked_tool_id = tool_call.tool_id.clone();
+                        merge_resolved_tool_identity(
+                            tool_call,
+                            ResolvedToolIdentity::from_tool_artifact(
+                                invoked_tool_id.as_deref(),
+                                Some(tool_metadata),
+                            ),
+                        );
+                    }
                     let metadata = tool_call
                         .metadata
                         .get_or_insert_with(ToolCallMetadata::default);
@@ -876,6 +919,31 @@ pub fn project_resume_plan<'a>(
         is_resumable: resume_disabled_reason.is_none(),
         resume_disabled_reason,
     })
+}
+
+fn merge_resolved_tool_identity(
+    snapshot: &mut ResumeToolCallSnapshot,
+    incoming: ResolvedToolIdentity,
+) {
+    if incoming.is_empty() {
+        return;
+    }
+
+    let identity = snapshot
+        .resolved_tool_identity
+        .get_or_insert_with(ResolvedToolIdentity::default);
+    if identity.invoked_tool_id.is_none() {
+        identity.invoked_tool_id = incoming.invoked_tool_id;
+    }
+    if identity.effective_tool_id.is_none() {
+        identity.effective_tool_id = incoming.effective_tool_id;
+    }
+    if identity.canonical_tool_id.is_none() {
+        identity.canonical_tool_id = incoming.canonical_tool_id;
+    }
+    if identity.alias_source_tool_id.is_none() {
+        identity.alias_source_tool_id = incoming.alias_source_tool_id;
+    }
 }
 
 fn merge_tool_call_metadata(snapshot: &mut ResumeToolCallSnapshot, incoming: ToolCallMetadata) {
@@ -1298,6 +1366,7 @@ fn event_type_name(event: &EventV1) -> String {
         EventV1::StaleDetected(_) => "stale_detected",
         EventV1::ProviderRequestStarted(_) => "provider_request_started",
         EventV1::ProviderStreamDelta(_) => "provider_stream_delta",
+        EventV1::ProviderReasoningDelta(_) => "provider_reasoning_delta",
         EventV1::ProviderRequestFinished(_) => "provider_request_finished",
         EventV1::ToolCallRequested(_) => "tool_call_requested",
         EventV1::ToolCallStarted(_) => "tool_call_started",

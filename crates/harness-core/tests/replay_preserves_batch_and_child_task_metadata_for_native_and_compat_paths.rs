@@ -263,6 +263,7 @@ async fn replay_preserves_batch_and_child_task_metadata_for_native_and_compat_pa
         &plan,
         &native_spawn_call_id,
         "agent.spawn",
+        "agent.spawn",
         None,
         Some("child-native-session"),
         Some("child-native-request"),
@@ -270,15 +271,25 @@ async fn replay_preserves_batch_and_child_task_metadata_for_native_and_compat_pa
     assert_replay_tool(
         &plan,
         &compat_task_call_id,
+        "task",
         "agent.spawn",
         Some("task"),
         Some("child-compat-session"),
         Some("child-compat-request"),
     );
-    assert_replay_tool(&plan, &native_batch_call_id, "tool.batch", None, None, None);
+    assert_replay_tool(
+        &plan,
+        &native_batch_call_id,
+        "tool.batch",
+        "tool.batch",
+        None,
+        None,
+        None,
+    );
     assert_replay_tool(
         &plan,
         &compat_batch_call_id,
+        "batch",
         "tool.batch",
         Some("batch"),
         None,
@@ -407,6 +418,7 @@ fn assert_tool_metadata(
 fn assert_replay_tool(
     plan: &harness_core::proj::ResumePlan,
     tool_call_id: &str,
+    invoked_tool_id: &str,
     canonical_tool_id: &str,
     alias_source_tool_id: Option<&str>,
     child_session_id: Option<&str>,
@@ -416,6 +428,39 @@ fn assert_replay_tool(
         .tool_calls
         .get(tool_call_id)
         .expect("replay tool snapshot");
+    assert_eq!(replay_tool.tool_id.as_deref(), Some(invoked_tool_id));
+    assert_eq!(
+        replay_tool
+            .resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.invoked_tool_id.as_deref()),
+        Some(invoked_tool_id)
+    );
+    assert_eq!(
+        replay_tool
+            .resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.effective_tool_id.as_deref()),
+        Some(canonical_tool_id)
+    );
+    assert_eq!(
+        replay_tool
+            .resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.canonical_tool_id.as_deref()),
+        Some(canonical_tool_id)
+    );
+    assert_eq!(
+        replay_tool
+            .resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.alias_source_tool_id.as_deref()),
+        alias_source_tool_id
+    );
+    assert_eq!(
+        replay_tool.lifecycle_state,
+        Some(harness_core::event::ToolCallLifecycleState::Completed)
+    );
     assert_eq!(replay_tool.status, Some(ToolCallStatus::Succeeded));
     assert_eq!(
         replay_tool

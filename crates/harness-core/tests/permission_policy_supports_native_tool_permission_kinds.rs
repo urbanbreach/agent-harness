@@ -26,7 +26,7 @@ fn permission_policy_supports_native_tool_permission_kinds() {
               },
             },
           },
-          profiles: {
+          agents: {
             deep: {
               description: "Deep work",
               model_ref: "default:gpt-4o-mini",

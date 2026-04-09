@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+use harness_providers::CompletionUsage;
+
 use crate::clock::Clock;
 use crate::redact::{redact_value, Redactor};
 
@@ -91,6 +93,7 @@ pub enum EventV1 {
     UserMessageSubmitted(UserMessageSubmittedEvent),
     ProviderRequestStarted(ProviderRequestStartedEvent),
     ProviderStreamDelta(ProviderStreamDeltaEvent),
+    ProviderReasoningDelta(ProviderReasoningDeltaEvent),
     ProviderRequestFinished(ProviderRequestFinishedEvent),
     ToolCallRequested(ToolCallRequestedEvent),
     ToolCallStarted(ToolCallStartedEvent),
@@ -152,6 +155,18 @@ pub enum TaskScheduleState {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ToolIdentityMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_tool_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias_source_tool_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ResolvedToolIdentity {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invoked_tool_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_tool_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub canonical_tool_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -296,11 +311,19 @@ pub struct ProviderStreamDeltaEvent {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderReasoningDeltaEvent {
+    pub request_id: String,
+    pub delta: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderRequestFinishedEvent {
     pub request_id: String,
     pub finish_reason: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<CompletionUsage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -337,6 +360,98 @@ pub struct ToolCallFinishedEvent {
 pub enum ToolCallStatus {
     Succeeded,
     Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolCallLifecycleState {
+    #[default]
+    Pending,
+    Running,
+    Completed,
+    Error,
+}
+
+impl ToolCallLifecycleState {
+    pub fn from_finish_status(status: ToolCallStatus) -> Self {
+        match status {
+            ToolCallStatus::Succeeded => Self::Completed,
+            ToolCallStatus::Failed => Self::Error,
+        }
+    }
+}
+
+impl ResolvedToolIdentity {
+    pub fn from_tool_call(
+        invoked_tool_id: Option<&str>,
+        metadata: Option<&ToolCallMetadata>,
+    ) -> Self {
+        Self::from_parts(
+            invoked_tool_id,
+            metadata.and_then(|metadata| metadata.canonical_tool_id.as_deref()),
+            metadata.and_then(|metadata| metadata.alias_source_tool_id.as_deref()),
+        )
+    }
+
+    pub fn from_tool_artifact(
+        invoked_tool_id: Option<&str>,
+        metadata: Option<&ToolIdentityMetadata>,
+    ) -> Self {
+        Self::from_parts(
+            invoked_tool_id,
+            metadata.and_then(|metadata| metadata.canonical_tool_id.as_deref()),
+            metadata.and_then(|metadata| metadata.alias_source_tool_id.as_deref()),
+        )
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.invoked_tool_id.is_none()
+            && self.effective_tool_id.is_none()
+            && self.canonical_tool_id.is_none()
+            && self.alias_source_tool_id.is_none()
+    }
+
+    fn from_parts(
+        invoked_tool_id: Option<&str>,
+        persisted_canonical_tool_id: Option<&str>,
+        alias_source_tool_id: Option<&str>,
+    ) -> Self {
+        let invoked_tool_id = normalized_tool_id(invoked_tool_id);
+        let persisted_canonical_tool_id = normalized_tool_id(persisted_canonical_tool_id);
+        let alias_source_tool_id = normalized_tool_id(alias_source_tool_id);
+        let is_mcp_invocation = invoked_tool_id
+            .as_deref()
+            .is_some_and(|tool_id| tool_id.starts_with("mcp."));
+
+        let effective_tool_id = if is_mcp_invocation {
+            persisted_canonical_tool_id
+                .clone()
+                .or_else(|| invoked_tool_id.clone())
+        } else {
+            persisted_canonical_tool_id
+                .clone()
+                .or_else(|| invoked_tool_id.clone())
+        };
+        let canonical_tool_id = if is_mcp_invocation {
+            None
+        } else {
+            persisted_canonical_tool_id
+        };
+
+        Self {
+            invoked_tool_id,
+            effective_tool_id,
+            canonical_tool_id,
+            alias_source_tool_id,
+        }
+    }
+}
+
+fn normalized_tool_id(tool_id: Option<&str>) -> Option<String> {
+    tool_id
+        .map(str::trim)
+        .filter(|tool_id| !tool_id.is_empty())
+        .map(str::to_string)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

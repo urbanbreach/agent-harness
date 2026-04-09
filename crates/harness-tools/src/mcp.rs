@@ -1,8 +1,11 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use harness_core::config::{McpConfig, McpServerConfig};
+use harness_core::config::{
+    set_registered_mcp_server_connection_states, set_registered_mcp_server_first_class_tool_ids,
+    McpConfig, McpServerConfig, McpServerConnectionState,
+};
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -17,11 +20,19 @@ const MCP_PROTOCOL_VERSION_HEADER: &str = "mcp-protocol-version";
 
 pub(crate) fn register_mcp_tools(registry: &mut ToolRegistry, config: McpConfig) {
     if config.servers.is_empty() {
+        set_registered_mcp_server_connection_states(BTreeMap::new());
+        set_registered_mcp_server_first_class_tool_ids(BTreeMap::new());
         return;
     }
 
     let http_client = build_http_client();
+    let mut connection_states = BTreeMap::new();
+    let mut first_class_tool_ids = BTreeMap::new();
     for (server_id, server_config) in config.servers {
+        if !server_config.enabled() {
+            continue;
+        }
+
         let executor = std::sync::Arc::new(McpServerExecutor::new(
             server_id,
             server_config,
@@ -33,13 +44,107 @@ pub(crate) fn register_mcp_tools(registry: &mut ToolRegistry, config: McpConfig)
                 kind,
             )));
         }
+
+        let (discovered_tools, discovered_tool_ids, connection_state) =
+            discover_first_class_tools(executor.clone());
+        connection_states.insert(executor.server_id.clone(), connection_state);
+        first_class_tool_ids.insert(executor.server_id.clone(), discovered_tool_ids);
+        for tool in discovered_tools {
+            registry.register(std::sync::Arc::new(tool));
+        }
     }
+
+    set_registered_mcp_server_connection_states(connection_states);
+    set_registered_mcp_server_first_class_tool_ids(first_class_tool_ids);
 }
 
 fn build_http_client() -> reqwest::Client {
     reqwest::Client::builder()
         .build()
         .unwrap_or_else(|_| reqwest::Client::new())
+}
+
+fn discover_first_class_tools(
+    executor: std::sync::Arc<McpServerExecutor>,
+) -> (
+    Vec<McpDiscoveredTool>,
+    BTreeMap<String, String>,
+    McpServerConnectionState,
+) {
+    let discovery_executor = executor.clone();
+    let discovery = std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|err| {
+                ToolError::Execution(format!("failed to build MCP discovery runtime: {err}"))
+            })?;
+        runtime.block_on(async move { discovery_executor.discover_tools().await })
+    })
+    .join();
+
+    match discovery {
+        Ok(Ok(specs)) => {
+            let discovered_tool_ids = specs
+                .iter()
+                .map(|spec| (spec.remote_tool_name.clone(), spec.tool_id.clone()))
+                .collect::<BTreeMap<_, _>>();
+            let tools = specs
+                .into_iter()
+                .map(|spec| McpDiscoveredTool::new(spec, executor.clone()))
+                .collect::<Vec<_>>();
+            (
+                tools,
+                discovered_tool_ids,
+                McpServerConnectionState::Connected,
+            )
+        }
+        Ok(Err(_)) | Err(_) => (
+            Vec::new(),
+            BTreeMap::new(),
+            McpServerConnectionState::Disconnected,
+        ),
+    }
+}
+
+fn normalize_provider_parameters_schema(schema: Option<Value>) -> Value {
+    let Some(Value::Object(mut object)) = schema else {
+        return serde_json::json!({
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true,
+        });
+    };
+
+    if object.get("type").and_then(Value::as_str) != Some("object") {
+        return serde_json::json!({
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true,
+        });
+    }
+
+    for forbidden in ["oneOf", "anyOf", "allOf", "enum", "not"] {
+        object.remove(forbidden);
+    }
+    object
+        .entry("properties".to_string())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    object
+        .entry("additionalProperties".to_string())
+        .or_insert(Value::Bool(true));
+    Value::Object(object)
+}
+
+fn sanitize_mcp_tool_segment(name: &str) -> String {
+    let sanitized = harness_core::tool::sanitize_tool_function_name(name);
+    sanitized.replace('-', "_")
+}
+
+fn reserved_mcp_tool_segments() -> BTreeSet<String> {
+    McpToolKind::all()
+        .map(|kind| sanitize_mcp_tool_segment(kind.suffix()))
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -117,6 +222,26 @@ struct McpServerTool {
     executor: std::sync::Arc<McpServerExecutor>,
 }
 
+struct McpDiscoveredTool {
+    tool_id: String,
+    remote_tool_name: String,
+    description: String,
+    parameters_schema: Value,
+    executor: std::sync::Arc<McpServerExecutor>,
+}
+
+impl McpDiscoveredTool {
+    fn new(spec: DiscoveredMcpToolSpec, executor: std::sync::Arc<McpServerExecutor>) -> Self {
+        Self {
+            tool_id: spec.tool_id,
+            remote_tool_name: spec.remote_tool_name,
+            description: spec.description,
+            parameters_schema: spec.parameters_schema,
+            executor,
+        }
+    }
+}
+
 impl McpServerTool {
     fn new(executor: std::sync::Arc<McpServerExecutor>, kind: McpToolKind) -> Self {
         Self {
@@ -181,6 +306,31 @@ impl Tool for McpServerTool {
     }
 }
 
+#[async_trait]
+impl Tool for McpDiscoveredTool {
+    fn id(&self) -> &str {
+        &self.tool_id
+    }
+
+    fn description(&self) -> &str {
+        &self.description
+    }
+
+    fn parameters_json_schema(&self) -> Value {
+        self.parameters_schema.clone()
+    }
+
+    fn capability(&self) -> ToolCapability {
+        self.executor.capability()
+    }
+
+    async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
+        self.executor
+            .call_named_tool(&ctx, &self.remote_tool_name, args_json)
+            .await
+    }
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct EmptyArgs {}
@@ -212,6 +362,22 @@ struct McpServerExecutor {
     server_config: McpServerConfig,
     http_client: reqwest::Client,
     descriptions: BTreeMap<&'static str, String>,
+}
+
+#[derive(Debug, Clone)]
+struct DiscoveredMcpToolSpec {
+    tool_id: String,
+    remote_tool_name: String,
+    description: String,
+    parameters_schema: Value,
+}
+
+#[derive(Debug, Clone)]
+struct PendingDiscoveredMcpToolSpec {
+    base_segment: String,
+    remote_tool_name: String,
+    description: String,
+    parameters_schema: Value,
 }
 
 impl McpServerExecutor {
@@ -280,8 +446,17 @@ impl McpServerExecutor {
         _ctx: &ToolContext,
         args: McpToolCallArgs,
     ) -> Result<ToolResult, ToolError> {
-        let tool_name = args.tool;
-        let arguments = normalize_object_value(args.arguments);
+        self.call_named_tool(_ctx, &args.tool, args.arguments).await
+    }
+
+    async fn call_named_tool(
+        &self,
+        _ctx: &ToolContext,
+        tool_name: &str,
+        arguments: Value,
+    ) -> Result<ToolResult, ToolError> {
+        let tool_name = tool_name.to_string();
+        let arguments = normalize_object_value(arguments);
         let mut session = self.start_session().await?;
         let payload = session
             .request(
@@ -319,6 +494,82 @@ impl McpServerExecutor {
             )),
             artifacts: Vec::new(),
         })
+    }
+
+    async fn discover_tools(&self) -> Result<Vec<DiscoveredMcpToolSpec>, ToolError> {
+        let list = self.list_items("tools/list", "tools").await?;
+        let mut pending_specs = Vec::new();
+
+        for item in list.items {
+            let Some(remote_tool_name) = item
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+            else {
+                continue;
+            };
+
+            let description = item
+                .get("description")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string)
+                .unwrap_or_else(|| {
+                    format!(
+                        "Calls MCP tool `{remote_tool_name}` exposed by server `{}`.",
+                        self.server_id
+                    )
+                });
+            let parameters_schema =
+                normalize_provider_parameters_schema(item.get("inputSchema").cloned());
+
+            pending_specs.push(PendingDiscoveredMcpToolSpec {
+                base_segment: sanitize_mcp_tool_segment(remote_tool_name),
+                remote_tool_name: remote_tool_name.to_string(),
+                description,
+                parameters_schema,
+            });
+        }
+
+        let mut used_ids = reserved_mcp_tool_segments();
+        let mut assigned_segments = vec![String::new(); pending_specs.len()];
+        let mut allocation_order = pending_specs
+            .iter()
+            .enumerate()
+            .map(|(index, spec)| {
+                (
+                    index,
+                    spec.base_segment.as_str(),
+                    spec.remote_tool_name.as_str(),
+                )
+            })
+            .collect::<Vec<_>>();
+        allocation_order
+            .sort_by(|left, right| left.1.cmp(right.1).then_with(|| left.2.cmp(right.2)));
+        for (index, base_segment, _) in allocation_order {
+            let mut tool_segment = base_segment.to_string();
+            let mut suffix = 2usize;
+            while !used_ids.insert(tool_segment.clone()) {
+                tool_segment = format!("{base_segment}_{suffix}");
+                suffix += 1;
+            }
+            assigned_segments[index] = tool_segment;
+        }
+
+        let specs = pending_specs
+            .into_iter()
+            .zip(assigned_segments)
+            .map(|(spec, tool_segment)| DiscoveredMcpToolSpec {
+                tool_id: format!("mcp.{}.{}", self.server_id, tool_segment),
+                remote_tool_name: spec.remote_tool_name,
+                description: spec.description,
+                parameters_schema: spec.parameters_schema,
+            })
+            .collect();
+
+        Ok(specs)
     }
 
     async fn list_resources(&self) -> Result<ToolResult, ToolError> {
@@ -526,6 +777,7 @@ impl McpSession {
                 env,
                 cwd,
                 timeout_secs,
+                ..
             } => Ok(Self::Stdio(
                 StdioMcpSession::start(server_id, command, env, cwd.as_ref(), *timeout_secs)
                     .await?,
@@ -534,6 +786,7 @@ impl McpSession {
                 endpoint,
                 headers,
                 timeout_secs,
+                ..
             } => Ok(Self::Http(
                 HttpMcpSession::start(server_id, endpoint, headers, *timeout_secs, http_client)
                     .await?,

@@ -653,6 +653,10 @@ impl ToolRegistry {
     pub fn function_name_mapping(&self) -> ToolFunctionNameMapping {
         build_tool_function_name_mapping(self.tools.keys().map(String::as_str))
     }
+
+    pub fn tool_ids(&self) -> Vec<String> {
+        self.tools.keys().cloned().collect()
+    }
 }
 
 pub fn actor_capabilities(actor_kind: ActorKind) -> BTreeSet<ToolCapability> {

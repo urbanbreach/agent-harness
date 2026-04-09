@@ -13,13 +13,14 @@ use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::{
-    default_provider, run_multi_turn_streaming, AgentProfile, AgentRequest, AgentRuntimeEvent,
-    AgentTurnOutcome, MultiTurnStreamingRequest, ProviderConversationTurn,
+    default_model_settings_for_profile, default_provider, run_multi_turn_streaming,
+    AgentModelSettings, AgentProfile, AgentRequest, AgentRuntimeEvent, AgentTurnOutcome,
+    MultiTurnStreamingRequest, ProviderConversationTurn,
 };
 use crate::clock::Clock;
 use crate::config::{
-    registered_hook_runtime_config, HookLifecycleEvent, HookRuntimeConfig, LifecycleHookConfig,
-    ShellAllowlist,
+    registered_hook_runtime_config, registered_mcp_server_first_class_tool_id, HookLifecycleEvent,
+    HookRuntimeConfig, LifecycleHookConfig, ShellAllowlist,
 };
 use crate::edit::hashline::HashlinePatch;
 use crate::event::{
@@ -27,11 +28,11 @@ use crate::event::{
     EditRejectedEvent, EventActor, EventArtifactRef, EventBuildError, EventBuilder, EventContext,
     EventEnvelopeV1, EventV1, ExecutionTimingMetadata, HookExecutionMetadata, HookExecutionStatus,
     PermissionDecision as EventPermissionDecision, PermissionRequestedArgs,
-    PermissionResolvedEvent, PolicyViolationDetectedEvent, RunFinishedEvent, RunStartedEvent,
-    StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata,
-    TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState, TaskScheduledEvent,
-    ToolCallFinishedEvent, ToolCallMetadata, ToolCallStartedEvent, ToolCallStatus,
-    ToolIdentityMetadata, UserMessageSubmittedEvent,
+    PermissionResolvedEvent, PolicyViolationDetectedEvent, ProviderReasoningDeltaEvent,
+    RunFinishedEvent, RunStartedEvent, StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent,
+    TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState,
+    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallStartedEvent,
+    ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent,
 };
 use crate::perm::{
     permission_kind_for_tool, permission_kind_for_tool_call, PermissionDecision, PermissionKind,
@@ -43,7 +44,9 @@ use crate::sched::{
     ConcurrencyKey, ScheduleDecision, Scheduler, SchedulerLimits, TaskProgressSnapshot,
 };
 use crate::store::{EventEnvelopeWithoutSeqV1, EventStore, EventStoreError, JsonlFileEventStore};
-use crate::tool::{canonical_tool_id_for, ToolContext, ToolRegistry, ToolResult};
+use crate::tool::{
+    canonical_tool_id_for, sanitize_tool_function_name, ToolContext, ToolRegistry, ToolResult,
+};
 use harness_providers::Provider;
 
 const DEFAULT_COMMAND_BUFFER: usize = 64;
@@ -178,7 +181,15 @@ pub enum Command {
         actor: EventActor,
         agent_id: String,
         prompt: String,
+        model_ref_override: Option<String>,
+        model_settings_override: Option<AgentModelSettings>,
         respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
+    },
+    AgentProviderReasoningDelta {
+        task_id: String,
+        agent_id: String,
+        request_id: String,
+        delta: String,
     },
     RequestToolCall {
         actor: EventActor,
@@ -243,6 +254,7 @@ pub enum Command {
         request_id: String,
         finish_reason: String,
         output_digest: Option<String>,
+        usage: Option<harness_providers::CompletionUsage>,
     },
     AgentTurnFinished {
         task_id: String,
@@ -476,12 +488,26 @@ impl CoordinatorHandle {
         agent_id: impl Into<String>,
         prompt: impl Into<String>,
     ) -> Result<String, CoordinatorError> {
+        self.request_agent_turn_with_model(actor, agent_id, prompt, None, None)
+            .await
+    }
+
+    pub async fn request_agent_turn_with_model(
+        &self,
+        actor: EventActor,
+        agent_id: impl Into<String>,
+        prompt: impl Into<String>,
+        model_ref_override: Option<String>,
+        model_settings_override: Option<AgentModelSettings>,
+    ) -> Result<String, CoordinatorError> {
         let (respond_to, response_rx) = oneshot::channel();
         self.tx
             .send(Command::RequestAgentTurn {
                 actor,
                 agent_id: agent_id.into(),
                 prompt: prompt.into(),
+                model_ref_override,
+                model_settings_override,
                 respond_to,
             })
             .await
@@ -723,10 +749,18 @@ impl Coordinator {
                 actor,
                 agent_id,
                 prompt,
+                model_ref_override,
+                model_settings_override,
                 respond_to,
             } => {
                 let result = self
-                    .request_agent_turn_internal(actor, agent_id, prompt)
+                    .request_agent_turn_internal(
+                        actor,
+                        agent_id,
+                        prompt,
+                        model_ref_override,
+                        model_settings_override,
+                    )
                     .await;
                 let _ = respond_to.send(result);
             }
@@ -828,12 +862,22 @@ impl Coordinator {
                 let _ =
                     self.agent_provider_stream_delta_internal(task_id, agent_id, request_id, delta);
             }
+            Command::AgentProviderReasoningDelta {
+                task_id,
+                agent_id,
+                request_id,
+                delta,
+            } => {
+                let _ = self
+                    .agent_provider_reasoning_delta_internal(task_id, agent_id, request_id, delta);
+            }
             Command::AgentProviderRequestFinished {
                 task_id,
                 agent_id,
                 request_id,
                 finish_reason,
                 output_digest,
+                usage,
             } => {
                 let _ = self
                     .agent_provider_request_finished_internal(
@@ -842,6 +886,7 @@ impl Coordinator {
                         request_id,
                         finish_reason,
                         output_digest,
+                        usage,
                     )
                     .await;
             }
@@ -1376,6 +1421,7 @@ impl Coordinator {
                     profile_cfg.system_prompt.clone()
                 },
                 model_ref: profile_cfg.model_ref.clone(),
+                model_settings: default_model_settings_for_profile(&profile_cfg.name),
             };
 
             schedule_agent_turn(
@@ -1403,6 +1449,8 @@ impl Coordinator {
         actor: EventActor,
         agent_id: String,
         prompt: String,
+        model_ref_override: Option<String>,
+        model_settings_override: Option<AgentModelSettings>,
     ) -> Result<String, CoordinatorError> {
         let run_state = self
             .run_state
@@ -1438,7 +1486,9 @@ impl Coordinator {
         let request = AgentRequest {
             agent_id,
             prompt,
-            model_ref: profile.model_ref.clone(),
+            model_ref: model_ref_override.unwrap_or_else(|| profile.model_ref.clone()),
+            model_settings: model_settings_override
+                .unwrap_or_else(|| default_model_settings_for_profile(&profile.name)),
         };
 
         append_payload_event_with_correlation(
@@ -1494,7 +1544,7 @@ impl Coordinator {
         run_state.next_tool_call_id += 1;
 
         let request_correlation_id = tool_request_correlation_id(run_state, &actor);
-        let tool_metadata = requested_tool_call_metadata(&tool_id);
+        let tool_metadata = requested_tool_call_metadata(&tool_id, &args_json);
 
         append_tool_call_requested_event(
             self.clock.as_ref(),
@@ -1650,6 +1700,7 @@ impl Coordinator {
                         actor: actor.clone(),
                         category: effective_category.clone(),
                         tool_id: &tool_id,
+                        args_json: &args_json,
                         tool_call_id: &tool_call_id,
                         hashline_edit: hashline_edit.as_ref(),
                         kind: maybe_kind
@@ -2999,6 +3050,34 @@ impl Coordinator {
         Ok(())
     }
 
+    fn agent_provider_reasoning_delta_internal(
+        &mut self,
+        task_id: String,
+        agent_id: String,
+        request_id: String,
+        delta: String,
+    ) -> Result<(), CoordinatorError> {
+        let Some(run_state) = self.run_state.as_mut() else {
+            return Ok(());
+        };
+
+        if !run_state.running_agent_turns.contains_key(&task_id) {
+            return Ok(());
+        }
+
+        append_payload_event_with_correlation(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            agent_actor(&agent_id),
+            Some(format!("agent:{agent_id}")),
+            Some(request_id.clone()),
+            EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent { request_id, delta }),
+        )?;
+
+        Ok(())
+    }
+
     async fn agent_provider_request_finished_internal(
         &mut self,
         task_id: String,
@@ -3006,6 +3085,7 @@ impl Coordinator {
         request_id: String,
         finish_reason: String,
         output_digest: Option<String>,
+        usage: Option<harness_providers::CompletionUsage>,
     ) -> Result<(), CoordinatorError> {
         let Some(run_state) = self.run_state.as_mut() else {
             return Ok(());
@@ -3029,6 +3109,7 @@ impl Coordinator {
                 request_id: request_id.clone(),
                 finish_reason: finish_reason.clone(),
                 output_digest: output_digest.clone(),
+                usage,
             }),
         )?;
 
@@ -3444,6 +3525,7 @@ struct PermissionDeniedArgs<'a> {
     actor: EventActor,
     category: Option<String>,
     tool_id: &'a str,
+    args_json: &'a Value,
     tool_call_id: &'a str,
     hashline_edit: Option<&'a HashlineEditMetadata>,
     kind: PermissionKind,
@@ -3937,7 +4019,7 @@ where
         respond_to,
     } = args;
     let mut respond_to = respond_to;
-    let tool_metadata = tool_identity_metadata(&tool_id);
+    let tool_metadata = tool_identity_metadata(&tool_id, &args_json);
 
     let Some(tool) = tool_registry.get(&tool_id) else {
         append_payload_event(
@@ -3959,7 +4041,7 @@ where
             &tool_call_id,
             "unknown tool",
             request_correlation_id.as_deref(),
-            requested_tool_call_metadata(&tool_id),
+            requested_tool_call_metadata(&tool_id, &args_json),
             &[],
         )?;
         return Err(CoordinatorError::PolicyViolation(format!(
@@ -3993,7 +4075,7 @@ where
             &tool_call_id,
             "capability forbidden",
             request_correlation_id.as_deref(),
-            requested_tool_call_metadata(&tool_id),
+            requested_tool_call_metadata(&tool_id, &args_json),
             &[],
         )?;
         return Err(CoordinatorError::PolicyViolation(
@@ -4467,6 +4549,14 @@ where
                                     delta,
                                 }).await;
                             }
+                            AgentRuntimeEvent::ProviderReasoningDelta { request_id, delta } => {
+                                let _ = job_tx.send(Command::AgentProviderReasoningDelta {
+                                    task_id,
+                                    agent_id,
+                                    request_id,
+                                    delta,
+                                }).await;
+                            }
                             AgentRuntimeEvent::ProviderRequestFinished(finished) => {
                                 let _ = job_tx.send(Command::AgentProviderRequestFinished {
                                     task_id,
@@ -4474,6 +4564,7 @@ where
                                     request_id: finished.request_id,
                                     finish_reason: finished.finish_reason,
                                     output_digest: finished.output_digest,
+                                    usage: finished.usage,
                                 }).await;
                             }
                         }
@@ -4512,6 +4603,7 @@ where
         actor,
         category,
         tool_id,
+        args_json,
         tool_call_id,
         hashline_edit,
         kind,
@@ -4567,7 +4659,7 @@ where
             format!("{final_rejection_reason}; critical lifecycle hook failed: {hook_reason}");
     }
 
-    let tool_metadata = tool_identity_metadata(tool_id);
+    let tool_metadata = tool_identity_metadata(tool_id, args_json);
 
     append_tool_call_rejection(
         clock,
@@ -4700,7 +4792,7 @@ where
     };
 
     let hashline_edit = hashline_edit_metadata(&tool_id, &args_json, &pending.tool_call_id);
-    let tool_metadata = tool_identity_metadata(&tool_id);
+    let tool_metadata = tool_identity_metadata(&tool_id, &args_json);
     append_tool_call_rejection(
         clock,
         redactor,
@@ -5322,12 +5414,19 @@ fn hashline_diff_refs(result: &ToolResult) -> (Option<String>, Option<String>) {
     )
 }
 
-fn requested_tool_call_metadata(tool_id: &str) -> Option<ToolCallMetadata> {
-    let tool_identity = tool_identity_metadata(tool_id);
+fn requested_tool_call_metadata(tool_id: &str, args_json: &Value) -> Option<ToolCallMetadata> {
+    let tool_identity = tool_identity_metadata(tool_id, args_json);
     tool_call_metadata(tool_identity.as_ref(), None, Vec::new(), None, Vec::new())
 }
 
-fn tool_identity_metadata(tool_id: &str) -> Option<ToolIdentityMetadata> {
+fn tool_identity_metadata(tool_id: &str, args_json: &Value) -> Option<ToolIdentityMetadata> {
+    if let Some(canonical_tool_id) = effective_mcp_tool_id(tool_id, args_json) {
+        return Some(ToolIdentityMetadata {
+            canonical_tool_id: Some(canonical_tool_id),
+            alias_source_tool_id: None,
+        });
+    }
+
     let canonical_tool_id = canonical_tool_id_for(tool_id).map(ToOwned::to_owned)?;
     let alias_source_tool_id = (canonical_tool_id != tool_id).then(|| tool_id.to_string());
 
@@ -5335,6 +5434,41 @@ fn tool_identity_metadata(tool_id: &str) -> Option<ToolIdentityMetadata> {
         canonical_tool_id: Some(canonical_tool_id),
         alias_source_tool_id,
     })
+}
+
+fn effective_mcp_tool_id(tool_id: &str, args_json: &Value) -> Option<String> {
+    let mut segments = tool_id.split('.');
+    let Some("mcp") = segments.next() else {
+        return None;
+    };
+    let server_id = segments.next()?.trim();
+    if server_id.is_empty() {
+        return None;
+    }
+
+    let suffix = segments.collect::<Vec<_>>().join(".");
+    if suffix == "tool.call" {
+        let remote_tool_name = args_json
+            .get("tool")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())?;
+        if let Some(tool_id) =
+            registered_mcp_server_first_class_tool_id(server_id, remote_tool_name)
+        {
+            return Some(tool_id);
+        }
+        return Some(format!(
+            "mcp.{server_id}.{}",
+            sanitize_mcp_tool_segment(remote_tool_name)
+        ));
+    }
+
+    Some(tool_id.to_string())
+}
+
+fn sanitize_mcp_tool_segment(name: &str) -> String {
+    sanitize_tool_function_name(name).replace('-', "_")
 }
 
 fn tool_call_metadata(

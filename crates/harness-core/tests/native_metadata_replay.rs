@@ -226,6 +226,38 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
         .get(&tool_call_id)
         .expect("resume plan should retain tool metadata");
     assert_eq!(replay_tool.tool_id.as_deref(), Some("task"));
+    assert_eq!(
+        replay_tool
+            .resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.invoked_tool_id.as_deref()),
+        Some("task")
+    );
+    assert_eq!(
+        replay_tool
+            .resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.effective_tool_id.as_deref()),
+        Some("agent.spawn")
+    );
+    assert_eq!(
+        replay_tool
+            .resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.canonical_tool_id.as_deref()),
+        Some("agent.spawn")
+    );
+    assert_eq!(
+        replay_tool
+            .resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.alias_source_tool_id.as_deref()),
+        Some("task")
+    );
+    assert_eq!(
+        replay_tool.lifecycle_state,
+        Some(harness_core::event::ToolCallLifecycleState::Completed)
+    );
     assert_eq!(replay_tool.status, Some(ToolCallStatus::Succeeded));
     assert_eq!(
         replay_tool

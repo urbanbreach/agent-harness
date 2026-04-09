@@ -3565,6 +3565,7 @@ fn write_resumable_history_fixture(session_dir: &Path, run_id: &str) {
                 request_id: "req_000001".to_string(),
                 finish_reason: "done".to_string(),
                 output_digest: Some("digest-out-1".to_string()),
+                usage: None,
             }),
         ),
         resume_fixture_event_with_actor_and_correlation(
@@ -3641,6 +3642,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
                 request_id: "req_000001".to_string(),
                 finish_reason: "done".to_string(),
                 output_digest: Some("digest-out-1".to_string()),
+                usage: None,
             }),
         ),
         resume_fixture_event_with_actor_and_correlation(
@@ -3675,6 +3677,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
                 request_id: "req_000002".to_string(),
                 finish_reason: "done".to_string(),
                 output_digest: Some("digest-out-2".to_string()),
+                usage: None,
             }),
         ),
         resume_fixture_event_with_actor_and_correlation(
@@ -3806,6 +3809,10 @@ fn test_mock_provider() -> MockProvider {
             ],
             temperature: Some(0.0),
             max_tokens: None,
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
             tools: None,
             tool_choice: None,
             stream: true,

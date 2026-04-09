@@ -133,7 +133,7 @@ impl DefaultPermissionModes {
 impl PermissionPolicy {
     pub fn from_config(config: &HarnessConfig) -> Self {
         let profile_overrides = config
-            .profiles
+            .agents
             .iter()
             .filter_map(|(name, profile)| {
                 profile

@@ -77,7 +77,7 @@ fn example_profiles(
     config: &harness_core::config::HarnessConfig,
 ) -> BTreeMap<String, AgentProfile> {
     config
-        .profiles
+        .agents
         .iter()
         .map(|(name, profile)| {
             (
@@ -127,7 +127,7 @@ async fn example_config_exposes_opencode_compat_tools_through_live_registry() {
     ] {
         assert!(registry.get(tool_id).is_some(), "missing tool {tool_id}");
         assert!(
-            config.profiles["deep_compat"]
+            config.agents["deep_compat"]
                 .tools
                 .iter()
                 .any(|tool| tool == tool_id),
@@ -135,7 +135,7 @@ async fn example_config_exposes_opencode_compat_tools_through_live_registry() {
         );
     }
     assert_eq!(
-        config.profiles["deep_compat"].tool_surface,
+        config.agents["deep_compat"].tool_surface,
         ToolSurface::Compat
     );
 }

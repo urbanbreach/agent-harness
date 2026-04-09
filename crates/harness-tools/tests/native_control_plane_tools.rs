@@ -397,7 +397,7 @@ async fn plan_exit_rejects_non_plan_profile_or_missing_build_target() {
         .await
         .expect_err("plan.exit should reject missing build target");
     assert!(
-        err.contains("configured exit target profile") && err.contains("build"),
+        err.contains("configured exit target agent") && err.contains("build"),
         "unexpected error: {err}"
     );
 }

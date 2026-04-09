@@ -195,7 +195,7 @@ fn profile_metadata_config() -> HarnessConfig {
               }},
             }},
           }},
-          profiles: {{
+          agents: {{
             {PROFILE_NAME}: {{
               description: "Deep work",
               model_ref: "{MODEL_REF}",

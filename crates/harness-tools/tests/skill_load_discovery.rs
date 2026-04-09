@@ -250,7 +250,7 @@ fn harness_config_with_skills(skills: SkillsConfig) -> HarnessConfig {
                 }
             }
         },
-        "profiles": {
+        "agents": {
             "deep": {
                 "description": "Deep profile",
                 "model_ref": "default:gpt-5.4-mini",

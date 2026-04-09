@@ -207,11 +207,11 @@ impl ControlPlaneExecutor {
             .as_deref()
             .filter(|value| !value.trim().is_empty())
             .ok_or_else(|| {
-                ToolError::Execution("plan.exit requires an active profile context".to_string())
+                ToolError::Execution("plan.exit requires an active agent context".to_string())
             })?;
         if !ctx.plan_mode {
             return Err(ToolError::Execution(format!(
-                "plan.exit is only available for plan-mode profiles; `{source_profile}` is not plan-capable"
+                "plan.exit is only available for plan-mode agents; `{source_profile}` is not plan-capable"
             )));
         }
         let target_profile = ctx
@@ -220,7 +220,7 @@ impl ControlPlaneExecutor {
             .filter(|value| !value.trim().is_empty())
             .ok_or_else(|| {
                 ToolError::Execution(format!(
-                    "plan.exit for `{source_profile}` requires a configured exit target profile or an available `{PLAN_EXIT_BUILD_FALLBACK_PROFILE}` profile"
+                    "plan.exit for `{source_profile}` requires a configured exit target agent or an available `{PLAN_EXIT_BUILD_FALLBACK_PROFILE}` agent"
                 ))
             })?;
 
