@@ -26,6 +26,9 @@ use tempfile::TempDir;
 
 #[test]
 pub(super) fn module_replay_mode_snapshot_renders_two_pane_layout() {
+    harness_core::config::clear_registered_integrations_config();
+    harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
+
     let run_dir = write_replay_fixture(sample_replay_events());
     let events = load_events_from_run_dir(run_dir.path()).expect("load replay events");
 
@@ -192,6 +195,9 @@ fn permission_modal_ctrl_y_emits_resolve_intent_and_closes_on_resolved() {
 
 #[test]
 pub(super) fn module_transcript_edit_snapshot_renders_inline_diff() {
+    harness_core::config::clear_registered_integrations_config();
+    harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
+
     let run_dir = write_diff_fixture(true);
     let events = load_events_from_run_dir(run_dir.path()).expect("load diff fixture");
 
@@ -332,7 +338,8 @@ fn prompt_focus_enter_emits_submit_intent() {
     assert_eq!(
         intents[0],
         UiIntent::SubmitPrompt {
-            text: "hello".to_string()
+            text: "hello".to_string(),
+            launch_metadata: app::LaunchMetadata::default(),
         }
     );
     drop(intents);
@@ -442,6 +449,7 @@ fn activity_status_done_on_request_finished() {
             request_id: "req_001".to_string(),
             finish_reason: "stop".to_string(),
             output_digest: Some("digest-out".to_string()),
+            usage: None,
         }),
     ));
 
@@ -842,6 +850,7 @@ fn assistant_markdown_renders_headings_lists_and_quotes() {
             request_id: "req_markdown".to_string(),
             finish_reason: "stop".to_string(),
             output_digest: Some("digest-markdown-finished".to_string()),
+            usage: None,
         }),
     ));
 
@@ -1051,7 +1060,7 @@ fn task_scheduled_queued_does_not_reuse_tool_call_id_as_task_id() {
     let tool_call = activity.tool_calls.first().unwrap();
     assert_eq!(
         tool_call.status,
-        crate::app::ToolCallDisplayStatus::PendingPermission,
+        crate::app::ToolCallDisplayStatus::Queued,
         "TaskScheduled must not treat task_id as a tool_call_id"
     );
 
@@ -1129,6 +1138,7 @@ fn sample_live_events() -> Vec<EventEnvelopeV1> {
                 request_id: "req_1".to_string(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-output".to_string()),
+                usage: None,
             }),
         ),
         permission_requested_event(6, "perm_1", "tool_call_1"),

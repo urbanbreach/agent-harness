@@ -116,6 +116,13 @@ struct BuildTurnSectionArgs<'a> {
     app: &'a AppState,
 }
 
+#[derive(Debug, Clone)]
+struct TranscriptOrderedToolCallSection {
+    tool_call_id: String,
+    first_seq: u64,
+    section: TranscriptToolCallSection,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TranscriptTurnSection {
     request_id: String,
@@ -128,6 +135,7 @@ struct TranscriptTurnSection {
     tool_calls: Vec<TranscriptToolCallSection>,
     thinking: Option<TranscriptLabeledTextSection>,
     error: Option<TranscriptErrorSection>,
+    assistant_parts: Vec<TranscriptAssistantPart>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -208,6 +216,14 @@ enum TranscriptToolCallDisclosureState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TranscriptErrorSection {
     text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum TranscriptAssistantPart {
+    Reasoning(TranscriptLabeledTextSection),
+    Body(TranscriptBodyBlock),
+    ToolCall(TranscriptToolCallSection),
+    Error(TranscriptErrorSection),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -440,6 +456,45 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         body_blocks.push(TranscriptBodyBlock::WaitingResponse);
     }
 
+    let ordered_tool_calls = activity
+        .tool_calls
+        .iter()
+        .filter_map(|tool_call| {
+            build_tool_call_section(
+                tool_call,
+                app,
+                show_tool_details,
+                timestamps_visible,
+                show_generic_tool_output,
+                app.tool_output_expanded(tool_call),
+                stacked_diffs,
+                session_path,
+            )
+            .map(|section| TranscriptOrderedToolCallSection {
+                tool_call_id: tool_call.tool_call_id.clone(),
+                first_seq: tool_call.first_seq,
+                section,
+            })
+        })
+        .collect::<Vec<_>>();
+    let tool_calls = ordered_tool_calls
+        .iter()
+        .map(|tool_call| tool_call.section.clone())
+        .collect::<Vec<_>>();
+    let error = activity
+        .error_message
+        .as_ref()
+        .map(|text| TranscriptErrorSection { text: text.clone() });
+    let assistant_parts = build_ordered_assistant_parts(
+        activity,
+        app,
+        thinking_visible,
+        thinking.clone(),
+        body_blocks.clone(),
+        ordered_tool_calls,
+        error.clone(),
+    );
+
     TranscriptTurnSection {
         request_id: activity.request_id.clone(),
         user_message,
@@ -457,28 +512,382 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
             duration_ms: activity.duration_ms(),
         },
         body_blocks,
-        tool_calls: activity
-            .tool_calls
-            .iter()
-            .filter_map(|tool_call| {
-                build_tool_call_section(
-                    tool_call,
-                    app,
-                    show_tool_details,
-                    timestamps_visible,
-                    show_generic_tool_output,
-                    app.tool_output_expanded(tool_call),
-                    stacked_diffs,
-                    session_path,
-                )
-            })
-            .collect(),
+        tool_calls,
         thinking,
-        error: activity
-            .error_message
-            .as_ref()
-            .map(|text| TranscriptErrorSection { text: text.clone() }),
+        error,
+        assistant_parts,
     }
+}
+
+fn build_ordered_assistant_parts(
+    activity: &ActivityEntry,
+    app: &AppState,
+    thinking_visible: bool,
+    thinking: Option<TranscriptLabeledTextSection>,
+    body_blocks: Vec<TranscriptBodyBlock>,
+    ordered_tool_calls: Vec<TranscriptOrderedToolCallSection>,
+    error: Option<TranscriptErrorSection>,
+) -> Vec<TranscriptAssistantPart> {
+    let mut event_parts = build_ordered_assistant_parts_from_events(
+        activity,
+        app,
+        &ordered_tool_calls,
+        thinking_visible,
+    );
+    if event_parts.is_empty() {
+        let mut fallback_parts = Vec::new();
+        if let Some(thinking) = thinking {
+            fallback_parts.push(TranscriptAssistantPart::Reasoning(thinking));
+        }
+        fallback_parts.extend(body_blocks.into_iter().map(TranscriptAssistantPart::Body));
+        fallback_parts.extend(
+            ordered_tool_calls
+                .into_iter()
+                .map(|tool_call| TranscriptAssistantPart::ToolCall(tool_call.section)),
+        );
+        if let Some(error) = error {
+            fallback_parts.push(TranscriptAssistantPart::Error(error));
+        }
+        return fallback_parts;
+    }
+
+    sync_reasoning_parts_with_activity(&mut event_parts, activity, thinking_visible);
+
+    if let Some(error) = error {
+        event_parts.push(TranscriptAssistantPart::Error(error));
+    }
+    event_parts
+}
+
+fn sync_reasoning_parts_with_activity(
+    parts: &mut Vec<TranscriptAssistantPart>,
+    activity: &ActivityEntry,
+    thinking_visible: bool,
+) {
+    if !thinking_visible {
+        parts.retain(|part| !matches!(part, TranscriptAssistantPart::Reasoning(_)));
+        return;
+    }
+
+    if activity.thinking_text.trim().is_empty() {
+        parts.retain(|part| !matches!(part, TranscriptAssistantPart::Reasoning(_)));
+        return;
+    }
+
+    let Some(first_reasoning_index) = parts
+        .iter()
+        .position(|part| matches!(part, TranscriptAssistantPart::Reasoning(_)))
+    else {
+        return;
+    };
+
+    parts[first_reasoning_index] =
+        TranscriptAssistantPart::Reasoning(TranscriptLabeledTextSection {
+            label: THINKING_TRACE_LABEL,
+            text: activity.thinking_text.clone(),
+        });
+    let mut seen_reasoning = false;
+    parts.retain(|part| {
+        if matches!(part, TranscriptAssistantPart::Reasoning(_)) {
+            if seen_reasoning {
+                false
+            } else {
+                seen_reasoning = true;
+                true
+            }
+        } else {
+            true
+        }
+    });
+}
+
+fn turn_event_matches_activity(
+    event: &harness_core::event::EventEnvelopeV1,
+    request_id: &str,
+) -> bool {
+    match &event.payload {
+        harness_core::event::EventV1::ProviderReasoningDelta(data) => data.request_id == request_id,
+        harness_core::event::EventV1::ProviderStreamDelta(data) => data.request_id == request_id,
+        harness_core::event::EventV1::TaskCompleted(_)
+        | harness_core::event::EventV1::ToolCallRequested(_) => {
+            event.correlation_id.as_deref() == Some(request_id)
+        }
+        _ => false,
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SequencedTranscriptAssistantPart {
+    seq: u64,
+    index: usize,
+    part: TranscriptAssistantPart,
+}
+
+fn build_ordered_assistant_parts_from_events(
+    activity: &ActivityEntry,
+    app: &AppState,
+    ordered_tool_calls: &[TranscriptOrderedToolCallSection],
+    thinking_visible: bool,
+) -> Vec<TranscriptAssistantPart> {
+    let mut parts = Vec::new();
+    let mut next_index = 0usize;
+    let mut saw_turn_event = false;
+    let mut saw_reasoning_event = false;
+    let mut saw_body_event = false;
+    let mut saw_tool_call = false;
+    let mut pending_pre_tool_stream: Option<(u64, String)> = None;
+    let mut pending_tool_calls = ordered_tool_calls
+        .iter()
+        .cloned()
+        .map(|tool_call| (tool_call.tool_call_id.clone(), tool_call))
+        .collect::<std::collections::BTreeMap<_, _>>();
+
+    for event in app.events.iter().filter(|event| {
+        event.seq >= activity.first_seq
+            && event.seq <= activity.last_seq
+            && turn_event_matches_activity(event, &activity.request_id)
+    }) {
+        match &event.payload {
+            harness_core::event::EventV1::ProviderReasoningDelta(data)
+                if data.request_id == activity.request_id =>
+            {
+                saw_turn_event = true;
+                if thinking_visible {
+                    saw_reasoning_event = true;
+                    push_sequenced_text_part(
+                        &mut parts,
+                        &mut next_index,
+                        event.seq,
+                        TranscriptAssistantTextKind::Reasoning,
+                        &data.delta,
+                    );
+                }
+            }
+            harness_core::event::EventV1::ProviderStreamDelta(data)
+                if data.request_id == activity.request_id =>
+            {
+                saw_turn_event = true;
+                if saw_tool_call {
+                    saw_body_event = true;
+                    push_sequenced_text_part(
+                        &mut parts,
+                        &mut next_index,
+                        event.seq,
+                        TranscriptAssistantTextKind::Body,
+                        &data.delta,
+                    );
+                } else {
+                    let pending =
+                        pending_pre_tool_stream.get_or_insert_with(|| (event.seq, String::new()));
+                    pending.1.push_str(&data.delta);
+                }
+            }
+            harness_core::event::EventV1::TaskCompleted(data)
+                if event.correlation_id.as_deref() == Some(activity.request_id.as_str())
+                    && !saw_body_event
+                    && !data.result_summary.trim().is_empty() =>
+            {
+                saw_turn_event = true;
+                flush_pending_pre_tool_stream(
+                    &mut parts,
+                    &mut next_index,
+                    &mut pending_pre_tool_stream,
+                    activity,
+                    thinking_visible,
+                    &mut saw_reasoning_event,
+                    &mut saw_body_event,
+                );
+                saw_body_event = true;
+                push_sequenced_text_part(
+                    &mut parts,
+                    &mut next_index,
+                    event.seq,
+                    TranscriptAssistantTextKind::Body,
+                    &data.result_summary,
+                );
+            }
+            harness_core::event::EventV1::ToolCallRequested(data)
+                if event.correlation_id.as_deref() == Some(activity.request_id.as_str()) =>
+            {
+                saw_turn_event = true;
+                saw_tool_call = true;
+                flush_pending_pre_tool_stream(
+                    &mut parts,
+                    &mut next_index,
+                    &mut pending_pre_tool_stream,
+                    activity,
+                    thinking_visible,
+                    &mut saw_reasoning_event,
+                    &mut saw_body_event,
+                );
+                if let Some(tool_call) = pending_tool_calls.remove(&data.tool_call_id) {
+                    parts.push(SequencedTranscriptAssistantPart {
+                        seq: event.seq,
+                        index: next_index,
+                        part: TranscriptAssistantPart::ToolCall(tool_call.section),
+                    });
+                    next_index += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if !saw_turn_event {
+        return Vec::new();
+    }
+
+    flush_pending_pre_tool_stream(
+        &mut parts,
+        &mut next_index,
+        &mut pending_pre_tool_stream,
+        activity,
+        thinking_visible,
+        &mut saw_reasoning_event,
+        &mut saw_body_event,
+    );
+
+    if !saw_reasoning_event && !saw_body_event && !activity.thinking_text.trim().is_empty() {
+        parts.push(SequencedTranscriptAssistantPart {
+            seq: activity.first_seq,
+            index: next_index,
+            part: TranscriptAssistantPart::Reasoning(TranscriptLabeledTextSection {
+                label: THINKING_TRACE_LABEL,
+                text: activity.thinking_text.clone(),
+            }),
+        });
+        next_index += 1;
+    }
+
+    if !saw_body_event {
+        if !activity.transcript_text.is_empty() {
+            parts.push(SequencedTranscriptAssistantPart {
+                seq: activity.last_seq,
+                index: next_index,
+                part: TranscriptAssistantPart::Body(TranscriptBodyBlock::RichText(
+                    activity.transcript_text.clone(),
+                )),
+            });
+            next_index += 1;
+        } else if activity.status == ActivityStatus::Streaming {
+            parts.push(SequencedTranscriptAssistantPart {
+                seq: activity.last_seq.saturating_add(1),
+                index: next_index,
+                part: TranscriptAssistantPart::Body(TranscriptBodyBlock::WaitingResponse),
+            });
+            next_index += 1;
+        }
+    }
+
+    for tool_call in pending_tool_calls.into_values() {
+        parts.push(SequencedTranscriptAssistantPart {
+            seq: tool_call.first_seq,
+            index: next_index,
+            part: TranscriptAssistantPart::ToolCall(tool_call.section),
+        });
+        next_index += 1;
+    }
+
+    parts.sort_by_key(|part| (part.seq, part.index));
+    parts.into_iter().map(|part| part.part).collect()
+}
+
+fn flush_pending_pre_tool_stream(
+    parts: &mut Vec<SequencedTranscriptAssistantPart>,
+    next_index: &mut usize,
+    pending_pre_tool_stream: &mut Option<(u64, String)>,
+    activity: &ActivityEntry,
+    thinking_visible: bool,
+    saw_reasoning_event: &mut bool,
+    saw_body_event: &mut bool,
+) {
+    let Some((seq, text)) = pending_pre_tool_stream.take() else {
+        return;
+    };
+
+    if text.is_empty() {
+        return;
+    }
+
+    let treat_as_reasoning = thinking_visible
+        && !activity.thinking_text.trim().is_empty()
+        && activity.thinking_text == text;
+
+    if treat_as_reasoning {
+        *saw_reasoning_event = true;
+        push_sequenced_text_part(
+            parts,
+            next_index,
+            seq,
+            TranscriptAssistantTextKind::Reasoning,
+            &text,
+        );
+    } else {
+        *saw_body_event = true;
+        push_sequenced_text_part(
+            parts,
+            next_index,
+            seq,
+            TranscriptAssistantTextKind::Body,
+            &text,
+        );
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TranscriptAssistantTextKind {
+    Reasoning,
+    Body,
+}
+
+fn push_sequenced_text_part(
+    parts: &mut Vec<SequencedTranscriptAssistantPart>,
+    next_index: &mut usize,
+    seq: u64,
+    kind: TranscriptAssistantTextKind,
+    text: &str,
+) {
+    if text.is_empty() {
+        return;
+    }
+
+    if let Some(last) = parts.last_mut() {
+        match (&mut last.part, kind) {
+            (
+                TranscriptAssistantPart::Reasoning(existing),
+                TranscriptAssistantTextKind::Reasoning,
+            ) => {
+                existing.text.push_str(text);
+                return;
+            }
+            (
+                TranscriptAssistantPart::Body(TranscriptBodyBlock::RichText(existing)),
+                TranscriptAssistantTextKind::Body,
+            ) => {
+                existing.push_str(text);
+                return;
+            }
+            _ => {}
+        }
+    }
+
+    let part = match kind {
+        TranscriptAssistantTextKind::Reasoning => {
+            TranscriptAssistantPart::Reasoning(TranscriptLabeledTextSection {
+                label: THINKING_TRACE_LABEL,
+                text: text.to_string(),
+            })
+        }
+        TranscriptAssistantTextKind::Body => {
+            TranscriptAssistantPart::Body(TranscriptBodyBlock::RichText(text.to_string()))
+        }
+    };
+    parts.push(SequencedTranscriptAssistantPart {
+        seq,
+        index: *next_index,
+        part,
+    });
+    *next_index += 1;
 }
 
 #[expect(
@@ -524,7 +933,7 @@ fn build_opencode_tool_call_section(
     let struck_out = tool_call_denied(tool_call);
     let mut detail_blocks = Vec::new();
     let expanded = show_generic_tool_output || tool_output_expanded;
-    let display_tool_id = tool_call.canonical_tool_id();
+    let display_tool_id = tool_call.effective_tool_id();
 
     let (title, icon, visual_style) = match display_tool_id {
         "fs.read" => (
@@ -723,6 +1132,17 @@ fn build_opencode_tool_call_section(
             Some("⌘"),
             TranscriptToolCallVisualStyle::Block,
         ),
+        _ if display_tool_id.starts_with("mcp.") => (
+            mcp_tool_title(tool_call, display_tool_id),
+            Some("⇄"),
+            if tool_prefers_inline_success_presentation(tool_call) {
+                TranscriptToolCallVisualStyle::Inline
+            } else if tool_call.output_summary.is_some() {
+                TranscriptToolCallVisualStyle::Block
+            } else {
+                TranscriptToolCallVisualStyle::Inline
+            },
+        ),
         _ => {
             let title = generic_tool_title(tool_call, display_tool_id);
             if tool_call.output_summary.is_some() {
@@ -737,7 +1157,15 @@ fn build_opencode_tool_call_section(
                         TranscriptToolCallDetailTone::Secondary
                     },
                 );
-                (title, Some("⚙"), TranscriptToolCallVisualStyle::Block)
+                (
+                    title,
+                    Some("⚙"),
+                    if tool_prefers_inline_success_presentation(tool_call) {
+                        TranscriptToolCallVisualStyle::Inline
+                    } else {
+                        TranscriptToolCallVisualStyle::Block
+                    },
+                )
             } else {
                 (title, Some("⚙"), TranscriptToolCallVisualStyle::Inline)
             }
@@ -759,6 +1187,7 @@ fn build_opencode_tool_call_section(
     if detail_blocks.is_empty()
         && tool_prefers_generic_output_block(display_tool_id)
         && tool_call.output_summary.is_some()
+        && (!tool_output_hidden_behind_disclosure_by_default(tool_call) || expanded)
     {
         push_collapsible_output_block(
             &mut detail_blocks,
@@ -851,6 +1280,72 @@ fn lsp_tool_title(tool_call: &crate::app::ToolCallEntry) -> String {
         .or_else(|| tool_summary_string(&tool_call.args_summary, &["tool_name"]))
         .unwrap_or_else(|| "request".to_string());
     format!("LSP {}", collapse_inline_whitespace(&operation))
+}
+
+fn mcp_tool_title(tool_call: &crate::app::ToolCallEntry, display_tool_id: &str) -> String {
+    let server =
+        mcp_server_name(tool_call, display_tool_id).unwrap_or_else(|| "server".to_string());
+    match mcp_tool_suffix(display_tool_id) {
+        Some("tools.list") => format!("List MCP tools · {server}"),
+        Some("resources.list") => format!("List MCP resources · {server}"),
+        Some("resource.read") => format!(
+            "Read MCP resource · {}",
+            tool_json_nested_string(tool_call.output_json.as_ref(), &["payload", "uri"])
+                .or_else(|| tool_summary_string(&tool_call.args_summary, &["uri"]))
+                .unwrap_or(server)
+        ),
+        Some("prompts.list") => format!("List MCP prompts · {server}"),
+        Some("prompt.get") => format!(
+            "Load MCP prompt · {}",
+            tool_json_nested_string(tool_call.output_json.as_ref(), &["payload", "name"])
+                .or_else(|| tool_summary_string(&tool_call.args_summary, &["name"]))
+                .unwrap_or(server)
+        ),
+        _ => format!(
+            "MCP {server} · {}",
+            mcp_remote_tool_name(tool_call, display_tool_id).unwrap_or_else(|| "tool".to_string())
+        ),
+    }
+}
+
+fn mcp_server_name(tool_call: &crate::app::ToolCallEntry, display_tool_id: &str) -> Option<String> {
+    tool_json_nested_string(tool_call.output_json.as_ref(), &["server", "id"]).or_else(|| {
+        display_tool_id
+            .strip_prefix("mcp.")
+            .and_then(|value| value.split_once('.'))
+            .map(|(server, _)| collapse_inline_whitespace(server))
+            .filter(|server| !server.is_empty())
+    })
+}
+
+fn mcp_tool_suffix(display_tool_id: &str) -> Option<&str> {
+    display_tool_id
+        .strip_prefix("mcp.")
+        .and_then(|value| value.split_once('.'))
+        .map(|(_, suffix)| suffix)
+}
+
+fn mcp_remote_tool_name(
+    tool_call: &crate::app::ToolCallEntry,
+    display_tool_id: &str,
+) -> Option<String> {
+    tool_json_nested_string(tool_call.output_json.as_ref(), &["payload", "tool"])
+        .or_else(|| tool_summary_string(&tool_call.args_summary, &["tool"]))
+        .or_else(|| {
+            let suffix = mcp_tool_suffix(display_tool_id)?;
+            (!matches!(
+                suffix,
+                "tools.list"
+                    | "tool.call"
+                    | "resources.list"
+                    | "resource.read"
+                    | "prompts.list"
+                    | "prompt.get"
+            ))
+            .then(|| suffix.rsplit('.').next().unwrap_or(suffix).to_string())
+        })
+        .map(|value| collapse_inline_whitespace(&value))
+        .filter(|value| !value.is_empty())
 }
 
 fn build_agent_spawn_tool_row(
@@ -1025,19 +1520,33 @@ fn tool_json_string(output_json: Option<&serde_json::Value>, keys: &[&str]) -> O
     })
 }
 
+fn tool_json_nested_string(
+    output_json: Option<&serde_json::Value>,
+    path: &[&str],
+) -> Option<String> {
+    let mut current = output_json?;
+    for key in path {
+        current = current.get(*key)?;
+    }
+    current
+        .as_str()
+        .map(collapse_inline_whitespace)
+        .filter(|value| !value.is_empty())
+}
+
 fn push_tool_identity_block(
     detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
     tool_call: &crate::app::ToolCallEntry,
 ) {
-    let Some(alias_source) = tool_call.alias_source_tool_id.as_deref() else {
+    let Some(alias_source) = tool_call.resolved_alias_source_tool_id() else {
         return;
     };
-    let canonical = tool_call.canonical_tool_id();
-    if alias_source == canonical {
+    let effective = tool_call.effective_tool_id();
+    if !tool_call.is_compat_alias() || alias_source == effective {
         return;
     }
     detail_blocks.push(TranscriptToolCallDetailBlock::Message {
-        text: format!("Compat alias · {alias_source} → {canonical}"),
+        text: format!("Compat alias · {alias_source} → {effective}"),
         tone: TranscriptToolCallDetailTone::Secondary,
     });
 }
@@ -1099,10 +1608,14 @@ fn tool_disclosure_state(
 }
 
 fn tool_call_has_transcript_disclosure(tool_call: &crate::app::ToolCallEntry) -> bool {
+    if tool_output_hidden_behind_disclosure_by_default(tool_call) {
+        return true;
+    }
+
     let output = tool_call.output_summary.as_deref().unwrap_or_default();
     let output_line_count = output.lines().count();
     !tool_call.artifact_refs.is_empty()
-        || match tool_call.canonical_tool_id() {
+        || match tool_call.effective_tool_id() {
             "shell.run" => output_line_count > 10,
             "edit.hashline_apply" => tool_call
                 .edit
@@ -1119,6 +1632,36 @@ fn tool_prefers_generic_output_block(display_tool_id: &str) -> bool {
         display_tool_id,
         "web.fetch" | "search.web" | "search.code" | "tool.batch" | "code.lsp"
     ) || display_tool_id.starts_with("mcp.")
+}
+
+fn tool_output_hidden_behind_disclosure_by_default(tool_call: &crate::app::ToolCallEntry) -> bool {
+    tool_call.status == ToolCallDisplayStatus::Succeeded
+        && tool_call.effective_tool_id().starts_with("mcp.")
+        && tool_call
+            .output_summary
+            .as_deref()
+            .is_some_and(|output| !output.trim().is_empty())
+}
+
+fn tool_prefers_inline_success_presentation(tool_call: &crate::app::ToolCallEntry) -> bool {
+    tool_call.status == ToolCallDisplayStatus::Succeeded
+        && !tool_output_requires_block_presentation(tool_call)
+}
+
+fn tool_output_requires_block_presentation(tool_call: &crate::app::ToolCallEntry) -> bool {
+    if tool_call.status == ToolCallDisplayStatus::Failed
+        || !tool_call.artifact_refs.is_empty()
+        || tool_call
+            .edit
+            .as_ref()
+            .and_then(|edit| edit.diff_rel_path.as_ref())
+            .is_some()
+    {
+        return true;
+    }
+
+    let output = tool_call.output_summary.as_deref().unwrap_or_default();
+    format_detail_payload(output).lines().count() > 3
 }
 
 fn tool_path_display(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
@@ -1349,13 +1892,19 @@ fn tool_call_header_subtitle(
             }
         }
     } else {
-        match tool_call.status {
-            ToolCallDisplayStatus::PendingPermission => {
-                suffixes.push("pending permission".to_string())
+        match tool_call.lifecycle_state() {
+            harness_core::event::ToolCallLifecycleState::Pending => {
+                if tool_call.status == ToolCallDisplayStatus::PendingPermission {
+                    suffixes.push("pending permission".to_string());
+                } else {
+                    suffixes.push("queued".to_string());
+                }
             }
-            ToolCallDisplayStatus::Queued => suffixes.push("queued".to_string()),
-            ToolCallDisplayStatus::Running => suffixes.push("running".to_string()),
-            ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed => {
+            harness_core::event::ToolCallLifecycleState::Running => {
+                suffixes.push("running".to_string())
+            }
+            harness_core::event::ToolCallLifecycleState::Completed
+            | harness_core::event::ToolCallLifecycleState::Error => {
                 if let Some(duration_ms) = tool_call.duration_ms() {
                     suffixes.push(format_duration_ms(duration_ms));
                 }
@@ -1666,9 +2215,6 @@ fn build_assistant_render_surfaces(
     width: u16,
     base_surface: Color,
 ) -> Vec<TranscriptRenderSurface> {
-    let mut reasoning_lines = Vec::new();
-    let mut answer_lines = Vec::new();
-    let mut context_lines = Vec::new();
     let (assistant_icon, assistant_color, assistant_status) = match turn.header.status {
         ActivityStatus::Streaming => (
             transcript_streaming_spinner_frame(turn.animation_phase),
@@ -1679,31 +2225,150 @@ fn build_assistant_render_surfaces(
         ActivityStatus::Error => (theme.live_shell.glyphs.error, theme.status.error, "error"),
     };
 
-    for block in &turn.body_blocks {
-        match block {
-            TranscriptBodyBlock::RichText(text) => {
-                append_rich_text_block(
-                    &mut answer_lines,
+    let mut surfaces = Vec::new();
+    let footer_target = assistant_footer_target_index(turn);
+
+    for (index, part) in turn.assistant_parts.iter().enumerate() {
+        let prepend_gap = index > 0
+            && matches!(
+                turn.assistant_parts[index - 1],
+                TranscriptAssistantPart::Reasoning(_)
+            )
+            && matches!(part, TranscriptAssistantPart::Body(_));
+        let append_footer = footer_target == Some(index);
+        surfaces.push(build_assistant_part_render_surface(
+            turn,
+            part,
+            theme,
+            width,
+            base_surface,
+            prepend_gap,
+            append_footer,
+            assistant_icon,
+            assistant_color,
+            assistant_status,
+        ));
+    }
+
+    if footer_target == Some(turn.assistant_parts.len()) {
+        surfaces.push(build_footer_only_render_surface(
+            turn,
+            theme,
+            base_surface,
+            assistant_icon,
+            assistant_color,
+            assistant_status,
+        ));
+    }
+    surfaces
+}
+
+fn assistant_footer_target_index(turn: &TranscriptTurnSection) -> Option<usize> {
+    if !turn.show_footer || (turn.assistant_parts.is_empty() && turn.user_message.is_none()) {
+        return None;
+    }
+
+    turn.assistant_parts
+        .iter()
+        .rposition(|part| matches!(part, TranscriptAssistantPart::Body(_)))
+        .or_else(|| (!turn.assistant_parts.is_empty()).then_some(turn.assistant_parts.len() - 1))
+        .or_else(|| {
+            turn.user_message
+                .as_ref()
+                .map(|_| turn.assistant_parts.len())
+        })
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "assistant turn surface assembly needs the footer styling inputs in one place"
+)]
+fn build_assistant_part_render_surface(
+    turn: &TranscriptTurnSection,
+    part: &TranscriptAssistantPart,
+    theme: &Theme,
+    width: u16,
+    base_surface: Color,
+    prepend_gap: bool,
+    append_footer: bool,
+    assistant_icon: &str,
+    assistant_color: Color,
+    assistant_status: &str,
+) -> TranscriptRenderSurface {
+    let mut lines = Vec::new();
+    let (show_outer_rail, rail_color, surface) = match part {
+        TranscriptAssistantPart::Reasoning(thinking) => {
+            append_reasoning_block(
+                &mut lines,
+                thinking,
+                theme,
+                transcript_surface_content_width(width, true),
+            );
+            (
+                true,
+                theme.border.subtle,
+                transcript_flat_surface(base_surface),
+            )
+        }
+        TranscriptAssistantPart::Body(block) => {
+            if prepend_gap {
+                lines.push(Line::default());
+            }
+            match block {
+                TranscriptBodyBlock::RichText(text) => append_rich_text_block(
+                    &mut lines,
                     text,
                     theme.text.primary,
                     TRANSCRIPT_ASSISTANT_BODY_PREFIX,
                     theme,
                     transcript_surface_content_width(width, false),
-                );
-            }
-            TranscriptBodyBlock::WaitingResponse => {
-                append_text_block(
-                    &mut answer_lines,
+                ),
+                TranscriptBodyBlock::WaitingResponse => append_text_block(
+                    &mut lines,
                     "Waiting for response…",
                     theme.text.secondary,
                     TRANSCRIPT_ASSISTANT_BODY_PREFIX,
-                );
+                ),
             }
+            (
+                false,
+                assistant_primary_rail_color(turn, theme),
+                transcript_flat_surface(base_surface),
+            )
         }
-    }
+        TranscriptAssistantPart::ToolCall(tool_call) => {
+            append_tool_call_section_lines(&mut lines, tool_call, theme, width, base_surface);
+            (
+                false,
+                transcript_nested_rail_color(theme),
+                transcript_nested_surface(theme, base_surface),
+            )
+        }
+        TranscriptAssistantPart::Error(error) => {
+            append_labeled_text_block(
+                &mut lines,
+                &error.text,
+                LabeledTextBlockStyle {
+                    indent: TRANSCRIPT_NESTED_INDENT,
+                    label: "error",
+                    rail_color: transcript_nested_rail_color(theme),
+                    surface: transcript_nested_surface(theme, base_surface),
+                    label_style: Style::default().fg(theme.status.error),
+                    body_style: Style::default().fg(theme.status.error),
+                },
+                theme,
+                width,
+            );
+            (
+                false,
+                transcript_nested_rail_color(theme),
+                transcript_nested_surface(theme, base_surface),
+            )
+        }
+    };
 
-    if turn.show_footer && (!answer_lines.is_empty() || turn.user_message.is_some()) {
-        answer_lines.push(build_assistant_footer_line(
+    if append_footer {
+        lines.push(build_assistant_footer_line(
             turn,
             assistant_icon,
             assistant_color,
@@ -1712,64 +2377,34 @@ fn build_assistant_render_surfaces(
         ));
     }
 
-    if let Some(thinking) = &turn.thinking {
-        append_reasoning_block(
-            &mut reasoning_lines,
-            thinking,
-            theme,
-            transcript_surface_content_width(width, true),
-        );
+    TranscriptRenderSurface {
+        show_outer_rail,
+        rail_color,
+        surface,
+        lines,
     }
+}
 
-    if !reasoning_lines.is_empty() && !answer_lines.is_empty() {
-        answer_lines.insert(0, Line::default());
-    }
-
-    for tool_call in &turn.tool_calls {
-        append_tool_call_section_lines(&mut context_lines, tool_call, theme, width, base_surface);
-    }
-
-    if let Some(error) = &turn.error {
-        append_labeled_text_block(
-            &mut context_lines,
-            &error.text,
-            LabeledTextBlockStyle {
-                indent: TRANSCRIPT_NESTED_INDENT,
-                label: "error",
-                rail_color: transcript_nested_rail_color(theme),
-                surface: transcript_nested_surface(theme, base_surface),
-                label_style: Style::default().fg(theme.status.error),
-                body_style: Style::default().fg(theme.status.error),
-            },
-            theme,
-            width,
-        );
-    }
-
-    let mut surfaces = Vec::new();
-    if !reasoning_lines.is_empty() {
-        surfaces.push(TranscriptRenderSurface {
-            show_outer_rail: true,
-            rail_color: theme.border.subtle,
-            surface: transcript_flat_surface(base_surface),
-            lines: reasoning_lines,
-        });
-    }
-    surfaces.push(TranscriptRenderSurface {
+fn build_footer_only_render_surface(
+    turn: &TranscriptTurnSection,
+    theme: &Theme,
+    base_surface: Color,
+    assistant_icon: &str,
+    assistant_color: Color,
+    assistant_status: &str,
+) -> TranscriptRenderSurface {
+    TranscriptRenderSurface {
         show_outer_rail: false,
         rail_color: assistant_primary_rail_color(turn, theme),
         surface: transcript_flat_surface(base_surface),
-        lines: answer_lines,
-    });
-    if !context_lines.is_empty() {
-        surfaces.push(TranscriptRenderSurface {
-            show_outer_rail: false,
-            rail_color: transcript_nested_rail_color(theme),
-            surface: transcript_nested_surface(theme, base_surface),
-            lines: context_lines,
-        });
+        lines: vec![build_assistant_footer_line(
+            turn,
+            assistant_icon,
+            assistant_color,
+            assistant_status,
+            theme,
+        )],
     }
-    surfaces
 }
 
 fn append_reasoning_block(
@@ -3482,8 +4117,10 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
         tool_id: "shell.run".to_string(),
         canonical_tool_id: None,
         alias_source_tool_id: None,
+        resolved_tool_identity: None,
         args_summary: r#"{"cmd":"false"}"#.to_string(),
         args_digest: "digest".to_string(),
+        lifecycle_state: None,
         status: ToolCallDisplayStatus::Failed,
         output_summary: Some("command failed".to_string()),
         output_digest: Some("out-digest".to_string()),
@@ -3564,8 +4201,10 @@ pub(crate) fn exact_test_transcript_reasoning_precedes_answer_and_tool_rows() {
         tool_id: "fs.read".to_string(),
         canonical_tool_id: None,
         alias_source_tool_id: None,
+        resolved_tool_identity: None,
         args_summary: r#"{"path":"src/ui.rs"}"#.to_string(),
         args_digest: "digest".to_string(),
+        lifecycle_state: None,
         status: ToolCallDisplayStatus::Succeeded,
         output_summary: Some("24 lines read".to_string()),
         output_digest: Some("out-digest".to_string()),
@@ -3616,6 +4255,155 @@ pub(crate) fn exact_test_transcript_reasoning_precedes_answer_and_tool_rows() {
 }
 
 #[cfg(test)]
+pub(crate) fn exact_test_transcript_tool_rows_follow_chronological_turn_order() {
+    fn event(
+        seq: u64,
+        correlation_id: &str,
+        payload: harness_core::event::EventV1,
+    ) -> harness_core::event::EventEnvelopeV1 {
+        harness_core::event::EventEnvelopeV1 {
+            schema_version: harness_core::event::SCHEMA_VERSION,
+            event_id: format!("evt_turn_order_{seq:04}"),
+            seq,
+            run_id: "run_turn_order".to_string(),
+            mono_ms: seq * 100,
+            ts: Some("2026-03-22T14:36:00Z".to_string()),
+            actor: harness_core::event::EventActor::new(
+                harness_core::event::ActorKind::Worker,
+                Some("agent_parent".to_string()),
+            ),
+            correlation_id: Some(correlation_id.to_string()),
+            causation_id: None,
+            stream_key: None,
+            payload,
+        }
+    }
+
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(event(
+        1,
+        "req_ordered_turn",
+        harness_core::event::EventV1::UserMessageSubmitted(
+            harness_core::event::UserMessageSubmittedEvent {
+                request_id: "req_ordered_turn".to_string(),
+                text: "Check transcript parity".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(event(
+        2,
+        "req_ordered_turn",
+        harness_core::event::EventV1::ProviderRequestStarted(
+            harness_core::event::ProviderRequestStartedEvent {
+                request_id: "req_ordered_turn".to_string(),
+                provider_id: "default".to_string(),
+                model_id: "gpt-5.4-mini".to_string(),
+                prompt_summary: "Check transcript parity".to_string(),
+                request_digest: "digest-turn-order".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(event(
+        3,
+        "req_ordered_turn",
+        harness_core::event::EventV1::ProviderStreamDelta(
+            harness_core::event::ProviderStreamDeltaEvent {
+                request_id: "req_ordered_turn".to_string(),
+                delta: "I’ll inspect the MCP result first.\n".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(event(
+        4,
+        "req_ordered_turn",
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tc_docs".to_string(),
+                tool_id: "mcp.docs-rs.search".to_string(),
+                args_summary: r#"{"query":"ratatui"}"#.to_string(),
+                args_digest: "digest-docs-search".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(event(
+        5,
+        "req_ordered_turn",
+        harness_core::event::EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
+            tool_call_id: "tc_docs".to_string(),
+        }),
+    ));
+    app.ingest_event(event(
+        6,
+        "req_ordered_turn",
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tc_docs".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("ratatui 0.29.0".to_string()),
+                output_digest: Some("digest-docs-result".to_string()),
+                output_json: None,
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(event(
+        7,
+        "req_ordered_turn",
+        harness_core::event::EventV1::ProviderStreamDelta(
+            harness_core::event::ProviderStreamDeltaEvent {
+                request_id: "req_ordered_turn".to_string(),
+                delta: "It returns the crate metadata inline afterward.".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(event(
+        8,
+        "req_ordered_turn",
+        harness_core::event::EventV1::ProviderRequestFinished(
+            harness_core::event::ProviderRequestFinishedEvent {
+                request_id: "req_ordered_turn".to_string(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some("digest-turn-order-output".to_string()),
+                usage: None,
+            },
+        ),
+    ));
+
+    let lines = build_transcript_lines_for_width(&app, &Theme::default(), 96)
+        .into_iter()
+        .map(|line| {
+            line.spans
+                .into_iter()
+                .map(|span| span.content.into_owned())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>();
+
+    let opening_row = lines
+        .iter()
+        .position(|line| line.contains("I’ll inspect the MCP result first."))
+        .expect("opening answer row");
+    let tool_row = lines
+        .iter()
+        .position(|line| line.contains("MCP docs-rs · search"))
+        .expect("tool row");
+    let closing_row = lines
+        .iter()
+        .position(|line| line.contains("It returns the crate metadata inline afterward."))
+        .expect("closing answer row");
+
+    assert!(
+        opening_row < tool_row,
+        "tool row should stay after the initial assistant prose"
+    );
+    assert!(
+        tool_row < closing_row,
+        "tool row should stay before the dependent assistant follow-up"
+    );
+}
+
+#[cfg(test)]
 pub(crate) fn exact_test_transcript_edit_tool_matches_opencode_inline_diff_shape() {
     let run_dir = tempfile::tempdir().expect("create run dir");
     let artifacts_dir = run_dir.path().join("artifacts");
@@ -3634,8 +4422,10 @@ pub(crate) fn exact_test_transcript_edit_tool_matches_opencode_inline_diff_shape
         tool_id: "edit.hashline_apply".to_string(),
         canonical_tool_id: None,
         alias_source_tool_id: None,
+        resolved_tool_identity: None,
         args_summary: r#"{"path":"crates/harness-tui/src/ui.rs"}"#.to_string(),
         args_digest: "digest-edit".to_string(),
+        lifecycle_state: None,
         status: ToolCallDisplayStatus::Succeeded,
         output_summary: Some("Edit applied".to_string()),
         output_digest: Some("digest-edit-output".to_string()),
@@ -3696,8 +4486,10 @@ pub(crate) fn exact_test_transcript_proposed_edit_renders_opencode_header() {
         tool_id: "edit.hashline_apply".to_string(),
         canonical_tool_id: None,
         alias_source_tool_id: None,
+        resolved_tool_identity: None,
         args_summary: r#"{"path":"crates/harness-tui/src/ui.rs"}"#.to_string(),
         args_digest: "digest-edit-proposed".to_string(),
+        lifecycle_state: None,
         status: ToolCallDisplayStatus::Running,
         output_summary: None,
         output_digest: None,
@@ -3752,8 +4544,10 @@ pub(crate) fn exact_test_transcript_rejected_edit_surfaces_reason_inline() {
         tool_id: "edit.hashline_apply".to_string(),
         canonical_tool_id: None,
         alias_source_tool_id: None,
+        resolved_tool_identity: None,
         args_summary: r#"{"path":"crates/harness-tui/src/ui.rs"}"#.to_string(),
         args_digest: "digest-edit-rejected".to_string(),
+        lifecycle_state: None,
         status: ToolCallDisplayStatus::Failed,
         output_summary: Some("ANCHOR_MISMATCH".to_string()),
         output_digest: None,
@@ -3906,7 +4700,14 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
     let theme = Theme::default();
 
     let mut native_read = transcript_section_model_test_tool_call("tc-native-read", "fs.read");
+    native_read.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {
+        invoked_tool_id: Some("fs.read".to_string()),
+        effective_tool_id: Some("fs.read".to_string()),
+        canonical_tool_id: Some("fs.read".to_string()),
+        alias_source_tool_id: None,
+    });
     native_read.args_summary = r#"{"path":"src/ui.rs","offset":12,"limit":24}"#.to_string();
+    native_read.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
     native_read.status = ToolCallDisplayStatus::Succeeded;
     native_read.output_summary = Some("24 lines read from src/ui.rs".to_string());
     native_read.truncated_output = native_read.output_summary.clone();
@@ -3914,9 +4715,14 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
     native_read.last_timestamp = Some("2026-03-22T14:35:44Z".to_string());
 
     let mut alias_read = transcript_section_model_test_tool_call("tc-alias-read", "read");
-    alias_read.canonical_tool_id = Some("fs.read".to_string());
-    alias_read.alias_source_tool_id = Some("read".to_string());
+    alias_read.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {
+        invoked_tool_id: Some("read".to_string()),
+        effective_tool_id: Some("fs.read".to_string()),
+        canonical_tool_id: Some("fs.read".to_string()),
+        alias_source_tool_id: Some("read".to_string()),
+    });
     alias_read.args_summary = native_read.args_summary.clone();
+    alias_read.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
     alias_read.status = ToolCallDisplayStatus::Succeeded;
     alias_read.output_summary = native_read.output_summary.clone();
     alias_read.truncated_output = native_read.truncated_output.clone();
@@ -3958,10 +4764,15 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
         )));
 
     let mut task_call = transcript_section_model_test_tool_call("tc-task", "task");
-    task_call.canonical_tool_id = Some("agent.spawn".to_string());
-    task_call.alias_source_tool_id = Some("task".to_string());
+    task_call.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {
+        invoked_tool_id: Some("task".to_string()),
+        effective_tool_id: Some("agent.spawn".to_string()),
+        canonical_tool_id: Some("agent.spawn".to_string()),
+        alias_source_tool_id: Some("task".to_string()),
+    });
     task_call.args_summary =
         r#"{"description":"audit transcript parity","subagent_type":"researcher"}"#.to_string();
+    task_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
     task_call.status = ToolCallDisplayStatus::Succeeded;
     task_call.output_json = Some(serde_json::json!({
         "description": "audit transcript parity",
@@ -4009,10 +4820,15 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
     assert!(!task_text.contains("Task audit transcript parity"));
 
     let mut fetch_call = transcript_section_model_test_tool_call("tc-fetch", "webfetch");
-    fetch_call.canonical_tool_id = Some("web.fetch".to_string());
-    fetch_call.alias_source_tool_id = Some("webfetch".to_string());
+    fetch_call.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {
+        invoked_tool_id: Some("webfetch".to_string()),
+        effective_tool_id: Some("web.fetch".to_string()),
+        canonical_tool_id: Some("web.fetch".to_string()),
+        alias_source_tool_id: Some("webfetch".to_string()),
+    });
     fetch_call.args_summary =
         r#"{"url":"https://example.test/report.pdf","format":"markdown"}"#.to_string();
+    fetch_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
     fetch_call.status = ToolCallDisplayStatus::Succeeded;
     fetch_call.output_summary =
         Some("report ready\npage count: 2\nformat: pdf\nstored inline artifact".to_string());
@@ -4051,8 +4867,15 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
     assert!(fetch_text.contains("Compat alias · webfetch → web.fetch"));
 
     let mut generic_call = transcript_section_model_test_tool_call("tc-generic", "vendor.magic");
+    generic_call.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {
+        invoked_tool_id: Some("vendor.magic".to_string()),
+        effective_tool_id: Some("vendor.magic".to_string()),
+        canonical_tool_id: None,
+        alias_source_tool_id: None,
+    });
     generic_call.args_summary =
         r#"{"path":"notes.md","query":"child parity","limit":3}"#.to_string();
+    generic_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
     generic_call.status = ToolCallDisplayStatus::Succeeded;
     generic_call.timing_elapsed_ms = Some(800);
     let generic_section =
@@ -4062,6 +4885,180 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
         "vendor.magic · limit=3 · path=notes.md · query=child parity"
     );
     assert_eq!(generic_section.header.subtitle.as_deref(), Some("800ms"));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_mcp_tool_transcript_rows_use_effective_identity_without_generic_fallback()
+{
+    let theme = Theme::default();
+
+    let mut direct_call =
+        transcript_section_model_test_tool_call("tc-mcp-direct", "mcp.fixture.echo");
+    direct_call.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {
+        invoked_tool_id: Some("mcp.fixture.echo".to_string()),
+        effective_tool_id: Some("mcp.fixture.echo".to_string()),
+        canonical_tool_id: None,
+        alias_source_tool_id: None,
+    });
+    direct_call.args_summary = r#"{"text":"hello from direct"}"#.to_string();
+    direct_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    direct_call.status = ToolCallDisplayStatus::Succeeded;
+    direct_call.output_summary = Some("hello from direct".to_string());
+    direct_call.output_json = Some(serde_json::json!({
+        "server": {
+            "id": "fixture",
+            "transport": "stdio",
+        },
+        "protocolVersion": "2025-06-18",
+        "serverInfo": {
+            "name": "fixture",
+            "version": "1.0.0",
+        },
+        "payload": {
+            "tool": "echo",
+            "arguments": { "text": "hello from direct" },
+            "result": {
+                "content": [{ "type": "text", "text": "hello from direct" }],
+                "isError": false,
+            },
+        },
+    }));
+    direct_call.timing_elapsed_ms = Some(900);
+
+    let mut wrapper_call =
+        transcript_section_model_test_tool_call("tc-mcp-wrapper", "mcp.fixture.tool.call");
+    wrapper_call.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {
+        invoked_tool_id: Some("mcp.fixture.tool.call".to_string()),
+        effective_tool_id: Some("mcp.fixture.echo".to_string()),
+        canonical_tool_id: None,
+        alias_source_tool_id: None,
+    });
+    wrapper_call.args_summary =
+        r#"{"tool":"echo","arguments":{"text":"hello from wrapper"}}"#.to_string();
+    wrapper_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    wrapper_call.status = ToolCallDisplayStatus::Succeeded;
+    wrapper_call.output_summary = Some("hello from wrapper".to_string());
+    wrapper_call.output_json = Some(serde_json::json!({
+        "server": {
+            "id": "fixture",
+            "transport": "stdio",
+        },
+        "protocolVersion": "2025-06-18",
+        "serverInfo": {
+            "name": "fixture",
+            "version": "1.0.0",
+        },
+        "payload": {
+            "tool": "echo",
+            "arguments": { "text": "hello from wrapper" },
+            "result": {
+                "content": [{ "type": "text", "text": "hello from wrapper" }],
+                "isError": false,
+            },
+        },
+    }));
+    wrapper_call.timing_elapsed_ms = Some(900);
+
+    let direct_section =
+        build_opencode_tool_call_section(&direct_call, None, true, false, false, false, None);
+    let wrapper_section =
+        build_opencode_tool_call_section(&wrapper_call, None, true, false, false, false, None);
+
+    assert_eq!(direct_section.header.title, "MCP fixture · echo");
+    assert_eq!(wrapper_section.header.title, direct_section.header.title);
+    assert_eq!(wrapper_section.header.icon, Some("⇄"));
+    assert_eq!(
+        direct_section.header.visual_style,
+        TranscriptToolCallVisualStyle::Inline
+    );
+    assert_eq!(
+        wrapper_section.header.visual_style,
+        direct_section.header.visual_style
+    );
+    assert_eq!(
+        direct_section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
+    assert_eq!(
+        wrapper_section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
+
+    let mut direct_lines = Vec::new();
+    append_tool_call_section_lines(
+        &mut direct_lines,
+        &direct_section,
+        &theme,
+        120,
+        theme.surface.panel,
+    );
+    let mut wrapper_lines = Vec::new();
+    append_tool_call_section_lines(
+        &mut wrapper_lines,
+        &wrapper_section,
+        &theme,
+        120,
+        theme.surface.panel,
+    );
+
+    let direct_text = transcript_test_line_texts(direct_lines).join("\n");
+    let wrapper_text = transcript_test_line_texts(wrapper_lines).join("\n");
+    assert!(direct_text.contains("MCP fixture · echo"));
+    assert!(wrapper_text.contains("MCP fixture · echo"));
+    assert!(!direct_text.contains("hello from direct"));
+    assert!(!wrapper_text.contains("hello from wrapper"));
+    assert!(!direct_text.contains("⚙"));
+    assert!(!wrapper_text.contains("⚙"));
+    assert!(!wrapper_text.contains("mcp.fixture.tool.call"));
+    assert!(!wrapper_text.contains("Compat alias"));
+
+    let expanded_wrapper =
+        build_opencode_tool_call_section(&wrapper_call, None, true, false, true, false, None);
+    let expanded_text = transcript_test_line_texts({
+        let mut lines = Vec::new();
+        append_tool_call_section_lines(
+            &mut lines,
+            &expanded_wrapper,
+            &theme,
+            120,
+            theme.surface.panel,
+        );
+        lines
+    })
+    .join("\n");
+    assert!(expanded_text.contains("hello from wrapper"));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_generic_tool_successful_output_prefers_inline_background_rows() {
+    let theme = Theme::default();
+    let mut tool_call = transcript_section_model_test_tool_call("tc-vendor-magic", "vendor.magic");
+    tool_call.args_summary = r#"{"path":"notes.md","query":"child parity","limit":3}"#.to_string();
+    tool_call.status = ToolCallDisplayStatus::Succeeded;
+    tool_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    tool_call.output_summary = Some("hello from custom tool".to_string());
+    tool_call.timing_elapsed_ms = Some(250);
+
+    let section =
+        build_opencode_tool_call_section(&tool_call, None, true, false, false, false, None);
+    assert_eq!(
+        section.header.visual_style,
+        TranscriptToolCallVisualStyle::Inline
+    );
+
+    let rendered = transcript_test_line_texts({
+        let mut lines = Vec::new();
+        append_tool_call_section_lines(&mut lines, &section, &theme, 96, theme.surface.panel);
+        lines
+    });
+
+    assert!(rendered[0].contains("vendor.magic · limit=3 · path=notes.md · query=child parity"));
+    assert!(rendered
+        .iter()
+        .any(|line| line.contains("hello from custom tool")));
+    assert!(rendered
+        .iter()
+        .all(|line| !line.trim_start().starts_with('┃')));
 }
 
 #[cfg(test)]
@@ -4415,6 +5412,7 @@ fn transcript_section_model_test_activity(
         request_data: None,
         thinking_text: String::new(),
         transcript_text: transcript_text.to_string(),
+        usage: None,
         error_message: None,
         permissions: Vec::new(),
         tool_calls: Vec::new(),
@@ -4435,8 +5433,10 @@ fn transcript_section_model_test_tool_call(
         tool_id: tool_id.to_string(),
         canonical_tool_id: None,
         alias_source_tool_id: None,
+        resolved_tool_identity: None,
         args_summary: "{}".to_string(),
         args_digest: "digest".to_string(),
+        lifecycle_state: None,
         status: ToolCallDisplayStatus::Queued,
         output_summary: None,
         output_digest: None,
@@ -4558,6 +5558,7 @@ mod tests {
             request_data: None,
             thinking_text: String::new(),
             transcript_text: String::new(),
+            usage: None,
             error_message: None,
             permissions: Vec::new(),
             tool_calls: Vec::new(),
@@ -4595,6 +5596,7 @@ mod tests {
                 request_data: None,
                 thinking_text: String::new(),
                 transcript_text: "first reply".to_string(),
+                usage: None,
                 error_message: None,
                 permissions: Vec::new(),
                 tool_calls: Vec::new(),
@@ -4616,6 +5618,7 @@ mod tests {
                 request_data: None,
                 thinking_text: String::new(),
                 transcript_text: "second reply".to_string(),
+                usage: None,
                 error_message: None,
                 permissions: Vec::new(),
                 tool_calls: Vec::new(),
@@ -4676,6 +5679,7 @@ mod tests {
             request_data: None,
             thinking_text: String::new(),
             transcript_text: "reply".to_string(),
+            usage: None,
             error_message: None,
             permissions: Vec::new(),
             tool_calls: Vec::new(),
@@ -4746,6 +5750,7 @@ mod tests {
             request_data: None,
             thinking_text: String::new(),
             transcript_text: String::new(),
+            usage: None,
             error_message: None,
             permissions: Vec::new(),
             tool_calls: Vec::new(),

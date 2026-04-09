@@ -639,7 +639,7 @@ fn tool_runtime_state(activity: &ActivityEntry) -> Option<RuntimeState> {
         ToolCallDisplayStatus::PendingPermission => None,
         ToolCallDisplayStatus::Queued => Some(RuntimeState {
             kind: RuntimeStateKind::Streaming,
-            summary: format!("tool queued · {}", tool_call.tool_id),
+            summary: format!("tool queued · {}", tool_call.effective_tool_id()),
             detail: tool_call.transcript_summary(),
             composer_disabled: false,
             composer_hint: "Draft the next prompt while the queued tool waits to start…"
@@ -647,7 +647,7 @@ fn tool_runtime_state(activity: &ActivityEntry) -> Option<RuntimeState> {
         }),
         ToolCallDisplayStatus::Running => Some(RuntimeState {
             kind: RuntimeStateKind::Streaming,
-            summary: format!("tool running · {}", tool_call.tool_id),
+            summary: format!("tool running · {}", tool_call.effective_tool_id()),
             detail: tool_call.transcript_summary(),
             composer_disabled: false,
             composer_hint: "Draft the next prompt while the tool runs…".to_string(),
@@ -656,7 +656,7 @@ fn tool_runtime_state(activity: &ActivityEntry) -> Option<RuntimeState> {
             kind: RuntimeStateKind::Streaming,
             summary: format!(
                 "tool finished · waiting for final response · {}",
-                tool_call.tool_id
+                tool_call.effective_tool_id()
             ),
             detail: tool_call.truncated_output.clone(),
             composer_disabled: false,
@@ -666,7 +666,7 @@ fn tool_runtime_state(activity: &ActivityEntry) -> Option<RuntimeState> {
         }),
         ToolCallDisplayStatus::Failed => Some(RuntimeState {
             kind: RuntimeStateKind::Failure,
-            summary: format!("tool failed · {}", tool_call.tool_id),
+            summary: format!("tool failed · {}", tool_call.effective_tool_id()),
             detail: tool_call.output_summary.clone(),
             composer_disabled: false,
             composer_hint: "After review, adjust the draft, then retry or continue.".to_string(),
@@ -687,6 +687,70 @@ fn control_dock_runtime_fixture(
         detail: None,
         composer_disabled,
         composer_hint: composer_hint.to_string(),
+    }
+}
+
+#[cfg(test)]
+fn runtime_tool_identity_fixture(status: ToolCallDisplayStatus) -> ActivityEntry {
+    ActivityEntry {
+        request_id: "req_tool_identity".to_string(),
+        model_id: "gpt-5.4".to_string(),
+        provider_id: "default".to_string(),
+        status: ActivityStatus::Streaming,
+        user_message: None,
+        user_timestamp: None,
+        request_data: None,
+        thinking_text: String::new(),
+        transcript_text: String::new(),
+        usage: None,
+        error_message: None,
+        permissions: Vec::new(),
+        tool_calls: vec![crate::app::ToolCallEntry {
+            tool_call_id: "tc_task".to_string(),
+            tool_id: "task".to_string(),
+            canonical_tool_id: Some("agent.spawn".to_string()),
+            alias_source_tool_id: Some("task".to_string()),
+            resolved_tool_identity: Some(harness_core::event::ResolvedToolIdentity {
+                invoked_tool_id: Some("task".to_string()),
+                effective_tool_id: None,
+                canonical_tool_id: Some("agent.spawn".to_string()),
+                alias_source_tool_id: Some("task".to_string()),
+            }),
+            args_summary: r#"{"description":"inspect"}"#.to_string(),
+            args_digest: "digest-task".to_string(),
+            lifecycle_state: Some(match status {
+                ToolCallDisplayStatus::PendingPermission | ToolCallDisplayStatus::Queued => {
+                    harness_core::event::ToolCallLifecycleState::Pending
+                }
+                ToolCallDisplayStatus::Running => {
+                    harness_core::event::ToolCallLifecycleState::Running
+                }
+                ToolCallDisplayStatus::Succeeded => {
+                    harness_core::event::ToolCallLifecycleState::Completed
+                }
+                ToolCallDisplayStatus::Failed => harness_core::event::ToolCallLifecycleState::Error,
+            }),
+            status,
+            output_summary: Some("tool failed summary".to_string()),
+            output_digest: None,
+            output_json: None,
+            truncated_output: Some("tool succeeded summary".to_string()),
+            edit: None,
+            lineage: None,
+            artifact_refs: Vec::new(),
+            timing_elapsed_ms: None,
+            permissions: Vec::new(),
+            first_seq: 1,
+            last_seq: 1,
+            first_mono_ms: 1,
+            last_mono_ms: 1,
+            first_timestamp: None,
+            last_timestamp: None,
+        }],
+        first_seq: 1,
+        last_seq: 1,
+        first_mono_ms: 1,
+        last_mono_ms: 1,
     }
 }
 
@@ -774,6 +838,40 @@ pub(crate) fn exact_test_control_dock_view_model_handles_live_runtime_variants()
     assert_eq!(failed.composer_disclosure, "ctrl+p commands");
     assert!(!failed.composer_focused);
     assert!(failed.composer_disabled);
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_tool_runtime_state_uses_effective_tool_identity() {
+    let queued = tool_runtime_state(&runtime_tool_identity_fixture(
+        ToolCallDisplayStatus::Queued,
+    ))
+    .expect("queued runtime state");
+    assert_eq!(queued.summary, "tool queued · agent.spawn");
+    assert!(!queued.summary.contains("task"));
+
+    let running = tool_runtime_state(&runtime_tool_identity_fixture(
+        ToolCallDisplayStatus::Running,
+    ))
+    .expect("running runtime state");
+    assert_eq!(running.summary, "tool running · agent.spawn");
+    assert!(!running.summary.contains("task"));
+
+    let succeeded = tool_runtime_state(&runtime_tool_identity_fixture(
+        ToolCallDisplayStatus::Succeeded,
+    ))
+    .expect("succeeded runtime state");
+    assert_eq!(
+        succeeded.summary,
+        "tool finished · waiting for final response · agent.spawn"
+    );
+    assert!(!succeeded.summary.contains("task"));
+
+    let failed = tool_runtime_state(&runtime_tool_identity_fixture(
+        ToolCallDisplayStatus::Failed,
+    ))
+    .expect("failed runtime state");
+    assert_eq!(failed.summary, "tool failed · agent.spawn");
+    assert!(!failed.summary.contains("task"));
 }
 
 #[cfg(test)]

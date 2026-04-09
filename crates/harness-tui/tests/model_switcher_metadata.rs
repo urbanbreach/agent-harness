@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use harness_core::config::load_config_from_str;
+use harness_core::config::{configured_model_catalog, load_config_from_str};
 use harness_tui::app::{AppState, LaunchMetadata, ModelOption, UiIntent};
 
 fn key(code: KeyCode) -> KeyEvent {
@@ -53,7 +53,7 @@ fn rich_model_config() -> &'static str {
           },
         },
       },
-      profiles: {
+      agents: {
         deep: {
           description: "Deep work",
           model_ref: "default:gpt-5.4-mini",
@@ -98,6 +98,84 @@ fn available_models() -> Vec<ModelOption> {
         ModelOption::from_model_ref("deep", "default:gpt-5.4-mini"),
         ModelOption::from_model_ref("writer", "default:gpt-5.4-mini"),
     ]
+}
+
+fn build_plan_models() -> Vec<ModelOption> {
+    vec![
+        ModelOption::from_model_ref("build", "default:gpt-5.4-mini"),
+        ModelOption {
+            profile: "plan".to_string(),
+            provider: "default".to_string(),
+            model: "gpt-5.4-mini".to_string(),
+            variant: Some("deterministic".to_string()),
+            display_label: Some("GPT-5.4 Mini · Deterministic".to_string()),
+            token_window_label: Some("128k ctx · 128k in · 4k out".to_string()),
+            context_window_tokens: Some(128000),
+            max_input_tokens: Some(128000),
+            max_output_tokens: Some(4096),
+            description: Some("Stable low-variance coding".to_string()),
+            reasoning_effort: Some("minimal".to_string()),
+            text_verbosity: Some("low".to_string()),
+            recommended_for: Some("planning".to_string()),
+        },
+    ]
+}
+
+fn same_profile_variant_options() -> Vec<ModelOption> {
+    vec![
+        ModelOption {
+            profile: "deep".to_string(),
+            provider: "default".to_string(),
+            model: "gpt-5.4-mini".to_string(),
+            variant: Some("deterministic".to_string()),
+            display_label: Some("GPT-5.4 Mini · Deterministic".to_string()),
+            token_window_label: Some("128k ctx · 128k in · 4k out".to_string()),
+            context_window_tokens: Some(128000),
+            max_input_tokens: Some(128000),
+            max_output_tokens: Some(4096),
+            description: Some("Stable low-variance coding".to_string()),
+            reasoning_effort: Some("minimal".to_string()),
+            text_verbosity: Some("low".to_string()),
+            recommended_for: Some("deep debugging".to_string()),
+        },
+        ModelOption {
+            profile: "deep".to_string(),
+            provider: "default".to_string(),
+            model: "gpt-5.4-mini".to_string(),
+            variant: Some("creative".to_string()),
+            display_label: Some("GPT-5.4 Mini · Creative".to_string()),
+            token_window_label: Some("128k ctx · 128k in · 16k out".to_string()),
+            context_window_tokens: Some(128000),
+            max_input_tokens: Some(128000),
+            max_output_tokens: Some(16384),
+            description: Some("Higher-variance drafting".to_string()),
+            reasoning_effort: Some("high".to_string()),
+            text_verbosity: Some("high".to_string()),
+            recommended_for: Some("novel drafting".to_string()),
+        },
+    ]
+}
+
+fn config_backed_profile_model_options(profile: &str) -> Vec<ModelOption> {
+    let config = load_config_from_str(rich_model_config()).expect("config should parse");
+    configured_model_catalog(&config)
+        .into_iter()
+        .map(|entry| ModelOption {
+            profile: profile.to_string(),
+            provider: entry.provider,
+            model: entry.model,
+            variant: entry.variant,
+            display_label: Some(entry.display_label),
+            token_window_label: entry.token_window_label,
+            context_window_tokens: entry.context_window_tokens,
+            max_input_tokens: entry.max_input_tokens,
+            max_output_tokens: entry.max_output_tokens,
+            description: entry.description,
+            reasoning_effort: entry.reasoning_effort,
+            text_verbosity: entry.text_verbosity,
+            recommended_for: entry.recommended_for,
+        })
+        .collect()
 }
 
 #[test]
@@ -231,6 +309,53 @@ fn model_identity_rows_use_gpt_5_4_mini_defaults() {
 }
 
 #[test]
+fn model_switcher_can_switch_between_build_and_plan_profiles() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(sink));
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini")
+            .with_available_models(build_plan_models())
+            .with_mode_label("Live"),
+    );
+
+    for ch in "/model".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+    assert!(app.model_switcher_visible);
+
+    for ch in "plan".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    assert_eq!(app.model_filtered.len(), 1);
+    app.handle_key(key(KeyCode::Enter));
+
+    assert_eq!(app.active_profile(), "plan");
+    assert_eq!(app.launch_mode_label(), Some("Live"));
+
+    let intents = intents.lock().expect("lock intents");
+    let UiIntent::SwitchModel {
+        profile,
+        launch_metadata,
+    } = intents
+        .last()
+        .expect("switch model intent should be emitted")
+    else {
+        panic!("expected switch model intent");
+    };
+    assert_eq!(profile, "plan");
+    assert_eq!(launch_metadata.profile(), "plan");
+    assert_eq!(launch_metadata.mode_label(), Some("Live"));
+}
+
+#[test]
 fn variant_cycle_updates_selected_model_without_losing_launch_metadata() {
     let _config = load_config_from_str(rich_model_config()).expect("config should parse");
 
@@ -242,7 +367,7 @@ fn variant_cycle_updates_selected_model_without_losing_launch_metadata() {
         })
     };
 
-    let available_models = available_models();
+    let available_models = same_profile_variant_options();
     let variant_cycle_overrides =
         BTreeMap::from([("variant_cycle".to_string(), "tab".to_string())]);
 
@@ -256,7 +381,7 @@ fn variant_cycle_updates_selected_model_without_losing_launch_metadata() {
 
     live.handle_key(key(KeyCode::Tab));
 
-    assert_eq!(live.active_profile(), "writer");
+    assert_eq!(live.active_profile(), "deep");
     assert_eq!(live.current_model_label(), "GPT-5.4 Mini · Creative");
     assert_eq!(live.launch_mode_label(), Some("Demo"));
 
@@ -270,7 +395,7 @@ fn variant_cycle_updates_selected_model_without_losing_launch_metadata() {
     else {
         panic!("expected switch model intent");
     };
-    assert_eq!(profile, "writer");
+    assert_eq!(profile, "deep");
     assert_eq!(launch_metadata.variant(), Some("creative"));
     assert_eq!(launch_metadata.mode_label(), Some("Demo"));
     assert_eq!(launch_metadata.available_models().len(), 2);
@@ -288,6 +413,94 @@ fn variant_cycle_updates_selected_model_without_losing_launch_metadata() {
     assert_eq!(replay.active_profile(), "deep");
     assert_eq!(replay.current_model_label(), "GPT-5.4 Mini · Deterministic");
     assert_eq!(replay.launch_mode_label(), Some("Demo"));
+}
+
+#[test]
+fn ctrl_t_cycles_thinking_variant_within_current_profile() {
+    let _config = load_config_from_str(rich_model_config()).expect("config should parse");
+
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut live = AppState::new_live(None, false, Some(sink));
+    live.set_launch_metadata(
+        LaunchMetadata::from_model_ref("deep", "default:gpt-5.4-mini")
+            .with_available_models(same_profile_variant_options())
+            .with_mode_label("Demo"),
+    );
+
+    live.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL));
+
+    assert_eq!(live.active_profile(), "deep");
+    assert_eq!(live.current_model_label(), "GPT-5.4 Mini · Creative");
+    assert_eq!(live.launch_mode_label(), Some("Demo"));
+
+    let intents = intents.lock().expect("lock intents");
+    let UiIntent::SwitchModel {
+        profile,
+        launch_metadata,
+    } = intents
+        .last()
+        .expect("switch model intent should be emitted")
+    else {
+        panic!("expected switch model intent");
+    };
+    assert_eq!(profile, "deep");
+    assert_eq!(launch_metadata.variant(), Some("creative"));
+    assert_eq!(launch_metadata.reasoning_effort(), Some("high"));
+}
+
+#[test]
+fn ctrl_t_skips_base_model_entries_in_config_backed_variant_cycle() {
+    let _config = load_config_from_str(rich_model_config()).expect("config should parse");
+
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let available_models = config_backed_profile_model_options("deep");
+    assert!(available_models
+        .iter()
+        .any(|option| option.variant().is_none()));
+
+    let mut live = AppState::new_live(None, false, Some(sink));
+    live.set_launch_metadata(
+        LaunchMetadata::from_model_ref("deep", "default:gpt-5.4-mini")
+            .with_available_models(available_models)
+            .with_mode_label("Demo"),
+    );
+
+    live.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL));
+
+    assert_eq!(live.active_profile(), "deep");
+    assert_eq!(live.current_model_label(), "GPT-5.4 Mini · Creative");
+    assert_eq!(
+        live.runtime_context_summary_segment_text(),
+        Some("Next turns: deep · GPT-5.4 Mini · Creative".to_string())
+    );
+
+    let intents = intents.lock().expect("lock intents");
+    let UiIntent::SwitchModel {
+        profile,
+        launch_metadata,
+    } = intents
+        .last()
+        .expect("switch model intent should be emitted")
+    else {
+        panic!("expected switch model intent");
+    };
+    assert_eq!(profile, "deep");
+    assert_eq!(launch_metadata.variant(), Some("creative"));
+    assert_eq!(launch_metadata.reasoning_effort(), Some("high"));
 }
 
 #[test]
@@ -349,7 +562,7 @@ fn live_switch_model_labels_next_turn_only() {
     live.apply_keybindings(variant_cycle_overrides.clone());
     live.set_launch_metadata(
         LaunchMetadata::from_model_ref("deep", "default:gpt-5.4-mini")
-            .with_available_models(available_models()),
+            .with_available_models(same_profile_variant_options()),
     );
 
     live.handle_key(key(KeyCode::Tab));
@@ -360,7 +573,7 @@ fn live_switch_model_labels_next_turn_only() {
     );
     assert_eq!(
         live.runtime_context_summary_segment_text(),
-        Some("Next turns: writer · GPT-5.4 Mini · Creative".to_string())
+        Some("Next turns: deep · GPT-5.4 Mini · Creative".to_string())
     );
 
     let mut replay = AppState::new_replay(
@@ -370,7 +583,7 @@ fn live_switch_model_labels_next_turn_only() {
     replay.apply_keybindings(variant_cycle_overrides);
     replay.set_launch_metadata(
         LaunchMetadata::from_model_ref("deep", "default:gpt-5.4-mini")
-            .with_available_models(available_models()),
+            .with_available_models(same_profile_variant_options()),
     );
 
     replay.handle_key(key(KeyCode::Tab));

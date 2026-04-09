@@ -45,12 +45,13 @@ use ui_secondary::{
     render_events_tab, render_help_tab, render_live_details_overlay, render_operator_sidebar,
 };
 pub use ui_transcript::hovered_wheel_target;
-use ui_transcript::{append_text_block, render_transcript_pane};
+use ui_transcript::render_transcript_pane;
 
 #[cfg(test)]
 pub(crate) use ui_chrome::{
     exact_test_live_control_dock_collapses_disclosure_before_status,
     exact_test_live_control_dock_renders_shared_surface,
+    exact_test_tool_status_summary_uses_effective_tool_identity,
 };
 #[cfg(test)]
 pub(crate) fn exact_test_startup_shell_keeps_no_default_tab_chrome_after_runtime_context_addition()
@@ -120,8 +121,10 @@ pub(crate) fn exact_test_replay_prompt_pane_is_visibly_read_only() {
         .expect("draw frame");
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(debug.contains("Replay · read-only"));
-    assert!(debug.contains("Recorded runtime · read-only:"));
-    assert!(debug.contains("Provider default"));
+    assert!(debug.contains("Context"));
+    assert!(debug.contains("▼ MCP"));
+    assert!(debug.contains("▼ LSP"));
+    assert!(debug.contains("▼ Modified Files"));
     assert!(debug.contains("Replay is read-only"));
     assert!(!debug.contains("Type a prompt for the next turn"));
     assert!(!debug.contains("Recent context for the next turn"));
@@ -176,6 +179,7 @@ pub(crate) use ui_secondary::orchestration_card_text_for_test;
 #[cfg(test)]
 pub(crate) use ui_secondary::{
     exact_test_operator_rail_low_activity_presentation_prefers_primary_stack,
+    exact_test_operator_rail_sanitizes_control_chars_in_sidebar_strings,
     exact_test_operator_rail_section_model_builds_pinned_summary,
     exact_test_operator_rail_section_model_counts_generic_mcp_activity,
     exact_test_operator_rail_section_model_hides_empty_sources_but_preserves_order,
@@ -188,7 +192,9 @@ use ui_transcript::build_transcript_lines;
 #[cfg(test)]
 pub(crate) use ui_transcript::{
     exact_test_block_tool_cards_skip_empty_subtitle_rows,
+    exact_test_generic_tool_successful_output_prefers_inline_background_rows,
     exact_test_inline_tool_rows_wrap_long_subtitles_cleanly,
+    exact_test_mcp_tool_transcript_rows_use_effective_identity_without_generic_fallback,
     exact_test_native_tool_transcript_rows_show_disclosure_timestamps_and_task_metadata,
     exact_test_transcript_edit_tool_matches_opencode_inline_diff_shape,
     exact_test_transcript_follow_mode_uses_measured_surface_heights,
@@ -199,6 +205,7 @@ pub(crate) use ui_transcript::{
     exact_test_transcript_section_model_keeps_nested_tool_and_error_blocks,
     exact_test_transcript_section_model_preserves_activity_order,
     exact_test_transcript_task_rows_show_child_status_duration_and_counts,
+    exact_test_transcript_tool_rows_follow_chronological_turn_order,
 };
 
 #[cfg(test)]
@@ -225,6 +232,9 @@ pub(crate) fn exact_test_wheel_target_hits_transcript_when_hovered() {
 
 #[cfg(test)]
 pub(crate) fn exact_test_wheel_target_hits_inspector_inside_live_overlay() {
+    harness_core::config::clear_registered_integrations_config();
+    harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
+
     let mut app = AppState::new_live(None, false, None);
     app.live_details_drawer_open = true;
 
@@ -241,6 +251,9 @@ pub(crate) fn exact_test_wheel_target_hits_inspector_inside_live_overlay() {
 
 #[cfg(test)]
 pub(crate) fn exact_test_wheel_target_excludes_activity_portion_of_live_overlay() {
+    harness_core::config::clear_registered_integrations_config();
+    harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
+
     let mut app = AppState::new_live(None, false, None);
     app.live_details_drawer_open = true;
 
@@ -264,6 +277,9 @@ pub(crate) fn exact_test_wheel_target_excludes_activity_portion_of_live_overlay(
 
 #[cfg(test)]
 pub(crate) fn exact_test_compact_operator_rail_does_not_capture_wheel() {
+    harness_core::config::clear_registered_integrations_config();
+    harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
+
     let app = AppState::new_live(None, false, None);
     let area = Rect::new(0, 0, 140, 40);
     let plan = FrameLayoutPlan::for_app(&app, area);
@@ -904,6 +920,7 @@ mod tests {
                 request_id: "req_answer_first".to_string(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-answer-first-finished".to_string()),
+                usage: None,
             }),
         ));
 
@@ -916,8 +933,8 @@ mod tests {
             .expect("answer text");
         let tool_index = transcript.find("Read src/ui.rs").expect("tool summary");
 
-        assert!(thinking_index < answer_index);
-        assert!(answer_index < tool_index);
+        assert!(thinking_index < tool_index);
+        assert!(tool_index < answer_index);
     }
 
     #[test]
@@ -1346,13 +1363,12 @@ mod tests {
         app.handle_key(key(KeyCode::Char('i')));
 
         let sidebar_text = super::ui_secondary::operator_sidebar_text_for_test(&app).join("\n");
-        assert!(sidebar_text.contains("Live · run run_ui_tests"));
-        assert!(sidebar_text.contains("Current runtime: default · gpt-5-codex"));
-        assert!(sidebar_text.contains("Provider openai"));
+        assert!(sidebar_text.contains("Read the file"));
         assert!(sidebar_text.contains("Context"));
-        assert!(sidebar_text.contains("0 active todos · 0 modified files"));
-        assert!(!sidebar_text.contains("Todo ·"));
-        assert!(!sidebar_text.contains("Modified Files ·"));
+        assert!(sidebar_text.contains("0 tokens"));
+        assert!(sidebar_text.contains("▼ MCP"));
+        assert!(sidebar_text.contains("▼ LSP"));
+        assert!(sidebar_text.contains("▼ Modified Files"));
     }
 
     #[test]
@@ -1412,12 +1428,12 @@ mod tests {
         app.handle_key(key(KeyCode::Char('i')));
 
         let sidebar_text = super::ui_secondary::operator_sidebar_text_for_test(&app).join("\n");
-        assert!(sidebar_text.contains("Live · run run_ui_tests"));
-        assert!(sidebar_text.contains("Current runtime: default · gpt-5-codex"));
-        assert!(sidebar_text.contains("Provider openai"));
         assert!(sidebar_text.contains("Context"));
-        assert!(sidebar_text.contains("0 active todos · 0 modified files"));
-        assert!(!sidebar_text.contains("No modified files recorded"));
+        assert!(sidebar_text.contains("0 tokens"));
+        assert!(sidebar_text.contains("▼ MCP"));
+        assert!(sidebar_text.contains("▼ LSP"));
+        assert!(sidebar_text.contains("▼ Modified Files"));
+        assert!(sidebar_text.contains("No modified files"));
         assert!(!sidebar_text.contains("Permission context:"));
         assert!(!sidebar_text.contains("perm_permission_detail"));
         assert!(!sidebar_text.contains("Resolved: deny"));

@@ -21,12 +21,24 @@ fn prompt_cli_config(base_url: &str, session_dir: &std::path::Path, tools: &[&st
                 "timeout_ms": 60000,
                 "models": {
                     "gpt-4o-mini": {
-                        "display_name": "GPT-4o mini"
+                        "display_name": "GPT-4o mini",
+                        "metadata": {
+                            "supports_reasoning_summaries": true
+                        },
+                        "variants": {
+                            "low": {
+                                "display_name": "Low",
+                                "metadata": {
+                                    "reasoning_effort": "low",
+                                    "text_verbosity": "low"
+                                }
+                            }
+                        }
                     }
                 }
             }
         },
-        "profiles": {
+        "agents": {
             "deep": {
                 "description": "Deep profile",
                 "model_ref": "default:gpt-4o-mini",
@@ -98,7 +110,7 @@ fn prompt_cli_multi_provider_config(
                 }
             }
         },
-        "profiles": {
+        "agents": {
             "deep": {
                 "description": "Deep profile",
                 "model_ref": "default:gpt-4o-mini",
@@ -200,6 +212,96 @@ async fn prompt_cli_calls_responses_endpoint() {
         requests.iter().any(|req| req.url.path() == "/v1/responses"),
         "expected prompt CLI to call /v1/responses"
     );
+}
+
+#[tokio::test]
+async fn prompt_cli_model_variant_and_thinking_flags_stream_reasoning_output() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .and(body_string_contains(
+            "\"reasoning\":{\"effort\":\"low\",\"summary\":\"auto\"}",
+        ))
+        .and(body_string_contains("\"text\":{\"verbosity\":\"low\"}"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(reasoning_responses_sse_transcript(), "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.reasoning.jsonc");
+    let session_dir = temp.path().join("sessions");
+
+    fs::write(
+        &config_path,
+        prompt_cli_config(&format!("{}/v1", server.uri()), &session_dir, &[]),
+    )
+    .expect("write config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "prompt",
+            "--text",
+            "Hello",
+            "--model",
+            "default:gpt-4o-mini",
+            "--variant",
+            "low",
+            "--thinking",
+        ])
+        .output()
+        .expect("run harness prompt with thinking");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Thinking: Drafting a careful answer."));
+    assert!(stdout.contains("Hello world"));
+}
+
+#[test]
+fn models_cli_lists_configured_variants() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.models.jsonc");
+    let session_dir = temp.path().join("sessions");
+
+    fs::write(
+        &config_path,
+        prompt_cli_config("http://127.0.0.1:9999/v1", &session_dir, &[]),
+    )
+    .expect("write config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "models",
+        ])
+        .output()
+        .expect("run harness models");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("default:gpt-4o-mini | label=GPT-4o mini"));
+    assert!(stdout.contains("default:gpt-4o-mini | variant=low | label=GPT-4o mini · Low"));
 }
 
 #[test]
@@ -768,6 +870,21 @@ fn deterministic_responses_sse_transcript() -> String {
     .concat()
 }
 
+fn reasoning_responses_sse_transcript() -> String {
+    [
+        "event: response.reasoning_summary_text.delta\n",
+        "data: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"Drafting a careful answer.\"}\n\n",
+        "event: response.output_text.delta\n",
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\n",
+        "event: response.output_text.delta\n",
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\" world\"}\n\n",
+        "event: response.completed\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2,\"total_tokens\":7}}}\n\n",
+        "data: [DONE]\n\n",
+    ]
+    .concat()
+}
+
 fn tool_call_responses_sse_transcript() -> String {
     [
         "event: response.output_item.added\n",
@@ -898,6 +1015,7 @@ fn write_resume_fixture_events(run_dir: &std::path::Path) {
                 request_id: "req_000001".to_string(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-output".to_string()),
+                usage: None,
             }),
         ),
         resume_envelope(

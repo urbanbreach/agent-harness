@@ -168,7 +168,7 @@ fn continued_runtime_model_options() -> Vec<ModelOption> {
             recommended_for: None,
         },
         ModelOption {
-            profile: "writer".to_string(),
+            profile: "deep".to_string(),
             provider: "default".to_string(),
             model: "gpt-5.4-mini".to_string(),
             variant: Some("creative".to_string()),
@@ -335,6 +335,6 @@ fn continued_runtime_stays_primary_until_variant_cycle_sets_next_turns() {
     );
     assert_eq!(
         app.runtime_context_summary_segment_text(),
-        Some("Next turns: writer · GPT-5.4 Mini · Creative".to_string())
+        Some("Next turns: deep · GPT-5.4 Mini · Creative".to_string())
     );
 }

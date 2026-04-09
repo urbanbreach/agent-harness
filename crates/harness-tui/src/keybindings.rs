@@ -126,6 +126,13 @@ impl Action {
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
+                id: "cycle_variant",
+                label: "Cycle reasoning preset",
+                description: "Cycle the configured model variant/reasoning preset",
+                shortcut: "ctrl+t",
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
                 id: "close_review_surface",
                 label: "Session shell",
                 description: "Return to the transcript-first session shell",
@@ -285,6 +292,10 @@ impl Action {
             ("resume_session", "Continue a prior session when resumable"),
             ("replay_session", "Replay a previous session as read-only"),
             ("switch_model", "Browse available provider/model options"),
+            (
+                "cycle_variant",
+                "Cycle the configured model variant/reasoning preset",
+            ),
             (
                 "close_review_surface",
                 "Return to the transcript-first session shell",
@@ -622,6 +633,10 @@ impl KeyMap {
             KeyBinding::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
             Action::Palette,
         );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('t'), KeyModifiers::CONTROL),
+            Action::VariantCycle,
+        );
 
         // Prompt navigation (when in prompt focus)
         keymap.bind(
@@ -953,5 +968,16 @@ mod tests {
             keymap.get_action(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
             Some(Action::VariantCycle)
         );
+    }
+
+    #[test]
+    fn keymap_binds_ctrl_t_to_variant_cycle() {
+        let keymap = KeyMap::with_defaults();
+
+        assert_eq!(
+            keymap.get_action(&KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL)),
+            Some(Action::VariantCycle)
+        );
+        assert_eq!(keymap.get_binding_str(Action::VariantCycle), "Ctrl+t");
     }
 }

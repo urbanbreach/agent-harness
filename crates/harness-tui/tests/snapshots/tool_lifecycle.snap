@@ -1,30 +1,30 @@
 
-  ┃                                                                                                                                                                                 Live · run run_fixture
-                                                                                                                                                                                    Export bundle · run_fixture/
-     Tool summaries are now easier to scan, and edits stay inline.                                                                                                                  Current runtime: default · model-1
-     ● Assistant · model-1 · 14ms                                                                                                                                                   Provider mock
-                                                                                                                                                                                    0 active todos · 1 modified file
-     → Read src/ui.rs [offset=1, limit=24] · 2ms
-      ↳ Loaded src/ui.rs                                                                                                                                                            Context
-     ┃ ▸ ← Patched crates/harness-tui/src/ui.rs · 4ms                                                                                                                               turn 1 · ready for next turn
-      crates/harness-tui/src/ui.rs · +1 -1
-      @@ -44,8 +44,7 @@                                                                                                                                                             Modified Files · 1
-        use ui_secondary::{                                                                 │   use ui_secondary::{                                                                 crates/harness-tui/src/ui.rs · diff
-                                                                                                                                                                                    artifacts/tool-lifecycle-inline.diff
+                                                                                                                                                                                    Inspect tool activity
 
-      -     render_diff_tab, render_events_tab, render_help_tab,                            │ +     render_events_tab, render_help_tab, render_live_details_overlay,                Recovery · 2
-                                                                                                                                                                                    Bundle keeps events.jsonl and
-                                                                                                                                                                                    artifacts/
-            render_operator_sidebar,                                                        │       render_operator_sidebar,                                                        Artifact ·
-                                                                                                                                                                                    artifacts/tool-lifecycle-inline.diff
+     ┃ -     render_diff_tab, render_events_tab, render_help_tab,                            │ +     render_events_tab, render_help_tab, render_live_details_overlay,               Context
+                                                                                                                                                                                    0 tokens
 
-        };                                                                                  │   };
+     ┃       render_operator_sidebar,                                                        │       render_operator_sidebar,                                                       ▼ MCP
+                                                                                                                                                                                    • No MCP integrations configured
 
+     ┃ ▸ ↗ Spawn researcher · audit tool lifecycle parity                                                                                                                           ▼ LSP
+     ┃ 2ms                                                                                                                                                                          • No active LSP servers
+     ┃ foreground · agent_worker · req_child · completed · 2 child tool calls
+     ┃ Found the whole-tool parity path.                                                                                                                                            ▼ Modified Files
+     ┃ Compat alias · task → agent.spawn                                                                                                                                            • crates/harness-tui/src/ui.rs · +1 -1
 
+     ┃ # cargo test -p harness-tui in /workspace
+     ┃ 2ms
+     ┃ $ cargo test -p harness-tui
+     ┃ exit code: 1
+     ┃ stderr: snapshot mismatch
+
+     Tool summaries are now easier to scan, and edits stay inline.
+     ● Assistant · model-1 · 17ms
 
 ┃
 ┃
 ┃
-┃  Current runtime: default · model-1 · provider mock
-╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀   harness-tui · v0.1.0
-  Enter send · Shift+Enter/Ctrl+j newline · ↑/↓ history
+┃   Success   Current runtime: default · model-1 · provider mock
+╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+turn 1 · ready for next turn

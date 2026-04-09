@@ -278,6 +278,85 @@ fn replay_cli_surfaces_recovery_story_details_from_resume_metadata() {
 }
 
 #[test]
+fn replay_cli_sanitizes_control_char_metadata_in_human_output() {
+    let run_dir = tempdir().expect("tempdir");
+    write_events_jsonl(
+        run_dir.path(),
+        &delegated_recovery_events_with_control_chars("run_recovery_controls"),
+    );
+
+    let json_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "replay",
+            "--session",
+            run_dir.path().to_str().expect("run dir utf-8"),
+            "--json",
+        ])
+        .output()
+        .expect("run harness replay json with control chars");
+
+    assert!(
+        json_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&json_output.stderr)
+    );
+    let summary: serde_json::Value = serde_json::from_slice(&json_output.stdout)
+        .expect("replay json output with control chars should parse");
+    assert_eq!(summary["artifact_count"], 1);
+    assert_eq!(summary["child_session_count"], 1);
+    assert_eq!(
+        summary["artifacts"][0]["path"],
+        "artifacts/delegated/task-output\n.json"
+    );
+    assert_eq!(summary["artifacts"][0]["tool_id"], "task");
+    assert_eq!(summary["artifacts"][0]["effective_tool_id"], "agent.spawn");
+    assert_eq!(summary["artifacts"][0]["canonical_tool_id"], "agent.spawn");
+    assert_eq!(summary["artifacts"][0]["alias_source_tool_id"], "task");
+    assert_eq!(
+        summary["artifacts"][0]["child_session_id"],
+        "child-run-001\n\tcontrol"
+    );
+    assert_eq!(
+        summary["child_sessions"][0]["child_session_id"],
+        "child-run-001\n\tcontrol"
+    );
+    assert_eq!(
+        summary["child_sessions"][0]["parent_tool_call_id"],
+        "toolcall_parent\rcontrol"
+    );
+    assert_eq!(
+        summary["child_sessions"][0]["provider_model"],
+        "openai/gpt-5.4-mini"
+    );
+
+    let human_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "replay",
+            "--session",
+            run_dir.path().to_str().expect("run dir utf-8"),
+        ])
+        .output()
+        .expect("run harness replay human with control chars");
+
+    assert!(
+        human_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&human_output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&human_output.stdout);
+    assert!(!stdout.contains("artifacts/delegated/task-output\n.json"));
+    assert!(!stdout.contains("child-run-001\n\tcontrol"));
+    assert!(!stdout.contains("toolcall_parent\rcontrol"));
+    assert!(stdout.contains("artifacts/delegated/task-output\\n.json"));
+    assert!(stdout.contains("child-run-001\\n\\tcontrol"));
+    assert!(stdout.contains("parent_tool=toolcall_parent\\rcontrol"));
+    assert!(stdout.contains("tool=task"));
+    assert!(stdout.contains("effective=agent.spawn"));
+    assert!(stdout.contains("canonical=agent.spawn"));
+    assert!(stdout.contains("alias=task"));
+}
+
+#[test]
 fn replay_cli_surfaces_recovery_context_in_json_summary() {
     let run_dir = tempdir().expect("tempdir");
     write_events_jsonl(
@@ -1972,6 +2051,116 @@ fn delegated_recovery_events(run_id: &str) -> Vec<EventEnvelopeV1> {
                 task_id: "task_1".to_string(),
                 result_summary: "delegated result".to_string(),
                 result_digest: "result-digest-001".to_string(),
+                metadata: Some(TaskCompletionMetadata {
+                    lineage: Some(lineage),
+                    timing: Some(ExecutionTimingMetadata {
+                        started_mono_ms: Some(10),
+                        finished_mono_ms: Some(25),
+                        elapsed_ms: Some(15),
+                    }),
+                    hook_executions: Vec::new(),
+                }),
+            }),
+        ),
+        envelope(
+            run_id,
+            7,
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: "done".to_string(),
+            }),
+        ),
+    ]
+}
+
+fn delegated_recovery_events_with_control_chars(run_id: &str) -> Vec<EventEnvelopeV1> {
+    let child_session_id = "child-run-001\n\tcontrol".to_string();
+    let parent_tool_call_id = "toolcall_parent\rcontrol".to_string();
+    let artifact_path = "artifacts/delegated/task-output\n.json".to_string();
+    let lineage = TaskLineageMetadata {
+        parent_tool_call_id: Some(parent_tool_call_id.clone()),
+        parent_task_id: Some("task_1".to_string()),
+        parent_request_id: Some("req_1".to_string()),
+        parent_session_id: Some("agent_supervisor".to_string()),
+        child_session_id: Some(child_session_id.clone()),
+        child_request_id: Some("child-req-001".to_string()),
+        child_provider_id: Some("openai".to_string()),
+        child_model_id: Some("gpt-5.4-mini".to_string()),
+    };
+    let tool_metadata = ToolCallMetadata {
+        canonical_tool_id: Some("agent.spawn".to_string()),
+        alias_source_tool_id: Some("task".to_string()),
+        lineage: Some(lineage.clone()),
+        artifact_refs: vec![EventArtifactRef {
+            path: artifact_path.clone(),
+            digest: Some("artifact-digest-002".to_string()),
+        }],
+        timing: None,
+        hook_executions: Vec::new(),
+    };
+
+    vec![
+        envelope(
+            run_id,
+            1,
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "recovery-fixture".to_string(),
+                workspace_root: "/tmp/workspace".to_string(),
+            }),
+        ),
+        envelope(
+            run_id,
+            2,
+            EventV1::AgentSpawned(AgentSpawnedEvent {
+                agent_id: child_session_id.clone(),
+                profile: "worker".to_string(),
+                parent_agent_id: Some("agent_supervisor".to_string()),
+            }),
+        ),
+        envelope(
+            run_id,
+            3,
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "toolcall_1".to_string(),
+                tool_id: "task".to_string(),
+                args_summary: "delegate".to_string(),
+                args_digest: "args-digest-002".to_string(),
+                metadata: Some(tool_metadata.clone()),
+            }),
+        ),
+        envelope(
+            run_id,
+            4,
+            EventV1::ArtifactWritten(ArtifactWrittenEvent {
+                path: artifact_path.clone(),
+                digest: "artifact-digest-002".to_string(),
+                bytes: 42,
+                tool_call_id: Some("toolcall_1".to_string()),
+                tool_metadata: Some(ToolIdentityMetadata {
+                    canonical_tool_id: Some("agent.spawn".to_string()),
+                    alias_source_tool_id: Some("task".to_string()),
+                }),
+                metadata: BTreeMap::new(),
+            }),
+        ),
+        envelope(
+            run_id,
+            5,
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "toolcall_1".to_string(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("delegated".to_string()),
+                output_digest: Some("output-digest-002".to_string()),
+                output_json: None,
+                metadata: Some(tool_metadata),
+            }),
+        ),
+        envelope(
+            run_id,
+            6,
+            EventV1::TaskCompleted(TaskCompletedEvent {
+                task_id: "task_1".to_string(),
+                result_summary: "delegated result".to_string(),
+                result_digest: "result-digest-002".to_string(),
                 metadata: Some(TaskCompletionMetadata {
                     lineage: Some(lineage),
                     timing: Some(ExecutionTimingMetadata {

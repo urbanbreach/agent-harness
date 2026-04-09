@@ -1,18 +1,21 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::future::Future;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::mpsc as std_mpsc;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use clap::Args;
-use harness_core::agent::AgentProfile;
+use harness_core::agent::{AgentModelSettings, AgentProfile};
 use harness_core::clock::{Clock, FakeClock, RealClock};
 use harness_core::config::{
-    load_config_from_file, resolve_config_path, HarnessConfig, ShellAllowlist,
+    configured_model_catalog, load_config_from_file, resolve_config_path,
+    resolve_profile_model_metadata, HarnessConfig, ShellAllowlist,
 };
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle,
@@ -30,8 +33,8 @@ use harness_tui::app::{
     ModelOption, SessionHistoryEntry,
 };
 use harness_tui::{
-    load_events_from_run_dir, run_tui_with_options, set_pending_replay_launch_metadata, LiveUpdate,
-    TuiMode, TuiOptions, UiIntent,
+    close_preserved_terminal_session, load_events_from_run_dir, run_tui_with_options,
+    set_pending_replay_launch_metadata, LiveUpdate, TuiMode, TuiOptions, UiIntent,
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -47,6 +50,39 @@ use crate::scenarios::{
 const DEFAULT_SESSION_DIR: &str = ".agent-harness/sessions";
 const DEFAULT_MOCK_PROFILE: &str = "worker";
 const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
+
+fn handoff_profile_file() -> Option<&'static Mutex<std::fs::File>> {
+    static PROFILE_FILE: OnceLock<Option<Mutex<std::fs::File>>> = OnceLock::new();
+    PROFILE_FILE
+        .get_or_init(|| {
+            let path = std::env::var_os("HARNESS_TUI_PROFILE_LOG")?;
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .ok()?;
+            Some(Mutex::new(file))
+        })
+        .as_ref()
+}
+
+fn handoff_profile_start() -> &'static Instant {
+    static START: OnceLock<Instant> = OnceLock::new();
+    START.get_or_init(Instant::now)
+}
+
+fn profile_handoff(event: &str) {
+    let Some(file) = handoff_profile_file() else {
+        return;
+    };
+
+    let elapsed_ms = handoff_profile_start().elapsed().as_millis();
+    let mut file = match file.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    let _ = writeln!(file, "{elapsed_ms:>6}ms {event}");
+}
 
 #[derive(Debug, Args, Clone)]
 pub struct TuiCommand {
@@ -84,6 +120,7 @@ pub struct TuiCommand {
 struct LiveSettings {
     config: Option<HarnessConfig>,
     session_dir: PathBuf,
+    workspace_root: PathBuf,
     shell_allowlist: ShellAllowlist,
     deterministic: bool,
     seed: u64,
@@ -95,6 +132,97 @@ struct LiveSettings {
 struct LiveBootstrap {
     store: Arc<dyn EventStore>,
     run_dir: PathBuf,
+}
+
+#[derive(Clone)]
+struct LiveCoordinatorConfigWarmup {
+    state: Arc<tokio::sync::Mutex<LiveCoordinatorConfigWarmupState>>,
+}
+
+enum LiveCoordinatorConfigWarmupState {
+    Disabled,
+    Pending(JoinHandle<Result<CoordinatorConfig, String>>),
+    Ready(Box<CoordinatorConfig>),
+}
+
+impl LiveCoordinatorConfigWarmup {
+    fn start(settings: &LiveSettings, demo_mode: bool) -> Self {
+        profile_handoff(&format!(
+            "warmup.start demo_mode={} has_config={}",
+            demo_mode,
+            settings.config.is_some()
+        ));
+        let state = if demo_mode {
+            LiveCoordinatorConfigWarmupState::Disabled
+        } else if let Some(mut config) = settings.config.clone() {
+            let session_dir = settings.session_dir.clone();
+            LiveCoordinatorConfigWarmupState::Pending(tokio::task::spawn_blocking(move || {
+                profile_handoff("warmup.build.begin");
+                config.apply_session_dir_override(Some(session_dir));
+                let result = bootstrap::build_interactive_coordinator_config(&config);
+                profile_handoff("warmup.build.end");
+                result
+            }))
+        } else {
+            LiveCoordinatorConfigWarmupState::Disabled
+        };
+
+        Self {
+            state: Arc::new(tokio::sync::Mutex::new(state)),
+        }
+    }
+
+    async fn coordinator_config(
+        &self,
+        settings: &LiveSettings,
+        demo_mode: bool,
+    ) -> Result<CoordinatorConfig, String> {
+        if demo_mode {
+            profile_handoff("warmup.use_demo_config");
+            return Ok(demo_coordinator_config(settings));
+        }
+
+        let pending = {
+            let mut state = self.state.lock().await;
+            match &*state {
+                LiveCoordinatorConfigWarmupState::Ready(config) => {
+                    profile_handoff("warmup.cache_hit");
+                    return Ok(config.as_ref().clone());
+                }
+                LiveCoordinatorConfigWarmupState::Disabled => {
+                    profile_handoff("warmup.disabled_fallback");
+                    None
+                }
+                LiveCoordinatorConfigWarmupState::Pending(_) => {
+                    profile_handoff("warmup.await_pending");
+                    match std::mem::replace(&mut *state, LiveCoordinatorConfigWarmupState::Disabled)
+                    {
+                        LiveCoordinatorConfigWarmupState::Pending(handle) => Some(handle),
+                        LiveCoordinatorConfigWarmupState::Ready(config) => {
+                            let resolved = config.as_ref().clone();
+                            profile_handoff("warmup.ready_race");
+                            *state = LiveCoordinatorConfigWarmupState::Ready(config);
+                            return Ok(resolved);
+                        }
+                        LiveCoordinatorConfigWarmupState::Disabled => None,
+                    }
+                }
+            }
+        };
+
+        if let Some(handle) = pending {
+            let config = handle
+                .await
+                .map_err(|err| format!("live coordinator warmup task failed: {err}"))??;
+            profile_handoff("warmup.pending_resolved");
+            let mut state = self.state.lock().await;
+            *state = LiveCoordinatorConfigWarmupState::Ready(Box::new(config.clone()));
+            return Ok(config);
+        }
+
+        profile_handoff("warmup.rebuild_fallback");
+        interactive_coordinator_config(settings)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -220,6 +348,7 @@ fn execute_replay_mode(run_dir: &Path, exit_on_finish: bool) -> ExitCode {
         exit_on_finish,
         on_ui_intent: None,
         keybindings: None,
+        preserve_terminal_on_exit: false,
     }) {
         eprintln!("TUI error: {err}");
         return ExitCode::from(1);
@@ -264,7 +393,15 @@ fn resolve_live_settings(
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
 ) -> Result<LiveSettings, String> {
-    let explicit_config = resolve_config_path(config_path.as_deref());
+    let workspace_root = std::env::current_dir()
+        .map_err(|err| format!("failed to resolve current working directory: {err}"))?;
+    let explicit_config = config_path.or_else(|| {
+        if cmd.mock || cmd.scenario.is_some() {
+            None
+        } else {
+            resolve_config_path(None)
+        }
+    });
     let mut shell_allowlist = ShellAllowlist::default();
     let mut config_session_dir = PathBuf::from(DEFAULT_SESSION_DIR);
     let mut config_deterministic = false;
@@ -306,11 +443,13 @@ fn resolve_live_settings(
         "Demo"
     }
     .to_string();
-    let launch_metadata = interactive_launch_metadata(&agent_profiles, &default_profile)?;
+    let launch_metadata =
+        interactive_launch_metadata(live_config.as_ref(), &agent_profiles, &default_profile)?;
 
     Ok(LiveSettings {
         config: live_config,
         session_dir,
+        workspace_root,
         shell_allowlist,
         deterministic,
         seed: config_seed,
@@ -321,6 +460,7 @@ fn resolve_live_settings(
 }
 
 fn interactive_launch_metadata(
+    config: Option<&HarnessConfig>,
     agent_profiles: &BTreeMap<String, AgentProfile>,
     profile: &str,
 ) -> Result<LaunchMetadata, String> {
@@ -332,8 +472,70 @@ fn interactive_launch_metadata(
 
     Ok(
         LaunchMetadata::from_model_ref(selected_profile.name.clone(), &selected_profile.model_ref)
-            .with_available_models(model_options_from_profiles(agent_profiles)),
+            .with_available_models(model_options_for_profiles(config, agent_profiles)),
     )
+}
+
+fn model_options_for_profiles(
+    config: Option<&HarnessConfig>,
+    agent_profiles: &BTreeMap<String, AgentProfile>,
+) -> Vec<ModelOption> {
+    config
+        .map(|config| configured_profile_model_options(config, agent_profiles))
+        .unwrap_or_else(|| model_options_from_profiles(agent_profiles))
+}
+
+fn configured_profile_model_options(
+    config: &HarnessConfig,
+    agent_profiles: &BTreeMap<String, AgentProfile>,
+) -> Vec<ModelOption> {
+    let catalog_entries = configured_model_catalog(config);
+    let mut options = agent_profiles
+        .keys()
+        .flat_map(|profile| {
+            catalog_entries.iter().map(|entry| ModelOption {
+                profile: profile.clone(),
+                provider: entry.provider.clone(),
+                model: entry.model.clone(),
+                variant: entry.variant.clone(),
+                display_label: Some(entry.display_label.clone()),
+                token_window_label: entry.token_window_label.clone(),
+                context_window_tokens: entry.context_window_tokens,
+                max_input_tokens: entry.max_input_tokens,
+                max_output_tokens: entry.max_output_tokens,
+                description: entry.description.clone(),
+                reasoning_effort: entry.reasoning_effort.clone(),
+                text_verbosity: entry.text_verbosity.clone(),
+                recommended_for: entry.recommended_for.clone(),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    for profile in agent_profiles.keys() {
+        if let Ok(metadata) = resolve_profile_model_metadata(config, profile) {
+            let preferred = ModelOption {
+                profile: profile.clone(),
+                provider: metadata.provider,
+                model: metadata.model,
+                variant: metadata.variant,
+                display_label: Some(metadata.display_label),
+                token_window_label: metadata.token_window_label,
+                context_window_tokens: metadata.context_window_tokens,
+                max_input_tokens: metadata.max_input_tokens,
+                max_output_tokens: metadata.max_output_tokens,
+                description: metadata.description,
+                reasoning_effort: metadata.reasoning_effort,
+                text_verbosity: metadata.text_verbosity,
+                recommended_for: metadata.recommended_for,
+            };
+
+            if !options.iter().any(|option| option == &preferred) {
+                options.push(preferred);
+            }
+        }
+    }
+
+    options
 }
 
 fn model_options_from_profiles(
@@ -345,6 +547,25 @@ fn model_options_from_profiles(
         .collect()
 }
 
+fn launch_metadata_model_ref(launch_metadata: &LaunchMetadata) -> Option<String> {
+    Some(format!(
+        "{}:{}",
+        launch_metadata.provider(),
+        launch_metadata.model()?
+    ))
+}
+
+fn launch_metadata_model_settings(launch_metadata: &LaunchMetadata) -> AgentModelSettings {
+    AgentModelSettings {
+        variant: launch_metadata.variant().map(str::to_string),
+        reasoning_effort: launch_metadata.reasoning_effort().map(str::to_string),
+        text_verbosity: launch_metadata.text_verbosity().map(str::to_string),
+        reasoning_summary: launch_metadata
+            .reasoning_effort()
+            .map(|_| "auto".to_string()),
+    }
+}
+
 fn launch_metadata_for_mode(
     settings: &LiveSettings,
     selection: &LaunchSelection,
@@ -352,6 +573,41 @@ fn launch_metadata_for_mode(
     recover_mutex_lock(selection)
         .clone()
         .with_mode_label(settings.launch_mode_label.clone())
+}
+
+fn demo_coordinator_config(settings: &LiveSettings) -> CoordinatorConfig {
+    let mut coordinator_config = CoordinatorConfig::new(settings.session_dir.clone());
+    coordinator_config.permission_policy = default_permission_policy();
+    coordinator_config.tool_registry =
+        Arc::new(coordinator_registry(settings.shell_allowlist.clone()));
+    coordinator_config.provider = Arc::new(golden_path_provider());
+    coordinator_config.agent_profiles = golden_path_profiles();
+    coordinator_config
+}
+
+fn interactive_coordinator_config(settings: &LiveSettings) -> Result<CoordinatorConfig, String> {
+    let mut config = settings
+        .config
+        .clone()
+        .ok_or_else(bootstrap::interactive_config_guidance)?;
+    config.apply_session_dir_override(Some(settings.session_dir.clone()));
+    bootstrap::build_interactive_coordinator_config(&config)
+}
+
+fn prepare_new_live_workspace(
+    settings: &LiveSettings,
+    demo_mode: bool,
+    run_id_override: &str,
+) -> Result<PathBuf, String> {
+    if demo_mode {
+        return create_workspace(
+            &settings.session_dir,
+            ScenarioName::GoldenPathInteractive,
+            Some(run_id_override),
+        );
+    }
+
+    Ok(settings.workspace_root.clone())
 }
 
 fn record_launch_selection(selection: &LaunchSelection, launch_metadata: &LaunchMetadata) {
@@ -367,14 +623,20 @@ async fn run_interactive_mode(
     settings: &LiveSettings,
     demo_mode: bool,
 ) -> Result<(), String> {
+    profile_handoff("interactive_mode.begin");
     fs::create_dir_all(&settings.session_dir)
         .map_err(|err| format!("failed to create session dir: {err}"))?;
 
     let launch_selection = Arc::new(Mutex::new(
         settings.launch_metadata.clone().without_mode_label(),
     ));
+    let coordinator_config_warmup = LiveCoordinatorConfigWarmup::start(settings, demo_mode);
+    let _ = coordinator_config_warmup
+        .coordinator_config(settings, demo_mode)
+        .await?;
+    profile_handoff("interactive_mode.warmup_ready");
 
-    run_interactive_workflow_loop(
+    let result = run_interactive_workflow_loop(
         InteractiveWorkflow::Startup,
         {
             let launch_selection = Arc::clone(&launch_selection);
@@ -398,10 +660,20 @@ async fn run_interactive_mode(
         },
         {
             let launch_selection = Arc::clone(&launch_selection);
-            move || run_new_live_session(cmd, settings, demo_mode, Arc::clone(&launch_selection))
+            let coordinator_config_warmup = coordinator_config_warmup.clone();
+            move || {
+                run_new_live_session(
+                    cmd,
+                    settings,
+                    demo_mode,
+                    Arc::clone(&launch_selection),
+                    coordinator_config_warmup.clone(),
+                )
+            }
         },
         {
             let launch_selection = Arc::clone(&launch_selection);
+            let coordinator_config_warmup = coordinator_config_warmup.clone();
             move |run_id, run_dir| {
                 run_continue_session_bootstrap(
                     cmd,
@@ -410,6 +682,7 @@ async fn run_interactive_mode(
                     run_id,
                     run_dir,
                     Arc::clone(&launch_selection),
+                    coordinator_config_warmup.clone(),
                 )
             }
         },
@@ -418,7 +691,10 @@ async fn run_interactive_mode(
             Ok(InteractiveWorkflow::Startup)
         },
     )
-    .await
+    .await;
+
+    close_preserved_terminal_session().map_err(|err| err.to_string())?;
+    result
 }
 
 async fn run_interactive_workflow_loop<
@@ -476,6 +752,11 @@ async fn run_direct_continue_mode(
     let launch_selection = Arc::new(Mutex::new(
         settings.launch_metadata.clone().without_mode_label(),
     ));
+    let coordinator_config_warmup = LiveCoordinatorConfigWarmup::start(settings, demo_mode);
+    let _ = coordinator_config_warmup
+        .coordinator_config(settings, demo_mode)
+        .await?;
+    profile_handoff("direct_continue_mode.warmup_ready");
     let run_id = run_dir
         .file_name()
         .and_then(|name| name.to_str())
@@ -489,7 +770,7 @@ async fn run_direct_continue_mode(
         })?
         .to_string();
 
-    run_interactive_workflow_loop(
+    let result = run_interactive_workflow_loop(
         InteractiveWorkflow::Continue { run_id, run_dir },
         {
             let launch_selection = Arc::clone(&launch_selection);
@@ -513,10 +794,20 @@ async fn run_direct_continue_mode(
         },
         {
             let launch_selection = Arc::clone(&launch_selection);
-            move || run_new_live_session(cmd, settings, demo_mode, Arc::clone(&launch_selection))
+            let coordinator_config_warmup = coordinator_config_warmup.clone();
+            move || {
+                run_new_live_session(
+                    cmd,
+                    settings,
+                    demo_mode,
+                    Arc::clone(&launch_selection),
+                    coordinator_config_warmup.clone(),
+                )
+            }
         },
         {
             let launch_selection = Arc::clone(&launch_selection);
+            let coordinator_config_warmup = coordinator_config_warmup.clone();
             move |run_id, run_dir| {
                 run_continue_session_bootstrap(
                     cmd,
@@ -525,6 +816,7 @@ async fn run_direct_continue_mode(
                     run_id,
                     run_dir,
                     Arc::clone(&launch_selection),
+                    coordinator_config_warmup.clone(),
                 )
             }
         },
@@ -533,7 +825,10 @@ async fn run_direct_continue_mode(
             Ok(InteractiveWorkflow::Startup)
         },
     )
-    .await
+    .await;
+
+    close_preserved_terminal_session().map_err(|err| err.to_string())?;
+    result
 }
 
 fn load_startup_session_history_entries(
@@ -563,6 +858,7 @@ async fn run_startup_launcher(
     session_history_entries: Vec<SessionHistoryEntry>,
     launch_selection: LaunchSelection,
 ) -> Result<InteractiveWorkflow, String> {
+    profile_handoff("startup_launcher.begin");
     let selected_intent = Arc::new(Mutex::new(None::<UiIntent>));
     let selected_intent_sink = Arc::clone(&selected_intent);
     let on_ui_intent = Arc::new(move |intent: UiIntent| {
@@ -584,6 +880,7 @@ async fn run_startup_launcher(
         ) {
             return;
         }
+        profile_handoff(&format!("startup_launcher.intent {intent:?}"));
         let mut slot = recover_mutex_lock(&selected_intent_sink);
         if slot.is_none() {
             *slot = Some(intent);
@@ -598,6 +895,7 @@ async fn run_startup_launcher(
             exit_on_finish,
             on_ui_intent: Some(on_ui_intent),
             keybindings: None,
+            preserve_terminal_on_exit: true,
         })
     })
     .await
@@ -608,6 +906,7 @@ async fn run_startup_launcher(
     }
 
     let selected_intent = recover_mutex_lock(&selected_intent).clone();
+    profile_handoff(&format!("startup_launcher.end intent={selected_intent:?}"));
 
     Ok(map_startup_intent_to_workflow(selected_intent))
 }
@@ -619,7 +918,7 @@ fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> InteractiveWorkfl
         Some(UiIntent::ContinueSession { run_id, run_dir }) => {
             InteractiveWorkflow::Continue { run_id, run_dir }
         }
-        Some(UiIntent::SubmitPrompt { text }) => {
+        Some(UiIntent::SubmitPrompt { text, .. }) => {
             set_pending_live_prompt_auto_submit(Some(text));
             InteractiveWorkflow::NewSession
         }
@@ -639,6 +938,7 @@ async fn run_replay_tui(run_dir: PathBuf, exit_on_finish: bool) -> Result<(), St
             exit_on_finish,
             on_ui_intent: None,
             keybindings: None,
+            preserve_terminal_on_exit: false,
         })
     })
     .await
@@ -653,7 +953,9 @@ async fn run_continue_session_bootstrap(
     run_id: String,
     run_dir: PathBuf,
     launch_selection: LaunchSelection,
+    coordinator_config_warmup: LiveCoordinatorConfigWarmup,
 ) -> Result<InteractiveWorkflow, String> {
+    profile_handoff(&format!("continue_bootstrap.begin run_id={run_id}"));
     let resume_plan = inspect_resume_plan(&run_dir);
     if !resume_plan.is_resumable {
         let reason = resume_plan
@@ -674,22 +976,10 @@ async fn run_continue_session_bootstrap(
         Arc::new(RealClock::new())
     };
 
-    let mut coordinator_config = if demo_mode {
-        let mut coordinator_config = CoordinatorConfig::new(settings.session_dir.clone());
-        coordinator_config.permission_policy = default_permission_policy();
-        coordinator_config.tool_registry =
-            Arc::new(coordinator_registry(settings.shell_allowlist.clone()));
-        coordinator_config.provider = Arc::new(golden_path_provider());
-        coordinator_config.agent_profiles = golden_path_profiles();
-        coordinator_config
-    } else {
-        let mut config = settings
-            .config
-            .clone()
-            .ok_or_else(bootstrap::interactive_config_guidance)?;
-        config.apply_session_dir_override(Some(settings.session_dir.clone()));
-        bootstrap::build_interactive_coordinator_config(&config)?
-    };
+    let mut coordinator_config = coordinator_config_warmup
+        .coordinator_config(settings, demo_mode)
+        .await?;
+    profile_handoff("continue_bootstrap.coordinator_ready");
     coordinator_config.deterministic_store = settings.deterministic;
     coordinator_config.hook_runtime_config.suppress_execution = settings.deterministic;
     coordinator_config.config_digest = settings.config_digest.clone();
@@ -700,15 +990,18 @@ async fn run_continue_session_bootstrap(
         clock,
         Arc::new(DefaultRedactor::default()),
     );
+    profile_handoff("continue_bootstrap.coordinator_spawned");
 
     let run = coordinator
         .resume_run(run_id.clone(), run_name)
         .await
         .map_err(|err| err.to_string())?;
+    profile_handoff("continue_bootstrap.resume_run_done");
     let store = coordinator
         .event_store()
         .await
         .map_err(|err| err.to_string())?;
+    profile_handoff("continue_bootstrap.event_store_done");
 
     let preloaded_last_seq = historical_events.last().map(|event| event.seq).unwrap_or(0);
     let recorded_runtime_context = load_recorded_runtime_context(&run_dir);
@@ -728,7 +1021,6 @@ async fn run_continue_session_bootstrap(
             .available_models()
             .to_vec(),
     );
-
     let (live_update_tx, live_update_rx) = std_mpsc::channel::<LiveUpdate>();
     let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
 
@@ -807,6 +1099,7 @@ fn continue_live_tui_options(
         exit_on_finish,
         on_ui_intent: Some(ui_intent_sender),
         keybindings: None,
+        preserve_terminal_on_exit: false,
     }
 }
 
@@ -1078,7 +1371,9 @@ async fn run_new_live_session(
     settings: &LiveSettings,
     demo_mode: bool,
     launch_selection: LaunchSelection,
+    coordinator_config_warmup: LiveCoordinatorConfigWarmup,
 ) -> Result<InteractiveWorkflow, String> {
+    profile_handoff("new_live.begin");
     let run_id_override = if settings.deterministic {
         deterministic_run_id(settings.seed, ScenarioName::GoldenPathInteractive)
     } else {
@@ -1094,11 +1389,8 @@ async fn run_new_live_session(
         }
     }
 
-    let workspace = create_workspace(
-        &settings.session_dir,
-        ScenarioName::GoldenPathInteractive,
-        Some(run_id_override.as_str()),
-    )?;
+    let workspace = prepare_new_live_workspace(settings, demo_mode, run_id_override.as_str())?;
+    profile_handoff("new_live.workspace_ready");
 
     let clock: Arc<dyn Clock + Send + Sync> = if settings.deterministic {
         Arc::new(FakeClock::new())
@@ -1106,22 +1398,10 @@ async fn run_new_live_session(
         Arc::new(RealClock::new())
     };
 
-    let mut coordinator_config = if demo_mode {
-        let mut coordinator_config = CoordinatorConfig::new(settings.session_dir.clone());
-        coordinator_config.permission_policy = default_permission_policy();
-        coordinator_config.tool_registry =
-            Arc::new(coordinator_registry(settings.shell_allowlist.clone()));
-        coordinator_config.provider = Arc::new(golden_path_provider());
-        coordinator_config.agent_profiles = golden_path_profiles();
-        coordinator_config
-    } else {
-        let mut config = settings
-            .config
-            .clone()
-            .ok_or_else(bootstrap::interactive_config_guidance)?;
-        config.apply_session_dir_override(Some(settings.session_dir.clone()));
-        bootstrap::build_interactive_coordinator_config(&config)?
-    };
+    let mut coordinator_config = coordinator_config_warmup
+        .coordinator_config(settings, demo_mode)
+        .await?;
+    profile_handoff("new_live.coordinator_ready");
     coordinator_config.deterministic_store = settings.deterministic;
     coordinator_config.hook_runtime_config.suppress_execution = settings.deterministic;
     coordinator_config.run_id_override = Some(run_id_override);
@@ -1133,15 +1413,18 @@ async fn run_new_live_session(
         clock,
         Arc::new(DefaultRedactor::default()),
     );
+    profile_handoff("new_live.coordinator_spawned");
 
     let run = coordinator
         .start_run("interactive", &workspace)
         .await
         .map_err(|err| err.to_string())?;
+    profile_handoff("new_live.start_run_done");
     let store = coordinator
         .event_store()
         .await
         .map_err(|err| err.to_string())?;
+    profile_handoff("new_live.event_store_done");
 
     let launch_metadata = launch_metadata_for_mode(settings, &launch_selection);
 
@@ -1153,6 +1436,7 @@ async fn run_new_live_session(
         )
         .await
         .map_err(|err| err.to_string())?;
+    profile_handoff("new_live.spawn_agent_idle_done");
 
     let (live_update_tx, live_update_rx) = std_mpsc::channel::<LiveUpdate>();
     let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
@@ -1183,6 +1467,7 @@ async fn run_new_live_session(
     set_pending_live_launch_metadata(launch_metadata);
 
     let tui_result = tokio::task::spawn_blocking(move || {
+        profile_handoff("continue_bootstrap.live_tui_begin");
         run_tui_with_options(TuiOptions {
             mode: TuiMode::Live {
                 run_dir: run.run_dir,
@@ -1192,10 +1477,12 @@ async fn run_new_live_session(
             exit_on_finish,
             on_ui_intent: Some(ui_intent_sender),
             keybindings: None,
+            preserve_terminal_on_exit: false,
         })
     })
     .await
     .map_err(|err| format!("TUI task failed: {err}"))?;
+    profile_handoff("continue_bootstrap.live_tui_end");
 
     if let Err(err) = tui_result {
         event_forwarder_task.abort();
@@ -1302,6 +1589,7 @@ async fn run_live_mode(
     set_pending_live_launch_metadata(scenario_launch_metadata());
 
     let tui_result = tokio::task::spawn_blocking(move || {
+        profile_handoff("new_live.live_tui_begin");
         run_tui_with_options(TuiOptions {
             mode: TuiMode::Live {
                 run_dir,
@@ -1311,10 +1599,12 @@ async fn run_live_mode(
             exit_on_finish,
             on_ui_intent: Some(ui_intent_sender),
             keybindings: None,
+            preserve_terminal_on_exit: false,
         })
     })
     .await
     .map_err(|err| format!("TUI task failed: {err}"))?;
+    profile_handoff("new_live.live_tui_end");
 
     if let Err(err) = tui_result {
         scenario_task.abort();
@@ -1509,7 +1799,10 @@ async fn handle_ui_intents(
                     .await
                     .map_err(|err| err.to_string())?;
             }
-            UiIntent::SubmitPrompt { text } => {
+            UiIntent::SubmitPrompt {
+                text,
+                launch_metadata,
+            } => {
                 let agent_id = live_agent_target.as_ref().and_then(|target| {
                     target
                         .lock()
@@ -1519,7 +1812,13 @@ async fn handle_ui_intents(
 
                 if let Some(agent_id) = agent_id {
                     coordinator
-                        .request_agent_turn(user_actor.clone(), agent_id, text)
+                        .request_agent_turn_with_model(
+                            user_actor.clone(),
+                            agent_id,
+                            text,
+                            launch_metadata_model_ref(&launch_metadata),
+                            Some(launch_metadata_model_settings(&launch_metadata)),
+                        )
                         .await
                         .map_err(|err| err.to_string())?;
                 }
@@ -1757,8 +2056,15 @@ pub(crate) fn replay_launch_metadata_for_test(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use harness_core::config::load_config_from_str;
     use harness_core::event::{AgentSpawnedEvent, ProviderRequestStartedEvent};
     use harness_tui::app::{set_pending_live_prompt_draft, AppState};
+    use std::sync::{Mutex, OnceLock};
+
+    fn mock_mode_cwd_test_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     #[test]
     fn tui_startup_new_session_bootstraps_live_after_intent() {
@@ -1786,6 +2092,183 @@ mod tests {
 
         let live = AppState::new_live(None, false, None);
         assert_eq!(live.prompt_buffer, "draft to keep");
+    }
+
+    #[test]
+    fn mock_mode_ignores_discovered_cwd_config() {
+        let _guard = mock_mode_cwd_test_lock()
+            .lock()
+            .expect("mock mode cwd lock poisoned");
+        let temp = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            temp.path().join("harness.jsonc"),
+            r#"{
+              providers: {
+                default: {
+                  type: "openai_compatible",
+                  base_url: "http://127.0.0.1:8317/v1",
+                  api_key: "test-key",
+                  api_mode: "responses",
+                  timeout_ms: 60000,
+                  models: {
+                    "gpt-5.4-mini": {
+                      display_name: "GPT-5.4 Mini"
+                    }
+                  }
+                }
+              },
+              agent: {
+                build: {
+                  description: "Implementation",
+                  model_ref: "default:gpt-5.4-mini",
+                  tools: []
+                }
+              },
+              default_agent: "build",
+              permissions: {
+                defaults: {
+                  edit: "allow",
+                  shell: "allow",
+                  network: "allow"
+                }
+              },
+              runtime: {
+                background_tasks: {
+                  default_concurrency: 2,
+                  provider_concurrency: 2,
+                  model_concurrency: 2,
+                  stale_timeout_ms: 15000,
+                  message_staleness_timeout_ms: 5000
+                },
+                session_dir: ".agent-harness/sessions"
+              },
+              integrations: {
+                remote_search: {
+                  endpoint: "https://mcp.exa.ai/mcp"
+                }
+              }
+            }"#,
+        )
+        .expect("write discovered cwd config");
+
+        let previous_dir = std::env::current_dir().expect("read current dir");
+        std::env::set_current_dir(temp.path()).expect("enter temp dir");
+
+        let result = resolve_live_settings(
+            &TuiCommand {
+                replay: None,
+                continue_session: None,
+                scenario: None,
+                mock: true,
+                deterministic: false,
+                session_dir: None,
+                exit_on_finish: false,
+                profile: None,
+            },
+            None,
+            None,
+        );
+
+        std::env::set_current_dir(previous_dir).expect("restore current dir");
+
+        let settings = result.expect("mock mode settings should resolve");
+        assert!(settings.config.is_none());
+        assert_eq!(settings.launch_mode_label, "Demo");
+        assert_eq!(settings.launch_metadata.profile(), "worker");
+        assert_eq!(settings.launch_metadata.provider(), "mock");
+        assert_eq!(settings.launch_metadata.model(), Some("model-1"));
+    }
+
+    #[test]
+    fn live_new_session_uses_current_workspace_instead_of_seeded_demo_workspace() {
+        let _guard = mock_mode_cwd_test_lock()
+            .lock()
+            .expect("mock mode cwd lock poisoned");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config_path = temp.path().join("harness.jsonc");
+        std::fs::write(
+            &config_path,
+            r#"{
+              providers: {
+                default: {
+                  type: "openai_compatible",
+                  base_url: "http://127.0.0.1:8317/v1",
+                  api_key: "test-key",
+                  api_mode: "responses",
+                  timeout_ms: 60000,
+                  models: {
+                    "gpt-5.4-mini": {
+                      display_name: "GPT-5.4 Mini"
+                    }
+                  }
+                }
+              },
+              agent: {
+                build: {
+                  description: "Implementation",
+                  model_ref: "default:gpt-5.4-mini",
+                  tools: []
+                }
+              },
+              default_agent: "build",
+              permissions: {
+                defaults: {
+                  edit: "allow",
+                  shell: "allow",
+                  network: "allow"
+                }
+              },
+              runtime: {
+                background_tasks: {
+                  default_concurrency: 2,
+                  provider_concurrency: 2,
+                  model_concurrency: 2,
+                  stale_timeout_ms: 15000,
+                  message_staleness_timeout_ms: 5000
+                },
+                session_dir: ".agent-harness/sessions"
+              },
+              integrations: {
+                remote_search: {
+                  endpoint: "https://mcp.exa.ai/mcp"
+                }
+              }
+            }"#,
+        )
+        .expect("write live config");
+
+        let previous_dir = std::env::current_dir().expect("read current dir");
+        std::env::set_current_dir(temp.path()).expect("enter temp dir");
+
+        let result = resolve_live_settings(
+            &TuiCommand {
+                replay: None,
+                continue_session: None,
+                scenario: None,
+                mock: false,
+                deterministic: false,
+                session_dir: None,
+                exit_on_finish: false,
+                profile: None,
+            },
+            Some(config_path.clone()),
+            None,
+        );
+
+        std::env::set_current_dir(previous_dir).expect("restore current dir");
+
+        let settings = result.expect("live mode settings should resolve");
+        let workspace = prepare_new_live_workspace(&settings, false, "run_test")
+            .expect("live workspace should resolve");
+
+        assert_eq!(settings.launch_mode_label, "Live");
+        assert_eq!(workspace, temp.path());
+        assert!(!workspace.join("demo.txt").exists());
+        assert!(!settings
+            .session_dir
+            .join("workspaces")
+            .join("golden_path_interactive-run_test")
+            .exists());
     }
 
     #[test]
@@ -1962,6 +2445,228 @@ mod tests {
         assert_eq!(metadata.provider(), "provider-alpha");
         assert_eq!(metadata.model(), Some("model-alpha"));
         assert_eq!(metadata.mode_label(), Some("Continued"));
+    }
+
+    #[test]
+    fn interactive_launch_metadata_exposes_cross_profile_switch_options() {
+        let config = load_config_from_str(
+            r#"
+            {
+              providers: {
+                default: {
+                  type: "openai_compatible",
+                  base_url: "http://127.0.0.1:8317/v1",
+                  api_key: "test-key",
+                  api_mode: "responses",
+                  timeout_ms: 60000,
+                  models: {
+                    "gpt-5.4-mini": {
+                      display_name: "GPT-5.4 Mini",
+                      variants: {
+                        low: {
+                          display_name: "Low"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              agent: {
+                build: {
+                  description: "Implementation",
+                  model_ref: "default:gpt-5.4-mini",
+                  tools: []
+                },
+                plan: {
+                  description: "Planning",
+                  model_ref: "default:gpt-5.4-mini",
+                  variant: "low",
+                  tools: []
+                }
+              },
+              default_agent: "build",
+              permissions: {
+                defaults: {
+                  edit: "allow",
+                  shell: "allow",
+                  network: "allow"
+                }
+              },
+              runtime: {
+                background_tasks: {
+                  default_concurrency: 2,
+                  provider_concurrency: 2,
+                  model_concurrency: 2,
+                  stale_timeout_ms: 15000,
+                  message_staleness_timeout_ms: 5000
+                },
+                session_dir: ".agent-harness/sessions"
+              },
+              integrations: {
+                remote_search: {
+                  endpoint: "https://mcp.exa.ai/mcp"
+                }
+              }
+            }
+            "#,
+        )
+        .expect("config should parse");
+
+        let agent_profiles = bootstrap::interactive_agent_profiles(&config)
+            .expect("interactive agent profiles should build");
+        let metadata = interactive_launch_metadata(Some(&config), &agent_profiles, "build")
+            .expect("launch metadata should build");
+
+        assert!(metadata
+            .available_models()
+            .iter()
+            .any(|option| option.profile == "build"));
+        assert!(metadata
+            .available_models()
+            .iter()
+            .any(|option| option.profile == "plan"));
+        assert!(metadata
+            .available_models()
+            .iter()
+            .any(|option| option.profile == "plan" && option.variant() == Some("low")));
+    }
+
+    #[test]
+    fn shipped_example_config_defaults_interactive_build_to_high_variant() {
+        let config_path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs/harness.example.jsonc");
+        let config_text = std::fs::read_to_string(&config_path)
+            .expect("shipped example config should be readable");
+        let config =
+            load_config_from_str(&config_text).expect("shipped example config should parse");
+
+        let agent_profiles = bootstrap::interactive_agent_profiles(&config)
+            .expect("interactive agent profiles should build");
+        let metadata = interactive_launch_metadata(Some(&config), &agent_profiles, "build")
+            .expect("launch metadata should build");
+
+        assert_eq!(metadata.profile(), "build");
+        assert_eq!(metadata.variant(), Some("high"));
+        assert!(metadata
+            .available_models()
+            .iter()
+            .any(|option| option.profile == "plan" && option.variant() == Some("low")));
+    }
+
+    #[test]
+    fn live_coordinator_config_warmup_reuses_interactive_config() {
+        let config = load_config_from_str(
+            r#"
+            {
+              providers: {
+                default: {
+                  type: "openai_compatible",
+                  base_url: "http://127.0.0.1:8317/v1",
+                  api_key: "test-key",
+                  api_mode: "responses",
+                  timeout_ms: 60000,
+                  models: {
+                    "gpt-5.4-mini": {
+                      display_name: "GPT-5.4 Mini"
+                    }
+                  }
+                }
+              },
+              agent: {
+                build: {
+                  description: "Implementation",
+                  model_ref: "default:gpt-5.4-mini",
+                  tools: ["fs.read"]
+                }
+              },
+              default_agent: "build",
+              permissions: {
+                defaults: {
+                  edit: "allow",
+                  shell: "allow",
+                  network: "allow"
+                },
+                shell_allowlist: {
+                  executables: ["bash"],
+                  cwd_roots: ["."]
+                }
+              },
+              runtime: {
+                background_tasks: {
+                  default_concurrency: 2,
+                  provider_concurrency: 2,
+                  model_concurrency: 2,
+                  stale_timeout_ms: 15000,
+                  message_staleness_timeout_ms: 5000
+                },
+                session_dir: ".agent-harness/sessions"
+              },
+              integrations: {
+                remote_search: {
+                  endpoint: "https://mcp.exa.ai/mcp"
+                }
+              }
+            }
+            "#,
+        )
+        .expect("config should parse");
+        let session_dir = PathBuf::from("/tmp/warmed-session-dir");
+        let agent_profiles = bootstrap::interactive_agent_profiles(&config)
+            .expect("interactive agent profiles should build");
+        let settings = LiveSettings {
+            config: Some(config),
+            session_dir: session_dir.clone(),
+            workspace_root: PathBuf::from("/tmp/warmed-workspace"),
+            shell_allowlist: ShellAllowlist::default(),
+            deterministic: false,
+            seed: 0,
+            config_digest: "digest".to_string(),
+            launch_metadata: interactive_launch_metadata(None, &agent_profiles, "build")
+                .expect("launch metadata should build"),
+            launch_mode_label: "Live".to_string(),
+        };
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime should build");
+        runtime.block_on(async {
+            let warmup = LiveCoordinatorConfigWarmup::start(&settings, false);
+            let first = warmup
+                .coordinator_config(&settings, false)
+                .await
+                .expect("warmup should build interactive coordinator config");
+            let second = warmup
+                .coordinator_config(&settings, false)
+                .await
+                .expect("warmup should reuse cached coordinator config");
+
+            assert_eq!(first.session_dir, session_dir);
+            assert_eq!(second.session_dir, session_dir);
+            assert!(first.agent_profiles.contains_key("build"));
+            assert!(second.tool_registry.get("fs.read").is_some());
+        });
+    }
+
+    #[test]
+    fn continue_launch_metadata_preserves_cross_profile_switch_options() {
+        let continue_metadata = LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini")
+            .with_available_models(vec![
+                ModelOption::from_model_ref("build", "default:gpt-5.4-mini"),
+                ModelOption::from_model_ref("plan", "default:gpt-5.4-mini"),
+            ])
+            .with_mode_label("Continued");
+        let continue_profile = continue_metadata.profile().to_string();
+
+        assert_eq!(continue_profile, "build");
+        assert!(continue_metadata
+            .available_models()
+            .iter()
+            .any(|option| option.profile == "build"));
+        assert!(continue_metadata
+            .available_models()
+            .iter()
+            .any(|option| option.profile == "plan"));
     }
 
     #[test]

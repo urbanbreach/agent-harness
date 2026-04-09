@@ -1,24 +1,24 @@
   events · run_fixture
 
-     events   15 recorded · selected seq 15 · follow on
+     events   18 recorded · selected seq 18 · follow onrity
     Event log · j/k active · Event details
-       ┃ ▸ ← Patched crates/harness-tui/src/ui.rs · 4ms
-         1ates/harness-tui/src{ui.rs · +1 -1
-     UserMessageSubmitted(U   "schema_version": 1,
-     serMessageSubmittedEve:{ "event_id": "evt-0015",
-     nt { request_id_diff_tab,"seq": 15,ents_tab, render_help_tab,
-         2    render_events_ta"run_id": "run_fixture",
-    rProviderRequestStartedrla"mono_ms": 15,
-     (ProviderRequestStarteor_"actor": {
+       ┃ foreground · agent_worker · req_child · completed · 2 child tool
+         1alls                {
+     UserMessageSubmitted(Uol "schema_version": 1,
+     serMessageSubmittedEvek →"event_id": "evt-0018",
+     nt { request_id          "seq": 18,
+         2 cargo test -p harne"run_id": "run_fixture",
+     ProviderRequestStarted   "mono_ms": 18,
+     (ProviderRequestStarterne"actor": {
      dEvent { request_id      "kind": "system",
-         3 cargo test -p harne"agent_id": "pty-helper"ms
-     ToolCallRequested(Toolnes},tui
-     CallRequestedEvent {     "correlation_id": "req_tool_lifecycle",
-     tool_call_idnapshot misma"stream_key": "run:run_fixture",
+         3tderr: snapshot mism"agent_id": "pty-helper"
+     ToolCallRequested(Tool   },
+     CallRequestedEvent { now "correlation_id": "req_tool_lifecycle",
+     tool_call_idt · model-1 ·"stream_key": "run:run_fixture",
 
   ┃
   ┃
   ┃
-  ┃  Current runtime: default · model-1 · provider mock
+  ┃   Success   Current runtime: default · model-1 · provider mock
   ┃
   ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀

@@ -5,9 +5,11 @@ use crate::view_model;
 use crossterm::event::MouseEvent;
 use harness_core::event::{
     ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
-    ProviderRequestStartedEvent, RunFailedEvent, RunFinishedEvent, RunStartedEvent,
-    TaskCompletedEvent, TaskLineageMetadata, ToolCallFinishedEvent, ToolCallMetadata,
-    ToolCallRequestedEvent, ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
+    PermissionResolvedEvent, ProviderReasoningDeltaEvent, ProviderRequestStartedEvent,
+    ProviderStreamDeltaEvent, RunFailedEvent, RunFinishedEvent, RunStartedEvent,
+    TaskCompletedEvent, TaskLineageMetadata, ToolCallFinishedEvent, ToolCallLifecycleState,
+    ToolCallMetadata, ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus,
+    UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -143,6 +145,109 @@ fn child_link_requested(
             }),
         }),
     )
+}
+
+#[test]
+fn tool_call_entries_prefer_resolved_identity_and_lifecycle_contract() {
+    let mut app = AppState::new_live(None, false, None);
+
+    app.ingest_event(envelope(
+        1,
+        "req_contract",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_contract".to_string(),
+            text: "Check tool contract".to_string(),
+        }),
+    ));
+    app.ingest_event(provider_started(2, "req_contract", "default", "model-1"));
+    app.ingest_event(envelope(
+        3,
+        "req_contract",
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: "tc_contract".to_string(),
+            tool_id: "task".to_string(),
+            args_summary: r#"{"description":"check tool contract","subagent_type":"researcher"}"#
+                .to_string(),
+            args_digest: "digest-contract".to_string(),
+            metadata: Some(ToolCallMetadata {
+                canonical_tool_id: Some("agent.spawn".to_string()),
+                alias_source_tool_id: Some("task".to_string()),
+                ..ToolCallMetadata::default()
+            }),
+        }),
+    ));
+
+    let tool_call = &app.activities[0].tool_calls[0];
+    assert_eq!(tool_call.invoked_tool_id(), "task");
+    assert_eq!(tool_call.effective_tool_id(), "agent.spawn");
+    assert_eq!(tool_call.resolved_canonical_tool_id(), Some("agent.spawn"));
+    assert_eq!(tool_call.resolved_alias_source_tool_id(), Some("task"));
+    assert_eq!(tool_call.lifecycle_state(), ToolCallLifecycleState::Pending);
+    assert_eq!(tool_call.status, ToolCallDisplayStatus::Queued);
+
+    app.ingest_event(envelope(
+        4,
+        "req_contract",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_contract".to_string(),
+            kind: "question".to_string(),
+            tool_call_id: Some("tc_contract".to_string()),
+            summary: "Need confirmation".to_string(),
+            request_digest: "digest-perm-contract".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    let tool_call = &app.activities[0].tool_calls[0];
+    assert_eq!(tool_call.lifecycle_state(), ToolCallLifecycleState::Pending);
+    assert_eq!(tool_call.status, ToolCallDisplayStatus::PendingPermission);
+
+    app.ingest_event(envelope(
+        5,
+        "req_contract",
+        EventV1::PermissionResolved(PermissionResolvedEvent {
+            permission_id: "perm_contract".to_string(),
+            decision: harness_core::event::PermissionDecision::Allow,
+            reason: None,
+        }),
+    ));
+
+    let tool_call = &app.activities[0].tool_calls[0];
+    assert_eq!(tool_call.lifecycle_state(), ToolCallLifecycleState::Pending);
+    assert_eq!(tool_call.status, ToolCallDisplayStatus::Queued);
+
+    app.ingest_event(envelope(
+        6,
+        "req_contract",
+        EventV1::ToolCallStarted(ToolCallStartedEvent {
+            tool_call_id: "tc_contract".to_string(),
+        }),
+    ));
+
+    let tool_call = &app.activities[0].tool_calls[0];
+    assert_eq!(tool_call.lifecycle_state(), ToolCallLifecycleState::Running);
+    assert_eq!(tool_call.status, ToolCallDisplayStatus::Running);
+
+    app.ingest_event(envelope(
+        7,
+        "req_contract",
+        EventV1::ToolCallFinished(ToolCallFinishedEvent {
+            tool_call_id: "tc_contract".to_string(),
+            status: ToolCallStatus::Succeeded,
+            output_summary: Some("child completed".to_string()),
+            output_digest: Some("digest-contract-output".to_string()),
+            output_json: None,
+            metadata: None,
+        }),
+    ));
+
+    let tool_call = &app.activities[0].tool_calls[0];
+    assert_eq!(
+        tool_call.lifecycle_state(),
+        ToolCallLifecycleState::Completed
+    );
+    assert_eq!(tool_call.status, ToolCallDisplayStatus::Succeeded);
 }
 
 #[test]
@@ -384,7 +489,7 @@ fn live_switch_model_labels_next_turn_only() {
         "GPT-5.4 Mini · Deterministic",
     );
     let next_turn_option = runtime_context_model_option(
-        "writer",
+        "deep",
         "default",
         "gpt-5.4-mini",
         Some("creative"),
@@ -409,7 +514,7 @@ fn live_switch_model_labels_next_turn_only() {
         dock.summary_segment,
         Some(view_model::ControlDockSummarySegment {
             kind: view_model::ControlDockSummarySegmentKind::Orchestration,
-            text: "Next turns: writer · GPT-5.4 Mini · Creative".to_string(),
+            text: "Next turns: deep · GPT-5.4 Mini · Creative".to_string(),
             tone: view_model::ControlDockSummaryTone::Secondary,
         })
     );
@@ -681,7 +786,7 @@ fn historical_task_completed_marks_turn_done_and_unblocks_first_resumed_submit()
     assert!(
         intents
             .iter()
-            .any(|intent| matches!(intent, UiIntent::SubmitPrompt { text } if text == "next")),
+            .any(|intent| matches!(intent, UiIntent::SubmitPrompt { text, .. } if text == "next")),
         "historical streaming residue should not block first resumed submit"
     );
 }
@@ -772,8 +877,41 @@ fn startup_prompt_enter_emits_submit_intent_and_quits_launcher() {
         intents.lock().expect("lock intents").as_slice(),
         &[UiIntent::SubmitPrompt {
             text: "ship it".to_string(),
+            launch_metadata: LaunchMetadata::default(),
         }]
     );
+}
+
+#[test]
+fn provider_reasoning_delta_populates_thinking_stream_without_overwriting_answer_text() {
+    let mut app = AppState::new_live(None, false, None);
+
+    app.ingest_event(provider_started(
+        1,
+        "req_reasoning",
+        "default",
+        "gpt-4o-mini",
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_reasoning",
+        EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
+            request_id: "req_reasoning".to_string(),
+            delta: "Drafting a careful answer.".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "req_reasoning",
+        EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            request_id: "req_reasoning".to_string(),
+            delta: "Hello world".to_string(),
+        }),
+    ));
+
+    let activity = app.activities.back().expect("streaming activity");
+    assert_eq!(activity.thinking_text, "Drafting a careful answer.");
+    assert_eq!(activity.transcript_text, "Hello world");
 }
 
 #[test]
@@ -853,6 +991,7 @@ fn live_bootstrap_auto_submit_echoes_and_emits_first_prompt() {
         intents.lock().expect("lock intents").as_slice(),
         &[UiIntent::SubmitPrompt {
             text: "boot prompt".to_string(),
+            launch_metadata: LaunchMetadata::default(),
         }]
     );
 }
@@ -868,9 +1007,10 @@ fn tool_call_finished_plan_exit_handoff_emits_switch_model_then_submit_prompt() 
     };
 
     let mut app = AppState::new_live(None, false, Some(sink));
-    let expected_launch_metadata = LaunchMetadata::from_model_ref("build", "mock:model-2")
+    let expected_launch_metadata = LaunchMetadata::from_model_ref("build", "mock:model-1")
         .with_available_models(vec![
             ModelOption::from_model_ref("plan", "mock:model-1"),
+            ModelOption::from_model_ref("build", "mock:model-1"),
             ModelOption::from_model_ref("build", "mock:model-2"),
         ])
         .with_mode_label("Demo");
@@ -900,16 +1040,22 @@ fn tool_call_finished_plan_exit_handoff_emits_switch_model_then_submit_prompt() 
     ));
 
     assert_eq!(app.active_profile(), "build");
+    assert!(app
+        .launch_metadata
+        .available_models()
+        .iter()
+        .any(|option| option.profile == "plan"));
     assert_eq!(
         intents.lock().expect("lock intents").as_slice(),
         &[
             UiIntent::SwitchModel {
                 profile: "build".to_string(),
-                launch_metadata: expected_launch_metadata,
+                launch_metadata: expected_launch_metadata.clone(),
             },
             UiIntent::SubmitPrompt {
                 text: "The plan has been approved, you can now edit files. Execute the plan."
                     .to_string(),
+                launch_metadata: expected_launch_metadata.clone(),
             },
         ]
     );

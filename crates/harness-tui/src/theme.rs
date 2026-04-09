@@ -484,7 +484,7 @@ impl Theme {
             target: ShellGeometryTarget::Minimum,
             activity_drawer_width: 20,
             inspector_drawer_width: 20,
-            details_sidebar_width: 34,
+            details_sidebar_width: 42,
             transcript_min_width: 28,
             permission_modal_width: 58,
             centered_content_width: 76,
@@ -494,7 +494,7 @@ impl Theme {
             target: ShellGeometryTarget::Split,
             activity_drawer_width: 18,
             inspector_drawer_width: 24,
-            details_sidebar_width: 34,
+            details_sidebar_width: 42,
             transcript_min_width: 32,
             permission_modal_width: 62,
             centered_content_width: 86,
@@ -1074,7 +1074,7 @@ mod tests {
         assert_eq!(minimum_lifecycle.target, ShellGeometryTarget::Minimum);
         assert_eq!(minimum.centered_content_width, 76);
         assert_eq!(minimum.content_margin_x, 1);
-        assert_eq!(minimum.details_sidebar_width, 34);
+        assert_eq!(minimum.details_sidebar_width, 42);
         assert_eq!(minimum_lifecycle.startup_card.width, 70);
         assert_eq!(minimum_lifecycle.startup_card.height, 12);
         assert_eq!(minimum_lifecycle.post_run_card.width, 72);
@@ -1087,7 +1087,7 @@ mod tests {
         assert_eq!(minimum.permission_modal_width, 58);
         assert_eq!(split.centered_content_width, 86);
         assert_eq!(split.content_margin_x, 0);
-        assert_eq!(split.details_sidebar_width, 34);
+        assert_eq!(split.details_sidebar_width, 42);
         assert_eq!(split_lifecycle.startup_card.width, 92);
         assert_eq!(split_lifecycle.startup_card.height, 13);
         assert_eq!(split_lifecycle.post_run_card.width, 76);

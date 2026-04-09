@@ -8,6 +8,7 @@ use crate::theme::{ChromeMode, DividerIntensity};
 struct DocumentComposerRenderContext<'a> {
     dock: &'a crate::view_model::ControlDockViewModel,
     composer_lines: u16,
+    disclosure_visible: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -344,6 +345,7 @@ pub(super) fn render_unified_bottom_dock(
         DocumentComposerRenderContext {
             dock: &dock,
             composer_lines,
+            disclosure_visible: dock_layout.disclosure.is_some(),
         },
     );
 }
@@ -641,7 +643,10 @@ fn tool_status_summary(
             ToolCallDisplayStatus::Succeeded => crate::view_model::ControlDockSummaryTone::Success,
             ToolCallDisplayStatus::Failed => crate::view_model::ControlDockSummaryTone::Error,
         };
-        return Some((format!("tool {} {label}", tool_call.tool_id), tone));
+        return Some((
+            format!("tool {} {label}", tool_call.effective_tool_id()),
+            tone,
+        ));
     }
 
     let mut pending = 0usize;
@@ -1099,7 +1104,7 @@ fn render_document_composer_content(
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 "▀".repeat(usize::from(composer_cap_area.width)),
-                Style::default().fg(composer_surface).bg(surface),
+                Style::default().fg(surface).bg(surface),
             )))
             .style(Style::default().bg(surface)),
             composer_cap_area,
@@ -1149,6 +1154,7 @@ fn render_document_composer_content(
             Paragraph::new(composer_metadata_line(
                 app,
                 context.dock,
+                context.disclosure_visible,
                 usize::from(rows[3].width),
                 theme,
                 composer_surface,
@@ -1170,48 +1176,63 @@ enum ComposerMetadataTone {
 fn composer_metadata_line(
     app: &AppState,
     dock: &crate::view_model::ControlDockViewModel,
+    disclosure_visible: bool,
     max_width: usize,
     theme: &Theme,
     surface: Color,
 ) -> Line<'static> {
-    let footer_hints = inline_footer_hint_text(app, max_width, theme);
-    if !footer_hints.is_empty() {
-        return Line::from(Span::styled(
-            footer_hints,
-            Style::default()
-                .fg(composer_metadata_color(
+    if !disclosure_visible && (app.completed_session_shell_active() || dock.composer_disabled) {
+        let hint_spans = composer_disclosure_hint_candidates(app, dock, theme, surface)
+            .into_iter()
+            .find(|candidate| spans_width(candidate) <= max_width)
+            .unwrap_or_else(|| {
+                vec![disclosure_segment(
+                    truncate_plain_text(&dock.runtime_badge, max_width),
                     ComposerMetadataTone::Secondary,
                     theme,
-                ))
-                .bg(surface),
-        ));
+                    surface,
+                )]
+            });
+        return Line::from(hint_spans);
     }
+
+    let runtime_badge = status_badge(
+        dock.runtime_badge.clone(),
+        runtime_state_color(dock.runtime_kind, theme),
+        theme,
+    );
+    let badge_width = runtime_badge.content.chars().count();
+    let badge_gap = 2usize;
+    let content_width = max_width.saturating_sub(badge_width.saturating_add(badge_gap));
 
     let candidates = composer_metadata_candidates(app, dock);
     let segments = candidates
         .iter()
-        .find(|segments| composer_metadata_segments_width(segments) <= max_width)
+        .find(|segments| composer_metadata_segments_width(segments) <= content_width)
         .cloned()
         .unwrap_or_else(|| {
             vec![(
-                truncate_plain_text(&composer_metadata_text(app, dock, max_width), max_width),
+                truncate_plain_text(
+                    &composer_metadata_text(app, dock, content_width),
+                    content_width,
+                ),
                 ComposerMetadataTone::Secondary,
             )]
         });
 
-    Line::from(
-        segments
-            .into_iter()
-            .map(|(text, tone)| {
-                Span::styled(
-                    text,
-                    Style::default()
-                        .fg(composer_metadata_color(tone, theme))
-                        .bg(surface),
-                )
-            })
-            .collect::<Vec<_>>(),
-    )
+    let mut spans = vec![
+        runtime_badge,
+        Span::styled("  ", Style::default().bg(surface)),
+    ];
+    spans.extend(segments.into_iter().map(|(text, tone)| {
+        Span::styled(
+            text,
+            Style::default()
+                .fg(composer_metadata_color(tone, theme))
+                .bg(surface),
+        )
+    }));
+    Line::from(spans)
 }
 
 #[allow(dead_code)]
@@ -1620,77 +1641,6 @@ fn composer_metadata_text(
     )
 }
 
-fn inline_footer_hint_text(app: &AppState, max_width: usize, theme: &Theme) -> String {
-    if max_width == 0 {
-        return String::new();
-    }
-
-    if app.startup_shell_visible() {
-        return String::new();
-    }
-
-    if !app.completed_session_shell_active() && !app.runtime_state().composer_disabled {
-        return String::new();
-    }
-
-    let mut hints = app.footer_hints_view_model().hints;
-    if hints.is_empty() {
-        return String::new();
-    }
-
-    let under_input_shortcuts_visible = !app.startup_shell_visible() && app.events.is_empty();
-    if under_input_shortcuts_visible {
-        hints.retain(|hint| {
-            if app.completed_session_shell_active() || app.runtime_state().composer_disabled {
-                hint.action != Action::Palette
-            } else {
-                hint.action != Action::SubmitPrompt
-            }
-        });
-    }
-
-    let palette_only = hints
-        .iter()
-        .find(|hint| hint.action == Action::Palette)
-        .copied()
-        .map(|hint| vec![hint])
-        .unwrap_or_default();
-    let last_only = hints
-        .last()
-        .copied()
-        .map(|hint| vec![hint])
-        .unwrap_or_default();
-    let separator = " ".repeat(theme.live_shell.rhythm.status_separator as usize);
-    let candidates = [
-        hints.clone(),
-        compact_footer_hints(&hints, 4),
-        compact_footer_hints(&hints, 2),
-        palette_only,
-        last_only,
-    ]
-    .into_iter()
-    .filter(|variant_hints| !variant_hints.is_empty())
-    .map(|variant_hints| {
-        variant_hints
-            .iter()
-            .map(|hint| app.keymap.get_binding_label(hint.action, hint.label))
-            .collect::<Vec<_>>()
-            .join(&separator)
-    })
-    .collect::<Vec<_>>();
-
-    candidates
-        .iter()
-        .find(|candidate| candidate.chars().count() <= max_width)
-        .cloned()
-        .unwrap_or_else(|| {
-            truncate_plain_text(
-                candidates.first().map(String::as_str).unwrap_or(""),
-                max_width,
-            )
-        })
-}
-
 fn best_fit_text(options: &[String], max_width: usize) -> String {
     options
         .iter()
@@ -1924,16 +1874,12 @@ fn render_control_dock_disclosure(
     theme: &Theme,
     dock: &crate::view_model::ControlDockViewModel,
 ) {
-    if area.width == 0 || area.height == 0 || dock.composer_disclosure.trim().is_empty() {
+    if area.width == 0 || area.height == 0 {
         return;
     }
 
     let surface = control_dock_surface(theme, dock.variant);
     let base = Style::default().bg(surface);
-    let text = truncate_plain_text(
-        &dock.composer_disclosure,
-        usize::from(area.width).saturating_sub(2),
-    );
 
     frame.render_widget(Block::default().style(base), area);
     if dock.variant == crate::view_model::ControlDockVariant::Startup {
@@ -1967,14 +1913,346 @@ fn render_control_dock_disclosure(
         return;
     }
 
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled("  ", base),
-            Span::styled(text, Style::default().fg(theme.text.secondary).bg(surface)),
-        ]))
-        .style(base),
-        area,
-    );
+    let mut hint_candidates = composer_disclosure_hint_candidates(app, dock, theme, surface);
+    let summary_candidates = composer_disclosure_summary_candidates(app, dock, theme, surface);
+    let max_width = usize::from(area.width);
+
+    if !app.startup_shell_visible()
+        && !app.completed_session_shell_active()
+        && !dock.composer_disabled
+        && area.width < theme.live_shell.breakpoints.minimum.width
+    {
+        hint_candidates.retain(|candidate| {
+            let text = candidate
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+                .to_ascii_lowercase();
+            !text.contains("history") && !text.contains("quit")
+        });
+    }
+
+    if !app.startup_shell_visible()
+        && !app.completed_session_shell_active()
+        && !dock.composer_disabled
+        && area.width >= theme.live_shell.breakpoints.minimum.width
+    {
+        for hint_spans in &hint_candidates {
+            let hint_width = spans_width(hint_spans);
+            if hint_width > max_width {
+                continue;
+            }
+            let summary_gap = usize::from(!hint_spans.is_empty()) * 2;
+            let summary_width = max_width.saturating_sub(hint_width.saturating_add(summary_gap));
+            if let Some(summary_spans) = summary_candidates
+                .iter()
+                .find(|candidate| spans_width(candidate) <= summary_width)
+                .cloned()
+            {
+                let columns = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Min(0),
+                        Constraint::Length(u16::try_from(hint_width).unwrap_or(u16::MAX)),
+                    ])
+                    .split(area);
+                if !summary_spans.is_empty() && columns[0].width > 0 {
+                    frame.render_widget(
+                        Paragraph::new(Line::from(summary_spans)).style(base),
+                        columns[0],
+                    );
+                }
+                if !hint_spans.is_empty() && columns[1].width > 0 {
+                    frame.render_widget(
+                        Paragraph::new(Line::from(hint_spans.clone()))
+                            .style(base)
+                            .alignment(Alignment::Right),
+                        columns[1],
+                    );
+                }
+                return;
+            }
+        }
+    }
+
+    let best_fit = summary_candidates
+        .iter()
+        .enumerate()
+        .filter_map(|(summary_idx, summary_spans)| {
+            let summary_width = spans_width(summary_spans);
+            (summary_width <= max_width).then_some((summary_idx, summary_spans, summary_width))
+        })
+        .flat_map(|(summary_idx, summary_spans, summary_width)| {
+            hint_candidates
+                .iter()
+                .enumerate()
+                .filter_map(move |(hint_idx, hint_spans)| {
+                    let hint_width = spans_width(hint_spans);
+                    if hint_width > max_width {
+                        return None;
+                    }
+
+                    let summary_gap =
+                        usize::from(!summary_spans.is_empty() && !hint_spans.is_empty()) * 2;
+                    (summary_width
+                        .saturating_add(hint_width)
+                        .saturating_add(summary_gap)
+                        <= max_width)
+                        .then_some((
+                            summary_idx + (hint_idx * 2),
+                            summary_spans,
+                            hint_spans,
+                            hint_width,
+                        ))
+                })
+        })
+        .min_by_key(|(score, _, _, _)| *score);
+
+    if let Some((_, summary_spans, hint_spans, hint_width)) = best_fit {
+        let columns = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(u16::try_from(hint_width).unwrap_or(u16::MAX)),
+            ])
+            .split(area);
+        if !summary_spans.is_empty() && columns[0].width > 0 {
+            frame.render_widget(
+                Paragraph::new(Line::from(summary_spans.to_vec())).style(base),
+                columns[0],
+            );
+        }
+        if !hint_spans.is_empty() && columns[1].width > 0 {
+            frame.render_widget(
+                Paragraph::new(Line::from(hint_spans.to_vec()))
+                    .style(base)
+                    .alignment(Alignment::Right),
+                columns[1],
+            );
+        }
+        return;
+    }
+
+    if let Some(summary_spans) = summary_candidates.first().cloned() {
+        frame.render_widget(Paragraph::new(Line::from(summary_spans)).style(base), area);
+    }
+}
+
+fn spans_width(spans: &[Span<'_>]) -> usize {
+    spans.iter().map(|span| span.content.chars().count()).sum()
+}
+
+fn disclosure_segment(
+    text: impl Into<String>,
+    tone: ComposerMetadataTone,
+    theme: &Theme,
+    surface: Color,
+) -> Span<'static> {
+    Span::styled(
+        text.into(),
+        Style::default()
+            .fg(composer_metadata_color(tone, theme))
+            .bg(surface),
+    )
+}
+
+fn disclosure_separator(theme: &Theme, surface: Color) -> Span<'static> {
+    disclosure_segment("  ·  ", ComposerMetadataTone::Tertiary, theme, surface)
+}
+
+fn disclosure_keycap(binding: &str, theme: &Theme, surface: Color) -> Span<'static> {
+    Span::styled(
+        binding.to_string(),
+        Style::default()
+            .fg(theme.text.primary)
+            .bg(surface)
+            .add_modifier(Modifier::BOLD),
+    )
+}
+
+fn disclosure_shortcut(
+    binding: &str,
+    label: &str,
+    theme: &Theme,
+    surface: Color,
+) -> Vec<Span<'static>> {
+    vec![
+        disclosure_keycap(binding, theme, surface),
+        disclosure_segment(
+            format!(" {label}"),
+            ComposerMetadataTone::Secondary,
+            theme,
+            surface,
+        ),
+    ]
+}
+
+fn shortcut_binding(app: &AppState, action: Action) -> Option<String> {
+    app.keymap.get_binding_strs(action).into_iter().next()
+}
+
+fn compose_shortcut_row(
+    shortcuts: &[(&str, &str)],
+    theme: &Theme,
+    surface: Color,
+) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    for (index, (binding, label)) in shortcuts.iter().enumerate() {
+        if index > 0 {
+            spans.push(disclosure_separator(theme, surface));
+        }
+        spans.extend(disclosure_shortcut(binding, label, theme, surface));
+    }
+    spans
+}
+
+fn composer_disclosure_hint_candidates(
+    app: &AppState,
+    dock: &crate::view_model::ControlDockViewModel,
+    theme: &Theme,
+    surface: Color,
+) -> Vec<Vec<Span<'static>>> {
+    if app.completed_session_shell_active() {
+        let focus = shortcut_binding(app, Action::FocusNext).unwrap_or_else(|| "Tab".to_string());
+        let commands =
+            shortcut_binding(app, Action::Palette).unwrap_or_else(|| "Ctrl+p".to_string());
+        let quit = shortcut_binding(app, Action::Quit).unwrap_or_else(|| "q".to_string());
+        return vec![
+            compose_shortcut_row(
+                &[
+                    (focus.as_str(), "focus"),
+                    (commands.as_str(), "commands"),
+                    (quit.as_str(), "quit"),
+                ],
+                theme,
+                surface,
+            ),
+            compose_shortcut_row(
+                &[(commands.as_str(), "commands"), (quit.as_str(), "quit")],
+                theme,
+                surface,
+            ),
+            compose_shortcut_row(&[(quit.as_str(), "quit")], theme, surface),
+        ];
+    }
+
+    if dock.composer_disabled {
+        let commands =
+            shortcut_binding(app, Action::Palette).unwrap_or_else(|| "Ctrl+p".to_string());
+        let quit = shortcut_binding(app, Action::Quit).unwrap_or_else(|| "q".to_string());
+        return vec![
+            compose_shortcut_row(
+                &[(commands.as_str(), "commands"), (quit.as_str(), "quit")],
+                theme,
+                surface,
+            ),
+            compose_shortcut_row(&[(quit.as_str(), "quit")], theme, surface),
+        ];
+    }
+
+    let send = shortcut_binding(app, Action::SubmitPrompt).unwrap_or_else(|| "Enter".to_string());
+    let commands = shortcut_binding(app, Action::Palette).unwrap_or_else(|| "Ctrl+p".to_string());
+    let quit = shortcut_binding(app, Action::Quit).unwrap_or_else(|| "q".to_string());
+    let newline = composer_newline_binding_hint(app);
+    let history = composer_history_binding_hint(app);
+
+    let mut candidates = vec![compose_shortcut_row(
+        &[(send.as_str(), "send"), (commands.as_str(), "commands")],
+        theme,
+        surface,
+    )];
+    if newline != "-" && history != "-" {
+        candidates.insert(
+            0,
+            compose_shortcut_row(
+                &[
+                    (send.as_str(), "send"),
+                    (commands.as_str(), "commands"),
+                    (newline.as_str(), "newline"),
+                    (history.as_str(), "history"),
+                ],
+                theme,
+                surface,
+            ),
+        );
+        candidates.insert(
+            1,
+            compose_shortcut_row(
+                &[
+                    (send.as_str(), "send"),
+                    (commands.as_str(), "commands"),
+                    (history.as_str(), "history"),
+                ],
+                theme,
+                surface,
+            ),
+        );
+        candidates.insert(
+            2,
+            compose_shortcut_row(
+                &[(send.as_str(), "send"), (history.as_str(), "history")],
+                theme,
+                surface,
+            ),
+        );
+    }
+    candidates.push(compose_shortcut_row(
+        &[(quit.as_str(), "quit")],
+        theme,
+        surface,
+    ));
+    candidates
+}
+
+fn composer_disclosure_summary_candidates(
+    app: &AppState,
+    dock: &crate::view_model::ControlDockViewModel,
+    theme: &Theme,
+    surface: Color,
+) -> Vec<Vec<Span<'static>>> {
+    let runtime_state = app.runtime_state();
+    let runtime_tone = runtime_kind_metadata_tone(runtime_state.kind);
+    let mut candidates = Vec::new();
+    let short_runtime_summary = runtime_state
+        .summary
+        .split(" · ")
+        .next()
+        .unwrap_or(runtime_state.summary.as_str())
+        .to_string();
+
+    candidates.push(vec![disclosure_segment(
+        runtime_state.summary.clone(),
+        runtime_tone,
+        theme,
+        surface,
+    )]);
+
+    candidates.push(vec![disclosure_segment(
+        short_runtime_summary,
+        runtime_tone,
+        theme,
+        surface,
+    )]);
+
+    if let Some(segment) = dock.summary_segment.as_ref() {
+        let segment_tone = control_dock_summary_tone_to_metadata_tone(segment.tone);
+        candidates.push(vec![disclosure_segment(
+            format!("{}  ·  {}", runtime_state.summary, segment.text),
+            segment_tone,
+            theme,
+            surface,
+        )]);
+        candidates.push(vec![disclosure_segment(
+            segment.text.clone(),
+            segment_tone,
+            theme,
+            surface,
+        )]);
+    }
+
+    candidates.push(Vec::new());
+
+    candidates
 }
 
 fn startup_disclosure_candidates(
@@ -2153,4 +2431,70 @@ pub(crate) fn exact_test_live_control_dock_collapses_disclosure_before_status() 
         .join("\n");
     assert!(!rendered.contains("↑/↓ history"));
     assert!(!rendered.contains("q quit"));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_tool_status_summary_uses_effective_tool_identity() {
+    let mut app = AppState::new_live(None, false, None);
+    app.activities.push_front(ActivityEntry {
+        request_id: "req_tool_identity".to_string(),
+        model_id: "gpt-5.4".to_string(),
+        provider_id: "default".to_string(),
+        status: ActivityStatus::Streaming,
+        user_message: None,
+        user_timestamp: None,
+        request_data: None,
+        thinking_text: String::new(),
+        transcript_text: String::new(),
+        usage: None,
+        error_message: None,
+        permissions: Vec::new(),
+        tool_calls: vec![crate::app::ToolCallEntry {
+            tool_call_id: "tc_wrapper".to_string(),
+            tool_id: "mcp.fixture.tool.call".to_string(),
+            canonical_tool_id: None,
+            alias_source_tool_id: None,
+            resolved_tool_identity: Some(harness_core::event::ResolvedToolIdentity {
+                invoked_tool_id: Some("mcp.fixture.tool.call".to_string()),
+                effective_tool_id: Some("mcp.fixture.echo".to_string()),
+                canonical_tool_id: None,
+                alias_source_tool_id: None,
+            }),
+            args_summary: r#"{"tool":"echo"}"#.to_string(),
+            args_digest: "digest-wrapper".to_string(),
+            lifecycle_state: Some(harness_core::event::ToolCallLifecycleState::Running),
+            status: ToolCallDisplayStatus::Running,
+            output_summary: None,
+            output_digest: None,
+            output_json: None,
+            truncated_output: None,
+            edit: None,
+            lineage: None,
+            artifact_refs: Vec::new(),
+            timing_elapsed_ms: None,
+            permissions: Vec::new(),
+            first_seq: 1,
+            last_seq: 1,
+            first_mono_ms: 1,
+            last_mono_ms: 1,
+            first_timestamp: None,
+            last_timestamp: None,
+        }],
+        first_seq: 1,
+        last_seq: 1,
+        first_mono_ms: 1,
+        last_mono_ms: 1,
+    });
+
+    let summary = control_dock_summary_segment(&app).expect("tool summary segment");
+    assert_eq!(
+        summary.kind,
+        crate::view_model::ControlDockSummarySegmentKind::Tool
+    );
+    assert_eq!(
+        summary.tone,
+        crate::view_model::ControlDockSummaryTone::Accent
+    );
+    assert_eq!(summary.text, "tool mcp.fixture.echo running");
+    assert!(!summary.text.contains("mcp.fixture.tool.call"));
 }

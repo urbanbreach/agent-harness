@@ -330,9 +330,7 @@ fn session_responsive_mode(area: Rect, shell: LiveShellLayout) -> SessionRespons
 }
 
 fn operator_sidebar_has_rail_sections(app: &AppState) -> bool {
-    !app.operator_sidebar_pending_permission_lines().is_empty()
-        || !app.operator_sidebar_todo_lines().is_empty()
-        || !app.operator_sidebar_modified_files().is_empty()
+    app.operator_rail_has_sections()
 }
 
 fn hide_session_header(app: &AppState, contract: SessionGeometryContract) -> bool {
@@ -691,14 +689,17 @@ fn live_prompt_block_height(
 
 fn control_dock_disclosure_rows(app: &AppState, contract: SessionGeometryContract) -> u16 {
     if app.replay_mode
-        || app.completed_session_shell_active()
         || (!app.startup_shell_visible() && app.events.is_empty() && app.prompt_buffer.is_empty())
-        || app.runtime_state().composer_disabled
         || app.review_surface().is_some()
-        || matches!(contract.footer_mode, SessionFooterMode::Minimal)
     {
         return 0;
     }
+
+    if app.startup_shell_visible() && matches!(contract.footer_mode, SessionFooterMode::Minimal) {
+        return 0;
+    }
+
+    let _ = contract;
 
     1
 }

@@ -1,5 +1,6 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -33,6 +34,8 @@ pub struct ReplayArtifactSummary {
     pub tool_call_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_tool_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub canonical_tool_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -363,6 +366,7 @@ fn summarize_recovery_story(
 #[derive(Debug, Clone, Default)]
 struct ToolCallDiscovery {
     tool_id: Option<String>,
+    effective_tool_id: Option<String>,
     canonical_tool_id: Option<String>,
     alias_source_tool_id: Option<String>,
     child_session_id: Option<String>,
@@ -397,16 +401,23 @@ fn artifact_inventory(
                 bytes: Some(payload.bytes),
                 tool_call_id: payload.tool_call_id.clone(),
                 tool_id: discovery.and_then(|it| it.tool_id.clone()),
-                canonical_tool_id: payload
-                    .tool_metadata
-                    .as_ref()
-                    .and_then(|metadata| metadata.canonical_tool_id.clone())
-                    .or_else(|| discovery.and_then(|it| it.canonical_tool_id.clone())),
-                alias_source_tool_id: payload
-                    .tool_metadata
-                    .as_ref()
-                    .and_then(|metadata| metadata.alias_source_tool_id.clone())
-                    .or_else(|| discovery.and_then(|it| it.alias_source_tool_id.clone())),
+                effective_tool_id: discovery.and_then(|it| it.effective_tool_id.clone()),
+                canonical_tool_id: discovery
+                    .and_then(|it| it.canonical_tool_id.clone())
+                    .or_else(|| {
+                        payload
+                            .tool_metadata
+                            .as_ref()
+                            .and_then(|metadata| metadata.canonical_tool_id.clone())
+                    }),
+                alias_source_tool_id: discovery
+                    .and_then(|it| it.alias_source_tool_id.clone())
+                    .or_else(|| {
+                        payload
+                            .tool_metadata
+                            .as_ref()
+                            .and_then(|metadata| metadata.alias_source_tool_id.clone())
+                    }),
                 child_session_id: discovery.and_then(|it| it.child_session_id.clone()),
                 present_on_disk: run_dir.join(&payload.path).exists(),
             });
@@ -422,19 +433,28 @@ fn artifact_inventory(
         if entry.tool_id.is_none() {
             entry.tool_id = discovery.and_then(|it| it.tool_id.clone());
         }
+        if entry.effective_tool_id.is_none() {
+            entry.effective_tool_id = discovery.and_then(|it| it.effective_tool_id.clone());
+        }
         if entry.canonical_tool_id.is_none() {
-            entry.canonical_tool_id = payload
-                .tool_metadata
-                .as_ref()
-                .and_then(|metadata| metadata.canonical_tool_id.clone())
-                .or_else(|| discovery.and_then(|it| it.canonical_tool_id.clone()));
+            entry.canonical_tool_id = discovery
+                .and_then(|it| it.canonical_tool_id.clone())
+                .or_else(|| {
+                    payload
+                        .tool_metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.canonical_tool_id.clone())
+                });
         }
         if entry.alias_source_tool_id.is_none() {
-            entry.alias_source_tool_id = payload
-                .tool_metadata
-                .as_ref()
-                .and_then(|metadata| metadata.alias_source_tool_id.clone())
-                .or_else(|| discovery.and_then(|it| it.alias_source_tool_id.clone()));
+            entry.alias_source_tool_id = discovery
+                .and_then(|it| it.alias_source_tool_id.clone())
+                .or_else(|| {
+                    payload
+                        .tool_metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.alias_source_tool_id.clone())
+                });
         }
         if entry.child_session_id.is_none() {
             entry.child_session_id = discovery.and_then(|it| it.child_session_id.clone());
@@ -461,14 +481,13 @@ fn artifact_inventory(
                         bytes: None,
                         tool_call_id: Some(tool_call_id.clone()),
                         tool_id: discovery.and_then(|it| it.tool_id.clone()),
-                        canonical_tool_id: metadata
-                            .canonical_tool_id
-                            .clone()
-                            .or_else(|| discovery.and_then(|it| it.canonical_tool_id.clone())),
-                        alias_source_tool_id: metadata
-                            .alias_source_tool_id
-                            .clone()
-                            .or_else(|| discovery.and_then(|it| it.alias_source_tool_id.clone())),
+                        effective_tool_id: discovery.and_then(|it| it.effective_tool_id.clone()),
+                        canonical_tool_id: discovery
+                            .and_then(|it| it.canonical_tool_id.clone())
+                            .or_else(|| metadata.canonical_tool_id.clone()),
+                        alias_source_tool_id: discovery
+                            .and_then(|it| it.alias_source_tool_id.clone())
+                            .or_else(|| metadata.alias_source_tool_id.clone()),
                         child_session_id: discovery.and_then(|it| it.child_session_id.clone()),
                         present_on_disk: run_dir.join(&artifact_ref.path).exists(),
                     });
@@ -481,17 +500,18 @@ fn artifact_inventory(
                 if entry.tool_id.is_none() {
                     entry.tool_id = discovery.and_then(|it| it.tool_id.clone());
                 }
+                if entry.effective_tool_id.is_none() {
+                    entry.effective_tool_id = discovery.and_then(|it| it.effective_tool_id.clone());
+                }
                 if entry.canonical_tool_id.is_none() {
-                    entry.canonical_tool_id = metadata
-                        .canonical_tool_id
-                        .clone()
-                        .or_else(|| discovery.and_then(|it| it.canonical_tool_id.clone()));
+                    entry.canonical_tool_id = discovery
+                        .and_then(|it| it.canonical_tool_id.clone())
+                        .or_else(|| metadata.canonical_tool_id.clone());
                 }
                 if entry.alias_source_tool_id.is_none() {
-                    entry.alias_source_tool_id = metadata
-                        .alias_source_tool_id
-                        .clone()
-                        .or_else(|| discovery.and_then(|it| it.alias_source_tool_id.clone()));
+                    entry.alias_source_tool_id = discovery
+                        .and_then(|it| it.alias_source_tool_id.clone())
+                        .or_else(|| metadata.alias_source_tool_id.clone());
                 }
                 if entry.child_session_id.is_none() {
                     entry.child_session_id = discovery.and_then(|it| it.child_session_id.clone());
@@ -523,6 +543,7 @@ fn artifact_inventory(
                     bytes: Some(bytes),
                     tool_call_id: None,
                     tool_id: None,
+                    effective_tool_id: None,
                     canonical_tool_id: None,
                     alias_source_tool_id: None,
                     child_session_id: None,
@@ -551,10 +572,43 @@ fn tool_call_discovery_lookup(
                             tool_id: snapshot
                                 .tool_id
                                 .clone()
+                                .or_else(|| {
+                                    snapshot
+                                        .resolved_tool_identity
+                                        .as_ref()
+                                        .and_then(|identity| identity.invoked_tool_id.clone())
+                                })
+                                .or_else(|| {
+                                    snapshot
+                                        .resolved_tool_identity
+                                        .as_ref()
+                                        .and_then(|identity| identity.effective_tool_id.clone())
+                                })
                                 .or_else(|| metadata.and_then(|it| it.canonical_tool_id.clone())),
-                            canonical_tool_id: metadata.and_then(|it| it.canonical_tool_id.clone()),
-                            alias_source_tool_id: metadata
-                                .and_then(|it| it.alias_source_tool_id.clone()),
+                            effective_tool_id: snapshot
+                                .resolved_tool_identity
+                                .as_ref()
+                                .and_then(|identity| identity.effective_tool_id.clone())
+                                .or_else(|| {
+                                    snapshot
+                                        .resolved_tool_identity
+                                        .as_ref()
+                                        .and_then(|identity| identity.invoked_tool_id.clone())
+                                })
+                                .or_else(|| metadata.and_then(|it| it.canonical_tool_id.clone()))
+                                .or_else(|| snapshot.tool_id.clone()),
+                            canonical_tool_id: snapshot
+                                .resolved_tool_identity
+                                .as_ref()
+                                .and_then(|identity| identity.canonical_tool_id.clone())
+                                .or_else(|| metadata.and_then(|it| it.canonical_tool_id.clone())),
+                            alias_source_tool_id: snapshot
+                                .resolved_tool_identity
+                                .as_ref()
+                                .and_then(|identity| identity.alias_source_tool_id.clone())
+                                .or_else(|| {
+                                    metadata.and_then(|it| it.alias_source_tool_id.clone())
+                                }),
                             child_session_id: metadata
                                 .and_then(|it| it.lineage.as_ref())
                                 .and_then(|lineage| lineage.child_session_id.clone()),
@@ -700,16 +754,27 @@ fn parse_unix_ms_from_string_timestamp(value: &str) -> Option<u128> {
 }
 
 pub(crate) fn print_human_summary(summary: &ReplaySummary) {
-    println!("run_id: {}", summary.run_id);
+    println!("run_id: {}", sanitize_human_text(&summary.run_id));
     println!(
         "run_name: {}",
-        summary.run_name.as_deref().unwrap_or("<unknown>")
+        summary
+            .run_name
+            .as_deref()
+            .map(sanitize_human_text)
+            .unwrap_or_else(|| "<unknown>".to_string())
     );
-    println!("session_path: {}", summary.session_path.display());
+    println!(
+        "session_path: {}",
+        sanitize_human_text(&summary.session_path.display().to_string())
+    );
     println!("status: {:?}", summary.status);
     println!(
         "workspace_root: {}",
-        summary.workspace_root.as_deref().unwrap_or("<unknown>")
+        summary
+            .workspace_root
+            .as_deref()
+            .map(sanitize_human_text)
+            .unwrap_or_else(|| "<unknown>".to_string())
     );
     println!("mode: {:?}", summary.mode_source);
     println!(
@@ -720,29 +785,33 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
             summary
                 .resume_disabled_reason
                 .as_deref()
-                .map(|reason| format!("blocked · {reason}"))
+                .map(|reason| format!("blocked · {}", sanitize_human_text(reason)))
                 .unwrap_or_else(|| "blocked".to_string())
         }
     );
     println!(
         "parent_session: {}",
-        summary.parent_session_id.as_deref().unwrap_or("-")
+        summary
+            .parent_session_id
+            .as_deref()
+            .map(sanitize_human_text)
+            .unwrap_or_else(|| "-".to_string())
     );
     println!("child_sessions: {}", summary.child_session_count);
     println!("artifacts: {}", summary.artifact_count);
     println!("total_events: {}", summary.total_events);
     if let Some(last_error) = &summary.last_error {
-        println!("last_error: {last_error}");
+        println!("last_error: {}", sanitize_human_text(last_error));
     }
     println!("next_steps:");
     println!(
         "  replay_tui: harness tui --replay {}",
-        summary.session_path.display()
+        sanitize_human_text(&summary.session_path.display().to_string())
     );
     if summary.is_resumable {
         println!(
             "  continue_tui: harness tui --continue {}",
-            summary.session_path.display()
+            sanitize_human_text(&summary.session_path.display().to_string())
         );
     } else {
         println!(
@@ -750,7 +819,8 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
             summary
                 .resume_disabled_reason
                 .as_deref()
-                .unwrap_or("resume unavailable without reason")
+                .map(sanitize_human_text)
+                .unwrap_or_else(|| "resume unavailable without reason".to_string())
         );
     }
     println!("counts:");
@@ -763,7 +833,7 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
         println!("  <none>");
     } else {
         for artifact in &summary.artifacts {
-            println!("  - {}", artifact.path);
+            println!("  - {}", sanitize_human_text(&artifact.path));
             let mut details = Vec::new();
             if let Some(digest) = artifact.digest.as_deref() {
                 details.push(format!("digest={}", short_digest(digest)));
@@ -771,21 +841,28 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
             if let Some(bytes) = artifact.bytes {
                 details.push(format!("bytes={bytes}"));
             }
-            if let Some(tool_call_id) = artifact.tool_call_id.as_deref() {
-                details.push(format!("tool_call={tool_call_id}"));
-            }
-            if let Some(tool_id) = artifact.tool_id.as_deref() {
-                details.push(format!("tool={tool_id}"));
-            }
-            if let Some(canonical_tool_id) = artifact.canonical_tool_id.as_deref() {
-                details.push(format!("canonical={canonical_tool_id}"));
-            }
-            if let Some(alias_source_tool_id) = artifact.alias_source_tool_id.as_deref() {
-                details.push(format!("alias={alias_source_tool_id}"));
-            }
-            if let Some(child_session_id) = artifact.child_session_id.as_deref() {
-                details.push(format!("child_session={child_session_id}"));
-            }
+            push_sanitized_detail(&mut details, "tool_call", artifact.tool_call_id.as_deref());
+            push_sanitized_detail(&mut details, "tool", artifact.tool_id.as_deref());
+            push_sanitized_detail(
+                &mut details,
+                "effective",
+                artifact.effective_tool_id.as_deref(),
+            );
+            push_sanitized_detail(
+                &mut details,
+                "canonical",
+                artifact.canonical_tool_id.as_deref(),
+            );
+            push_sanitized_detail(
+                &mut details,
+                "alias",
+                artifact.alias_source_tool_id.as_deref(),
+            );
+            push_sanitized_detail(
+                &mut details,
+                "child_session",
+                artifact.child_session_id.as_deref(),
+            );
             details.push(format!(
                 "present={}",
                 if artifact.present_on_disk {
@@ -805,48 +882,90 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
         println!("  <none>");
     } else {
         for child in &summary.child_sessions {
-            println!("  - {}", child.child_session_id);
+            println!("  - {}", sanitize_human_text(&child.child_session_id));
             let mut details = Vec::new();
-            if let Some(profile) = child.profile.as_deref() {
-                details.push(format!("profile={profile}"));
-            }
-            if let Some(provider_model) = child.provider_model.as_deref() {
-                details.push(format!("provider_model={provider_model}"));
-            }
-            if let Some(request_id) = child.latest_child_request_id.as_deref() {
-                details.push(format!("request={request_id}"));
-            }
-            if let Some(parent_tool_call_id) = child.parent_tool_call_id.as_deref() {
-                details.push(format!("parent_tool={parent_tool_call_id}"));
-            }
-            if let Some(parent_task_id) = child.parent_task_id.as_deref() {
-                details.push(format!("parent_task={parent_task_id}"));
-            }
-            if let Some(parent_request_id) = child.parent_request_id.as_deref() {
-                details.push(format!("parent_request={parent_request_id}"));
-            }
-            if let Some(parent_session_id) = child.parent_session_id.as_deref() {
-                details.push(format!("parent_session={parent_session_id}"));
-            }
+            push_sanitized_detail(&mut details, "profile", child.profile.as_deref());
+            push_sanitized_detail(
+                &mut details,
+                "provider_model",
+                child.provider_model.as_deref(),
+            );
+            push_sanitized_detail(
+                &mut details,
+                "request",
+                child.latest_child_request_id.as_deref(),
+            );
+            push_sanitized_detail(
+                &mut details,
+                "parent_tool",
+                child.parent_tool_call_id.as_deref(),
+            );
+            push_sanitized_detail(&mut details, "parent_task", child.parent_task_id.as_deref());
+            push_sanitized_detail(
+                &mut details,
+                "parent_request",
+                child.parent_request_id.as_deref(),
+            );
+            push_sanitized_detail(
+                &mut details,
+                "parent_session",
+                child.parent_session_id.as_deref(),
+            );
             if let Some(terminal_state) = child.terminal_state {
                 details.push(format!("state={terminal_state:?}"));
             }
             if let Some(elapsed_ms) = child.elapsed_ms {
                 details.push(format!("elapsed_ms={elapsed_ms}"));
             }
-            if let Some(reason) = child.terminal_reason.as_deref() {
-                details.push(format!("reason={reason}"));
-            }
+            push_sanitized_detail(&mut details, "reason", child.terminal_reason.as_deref());
             if !details.is_empty() {
                 println!("    {}", details.join(", "));
             }
             if !child.related_tool_call_ids.is_empty() {
-                println!("    tool_calls={}", child.related_tool_call_ids.join(", "));
+                println!(
+                    "    tool_calls={}",
+                    child
+                        .related_tool_call_ids
+                        .iter()
+                        .map(|value| sanitize_human_text(value))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
             }
             if !child.artifact_paths.is_empty() {
-                println!("    artifacts={}", child.artifact_paths.join(", "));
+                println!(
+                    "    artifacts={}",
+                    child
+                        .artifact_paths
+                        .iter()
+                        .map(|value| sanitize_human_text(value))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
             }
         }
+    }
+}
+
+fn sanitize_human_text(value: &str) -> String {
+    let mut sanitized = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '\n' => sanitized.push_str("\\n"),
+            '\r' => sanitized.push_str("\\r"),
+            '\t' => sanitized.push_str("\\t"),
+            c if c.is_control() => {
+                let _ = write!(&mut sanitized, "\\u{{{:x}}}", c as u32);
+            }
+            _ => sanitized.push(ch),
+        }
+    }
+    sanitized
+}
+
+fn push_sanitized_detail(details: &mut Vec<String>, key: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        details.push(format!("{key}={}", sanitize_human_text(value)));
     }
 }
 

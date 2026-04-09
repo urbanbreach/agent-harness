@@ -1,17 +1,17 @@
 
-  ┃                                                                                                                     Live · run run_fixture
-  ┃  Hello from PTY                                                                                                     Export bundle · run_fixture/
-  ┃                                                                                                                     Current runtime: default · model-1
-                                                                                                                        Provider mock
-     Hello world                                                                                                        0 active todos · 0 modified files
-     ● Assistant · model-1 · 4ms
-                                                                                                                        Context
-                                                                                                                        turn 1 · ready for next turn
+  ┃                                                                                                                     Hello from PTY
+  ┃  Hello from PTY
+  ┃                                                                                                                     Context
+                                                                                                                        0 tokens
+     Hello world
+     ● Assistant · model-1 · 4ms                                                                                        ▼ MCP
+                                                                                                                        • No MCP integrations configured
 
-                                                                                                                        Recovery · 1
-                                                                                                                        Bundle keeps events.jsonl and
-                                                                                                                        artifacts/
+                                                                                                                        ▼ LSP
+                                                                                                                        • No active LSP servers
 
+                                                                                                                        ▼ Modified Files
+                                                                                                                        • No modified files
 
 
 
@@ -25,6 +25,6 @@
 ┃
 ┃
 ┃
-┃  Current runtime: default · model-1 · provider mock
-╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀   harness-tui · v0.1.0
-  Enter send · Shift+Enter/Ctrl+j newline · ↑/↓ history
+┃   Success   Current runtime: default · model-1 · provider mock
+╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+turn 1 · ready for next turn

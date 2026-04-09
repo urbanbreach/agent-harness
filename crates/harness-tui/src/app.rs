@@ -13,8 +13,8 @@ use harness_core::config::{registered_profile_model_metadata, ResolvedProfileMod
 use harness_core::event::{
     ActorKind, EventArtifactRef, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
     PermissionDecision as EventPermissionDecision, ProviderRequestStartedEvent,
-    TaskCompletionMetadata, TaskLineageMetadata, ToolCallMetadata, ToolCallStatus,
-    UserMessageSubmittedEvent,
+    ResolvedToolIdentity, TaskCompletionMetadata, TaskLineageMetadata, ToolCallLifecycleState,
+    ToolCallMetadata, ToolCallStatus, UserMessageSubmittedEvent,
 };
 use harness_core::perm::PermissionDecision;
 use harness_core::proj::{
@@ -82,8 +82,10 @@ pub struct ToolCallEntry {
     pub tool_id: String,
     pub canonical_tool_id: Option<String>,
     pub alias_source_tool_id: Option<String>,
+    pub resolved_tool_identity: Option<ResolvedToolIdentity>,
     pub args_summary: String,
     pub args_digest: String,
+    pub lifecycle_state: Option<ToolCallLifecycleState>,
     pub status: ToolCallDisplayStatus,
     pub output_summary: Option<String>,
     pub output_digest: Option<String>,
@@ -180,8 +182,68 @@ impl ToolCallEntry {
         })
     }
 
+    pub fn invoked_tool_id(&self) -> &str {
+        self.resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| identity.invoked_tool_id.as_deref())
+            .unwrap_or(&self.tool_id)
+    }
+
+    pub fn effective_tool_id(&self) -> &str {
+        self.resolved_tool_identity
+            .as_ref()
+            .and_then(|identity| {
+                identity
+                    .effective_tool_id
+                    .as_deref()
+                    .or(identity.canonical_tool_id.as_deref())
+            })
+            .or(self.canonical_tool_id.as_deref())
+            .unwrap_or(&self.tool_id)
+    }
+
+    pub fn resolved_canonical_tool_id(&self) -> Option<&str> {
+        if let Some(identity) = self.resolved_tool_identity.as_ref() {
+            identity.canonical_tool_id.as_deref()
+        } else {
+            self.canonical_tool_id.as_deref()
+        }
+    }
+
+    pub fn resolved_alias_source_tool_id(&self) -> Option<&str> {
+        if let Some(identity) = self.resolved_tool_identity.as_ref() {
+            identity
+                .alias_source_tool_id
+                .as_deref()
+                .or(self.alias_source_tool_id.as_deref())
+        } else {
+            self.alias_source_tool_id.as_deref()
+        }
+    }
+
     pub fn canonical_tool_id(&self) -> &str {
-        self.canonical_tool_id.as_deref().unwrap_or(&self.tool_id)
+        self.resolved_canonical_tool_id()
+            .unwrap_or_else(|| self.effective_tool_id())
+    }
+
+    pub fn lifecycle_state(&self) -> ToolCallLifecycleState {
+        self.lifecycle_state.unwrap_or(match self.status {
+            ToolCallDisplayStatus::PendingPermission | ToolCallDisplayStatus::Queued => {
+                ToolCallLifecycleState::Pending
+            }
+            ToolCallDisplayStatus::Running => ToolCallLifecycleState::Running,
+            ToolCallDisplayStatus::Succeeded => ToolCallLifecycleState::Completed,
+            ToolCallDisplayStatus::Failed => ToolCallLifecycleState::Error,
+        })
+    }
+
+    pub fn is_compat_alias(&self) -> bool {
+        self.resolved_alias_source_tool_id()
+            .is_some_and(|alias_source| alias_source != self.effective_tool_id())
+    }
+
+    fn sync_display_status(&mut self) {
+        self.status = display_status_for_tool_call(self.lifecycle_state(), &self.permissions);
     }
 
     pub fn transcript_timestamp(&self) -> Option<&str> {
@@ -373,6 +435,47 @@ fn merge_tool_call_metadata(entry: &mut ToolCallEntry, metadata: Option<&ToolCal
     }
 }
 
+fn merge_resolved_tool_identity(entry: &mut ToolCallEntry, incoming: ResolvedToolIdentity) {
+    if incoming.is_empty() {
+        return;
+    }
+
+    let identity = entry
+        .resolved_tool_identity
+        .get_or_insert_with(ResolvedToolIdentity::default);
+    if identity.invoked_tool_id.is_none() {
+        identity.invoked_tool_id = incoming.invoked_tool_id;
+    }
+    if identity.effective_tool_id.is_none() {
+        identity.effective_tool_id = incoming.effective_tool_id;
+    }
+    if identity.canonical_tool_id.is_none() {
+        identity.canonical_tool_id = incoming.canonical_tool_id;
+    }
+    if identity.alias_source_tool_id.is_none() {
+        identity.alias_source_tool_id = incoming.alias_source_tool_id;
+    }
+}
+
+fn display_status_for_tool_call(
+    lifecycle_state: ToolCallLifecycleState,
+    permissions: &[PermissionEntry],
+) -> ToolCallDisplayStatus {
+    if permissions
+        .iter()
+        .any(|permission| permission.resolved_decision.is_none())
+    {
+        return ToolCallDisplayStatus::PendingPermission;
+    }
+
+    match lifecycle_state {
+        ToolCallLifecycleState::Pending => ToolCallDisplayStatus::Queued,
+        ToolCallLifecycleState::Running => ToolCallDisplayStatus::Running,
+        ToolCallLifecycleState::Completed => ToolCallDisplayStatus::Succeeded,
+        ToolCallLifecycleState::Error => ToolCallDisplayStatus::Failed,
+    }
+}
+
 fn execution_timing_elapsed_ms(timing: &ExecutionTimingMetadata) -> Option<u64> {
     timing
         .elapsed_ms
@@ -394,6 +497,7 @@ pub struct ActivityEntry {
     pub request_data: Option<ProviderRequestStartedEvent>,
     pub thinking_text: String,
     pub transcript_text: String,
+    pub usage: Option<ActivityUsage>,
     pub error_message: Option<String>,
     pub permissions: Vec<PermissionEntry>,
     pub tool_calls: Vec<ToolCallEntry>,
@@ -401,6 +505,13 @@ pub struct ActivityEntry {
     pub last_seq: u64,
     pub first_mono_ms: u64,
     pub last_mono_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActivityUsage {
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    pub total_tokens: u32,
 }
 
 struct NewStreamingActivityEntryArgs {
@@ -437,6 +548,7 @@ fn new_streaming_activity_entry(args: NewStreamingActivityEntryArgs) -> Activity
         request_data,
         thinking_text: String::new(),
         transcript_text,
+        usage: None,
         error_message: None,
         permissions: Vec::new(),
         tool_calls: Vec::new(),
@@ -770,10 +882,6 @@ pub enum Focus {
     Prompt,
 }
 
-#[expect(
-    clippy::large_enum_variant,
-    reason = "UiIntent keeps launch metadata inline so intent sinks do not need extra boxing/unboxing glue"
-)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiIntent {
     ResolvePermission {
@@ -796,6 +904,7 @@ pub enum UiIntent {
     },
     SubmitPrompt {
         text: String,
+        launch_metadata: LaunchMetadata,
     },
     QuitRequested,
 }
@@ -1324,22 +1433,48 @@ impl LaunchMetadata {
         let profile = self.profile();
         let provider = self.provider();
         let model = self.model();
+        let variant = self
+            .variant
+            .as_deref()
+            .filter(|value| !value.trim().is_empty());
 
-        self.available_models
-            .iter()
-            .find(|option| {
-                option.profile == profile
-                    && option.provider == provider
-                    && model.is_some_and(|model_id| option.model == model_id)
-            })
-            .or_else(|| {
-                let mut matches = self.available_models.iter().filter(|option| {
-                    option.provider == provider
-                        && model.is_some_and(|model_id| option.model == model_id)
-                });
-                let first = matches.next()?;
-                matches.next().is_none().then_some(first)
-            })
+        let mut exact_profile_matches = self.available_models.iter().filter(|option| {
+            option.profile == profile
+                && option.provider == provider
+                && model.is_some_and(|model_id| option.model == model_id)
+                && option.variant() == variant
+        });
+        if let Some(first) = exact_profile_matches.next() {
+            return Some(first);
+        }
+
+        let mut exact_variant_matches = self.available_models.iter().filter(|option| {
+            option.provider == provider
+                && model.is_some_and(|model_id| option.model == model_id)
+                && option.variant() == variant
+        });
+        if let Some(first) = exact_variant_matches.next() {
+            if exact_variant_matches.next().is_none() {
+                return Some(first);
+            }
+        }
+
+        let mut profile_matches = self.available_models.iter().filter(|option| {
+            option.profile == profile
+                && option.provider == provider
+                && model.is_some_and(|model_id| option.model == model_id)
+        });
+        if let Some(first) = profile_matches.next() {
+            if profile_matches.next().is_none() {
+                return Some(first);
+            }
+        }
+
+        let mut matches = self.available_models.iter().filter(|option| {
+            option.provider == provider && model.is_some_and(|model_id| option.model == model_id)
+        });
+        let first = matches.next()?;
+        matches.next().is_none().then_some(first)
     }
 }
 
@@ -1381,6 +1516,11 @@ impl ModelOption {
         };
         option.apply_registered_metadata();
         option
+    }
+
+    pub fn with_profile(mut self, profile: impl Into<String>) -> Self {
+        self.profile = profile.into();
+        self
     }
 
     fn matches(&self, input: &str) -> bool {
@@ -1539,6 +1679,7 @@ pub struct AppState {
     pub status_banner: Option<String>,
     pub details_scroll: u16,
     pub transcript_scroll: u16,
+    transcript_animation_phase: usize,
     pub auto_exit_on_finish: bool,
     pub prompt_buffer: String,
     pub prompt_cursor: usize,
@@ -1606,6 +1747,7 @@ impl Default for AppState {
             status_banner: None,
             details_scroll: 0,
             transcript_scroll: 0,
+            transcript_animation_phase: 0,
             auto_exit_on_finish: false,
             prompt_buffer: String::new(),
             prompt_cursor: 0,
@@ -1758,6 +1900,7 @@ impl SessionProjection {
         if let Some(tool_call_id) = data.tool_call_id.as_deref() {
             if let Some(tool_entry) = self.find_tool_call_mut(tool_call_id) {
                 tool_entry.permissions.push(permission_entry);
+                tool_entry.sync_display_status();
                 return;
             }
         }
@@ -1804,6 +1947,7 @@ impl SessionProjection {
                         permission.resolved_decision = Some(decision);
                         permission.resolution_reason = reason.map(str::to_owned);
                         permission.last_seq = seq;
+                        tool_call.sync_display_status();
                         tool_call.last_seq = seq;
                         activity.last_seq = seq;
                         return;
@@ -2152,6 +2296,34 @@ impl SessionProjection {
                 }
                 self.enforce_transcript_memory_cap();
             }
+            EventV1::ProviderReasoningDelta(data) => {
+                if let Some(index) = self.activity_index_or_local_echo(&data.request_id, event.seq)
+                {
+                    if let Some(entry) = self.activities.get_mut(index) {
+                        entry.status = ActivityStatus::Streaming;
+                        entry.thinking_text.push_str(&data.delta);
+                        mark_activity_event(entry, event.seq, event.mono_ms);
+                    }
+                } else {
+                    self.activities.push_back(new_streaming_activity_entry(
+                        NewStreamingActivityEntryArgs {
+                            request_id: data.request_id.clone(),
+                            model_id: String::new(),
+                            provider_id: String::new(),
+                            user_message: None,
+                            user_timestamp: None,
+                            request_data: None,
+                            transcript_text: String::new(),
+                            first_seq: event.seq,
+                            first_mono_ms: event.mono_ms,
+                        },
+                    ));
+                    if let Some(entry) = self.activities.back_mut() {
+                        entry.thinking_text = data.delta.clone();
+                    }
+                }
+                self.enforce_transcript_memory_cap();
+            }
             EventV1::ProviderRequestFinished(data) => {
                 if let Some(index) = self.activity_index_or_local_echo(&data.request_id, event.seq)
                 {
@@ -2163,6 +2335,11 @@ impl SessionProjection {
                             entry.transcript_text = std::mem::take(&mut entry.thinking_text);
                         }
                         entry.status = ActivityStatus::Done;
+                        entry.usage = data.usage.as_ref().map(|usage| ActivityUsage {
+                            prompt_tokens: usage.prompt_tokens,
+                            completion_tokens: usage.completion_tokens,
+                            total_tokens: usage.total_tokens,
+                        });
                         entry.last_seq = event.seq;
                         entry.last_mono_ms = event.mono_ms;
                     }
@@ -2256,9 +2433,11 @@ impl SessionProjection {
                         tool_id: data.tool_id.clone(),
                         canonical_tool_id: None,
                         alias_source_tool_id: None,
+                        resolved_tool_identity: None,
                         args_summary: data.args_summary.clone(),
                         args_digest: data.args_digest.clone(),
-                        status: ToolCallDisplayStatus::PendingPermission,
+                        lifecycle_state: Some(ToolCallLifecycleState::Pending),
+                        status: ToolCallDisplayStatus::Queued,
                         output_summary: None,
                         output_digest: None,
                         output_json: None,
@@ -2276,7 +2455,15 @@ impl SessionProjection {
                         last_timestamp: event.ts.clone(),
                     };
                     let mut tool_entry = tool_entry;
+                    merge_resolved_tool_identity(
+                        &mut tool_entry,
+                        ResolvedToolIdentity::from_tool_call(
+                            Some(data.tool_id.as_str()),
+                            data.metadata.as_ref(),
+                        ),
+                    );
                     merge_tool_call_metadata(&mut tool_entry, data.metadata.as_ref());
+                    tool_entry.sync_display_status();
                     entry.tool_calls.push(tool_entry);
                     entry.last_seq = event.seq;
                 }
@@ -2284,7 +2471,8 @@ impl SessionProjection {
             }
             EventV1::ToolCallStarted(data) => {
                 if let Some(tool_entry) = self.find_tool_call_mut(&data.tool_call_id) {
-                    tool_entry.status = ToolCallDisplayStatus::Running;
+                    tool_entry.lifecycle_state = Some(ToolCallLifecycleState::Running);
+                    tool_entry.sync_display_status();
                     tool_entry.last_seq = event.seq;
                     tool_entry.last_mono_ms = event.mono_ms;
                     tool_entry.last_timestamp = event.ts.clone();
@@ -2292,10 +2480,8 @@ impl SessionProjection {
             }
             EventV1::ToolCallFinished(data) => {
                 if let Some(tool_entry) = self.find_tool_call_mut(&data.tool_call_id) {
-                    tool_entry.status = match data.status {
-                        ToolCallStatus::Succeeded => ToolCallDisplayStatus::Succeeded,
-                        ToolCallStatus::Failed => ToolCallDisplayStatus::Failed,
-                    };
+                    tool_entry.lifecycle_state =
+                        Some(ToolCallLifecycleState::from_finish_status(data.status));
                     tool_entry.output_summary = data.output_summary.clone();
                     tool_entry.output_digest = data.output_digest.clone();
                     tool_entry.output_json = data.output_json.clone();
@@ -2312,7 +2498,15 @@ impl SessionProjection {
                             };
                         tool_entry.truncated_output = Some(display_text);
                     }
+                    merge_resolved_tool_identity(
+                        tool_entry,
+                        ResolvedToolIdentity::from_tool_call(
+                            Some(tool_entry.tool_id.as_str()),
+                            data.metadata.as_ref(),
+                        ),
+                    );
                     merge_tool_call_metadata(tool_entry, data.metadata.as_ref());
+                    tool_entry.sync_display_status();
                     tool_entry.last_seq = event.seq;
                     tool_entry.last_mono_ms = event.mono_ms;
                     tool_entry.last_timestamp = event.ts.clone();
@@ -2597,6 +2791,7 @@ impl AppState {
             return;
         }
 
+        let profile_id = self.launch_metadata.profile().to_string();
         let Some(model_id) = self.launch_metadata.model().map(str::to_owned) else {
             return;
         };
@@ -2605,13 +2800,24 @@ impl AppState {
             .launch_metadata
             .available_models()
             .iter()
-            .filter(|option| option.provider == provider_id && option.model == model_id)
+            .filter(|option| {
+                option.profile == profile_id
+                    && option.provider == provider_id
+                    && option.model == model_id
+            })
             .cloned()
             .collect::<Vec<_>>();
 
+        let explicit_variants_exist = variants.iter().any(|option| option.variant().is_some());
+        if explicit_variants_exist {
+            variants.retain(|option| option.variant().is_some());
+        }
+
         if let Some(current_option) = self.launch_metadata.to_model_option() {
-            if current_option.provider == provider_id
+            if current_option.profile == profile_id
+                && current_option.provider == provider_id
                 && current_option.model == model_id
+                && (!explicit_variants_exist || current_option.variant().is_some())
                 && !variants.iter().any(|option| option == &current_option)
             {
                 variants.push(current_option);
@@ -2620,16 +2826,21 @@ impl AppState {
 
         variants.sort();
         variants.dedup();
-        if variants.len() < 2 {
+        if variants.is_empty() {
             return;
         }
 
-        let current_index = variants
+        let selected_model = match variants
             .iter()
             .position(|option| self.is_current_model_option(option))
-            .unwrap_or(0);
-        let next_index = (current_index + 1) % variants.len();
-        let selected_model = variants[next_index].clone();
+        {
+            Some(_) if variants.len() < 2 => return,
+            Some(current_index) => {
+                let next_index = (current_index + 1) % variants.len();
+                variants[next_index].clone()
+            }
+            None => variants[0].clone(),
+        };
         self.apply_selected_model_option(selected_model, !self.replay_mode);
     }
 
@@ -3746,6 +3957,7 @@ impl AppState {
         }
 
         let handoff = envelope.plan_exit_handoff;
+        let mut available_models = self.launch_metadata.available_models().to_vec();
         let mut launch_metadata = self
             .launch_metadata
             .available_models()
@@ -3759,7 +3971,39 @@ impl AppState {
                     self.launch_metadata.model().map(str::to_owned),
                 )
             })
-            .with_available_models(self.launch_metadata.available_models().to_vec());
+            .with_available_models({
+                if !available_models
+                    .iter()
+                    .any(|option| option.profile == handoff.target_profile)
+                {
+                    available_models.push(ModelOption {
+                        profile: handoff.target_profile.clone(),
+                        provider: self.launch_metadata.provider().to_string(),
+                        model: self
+                            .launch_metadata
+                            .model()
+                            .map(str::to_string)
+                            .unwrap_or_default(),
+                        variant: self.launch_metadata.variant().map(str::to_string),
+                        display_label: self.launch_metadata.display_label().map(str::to_string),
+                        token_window_label: self
+                            .launch_metadata
+                            .token_window_label()
+                            .map(str::to_string),
+                        context_window_tokens: self.launch_metadata.context_window_tokens(),
+                        max_input_tokens: self.launch_metadata.max_input_tokens(),
+                        max_output_tokens: self.launch_metadata.max_output_tokens(),
+                        description: self.launch_metadata.description().map(str::to_string),
+                        reasoning_effort: self
+                            .launch_metadata
+                            .reasoning_effort()
+                            .map(str::to_string),
+                        text_verbosity: self.launch_metadata.text_verbosity().map(str::to_string),
+                        recommended_for: self.launch_metadata.recommended_for().map(str::to_string),
+                    });
+                }
+                available_models
+            });
         if let Some(mode_label) = self.launch_metadata.mode_label().map(str::to_owned) {
             launch_metadata = launch_metadata.with_mode_label(mode_label);
         }
@@ -3772,6 +4016,7 @@ impl AppState {
         });
         self.emit_ui_intent(UiIntent::SubmitPrompt {
             text: handoff.prompt,
+            launch_metadata: self.launch_metadata.clone(),
         });
     }
 
@@ -3790,6 +4035,14 @@ impl AppState {
 
     pub(crate) fn transcript_timestamps_visible(&self) -> bool {
         self.show_transcript_timestamps
+    }
+
+    pub(crate) fn transcript_animation_phase(&self) -> usize {
+        self.transcript_animation_phase
+    }
+
+    pub(crate) fn advance_transcript_animation_phase(&mut self) {
+        self.transcript_animation_phase = self.transcript_animation_phase.wrapping_add(1);
     }
 
     pub(crate) fn tool_details_visible(&self) -> bool {
@@ -3915,11 +4168,28 @@ impl AppState {
         !self.replay_mode && self.active_tab == Tab::Run && self.live_details_drawer_open
     }
 
-    fn operator_rail_has_sections(&self) -> bool {
-        !self.operator_sidebar_pending_permission_lines().is_empty()
-            || !self.operator_sidebar_recovery_lines().is_empty()
-            || !self.operator_sidebar_todo_lines().is_empty()
-            || !self.operator_sidebar_modified_files().is_empty()
+    pub(crate) fn operator_rail_has_sections(&self) -> bool {
+        if self.startup_shell_visible() {
+            return false;
+        }
+
+        let has_session_title = self.activities.iter().any(|activity| {
+            activity
+                .user_message
+                .as_ref()
+                .map(|message| message.text.trim())
+                .is_some_and(|text| !text.is_empty())
+        });
+        let has_usage = self
+            .activities
+            .iter()
+            .any(|activity| activity.usage.is_some());
+        let has_modified_files = !self.operator_sidebar_modified_files().is_empty();
+        let has_integrations = harness_core::config::registered_integrations_config().is_some();
+        let lsp = harness_core::config::registered_lsp_config();
+        let has_lsp = lsp.disabled || !lsp.servers.is_empty();
+
+        has_session_title || has_usage || has_modified_files || has_integrations || has_lsp
     }
 
     fn session_shell_operator_rail_interactive(&self) -> bool {
@@ -4230,6 +4500,7 @@ impl AppState {
             request_data: None,
             thinking_text: String::new(),
             transcript_text: String::new(),
+            usage: None,
             error_message: None,
             permissions: Vec::new(),
             tool_calls: Vec::new(),
@@ -4247,7 +4518,10 @@ impl AppState {
         self.prompt_history.push(text.clone());
         self.clear_prompt_input();
         self.echo_submitted_prompt(text.clone());
-        self.emit_ui_intent(UiIntent::SubmitPrompt { text });
+        self.emit_ui_intent(UiIntent::SubmitPrompt {
+            text,
+            launch_metadata: self.launch_metadata.clone(),
+        });
     }
 
     pub fn handle_mouse(&mut self, mouse: MouseEvent, hovered_wheel_target: Option<WheelTarget>) {
@@ -4734,6 +5008,7 @@ impl AppState {
             "switch_model" => {
                 self.open_model_switcher();
             }
+            "cycle_variant" => self.execute_action(Action::VariantCycle),
             "close_review_surface" => self.execute_action(Action::CloseReviewSurface),
             "open_event_log" => self.execute_action(Action::OpenEventLog),
             "toggle_follow" => self.execute_action(Action::ToggleFollow),
@@ -4880,7 +5155,11 @@ impl AppState {
 
     fn palette_command_available(&self, command_id: &str) -> bool {
         if command_id == "switch_model" {
-            return false;
+            return !self.replay_mode;
+        }
+
+        if command_id == "cycle_variant" {
+            return !self.replay_mode;
         }
 
         if self.startup_shell_visible() {
@@ -5839,7 +6118,10 @@ impl AppState {
 
         if self.startup_mode {
             let text = self.prompt_buffer.clone();
-            self.emit_ui_intent(UiIntent::SubmitPrompt { text });
+            self.emit_ui_intent(UiIntent::SubmitPrompt {
+                text,
+                launch_metadata: self.launch_metadata.clone(),
+            });
             self.should_quit = true;
             return;
         }
@@ -6164,10 +6446,20 @@ fn permission_display_summary(permission: &ActivePermissionView) -> String {
 }
 
 fn tool_call_has_expandable_output(tool_call: &ToolCallEntry) -> bool {
+    if tool_call.status == ToolCallDisplayStatus::Succeeded
+        && tool_call.effective_tool_id().starts_with("mcp.")
+        && tool_call
+            .output_summary
+            .as_deref()
+            .is_some_and(|output| !output.trim().is_empty())
+    {
+        return true;
+    }
+
     let output = tool_call.output_summary.as_deref().unwrap_or_default();
     let line_count = output.lines().count();
     !tool_call.artifact_refs.is_empty()
-        || match tool_call.canonical_tool_id() {
+        || match tool_call.effective_tool_id() {
             "shell.run" => line_count > 10,
             "edit.hashline_apply" => tool_call
                 .edit

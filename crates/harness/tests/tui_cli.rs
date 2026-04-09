@@ -72,7 +72,7 @@ fn multi_provider_interactive_config(
                 }
             }
         },
-        "profiles": {
+        "agents": {
             "deep": {
                 "description": "Deep profile",
                 "model_ref": "default:gpt-4o-mini",

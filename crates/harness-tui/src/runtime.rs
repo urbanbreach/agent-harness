@@ -16,6 +16,13 @@ use crate::app::{AppState, LaunchMetadata, SessionHistoryEntry, UiIntent};
 use crate::event::{self, poll};
 use crate::ui;
 
+#[derive(Clone, Copy, Debug, Default)]
+struct PreservedTerminalSession {
+    active: bool,
+    keyboard_enhancements_enabled: bool,
+    mouse_capture_enabled: bool,
+}
+
 fn recover_mutex_lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     match mutex.lock() {
         Ok(guard) => guard,
@@ -26,6 +33,11 @@ fn recover_mutex_lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 fn pending_replay_launch_metadata() -> &'static Mutex<Option<LaunchMetadata>> {
     static PENDING: OnceLock<Mutex<Option<LaunchMetadata>>> = OnceLock::new();
     PENDING.get_or_init(|| Mutex::new(None))
+}
+
+fn preserved_terminal_session() -> &'static Mutex<PreservedTerminalSession> {
+    static PRESERVED: OnceLock<Mutex<PreservedTerminalSession>> = OnceLock::new();
+    PRESERVED.get_or_init(|| Mutex::new(PreservedTerminalSession::default()))
 }
 
 pub fn set_pending_replay_launch_metadata(launch_metadata: Option<LaunchMetadata>) {
@@ -61,6 +73,7 @@ pub struct TuiOptions {
     pub exit_on_finish: bool,
     pub on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
     pub keybindings: Option<std::collections::BTreeMap<String, String>>,
+    pub preserve_terminal_on_exit: bool,
 }
 
 impl TuiOptions {
@@ -78,6 +91,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         exit_on_finish,
         on_ui_intent,
         keybindings: _,
+        preserve_terminal_on_exit,
     } = options;
 
     let (mut app, live_updates) = match mode {
@@ -116,47 +130,49 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         }
     };
 
-    crossterm::terminal::enable_raw_mode().context("failed to enable terminal raw mode")?;
+    let preserved_terminal = *recover_mutex_lock(preserved_terminal_session());
+    let reusing_terminal = preserved_terminal.active;
+    let mut keyboard_enhancements_enabled = preserved_terminal.keyboard_enhancements_enabled;
+    let mut mouse_capture_enabled = preserved_terminal.mouse_capture_enabled;
+
+    if !reusing_terminal {
+        crossterm::terminal::enable_raw_mode().context("failed to enable terminal raw mode")?;
+    }
     let mut stdout = std::io::stdout();
-    let mut entered_alternate_screen = false;
-    let mut keyboard_enhancements_enabled = false;
-    let mut mouse_capture_enabled = false;
+    if !reusing_terminal {
+        let setup_result = (|| -> Result<()> {
+            crossterm::execute!(stdout, crossterm::terminal::EnterAlternateScreen)
+                .context("failed to enter alternate screen before launching TUI")?;
 
-    let setup_result = (|| -> Result<()> {
-        crossterm::execute!(stdout, crossterm::terminal::EnterAlternateScreen)
-            .context("failed to enter alternate screen before launching TUI")?;
-        entered_alternate_screen = true;
-
-        if crossterm::execute!(
-            stdout,
-            PushKeyboardEnhancementFlags(
-                KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                    | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+            if crossterm::execute!(
+                stdout,
+                PushKeyboardEnhancementFlags(
+                    KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                        | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+                )
             )
-        )
-        .is_ok()
-        {
-            keyboard_enhancements_enabled = true;
-        }
+            .is_ok()
+            {
+                keyboard_enhancements_enabled = true;
+            }
 
-        crossterm::execute!(stdout, EnableMouseCapture)
-            .context("failed to enable mouse capture before launching TUI")?;
-        mouse_capture_enabled = true;
-        Ok(())
-    })();
+            crossterm::execute!(stdout, EnableMouseCapture)
+                .context("failed to enable mouse capture before launching TUI")?;
+            mouse_capture_enabled = true;
+            Ok(())
+        })();
 
-    if let Err(err) = setup_result {
-        if mouse_capture_enabled {
-            let _ = crossterm::execute!(stdout, DisableMouseCapture);
-        }
-        if keyboard_enhancements_enabled {
-            let _ = crossterm::execute!(stdout, PopKeyboardEnhancementFlags);
-        }
-        if entered_alternate_screen {
+        if let Err(err) = setup_result {
+            if mouse_capture_enabled {
+                let _ = crossterm::execute!(stdout, DisableMouseCapture);
+            }
+            if keyboard_enhancements_enabled {
+                let _ = crossterm::execute!(stdout, PopKeyboardEnhancementFlags);
+            }
             let _ = crossterm::execute!(stdout, crossterm::terminal::LeaveAlternateScreen);
+            let _ = crossterm::terminal::disable_raw_mode();
+            return Err(err);
         }
-        let _ = crossterm::terminal::disable_raw_mode();
-        return Err(err);
     }
 
     let backend = CrosstermBackend::new(stdout);
@@ -192,6 +208,8 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 break;
             }
 
+            app.advance_transcript_animation_phase();
+
             if let Some(event) = poll(Duration::from_millis(100))? {
                 match event {
                     event::TuiEvent::Key(key) => app.handle_key(key),
@@ -209,26 +227,73 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         Ok(())
     })();
 
+    if run_result.is_ok() && preserve_terminal_on_exit {
+        *recover_mutex_lock(preserved_terminal_session()) = PreservedTerminalSession {
+            active: true,
+            keyboard_enhancements_enabled,
+            mouse_capture_enabled,
+        };
+        return run_result;
+    }
+
+    *recover_mutex_lock(preserved_terminal_session()) = PreservedTerminalSession::default();
+    teardown_terminal_session(
+        terminal.backend_mut(),
+        keyboard_enhancements_enabled,
+        mouse_capture_enabled,
+    )?;
+
+    run_result
+}
+
+pub fn close_preserved_terminal_session() -> Result<()> {
+    let preserved = std::mem::take(&mut *recover_mutex_lock(preserved_terminal_session()));
+    if !preserved.active {
+        return Ok(());
+    }
+
+    // This handoff is intentionally process-global and stdout-backed: the startup launcher
+    // preserves the active terminal long enough for the next TUI invocation in the same process
+    // to reuse it, and the interactive workflow closes it after the handoff completes or fails.
+    let mut stdout = std::io::stdout();
+    teardown_terminal_session(
+        &mut stdout,
+        preserved.keyboard_enhancements_enabled,
+        preserved.mouse_capture_enabled,
+    )
+}
+
+fn teardown_terminal_session(
+    writer: &mut impl std::io::Write,
+    keyboard_enhancements_enabled: bool,
+    mouse_capture_enabled: bool,
+) -> Result<()> {
     crossterm::terminal::disable_raw_mode()
         .context("failed to disable terminal raw mode after TUI")?;
-    if keyboard_enhancements_enabled {
-        crossterm::execute!(
-            terminal.backend_mut(),
+
+    match (mouse_capture_enabled, keyboard_enhancements_enabled) {
+        (true, true) => crossterm::execute!(
+            writer,
             DisableMouseCapture,
             PopKeyboardEnhancementFlags,
             crossterm::terminal::LeaveAlternateScreen
         )
-        .context("failed to leave alternate screen after TUI")?;
-    } else {
-        crossterm::execute!(
-            terminal.backend_mut(),
+        .context("failed to leave alternate screen after TUI"),
+        (true, false) => crossterm::execute!(
+            writer,
             DisableMouseCapture,
             crossterm::terminal::LeaveAlternateScreen
         )
-        .context("failed to leave alternate screen after TUI")?;
+        .context("failed to leave alternate screen after TUI"),
+        (false, true) => crossterm::execute!(
+            writer,
+            PopKeyboardEnhancementFlags,
+            crossterm::terminal::LeaveAlternateScreen
+        )
+        .context("failed to leave alternate screen after TUI"),
+        (false, false) => crossterm::execute!(writer, crossterm::terminal::LeaveAlternateScreen)
+            .context("failed to leave alternate screen after TUI"),
     }
-
-    run_result
 }
 
 pub fn run_tui() -> Result<()> {
@@ -242,6 +307,7 @@ pub fn run_tui() -> Result<()> {
         exit_on_finish: false,
         on_ui_intent: None,
         keybindings: None,
+        preserve_terminal_on_exit: false,
     })
 }
 

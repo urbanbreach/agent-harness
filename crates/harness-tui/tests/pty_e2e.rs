@@ -509,8 +509,6 @@ fn pty_live_details_drawer_remains_reachable() {
             )
             .expect("wait for operator sidebar markers");
 
-            assert!(screen.contains("Live") || screen.contains("Live · run "));
-            assert!(screen.contains("run "));
             assert!(screen.contains("Context"));
         }
 
@@ -531,7 +529,7 @@ fn operator_sidebar_matches_opencode_information_architecture() {
     wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
-        "Live · run run_fixture",
+        "Inspect sidebar parity",
         STARTUP_TIMEOUT,
     )
     .expect("wait for sidebar parity startup render");
@@ -539,7 +537,7 @@ fn operator_sidebar_matches_opencode_information_architecture() {
     let screen = wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
-        "Modified Files · 3",
+        "src/ui_secondary.rs",
         MARKER_TIMEOUT,
     )
     .expect("wait for opencode sidebar parity markers");
@@ -547,33 +545,29 @@ fn operator_sidebar_matches_opencode_information_architecture() {
     assert_markers_in_order(
         &screen,
         &[
-            "Live · run run_fixture",
-            "Export bundle · run_fixture/",
-            "Provider openai",
+            "Inspect sidebar parity",
             "Context",
-            "▼ Modified Files · 3",
-            "Recovery · 1",
-            "▼ Todo · 3",
-            "Network · 1",
-            "Batch · 1",
-            "LSP · 1",
+            "▼ MCP",
+            "▼ LSP",
+            "▼ Modified Files",
         ],
     );
     assert!(screen.contains("Current runtime: default · gpt-5.4-mini"));
-    assert!(screen.contains("Provider openai"));
+    assert!(screen.contains("provider openai"));
     assert_screen_contains_all(
         &screen,
         &[
-            "Bundle keeps events.jsonl and",
-            "search.web · completed",
-            "tool.batch · running",
-            "goto_definition · src/ui_secondary.rs",
-            "task_review · tool:fs.read · w1/deep",
+            "No MCP integrations configured",
+            "● rust",
             "src/ui_secondary.rs",
             "src/layout.rs",
             "src/theme.rs",
         ],
     );
+    assert!(!screen.contains("Todo ·"));
+    assert!(!screen.contains("Recovery ·"));
+    assert!(!screen.contains("Network ·"));
+    assert!(!screen.contains("Batch ·"));
 
     terminate_child(helper.child);
 }
@@ -598,7 +592,7 @@ fn pty_live_orchestration_drawer_and_status() {
         MARKER_TIMEOUT,
     )
     .expect("wait for operator sidebar context");
-    assert_screen_contains_all(&queued_screen, &["Context", "Recovery · 1"]);
+    assert_screen_contains_all(&queued_screen, &["Context", "No modified files"]);
 
     thread::sleep(ORCHESTRATION_EVENT_DELAY + STABLE_WINDOW);
     drain_output(&mut helper.parser, &helper.output_rx);
@@ -612,9 +606,8 @@ fn pty_live_orchestration_drawer_and_status() {
         &completed_screen,
         &[
             "Context",
-            "Recovery · 1",
-            "Bundle keeps events.jsonl and",
-            "ready for next turn",
+            "No modified files",
+            "Current runtime: default · m1 · provider mock",
         ],
     );
     assert!(!completed_screen.contains("Todo ·"));
@@ -648,7 +641,7 @@ fn pty_live_orchestration_stale_late_result_flow() {
         MARKER_TIMEOUT,
     )
     .expect("wait for late result sidebar state");
-    assert_screen_contains_all(&late_result_screen, &["Context", "Recovery · 1"]);
+    assert_screen_contains_all(&late_result_screen, &["Context", "No modified files"]);
 
     terminate_child(helper.child);
 }
@@ -766,6 +759,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
                 exit_on_finish: false,
                 on_ui_intent,
                 keybindings: None,
+                preserve_terminal_on_exit: false,
             })
             .expect("run startup helper tui");
             return;
@@ -876,6 +870,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
                 exit_on_finish: false,
                 on_ui_intent,
                 keybindings: None,
+                preserve_terminal_on_exit: false,
             })
             .expect("run disconnected helper tui");
             return;
@@ -891,6 +886,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
                 exit_on_finish: false,
                 on_ui_intent: marker_path.map(replay_intent_handler),
                 keybindings: None,
+                preserve_terminal_on_exit: false,
             })
             .expect("run replay read-only helper tui");
             return;
@@ -907,6 +903,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
         exit_on_finish: false,
         on_ui_intent,
         keybindings: None,
+        preserve_terminal_on_exit: false,
     })
     .expect("run helper tui");
 }
@@ -945,7 +942,7 @@ fn replay_read_only_events() -> Vec<EventEnvelopeV1> {
 fn streamed_response_intent_handler(tx: Sender<LiveUpdate>) -> Arc<dyn Fn(UiIntent) + Send + Sync> {
     let submitted = Arc::new(Mutex::new(false));
     Arc::new(move |intent: UiIntent| {
-        let UiIntent::SubmitPrompt { text } = intent else {
+        let UiIntent::SubmitPrompt { text, .. } = intent else {
             return;
         };
 
@@ -1012,6 +1009,7 @@ fn streamed_response_events(text: &str) -> Vec<EventEnvelopeV1> {
                 request_id: request_id.to_string(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-output-pty-001".to_string()),
+                usage: None,
             }),
         ),
     ]
@@ -1044,10 +1042,14 @@ fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
             Some(request_id),
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
                 tool_call_id: "tc_read".to_string(),
-                tool_id: "fs.read".to_string(),
+                tool_id: "read".to_string(),
                 args_summary: r#"{"path":"src/ui.rs","start_line":1,"limit":24}"#.to_string(),
                 args_digest: "digest-tool-lifecycle-read-args".to_string(),
-                metadata: None,
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("fs.read".to_string()),
+                    alias_source_tool_id: Some("read".to_string()),
+                    ..harness_core::event::ToolCallMetadata::default()
+                }),
             }),
         ),
         envelope(
@@ -1066,7 +1068,11 @@ fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
                 output_summary: Some("24 lines read from src/ui.rs".to_string()),
                 output_digest: Some("digest-tool-lifecycle-read-output".to_string()),
                 output_json: None,
-                metadata: None,
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("fs.read".to_string()),
+                    alias_source_tool_id: Some("read".to_string()),
+                    ..harness_core::event::ToolCallMetadata::default()
+                }),
             }),
         ),
         envelope(
@@ -1124,6 +1130,69 @@ fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
             11,
             Some(request_id),
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_task".to_string(),
+                tool_id: "task".to_string(),
+                args_summary:
+                    r#"{"description":"audit tool lifecycle parity","subagent_type":"researcher"}"#
+                        .to_string(),
+                args_digest: "digest-tool-lifecycle-task-args".to_string(),
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("agent.spawn".to_string()),
+                    alias_source_tool_id: Some("task".to_string()),
+                    lineage: Some(harness_core::event::TaskLineageMetadata {
+                        parent_tool_call_id: Some("tc_task".to_string()),
+                        parent_request_id: Some(request_id.to_string()),
+                        child_session_id: Some("agent_worker".to_string()),
+                        child_request_id: Some("req_child".to_string()),
+                        ..harness_core::event::TaskLineageMetadata::default()
+                    }),
+                    ..harness_core::event::ToolCallMetadata::default()
+                }),
+            }),
+        ),
+        envelope(
+            12,
+            Some(request_id),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tc_task".to_string(),
+            }),
+        ),
+        envelope(
+            13,
+            Some(request_id),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_task".to_string(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("Found the whole-tool parity path.".to_string()),
+                output_digest: Some("digest-tool-lifecycle-task-output".to_string()),
+                output_json: Some(serde_json::json!({
+                    "description": "audit tool lifecycle parity",
+                    "profile": "researcher",
+                    "mode": "foreground",
+                    "status": "completed",
+                    "result_summary": "Found the whole-tool parity path.",
+                    "child_tool_call_count": 2,
+                    "child_session_id": "agent_worker",
+                    "child_request_id": "req_child"
+                })),
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("agent.spawn".to_string()),
+                    alias_source_tool_id: Some("task".to_string()),
+                    lineage: Some(harness_core::event::TaskLineageMetadata {
+                        parent_tool_call_id: Some("tc_task".to_string()),
+                        parent_request_id: Some(request_id.to_string()),
+                        child_session_id: Some("agent_worker".to_string()),
+                        child_request_id: Some("req_child".to_string()),
+                        ..harness_core::event::TaskLineageMetadata::default()
+                    }),
+                    ..harness_core::event::ToolCallMetadata::default()
+                }),
+            }),
+        ),
+        envelope(
+            14,
+            Some(request_id),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
                 tool_call_id: "tc_shell".to_string(),
                 tool_id: "shell.run".to_string(),
                 args_summary: r#"{"cmd":"cargo test -p harness-tui","cwd":"/workspace"}"#
@@ -1133,14 +1202,14 @@ fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
             }),
         ),
         envelope(
-            12,
+            15,
             Some(request_id),
             EventV1::ToolCallStarted(ToolCallStartedEvent {
                 tool_call_id: "tc_shell".to_string(),
             }),
         ),
         envelope(
-            13,
+            16,
             Some(request_id),
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
                 tool_call_id: "tc_shell".to_string(),
@@ -1152,7 +1221,7 @@ fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
             }),
         ),
         envelope(
-            14,
+            17,
             Some(request_id),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
                 request_id: request_id.to_string(),
@@ -1160,12 +1229,13 @@ fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
             }),
         ),
         envelope(
-            15,
+            18,
             Some(request_id),
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
                 request_id: request_id.to_string(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-tool-lifecycle-response".to_string()),
+                usage: None,
             }),
         ),
     ]
@@ -1437,6 +1507,7 @@ fn orchestration_base_events() -> Vec<EventEnvelopeV1> {
                 request_id: request_id.to_string(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-orch-output".to_string()),
+                usage: None,
             }),
         ),
     ]
@@ -1729,6 +1800,7 @@ fn capture_streamed_response_snapshot(geometry: PtyGeometry) -> String {
         MARKER_TIMEOUT,
     )
     .expect("wait for streamed response marker");
+    let screen = stabilize_screen(&mut helper.parser, &helper.output_rx, screen);
 
     write_visual_artifact("streamed_response", geometry, &helper.parser);
     terminate_child(helper.child);
@@ -1740,7 +1812,7 @@ fn capture_tool_lifecycle_snapshot(geometry: PtyGeometry) -> String {
     let screen = wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
-        "← Patched crates/harness-tui/src/ui.rs",
+        "Tool summaries are now easier to scan, and edits stay inline.",
         MARKER_TIMEOUT,
     )
     .expect("wait for tool lifecycle marker");

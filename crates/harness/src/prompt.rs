@@ -1,13 +1,17 @@
 use std::env;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clap::Args;
+use harness_core::agent::{default_model_settings_for_profile, AgentModelSettings};
 use harness_core::clock::{Clock, FakeClock, RealClock};
-use harness_core::config::{resolve_config_path, ShellAllowlist};
+use harness_core::config::{
+    resolve_config_path, resolve_configured_model_metadata, ShellAllowlist,
+};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1};
 use harness_core::perm::PermissionPolicy;
@@ -36,6 +40,15 @@ const DEFAULT_MOCK_PROFILE: &str = "worker";
 pub struct PromptCommand {
     #[arg(long)]
     pub text: String,
+
+    #[arg(long)]
+    pub model: Option<String>,
+
+    #[arg(long)]
+    pub variant: Option<String>,
+
+    #[arg(long, default_value_t = false)]
+    pub thinking: bool,
 
     #[arg(long, default_value_t = false, conflicts_with = "resume")]
     pub mock: bool,
@@ -269,22 +282,44 @@ async fn run_prompt(
         .profile
         .clone()
         .unwrap_or_else(|| settings.default_profile.clone());
+    let model_override = resolve_prompt_model_override(cmd, settings, &profile_name)?;
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), profile_name, None)
         .await
         .map_err(|err| err.to_string())?;
 
-    let request_id = coordinator
-        .request_agent_turn(user_actor(), agent_id, cmd.text.clone())
-        .await
-        .map_err(|err| err.to_string())?;
+    let request_id = match model_override {
+        Some(model_override) => {
+            coordinator
+                .request_agent_turn_with_model(
+                    user_actor(),
+                    agent_id,
+                    cmd.text.clone(),
+                    model_override.model_ref,
+                    Some(model_override.model_settings),
+                )
+                .await
+        }
+        None => {
+            coordinator
+                .request_agent_turn(user_actor(), agent_id, cmd.text.clone())
+                .await
+        }
+    }
+    .map_err(|err| err.to_string())?;
     let event_store = coordinator
         .event_store()
         .await
         .map_err(|err| err.to_string())?;
 
     let wait_timeout = prompt_wait_timeout();
-    let wait_result = wait_for_prompt_completion(event_store, &request_id, wait_timeout).await;
+    let wait_result = wait_for_prompt_completion_with_output(
+        event_store,
+        &request_id,
+        wait_timeout,
+        cmd.thinking,
+    )
+    .await;
     let stop_result = coordinator.stop_run().await;
 
     wait_result?;
@@ -325,6 +360,11 @@ async fn run_resumed_prompt(
     let historical_events = load_events_from_run_dir(&run_dir).map_err(|err| err.to_string())?;
     let resume_agent_id =
         select_resume_agent_id(&resume_plan, &historical_events, &recovery.run_id)?;
+    let resume_profile = resume_plan
+        .known_agents
+        .get(&resume_agent_id)
+        .cloned()
+        .unwrap_or_else(|| settings.default_profile.clone());
     let run_name = recovery
         .run_name
         .clone()
@@ -362,17 +402,39 @@ async fn run_resumed_prompt(
         logging::init_logging(config, &run.artifacts_dir)?;
     }
 
-    let request_id = coordinator
-        .request_agent_turn(user_actor(), resume_agent_id, cmd.text.clone())
-        .await
-        .map_err(|err| err.to_string())?;
+    let model_override = resolve_prompt_model_override(cmd, settings, &resume_profile)?;
+    let request_id = match model_override {
+        Some(model_override) => {
+            coordinator
+                .request_agent_turn_with_model(
+                    user_actor(),
+                    resume_agent_id,
+                    cmd.text.clone(),
+                    model_override.model_ref,
+                    Some(model_override.model_settings),
+                )
+                .await
+        }
+        None => {
+            coordinator
+                .request_agent_turn(user_actor(), resume_agent_id, cmd.text.clone())
+                .await
+        }
+    }
+    .map_err(|err| err.to_string())?;
     let event_store = coordinator
         .event_store()
         .await
         .map_err(|err| err.to_string())?;
 
     let wait_timeout = prompt_wait_timeout();
-    let wait_result = wait_for_prompt_completion(event_store, &request_id, wait_timeout).await;
+    let wait_result = wait_for_prompt_completion_with_output(
+        event_store,
+        &request_id,
+        wait_timeout,
+        cmd.thinking,
+    )
+    .await;
     let stop_result = coordinator.stop_run().await;
 
     wait_result?;
@@ -402,13 +464,24 @@ fn default_prompt_permission_policy() -> PermissionPolicy {
     )
 }
 
+#[cfg(test)]
 async fn wait_for_prompt_completion(
     event_store: Arc<dyn EventStore>,
     request_id: &str,
     timeout: Duration,
 ) -> Result<(), String> {
+    wait_for_prompt_completion_with_output(event_store, request_id, timeout, false).await
+}
+
+async fn wait_for_prompt_completion_with_output(
+    event_store: Arc<dyn EventStore>,
+    request_id: &str,
+    timeout: Duration,
+    show_thinking: bool,
+) -> Result<(), String> {
     let deadline = Instant::now() + timeout;
     let mut tracker = PromptCompletionTracker::new(request_id);
+    let mut printer = PromptStreamPrinter::new(show_thinking);
     let mut next_seq = 1;
     let mut stream = event_store
         .subscribe(next_seq)
@@ -426,10 +499,17 @@ async fn wait_for_prompt_completion(
         {
             Ok(Some(Ok(event))) => {
                 next_seq = event.seq.saturating_add(1);
+                printer.observe(&event, request_id);
                 match tracker.observe(&event) {
                     PromptCompletionStatus::Continue => {}
-                    PromptCompletionStatus::Completed => return Ok(()),
-                    PromptCompletionStatus::Failed(error) => return Err(error),
+                    PromptCompletionStatus::Completed => {
+                        printer.finish();
+                        return Ok(());
+                    }
+                    PromptCompletionStatus::Failed(error) => {
+                        printer.finish();
+                        return Err(error);
+                    }
                 }
             }
             Ok(Some(Err(EventStoreError::SubscriberLagged(_)))) => {
@@ -438,9 +518,11 @@ async fn wait_for_prompt_completion(
                 })?;
             }
             Ok(Some(Err(err))) => {
+                printer.finish();
                 return Err(format!("prompt event stream error: {err}"));
             }
             Ok(None) => {
+                printer.finish();
                 return Err(format!(
                     "prompt event stream closed before completion for {request_id}"
                 ));
@@ -449,14 +531,179 @@ async fn wait_for_prompt_completion(
         }
 
         if let Some(error) = tracker.provider_error_timeout() {
+            printer.finish();
             return Err(error);
         }
 
         if Instant::now() >= deadline {
+            printer.finish();
             return Err(format!(
                 "timed out waiting for ProviderRequestFinished or TaskCompleted for {request_id}"
             ));
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PromptModelOverride {
+    model_ref: Option<String>,
+    model_settings: AgentModelSettings,
+}
+
+fn resolve_prompt_model_override(
+    cmd: &PromptCommand,
+    settings: &PromptSettings,
+    profile_name: &str,
+) -> Result<Option<PromptModelOverride>, String> {
+    if cmd.model.is_none() && cmd.variant.is_none() && !cmd.thinking {
+        return Ok(None);
+    }
+
+    let mut model_settings = default_model_settings_for_profile(profile_name);
+    let mut model_ref_override = None;
+
+    if let Some(config) = settings.logging_config.as_ref() {
+        let (provider, model) = if let Some(model_ref) = cmd.model.as_deref() {
+            parse_cli_model_ref(model_ref)?
+        } else {
+            let profile = config.agents.get(profile_name).ok_or_else(|| {
+                format!("unknown agent `{profile_name}` while resolving prompt model override")
+            })?;
+            parse_cli_model_ref(&profile.model_ref)?
+        };
+
+        let resolved =
+            resolve_configured_model_metadata(config, &provider, &model, cmd.variant.as_deref())
+                .map_err(|err| err.to_string())?;
+
+        model_settings.variant = resolved.variant.clone();
+        model_settings.reasoning_effort = resolved.reasoning_effort.clone();
+        model_settings.text_verbosity = resolved.text_verbosity.clone();
+        model_settings.reasoning_summary =
+            if resolved.supports_reasoning_summaries && model_settings.reasoning_effort.is_some() {
+                Some("auto".to_string())
+            } else {
+                None
+            };
+
+        if cmd.thinking && model_settings.reasoning_summary.is_none() {
+            model_settings.reasoning_summary = Some("auto".to_string());
+        }
+
+        if cmd.model.is_some() || cmd.variant.is_some() || cmd.thinking {
+            model_ref_override = Some(format!("{}:{}", resolved.provider, resolved.model));
+        }
+    } else {
+        if let Some(model_ref) = cmd.model.as_deref() {
+            let (provider, model) = parse_cli_model_ref(model_ref)?;
+            model_ref_override = Some(format!("{provider}:{model}"));
+        }
+        if let Some(variant) = cmd.variant.as_ref() {
+            model_settings.variant = Some(variant.clone());
+        }
+        if cmd.thinking && model_settings.reasoning_summary.is_none() {
+            model_settings.reasoning_summary = Some("auto".to_string());
+        }
+    }
+
+    Ok(Some(PromptModelOverride {
+        model_ref: model_ref_override,
+        model_settings,
+    }))
+}
+
+fn parse_cli_model_ref(model_ref: &str) -> Result<(String, String), String> {
+    let normalized = model_ref.trim();
+    let Some((provider, model)) = normalized
+        .split_once(':')
+        .or_else(|| normalized.split_once('/'))
+    else {
+        return Err(format!(
+            "invalid model selector `{normalized}`; use `<provider>:<model>`"
+        ));
+    };
+
+    let provider = provider.trim();
+    let model = model.trim();
+    if provider.is_empty() || model.is_empty() {
+        return Err(format!(
+            "invalid model selector `{normalized}`; use `<provider>:<model>`"
+        ));
+    }
+
+    Ok((provider.to_string(), model.to_string()))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PromptStreamSection {
+    Thinking,
+    Assistant,
+}
+
+struct PromptStreamPrinter {
+    show_thinking: bool,
+    active_section: Option<PromptStreamSection>,
+    wrote_output: bool,
+}
+
+impl PromptStreamPrinter {
+    fn new(show_thinking: bool) -> Self {
+        Self {
+            show_thinking,
+            active_section: None,
+            wrote_output: false,
+        }
+    }
+
+    fn observe(&mut self, event: &EventEnvelopeV1, request_id: &str) {
+        match &event.payload {
+            EventV1::ProviderReasoningDelta(data)
+                if self.show_thinking && data.request_id == request_id =>
+            {
+                self.write_thinking(&data.delta);
+            }
+            EventV1::ProviderStreamDelta(data) if data.request_id == request_id => {
+                self.write_assistant(&data.delta);
+            }
+            _ => {}
+        }
+    }
+
+    fn finish(&mut self) {
+        if self.wrote_output {
+            println!();
+        }
+        self.active_section = None;
+        self.wrote_output = false;
+    }
+
+    fn write_thinking(&mut self, delta: &str) {
+        if delta.is_empty() {
+            return;
+        }
+        if self.active_section != Some(PromptStreamSection::Thinking) {
+            if self.wrote_output {
+                println!();
+            }
+            print!("Thinking: ");
+            self.active_section = Some(PromptStreamSection::Thinking);
+        }
+        self.wrote_output = true;
+        print!("{delta}");
+        let _ = std::io::stdout().flush();
+    }
+
+    fn write_assistant(&mut self, delta: &str) {
+        if delta.is_empty() {
+            return;
+        }
+        if self.active_section == Some(PromptStreamSection::Thinking) {
+            println!();
+        }
+        self.active_section = Some(PromptStreamSection::Assistant);
+        self.wrote_output = true;
+        print!("{delta}");
+        let _ = std::io::stdout().flush();
     }
 }
 
@@ -748,6 +995,7 @@ mod tests {
                 request_id: "req_000001".to_string(),
                 finish_reason: "error".to_string(),
                 output_digest: None,
+                usage: None,
             },
         ))];
 
@@ -764,6 +1012,7 @@ mod tests {
                     request_id: "req_000001".to_string(),
                     finish_reason: "done".to_string(),
                     output_digest: Some("abc123".to_string()),
+                    usage: None,
                 },
             )),
         ];
@@ -858,6 +1107,7 @@ mod tests {
                 request_id: "req_000007".to_string(),
                 finish_reason: "error".to_string(),
                 output_digest: None,
+                usage: None,
             },
         ))];
 

@@ -21,11 +21,14 @@ delegate_test!(fenced_code_highlighting_falls_back_to_plain_text_when_unknown =>
 delegate_test!(transcript_section_model_preserves_activity_order => ui::exact_test_transcript_section_model_preserves_activity_order);
 delegate_test!(transcript_section_model_keeps_nested_tool_and_error_blocks => ui::exact_test_transcript_section_model_keeps_nested_tool_and_error_blocks);
 delegate_test!(transcript_reasoning_precedes_answer_and_tool_rows => ui::exact_test_transcript_reasoning_precedes_answer_and_tool_rows);
+delegate_test!(transcript_tool_rows_follow_chronological_turn_order => ui::exact_test_transcript_tool_rows_follow_chronological_turn_order);
 delegate_test!(transcript_edit_tool_matches_opencode_inline_diff_shape => ui::exact_test_transcript_edit_tool_matches_opencode_inline_diff_shape);
 delegate_test!(transcript_proposed_edit_renders_opencode_header => ui::exact_test_transcript_proposed_edit_renders_opencode_header);
 delegate_test!(transcript_rejected_edit_surfaces_reason_inline => ui::exact_test_transcript_rejected_edit_surfaces_reason_inline);
 delegate_test!(transcript_follow_mode_uses_measured_surface_heights => ui::exact_test_transcript_follow_mode_uses_measured_surface_heights);
 delegate_test!(native_tool_transcript_rows_show_disclosure_timestamps_and_task_metadata => ui::exact_test_native_tool_transcript_rows_show_disclosure_timestamps_and_task_metadata);
+delegate_test!(mcp_tool_transcript_rows_use_effective_identity_without_generic_fallback => ui::exact_test_mcp_tool_transcript_rows_use_effective_identity_without_generic_fallback);
+delegate_test!(generic_tool_successful_output_prefers_inline_background_rows => ui::exact_test_generic_tool_successful_output_prefers_inline_background_rows);
 delegate_test!(transcript_task_rows_show_child_status_duration_and_counts => ui::exact_test_transcript_task_rows_show_child_status_duration_and_counts);
 delegate_test!(block_tool_cards_skip_empty_subtitle_rows => ui::exact_test_block_tool_cards_skip_empty_subtitle_rows);
 delegate_test!(inline_tool_rows_wrap_long_subtitles_cleanly => ui::exact_test_inline_tool_rows_wrap_long_subtitles_cleanly);
@@ -179,8 +182,10 @@ fn transcript_turn_sections_keep_nested_tool_details() {
         tool_id: "shell.run".to_string(),
         canonical_tool_id: None,
         alias_source_tool_id: None,
+        resolved_tool_identity: None,
         args_summary: r#"{"cmd":"false"}"#.to_string(),
         args_digest: "digest-1".to_string(),
+        lifecycle_state: None,
         status: app::ToolCallDisplayStatus::Failed,
         output_summary: Some("command failed".to_string()),
         output_digest: Some("digest-out".to_string()),
@@ -200,9 +205,10 @@ fn transcript_turn_sections_keep_nested_tool_details() {
     });
     app.activities = std::collections::VecDeque::from(vec![activity]);
     app.selected_activity_index = 0;
+    app.transcript_scroll = u16::MAX;
 
-    let rendered = render_live_lines(&app, 80, 20);
-    let buffer = render_live_cells(&app, 80, 20);
+    let rendered = render_live_lines(&app, 100, 24);
+    let buffer = render_live_cells(&app, 100, 24);
     let theme = Theme::default();
     let lines = rendered.lines().collect::<Vec<_>>();
     let reasoning_row = find_line_containing_all_from(&lines, 0, &["Thinking:", "tool planning"])
@@ -228,7 +234,7 @@ fn transcript_turn_sections_keep_nested_tool_details() {
     let assistant_body_rail = first_non_whitespace_column(lines[body_row]);
     let assistant_footer_column = first_alphanumeric_column(lines[assistant_footer]);
     let (reasoning_row_text, reasoning_row_fgs, _) =
-        row_at(&buffer, 80, reasoning_row).expect("reasoning palette row");
+        row_at(&buffer, 100, reasoning_row).expect("reasoning palette row");
     let reasoning_rail_column = reasoning_row_text.find('┃').expect("reasoning rail");
     let thinking_label_start = reasoning_row_text[..reasoning_row_text
         .find("Thinking:")
@@ -282,6 +288,7 @@ fn transcript_turn_sections_keep_nested_tool_details() {
 }
 
 delegate_test!(operator_rail_section_model_builds_pinned_summary => ui::exact_test_operator_rail_section_model_builds_pinned_summary);
+delegate_test!(operator_rail_sanitizes_control_chars_in_sidebar_strings => ui::exact_test_operator_rail_sanitizes_control_chars_in_sidebar_strings);
 delegate_test!(operator_rail_section_model_hides_empty_sources_but_preserves_order => ui::exact_test_operator_rail_section_model_hides_empty_sources_but_preserves_order);
 delegate_test!(operator_rail_section_model_counts_generic_mcp_activity => ui::exact_test_operator_rail_section_model_counts_generic_mcp_activity);
 delegate_test!(operator_rail_section_model_separates_mcp_from_native_tool_activity => ui::exact_test_operator_rail_section_model_separates_mcp_from_native_tool_activity);
@@ -292,6 +299,7 @@ delegate_test!(operator_rail_section_model_keeps_native_prefix_tools_out_of_mcp 
 fn operator_sidebar_pins_summary_and_hides_empty_sections() {
     ui::exact_test_operator_rail_low_activity_presentation_prefers_primary_stack();
     ui::exact_test_operator_rail_section_model_builds_pinned_summary();
+    ui::exact_test_operator_rail_sanitizes_control_chars_in_sidebar_strings();
     ui::exact_test_operator_rail_section_model_counts_generic_mcp_activity();
     ui::exact_test_operator_rail_section_model_hides_empty_sources_but_preserves_order();
     ui::exact_test_operator_rail_section_model_separates_mcp_from_native_tool_activity();
@@ -302,6 +310,11 @@ fn operator_sidebar_pins_summary_and_hides_empty_sections() {
 #[cfg(test)]
 #[test]
 fn operator_sidebar_compact_empty_mode_preserves_anchor_copy_with_fixed_width() {
+    harness_core::config::set_registered_integrations_config(
+        harness_core::config::IntegrationsConfig::default(),
+    );
+    harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
+
     let live_empty = operator_sidebar_empty_live_app();
     let replay_empty = app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new());
     let live_populated = operator_sidebar_todo_live_app();
@@ -341,21 +354,23 @@ fn operator_sidebar_compact_empty_mode_preserves_anchor_copy_with_fixed_width() 
             .expect("replay populated sidebar")
             .width
     );
-    assert!(live_empty_plan.wheel_hit_areas.overlay.is_none());
-    assert!(replay_empty_plan.wheel_hit_areas.overlay.is_none());
-
     for (label, app) in [("live", &live_empty), ("replay", &replay_empty)] {
         let sidebar = operator_sidebar_text(app);
+        let has_mcp_state = sidebar.contains("No MCP integrations configured")
+            || sidebar.contains("websearch Disconnected");
+        let has_lsp_state =
+            sidebar.contains("No active LSP servers") || sidebar.contains("LSP disabled");
 
         assert!(
-            sidebar.contains("Context") && sidebar.contains("0 active todos · 0 modified files"),
+            sidebar.contains("Context")
+                && sidebar.contains("0 tokens")
+                && sidebar.contains("▼ MCP")
+                && has_mcp_state
+                && sidebar.contains("▼ LSP")
+                && has_lsp_state
+                && sidebar.contains("▼ Modified Files")
+                && sidebar.contains("No modified files"),
             "{label} compact rail should preserve anchor copy"
-        );
-        assert!(
-            !sidebar.contains("Pending Permissions ·")
-                && !sidebar.contains("Todo ·")
-                && !sidebar.contains("Modified Files ·"),
-            "{label} compact rail should omit empty body sections"
         );
     }
 }
@@ -380,27 +395,27 @@ fn operator_sidebar_width_stays_fixed_when_todo_or_modified_files_exist() {
 
     assert_operator_sidebar_expanded(
         &operator_sidebar_todo_live_app(),
-        "Todo · 1",
+        "Explain the refactor",
         live_empty_width,
     );
     assert_operator_sidebar_expanded(
         &operator_sidebar_modified_files_live_app(),
-        "Modified Files · 1",
+        "src/ui_secondary.rs",
         live_empty_width,
     );
     assert_operator_sidebar_expanded(
         &operator_sidebar_child_navigation_replay_app(),
-        "▼ Recovery · 5",
+        "Explain the refactor",
         replay_empty_width,
     );
     assert_operator_sidebar_expanded(
         &operator_sidebar_todo_replay_app(),
-        "Todo · 1",
+        "Explain the refactor",
         replay_empty_width,
     );
     assert_operator_sidebar_expanded(
         &operator_sidebar_modified_files_replay_app(),
-        "Modified Files · 1",
+        "src/ui_secondary.rs",
         replay_empty_width,
     );
 }
@@ -408,10 +423,12 @@ fn operator_sidebar_width_stays_fixed_when_todo_or_modified_files_exist() {
 delegate_test!(persistent_operator_sidebar_uses_panel_gutter_instead_of_border_line => ui::exact_test_persistent_operator_sidebar_uses_panel_gutter);
 delegate_test!(control_dock_view_model_handles_live_runtime_variants => view_model::exact_test_control_dock_view_model_handles_live_runtime_variants);
 delegate_test!(control_dock_view_model_preserves_replay_read_only_variant => view_model::exact_test_control_dock_view_model_preserves_replay_read_only_variant);
+delegate_test!(tool_runtime_state_uses_effective_tool_identity => view_model::exact_test_tool_runtime_state_uses_effective_tool_identity);
 delegate_test!(startup_shell_keeps_no_default_tab_chrome_after_runtime_context_addition => ui::exact_test_startup_shell_keeps_no_default_tab_chrome_after_runtime_context_addition);
 delegate_test!(replay_prompt_pane_is_visibly_read_only => ui::exact_test_replay_prompt_pane_is_visibly_read_only);
 delegate_test!(live_control_dock_renders_shared_surface => ui::exact_test_live_control_dock_renders_shared_surface);
 delegate_test!(live_control_dock_collapses_disclosure_before_status => ui::exact_test_live_control_dock_collapses_disclosure_before_status);
+delegate_test!(tool_status_summary_uses_effective_tool_identity => ui::exact_test_tool_status_summary_uses_effective_tool_identity);
 delegate_test!(unified_bottom_dock_uses_single_layout_entrypoint => ui::exact_test_unified_bottom_dock_uses_single_layout_entrypoint);
 delegate_test!(wheel_target_hits_transcript_when_hovered => ui::exact_test_wheel_target_hits_transcript_when_hovered);
 delegate_test!(wheel_target_hits_inspector_inside_live_overlay => ui::exact_test_wheel_target_hits_inspector_inside_live_overlay);
@@ -824,8 +841,9 @@ fn replay_read_only_copy_matches_operator_shell_contract() {
 
     assert!(rendered.contains("Replay · read-only"));
     assert!(rendered.contains("Replay is read-only"));
-    assert!(rendered.contains("Replay · run run_fixture"));
     assert!(rendered.contains("Context"));
+    assert!(rendered.contains("▼ MCP"));
+    assert!(rendered.contains("▼ Modified Files"));
     assert!(rendered.contains("r reload"));
     assert!(rendered.contains("q quit"));
     assert!(!rendered.contains("Tab nav"));
@@ -1103,7 +1121,7 @@ fn dense_live_composer_keeps_blank_spacer_before_metadata() {
         &lines,
         composer_input_row + 1,
         composer_last_row + 1,
-        "Current runtime: default · - · provider local",
+        "Current runtime: default · -",
     )
     .unwrap_or_else(|| panic!("dense composer metadata row\n{rendered}"));
     let metadata_gap_row = composer_input_row + 1;
@@ -1119,6 +1137,29 @@ fn dense_live_composer_keeps_blank_spacer_before_metadata() {
             && !lines[metadata_gap_row].chars().any(char::is_alphanumeric),
         "dense live composer spacer row should stay visually blank\n{rendered}"
     );
+    assert!(lines[metadata_row].contains("Ready"));
+}
+
+#[cfg(test)]
+#[test]
+fn live_composer_control_strip_surfaces_runtime_and_commands() {
+    let mut ready = app::AppState::new_live(None, false, None);
+    let mut events = session_view_events();
+    events.pop();
+    for event in events {
+        ready.ingest_event(event);
+    }
+    let rendered = render_live_lines(&ready, 100, 24);
+    let lines = rendered.lines().collect::<Vec<_>>();
+    let metadata_row = find_line_containing(&lines, "Current runtime: default · gpt-5-codex")
+        .unwrap_or_else(|| panic!("live composer metadata row\n{rendered}"));
+    let disclosure_row = find_line_containing_from(&lines, metadata_row + 1, "Enter send")
+        .unwrap_or_else(|| panic!("live composer disclosure row\n{rendered}"));
+
+    assert!(lines[metadata_row].contains("Streaming"));
+    assert!(lines[disclosure_row].contains("tool finished"));
+    assert!(lines[disclosure_row].contains("Enter send"));
+    assert!(lines[disclosure_row].contains("Ctrl+p commands"));
 }
 
 #[cfg(test)]
@@ -1248,7 +1289,7 @@ fn live_shell_geometry_contract_is_rule_based() {
 
     assert_eq!(
         session_contract(95, 40).sidebar_mode,
-        layout::SessionSidebarMode::Overlay { width: 34 }
+        layout::SessionSidebarMode::Overlay { width: 42 }
     );
     assert_eq!(
         session_contract(120, 30).sidebar_mode,
@@ -1271,42 +1312,42 @@ fn live_shell_threshold_edges_are_stable() {
             40,
             layout::SessionHeaderMode::Hidden,
             layout::SessionFooterMode::Standard,
-            layout::SessionSidebarMode::Overlay { width: 34 },
+            layout::SessionSidebarMode::Overlay { width: 42 },
         ),
         (
             90,
             35,
             layout::SessionHeaderMode::Hidden,
             layout::SessionFooterMode::Standard,
-            layout::SessionSidebarMode::Overlay { width: 34 },
+            layout::SessionSidebarMode::Overlay { width: 42 },
         ),
         (
             90,
             36,
             layout::SessionHeaderMode::Hidden,
             layout::SessionFooterMode::Standard,
-            layout::SessionSidebarMode::Overlay { width: 34 },
+            layout::SessionSidebarMode::Overlay { width: 42 },
         ),
         (
             99,
             29,
             layout::SessionHeaderMode::Hidden,
             layout::SessionFooterMode::Standard,
-            layout::SessionSidebarMode::Overlay { width: 34 },
+            layout::SessionSidebarMode::Overlay { width: 42 },
         ),
         (
             99,
             30,
             layout::SessionHeaderMode::Hidden,
             layout::SessionFooterMode::Standard,
-            layout::SessionSidebarMode::Overlay { width: 34 },
+            layout::SessionSidebarMode::Overlay { width: 42 },
         ),
         (
             100,
             29,
             layout::SessionHeaderMode::Hidden,
             layout::SessionFooterMode::Standard,
-            layout::SessionSidebarMode::Overlay { width: 34 },
+            layout::SessionSidebarMode::Overlay { width: 42 },
         ),
         (
             100,
@@ -1540,7 +1581,7 @@ fn live_shell_redesign_guardrails_preserve_primary_contract() {
             24,
             layout::SessionHeaderMode::Hidden,
             layout::SessionFooterMode::Reduced,
-            layout::SessionSidebarMode::Overlay { width: 34 },
+            layout::SessionSidebarMode::Overlay { width: 42 },
         ),
         (
             "split 96x40 breakpoint support",
@@ -1548,7 +1589,7 @@ fn live_shell_redesign_guardrails_preserve_primary_contract() {
             40,
             layout::SessionHeaderMode::Hidden,
             layout::SessionFooterMode::Standard,
-            layout::SessionSidebarMode::Overlay { width: 34 },
+            layout::SessionSidebarMode::Overlay { width: 42 },
         ),
         (
             "primary 100x30 breakpoint support",
@@ -2056,7 +2097,7 @@ fn live_layout_breakpoints_choose_shell_variant() {
     assert_eq!(minimum.target, ShellGeometryTarget::Minimum);
     assert_eq!(minimum.activity_drawer_width, 20);
     assert_eq!(minimum.inspector_drawer_width, 20);
-    assert_eq!(minimum.details_sidebar_width, 34);
+    assert_eq!(minimum.details_sidebar_width, 42);
     assert_eq!(minimum.transcript_min_width, 28);
     assert_eq!(minimum.centered_content_width, 76);
 
@@ -2064,7 +2105,7 @@ fn live_layout_breakpoints_choose_shell_variant() {
     assert_eq!(split.target, ShellGeometryTarget::Split);
     assert_eq!(split.activity_drawer_width, 18);
     assert_eq!(split.inspector_drawer_width, 24);
-    assert_eq!(split.details_sidebar_width, 34);
+    assert_eq!(split.details_sidebar_width, 42);
     assert_eq!(split.transcript_min_width, 32);
     assert_eq!(split.centered_content_width, 86);
 
@@ -2144,7 +2185,7 @@ fn layout_breakpoints_match_opencode_parity_contract() {
     assert!(overlay_plan.operator_sidebar.is_none());
     assert_eq!(
         overlay_plan.details_overlay,
-        Some(ratatui::layout::Rect::new(44, 0, 34, 42))
+        Some(ratatui::layout::Rect::new(36, 0, 42, 42))
     );
 
     let mut compact = app::AppState::new_live(None, false, None);
@@ -2155,7 +2196,7 @@ fn layout_breakpoints_match_opencode_parity_contract() {
     assert!(compact_plan.operator_sidebar.is_none());
     assert_eq!(
         compact_plan.details_overlay,
-        Some(ratatui::layout::Rect::new(44, 0, 34, 18))
+        Some(ratatui::layout::Rect::new(36, 0, 42, 18))
     );
 
     let mut dense = app::AppState::new_live(None, false, None);
@@ -2614,14 +2655,7 @@ fn live_run_shell_places_under_input_controls_above_the_status_strip() {
         Some("↑/↓ history"),
         "Enter send",
     );
-    assert_live_shell_document_composer_contract(
-        &app,
-        80,
-        24,
-        None,
-        Some("↑/↓ history"),
-        "Enter send",
-    );
+    assert_live_shell_document_composer_contract(&app, 80, 24, None, None, "Enter send");
 
     let dense = render_live_lines(&app, 60, 18);
     assert!(!dense.contains("↑/↓ history"));
@@ -2695,7 +2729,7 @@ fn compact_geometry_uses_overlay_sidebar_and_minimal_footer() {
     let dense_render = render_live_lines(&dense, 60, 18);
     assert!(!dense_render.contains("run run_fixture"));
     assert!(!dense_render.contains("i details"));
-    assert!(!dense_render.contains("No MCPs connected"));
+    assert!(!dense_render.contains("No MCP integrations configured"));
 }
 
 #[cfg(test)]
@@ -3652,6 +3686,7 @@ pub(crate) fn session_view_events() -> Vec<harness_core::event::EventEnvelopeV1>
                     request_id: "req_001".to_string(),
                     finish_reason: "stop".to_string(),
                     output_digest: Some("digest-final".to_string()),
+                    usage: None,
                 },
             ),
         ),
@@ -4086,6 +4121,7 @@ pub(super) fn transcript_code_block_app(language: &str) -> app::AppState {
                 request_id: request_id.to_string(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-code-output".to_string()),
+                usage: None,
             },
         ),
     ));
@@ -4129,6 +4165,7 @@ pub(super) fn transcript_diff_block_app() -> app::AppState {
                 request_id: request_id.to_string(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-diff-block-output".to_string()),
+                usage: None,
             },
         ),
     ));
@@ -4238,6 +4275,7 @@ fn rich_transcript_fixture_app() -> app::AppState {
                 request_id: request_id.to_string(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-rich-shell-finished".to_string()),
+                usage: None,
             },
         ),
     ));
@@ -4304,6 +4342,7 @@ fn multi_turn_transcript_fixture_app() -> app::AppState {
                     request_id: request_id.to_string(),
                     finish_reason: "stop".to_string(),
                     output_digest: Some(format!("digest-finished-{request_id}")),
+                    usage: None,
                 },
             ),
         ));
@@ -4468,8 +4507,9 @@ fn module_live_shell_redesign_preserves_replay_overlay_and_permission_parity() {
 
     let theme = Theme::default();
 
-    let replay =
+    let mut replay =
         app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), session_view_events());
+    replay.transcript_scroll = u16::MAX;
     let replay_plan = FrameLayoutPlan::for_app(&replay, ratatui::layout::Rect::new(0, 0, 100, 30));
     let replay_render = render_live_lines(&replay, 100, 30);
     let replay_buffer = render_live_cells(&replay, 100, 30);
@@ -4759,6 +4799,7 @@ fn live_status_strip_distinguishes_terminal_states() {
                 request_id: "req_phase".to_string(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-out".to_string()),
+                usage: None,
             },
         ),
     ));
@@ -4892,6 +4933,7 @@ fn run_finished_keeps_transcript_and_ready_composer() {
                 request_id: "req_done".to_string(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-done-out".to_string()),
+                usage: None,
             },
         ),
     ));
@@ -5176,23 +5218,23 @@ fn transcript_shell_remains_scannable_without_bubble_cards() {
         &["Thinking:", "Drafting a document-like plan"],
     )
     .expect("reasoning row");
-    let body_row = find_line_containing_from(
-        &lines,
-        thinking_row + 1,
-        "Found the transcript renderer and the composer chrome.",
-    )
-    .expect("assistant body row");
     let tool_row = find_line_containing_all_from(
         &lines,
-        body_row + 1,
+        thinking_row + 1,
         &["Read src/ui.rs", "[offset=1, limit=24]"],
     )
     .expect("tool row");
+    let body_row = find_line_containing_from(
+        &lines,
+        tool_row + 1,
+        "Found the transcript renderer and the composer chrome.",
+    )
+    .expect("assistant body row");
 
     assert!(prompt_row < body_row);
     assert!(prompt_row < thinking_row);
-    assert!(thinking_row < body_row);
-    assert!(body_row < tool_row);
+    assert!(thinking_row < tool_row);
+    assert!(tool_row < body_row);
     assert!(
         first_alphanumeric_column(lines[thinking_row]) == first_alphanumeric_column(lines[body_row]),
         "reasoning should align with the assistant body instead of using a deeper nested rail\n{rendered}"
@@ -7529,7 +7571,7 @@ fn live_shell_orchestration_status_strip_snapshot() {
 
     insta::assert_snapshot!(
         status_row,
-        @"ready for first turn"
+        @"ready for first turn                    Enter send  ·  Ctrl+p commands  ·  Shift+Enter/Ctrl+j newline  ·  ↑/↓ history"
     );
 }
 
@@ -8158,10 +8200,12 @@ fn assert_operator_sidebar_expanded(
         "persistent operator rail width should stay fixed"
     );
     assert_eq!(plan.wheel_hit_areas.overlay, Some(sidebar));
+    assert!(sidebar_text.contains("Context"));
+    assert!(sidebar_text.contains("▼ MCP"));
+    assert!(sidebar_text.contains("▼ LSP"));
+    assert!(sidebar_text.contains("▼ Modified Files"));
     assert!(sidebar_text.contains(expected_marker));
-    assert!(!sidebar_text.contains("No operator activity now"));
     assert!(rendered.contains(expected_marker));
-    assert!(rendered.contains("harness-tui · v0.1.0"));
 }
 
 #[cfg(test)]
@@ -8200,13 +8244,19 @@ fn live_shell_details_drawer_orchestration_primary_snapshot() {
 
     let rendered = render_live_lines(&app, 100, 30);
     println!("{rendered}");
-    assert!(rendered.contains("Live · run run_fixture"));
+    assert!(rendered.contains("Explain the refactor"));
+    assert!(rendered.contains("Context"));
+    assert!(rendered.contains("▼ MCP"));
+    assert!(rendered.contains("▼ LSP"));
+    assert!(rendered.contains("▼ Modified Files"));
     assert!(rendered.contains("Current runtime: default · gpt-5-codex"));
-    assert!(rendered.contains("Provider openai"));
-    assert!(rendered.contains("4 active todos · 0 modified files"));
-    assert!(rendered.contains("Todo · 4"));
-    assert!(rendered.contains("task_stale · scan · w1/deep"));
-    assert!(rendered.contains("harness-tui · v0.1.0"));
+    assert!(rendered.contains("provider openai"));
+    assert!(
+        rendered.contains("No MCP integrations configured")
+            || rendered.contains("websearch Disconnected")
+    );
+    assert!(rendered.contains("No active LSP servers"));
+    assert!(rendered.contains("No modified files"));
 }
 
 #[cfg(test)]
@@ -8293,7 +8343,7 @@ fn layout_plan_minimum_geometry_stacks_live_details_drawer() {
     );
     assert_eq!(
         plan.details_overlay,
-        Some(ratatui::layout::Rect::new(44, 0, 34, 18))
+        Some(ratatui::layout::Rect::new(36, 0, 42, 18))
     );
     assert_eq!(plan.status, None);
     assert_eq!(
@@ -8317,8 +8367,9 @@ fn live_session_shell_removes_tab_chrome_and_debug_drawer() {
     assert!(plan.operator_sidebar.is_some());
     assert!(plan.details_overlay.is_none());
     assert!(!rendered.contains("Tabs"));
-    assert!(rendered.contains("Live · run run_fixture"));
-    assert!(rendered.contains("Todo · 1"));
+    assert!(rendered.contains("Explain the refactor"));
+    assert!(rendered.contains("▼ MCP"));
+    assert!(rendered.contains("▼ Modified Files"));
 }
 
 #[cfg(test)]
@@ -8364,8 +8415,9 @@ fn replay_shell_uses_read_only_operator_layout() {
     assert!(plan.details_overlay.is_none());
     assert!(!rendered.contains("Tabs"));
     assert!(rendered.contains("Replay · read-only"));
-    assert!(rendered.contains("Replay · run run_fixture"));
-    assert!(rendered.contains("Todo · 1"));
+    assert!(rendered.contains("Context"));
+    assert!(rendered.contains("▼ MCP"));
+    assert!(rendered.contains("▼ Modified Files"));
 }
 
 #[cfg(test)]
@@ -8681,6 +8733,7 @@ fn transcript_turn_group_test_activity(
         request_data: None,
         thinking_text: String::new(),
         transcript_text: transcript_text.to_string(),
+        usage: None,
         error_message: None,
         permissions: Vec::new(),
         tool_calls: Vec::new(),
@@ -9014,36 +9067,44 @@ fn details_drawer_toggles_without_leaving_live_surface() {
     assert_eq!(app.active_tab, app::Tab::Run);
     assert!(app.details_drawer_open());
     let open_debug = render_live_buffer(&app, 80, 24);
-    assert!(open_debug.contains("Todo · 1"));
+    assert!(open_debug.contains("▼ MCP"));
 
     app.handle_key(key(crossterm::event::KeyCode::Char('i')));
 
     assert_eq!(app.active_tab, app::Tab::Run);
     assert!(!app.details_drawer_open());
     let closed_debug = render_live_buffer(&app, 80, 24);
-    assert!(!closed_debug.contains("Todo · 1"));
+    assert!(!closed_debug.contains("▼ MCP"));
 }
 
 #[cfg(test)]
 #[test]
 fn operator_sidebar_matches_parity_information_architecture() {
+    harness_core::config::clear_registered_integrations_config();
+    harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
+
     let app = orchestration_details_drawer_app(2);
     let sidebar = operator_sidebar_text(&app);
 
     assert_markers_in_order(
         &sidebar,
         &[
-            "Live · run run_fixture",
-            "Current runtime: default · gpt-5-codex",
-            "4 active todos · 0 modified files",
-            "Todo · 4",
+            "Explain the refactor",
+            "Context",
+            "▼ MCP",
+            "▼ LSP",
+            "▼ Modified Files",
         ],
     );
-    assert!(sidebar.contains("Provider openai"));
-    assert!(sidebar.contains("task_stale · scan · w1/deep"));
-    assert!(sidebar.contains("tool_call_1 · tool:fs.read · system/n/a"));
-    assert!(sidebar.lines().any(|line| line == "Context"));
-    assert!(!sidebar.lines().any(|line| matches!(line, "MCP" | "LSP")));
+    assert!(sidebar.contains("0 tokens"));
+    assert!(
+        sidebar.contains("No MCP integrations configured")
+            || sidebar.contains("websearch Disconnected")
+    );
+    assert!(sidebar.contains("No active LSP servers"));
+    assert!(sidebar.contains("No modified files"));
+    assert!(!sidebar.contains("Todo ·"));
+    assert!(!sidebar.contains("Recovery ·"));
 }
 
 #[cfg(test)]
@@ -9053,7 +9114,7 @@ fn operator_sidebar_uses_secondary_quiet_chrome() {
     let rendered = render_live_lines(&app, 160, 48);
     let buffer = render_live_cells(&app, 160, 48);
     let theme = Theme::default();
-    let title = "Live · run run_fixture";
+    let title = "Explain the refactor";
     let (row, _fg, bg) = row_text_and_palette(&buffer, 160, title).expect("sidebar title row");
     let start = row.find(title).expect("sidebar title starts");
     let start = row[..start].chars().count();
@@ -9072,13 +9133,22 @@ fn operator_sidebar_uses_secondary_quiet_chrome() {
 #[cfg(test)]
 #[test]
 fn operator_sidebar_uses_explicit_empty_states() {
+    harness_core::config::set_registered_integrations_config(
+        harness_core::config::IntegrationsConfig::default(),
+    );
+    harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
+
     let app = app::AppState::new_live(None, false, None);
     let sidebar = operator_sidebar_text(&app);
-    let lines = sidebar.lines().collect::<Vec<_>>();
 
     assert!(sidebar.contains("Context"));
-    assert!(sidebar.contains("0 active todos · 0 modified files"));
-    assert!(!lines.iter().any(|line| matches!(*line, "MCP" | "LSP")));
+    assert!(sidebar.contains("0 tokens"));
+    assert!(sidebar.contains("▼ MCP"));
+    assert!(sidebar.contains("websearch Disconnected"));
+    assert!(sidebar.contains("▼ LSP"));
+    assert!(sidebar.contains("No active LSP servers"));
+    assert!(sidebar.contains("▼ Modified Files"));
+    assert!(sidebar.contains("No modified files"));
 }
 
 #[cfg(test)]
@@ -9086,18 +9156,14 @@ fn operator_sidebar_uses_explicit_empty_states() {
 fn operator_sidebar_recovery_section_surfaces_artifacts_and_navigation_hints() {
     let sidebar = operator_sidebar_text(&operator_sidebar_child_navigation_replay_app());
 
-    assert_markers_in_order(
-        &sidebar,
-        &[
-            "Context",
-            "▼ Recovery · 5",
-            "Replay is read-only — inspect recorded context and use replay navigation.",
-            "Parent session · parent_run",
-            "Child session · child_run",
-            "Bundle keeps events.jsonl and artifacts/",
-            "Artifact · artifacts/toolcalls/task/result.json",
-        ],
-    );
+    assert!(sidebar.contains("Context"));
+    assert!(sidebar.contains("▼ MCP"));
+    assert!(sidebar.contains("▼ LSP"));
+    assert!(sidebar.contains("▼ Modified Files"));
+    assert!(!sidebar.contains("Recovery"));
+    assert!(!sidebar.contains("Parent session · parent_run"));
+    assert!(!sidebar.contains("Child session · child_run"));
+    assert!(!sidebar.contains("Artifact · artifacts/toolcalls/task/result.json"));
 }
 
 #[cfg(test)]
@@ -9105,15 +9171,9 @@ fn operator_sidebar_recovery_section_surfaces_artifacts_and_navigation_hints() {
 fn operator_sidebar_modified_files_include_diff_artifact_paths() {
     let sidebar = operator_sidebar_text(&operator_sidebar_modified_files_live_app());
 
-    assert_markers_in_order(
-        &sidebar,
-        &[
-            "Modified Files · 1",
-            "src/ui_secondary.rs · diff artifacts/edit-1.diff",
-            "Recovery · 1",
-            "Artifact · artifacts/edit-1.diff",
-        ],
-    );
+    assert_markers_in_order(&sidebar, &["▼ Modified Files", "src/ui_secondary.rs"]);
+    assert!(!sidebar.contains("artifacts/edit-1.diff"));
+    assert!(!sidebar.contains("Recovery"));
 }
 
 #[cfg(test)]
@@ -9125,23 +9185,20 @@ fn operator_sidebar_preserves_section_order_and_copy() {
     assert_markers_in_order(
         &sidebar,
         &[
-            "Live · run run_fixture",
-            "Current runtime: default · gpt-5-codex",
-            "4 active todos · 0 modified files",
-            "Todo · 4",
+            "Explain the refactor",
+            "Context",
+            "▼ MCP",
+            "▼ LSP",
+            "▼ Modified Files",
         ],
     );
-    assert!(sidebar.contains("Provider openai"));
-    assert!(sidebar.contains("task_stale · scan · w1/deep"));
-    assert!(sidebar.contains("tool_call_1 · tool:fs.read · system/n/a"));
 
     let empty = operator_sidebar_text(&app::AppState::new_live(None, false, None));
     assert!(empty.contains("Context"));
-    assert!(empty.contains("ready for first turn"));
-    assert!(!empty.lines().any(|line| matches!(line, "MCP" | "LSP")));
-
-    let rendered = render_live_lines(&app, 160, 48);
-    assert!(rendered.contains("harness-tui · v0.1.0"));
+    assert!(empty.contains("0 tokens"));
+    assert!(empty.contains("▼ MCP"));
+    assert!(empty.contains("▼ LSP"));
+    assert!(empty.contains("▼ Modified Files"));
 }
 
 #[cfg(test)]
@@ -9157,8 +9214,9 @@ fn live_shell_no_longer_renders_debug_inspector_labels() {
     assert!(!rendered.contains("Provider:"));
     assert!(!rendered.contains("Model:"));
     assert!(!rendered.contains("Prompt summary"));
-    assert!(rendered.contains("Todo · 1"));
-    assert!(!rendered.contains("Modified Files"));
+    assert!(rendered.contains("▼ MCP"));
+    assert!(rendered.contains("▼ Modified Files"));
+    assert!(!rendered.contains("Todo · 1"));
 }
 
 #[cfg(test)]
