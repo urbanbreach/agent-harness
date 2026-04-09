@@ -1,12 +1,11 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-expression: "checkpoint_visual_snapshot(&screen,\n&[STARTUP_HOME_ASCII_WORDMARK_MARKER, STARTUP_HOME_SHORTCUT_MARKER,\nSTARTUP_HOME_DENSE_VALUE_PROP_MARKER,], &visual,)"
+expression: "checkpoint_visual_snapshot(&screen,\n&[STARTUP_HOME_ASCII_WORDMARK_MARKER, STARTUP_HOME_DENSE_VALUE_PROP_MARKER,],\n&visual,)"
 ---
 Harness: true
-Ctrl+p open: true
 open a fresh session in this directory: true
 focus_marker: Harness
-focus_render_state_blake3: e567674646059381ab6bb5e4a92a565d21084c571db2289a32aa050a23f6a789
+focus_render_state_blake3: d3c5881dba2c0e044ad8a6b60548adccd4930509b6f7432f72ee0f29cec95630
 focus_region_cells: row=13, col=8, height=5, width=24
 image: pty_startup_home_dense.png
 manifest_json: pty-manifests/startup_shell/manifest.json

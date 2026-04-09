@@ -11,11 +11,9 @@ pub(crate) const STARTUP_REPLAY_HISTORY_MARKER: &str = "Replay session";
 pub(crate) const STARTUP_CONTINUE_HISTORY_READY_MARKER: &str = "continue ready";
 pub(crate) const REPLAY_READY_MARKER: &str = "q quit";
 pub(crate) const REPLAY_DENSE_READY_MARKER: &str = "Replay · read-only";
-pub(crate) const CONTINUED_SESSION_TITLE_MARKER: &str = "Continued · run";
-pub(crate) const LIVE_OPERATOR_TODOS_MARKER: &str = "0 active todos";
 pub(crate) const LIVE_OPERATOR_EMPTY_MARKER: &str = "Context";
 pub(crate) const LIVE_SUCCESS_COMPOSER_MARKER: &str = "Worker · model-1";
 pub(crate) const LIVE_READY_NEXT_TURN_MARKER: &str = "ready for next turn";
 pub(crate) const OPERATOR_FILES_MARKER: &str = "Modified Files";
 pub(crate) const RUN_FINISHED_SHELL_MARKERS: &[&str] =
-    &["run finished", "session shell preserved", "Ctrl+p commands"];
+    &["Success", LIVE_READY_NEXT_TURN_MARKER, "Ctrl+p commands"];

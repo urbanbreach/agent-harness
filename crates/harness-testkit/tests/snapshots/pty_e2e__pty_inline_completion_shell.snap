@@ -2,12 +2,12 @@
 source: crates/harness-testkit/tests/pty_e2e.rs
 expression: "checkpoint_visual_snapshot(&inline_completion_checkpoint,\nRUN_FINISHED_SHELL_MARKERS, &inline_completion_visual)"
 ---
-run finished: true
-session shell preserved: true
+Success: true
+ready for next turn: true
 Ctrl+p commands: true
-focus_marker: run finished
-focus_render_state_blake3: cf982056266af457118ba7a41594b1b8336a75ec8dd65530fa228e85eaa3658e
-focus_region_cells: row=23, col=14, height=1, width=20
+focus_marker: ready for next turn
+focus_render_state_blake3: 5995b1ebea1c59bc250c999917c1b98a264a1dd8909ac68b46b17fb4e961e981
+focus_region_cells: row=23, col=11, height=1, width=20
 image: pty_inline_completion_shell.png
 manifest_json: pty-manifests/live_shell/manifest.json
 manifest_jsonl: pty-manifests/live_shell/manifest.jsonl

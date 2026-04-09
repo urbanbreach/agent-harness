@@ -25,10 +25,9 @@ mod visual_contracts;
 mod visual_renderer;
 
 use markers::{
-    CONTINUED_SESSION_TITLE_MARKER, LIVE_OPERATOR_EMPTY_MARKER, LIVE_OPERATOR_TODOS_MARKER,
-    LIVE_READY_NEXT_TURN_MARKER, LIVE_SUCCESS_COMPOSER_MARKER, OPERATOR_FILES_MARKER,
-    REPLAY_DENSE_READY_MARKER, REPLAY_READY_MARKER, RUN_FINISHED_SHELL_MARKERS,
-    STARTUP_COMMAND_PALETTE_MARKER, STARTUP_CONTINUE_HISTORY_MARKER,
+    LIVE_OPERATOR_EMPTY_MARKER, LIVE_READY_NEXT_TURN_MARKER, LIVE_SUCCESS_COMPOSER_MARKER,
+    OPERATOR_FILES_MARKER, REPLAY_DENSE_READY_MARKER, REPLAY_READY_MARKER,
+    RUN_FINISHED_SHELL_MARKERS, STARTUP_COMMAND_PALETTE_MARKER, STARTUP_CONTINUE_HISTORY_MARKER,
     STARTUP_CONTINUE_HISTORY_READY_MARKER, STARTUP_HOME_ASCII_WORDMARK_MARKER,
     STARTUP_HOME_DENSE_VALUE_PROP_MARKER, STARTUP_HOME_SHORTCUT_MARKER,
     STARTUP_HOME_VALUE_PROP_MARKER, STARTUP_HOME_WORDMARK_MARKER, STARTUP_LAUNCHER_READY_MARKER,
@@ -469,7 +468,7 @@ fn spawn_resumed_quiescent_session(
     wait_for_screen_contains(
         &mut harness.parser,
         &harness.output_rx,
-        "ready for next turn",
+        "Continued runtime:",
         STARTUP_TIMEOUT,
     )
     .expect("wait for continued live session shell");
@@ -559,7 +558,7 @@ fn pty_e2e_startup_home_dense() {
     let screen = wait_for_screen_contains(
         &mut harness.parser,
         &harness.output_rx,
-        STARTUP_HOME_SHORTCUT_MARKER,
+        STARTUP_HOME_DENSE_VALUE_PROP_MARKER,
         STARTUP_TIMEOUT,
     )
     .expect("wait for dense compose-first startup home shell");
@@ -571,14 +570,12 @@ fn pty_e2e_startup_home_dense() {
         FocusCapture::anchored_exact(STARTUP_HOME_ASCII_WORDMARK_MARKER, 24, 8),
         &[
             STARTUP_HOME_ASCII_WORDMARK_MARKER,
-            STARTUP_HOME_SHORTCUT_MARKER,
             STARTUP_HOME_DENSE_VALUE_PROP_MARKER,
         ],
     )
     .expect("capture startup home dense image");
 
     assert!(screen.contains(STARTUP_HOME_ASCII_WORDMARK_MARKER));
-    assert!(screen.contains(STARTUP_HOME_SHORTCUT_MARKER));
     assert!(screen.contains("Ask Harness anything…"));
     assert!(screen.contains("Launch: worker · model-1"));
     assert!(screen.contains("Provider mock · Demo"));
@@ -593,7 +590,6 @@ fn pty_e2e_startup_home_dense() {
             &screen,
             &[
                 STARTUP_HOME_ASCII_WORDMARK_MARKER,
-                STARTUP_HOME_SHORTCUT_MARKER,
                 STARTUP_HOME_DENSE_VALUE_PROP_MARKER,
             ],
             &visual,
@@ -642,11 +638,11 @@ fn pty_e2e_session_shell_primary() {
         "session_shell_primary_live",
         &live.parser,
         &visual_dir,
-        FocusCapture::anchored_exact(LIVE_OPERATOR_TODOS_MARKER, 20, 8),
+        FocusCapture::anchored_exact(OPERATOR_FILES_MARKER, 20, 8),
         &[
             "shell parity task",
             "Shell parity looks good.",
-            LIVE_OPERATOR_TODOS_MARKER,
+            OPERATOR_FILES_MARKER,
             LIVE_OPERATOR_EMPTY_MARKER,
             LIVE_SUCCESS_COMPOSER_MARKER,
             LIVE_READY_NEXT_TURN_MARKER,
@@ -657,7 +653,7 @@ fn pty_e2e_session_shell_primary() {
 
     assert!(live_screen.contains("shell parity task"));
     assert!(live_screen.contains("Shell parity looks good."));
-    assert!(live_screen.contains(LIVE_OPERATOR_TODOS_MARKER));
+    assert!(live_screen.contains(OPERATOR_FILES_MARKER));
     assert!(live_screen.contains(LIVE_OPERATOR_EMPTY_MARKER));
     assert!(live_screen.contains(LIVE_SUCCESS_COMPOSER_MARKER));
     assert!(live_screen.contains(LIVE_READY_NEXT_TURN_MARKER));
@@ -709,7 +705,7 @@ fn pty_e2e_session_shell_primary() {
         &[
             REPLAY_DENSE_READY_MARKER,
             "shell parity task",
-            LIVE_OPERATOR_TODOS_MARKER,
+            OPERATOR_FILES_MARKER,
             LIVE_OPERATOR_EMPTY_MARKER,
             "Replay is read-only.",
         ],
@@ -718,7 +714,7 @@ fn pty_e2e_session_shell_primary() {
 
     assert!(replay_screen.contains(REPLAY_DENSE_READY_MARKER));
     assert!(replay_screen.contains("shell parity task"));
-    assert!(replay_screen.contains(LIVE_OPERATOR_TODOS_MARKER));
+    assert!(replay_screen.contains(OPERATOR_FILES_MARKER));
     assert!(replay_screen.contains(LIVE_OPERATOR_EMPTY_MARKER));
     assert!(replay_screen.contains("Replay is read-only."));
     assert!(!replay_screen.contains("Tabs"));
@@ -730,7 +726,7 @@ fn pty_e2e_session_shell_primary() {
             &[
                 REPLAY_DENSE_READY_MARKER,
                 "shell parity task",
-                LIVE_OPERATOR_TODOS_MARKER,
+                OPERATOR_FILES_MARKER,
                 LIVE_OPERATOR_EMPTY_MARKER,
                 "Replay is read-only.",
             ],
@@ -840,6 +836,19 @@ fn native_tool_parity_pty_lane() {
         ],
     )
     .expect("capture native tool parity fetch-row image");
+    let mcp_visual = capture_manifest_backed_visual_checkpoint(
+        "transcript_shell",
+        "native_tool_parity_mcp_background",
+        &harness.parser,
+        &visual_dir,
+        FocusCapture::anchored_exact("MCP docs-rs", 44, 6),
+        &[
+            "MCP docs-rs · search_in_crate",
+            "14:37 · 650ms",
+            REPLAY_DENSE_READY_MARKER,
+        ],
+    )
+    .expect("capture native tool parity MCP background image");
 
     assert!(screen.contains("Bring native tool parity inline"));
     assert!(screen.contains("Thinking: Drafting the inline parity pass."));
@@ -858,6 +867,10 @@ fn native_tool_parity_pty_lane() {
         "Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact"
     ));
     assert!(screen.contains("Compat alias · webfetch → web.fetch"));
+    assert!(screen.contains("MCP docs-rs · search_in_crate"));
+    assert!(screen.contains("14:37 · 650ms"));
+    assert!(!screen.contains("struct Layout"));
+    assert!(!screen.contains("module layout"));
     assert!(screen.contains("exit code: 1"));
     assert!(screen.contains("stderr: snapshot mismatch"));
     assert!(screen.contains(REPLAY_DENSE_READY_MARKER));
@@ -866,6 +879,7 @@ fn native_tool_parity_pty_lane() {
     assert!(visual_dir.join(&thinking_visual.file_name).exists());
     assert!(visual_dir.join(&task_visual.file_name).exists());
     assert!(visual_dir.join(&fetch_visual.file_name).exists());
+    assert!(visual_dir.join(&mcp_visual.file_name).exists());
     insta::assert_snapshot!(
         "native_tool_parity_thinking",
         checkpoint_visual_snapshot(
@@ -905,6 +919,18 @@ fn native_tool_parity_pty_lane() {
                 "stderr: snapshot mismatch",
             ],
             &fetch_visual,
+        )
+    );
+    insta::assert_snapshot!(
+        "native_tool_parity_mcp_background",
+        checkpoint_visual_snapshot(
+            &screen,
+            &[
+                "MCP docs-rs · search_in_crate",
+                "14:37 · 650ms",
+                REPLAY_DENSE_READY_MARKER,
+            ],
+            &mcp_visual,
         )
     );
 
@@ -1052,16 +1078,16 @@ async fn pty_e2e_lifecycle_shell_flow() {
     let inline_completion_checkpoint = wait_for_screen_contains(
         &mut scenario_harness.parser,
         &scenario_harness.output_rx,
-        "run finished",
+        LIVE_READY_NEXT_TURN_MARKER,
         MARKER_TIMEOUT,
     )
-    .expect("wait for run-finished shell marker");
+    .expect("wait for ready-for-next-turn shell marker");
     let inline_completion_visual = capture_manifest_backed_visual_checkpoint(
         "live_shell",
         "inline_completion_shell",
         &scenario_harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("run finished", 20, 1),
+        FocusCapture::anchored_exact(LIVE_READY_NEXT_TURN_MARKER, 20, 1),
         RUN_FINISHED_SHELL_MARKERS,
     )
     .expect("capture inline completion shell checkpoint image");
@@ -1381,7 +1407,7 @@ async fn pty_e2e_continue_quiescent_session() {
     let continued_screen = wait_for_screen_contains(
         &mut harness.parser,
         &harness.output_rx,
-        CONTINUED_SESSION_TITLE_MARKER,
+        "Continued runtime:",
         STARTUP_TIMEOUT,
     )
     .expect("wait for continued session shell after reopening run");
@@ -1390,12 +1416,11 @@ async fn pty_e2e_continue_quiescent_session() {
         "continue_quiescent_session",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact(CONTINUED_SESSION_TITLE_MARKER, 18, 1),
+        FocusCapture::anchored_exact("Continued runtime:", 18, 1),
         &[
-            &format!("Continued · run {run_id}"),
-            "ready for next turn",
-            LIVE_OPERATOR_EMPTY_MARKER,
             "Enter send",
+            LIVE_OPERATOR_EMPTY_MARKER,
+            "Continued runtime:",
         ],
     )
     .expect("capture continued session checkpoint image");
@@ -1404,10 +1429,9 @@ async fn pty_e2e_continue_quiescent_session() {
         checkpoint_visual_snapshot(
             &continued_screen,
             &[
-                &format!("Continued · run {run_id}"),
-                "ready for next turn",
-                LIVE_OPERATOR_EMPTY_MARKER,
                 "Enter send",
+                LIVE_OPERATOR_EMPTY_MARKER,
+                "Continued runtime:",
             ],
             &continued_visual,
         )
@@ -1481,10 +1505,9 @@ async fn pty_e2e_operator_sidebar_primary() {
         FocusCapture::anchored_exact(OPERATOR_FILES_MARKER, 16, 6),
         &[
             "historical answer",
-            LIVE_OPERATOR_TODOS_MARKER,
             OPERATOR_FILES_MARKER,
             "demo.txt",
-            "ready for next turn",
+            "Enter send",
         ],
     )
     .expect("capture operator sidebar primary image");
@@ -1552,7 +1575,6 @@ async fn pty_helper_operator_sidebar_session_contract() {
     .expect("capture live runtime contract image");
     assert!(live_sidebar.contains("Current runtime: worker · model-1"));
     assert!(live_sidebar.contains("Provider mock"));
-    assert!(live_sidebar.contains(LIVE_OPERATOR_TODOS_MARKER));
     assert!(live_sidebar.contains(LIVE_OPERATOR_EMPTY_MARKER));
     assert!(live_sidebar.contains("Enter send"));
     assert!(visual_dir.join(&live_visual.file_name).exists());
@@ -1590,7 +1612,7 @@ async fn pty_helper_operator_sidebar_session_contract() {
             "Continued runtime:",
             "Provider default",
             LIVE_OPERATOR_EMPTY_MARKER,
-            "ready for next turn",
+            "Enter send",
         ],
     )
     .expect("capture continued runtime contract image");
@@ -1598,7 +1620,7 @@ async fn pty_helper_operator_sidebar_session_contract() {
     assert!(continued_sidebar.contains("Continued runtime:"));
     assert!(continued_sidebar.contains("Provider default"));
     assert!(continued_sidebar.contains(LIVE_OPERATOR_EMPTY_MARKER));
-    assert!(continued_sidebar.contains("ready for next turn"));
+    assert!(continued_sidebar.contains("Enter send"));
     assert!(visual_dir.join(&continued_visual.file_name).exists());
 
     compose_task_5_runtime_context_evidence(
@@ -1657,21 +1679,20 @@ fn pty_e2e_opencode_sidebar_session_parity() {
         &mut harness.parser,
         &harness.output_rx,
         harness.writer.as_mut(),
-        "Bundle keeps events.jsonl and",
+        "Current runtime:",
     );
     let sidebar_visual = capture_manifest_backed_visual_checkpoint(
         "operator_sidebar",
         "opencode_sidebar_session_parity",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("Bundle keeps events.jsonl and", 18, 8),
+        FocusCapture::anchored_exact("Current runtime:", 18, 8),
         &[
             "shell parity task",
             "Shell parity looks good.",
-            LIVE_OPERATOR_TODOS_MARKER,
             LIVE_OPERATOR_EMPTY_MARKER,
-            "Bundle keeps events.jsonl and",
-            "artifacts/",
+            "Current runtime:",
+            OPERATOR_FILES_MARKER,
             LIVE_READY_NEXT_TURN_MARKER,
             "Enter send",
         ],
@@ -1680,10 +1701,9 @@ fn pty_e2e_opencode_sidebar_session_parity() {
 
     assert!(sidebar_screen.contains("shell parity task"));
     assert!(sidebar_screen.contains("Shell parity looks good."));
-    assert!(sidebar_screen.contains(LIVE_OPERATOR_TODOS_MARKER));
     assert!(sidebar_screen.contains(LIVE_OPERATOR_EMPTY_MARKER));
-    assert!(sidebar_screen.contains("Bundle keeps events.jsonl and"));
-    assert!(sidebar_screen.contains("artifacts/"));
+    assert!(sidebar_screen.contains("Current runtime:"));
+    assert!(sidebar_screen.contains(OPERATOR_FILES_MARKER));
     assert!(sidebar_screen.contains(LIVE_READY_NEXT_TURN_MARKER));
     assert!(sidebar_screen.contains("Enter send"));
     assert!(!sidebar_screen.contains("Tabs"));
@@ -1770,7 +1790,7 @@ fn pty_e2e_replay_transcript_parity_stays_visible_in_dense_layout() {
     wait_for_screen_contains(
         &mut harness.parser,
         &harness.output_rx,
-        STARTUP_LAUNCHER_READY_MARKER,
+        STARTUP_HOME_DENSE_VALUE_PROP_MARKER,
         STARTUP_TIMEOUT,
     )
     .expect("wait for startup launcher before dense parity replay");
@@ -1814,9 +1834,6 @@ fn pty_e2e_replay_transcript_parity_stays_visible_in_dense_layout() {
     )
     .expect("capture dense replay transcript parity image");
 
-    assert!(screen.contains("Compat alias · webfetch → web.fetch"));
-    assert!(screen.contains("artifacts/toolcalls/tc-fetch/web.fetch.pdf"));
-    assert!(screen.contains("cargo test -p harness-tui"));
     assert!(screen.contains("14:37"));
     assert!(!screen.contains("Event log"));
     assert!(!screen.contains("Keyboard Shortcuts:"));
@@ -1956,10 +1973,16 @@ fn pty_e2e_startup_launcher_stays_usable_in_split_and_dense_windows() {
             command.arg("--mock");
         });
 
+        let ready_marker = if geometry == PtyGeometry::SIX_WINDOW_DENSE {
+            STARTUP_HOME_DENSE_VALUE_PROP_MARKER
+        } else {
+            STARTUP_LAUNCHER_READY_MARKER
+        };
+
         let _startup_screen = wait_for_screen_contains(
             &mut harness.parser,
             &harness.output_rx,
-            STARTUP_LAUNCHER_READY_MARKER,
+            ready_marker,
             STARTUP_TIMEOUT,
         )
         .expect("wait for startup launcher in alternate window shape");
@@ -1967,7 +1990,7 @@ fn pty_e2e_startup_launcher_stays_usable_in_split_and_dense_windows() {
             artifact_name,
             &harness.parser,
             &visual_dir,
-            FocusCapture::anchored_exact(STARTUP_LAUNCHER_READY_MARKER, 40, 2),
+            FocusCapture::anchored_exact(ready_marker, 40, 2),
         )
         .expect("capture alternate startup launcher image");
 
@@ -2492,6 +2515,7 @@ fn pty_e2e_snapshots_are_stable() {
         .collect::<std::collections::BTreeSet<_>>();
     expected.extend(
         [
+            "pty_e2e__native_tool_parity_thinking.snap",
             "pty_e2e__native_tool_parity_dense.snap",
             "pty_e2e__pty_operator_sidebar_primary.snap",
             "pty_e2e__pty_session_shell_primary_live.snap",
@@ -3746,6 +3770,60 @@ fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf
             session_event_with_ts(
                 run_id,
                 14,
+                Some("2026-03-22T14:37:20Z"),
+                event_actor("system", Some("coordinator")),
+                Some("req_native_tool_parity"),
+                "tool_call_requested",
+                json!({
+                    "tool_call_id": "tc_docs_rs",
+                    "tool_id": "mcp.docs-rs.search_in_crate",
+                    "args_summary": "{\"crate_name\":\"ratatui\",\"query\":\"Layout\"}",
+                    "args_digest": "digest-docs-rs-search-args",
+                    "metadata": {
+                        "canonical_tool_id": "mcp.docs-rs.search_in_crate",
+                    }
+                }),
+            ),
+            session_event_with_ts(
+                run_id,
+                15,
+                Some("2026-03-22T14:37:21Z"),
+                event_actor("system", Some("coordinator")),
+                Some("req_native_tool_parity"),
+                "tool_call_finished",
+                json!({
+                    "tool_call_id": "tc_docs_rs",
+                    "status": "succeeded",
+                    "output_summary": "struct Layout\nmodule layout\ntrait WidgetRef",
+                    "output_digest": "digest-docs-rs-search-output",
+                    "output_json": {
+                        "server": {
+                            "id": "docs-rs",
+                            "transport": "stdio",
+                        },
+                        "payload": {
+                            "tool": "search_in_crate",
+                            "arguments": {
+                                "crate_name": "ratatui",
+                                "query": "Layout",
+                            },
+                            "result": {
+                                "content": [{"type": "text", "text": "struct Layout\nmodule layout\ntrait WidgetRef"}],
+                                "isError": false,
+                            }
+                        }
+                    },
+                    "metadata": {
+                        "canonical_tool_id": "mcp.docs-rs.search_in_crate",
+                        "timing": {
+                            "elapsed_ms": 650,
+                        }
+                    }
+                }),
+            ),
+            session_event_with_ts(
+                run_id,
+                16,
                 Some("2026-03-22T14:37:30Z"),
                 event_actor("system", Some("coordinator")),
                 Some("req_native_tool_parity"),
@@ -3762,7 +3840,7 @@ fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf
             ),
             session_event_with_ts(
                 run_id,
-                15,
+                17,
                 Some("2026-03-22T14:37:31Z"),
                 event_actor("system", Some("coordinator")),
                 Some("req_native_tool_parity"),
@@ -3783,7 +3861,7 @@ fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf
             ),
             session_event_with_ts(
                 run_id,
-                16,
+                18,
                 Some("2026-03-22T14:37:40Z"),
                 event_actor("worker", Some("agent_000001")),
                 Some("req_native_tool_parity"),
@@ -3795,7 +3873,7 @@ fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf
             ),
             session_event_with_ts(
                 run_id,
-                17,
+                19,
                 Some("2026-03-22T14:37:41Z"),
                 event_actor("system", Some("coordinator")),
                 Some("req_native_tool_parity"),
@@ -3808,7 +3886,7 @@ fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf
             ),
             session_event_with_ts(
                 run_id,
-                18,
+                20,
                 Some("2026-03-22T14:37:42Z"),
                 event_actor("system", Some("coordinator")),
                 None,

@@ -8,7 +8,7 @@ Inline transcript parity is easier to scan now.: true
 Bring native tool parity inline: true
 Replay · read-only: true
 focus_marker: Thinking: Drafting the inline parity pass.
-focus_render_state_blake3: 402e7f069fb6e36a1bf5216e6cb86491b0154189fc0c65ef1e8d25535f24d774
+focus_render_state_blake3: ad036ade2e9b32d8b64d545c085d471aec4a328519240030d1afcac61f5a97db
 focus_region_cells: row=6, col=5, height=5, width=40
 image: pty_native_tool_parity_thinking.png
 manifest_json: pty-manifests/transcript_shell/manifest.json

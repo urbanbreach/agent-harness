@@ -21,17 +21,20 @@ The preflight verifies:
 - provider `api_mode` is `responses` or `auto`
 - the harness binary is available
 - the configured proxy host:port is reachable
-- the live visual lane uses the bundled PTY→PNG capture path and the shell-free `fs.write`
-  bootstrap used by the file-edit review flow
+- the later live visual lane can use the bundled PTY→PNG capture path and the shell-free
+  `fs.write` bootstrap used by the file-edit review flow
 
-The live visual review lane does **not** require KDE, `konsole`, or `spectacle`. Screenshots are
-rendered from captured PTY state into PNGs inside the harness, and the tool-flow bootstrap uses
-`fs.write` instead of `shell.run`, so the signoff path no longer depends on a desktop session or a
-local POSIX shell.
+The live visual review lane does **not** require KDE, `konsole`, or `spectacle`. When you run the
+later live TUI/tool-flow lanes, screenshots are rendered from captured PTY state into PNGs inside
+the harness, and the tool-flow bootstrap uses `fs.write` instead of `shell.run`, so the signoff
+path no longer depends on a desktop session or a local POSIX shell. `live_proxy_preflight` itself
+only verifies config/provider reachability plus the prepared live-config path.
 
-When the shipped `configs/harness.example.jsonc` is the active live config, the signoff helpers
-also default `gpt-5.4-mini` to the `live_signoff` variant so the Batch 1 parity lanes stay on the
-documented low-reasoning path. Set `HARNESS_LIVE_PROXY_VARIANT` to override that default.
+When the shipped `configs/harness.example.jsonc` is the active live config, the interactive
+`build` profile now defaults `gpt-5.4-mini` to the `high` variant so live TUI runs can surface
+visible `Thinking:` traces. The signoff helpers still force `gpt-5.4-mini` onto the `low`
+variant so the Batch 1 parity lanes stay on the documented low-reasoning path. Set
+`HARNESS_LIVE_PROXY_VARIANT` to override the helper default.
 
 Minimal portable baseline:
 
@@ -82,14 +85,14 @@ HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
 cargo test -p harness-testkit live_proxy_prompt_chat_tool_flow -- --ignored --exact
 ```
 
-This lane exercises a real model against prepared live profiles for:
+This lane exercises a real model against prepared live agents for:
 
 - `todowrite`
 - `question`
 - `skill`
 
-When the selected model exposes the documented `live_signoff` variant, the prepared signoff
-profiles prefer it automatically so `gpt-5.4-mini` stays on the low-reasoning parity path.
+When the selected model exposes the documented `low` variant, the prepared signoff
+agents prefer it automatically so `gpt-5.4-mini` stays on the low-reasoning parity path.
 
 The repo now ships `rust-best-practices` in `.agents/skills`, and the prepared live chat-tool lane
 copies that skill into its temporary workspace before the `skill` stage runs. A fresh checkout
@@ -152,7 +155,7 @@ Artifacts are written under:
 <artifact-root>/live-proxy/<test-name>/<run-id>/
 ```
 
-Recommended local root for both offline PTY and live manifest inspection:
+Recommended local root for native screenshot, offline PTY, and live manifest inspection:
 
 ```text
 target/pty-visual-artifacts/
@@ -168,6 +171,15 @@ target/pty-visual-artifacts/pty-manifests/<family>/manifest.jsonl
 
 Those PTY manifests use the same `manifest.json` / `manifest.jsonl` filenames as the live proxy
 lane so marker presence, focus hashes, and PNG paths stay machine-checkable across both oracles.
+
+The native screenshot lane writes sibling runs under:
+
+```text
+target/pty-visual-artifacts/native-visual/native_visual_ghostty_smoke/<run-id>/
+```
+
+Those runs use the same manifest filenames plus `native_visual_summary.json` / `.txt` so window
+capture provenance and cleanup state stay reviewable next to the screenshots.
 
 Example run id:
 

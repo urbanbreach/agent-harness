@@ -111,6 +111,12 @@ pub(crate) const OFFLINE_VISUAL_EVIDENCE_CONTRACTS: &[OfflineVisualEvidenceContr
     },
     OfflineVisualEvidenceContract {
         family: "transcript_shell",
+        state: "mcp_background",
+        png: "pty_native_tool_parity_mcp_background.png",
+        snapshot: Some("native_tool_parity_mcp_background"),
+    },
+    OfflineVisualEvidenceContract {
+        family: "transcript_shell",
         state: "dense_parity",
         png: "pty_native_tool_parity_dense.png",
         snapshot: None,

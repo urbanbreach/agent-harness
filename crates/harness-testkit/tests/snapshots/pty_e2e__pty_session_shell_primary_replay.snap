@@ -1,14 +1,14 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-expression: "checkpoint_visual_snapshot(&replay_screen,\n&[REPLAY_DENSE_READY_MARKER, \"shell parity task\", LIVE_OPERATOR_TODOS_MARKER,\nLIVE_OPERATOR_EMPTY_MARKER, \"Replay is read-only.\",], &replay_visual,)"
+expression: "checkpoint_visual_snapshot(&replay_screen,\n&[REPLAY_DENSE_READY_MARKER, \"shell parity task\", OPERATOR_FILES_MARKER,\nLIVE_OPERATOR_EMPTY_MARKER, \"Replay is read-only.\",], &replay_visual,)"
 ---
 Replay · read-only: true
 shell parity task: true
-0 active todos: true
+Modified Files: true
 Context: true
 Replay is read-only.: true
 focus_marker: Replay · read-only
-focus_render_state_blake3: cc7f8b9e99a4e88f8e37982b9a4649c4484304efb1a0b89c1c56369f7c1920fd
+focus_render_state_blake3: c5ccf1dbaa8d8205e285573f939c46f0286dad1c43b7adc6a741a7465bbad65c
 focus_region_cells: row=0, col=0, height=2, width=20
 image: pty_session_shell_primary_replay.png
 manifest_json: pty-manifests/replay_shell/manifest.json

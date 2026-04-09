@@ -36,7 +36,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const DEFAULT_LIVE_PROXY_PROVIDER: &str = "default";
 const DEFAULT_LIVE_PROXY_MODEL: &str = "gpt-5.4-mini";
-const DEFAULT_LIVE_PROXY_VARIANT: &str = "live_signoff";
+const DEFAULT_LIVE_PROXY_VARIANT: &str = "low";
 const DEFAULT_LIVE_PROXY_PROFILE: &str = "live_proxy_smoke";
 const LIVE_PROXY_TOOL_FLOW_PROFILE: &str = "live_proxy_tool_flow";
 const LIVE_PROXY_CHAT_TODO_FLOW_PROFILE: &str = "live_proxy_chat_todo_flow";
@@ -1308,7 +1308,7 @@ fn prepare_prompt_run_config_rejects_chat_completions_mode() {
 }
 
 #[test]
-fn prepare_live_prompt_run_config_applies_live_signoff_variant_when_available() {
+fn prepare_live_prompt_run_config_applies_low_variant_when_available() {
     let request = LivePromptRequest {
         source_config_path: repo_root().join("configs").join("harness.example.jsonc"),
         provider_name: DEFAULT_LIVE_PROXY_PROVIDER.to_string(),
@@ -1324,11 +1324,19 @@ fn prepare_live_prompt_run_config_applies_live_signoff_variant_when_available() 
         prepare_live_prompt_run_config(&request).expect("prepare live prompt run config");
     let prepared = load_json5_config(&run_config.config_path).expect("load prepared config");
     let prepared_profile = prepared
-        .get("profiles")
+        .get("agents")
         .and_then(Value::as_object)
-        .and_then(|profiles| profiles.get(DEFAULT_LIVE_PROXY_PROFILE))
+        .and_then(|agents| agents.get(DEFAULT_LIVE_PROXY_PROFILE))
         .and_then(Value::as_object)
-        .expect("prepared live smoke profile present");
+        .expect("prepared live smoke agent present");
+    assert_eq!(
+        prepared
+            .get("ui")
+            .and_then(Value::as_object)
+            .and_then(|ui| ui.get("default_profile"))
+            .and_then(Value::as_str),
+        Some(DEFAULT_LIVE_PROXY_PROFILE)
+    );
 
     assert_eq!(
         prepared_profile.get("model_ref").and_then(Value::as_str),
@@ -1458,11 +1466,11 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
     );
 
     let tool_flow_profile = tool_flow_config
-        .get("profiles")
+        .get("agents")
         .and_then(Value::as_object)
-        .and_then(|profiles| profiles.get(LIVE_PROXY_TOOL_FLOW_PROFILE))
+        .and_then(|agents| agents.get(LIVE_PROXY_TOOL_FLOW_PROFILE))
         .and_then(Value::as_object)
-        .expect("tool-flow profile present");
+        .expect("tool-flow agent present");
     assert_eq!(
         tool_flow_profile.get("model_ref").and_then(Value::as_str),
         Some("default:gpt-5.4-mini")
@@ -1567,11 +1575,11 @@ fn prepare_live_prompt_native_tool_flow_run_config_builds_cli_parity_stages() {
     let prepared = load_json5_config(&run_config.create.config_path)
         .expect("load native tool flow prepared config");
     let profile = prepared
-        .get("profiles")
+        .get("agents")
         .and_then(Value::as_object)
-        .and_then(|profiles| profiles.get(LIVE_PROXY_TOOL_FLOW_PROFILE))
+        .and_then(|agents| agents.get(LIVE_PROXY_TOOL_FLOW_PROFILE))
         .and_then(Value::as_object)
-        .expect("native tool flow profile present");
+        .expect("native tool flow agent present");
     assert_eq!(
         profile.get("variant").and_then(Value::as_str),
         Some(DEFAULT_LIVE_PROXY_VARIANT)
@@ -1579,7 +1587,7 @@ fn prepare_live_prompt_native_tool_flow_run_config_builds_cli_parity_stages() {
 }
 
 #[test]
-fn prepare_live_prompt_chat_tool_run_config_builds_restricted_profiles() {
+fn prepare_live_prompt_chat_tool_run_config_builds_restricted_agents() {
     let source_config_path = unique_temp_file("live-proxy-chat-tool-config", "jsonc");
     let source_session_dir = unique_temp_dir("live-proxy-chat-tool-source-session");
     let source_config = build_live_proxy_test_config(
@@ -1629,22 +1637,22 @@ fn prepare_live_prompt_chat_tool_run_config_builds_restricted_profiles() {
         load_json5_config(&run_config.skill.config_path).expect("load prepared skill config");
 
     let todo_profile = todo_config
-        .get("profiles")
+        .get("agents")
         .and_then(Value::as_object)
-        .and_then(|profiles| profiles.get(LIVE_PROXY_CHAT_TODO_FLOW_PROFILE))
+        .and_then(|agents| agents.get(LIVE_PROXY_CHAT_TODO_FLOW_PROFILE))
         .and_then(Value::as_object)
-        .expect("todo profile present");
+        .expect("todo agent present");
     assert_eq!(
         todo_profile.get("tools").and_then(Value::as_array),
         Some(&vec![Value::String("todowrite".to_string())])
     );
 
     let question_profile = question_config
-        .get("profiles")
+        .get("agents")
         .and_then(Value::as_object)
-        .and_then(|profiles| profiles.get(LIVE_PROXY_CHAT_QUESTION_PROFILE))
+        .and_then(|agents| agents.get(LIVE_PROXY_CHAT_QUESTION_PROFILE))
         .and_then(Value::as_object)
-        .expect("question profile present");
+        .expect("question agent present");
     assert_eq!(
         question_profile.get("tools").and_then(Value::as_array),
         Some(&vec![Value::String("user.question".to_string())])
@@ -1655,11 +1663,11 @@ fn prepare_live_prompt_chat_tool_run_config_builds_restricted_profiles() {
     );
 
     let skill_profile = skill_config
-        .get("profiles")
+        .get("agents")
         .and_then(Value::as_object)
-        .and_then(|profiles| profiles.get(LIVE_PROXY_CHAT_SKILL_PROFILE))
+        .and_then(|agents| agents.get(LIVE_PROXY_CHAT_SKILL_PROFILE))
         .and_then(Value::as_object)
-        .expect("skill profile present");
+        .expect("skill agent present");
     assert_eq!(
         skill_profile.get("tools").and_then(Value::as_array),
         Some(&vec![Value::String("skill".to_string())])
@@ -1678,7 +1686,7 @@ fn prepare_live_prompt_chat_tool_run_config_builds_restricted_profiles() {
 }
 
 #[test]
-fn prepare_live_prompt_compat_edit_run_config_builds_restricted_profile() {
+fn prepare_live_prompt_compat_edit_run_config_builds_restricted_agent() {
     let source_config_path = unique_temp_file("live-proxy-compat-edit-config", "jsonc");
     let source_session_dir = unique_temp_dir("live-proxy-compat-edit-source-session");
     let source_config = build_live_proxy_test_config(
@@ -1753,11 +1761,11 @@ fn prepare_live_prompt_compat_edit_run_config_builds_restricted_profile() {
     let write_config =
         load_json5_config(&run_config.write.config_path).expect("load prepared compat edit config");
     let compat_profile = write_config
-        .get("profiles")
+        .get("agents")
         .and_then(Value::as_object)
-        .and_then(|profiles| profiles.get(LIVE_PROXY_COMPAT_EDIT_PROFILE))
+        .and_then(|agents| agents.get(LIVE_PROXY_COMPAT_EDIT_PROFILE))
         .and_then(Value::as_object)
-        .expect("compat edit profile present");
+        .expect("compat edit agent present");
     assert_eq!(
         compat_profile.get("tools").and_then(Value::as_array),
         Some(&vec![
@@ -1769,7 +1777,7 @@ fn prepare_live_prompt_compat_edit_run_config_builds_restricted_profile() {
 }
 
 #[test]
-fn example_config_ships_canonical_plan_build_and_audit_profiles() {
+fn example_config_ships_canonical_plan_build_and_audit_agents() {
     let config = load_json5_config(&repo_root().join("configs").join("harness.example.jsonc"))
         .expect("load shipped example config");
 
@@ -1793,19 +1801,16 @@ fn example_config_ships_canonical_plan_build_and_audit_profiles() {
     );
 
     assert_eq!(
-        config
-            .get("ui")
-            .and_then(|ui| ui.get("default_profile"))
-            .and_then(Value::as_str),
-        Some("plan")
+        config.get("default_agent").and_then(Value::as_str),
+        Some("build")
     );
 
     let plan = config
-        .get("profiles")
+        .get("agent")
         .and_then(Value::as_object)
-        .and_then(|profiles| profiles.get("plan"))
+        .and_then(|agents| agents.get("plan"))
         .and_then(Value::as_object)
-        .expect("plan profile present in example config");
+        .expect("plan agent present in example config");
     assert_eq!(plan.get("plan_mode").and_then(Value::as_bool), Some(true));
     assert_eq!(
         plan.get("exit_target_profile").and_then(Value::as_str),
@@ -1828,7 +1833,6 @@ fn example_config_ships_canonical_plan_build_and_audit_profiles() {
         "web.fetch",
         "search.code",
         "code.lsp",
-        "agent.spawn",
     ] {
         assert!(
             plan_tools.contains(&Value::String(required_tool.to_string())),
@@ -1843,15 +1847,16 @@ fn example_config_ships_canonical_plan_build_and_audit_profiles() {
     assert!(plan_prompt.contains("hand off"));
 
     let build = config
-        .get("profiles")
+        .get("agent")
         .and_then(Value::as_object)
-        .and_then(|profiles| profiles.get("build"))
+        .and_then(|agents| agents.get("build"))
         .and_then(Value::as_object)
-        .expect("build profile present in example config");
+        .expect("build agent present in example config");
     assert_eq!(
         build.get("model_ref").and_then(Value::as_str),
         Some("default:gpt-5.4-mini")
     );
+    assert_eq!(build.get("variant").and_then(Value::as_str), Some("high"));
     let build_tools = build
         .get("tools")
         .and_then(Value::as_array)
@@ -1871,11 +1876,11 @@ fn example_config_ships_canonical_plan_build_and_audit_profiles() {
     }
 
     let tool_audit = config
-        .get("profiles")
+        .get("agent")
         .and_then(Value::as_object)
-        .and_then(|profiles| profiles.get("tool_audit"))
+        .and_then(|agents| agents.get("tool_audit"))
         .and_then(Value::as_object)
-        .expect("tool_audit profile present in example config");
+        .expect("tool_audit agent present in example config");
 
     assert_eq!(
         tool_audit.get("model_ref").and_then(Value::as_str),
@@ -1972,36 +1977,60 @@ fn example_config_ships_canonical_plan_build_and_audit_profiles() {
         Some("tool_audit")
     );
 
-    let live_signoff_variant = config
+    let low_variant = config
         .get("providers")
         .and_then(|providers| providers.get("default"))
         .and_then(|provider| provider.get("models"))
         .and_then(|models| models.get("gpt-5.4-mini"))
         .and_then(|model| model.get("variants"))
-        .and_then(|variants| variants.get("live_signoff"))
+        .and_then(|variants| variants.get("low"))
         .and_then(Value::as_object)
-        .expect("gpt-5.4-mini live_signoff variant present");
+        .expect("gpt-5.4-mini low variant present");
     assert_eq!(
-        live_signoff_variant
+        low_variant
             .get("metadata")
             .and_then(|metadata| metadata.get("reasoning_effort"))
             .and_then(Value::as_str),
         Some("low")
     );
     assert_eq!(
-        live_signoff_variant
+        low_variant
             .get("metadata")
             .and_then(|metadata| metadata.get("recommended_for"))
             .and_then(Value::as_str),
         Some("live_proxy")
     );
 
+    let high_variant = config
+        .get("providers")
+        .and_then(|providers| providers.get("default"))
+        .and_then(|provider| provider.get("models"))
+        .and_then(|models| models.get("gpt-5.4-mini"))
+        .and_then(|model| model.get("variants"))
+        .and_then(|variants| variants.get("high"))
+        .and_then(Value::as_object)
+        .expect("gpt-5.4-mini high variant present");
+    assert_eq!(
+        high_variant
+            .get("metadata")
+            .and_then(|metadata| metadata.get("reasoning_effort"))
+            .and_then(Value::as_str),
+        Some("high")
+    );
+    assert_eq!(
+        high_variant
+            .get("metadata")
+            .and_then(|metadata| metadata.get("recommended_for"))
+            .and_then(Value::as_str),
+        Some("interactive_live")
+    );
+
     let deep_compat = config
-        .get("profiles")
+        .get("agent")
         .and_then(Value::as_object)
-        .and_then(|profiles| profiles.get("deep_compat"))
+        .and_then(|agents| agents.get("deep_compat"))
         .and_then(Value::as_object)
-        .expect("deep_compat profile present in example config");
+        .expect("deep_compat agent present in example config");
     assert_eq!(
         deep_compat.get("tool_surface").and_then(Value::as_str),
         Some("compat")
@@ -2444,7 +2473,7 @@ fn resolve_live_request_defaults_vision_model_to_primary() {
 }
 
 #[test]
-fn resolve_live_request_prefers_live_signoff_variant_for_documented_signoff_model() {
+fn resolve_live_request_prefers_low_variant_for_documented_signoff_model() {
     let _guard = live_proxy_env_lock()
         .lock()
         .expect("live proxy env test lock should not be poisoned");
@@ -2632,9 +2661,9 @@ fn live_tui_smoke_helpers_reuse_cliproxy_config_and_endpoint_rules() {
     );
 
     let categories = prepared_config
-        .get("profiles")
+        .get("agents")
         .and_then(Value::as_object)
-        .expect("prepared config profiles object");
+        .expect("prepared config agents object");
     assert_eq!(
         categories
             .get("deep")
@@ -2741,6 +2770,7 @@ fn live_visual_checkpoint_writes_png_and_manifest() {
                     "preset": "desktop"
                 }
             }),
+            ..LiveVisualRunOptions::default()
         },
     )
     .expect("create live visual run");
@@ -2989,6 +3019,7 @@ fn live_visual_manifest_orders_checkpoints_and_jsonl_by_stage() {
                     "preset": "desktop"
                 }
             }),
+            ..LiveVisualRunOptions::default()
         },
     )
     .expect("create ordered live visual run");
@@ -3888,6 +3919,7 @@ fn prepare_prompt_run_config_with_contract(
     }
 
     let mut config = load_json5_config(source_config_path)?;
+    normalize_legacy_profile_aliases(&mut config)?;
 
     let provider = provider_from_config(&config, provider_name)?;
     let endpoint = resolve_live_smoke_endpoint(provider)?;
@@ -4006,6 +4038,7 @@ fn run_live_tui_smoke(
                 &run_config.workspace_root,
                 &run_config.session_dir,
             ),
+            ..LiveVisualRunOptions::default()
         },
     )?;
 
@@ -4146,6 +4179,7 @@ fn run_live_tui_tool_flow(
                 &run_config.tool_flow.workspace_root,
                 &run_config.tool_flow.session_dir,
             ),
+            ..LiveVisualRunOptions::default()
         },
     )?;
     let deadline = Instant::now() + timeout;
@@ -5532,13 +5566,13 @@ fn normalize_category_model_refs_to_default(config: &mut Value) -> Result<(), St
         .as_object_mut()
         .ok_or_else(|| "config root must be a JSON object".to_string())?;
     let categories = root
-        .get_mut("profiles")
+        .get_mut("agents")
         .and_then(Value::as_object_mut)
-        .ok_or_else(|| "config.profiles must be an object".to_string())?;
+        .ok_or_else(|| "config.agents must be an object".to_string())?;
 
     for (category_name, category_value) in categories.iter_mut() {
         let Some(category_obj) = category_value.as_object_mut() else {
-            return Err(format!("profile `{category_name}` must be an object"));
+            return Err(format!("agent `{category_name}` must be an object"));
         };
 
         let model_ref = category_obj
@@ -5569,6 +5603,37 @@ fn normalize_category_model_refs_to_default(config: &mut Value) -> Result<(), St
     Ok(())
 }
 
+fn normalize_legacy_profile_aliases(config: &mut Value) -> Result<(), String> {
+    let root = config
+        .as_object_mut()
+        .ok_or_else(|| "config root must be a JSON object".to_string())?;
+
+    if !root.contains_key("agents") {
+        if let Some(agent_alias) = root.get("agent").cloned() {
+            root.insert("agents".to_string(), agent_alias);
+        }
+    }
+
+    let default_profile = root
+        .get("default_agent")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+
+    if let Some(default_profile) = default_profile {
+        let ui = root
+            .entry("ui".to_string())
+            .or_insert_with(|| Value::Object(serde_json::Map::new()))
+            .as_object_mut()
+            .ok_or_else(|| "config.ui must be an object".to_string())?;
+        ui.entry("default_profile".to_string())
+            .or_insert_with(|| Value::String(default_profile));
+    }
+
+    Ok(())
+}
+
 fn ensure_profile_model_ref(
     config: &mut Value,
     profile_name: &str,
@@ -5579,10 +5644,10 @@ fn ensure_profile_model_ref(
         .ok_or_else(|| "config root must be a JSON object".to_string())?;
 
     let categories = root
-        .entry("profiles".to_string())
+        .entry("agents".to_string())
         .or_insert_with(|| Value::Object(serde_json::Map::new()))
         .as_object_mut()
-        .ok_or_else(|| "config.profiles must be an object".to_string())?;
+        .ok_or_else(|| "config.agents must be an object".to_string())?;
 
     let mut profile = categories.get(profile_name).cloned().unwrap_or_else(|| {
         json!({
@@ -5593,7 +5658,7 @@ fn ensure_profile_model_ref(
 
     let profile_obj = profile
         .as_object_mut()
-        .ok_or_else(|| format!("profile `{profile_name}` must be an object"))?;
+        .ok_or_else(|| format!("agent `{profile_name}` must be an object"))?;
     profile_obj.insert(
         "model_ref".to_string(),
         Value::String(format!("default:{model_id}")),
@@ -5618,13 +5683,13 @@ fn ensure_profile_variant(
         .as_object_mut()
         .ok_or_else(|| "config root must be a JSON object".to_string())?;
     let categories = root
-        .get_mut("profiles")
+        .get_mut("agents")
         .and_then(Value::as_object_mut)
-        .ok_or_else(|| "config.profiles must be an object".to_string())?;
+        .ok_or_else(|| "config.agents must be an object".to_string())?;
     let profile = categories
         .get_mut(profile_name)
         .and_then(Value::as_object_mut)
-        .ok_or_else(|| format!("profile `{profile_name}` must be an object"))?;
+        .ok_or_else(|| format!("agent `{profile_name}` must be an object"))?;
 
     match selected_variant {
         Some(variant) if !variant.trim().is_empty() => {
@@ -5873,13 +5938,13 @@ fn apply_tool_flow_contract(
     );
 
     let categories = root
-        .get_mut("profiles")
+        .get_mut("agents")
         .and_then(Value::as_object_mut)
-        .ok_or_else(|| "config.profiles must be an object".to_string())?;
+        .ok_or_else(|| "config.agents must be an object".to_string())?;
     let profile = categories
         .get_mut(profile_name)
         .and_then(Value::as_object_mut)
-        .ok_or_else(|| format!("profile `{profile_name}` must be present and be an object"))?;
+        .ok_or_else(|| format!("agent `{profile_name}` must be present and be an object"))?;
     profile.insert(
         "description".to_string(),
         Value::String(stage.description().to_string()),
@@ -5917,13 +5982,13 @@ fn apply_restricted_tools_contract(
         .as_object_mut()
         .ok_or_else(|| "config root must be a JSON object".to_string())?;
     let categories = root
-        .get_mut("profiles")
+        .get_mut("agents")
         .and_then(Value::as_object_mut)
-        .ok_or_else(|| "config.profiles must be an object".to_string())?;
+        .ok_or_else(|| "config.agents must be an object".to_string())?;
     let profile = categories
         .get_mut(profile_name)
         .and_then(Value::as_object_mut)
-        .ok_or_else(|| format!("profile `{profile_name}` must be present and be an object"))?;
+        .ok_or_else(|| format!("agent `{profile_name}` must be present and be an object"))?;
     profile.insert(
         "description".to_string(),
         Value::String(description.to_string()),
@@ -6391,8 +6456,8 @@ fn build_live_proxy_test_config(
                 configured_model: {
                     "display_name": "Configured model",
                     "variants": {
-                        "live_signoff": {
-                            "display_name": "Live signoff",
+                        "low": {
+                            "display_name": "Low",
                             "metadata": {
                                 "reasoning_effort": "low",
                                 "text_verbosity": "low",
@@ -6417,7 +6482,7 @@ fn build_live_proxy_test_config(
 
     json!({
         "providers": providers,
-        "profiles": categories,
+        "agents": categories,
         "permissions": {
             "defaults": {
                 "edit": "allow",

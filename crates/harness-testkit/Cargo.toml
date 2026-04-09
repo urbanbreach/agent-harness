@@ -5,19 +5,20 @@ license.workspace = true
 version.workspace = true
 
 [dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
 regex = "1"
+serde_json.workspace = true
+zbus = "5.14"
 
 [dev-dependencies]
 base64 = "0.22"
 blake3 = "1"
 font8x8 = "0.3"
 fontdue = "0.9"
-image = { version = "0.25", default-features = false, features = ["png"] }
 insta = { version = "1.42", features = ["json"] }
 json5.workspace = true
 portable-pty = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
-serde_json.workspace = true
 time = { version = "0.3", features = ["formatting", "macros"] }
 tokio.workspace = true
 vt100 = "0.15"

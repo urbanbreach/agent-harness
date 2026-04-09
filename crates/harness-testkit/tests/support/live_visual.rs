@@ -1,3 +1,4 @@
+use image::RgbImage;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::fs;
@@ -22,6 +23,7 @@ pub const VISUAL_MANIFEST_JSON_FILE: &str = "manifest.json";
 pub const VISUAL_MANIFEST_JSONL_FILE: &str = "manifest.jsonl";
 
 const LIVE_PROXY_NAMESPACE: &str = "live-proxy";
+const LIVE_PROXY_PNG_PREFIX: &str = "live_proxy";
 const DEFAULT_LIVE_VISUAL_RETENTION_RUNS: usize = 5;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LiveViewportPreset {
@@ -135,20 +137,35 @@ impl LiveVisualCheckpoint {
 #[derive(Debug, Clone)]
 pub struct LiveVisualRunOptions {
     pub run_metadata: Value,
+    pub artifact_namespace: String,
+    pub png_prefix: String,
 }
 
 impl Default for LiveVisualRunOptions {
     fn default() -> Self {
         Self {
             run_metadata: Value::Object(serde_json::Map::new()),
+            artifact_namespace: LIVE_PROXY_NAMESPACE.to_string(),
+            png_prefix: LIVE_PROXY_PNG_PREFIX.to_string(),
         }
     }
+}
+
+pub struct ExternalPngCheckpointSpec<'a> {
+    pub checkpoint_id: &'a str,
+    pub source_png_path: &'a Path,
+    pub screen_text: &'a str,
+    pub terminal_size: (u16, u16),
+    pub screen_markers: &'a [&'a str],
+    pub focus: &'a FocusCapture,
+    pub metadata: Option<&'a Value>,
 }
 
 #[derive(Debug)]
 pub struct LiveVisualRun {
     run_dir: PathBuf,
     manifest: VisualManifest,
+    png_prefix: String,
 }
 
 impl LiveVisualRun {
@@ -177,7 +194,7 @@ impl LiveVisualRun {
             return Err("live visual run id cannot be empty".to_string());
         }
 
-        let test_root = root.join(LIVE_PROXY_NAMESPACE).join(test_name);
+        let test_root = root.join(&options.artifact_namespace).join(test_name);
         fs::create_dir_all(&test_root).map_err(|err| {
             format!(
                 "failed to create live visual test root {}: {err}",
@@ -202,6 +219,7 @@ impl LiveVisualRun {
                 options.run_metadata,
             )?,
             run_dir,
+            png_prefix: options.png_prefix,
         })
     }
 
@@ -227,7 +245,7 @@ impl LiveVisualRun {
 
         let render_config = live_visual_render_config();
         let image = render_parser_to_image(parser, render_config);
-        let file_name = format!("live_proxy_{checkpoint_id}.png");
+        let file_name = format!("{}_{checkpoint_id}.png", self.png_prefix);
         let png_path = self.run_dir.join(&file_name);
         image
             .save(&png_path)
@@ -267,6 +285,92 @@ impl LiveVisualRun {
             focus_region_cells,
             image_size: (image.width(), image.height()),
             metadata: metadata.as_ref(),
+        })?;
+
+        self.manifest.append_checkpoint(manifest_entry)?;
+
+        Ok(LiveVisualCheckpoint {
+            png_path,
+            manifest_json_path: self.manifest.manifest_json_path().to_path_buf(),
+            manifest_jsonl_path: self.manifest.manifest_jsonl_path().to_path_buf(),
+            focus_marker_found,
+            focus_region_cells,
+        })
+    }
+
+    #[allow(dead_code)]
+    pub fn capture_external_png_checkpoint(
+        &mut self,
+        spec: ExternalPngCheckpointSpec<'_>,
+    ) -> Result<LiveVisualCheckpoint, String> {
+        ensure_known_checkpoint_id(spec.checkpoint_id)?;
+
+        let file_name = format!(
+            "{}_{checkpoint_id}.png",
+            self.png_prefix,
+            checkpoint_id = spec.checkpoint_id
+        );
+        let png_path = self.run_dir.join(&file_name);
+        if spec.source_png_path != png_path {
+            fs::copy(spec.source_png_path, &png_path).map_err(|err| {
+                format!(
+                    "failed to copy external screenshot {} to {}: {err}",
+                    spec.source_png_path.display(),
+                    png_path.display()
+                )
+            })?;
+        }
+
+        let image = image::open(&png_path)
+            .map_err(|err| {
+                format!(
+                    "failed to read external screenshot {}: {err}",
+                    png_path.display()
+                )
+            })?
+            .to_rgb8();
+        let (rows, cols) = spec.terminal_size;
+        if rows == 0 || cols == 0 {
+            return Err(
+                "external screenshot checkpoint requires non-zero terminal rows/cols".to_string(),
+            );
+        }
+
+        let focus_region =
+            find_marker_cell_in_text_grid(spec.screen_text, rows, cols, &spec.focus.marker)
+                .map(|(row, col)| anchored_region((row, col), (rows, cols), spec.focus));
+        let focus_marker_found = focus_region.is_some();
+        let focus_region_cells = focus_region.unwrap_or((0, 0, rows.max(1), cols.max(1)));
+        let render_config = external_png_render_config(&image, spec.terminal_size)?;
+        let focus_pixels = extract_region_pixels(&image, focus_region_cells, render_config);
+        let marker_states = marker_presence_states(spec.screen_text, spec.screen_markers);
+        let focus_scope = if focus_marker_found {
+            "anchored"
+        } else {
+            "full_frame_fallback"
+        };
+        let focus_pixels_blake3 = blake3::hash(&focus_pixels).to_hex().to_string();
+        let focus_render_state_blake3 = blake3::hash(&extract_text_region_render_state(
+            spec.screen_text,
+            focus_region_cells,
+            spec.terminal_size,
+        ))
+        .to_hex()
+        .to_string();
+        let manifest_entry = VisualManifestEntry::new(VisualManifestEntrySpec {
+            checkpoint_id: spec.checkpoint_id,
+            captured_at_stage: spec.checkpoint_id,
+            png_path: &png_path,
+            file_name: &file_name,
+            screen_markers: &marker_states,
+            focus_marker: &spec.focus.marker,
+            focus_marker_found,
+            focus_scope,
+            focus_pixels_blake3: &focus_pixels_blake3,
+            focus_render_state_blake3: &focus_render_state_blake3,
+            focus_region_cells,
+            image_size: (image.width(), image.height()),
+            metadata: spec.metadata,
         })?;
 
         self.manifest.append_checkpoint(manifest_entry)?;
@@ -554,6 +658,101 @@ fn marker_presence_states(screen: &str, markers: &[&str]) -> Vec<(String, bool)>
         .iter()
         .map(|marker| ((*marker).to_string(), screen.contains(marker)))
         .collect()
+}
+
+#[allow(dead_code)]
+fn find_marker_cell_in_text_grid(
+    screen_text: &str,
+    rows: u16,
+    cols: u16,
+    marker: &str,
+) -> Option<(u16, u16)> {
+    let lines = normalized_screen_lines(screen_text, rows, cols);
+    for (row, line) in lines.iter().enumerate() {
+        if let Some(byte_idx) = line.find(marker) {
+            let col = line[..byte_idx].chars().count();
+            if let (Ok(row), Ok(col)) = (u16::try_from(row), u16::try_from(col)) {
+                return Some((row, col));
+            }
+        }
+    }
+    None
+}
+
+#[allow(dead_code)]
+fn normalized_screen_lines(screen_text: &str, rows: u16, cols: u16) -> Vec<String> {
+    let mut lines = screen_text
+        .lines()
+        .map(|line| {
+            let mut normalized = line.chars().take(cols as usize).collect::<String>();
+            let width = normalized.chars().count();
+            if width < cols as usize {
+                normalized.push_str(&" ".repeat(cols as usize - width));
+            }
+            normalized
+        })
+        .collect::<Vec<_>>();
+
+    if lines.len() < rows as usize {
+        lines.resize(rows as usize, " ".repeat(cols as usize));
+    }
+    if lines.len() > rows as usize {
+        lines.truncate(rows as usize);
+    }
+    lines
+}
+
+#[allow(dead_code)]
+fn extract_text_region_render_state(
+    screen_text: &str,
+    region: (u16, u16, u16, u16),
+    terminal_size: (u16, u16),
+) -> Vec<u8> {
+    let (rows, cols) = terminal_size;
+    let lines = normalized_screen_lines(screen_text, rows, cols);
+    let (row_start, col_start, height_cells, width_cells) = region;
+    let row_end = row_start.saturating_add(height_cells).min(rows);
+    let col_end = col_start.saturating_add(width_cells).min(cols);
+    let mut data = Vec::new();
+
+    for row in row_start..row_end {
+        let Some(line) = lines.get(row as usize) else {
+            break;
+        };
+        let region_text = line
+            .chars()
+            .skip(col_start as usize)
+            .take((col_end - col_start) as usize)
+            .collect::<String>();
+        data.extend_from_slice(region_text.as_bytes());
+        data.push(b'\n');
+    }
+
+    data
+}
+
+#[allow(dead_code)]
+fn external_png_render_config(
+    image: &RgbImage,
+    terminal_size: (u16, u16),
+) -> Result<TerminalRenderConfig, String> {
+    let (rows, cols) = terminal_size;
+    let width = image.width();
+    let height = image.height();
+    if width == 0 || height == 0 {
+        return Err("external screenshot image dimensions must be non-zero".to_string());
+    }
+
+    let cols = u32::from(cols);
+    let rows = u32::from(rows);
+    if !width.is_multiple_of(cols) || !height.is_multiple_of(rows) {
+        return Err(format!(
+            "external screenshot {}x{} does not map cleanly to {}x{} terminal cells",
+            width, height, cols, rows
+        ));
+    }
+
+    Ok(TerminalRenderConfig::new(width / cols, height / rows))
 }
 
 pub fn assert_checkpoint_markers(
