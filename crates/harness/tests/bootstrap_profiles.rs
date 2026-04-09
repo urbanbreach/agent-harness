@@ -6,7 +6,7 @@ use harness_core::perm::{PermissionKind, PolicyDecision};
 mod bootstrap;
 
 #[test]
-fn interactive_bootstrap_builds_runtime_state_from_profiles() {
+fn interactive_bootstrap_builds_runtime_state_from_agents() {
     let config = load_config_from_str(
         r#"
         {
@@ -24,7 +24,7 @@ fn interactive_bootstrap_builds_runtime_state_from_profiles() {
               },
             },
           },
-          profiles: {
+          agents: {
             deep: {
               description: "Deep work",
               model_ref: "default:gpt-4o-mini",
@@ -94,6 +94,125 @@ fn interactive_bootstrap_builds_runtime_state_from_profiles() {
         coordinator_config
             .permission_policy
             .evaluate(Some("planner"), PermissionKind::Task),
+        PolicyDecision::Deny
+    );
+}
+
+#[test]
+fn opencode_primary_agents_enforce_build_and_plan_permissions() {
+    let config = load_config_from_str(
+        r#"
+        {
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              api_mode: "responses",
+              timeout_ms: 60000,
+              models: {
+                "gpt-4o-mini": {
+                  display_name: "GPT-4o mini",
+                },
+              },
+            },
+          },
+          agent: {
+            build: {
+              description: "Implementation mode",
+              model_ref: "default:gpt-4o-mini",
+              permissions: {
+                edit: "allow",
+                shell: "allow",
+                task: "allow",
+              },
+              tools: [],
+            },
+            plan: {
+              description: "Planning mode",
+              model_ref: "default:gpt-4o-mini",
+              plan_mode: true,
+              exit_target_profile: "build",
+              permissions: {
+                edit: "deny",
+                shell: "deny",
+                task: "deny",
+              },
+              tools: [],
+            },
+          },
+          default_agent: "build",
+          permissions: {
+            defaults: {
+              edit: "allow",
+              shell: "allow",
+              network: "allow",
+              task: "allow",
+            },
+            shell_allowlist: {
+              executables: ["git"],
+              cwd_roots: ["."],
+            },
+          },
+          runtime: {
+            background_tasks: {
+              default_concurrency: 2,
+              provider_concurrency: 2,
+              model_concurrency: 2,
+              stale_timeout_ms: 15000,
+              message_staleness_timeout_ms: 5000,
+            },
+            session_dir: ".agent-harness/sessions",
+          },
+          integrations: {
+            remote_search: {
+              endpoint: "https://mcp.exa.ai/mcp",
+            },
+          },
+        }
+        "#,
+    )
+    .expect("config should parse");
+
+    let coordinator_config =
+        bootstrap::build_interactive_coordinator_config(&config).expect("build config");
+
+    assert_eq!(bootstrap::interactive_profile_name(&config), "build");
+    assert!(coordinator_config.plan_profiles["plan"].plan_mode);
+    assert_eq!(
+        coordinator_config.plan_profiles["plan"]
+            .exit_target_profile
+            .as_deref(),
+        Some("build")
+    );
+    assert_eq!(
+        coordinator_config
+            .permission_policy
+            .evaluate(Some("build"), PermissionKind::EditFs),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        coordinator_config
+            .permission_policy
+            .evaluate(Some("build"), PermissionKind::Shell),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        coordinator_config
+            .permission_policy
+            .evaluate(Some("plan"), PermissionKind::EditFs),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        coordinator_config
+            .permission_policy
+            .evaluate(Some("plan"), PermissionKind::Shell),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        coordinator_config
+            .permission_policy
+            .evaluate(Some("plan"), PermissionKind::Task),
         PolicyDecision::Deny
     );
 }

@@ -9,7 +9,7 @@ use harness_core::config::{
 };
 use harness_core::coord::{CoordinatorConfig, PlanProfileConfig};
 use harness_core::perm::PermissionPolicy;
-use harness_core::tool::resolve_tool_ids_for_surface;
+use harness_core::tool::{resolve_tool_ids_for_surface, ToolRegistry};
 use harness_providers::openai::{
     OpenAiApiMode as ProviderOpenAiApiMode, OpenAiCompatibleProvider,
     OpenAiCompatibleProviderConfig,
@@ -17,7 +17,8 @@ use harness_providers::openai::{
 use harness_providers::{Provider, ProviderRouter};
 use harness_tools::coordinator_registry_with_mcp;
 
-const DEFAULT_INTERACTIVE_PROFILE: &str = "deep";
+const DEFAULT_INTERACTIVE_PROFILE: &str = "build";
+const LEGACY_INTERACTIVE_PROFILE: &str = "deep";
 
 const CONFIG_SEARCH_LOCATIONS: [&str; 2] = [
     "./harness.jsonc",
@@ -30,7 +31,7 @@ pub fn load_harness_config(path: &Path) -> Result<HarnessConfig, String> {
 
 pub fn interactive_config_guidance() -> String {
     format!(
-        "interactive mode requires a config file; pass --config <path> or create {}. A starting point lives at configs/harness.example.jsonc and defaults to the plan -> build handoff. If you want the demo/mock UI instead, re-run with --mock",
+        "interactive mode requires a config file; pass --config <path> or create {}. A starting point lives at configs/harness.example.jsonc and defaults to the build agent while keeping the plan -> build handoff available. If you want the demo/mock UI instead, re-run with --mock",
         CONFIG_SEARCH_LOCATIONS.join(" or ")
     )
 }
@@ -40,15 +41,18 @@ pub fn build_interactive_coordinator_config(
 ) -> Result<CoordinatorConfig, String> {
     let mut coordinator_config = CoordinatorConfig::new(cfg.paths.session_dir.clone());
     coordinator_config.permission_policy = PermissionPolicy::from_config(cfg);
-    coordinator_config.tool_registry = Arc::new(coordinator_registry_with_mcp(
+    let tool_registry = coordinator_registry_with_mcp(
         cfg.permissions.shell_allowlist.clone(),
         cfg.integrations.mcp.clone(),
-    ));
+    );
+    let auto_tool_ids = auto_mcp_tool_ids(&tool_registry);
+    coordinator_config.tool_registry = Arc::new(tool_registry);
     coordinator_config.tool_concurrency = cfg.background_task.default_concurrency;
     coordinator_config.provider_model_concurrency = cfg.background_task.model_concurrency;
     coordinator_config.stale_timeout_ms = cfg.background_task.stale_timeout_ms;
     coordinator_config.provider = Arc::new(build_provider_router(cfg)?);
-    coordinator_config.agent_profiles = interactive_agent_profiles(cfg)?;
+    coordinator_config.agent_profiles =
+        interactive_agent_profiles_with_extra_tools(cfg, &auto_tool_ids)?;
     coordinator_config.plan_profiles = interactive_plan_profiles(cfg);
     Ok(coordinator_config)
 }
@@ -57,6 +61,17 @@ pub fn interactive_profile_name(cfg: &HarnessConfig) -> String {
     cfg.ui
         .default_profile
         .clone()
+        .or_else(|| {
+            cfg.agents
+                .contains_key(DEFAULT_INTERACTIVE_PROFILE)
+                .then(|| DEFAULT_INTERACTIVE_PROFILE.to_string())
+        })
+        .or_else(|| {
+            cfg.agents
+                .contains_key(LEGACY_INTERACTIVE_PROFILE)
+                .then(|| LEGACY_INTERACTIVE_PROFILE.to_string())
+        })
+        .or_else(|| cfg.agents.keys().next().cloned())
         .unwrap_or_else(|| DEFAULT_INTERACTIVE_PROFILE.to_string())
 }
 
@@ -104,11 +119,18 @@ fn default_interactive_system_prompt(profile_name: &str, description: &str) -> S
 pub fn interactive_agent_profiles(
     cfg: &HarnessConfig,
 ) -> Result<BTreeMap<String, AgentProfile>, String> {
+    interactive_agent_profiles_with_extra_tools(cfg, &[])
+}
+
+fn interactive_agent_profiles_with_extra_tools(
+    cfg: &HarnessConfig,
+    extra_tool_ids: &[String],
+) -> Result<BTreeMap<String, AgentProfile>, String> {
     refresh_profile_model_metadata_registry(cfg).map_err(|err| err.to_string())?;
 
     let mut profiles = BTreeMap::new();
 
-    for (profile_name, profile_cfg) in &cfg.profiles {
+    for (profile_name, profile_cfg) in &cfg.agents {
         profiles.insert(
             profile_name.clone(),
             AgentProfile {
@@ -123,7 +145,11 @@ pub fn interactive_agent_profiles(
                 tool_failure_mode: profile_cfg.tool_failure_mode,
                 tool_surface: profile_cfg.tool_surface,
                 toolset: resolve_tool_ids_for_surface(
-                    profile_cfg.tools.iter().map(String::as_str),
+                    profile_cfg
+                        .tools
+                        .iter()
+                        .map(String::as_str)
+                        .chain(extra_tool_ids.iter().map(String::as_str)),
                     profile_cfg.tool_surface,
                 ),
             },
@@ -133,8 +159,31 @@ pub fn interactive_agent_profiles(
     Ok(profiles)
 }
 
+fn auto_mcp_tool_ids(tool_registry: &ToolRegistry) -> Vec<String> {
+    tool_registry
+        .tool_ids()
+        .into_iter()
+        .filter(|tool_id| {
+            tool_id.starts_with("mcp.")
+                && !matches!(
+                    tool_id
+                        .splitn(4, '.')
+                        .skip(2)
+                        .collect::<Vec<_>>()
+                        .as_slice(),
+                    ["tools", "list"]
+                        | ["tool", "call"]
+                        | ["resources", "list"]
+                        | ["resource", "read"]
+                        | ["prompts", "list"]
+                        | ["prompt", "get"]
+                )
+        })
+        .collect()
+}
+
 fn interactive_plan_profiles(cfg: &HarnessConfig) -> BTreeMap<String, PlanProfileConfig> {
-    cfg.profiles
+    cfg.agents
         .iter()
         .map(|(name, profile)| {
             (
@@ -154,7 +203,7 @@ mod tests {
 
     use super::*;
 
-    fn config_fixture(profiles: &str) -> HarnessConfig {
+    fn config_fixture(agents: &str) -> HarnessConfig {
         let raw = format!(
             r#"
             {{
@@ -172,8 +221,8 @@ mod tests {
                   }},
                 }},
               }},
-              profiles: {{
-                {profiles}
+              agents: {{
+                {agents}
               }},
               permissions: {{
                 defaults: {{
@@ -219,7 +268,7 @@ mod tests {
               }},
             }}
             "#,
-            profiles = profiles,
+            agents = agents,
         );
 
         load_config_from_str(&raw).expect("fixture config should parse")
@@ -252,7 +301,7 @@ mod tests {
     }
 
     #[test]
-    fn interactive_profiles_preserve_configured_system_prompt_in_runtime_config() {
+    fn interactive_agents_preserve_configured_system_prompt_in_runtime_config() {
         let configured_prompt =
             "Audit the configured tool flow exactly.\nCollect hooks evidence before signoff.";
         let configured_prompt_json = configured_prompt.replace('\n', "\\n");
@@ -280,7 +329,7 @@ mod tests {
     }
 
     #[test]
-    fn interactive_profiles_fall_back_to_generated_system_prompt_when_missing() {
+    fn interactive_agents_fall_back_to_generated_system_prompt_when_missing() {
         let cfg = config_fixture(
             r#"
             deep: {
@@ -297,5 +346,74 @@ mod tests {
             profiles["deep"].system_prompt,
             default_interactive_system_prompt("deep", "Default deep execution profile")
         );
+    }
+
+    #[test]
+    fn interactive_agent_profiles_append_auto_mcp_tools() {
+        let cfg = config_fixture(
+            r#"
+            build: {
+              description: "Build lane",
+              model_ref: "default:gpt-5.4-mini",
+              tool_surface: "native",
+              tools: ["fs.read"],
+            },
+            "#,
+        );
+
+        let profiles = interactive_agent_profiles_with_extra_tools(
+            &cfg,
+            &[
+                "mcp.docs-rs.search_in_crate".to_string(),
+                "mcp.gh_grep.searchGitHub".to_string(),
+            ],
+        )
+        .expect("interactive profiles");
+
+        assert!(profiles["build"].toolset.contains(&"fs.read".to_string()));
+        assert!(profiles["build"]
+            .toolset
+            .contains(&"mcp.docs-rs.search_in_crate".to_string()));
+        assert!(profiles["build"]
+            .toolset
+            .contains(&"mcp.gh_grep.searchGitHub".to_string()));
+        assert!(!profiles["build"]
+            .toolset
+            .contains(&"mcp.docs-rs.tool.call".to_string()));
+    }
+
+    #[test]
+    fn interactive_profile_name_defaults_to_build_when_present() {
+        let cfg = config_fixture(
+            r#"
+            build: {
+              description: "Build lane",
+              model_ref: "default:gpt-5.4-mini",
+              tools: ["fs.read"],
+            },
+            plan: {
+              description: "Plan lane",
+              model_ref: "default:gpt-5.4-mini",
+              tools: ["fs.read"],
+            },
+            "#,
+        );
+
+        assert_eq!(interactive_profile_name(&cfg), "build");
+    }
+
+    #[test]
+    fn interactive_profile_name_preserves_legacy_deep_fallback_without_build() {
+        let cfg = config_fixture(
+            r#"
+            deep: {
+              description: "Deep lane",
+              model_ref: "default:gpt-5.4-mini",
+              tools: ["fs.read"],
+            },
+            "#,
+        );
+
+        assert_eq!(interactive_profile_name(&cfg), "deep");
     }
 }

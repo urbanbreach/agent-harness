@@ -92,6 +92,10 @@ fn native_surface_request() -> CompletionRequest {
         }],
         temperature: Some(0.0),
         max_tokens: None,
+        variant: None,
+        reasoning_effort: None,
+        text_verbosity: None,
+        reasoning_summary: None,
         tools: Some(vec![
             ToolDef {
                 tool_id: "fs.read".to_string(),

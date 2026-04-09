@@ -4,14 +4,14 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use harness_providers::{
-    AssistantToolCall, CompletionMessage, CompletionRequest, MessageRole, Provider,
-    ProviderEventStream, ProviderStreamEvent, ToolChoice, ToolDef,
+    AssistantToolCall, CompletionMessage, CompletionRequest, CompletionUsage, MessageRole,
+    Provider, ProviderEventStream, ProviderStreamEvent, ToolChoice, ToolDef,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio_stream::StreamExt;
 
-use crate::config::ToolFailureMode;
+use crate::config::{registered_profile_model_metadata, ToolFailureMode};
 use crate::tool::{
     build_tool_function_name_mapping, resolve_tool_ids_for_surface, ToolRegistry, ToolResult,
     ToolSurface,
@@ -59,6 +59,20 @@ pub struct AgentRequest {
     pub agent_id: String,
     pub prompt: String,
     pub model_ref: String,
+    #[serde(default)]
+    pub model_settings: AgentModelSettings,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct AgentModelSettings {
+    #[serde(default)]
+    pub variant: Option<String>,
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
+    #[serde(default)]
+    pub text_verbosity: Option<String>,
+    #[serde(default)]
+    pub reasoning_summary: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,12 +122,14 @@ pub struct ProviderRequestFinished {
     pub request_id: String,
     pub finish_reason: String,
     pub output_digest: Option<String>,
+    pub usage: Option<CompletionUsage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentRuntimeEvent {
     ProviderRequestStarted(ProviderRequestStarted),
     ProviderStreamDelta { request_id: String, delta: String },
+    ProviderReasoningDelta { request_id: String, delta: String },
     ProviderRequestFinished(ProviderRequestFinished),
 }
 
@@ -157,6 +173,7 @@ where
         model.model_id.clone(),
         messages,
         profile.temperature,
+        request.model_settings.clone(),
         None,
         None,
     );
@@ -186,14 +203,22 @@ where
                 })
                 .await;
             }
+            ProviderStreamEvent::ReasoningDelta(delta) => {
+                emit(AgentRuntimeEvent::ProviderReasoningDelta {
+                    request_id: request_id.clone(),
+                    delta,
+                })
+                .await;
+            }
             ProviderStreamEvent::ToolCallDelta { .. }
             | ProviderStreamEvent::ToolCallComplete { .. } => {}
-            ProviderStreamEvent::Done { .. } => {
+            ProviderStreamEvent::Done { usage } => {
                 emit(AgentRuntimeEvent::ProviderRequestFinished(
                     ProviderRequestFinished {
                         request_id: request_id.clone(),
                         finish_reason: "done".to_string(),
                         output_digest: Some(digest12(output.as_bytes())),
+                        usage: Some(usage),
                     },
                 ))
                 .await;
@@ -206,6 +231,7 @@ where
                         request_id: request_id.clone(),
                         finish_reason: "error".to_string(),
                         output_digest: None,
+                        usage: None,
                     },
                 ))
                 .await;
@@ -220,6 +246,7 @@ where
             request_id,
             finish_reason: "stream_ended".to_string(),
             output_digest: Some(digest12(output.as_bytes())),
+            usage: None,
         },
     ))
     .await;
@@ -265,6 +292,7 @@ where
             model.model_id.clone(),
             messages.clone(),
             profile.temperature,
+            request.model_settings.clone(),
             (!tool_defs.is_empty()).then(|| tool_defs.clone()),
             (!tool_defs.is_empty()).then_some(ToolChoice::Auto),
         );
@@ -296,6 +324,13 @@ where
                     })
                     .await;
                 }
+                ProviderStreamEvent::ReasoningDelta(delta) => {
+                    emit(AgentRuntimeEvent::ProviderReasoningDelta {
+                        request_id: turn_request_id.clone(),
+                        delta,
+                    })
+                    .await;
+                }
                 ProviderStreamEvent::ToolCallDelta { .. } => {}
                 ProviderStreamEvent::ToolCallComplete {
                     tool_call_id,
@@ -308,8 +343,18 @@ where
                         arguments_json,
                     });
                 }
-                ProviderStreamEvent::Done { .. } => {
+                ProviderStreamEvent::Done { usage } => {
                     finished = true;
+                    let usage = Some(usage);
+                    emit(AgentRuntimeEvent::ProviderRequestFinished(
+                        ProviderRequestFinished {
+                            request_id: turn_request_id.clone(),
+                            finish_reason: "done".to_string(),
+                            output_digest: Some(digest12(output.as_bytes())),
+                            usage,
+                        },
+                    ))
+                    .await;
                     break;
                 }
                 ProviderStreamEvent::Error { message } => {
@@ -318,6 +363,7 @@ where
                             request_id: turn_request_id,
                             finish_reason: "error".to_string(),
                             output_digest: None,
+                            usage: None,
                         },
                     ))
                     .await;
@@ -326,18 +372,17 @@ where
             }
         }
 
-        emit(AgentRuntimeEvent::ProviderRequestFinished(
-            ProviderRequestFinished {
-                request_id: turn_request_id,
-                finish_reason: if finished {
-                    "done".to_string()
-                } else {
-                    "stream_ended".to_string()
+        if !finished {
+            emit(AgentRuntimeEvent::ProviderRequestFinished(
+                ProviderRequestFinished {
+                    request_id: turn_request_id,
+                    finish_reason: "stream_ended".to_string(),
+                    output_digest: Some(digest12(output.as_bytes())),
+                    usage: None,
                 },
-                output_digest: Some(digest12(output.as_bytes())),
-            },
-        ))
-        .await;
+            ))
+            .await;
+        }
 
         let assistant_tool_calls = (!tool_calls.is_empty()).then(|| {
             tool_calls
@@ -567,18 +612,46 @@ fn build_completion_request(
     model_id: String,
     messages: Vec<CompletionMessage>,
     temperature: Option<f32>,
+    model_settings: AgentModelSettings,
     tools: Option<Vec<ToolDef>>,
     tool_choice: Option<ToolChoice>,
 ) -> CompletionRequest {
+    let AgentModelSettings {
+        variant,
+        reasoning_effort,
+        text_verbosity,
+        reasoning_summary,
+    } = model_settings;
+
     CompletionRequest {
         provider_id,
         model_id,
         messages,
         temperature,
         max_tokens: None,
+        variant,
+        reasoning_effort,
+        text_verbosity,
+        reasoning_summary,
         tools,
         tool_choice,
         stream: true,
+    }
+}
+
+pub fn default_model_settings_for_profile(profile_name: &str) -> AgentModelSettings {
+    let Some(metadata) = registered_profile_model_metadata(profile_name) else {
+        return AgentModelSettings::default();
+    };
+
+    AgentModelSettings {
+        variant: metadata.variant,
+        reasoning_effort: metadata.reasoning_effort.clone(),
+        text_verbosity: metadata.text_verbosity,
+        reasoning_summary: metadata
+            .reasoning_effort
+            .as_ref()
+            .map(|_| "auto".to_string()),
     }
 }
 
@@ -624,7 +697,8 @@ mod tests {
 
     use super::{
         build_provider_tool_defs, run_multi_turn_streaming, tool_result_to_message_content,
-        AgentProfile, AgentRequest, AgentTurnOutcome, MultiTurnStreamingRequest,
+        AgentModelSettings, AgentProfile, AgentRequest, AgentTurnOutcome,
+        MultiTurnStreamingRequest,
     };
     use crate::config::ToolFailureMode;
     use crate::tool::{
@@ -1267,6 +1341,7 @@ mod tests {
             agent_id: "agent_1".to_string(),
             prompt: "Use a tool".to_string(),
             model_ref: "mock:model-1".to_string(),
+            model_settings: AgentModelSettings::default(),
         }
     }
 
@@ -1281,6 +1356,10 @@ mod tests {
             messages,
             temperature: Some(0.1),
             max_tokens: None,
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
             tools: Some(tool_defs.to_vec()),
             tool_choice: Some(ToolChoice::Auto),
             stream: true,

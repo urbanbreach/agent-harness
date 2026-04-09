@@ -150,6 +150,14 @@ struct FixtureCompletionRequest {
     #[serde(default)]
     max_tokens: Option<u32>,
     #[serde(default)]
+    variant: Option<String>,
+    #[serde(default)]
+    reasoning_effort: Option<String>,
+    #[serde(default)]
+    text_verbosity: Option<String>,
+    #[serde(default)]
+    reasoning_summary: Option<String>,
+    #[serde(default)]
     tools: Option<Vec<ToolDef>>,
     #[serde(default)]
     tool_choice: Option<ToolChoice>,
@@ -164,6 +172,10 @@ impl From<FixtureCompletionRequest> for CompletionRequest {
             messages: value.messages,
             temperature: value.temperature,
             max_tokens: value.max_tokens,
+            variant: value.variant,
+            reasoning_effort: value.reasoning_effort,
+            text_verbosity: value.text_verbosity,
+            reasoning_summary: value.reasoning_summary,
             tools: value.tools,
             tool_choice: value.tool_choice,
             stream: value.stream,
@@ -175,6 +187,9 @@ impl From<FixtureCompletionRequest> for CompletionRequest {
 #[serde(tag = "type", rename_all = "snake_case")]
 enum FixtureStreamEvent {
     Start,
+    ReasoningDelta {
+        text: String,
+    },
     TextDelta {
         text: String,
     },
@@ -201,6 +216,7 @@ impl From<FixtureStreamEvent> for ProviderStreamEvent {
     fn from(value: FixtureStreamEvent) -> Self {
         match value {
             FixtureStreamEvent::Start => Self::Start,
+            FixtureStreamEvent::ReasoningDelta { text } => Self::ReasoningDelta(text),
             FixtureStreamEvent::TextDelta { text } => Self::TextDelta(text),
             FixtureStreamEvent::ToolCallDelta {
                 tool_call_id,
@@ -279,6 +295,10 @@ mod tests {
             }],
             temperature: Some(0.1),
             max_tokens: Some(7),
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
             tools: None,
             tool_choice: None,
             stream: true,
@@ -364,6 +384,10 @@ mod tests {
             ],
             temperature: Some(0.0),
             max_tokens: Some(32),
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
             tools: None,
             tool_choice: None,
             stream: true,
@@ -392,6 +416,10 @@ mod tests {
             ],
             temperature: Some(0.0),
             max_tokens: Some(64),
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
             tools: Some(vec![crate::ToolDef {
                 tool_id: "fs.read".to_string(),
                 function_name: "filesystem_read".to_string(),

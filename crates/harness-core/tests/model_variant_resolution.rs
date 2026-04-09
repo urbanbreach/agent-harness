@@ -35,7 +35,7 @@ fn variant_test_config() -> HarnessConfig {
               },
             },
           },
-          profiles: {
+          agents: {
             deep: {
               description: "Deep work",
               model_ref: "default:gpt-5.4-mini",
@@ -97,16 +97,12 @@ fn model_variant_resolution_returns_variant_display_and_metadata() {
 #[test]
 fn model_variant_resolution_rejects_unknown_variant() {
     let mut config = variant_test_config();
-    config
-        .profiles
-        .get_mut("deep")
-        .expect("deep profile")
-        .variant = Some("ghost".to_string());
+    config.agents.get_mut("deep").expect("deep profile").variant = Some("ghost".to_string());
 
     let err = resolve_profile_model_metadata(&config, "deep").expect_err("variant must fail");
 
     assert_eq!(
         err.to_string(),
-        "profile `deep` references unknown variant `ghost` for model `default:gpt-5.4-mini`; available variants: deterministic"
+        "agent `deep` references unknown variant `ghost` for model `default:gpt-5.4-mini`; available variants: deterministic"
     );
 }

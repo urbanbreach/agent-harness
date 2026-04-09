@@ -75,6 +75,14 @@ pub struct CompletionRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_verbosity: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<ToolDef>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<ToolChoice>,
@@ -92,6 +100,7 @@ pub struct CompletionUsage {
 pub enum ProviderStreamEvent {
     Start,
     TextDelta(String),
+    ReasoningDelta(String),
     ToolCallDelta {
         tool_call_id: String,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -223,6 +232,10 @@ mod tests {
             ],
             temperature: Some(0.0),
             max_tokens: Some(256),
+            variant: Some("low".to_string()),
+            reasoning_effort: Some("low".to_string()),
+            text_verbosity: Some("low".to_string()),
+            reasoning_summary: Some("auto".to_string()),
             tools: Some(vec![ToolDef {
                 tool_id: "fs.read".to_string(),
                 function_name: "filesystem_read".to_string(),
@@ -261,6 +274,10 @@ mod tests {
             }],
             temperature: None,
             max_tokens: None,
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
             tools: None,
             tool_choice: None,
             stream: true,

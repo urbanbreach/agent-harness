@@ -338,6 +338,17 @@ async fn consume_chat_sse_stream(
 
         let mut finish_seen = false;
         for choice in chunk.choices {
+            if let Some(reasoning) = choice.delta.reasoning_text {
+                if !reasoning.is_empty()
+                    && tx
+                        .send(ProviderStreamEvent::ReasoningDelta(reasoning))
+                        .await
+                        .is_err()
+                {
+                    return;
+                }
+            }
+
             if let Some(content) = choice.delta.content {
                 if !content.is_empty()
                     && tx
@@ -581,6 +592,18 @@ async fn consume_responses_sse_stream(
         };
 
         match parsed.event_type.as_str() {
+            "response.reasoning_summary_text.delta" => {
+                if let Some(delta) = parsed.delta {
+                    if !delta.is_empty()
+                        && tx
+                            .send(ProviderStreamEvent::ReasoningDelta(delta))
+                            .await
+                            .is_err()
+                    {
+                        return;
+                    }
+                }
+            }
             "response.output_text.delta" => {
                 if let Some(delta) = parsed.delta {
                     if !delta.is_empty()
@@ -912,6 +935,10 @@ struct OpenAiChatCompletionsRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text_verbosity: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<Vec<OpenAiChatTool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_choice: Option<ToolChoice>,
@@ -926,6 +953,10 @@ impl From<CompletionRequest> for OpenAiChatCompletionsRequest {
             messages,
             temperature,
             max_tokens,
+            variant: _,
+            reasoning_effort,
+            text_verbosity,
+            reasoning_summary: _,
             tools,
             tool_choice,
             stream,
@@ -936,6 +967,8 @@ impl From<CompletionRequest> for OpenAiChatCompletionsRequest {
             messages: messages.into_iter().map(Into::into).collect(),
             temperature,
             max_tokens,
+            reasoning_effort,
+            text_verbosity,
             tools: map_tools(tools),
             tool_choice,
             stream,
@@ -1042,6 +1075,10 @@ struct OpenAiResponsesRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     max_output_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning: Option<OpenAiResponsesReasoning>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<OpenAiResponsesText>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<Vec<OpenAiResponsesTool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_choice: Option<ToolChoice>,
@@ -1056,6 +1093,10 @@ impl From<CompletionRequest> for OpenAiResponsesRequest {
             messages,
             temperature,
             max_tokens,
+            variant: _,
+            reasoning_effort,
+            text_verbosity,
+            reasoning_summary,
             tools,
             tool_choice,
             stream,
@@ -1066,6 +1107,13 @@ impl From<CompletionRequest> for OpenAiResponsesRequest {
             input: serialize_responses_input(messages),
             temperature,
             max_output_tokens: max_tokens,
+            reasoning: (reasoning_effort.is_some() || reasoning_summary.is_some()).then_some(
+                OpenAiResponsesReasoning {
+                    effort: reasoning_effort,
+                    summary: reasoning_summary,
+                },
+            ),
+            text: text_verbosity.map(|verbosity| OpenAiResponsesText { verbosity }),
             tools: map_tools(tools),
             tool_choice,
             stream,
@@ -1156,6 +1204,19 @@ struct OpenAiResponsesContentItem {
     #[serde(rename = "type")]
     item_type: String,
     text: String,
+}
+
+#[derive(Debug, Serialize)]
+struct OpenAiResponsesReasoning {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effort: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    summary: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct OpenAiResponsesText {
+    verbosity: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -1279,6 +1340,8 @@ struct OpenAiChatChoiceChunk {
 struct OpenAiChatDeltaChunk {
     #[serde(default)]
     content: Option<String>,
+    #[serde(default)]
+    reasoning_text: Option<String>,
     #[serde(default)]
     tool_calls: Vec<OpenAiChatToolCallDeltaChunk>,
 }
@@ -1556,6 +1619,10 @@ mod tests {
             ],
             temperature: Some(0.0),
             max_tokens: None,
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
             tools: None,
             tool_choice: None,
             stream: true,
@@ -1684,6 +1751,10 @@ mod tests {
             ],
             temperature: Some(0.0),
             max_tokens: None,
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
             tools: None,
             tool_choice: None,
             stream: true,
@@ -1976,6 +2047,7 @@ mod tests {
             while let Some(event) = stream.next().await {
                 match event {
                     ProviderStreamEvent::Start => saw_start = true,
+                    ProviderStreamEvent::ReasoningDelta(_) => {}
                     ProviderStreamEvent::TextDelta(delta) => {
                         delta_chars += delta.len();
                     }
@@ -2031,6 +2103,10 @@ mod tests {
             }],
             temperature: Some(0.0),
             max_tokens: Some(32),
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
             tools: None,
             tool_choice: None,
             stream: true,
@@ -2050,6 +2126,10 @@ mod tests {
             }],
             temperature: Some(0.0),
             max_tokens: Some(64),
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
             tools: Some(vec![ToolDef {
                 tool_id: "fs.read".to_string(),
                 function_name: "filesystem_read".to_string(),

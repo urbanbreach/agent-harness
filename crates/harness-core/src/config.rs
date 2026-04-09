@@ -6,7 +6,7 @@ use std::{
 };
 
 use schemars::{schema_for, JsonSchema};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
 use crate::tool::ToolSurface;
@@ -19,6 +19,12 @@ static PROFILE_MODEL_METADATA_REGISTRY: OnceLock<
 static HOOK_RUNTIME_CONFIG_REGISTRY: OnceLock<Mutex<HookRuntimeConfig>> = OnceLock::new();
 static SKILLS_CONFIG_REGISTRY: OnceLock<Mutex<SkillsConfig>> = OnceLock::new();
 static LSP_CONFIG_REGISTRY: OnceLock<Mutex<LspConfig>> = OnceLock::new();
+static INTEGRATIONS_CONFIG_REGISTRY: OnceLock<Mutex<Option<IntegrationsConfig>>> = OnceLock::new();
+static MCP_SERVER_CONNECTION_REGISTRY: OnceLock<Mutex<BTreeMap<String, McpServerConnectionState>>> =
+    OnceLock::new();
+static MCP_SERVER_FIRST_CLASS_TOOL_ID_REGISTRY: OnceLock<
+    Mutex<BTreeMap<String, BTreeMap<String, String>>>,
+> = OnceLock::new();
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
@@ -52,8 +58,10 @@ pub struct HarnessConfig {
     #[serde(rename = "$schema", default)]
     pub schema: Option<String>,
     pub providers: BTreeMap<String, ProviderConfig>,
-    #[serde(rename = "profiles")]
-    pub profiles: BTreeMap<String, ProfileConfig>,
+    #[serde(default)]
+    pub agents: BTreeMap<String, ProfileConfig>,
+    #[serde(default)]
+    pub agent: BTreeMap<String, ProfileConfig>,
     pub permissions: PermissionsConfig,
     pub runtime: RuntimeConfig,
     pub integrations: IntegrationsConfig,
@@ -79,6 +87,8 @@ pub struct HarnessConfig {
     pub ui: UiConfig,
     #[serde(default)]
     pub logging: LoggingConfig,
+    #[serde(default, alias = "defaultAgent")]
+    pub default_agent: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -210,6 +220,33 @@ impl HarnessConfig {
         self.deterministic = self.runtime.deterministic.clone();
     }
 
+    fn normalize_public_config_aliases(&mut self) -> Result<(), ConfigError> {
+        if !self.agent.is_empty() {
+            if self.agents.is_empty() {
+                self.agents = self.agent.clone();
+            } else if self.agents != self.agent {
+                return Err(ConfigError::InvalidReference(
+                    "top-level `agent` and `agents` both exist but differ; use one shape or make them identical"
+                        .to_string(),
+                ));
+            }
+        }
+
+        if let Some(default_agent) = self.default_agent.clone() {
+            match self.ui.default_profile.as_deref() {
+                None => self.ui.default_profile = Some(default_agent),
+                Some(profile) if profile == default_agent => {}
+                Some(profile) => {
+                    return Err(ConfigError::InvalidReference(format!(
+                        "top-level `default_agent` `{default_agent}` conflicts with `ui.default_profile` `{profile}`; use one value"
+                    )));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     fn apply_env_substitutions(&mut self) -> Result<(), ConfigError> {
         for provider in self.providers.values_mut() {
             match provider {
@@ -222,19 +259,19 @@ impl HarnessConfig {
         Ok(())
     }
 
-    fn validate_references(&self) -> Result<(), ConfigError> {
-        for (profile_name, profile) in &self.profiles {
-            let Some((provider_name, model_name)) = parse_model_ref(&profile.model_ref) else {
+    fn validate_references(&mut self) -> Result<(), ConfigError> {
+        for (agent_name, agent) in &self.agents {
+            let Some((provider_name, model_name)) = parse_model_ref(&agent.model_ref) else {
                 return Err(ConfigError::InvalidReference(format!(
-                    "profile `{profile_name}` has invalid `model_ref` `{}`; use `<provider>:<model>`",
-                    profile.model_ref
+                    "agent `{agent_name}` has invalid `model_ref` `{}`; use `<provider>:<model>`",
+                    agent.model_ref
                 )));
             };
 
             let Some(provider) = self.providers.get(provider_name) else {
                 return Err(ConfigError::InvalidReference(format!(
-                    "profile `{profile_name}` references unknown provider `{provider_name}` in `model_ref` `{}`; available providers: {}",
-                    profile.model_ref,
+                    "agent `{agent_name}` references unknown provider `{provider_name}` in `model_ref` `{}`; available providers: {}",
+                    agent.model_ref,
                     format_name_list(self.providers.keys().map(|name| name.as_str()))
                 )));
             };
@@ -242,51 +279,142 @@ impl HarnessConfig {
             let models = provider.models();
             let Some(model) = models.get(model_name) else {
                 return Err(ConfigError::InvalidReference(format!(
-                    "profile `{profile_name}` references unknown model `{model_name}` in `model_ref` `{}`; available models for provider `{provider_name}`: {}",
-                    profile.model_ref,
+                    "agent `{agent_name}` references unknown model `{model_name}` in `model_ref` `{}`; available models for provider `{provider_name}`: {}",
+                    agent.model_ref,
                     format_name_list(models.keys().map(|name| name.as_str()))
                 )));
             };
 
-            if let Some(variant_name) = profile.variant.as_deref() {
+            if let Some(variant_name) = agent.variant.as_deref() {
                 let Some(variant) = model.variants.get(variant_name) else {
                     return Err(ConfigError::InvalidReference(format!(
-                        "profile `{profile_name}` references unknown variant `{variant_name}` for model `{}`; available variants: {}",
-                        profile.model_ref,
+                        "agent `{agent_name}` references unknown variant `{variant_name}` for model `{}`; available variants: {}",
+                        agent.model_ref,
                         format_name_list(model.variants.keys().map(|name| name.as_str()))
                     )));
                 };
 
                 if variant.disabled {
                     return Err(ConfigError::InvalidReference(format!(
-                        "profile `{profile_name}` references disabled variant `{variant_name}` for model `{}`; choose an enabled variant",
-                        profile.model_ref
+                        "agent `{agent_name}` references disabled variant `{variant_name}` for model `{}`; choose an enabled variant",
+                        agent.model_ref
                     )));
                 }
             }
 
-            if let Some(target_profile) = profile.exit_target_profile.as_deref() {
-                if !self.profiles.contains_key(target_profile) {
+            if let Some(target_profile) = agent.exit_target_profile.as_deref() {
+                if !self.agents.contains_key(target_profile) {
                     return Err(ConfigError::InvalidReference(format!(
-                        "profile `{profile_name}` references unknown `exit_target_profile` `{target_profile}`; available profiles: {}",
-                        format_name_list(self.profiles.keys().map(|name| name.as_str()))
+                        "agent `{agent_name}` references unknown `exit_target_profile` `{target_profile}`; available agents: {}",
+                        format_name_list(self.agents.keys().map(|name| name.as_str()))
                     )));
                 }
             }
         }
 
         if let Some(default_profile) = self.ui.default_profile.as_deref() {
-            if !self.profiles.contains_key(default_profile) {
-                return Err(ConfigError::InvalidReference(format!(
-                    "ui.default_profile references unknown profile `{default_profile}`; available profiles: {}",
-                    format_name_list(self.profiles.keys().map(|name| name.as_str()))
-                )));
+            if !self.agents.contains_key(default_profile) {
+                if self.agents.contains_key("build") {
+                    self.ui.default_profile = Some("build".to_string());
+                    self.default_agent = Some("build".to_string());
+                } else {
+                    return Err(ConfigError::InvalidReference(format!(
+                        "ui.default_profile references unknown agent `{default_profile}`; available agents: {}",
+                        format_name_list(self.agents.keys().map(|name| name.as_str()))
+                    )));
+                }
             }
         }
 
         self.validate_hook_definitions()?;
         self.validate_skill_roots()?;
         self.validate_lsp_overrides()?;
+        self.validate_mcp_servers()?;
+
+        Ok(())
+    }
+
+    fn validate_mcp_servers(&self) -> Result<(), ConfigError> {
+        for (server_name, server) in &self.integrations.mcp.servers {
+            if server_name.trim().is_empty() {
+                return Err(ConfigError::InvalidReference(
+                    "integrations.mcp.servers contains an empty server name; use explicit ids like `docs-rs` or `gh_grep`"
+                        .to_string(),
+                ));
+            }
+            if !server_name
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-'))
+            {
+                return Err(ConfigError::InvalidReference(format!(
+                    "integrations.mcp.servers.{server_name} has an invalid server id; use only ASCII letters, digits, `_`, or `-`"
+                )));
+            }
+
+            match server {
+                McpServerConfig::Stdio {
+                    command,
+                    env,
+                    cwd,
+                    timeout_secs,
+                    ..
+                } => {
+                    if command.is_empty() {
+                        return Err(ConfigError::InvalidReference(format!(
+                            "integrations.mcp.servers.{server_name} must include at least one stdio command token"
+                        )));
+                    }
+                    if command.iter().any(|token| token.trim().is_empty()) {
+                        return Err(ConfigError::InvalidReference(format!(
+                            "integrations.mcp.servers.{server_name} contains an empty stdio command token"
+                        )));
+                    }
+                    if *timeout_secs == 0 {
+                        return Err(ConfigError::InvalidReference(format!(
+                            "integrations.mcp.servers.{server_name} must set `timeout_secs` to a value greater than 0"
+                        )));
+                    }
+                    if let Some(cwd) = cwd {
+                        if cwd.as_os_str().is_empty() {
+                            return Err(ConfigError::InvalidReference(format!(
+                                "integrations.mcp.servers.{server_name} must set `cwd` to a non-empty path when provided"
+                            )));
+                        }
+                    }
+                    for key in env.keys() {
+                        if key.trim().is_empty() {
+                            return Err(ConfigError::InvalidReference(format!(
+                                "integrations.mcp.servers.{server_name} contains an empty environment variable name"
+                            )));
+                        }
+                    }
+                }
+                McpServerConfig::Http {
+                    endpoint,
+                    headers,
+                    timeout_secs,
+                    ..
+                } => {
+                    if endpoint.trim().is_empty() {
+                        return Err(ConfigError::InvalidReference(format!(
+                            "integrations.mcp.servers.{server_name} must set a non-empty HTTP endpoint"
+                        )));
+                    }
+                    if *timeout_secs == 0 {
+                        return Err(ConfigError::InvalidReference(format!(
+                            "integrations.mcp.servers.{server_name} must set `timeout_secs` to a value greater than 0"
+                        )));
+                    }
+                    for key in headers.keys() {
+                        if key.trim().is_empty() {
+                            return Err(ConfigError::InvalidReference(format!(
+                                "integrations.mcp.servers.{server_name} contains an empty HTTP header name"
+                            )));
+                        }
+                    }
+                }
+            }
+        }
 
         Ok(())
     }
@@ -732,6 +860,23 @@ pub struct ResolvedProfileModelMetadata {
     pub recommended_for: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedModelCatalogEntry {
+    pub provider: String,
+    pub model: String,
+    pub variant: Option<String>,
+    pub display_label: String,
+    pub token_window_label: Option<String>,
+    pub context_window_tokens: Option<u32>,
+    pub max_input_tokens: Option<u32>,
+    pub max_output_tokens: Option<u32>,
+    pub description: Option<String>,
+    pub reasoning_effort: Option<String>,
+    pub text_verbosity: Option<String>,
+    pub recommended_for: Option<String>,
+    pub supports_reasoning_summaries: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
 pub struct ModelMetadataConfig {
@@ -787,7 +932,7 @@ pub enum ModelVariantTextVerbosity {
     High,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProfileConfig {
     pub description: String,
@@ -822,7 +967,7 @@ pub struct ProfileConfig {
 /// Legacy compatibility alias kept for migration shims and older category-named call sites.
 pub type CategoryConfig = ProfileConfig;
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
 pub struct ProfilePermissions {
     #[serde(default)]
@@ -961,6 +1106,12 @@ pub struct IntegrationsConfig {
     pub mcp: McpConfig,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpServerConnectionState {
+    Connected,
+    Disconnected,
+}
+
 /// Settings for the built-in remote search bridge.
 ///
 /// The current runtime expects an Exa-compatible MCP endpoint for native
@@ -1014,25 +1165,38 @@ pub struct McpConfig {
     pub servers: BTreeMap<String, McpServerConfig>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(tag = "transport", rename_all = "snake_case", deny_unknown_fields)]
 pub enum McpServerConfig {
     Stdio {
         command: Vec<String>,
-        #[serde(default)]
+        #[serde(default, alias = "environment")]
         env: BTreeMap<String, String>,
         #[serde(default)]
         cwd: Option<PathBuf>,
-        #[serde(default = "default_mcp_timeout_secs", alias = "timeoutSecs")]
+        #[serde(
+            default = "default_mcp_timeout_secs",
+            alias = "timeoutSecs",
+            alias = "timeout"
+        )]
         timeout_secs: u64,
+        #[serde(default = "default_mcp_enabled")]
+        enabled: bool,
     },
     #[serde(alias = "streamable_http")]
     Http {
+        #[serde(alias = "url")]
         endpoint: String,
         #[serde(default)]
         headers: BTreeMap<String, String>,
-        #[serde(default = "default_mcp_timeout_secs", alias = "timeoutSecs")]
+        #[serde(
+            default = "default_mcp_timeout_secs",
+            alias = "timeoutSecs",
+            alias = "timeout"
+        )]
         timeout_secs: u64,
+        #[serde(default = "default_mcp_enabled")]
+        enabled: bool,
     },
 }
 
@@ -1040,6 +1204,165 @@ impl McpServerConfig {
     pub fn timeout_secs(&self) -> u64 {
         match self {
             Self::Stdio { timeout_secs, .. } | Self::Http { timeout_secs, .. } => *timeout_secs,
+        }
+    }
+
+    pub fn enabled(&self) -> bool {
+        match self {
+            Self::Stdio { enabled, .. } | Self::Http { enabled, .. } => *enabled,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for McpServerConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = RawMcpServerConfig::deserialize(deserializer)?;
+        Ok(match raw {
+            RawMcpServerConfig::Harness(config) => config.into_runtime(),
+            RawMcpServerConfig::Opencode(config) => config.into_runtime(),
+        })
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum RawMcpServerConfig {
+    Harness(HarnessTaggedMcpServerConfig),
+    Opencode(OpencodeTaggedMcpServerConfig),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "transport", rename_all = "snake_case", deny_unknown_fields)]
+enum HarnessTaggedMcpServerConfig {
+    Stdio {
+        command: Vec<String>,
+        #[serde(default, alias = "environment")]
+        env: BTreeMap<String, String>,
+        #[serde(default)]
+        cwd: Option<PathBuf>,
+        #[serde(
+            default = "default_mcp_timeout_secs",
+            alias = "timeoutSecs",
+            alias = "timeout"
+        )]
+        timeout_secs: u64,
+        #[serde(default = "default_mcp_enabled")]
+        enabled: bool,
+    },
+    #[serde(alias = "streamable_http")]
+    Http {
+        #[serde(alias = "url")]
+        endpoint: String,
+        #[serde(default)]
+        headers: BTreeMap<String, String>,
+        #[serde(
+            default = "default_mcp_timeout_secs",
+            alias = "timeoutSecs",
+            alias = "timeout"
+        )]
+        timeout_secs: u64,
+        #[serde(default = "default_mcp_enabled")]
+        enabled: bool,
+    },
+}
+
+impl HarnessTaggedMcpServerConfig {
+    fn into_runtime(self) -> McpServerConfig {
+        match self {
+            Self::Stdio {
+                command,
+                env,
+                cwd,
+                timeout_secs,
+                enabled,
+            } => McpServerConfig::Stdio {
+                command,
+                env,
+                cwd,
+                timeout_secs,
+                enabled,
+            },
+            Self::Http {
+                endpoint,
+                headers,
+                timeout_secs,
+                enabled,
+            } => McpServerConfig::Http {
+                endpoint,
+                headers,
+                timeout_secs,
+                enabled,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+enum OpencodeTaggedMcpServerConfig {
+    Local {
+        command: Vec<String>,
+        #[serde(default, alias = "env")]
+        environment: BTreeMap<String, String>,
+        #[serde(default)]
+        cwd: Option<PathBuf>,
+        #[serde(
+            default = "default_mcp_timeout_secs",
+            alias = "timeoutSecs",
+            alias = "timeout"
+        )]
+        timeout_secs: u64,
+        #[serde(default = "default_mcp_enabled")]
+        enabled: bool,
+    },
+    Remote {
+        url: String,
+        #[serde(default)]
+        headers: BTreeMap<String, String>,
+        #[serde(default, rename = "oauth")]
+        _oauth: Option<serde_json::Value>,
+        #[serde(
+            default = "default_mcp_timeout_secs",
+            alias = "timeoutSecs",
+            alias = "timeout"
+        )]
+        timeout_secs: u64,
+        #[serde(default = "default_mcp_enabled")]
+        enabled: bool,
+    },
+}
+
+impl OpencodeTaggedMcpServerConfig {
+    fn into_runtime(self) -> McpServerConfig {
+        match self {
+            Self::Local {
+                command,
+                environment,
+                cwd,
+                timeout_secs,
+                enabled,
+            } => McpServerConfig::Stdio {
+                command,
+                env: environment,
+                cwd,
+                timeout_secs,
+                enabled,
+            },
+            Self::Remote {
+                url,
+                headers,
+                _oauth: _,
+                timeout_secs,
+                enabled,
+            } => McpServerConfig::Http {
+                endpoint: url,
+                headers,
+                timeout_secs,
+                enabled,
+            },
         }
     }
 }
@@ -1128,6 +1451,10 @@ fn default_mcp_timeout_secs() -> u64 {
     30
 }
 
+fn default_mcp_enabled() -> bool {
+    true
+}
+
 fn default_provider_timeout_ms() -> u64 {
     60_000
 }
@@ -1186,39 +1513,36 @@ fn resolve_env_reference(value: &str) -> Result<String, ConfigError> {
     }
 }
 
-const REQUIRED_CONFIG_SECTIONS: [&str; 5] = [
-    "integrations",
-    "permissions",
-    "profiles",
-    "providers",
-    "runtime",
-];
+const REQUIRED_CONFIG_SECTIONS: [&str; 4] = ["integrations", "permissions", "providers", "runtime"];
 
-const ALLOWED_TOP_LEVEL_CONFIG_KEYS: [&str; 11] = [
+const ALLOWED_TOP_LEVEL_CONFIG_KEYS: [&str; 13] = [
     "$schema",
+    "agent",
+    "agents",
+    "default_agent",
     "hooks",
     "integrations",
     "lsp",
     "logging",
     "permissions",
-    "profiles",
     "providers",
     "runtime",
     "skills",
     "ui",
 ];
 
-const RETIRED_TOP_LEVEL_CONFIG_KEYS: [(&str, &str); 4] = [
+const RETIRED_TOP_LEVEL_CONFIG_KEYS: [(&str, &str); 5] = [
     (
         "backgroundTask",
         "move its fields under `runtime.background_tasks`",
     ),
-    ("categories", "rename it to `profiles`"),
+    ("categories", "rename it to `agents`"),
     (
         "deterministic",
         "move its fields under `runtime.deterministic`",
     ),
     ("paths", "move `paths.session_dir` to `runtime.session_dir`"),
+    ("profiles", "rename it to `agents`"),
 ];
 
 fn validate_root_config_object(
@@ -1241,6 +1565,9 @@ fn validate_root_config_object(
         .copied()
         .filter(|key| !object.contains_key(*key))
         .collect::<Vec<_>>();
+    if !object.contains_key("agent") && !object.contains_key("agents") {
+        missing.push("agent/agents");
+    }
     if !missing.is_empty() {
         missing.sort_unstable();
         return Err(ConfigError::MissingRequiredSections(missing.join(", ")));
@@ -1325,6 +1652,19 @@ fn lsp_config_registry() -> &'static Mutex<LspConfig> {
     LSP_CONFIG_REGISTRY.get_or_init(|| Mutex::new(LspConfig::default()))
 }
 
+fn integrations_config_registry() -> &'static Mutex<Option<IntegrationsConfig>> {
+    INTEGRATIONS_CONFIG_REGISTRY.get_or_init(|| Mutex::new(None))
+}
+
+fn mcp_server_connection_registry() -> &'static Mutex<BTreeMap<String, McpServerConnectionState>> {
+    MCP_SERVER_CONNECTION_REGISTRY.get_or_init(|| Mutex::new(BTreeMap::new()))
+}
+
+fn mcp_server_first_class_tool_id_registry(
+) -> &'static Mutex<BTreeMap<String, BTreeMap<String, String>>> {
+    MCP_SERVER_FIRST_CLASS_TOOL_ID_REGISTRY.get_or_init(|| Mutex::new(BTreeMap::new()))
+}
+
 fn with_profile_model_metadata_registry<T>(
     f: impl FnOnce(&mut BTreeMap<String, ResolvedProfileModelMetadata>) -> T,
 ) -> T {
@@ -1367,9 +1707,43 @@ fn with_lsp_config_registry<T>(f: impl FnOnce(&mut LspConfig) -> T) -> T {
     }
 }
 
+fn with_integrations_config_registry<T>(f: impl FnOnce(&mut Option<IntegrationsConfig>) -> T) -> T {
+    match integrations_config_registry().lock() {
+        Ok(mut guard) => f(&mut guard),
+        Err(poisoned) => {
+            let mut guard = poisoned.into_inner();
+            f(&mut guard)
+        }
+    }
+}
+
+fn with_mcp_server_connection_registry<T>(
+    f: impl FnOnce(&mut BTreeMap<String, McpServerConnectionState>) -> T,
+) -> T {
+    match mcp_server_connection_registry().lock() {
+        Ok(mut guard) => f(&mut guard),
+        Err(poisoned) => {
+            let mut guard = poisoned.into_inner();
+            f(&mut guard)
+        }
+    }
+}
+
+fn with_mcp_server_first_class_tool_id_registry<T>(
+    f: impl FnOnce(&mut BTreeMap<String, BTreeMap<String, String>>) -> T,
+) -> T {
+    match mcp_server_first_class_tool_id_registry().lock() {
+        Ok(mut guard) => f(&mut guard),
+        Err(poisoned) => {
+            let mut guard = poisoned.into_inner();
+            f(&mut guard)
+        }
+    }
+}
+
 pub fn refresh_profile_model_metadata_registry(cfg: &HarnessConfig) -> Result<(), ConfigError> {
     let resolved = cfg
-        .profiles
+        .agents
         .keys()
         .map(|profile_name| {
             resolve_profile_model_metadata(cfg, profile_name)
@@ -1412,8 +1786,78 @@ pub fn refresh_lsp_config_registry(cfg: &HarnessConfig) {
     set_registered_lsp_config(cfg.lsp.clone());
 }
 
+pub fn refresh_integrations_config_registry(cfg: &HarnessConfig) {
+    set_registered_integrations_config(cfg.integrations.clone());
+    clear_registered_mcp_server_connection_states();
+    clear_registered_mcp_server_first_class_tool_ids();
+}
+
 pub fn registered_skills_config() -> SkillsConfig {
     with_skills_config_registry(|registered| registered.clone())
+}
+
+pub fn set_registered_integrations_config(config: IntegrationsConfig) {
+    with_integrations_config_registry(|registered| {
+        *registered = Some(config);
+    });
+}
+
+pub fn clear_registered_integrations_config() {
+    with_integrations_config_registry(|registered| {
+        *registered = None;
+    });
+    clear_registered_mcp_server_connection_states();
+    clear_registered_mcp_server_first_class_tool_ids();
+}
+
+pub fn registered_integrations_config() -> Option<IntegrationsConfig> {
+    with_integrations_config_registry(|registered| registered.clone())
+}
+
+pub fn set_registered_mcp_server_connection_states(
+    states: BTreeMap<String, McpServerConnectionState>,
+) {
+    with_mcp_server_connection_registry(|registered| {
+        *registered = states;
+    });
+}
+
+pub fn clear_registered_mcp_server_connection_states() {
+    with_mcp_server_connection_registry(|registered| {
+        registered.clear();
+    });
+}
+
+pub fn set_registered_mcp_server_first_class_tool_ids(
+    tool_ids: BTreeMap<String, BTreeMap<String, String>>,
+) {
+    with_mcp_server_first_class_tool_id_registry(|registered| {
+        *registered = tool_ids;
+    });
+}
+
+pub fn clear_registered_mcp_server_first_class_tool_ids() {
+    with_mcp_server_first_class_tool_id_registry(|registered| {
+        registered.clear();
+    });
+}
+
+pub fn registered_mcp_server_first_class_tool_id(
+    server_name: &str,
+    remote_tool_name: &str,
+) -> Option<String> {
+    with_mcp_server_first_class_tool_id_registry(|registered| {
+        registered
+            .get(server_name)
+            .and_then(|tool_ids| tool_ids.get(remote_tool_name))
+            .cloned()
+    })
+}
+
+pub fn registered_mcp_server_connection_state(
+    server_name: &str,
+) -> Option<McpServerConnectionState> {
+    with_mcp_server_connection_registry(|registered| registered.get(server_name).copied())
 }
 
 pub fn set_registered_lsp_config(config: LspConfig) {
@@ -1434,23 +1878,23 @@ pub fn resolve_profile_model_metadata(
     cfg: &HarnessConfig,
     profile_name: &str,
 ) -> Result<ResolvedProfileModelMetadata, ConfigError> {
-    let profile = cfg.profiles.get(profile_name).ok_or_else(|| {
+    let profile = cfg.agents.get(profile_name).ok_or_else(|| {
         ConfigError::InvalidReference(format!(
-            "unknown profile `{profile_name}`; available profiles: {}",
-            format_name_list(cfg.profiles.keys().map(|name| name.as_str()))
+            "unknown agent `{profile_name}`; available agents: {}",
+            format_name_list(cfg.agents.keys().map(|name| name.as_str()))
         ))
     })?;
 
     let Some((provider_name, model_name)) = parse_model_ref(&profile.model_ref) else {
         return Err(ConfigError::InvalidReference(format!(
-            "profile `{profile_name}` has invalid `model_ref` `{}`; use `<provider>:<model>`",
+            "agent `{profile_name}` has invalid `model_ref` `{}`; use `<provider>:<model>`",
             profile.model_ref
         )));
     };
 
     let provider = cfg.providers.get(provider_name).ok_or_else(|| {
         ConfigError::InvalidReference(format!(
-            "profile `{profile_name}` references unknown provider `{provider_name}` in `model_ref` `{}`; available providers: {}",
+            "agent `{profile_name}` references unknown provider `{provider_name}` in `model_ref` `{}`; available providers: {}",
             profile.model_ref,
             format_name_list(cfg.providers.keys().map(|name| name.as_str()))
         ))
@@ -1459,7 +1903,7 @@ pub fn resolve_profile_model_metadata(
     let models = provider.models();
     let model = models.get(model_name).ok_or_else(|| {
         ConfigError::InvalidReference(format!(
-            "profile `{profile_name}` references unknown model `{model_name}` in `model_ref` `{}`; available models for provider `{provider_name}`: {}",
+            "agent `{profile_name}` references unknown model `{model_name}` in `model_ref` `{}`; available models for provider `{provider_name}`: {}",
             profile.model_ref,
             format_name_list(models.keys().map(|name| name.as_str()))
         ))
@@ -1468,7 +1912,7 @@ pub fn resolve_profile_model_metadata(
     let variant = profile.variant.as_deref().map(|variant_name| {
         let variant = model.variants.get(variant_name).ok_or_else(|| {
             ConfigError::InvalidReference(format!(
-                "profile `{profile_name}` references unknown variant `{variant_name}` for model `{}`; available variants: {}",
+                "agent `{profile_name}` references unknown variant `{variant_name}` for model `{}`; available variants: {}",
                 profile.model_ref,
                 format_name_list(model.variants.keys().map(|name| name.as_str()))
             ))
@@ -1476,7 +1920,7 @@ pub fn resolve_profile_model_metadata(
 
         if variant.disabled {
             return Err(ConfigError::InvalidReference(format!(
-                "profile `{profile_name}` references disabled variant `{variant_name}` for model `{}`; choose an enabled variant",
+                "agent `{profile_name}` references disabled variant `{variant_name}` for model `{}`; choose an enabled variant",
                 profile.model_ref
             )));
         }
@@ -1525,6 +1969,129 @@ pub fn resolve_profile_model_metadata(
         recommended_for: variant
             .and_then(|(_, variant_cfg)| variant_cfg.metadata.recommended_for.clone()),
     })
+}
+
+pub fn resolve_configured_model_metadata(
+    cfg: &HarnessConfig,
+    provider_name: &str,
+    model_name: &str,
+    variant_name: Option<&str>,
+) -> Result<ResolvedModelCatalogEntry, ConfigError> {
+    let provider = cfg.providers.get(provider_name).ok_or_else(|| {
+        ConfigError::InvalidReference(format!(
+            "unknown provider `{provider_name}`; available providers: {}",
+            format_name_list(cfg.providers.keys().map(|name| name.as_str()))
+        ))
+    })?;
+
+    let model = provider.models().get(model_name).ok_or_else(|| {
+        ConfigError::InvalidReference(format!(
+            "unknown model `{model_name}` for provider `{provider_name}`; available models: {}",
+            format_name_list(provider.models().keys().map(|name| name.as_str()))
+        ))
+    })?;
+
+    let variant = variant_name.map(|variant_name| {
+        let variant = model.variants.get(variant_name).ok_or_else(|| {
+            ConfigError::InvalidReference(format!(
+                "unknown variant `{variant_name}` for model `{provider_name}:{model_name}`; available variants: {}",
+                format_name_list(model.variants.keys().map(|name| name.as_str()))
+            ))
+        })?;
+
+        if variant.disabled {
+            return Err(ConfigError::InvalidReference(format!(
+                "variant `{variant_name}` for model `{provider_name}:{model_name}` is disabled"
+            )));
+        }
+
+        Ok((variant_name, variant))
+    });
+    let variant = variant.transpose()?;
+
+    Ok(build_resolved_model_catalog_entry(
+        provider_name,
+        model_name,
+        model,
+        variant,
+    ))
+}
+
+pub fn configured_model_catalog(cfg: &HarnessConfig) -> Vec<ResolvedModelCatalogEntry> {
+    let mut entries = Vec::new();
+
+    for (provider_name, provider) in &cfg.providers {
+        for (model_name, model) in provider.models() {
+            entries.push(build_resolved_model_catalog_entry(
+                provider_name,
+                model_name,
+                model,
+                None,
+            ));
+
+            for (variant_name, variant_cfg) in &model.variants {
+                if variant_cfg.disabled {
+                    continue;
+                }
+
+                entries.push(build_resolved_model_catalog_entry(
+                    provider_name,
+                    model_name,
+                    model,
+                    Some((variant_name.as_str(), variant_cfg)),
+                ));
+            }
+        }
+    }
+
+    entries
+}
+
+fn build_resolved_model_catalog_entry(
+    provider_name: &str,
+    model_name: &str,
+    model: &ModelConfig,
+    variant: Option<(&str, &ModelVariantConfig)>,
+) -> ResolvedModelCatalogEntry {
+    let max_input_tokens = variant
+        .and_then(|(_, variant_cfg)| variant_cfg.max_input_tokens)
+        .or(model.max_input_tokens);
+    let max_output_tokens = variant
+        .and_then(|(_, variant_cfg)| variant_cfg.max_output_tokens)
+        .or(model.max_output_tokens);
+
+    ResolvedModelCatalogEntry {
+        provider: provider_name.to_string(),
+        model: model_name.to_string(),
+        variant: variant.map(|(variant_name, _)| variant_name.to_string()),
+        display_label: build_model_display_label(model, variant),
+        token_window_label: build_token_window_label(
+            model.metadata.context_window_tokens,
+            max_input_tokens,
+            max_output_tokens,
+        ),
+        context_window_tokens: model.metadata.context_window_tokens,
+        max_input_tokens,
+        max_output_tokens,
+        description: variant.and_then(|(_, variant_cfg)| variant_cfg.metadata.description.clone()),
+        reasoning_effort: variant.and_then(|(_, variant_cfg)| {
+            variant_cfg
+                .metadata
+                .reasoning_effort
+                .map(model_variant_reasoning_effort_label)
+                .map(str::to_string)
+        }),
+        text_verbosity: variant.and_then(|(_, variant_cfg)| {
+            variant_cfg
+                .metadata
+                .text_verbosity
+                .map(model_variant_text_verbosity_label)
+                .map(str::to_string)
+        }),
+        recommended_for: variant
+            .and_then(|(_, variant_cfg)| variant_cfg.metadata.recommended_for.clone()),
+        supports_reasoning_summaries: model.metadata.supports_reasoning_summaries.unwrap_or(false),
+    }
 }
 
 fn build_model_display_label(
@@ -1606,12 +2173,14 @@ pub fn load_config_from_str(raw: &str) -> Result<HarnessConfig, ConfigError> {
 
     let mut parsed: HarnessConfig =
         json5::from_str(raw).map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
+    parsed.normalize_public_config_aliases()?;
     parsed.sync_derived_runtime_sections();
     parsed.apply_env_substitutions()?;
     parsed.validate_references()?;
     refresh_hook_runtime_config_registry(&parsed);
     refresh_skills_config_registry(&parsed);
     refresh_lsp_config_registry(&parsed);
+    refresh_integrations_config_registry(&parsed);
     refresh_profile_model_metadata_registry(&parsed)?;
     Ok(parsed)
 }
@@ -1711,7 +2280,7 @@ mod tests {
     }
 
     fn config_fixture(
-        profiles: &str,
+        agents: &str,
         api_key: &str,
         ui_section: Option<&str>,
         schema: Option<&str>,
@@ -1739,8 +2308,8 @@ mod tests {
               }},
             }},
           }},
-          profiles: {{
-            {profiles}
+          agents: {{
+            {agents}
           }},
           permissions: {{
             defaults: {{
@@ -1789,7 +2358,7 @@ mod tests {
         "#,
             schema_section = schema_section,
             api_key = api_key,
-            profiles = profiles,
+            agents = agents,
             ui_section = ui_section,
         )
     }
@@ -1809,7 +2378,7 @@ mod tests {
 
     #[test]
     fn example_config_parses() {
-        let profiles = r#"
+        let agents = r#"
             deep: {
               description: "Default deep execution profile",
               model_ref: "default:gpt-4o-mini",
@@ -1832,7 +2401,7 @@ mod tests {
         "#;
 
         let text = config_fixture(
-            profiles,
+            agents,
             "${OPENAI_API_KEY:-sk-zerolimit}",
             Some(
                 r#"
@@ -1847,15 +2416,15 @@ mod tests {
 
         assert_eq!(parsed.schema.as_deref(), Some("./harness.schema.json"));
         assert!(parsed.providers.contains_key("default"));
-        assert!(parsed.profiles.contains_key("deep"));
-        assert_eq!(parsed.profiles["deep"].tool_surface, ToolSurface::Native);
+        assert!(parsed.agents.contains_key("deep"));
+        assert_eq!(parsed.agents["deep"].tool_surface, ToolSurface::Native);
         assert_eq!(
-            parsed.profiles["tool_audit"].tool_failure_mode,
+            parsed.agents["tool_audit"].tool_failure_mode,
             ToolFailureMode::ContinueAsToolMessage
         );
-        assert_eq!(parsed.profiles["tool_audit"].max_iters, 20);
+        assert_eq!(parsed.agents["tool_audit"].max_iters, 20);
         assert_eq!(
-            parsed.profiles["deep_compat"].tool_surface,
+            parsed.agents["deep_compat"].tool_surface,
             ToolSurface::Compat
         );
         assert_eq!(
@@ -1905,7 +2474,7 @@ mod tests {
                   }
                 }
               },
-              profiles: {
+              agents: {
                 deep: {
                   description: "Deep work",
                   model_ref: "default:gpt-4o-mini",
@@ -1976,7 +2545,7 @@ mod tests {
         let err = load_config_from_str(r#"{"version":1}"#).expect_err("must fail");
         assert_eq!(
             err.to_string(),
-            "missing required config sections: integrations, permissions, profiles, providers, runtime"
+            "missing required config sections: agent/agents, integrations, permissions, providers, runtime"
         );
     }
 
@@ -1993,7 +2562,7 @@ mod tests {
               permissions: {},
               runtime: {},
               integrations: {},
-              profiles: {}
+              agents: {}
             }
             "#,
         )
@@ -2001,7 +2570,7 @@ mod tests {
 
         assert_eq!(
             err.to_string(),
-            "retired config keys detected: top-level `backgroundTask` was retired; move its fields under `runtime.background_tasks`; top-level `categories` was retired; rename it to `profiles`; top-level `deterministic` was retired; move its fields under `runtime.deterministic`; top-level `paths` was retired; move `paths.session_dir` to `runtime.session_dir`"
+            "retired config keys detected: top-level `backgroundTask` was retired; move its fields under `runtime.background_tasks`; top-level `categories` was retired; rename it to `agents`; top-level `deterministic` was retired; move its fields under `runtime.deterministic`; top-level `paths` was retired; move `paths.session_dir` to `runtime.session_dir`"
         );
     }
 
@@ -2022,7 +2591,7 @@ mod tests {
                   }
                 }
               },
-              profiles: {
+              agents: {
                 deep: {
                   description: "Deep work",
                   model_ref: "default:gpt-4o-mini",
@@ -2061,7 +2630,7 @@ mod tests {
         let err = load_config_from_str(cfg).expect_err("unknown top-level key must fail");
         assert_eq!(
             err.to_string(),
-            "unknown top-level config keys: `extraTopLevel`; expected only `$schema`, `hooks`, `integrations`, `lsp`, `logging`, `permissions`, `profiles`, `providers`, `runtime`, `skills`, `ui`"
+            "unknown top-level config keys: `extraTopLevel`; expected only `$schema`, `agent`, `agents`, `default_agent`, `hooks`, `integrations`, `lsp`, `logging`, `permissions`, `providers`, `runtime`, `skills`, `ui`"
         );
     }
 
@@ -2103,7 +2672,7 @@ mod tests {
         let err = load_config_from_str(&cfg).expect_err("unknown provider must fail");
         assert_eq!(
             err.to_string(),
-            "profile `deep` references unknown provider `missing` in `model_ref` `missing:gpt-4o-mini`; available providers: default"
+            "agent `deep` references unknown provider `missing` in `model_ref` `missing:gpt-4o-mini`; available providers: default"
         );
     }
 
@@ -2124,7 +2693,7 @@ mod tests {
         let err = load_config_from_str(&cfg).expect_err("unknown exit target profile must fail");
         assert_eq!(
             err.to_string(),
-            "profile `deep` references unknown `exit_target_profile` `ops`; available profiles: deep"
+            "agent `deep` references unknown `exit_target_profile` `ops`; available agents: deep"
         );
     }
 
@@ -2146,8 +2715,202 @@ mod tests {
         let err = load_config_from_str(&cfg).expect_err("unknown ui default profile must fail");
         assert_eq!(
             err.to_string(),
-            "ui.default_profile references unknown profile `ops`; available profiles: deep"
+            "ui.default_profile references unknown agent `ops`; available agents: deep"
         );
+    }
+
+    #[test]
+    fn top_level_agent_alias_and_default_agent_normalize_to_runtime_shape() {
+        let cfg = r#"
+        {
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              models: {
+                "gpt-4o-mini": {
+                  display_name: "GPT-4o mini"
+                }
+              }
+            }
+          },
+          agent: {
+            build: {
+              description: "Build work",
+              model_ref: "default:gpt-4o-mini",
+              tools: ["fs.read"]
+            },
+            plan: {
+              description: "Planning work",
+              model_ref: "default:gpt-4o-mini",
+              plan_mode: true,
+              exit_target_profile: "build",
+              permissions: {
+                edit: "deny",
+                shell: "deny"
+              },
+              tools: ["fs.read", "plan.exit"]
+            }
+          },
+          default_agent: "build",
+          permissions: {
+            defaults: {
+              edit: "allow",
+              shell: "allow",
+              network: "allow"
+            }
+          },
+          runtime: {
+            background_tasks: {
+              default_concurrency: 2,
+              provider_concurrency: 2,
+              model_concurrency: 2,
+              stale_timeout_ms: 15000,
+              message_staleness_timeout_ms: 5000
+            },
+            session_dir: ".agent-harness/sessions"
+          },
+          integrations: {
+            remote_search: {
+              endpoint: "https://mcp.exa.ai/mcp"
+            }
+          }
+        }
+        "#;
+
+        let parsed = load_config_from_str(cfg).expect("agent/default_agent config should parse");
+        assert!(parsed.agents.contains_key("build"));
+        assert!(parsed.agents.contains_key("plan"));
+        assert_eq!(parsed.ui.default_profile.as_deref(), Some("build"));
+        assert_eq!(parsed.default_agent.as_deref(), Some("build"));
+        assert!(parsed.agents["plan"].plan_mode);
+        assert_eq!(
+            parsed.agents["plan"].exit_target_profile.as_deref(),
+            Some("build")
+        );
+    }
+
+    #[test]
+    fn top_level_agent_and_agents_conflict_is_rejected() {
+        let cfg = r#"
+        {
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              models: {
+                "gpt-4o-mini": {
+                  display_name: "GPT-4o mini"
+                }
+              }
+            }
+          },
+          agents: {
+            build: {
+              description: "Build work",
+              model_ref: "default:gpt-4o-mini",
+              tools: ["fs.read"]
+            }
+          },
+          agent: {
+            plan: {
+              description: "Planning work",
+              model_ref: "default:gpt-4o-mini",
+              tools: ["fs.read"]
+            }
+          },
+          permissions: {
+            defaults: {
+              edit: "allow",
+              shell: "allow",
+              network: "allow"
+            }
+          },
+          runtime: {
+            background_tasks: {
+              default_concurrency: 2,
+              provider_concurrency: 2,
+              model_concurrency: 2,
+              stale_timeout_ms: 15000,
+              message_staleness_timeout_ms: 5000
+            },
+            session_dir: ".agent-harness/sessions"
+          },
+          integrations: {
+            remote_search: {
+              endpoint: "https://mcp.exa.ai/mcp"
+            }
+          }
+        }
+        "#;
+
+        let err = load_config_from_str(cfg).expect_err("conflicting agent shapes must fail");
+        assert!(err
+            .to_string()
+            .contains("top-level `agent` and `agents` both exist but differ"));
+    }
+
+    #[test]
+    fn invalid_explicit_default_profile_falls_back_to_build_when_available() {
+        let cfg = r#"
+        {
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              models: {
+                "gpt-4o-mini": {
+                  display_name: "GPT-4o mini"
+                }
+              }
+            }
+          },
+          agents: {
+            build: {
+              description: "Build work",
+              model_ref: "default:gpt-4o-mini",
+              tools: ["fs.read"]
+            },
+            plan: {
+              description: "Planning work",
+              model_ref: "default:gpt-4o-mini",
+              tools: ["fs.read"]
+            }
+          },
+          permissions: {
+            defaults: {
+              edit: "allow",
+              shell: "allow",
+              network: "allow"
+            }
+          },
+          runtime: {
+            background_tasks: {
+              default_concurrency: 2,
+              provider_concurrency: 2,
+              model_concurrency: 2,
+              stale_timeout_ms: 15000,
+              message_staleness_timeout_ms: 5000
+            },
+            session_dir: ".agent-harness/sessions"
+          },
+          integrations: {
+            remote_search: {
+              endpoint: "https://mcp.exa.ai/mcp"
+            }
+          },
+          ui: {
+            default_profile: "ops"
+          }
+        }
+        "#;
+
+        let parsed = load_config_from_str(cfg).expect("invalid default should fall back to build");
+        assert_eq!(parsed.ui.default_profile.as_deref(), Some("build"));
+        assert_eq!(parsed.default_agent.as_deref(), Some("build"));
     }
 
     #[test]
@@ -2170,7 +2933,7 @@ mod tests {
                   }
                 }
               },
-              profiles: {
+              agents: {
                 deep: {
                   description: "Deep work",
                   model_ref: "default:gpt-4o-mini",
@@ -2226,7 +2989,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_uses_profiles_runtime_and_integrations_without_categories() {
+    fn schema_uses_agents_runtime_and_integrations_without_legacy_keys() {
         let schema = harness_schema_pretty_json().expect("schema generation should succeed");
         let parsed: serde_json::Value =
             serde_json::from_str(&schema).expect("schema output should be valid json");
@@ -2236,8 +2999,10 @@ mod tests {
             .expect("schema should contain properties");
 
         assert!(properties.contains_key("$schema"));
+        assert!(properties.contains_key("agent"));
         assert!(properties.contains_key("providers"));
-        assert!(properties.contains_key("profiles"));
+        assert!(properties.contains_key("agents"));
+        assert!(properties.contains_key("default_agent"));
         assert!(properties.contains_key("permissions"));
         assert!(properties.contains_key("runtime"));
         assert!(properties.contains_key("hooks"));
@@ -2245,6 +3010,7 @@ mod tests {
         assert!(properties.contains_key("lsp"));
         assert!(properties.contains_key("integrations"));
         assert!(!properties.contains_key("categories"));
+        assert!(!properties.contains_key("profiles"));
         assert!(schema.contains("\"ask_timeout_ms\""));
         assert!(schema.contains("\"wait_timeout_ms\""));
         assert!(!schema.contains("HARNESS_PROMPT_WAIT_TIMEOUT_MS"));
@@ -2268,7 +3034,7 @@ mod tests {
               },
             },
           },
-          profiles: {
+          agents: {
             deep: {
               description: "Deep work",
               model_ref: "default:gpt-4o-mini",
@@ -2316,7 +3082,7 @@ mod tests {
 
         let parsed = load_config_from_str(cfg).expect("json5 flavored config should parse");
         assert_eq!(parsed.schema.as_deref(), Some("./harness.schema.json"));
-        assert_eq!(parsed.profiles["deep"].model_ref, "default:gpt-4o-mini");
+        assert_eq!(parsed.agents["deep"].model_ref, "default:gpt-4o-mini");
     }
 
     #[test]
@@ -2431,7 +3197,7 @@ mod tests {
 
         let parsed =
             load_config_from_str(&cfg).expect("config with default tool surface must parse");
-        assert_eq!(parsed.profiles["deep"].tool_surface, ToolSurface::Native);
+        assert_eq!(parsed.agents["deep"].tool_surface, ToolSurface::Native);
     }
 
     #[test]
@@ -2450,7 +3216,7 @@ mod tests {
 
         let parsed =
             load_config_from_str(&cfg).expect("config with compat tool surface must parse");
-        assert_eq!(parsed.profiles["deep"].tool_surface, ToolSurface::Compat);
+        assert_eq!(parsed.agents["deep"].tool_surface, ToolSurface::Compat);
     }
 
     #[test]
@@ -2464,9 +3230,9 @@ mod tests {
 
         let parsed =
             load_config_from_str(&cfg).expect("config with default tool failure mode must parse");
-        assert_eq!(parsed.profiles["deep"].max_iters, default_max_iters());
+        assert_eq!(parsed.agents["deep"].max_iters, default_max_iters());
         assert_eq!(
-            parsed.profiles["deep"].tool_failure_mode,
+            parsed.agents["deep"].tool_failure_mode,
             ToolFailureMode::FailTurn
         );
     }
@@ -2490,12 +3256,12 @@ mod tests {
         let parsed = load_config_from_str(&cfg)
             .expect("config with explicit tool failure mode and prompt must parse");
         assert_eq!(
-            parsed.profiles["deep"].tool_failure_mode,
+            parsed.agents["deep"].tool_failure_mode,
             ToolFailureMode::ContinueAsToolMessage
         );
-        assert_eq!(parsed.profiles["deep"].max_iters, 24);
+        assert_eq!(parsed.agents["deep"].max_iters, 24);
         assert_eq!(
-            parsed.profiles["deep"].system_prompt.as_deref(),
+            parsed.agents["deep"].system_prompt.as_deref(),
             Some("Be precise.")
         );
     }
