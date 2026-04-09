@@ -58,7 +58,7 @@ fn valid_config_value(label: &str, session_dir: &Path) -> serde_json::Value {
                 }
             }
         },
-        "profiles": {
+        "agents": {
             "deep": {
                 "description": format!("{label} profile"),
                 "model_ref": "default:gpt-4o-mini",
@@ -152,7 +152,7 @@ fn rich_parity_config_value(session_dir: &Path) -> serde_json::Value {
                 }
             }
         },
-        "profiles": {
+        "agents": {
             "deep": {
                 "description": "Rich parity profile",
                 "model_ref": "default:gpt-5.4-mini",
@@ -278,7 +278,7 @@ fn schema_cli_prints_json_schema() {
     );
     let body = String::from_utf8_lossy(&output.stdout);
     assert!(body.contains("\"type\": \"object\""));
-    assert!(body.contains("\"profiles\"") || body.contains("\"runtime\""));
+    assert!(body.contains("\"agents\"") || body.contains("\"runtime\""));
     assert!(body.contains("\"integrations\""));
     assert!(body.contains("\"hooks\""));
     assert!(body.contains("\"skills\""));
@@ -484,7 +484,7 @@ fn config_validate_cli_accepts_gpt_5_4_mini_defaults() {
     let session_dir = temp.path().join("gpt-5.4-mini-sessions");
     let config = rich_parity_config_value(&temp.path().join("sessions"));
     assert_eq!(
-        config["profiles"]["deep"]["model_ref"],
+        config["agents"]["deep"]["model_ref"],
         serde_json::json!("default:gpt-5.4-mini")
     );
     assert!(config["providers"]["default"]["models"]
@@ -610,7 +610,7 @@ fn config_validate_cli_does_not_merge_lower_precedence_files_into_explicit_confi
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("config validation failed:"));
     assert!(stderr.contains(
-        "missing required config sections: integrations, permissions, profiles, runtime"
+        "missing required config sections: agent/agents, integrations, permissions, runtime"
     ));
 }
 
@@ -657,7 +657,7 @@ fn config_validate_cli_rejects_retired_public_keys_with_migration_guidance() {
                 "seed": 42
             }
         },
-        "profiles": {},
+        "agents": {},
         "categories": {},
         "backgroundTask": {
             "defaultConcurrency": 2
@@ -682,7 +682,7 @@ fn config_validate_cli_rejects_retired_public_keys_with_migration_guidance() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("config validation failed:"));
     assert!(stderr.contains("retired config keys detected:"));
-    assert!(stderr.contains("top-level `categories` was retired; rename it to `profiles`"));
+    assert!(stderr.contains("top-level `categories` was retired; rename it to `agents`"));
     assert!(stderr.contains(
         "top-level `backgroundTask` was retired; move its fields under `runtime.background_tasks`"
     ));
@@ -712,7 +712,34 @@ fn config_validate_cli_rejects_retired_categories_with_migration_guidance() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("config validation failed:"));
     assert!(stderr.contains("retired config keys detected:"));
-    assert!(stderr.contains("top-level `categories` was retired; rename it to `profiles`"));
+    assert!(stderr.contains("top-level `categories` was retired; rename it to `agents`"));
+}
+
+#[test]
+fn config_validate_cli_rejects_retired_profiles_with_migration_guidance() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    let mut config = valid_config_value("legacy-profiles", &temp.path().join("sessions"));
+    config["profiles"] = serde_json::json!({
+        "deep": {
+            "description": "Legacy deep agent",
+            "model_ref": "default:gpt-4o-mini",
+            "tools": []
+        }
+    });
+    write_config(&config_path, &config);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args(["config", "validate"])
+        .output()
+        .expect("run harness config validate with retired profiles");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("config validation failed:"));
+    assert!(stderr.contains("retired config keys detected:"));
+    assert!(stderr.contains("top-level `profiles` was retired; rename it to `agents`"));
 }
 
 #[test]
@@ -741,7 +768,7 @@ fn config_validate_cli_rejects_unknown_provider_reference() {
     let temp = tempdir().expect("tempdir");
     let config_path = temp.path().join("harness.jsonc");
     let mut config = valid_config_value("invalid-provider", &temp.path().join("sessions"));
-    config["profiles"]["deep"]["model_ref"] =
+    config["agents"]["deep"]["model_ref"] =
         serde_json::Value::String("missing:gpt-4o-mini".to_string());
     write_config(&config_path, &config);
 
@@ -755,7 +782,7 @@ fn config_validate_cli_rejects_unknown_provider_reference() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("config validation failed:"));
     assert!(stderr.contains(
-        "profile `deep` references unknown provider `missing` in `model_ref` `missing:gpt-4o-mini`"
+        "agent `deep` references unknown provider `missing` in `model_ref` `missing:gpt-4o-mini`"
     ));
 }
 
@@ -787,7 +814,7 @@ fn config_validate_cli_rejects_invalid_hook_or_variant_refs() {
 
     let invalid_variant_path = temp.path().join("invalid-variant.jsonc");
     let mut invalid_variant = rich_parity_config_value(&temp.path().join("sessions"));
-    invalid_variant["profiles"]["deep"]["variant"] = serde_json::Value::String("ghost".to_string());
+    invalid_variant["agents"]["deep"]["variant"] = serde_json::Value::String("ghost".to_string());
     write_config(&invalid_variant_path, &invalid_variant);
 
     let variant_output = Command::new(env!("CARGO_BIN_EXE_harness"))
@@ -807,7 +834,7 @@ fn config_validate_cli_rejects_invalid_hook_or_variant_refs() {
     let variant_stderr = String::from_utf8_lossy(&variant_output.stderr);
     assert!(variant_stderr.contains("config validation failed:"));
     assert!(variant_stderr.contains(
-        "profile `deep` references unknown variant `ghost` for model `default:gpt-5.4-mini`"
+        "agent `deep` references unknown variant `ghost` for model `default:gpt-5.4-mini`"
     ));
 
     let invalid_skill_root_path = temp.path().join("invalid-skill-root.jsonc");
@@ -840,8 +867,7 @@ fn config_validate_cli_rejects_unknown_exit_target_profile() {
     let temp = tempdir().expect("tempdir");
     let config_path = temp.path().join("harness.jsonc");
     let mut config = valid_config_value("invalid-exit-target", &temp.path().join("sessions"));
-    config["profiles"]["deep"]["exit_target_profile"] =
-        serde_json::Value::String("ops".to_string());
+    config["agents"]["deep"]["exit_target_profile"] = serde_json::Value::String("ops".to_string());
     write_config(&config_path, &config);
 
     let output = Command::new(env!("CARGO_BIN_EXE_harness"))
@@ -854,7 +880,7 @@ fn config_validate_cli_rejects_unknown_exit_target_profile() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("config validation failed:"));
     assert!(stderr.contains(
-        "profile `deep` references unknown `exit_target_profile` `ops`; available profiles: deep"
+        "agent `deep` references unknown `exit_target_profile` `ops`; available agents: deep"
     ));
 }
 
@@ -876,5 +902,100 @@ fn config_validate_cli_rejects_unknown_ui_default_profile() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("config validation failed:"));
     assert!(stderr
-        .contains("ui.default_profile references unknown profile `ops`; available profiles: deep"));
+        .contains("ui.default_profile references unknown agent `ops`; available agents: deep"));
+}
+
+#[test]
+fn config_validate_cli_accepts_opencode_style_agent_shape() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    let config = serde_json::json!({
+        "providers": {
+            "default": {
+                "type": "openai_compatible",
+                "base_url": "http://127.0.0.1:1/v1",
+                "api_key": "DUMMY",
+                "api_mode": "responses",
+                "timeout_ms": 60000,
+                "models": {
+                    "gpt-4o-mini": {
+                        "display_name": "GPT-4o mini"
+                    }
+                }
+            }
+        },
+        "agent": {
+            "build": {
+                "description": "Build profile",
+                "model_ref": "default:gpt-4o-mini",
+                "permissions": {
+                    "edit": "allow",
+                    "shell": "allow"
+                },
+                "tools": []
+            },
+            "plan": {
+                "description": "Plan profile",
+                "model_ref": "default:gpt-4o-mini",
+                "plan_mode": true,
+                "exit_target_profile": "build",
+                "permissions": {
+                    "edit": "deny",
+                    "shell": "deny",
+                    "task": "deny"
+                },
+                "tools": []
+            }
+        },
+        "default_agent": "build",
+        "permissions": {
+            "defaults": {
+                "edit": "allow",
+                "shell": "allow",
+                "network": "allow"
+            },
+            "shell_allowlist": {
+                "executables": ["git"],
+                "cwd_roots": ["."]
+            }
+        },
+        "runtime": {
+            "background_tasks": {
+                "default_concurrency": 2,
+                "provider_concurrency": 2,
+                "model_concurrency": 2,
+                "stale_timeout_ms": 30000,
+                "message_staleness_timeout_ms": 10000
+            },
+            "session_dir": temp.path().join("sessions"),
+            "deterministic": {
+                "enabled": false,
+                "seed": 42
+            }
+        },
+        "integrations": {
+            "remote_search": {
+                "endpoint": "https://mcp.exa.ai/mcp"
+            }
+        }
+    });
+    write_config(&config_path, &config);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args(["config", "validate"])
+        .output()
+        .expect("run harness config validate with opencode-style agent shape");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let parsed = load_config_from_file(&config_path).expect("load validated opencode-style config");
+    assert_eq!(parsed.ui.default_profile.as_deref(), Some("build"));
+    assert!(parsed.agents.contains_key("build"));
+    assert!(parsed.agents.contains_key("plan"));
 }

@@ -13,6 +13,7 @@ use harness_core::config::{
 
 mod bootstrap;
 mod logging;
+mod models;
 mod prompt;
 mod recovery;
 mod replay;
@@ -23,6 +24,7 @@ mod tui;
 
 use crate::prompt::PromptCommand;
 use crate::tui::TuiCommand;
+use models::ModelsCommand;
 use replay::ReplayCommand;
 use run::RunCommand;
 use sessions::SessionsCommand;
@@ -76,6 +78,7 @@ impl RootInteractiveArgs {
 enum Commands {
     Tui(TuiCommand),
     Run(RunCommand),
+    Models(ModelsCommand),
     Prompt(PromptCommand),
     Replay(ReplayCommand),
     Sessions {
@@ -118,6 +121,7 @@ fn main() -> ExitCode {
     match command {
         Commands::Tui(command) => crate::tui::execute(command, config, session_dir),
         Commands::Run(command) => run::execute(command, config, session_dir),
+        Commands::Models(command) => models::execute(command, config),
         Commands::Prompt(command) => prompt::execute(command, config, session_dir),
         Commands::Replay(command) => replay::execute(command),
         Commands::Sessions { command } => sessions::execute(command, config, session_dir),

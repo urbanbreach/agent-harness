@@ -5,7 +5,6 @@
   "required": [
     "integrations",
     "permissions",
-    "profiles",
     "providers",
     "runtime"
   ],
@@ -15,6 +14,37 @@
       "type": [
         "string",
         "null"
+      ]
+    },
+    "agent": {
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/ProfileConfig"
+      }
+    },
+    "agents": {
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/ProfileConfig"
+      }
+    },
+    "default_agent": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "hooks": {
+      "default": {
+        "lifecycle": []
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/HooksConfig"
+        }
       ]
     },
     "integrations": {
@@ -31,14 +61,19 @@
         }
       ]
     },
+    "lsp": {
+      "default": {
+        "disabled": false,
+        "servers": {}
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/LspConfig"
+        }
+      ]
+    },
     "permissions": {
       "$ref": "#/definitions/PermissionsConfig"
-    },
-    "profiles": {
-      "type": "object",
-      "additionalProperties": {
-        "$ref": "#/definitions/ProfileConfig"
-      }
     },
     "providers": {
       "type": "object",
@@ -49,12 +84,48 @@
     "runtime": {
       "$ref": "#/definitions/RuntimeConfig"
     },
+    "skills": {
+      "default": {
+        "global_roots": [
+          "~/.config/opencode/skills",
+          "~/.claude/skills",
+          "~/.agents/skills"
+        ],
+        "permissions": {
+          "*": "allow",
+          "experimental-*": "ask",
+          "internal-*": "deny"
+        },
+        "project_roots": [
+          ".opencode/skills",
+          ".claude/skills",
+          ".agents/skills"
+        ],
+        "walk_to_git_root": true
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/SkillsConfig"
+        }
+      ]
+    },
     "ui": {
       "default": {
         "default_profile": null,
         "keybindings": {},
         "maxEventsInMemory": 25000,
-        "maxTranscriptCharsInMemory": 200000
+        "maxTranscriptCharsInMemory": 200000,
+        "parity": {
+          "child_session_navigation_enabled": true,
+          "keybindings": {
+            "session_child_cycle": null,
+            "session_child_cycle_reverse": null,
+            "session_child_first": null,
+            "session_parent": null,
+            "variant_cycle": null
+          },
+          "variant_cycle_enabled": true
+        }
       },
       "allOf": [
         {
@@ -119,10 +190,53 @@
       },
       "additionalProperties": false
     },
-    "IntegrationsConfig": {
+    "HookLifecycleEvent": {
+      "type": "string",
+      "enum": [
+        "run_started",
+        "run_finished",
+        "run_failed",
+        "agent_turn_started",
+        "agent_turn_finished",
+        "tool_call_started",
+        "tool_call_finished",
+        "provider_request_started",
+        "provider_request_finished",
+        "subagent_spawned",
+        "subagent_finished",
+        "permission_requested",
+        "permission_resolved"
+      ]
+    },
+    "HooksConfig": {
       "type": "object",
       "properties": {
+        "lifecycle": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LifecycleHookConfig"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "IntegrationsConfig": {
+      "description": "Current public integration settings.\n\nAgent Harness exposes the native remote search transport used by the built-in `web_search` and `code_search` tools, plus configured MCP servers.",
+      "type": "object",
+      "properties": {
+        "mcp": {
+          "default": {
+            "servers": {}
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/McpConfig"
+            }
+          ]
+        },
         "remote_search": {
+          "description": "Configuration for the currently supported built-in external integrations.\n\nAgent Harness exposes the native remote search transport used by the built-in `web_search` and `code_search` tools, plus configured MCP servers.",
           "default": {
             "auth_token": null,
             "endpoint": "https://mcp.exa.ai/mcp",
@@ -136,6 +250,56 @@
               "$ref": "#/definitions/RemoteSearchConfig"
             }
           ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "LifecycleHookConfig": {
+      "type": "object",
+      "required": [
+        "command",
+        "event"
+      ],
+      "properties": {
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "critical": {
+          "default": false,
+          "type": "boolean"
+        },
+        "cwd": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "env": {
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "event": {
+          "$ref": "#/definitions/HookLifecycleEvent"
+        },
+        "id": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timeout_ms": {
+          "default": 5000,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
         }
       },
       "additionalProperties": false
@@ -156,6 +320,154 @@
         }
       },
       "additionalProperties": false
+    },
+    "LspConfig": {
+      "type": "object",
+      "properties": {
+        "disabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "servers": {
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/LspServerConfig"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "LspServerConfig": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "default": null,
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "disabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "env": {
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "extensions": {
+          "default": null,
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "initialization": {
+          "default": null
+        }
+      },
+      "additionalProperties": false
+    },
+    "McpConfig": {
+      "type": "object",
+      "properties": {
+        "servers": {
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/McpServerConfig"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "McpServerConfig": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "command",
+            "transport"
+          ],
+          "properties": {
+            "command": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "cwd": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "env": {
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "timeout_secs": {
+              "default": 30,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "transport": {
+              "type": "string",
+              "enum": [
+                "stdio"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "endpoint",
+            "transport"
+          ],
+          "properties": {
+            "endpoint": {
+              "type": "string"
+            },
+            "headers": {
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "timeout_secs": {
+              "default": 30,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "transport": {
+              "type": "string",
+              "enum": [
+                "http"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
     },
     "ModelConfig": {
       "type": "object",
@@ -184,6 +496,20 @@
           "format": "uint32",
           "minimum": 0.0
         },
+        "metadata": {
+          "default": {
+            "context_window_tokens": null,
+            "family": null,
+            "release_stage": null,
+            "supports_reasoning_summaries": null,
+            "supports_tool_calls": null
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/ModelMetadataConfig"
+            }
+          ]
+        },
         "variants": {
           "default": {},
           "type": "object",
@@ -194,9 +520,68 @@
       },
       "additionalProperties": false
     },
+    "ModelMetadataConfig": {
+      "type": "object",
+      "properties": {
+        "context_window_tokens": {
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "family": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "release_stage": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ModelReleaseStage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "supports_reasoning_summaries": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "supports_tool_calls": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ModelReleaseStage": {
+      "type": "string",
+      "enum": [
+        "stable",
+        "preview",
+        "deprecated"
+      ]
+    },
     "ModelVariantConfig": {
       "type": "object",
       "properties": {
+        "disabled": {
+          "default": false,
+          "type": "boolean"
+        },
         "display_name": {
           "default": null,
           "type": [
@@ -221,9 +606,83 @@
           ],
           "format": "uint32",
           "minimum": 0.0
+        },
+        "metadata": {
+          "default": {
+            "description": null,
+            "reasoning_effort": null,
+            "recommended_for": null,
+            "text_verbosity": null
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/ModelVariantMetadataConfig"
+            }
+          ]
         }
       },
       "additionalProperties": false
+    },
+    "ModelVariantMetadataConfig": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasoning_effort": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ModelVariantReasoningEffort"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recommended_for": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text_verbosity": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ModelVariantTextVerbosity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ModelVariantReasoningEffort": {
+      "type": "string",
+      "enum": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "ModelVariantTextVerbosity": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
     },
     "OpenAiApiMode": {
       "type": "string",
@@ -368,6 +827,7 @@
           ]
         },
         "max_iters": {
+          "description": "Per-profile multi-turn budget enforced directly by the runtime. There is no separate hardcoded runtime iteration cap beyond this setting.",
           "default": 12,
           "type": "integer",
           "format": "uint",
@@ -399,6 +859,7 @@
           ]
         },
         "temperature": {
+          "description": "When unset, the runtime omits `temperature` from provider requests so the provider default applies.",
           "default": null,
           "type": [
             "number",
@@ -611,9 +1072,11 @@
       ]
     },
     "RemoteSearchConfig": {
+      "description": "Settings for the built-in remote search bridge.\n\nThe current runtime expects an Exa-compatible MCP endpoint for native `web_search` and `code_search` requests.",
       "type": "object",
       "properties": {
         "auth_token": {
+          "description": "Optional bearer token for the remote search endpoint.",
           "default": null,
           "type": [
             "string",
@@ -621,26 +1084,31 @@
           ]
         },
         "endpoint": {
+          "description": "Endpoint used by the built-in remote search bridge.\n\nThe current runtime expects an Exa-compatible MCP endpoint for native `web_search` and `code_search` requests.",
           "default": "https://mcp.exa.ai/mcp",
           "type": "string"
         },
         "max_retries": {
+          "description": "Maximum retry attempts for retryable remote search failures.",
           "default": 1,
           "type": "integer",
           "format": "uint32",
           "minimum": 0.0
         },
         "require_auth": {
+          "description": "Require an auth token before the native search tools make requests.",
           "default": false,
           "type": "boolean"
         },
         "retry_backoff_ms": {
+          "description": "Backoff, in milliseconds, between retry attempts.",
           "default": 250,
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
         },
         "timeout_secs": {
+          "description": "Request timeout for native remote search calls.",
           "default": 30,
           "type": "integer",
           "format": "uint64",
@@ -728,6 +1196,37 @@
       },
       "additionalProperties": false
     },
+    "SkillsConfig": {
+      "type": "object",
+      "properties": {
+        "global_roots": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "permissions": {
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/PermissionMode"
+          }
+        },
+        "project_roots": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "walk_to_git_root": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "ToolFailureMode": {
       "type": "string",
       "enum": [
@@ -738,7 +1237,8 @@
     "ToolSurface": {
       "type": "string",
       "enum": [
-        "native"
+        "native",
+        "compat"
       ]
     },
     "UiConfig": {
@@ -769,6 +1269,93 @@
           "type": "integer",
           "format": "uint",
           "minimum": 0.0
+        },
+        "parity": {
+          "default": {
+            "child_session_navigation_enabled": true,
+            "keybindings": {
+              "session_child_cycle": null,
+              "session_child_cycle_reverse": null,
+              "session_child_first": null,
+              "session_parent": null,
+              "variant_cycle": null
+            },
+            "variant_cycle_enabled": true
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/UiParityConfig"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "UiParityConfig": {
+      "type": "object",
+      "properties": {
+        "child_session_navigation_enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "keybindings": {
+          "default": {
+            "session_child_cycle": null,
+            "session_child_cycle_reverse": null,
+            "session_child_first": null,
+            "session_parent": null,
+            "variant_cycle": null
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/UiParityKeybindingsConfig"
+            }
+          ]
+        },
+        "variant_cycle_enabled": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "UiParityKeybindingsConfig": {
+      "type": "object",
+      "properties": {
+        "session_child_cycle": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session_child_cycle_reverse": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session_child_first": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session_parent": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "variant_cycle": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false

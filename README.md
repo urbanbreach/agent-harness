@@ -13,32 +13,34 @@ Rust workspace for an event-sourced agent harness with:
 ## Configuration
 
 The current public integration surface is documented in [`docs/config.md`](docs/config.md).
-At the moment, Agent Harness exposes only `integrations.remote_search` for the built-in
-`web_search` and `code_search` tools; generic `integrations.mcp.servers` configuration
-is not part of the public runtime contract yet.
+Config-backed `integrations.mcp.servers` are first-class: enabled MCP servers are
+registered into the runtime tool registry, discovered server tools are exposed to
+interactive profiles alongside the built-ins, and the generic
+`mcp.<server>.tool.call` wrappers remain available for explicit discovery-oriented
+flows.
 
 - a CLI entrypoint
 - coordinator/runtime core
 - provider adapters
 - built-in native + compat tools
 - a Ratatui TUI
-- deterministic PTY/live verification lanes
+- native screenshot signoff plus deterministic PTY/live verification lanes
 
 ## Quick start
 
 The current blessed default path is:
 
 - provider: `default` (`openai_compatible`) via the local CLIProxy-compatible loopback endpoint
-- default profile: `plan`
-- handoff profile: `build`
+- default profile: `build`
+- planning profile: `plan`
 - default model: `gpt-5.4-mini`
 
-Primary shipped profiles:
+Primary shipped agents:
 
-- `plan` — default first-run planning lane
-- `build` — implementation lane after `plan.exit`
+- `build` — default implementation lane
+- `plan` — restricted planning lane with `plan.exit` handoff to `build`
 
-Secondary shipped profiles:
+Secondary shipped agents:
 
 - `tool_audit` — evidence/signoff lane
 - `deep_compat` — compat-surface regression lane
@@ -55,8 +57,10 @@ Launch the interactive harness with the canonical plan -> build split:
 cargo run -p harness -- --config configs/harness.example.jsonc
 ```
 
-The shipped config starts in the `plan` profile. After the user approves implementation, use `plan.exit` to hand off to `build`.
+The shipped config starts in the `build` agent by default. When you want a planning-first pass, launch `plan` explicitly and use `plan.exit` to hand off to `build` after approval.
 The shipped `default` provider points at the local CLIProxy-compatible bridge (`http://127.0.0.1:8317/v1`) so the default flow stays aligned between docs, config, and live signoff lanes.
+
+Inside the running harness, use `/model` or the command palette `switch_model` action to switch the active next-turn agent/profile between options such as `build` and `plan`.
 
 ## Shipped workflow surfaces
 

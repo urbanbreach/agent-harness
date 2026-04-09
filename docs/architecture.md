@@ -200,7 +200,7 @@ names above.
 ### Policy Resolution
 
 1. Check global defaults from config
-2. Check per-profile overrides
+2. Check per-agent overrides
 3. Apply decision:
    - `allow` - Proceed immediately
    - `deny` - Emit `PermissionResolved(deny)` and fail
@@ -227,18 +227,18 @@ Guardrails bound the loop by iteration count and total tool calls per turn.
 
 ## Tool Surface Policy
 
-Provider and tool exposure is selected per profile via `tool_surface`, and the supported value is
+Provider and tool exposure is selected per agent via `tool_surface`, and the supported value is
 `native`.
 
-Planner handoff is controlled separately from `tool_surface` by profile config:
+Planner handoff is controlled separately from `tool_surface` by agent config:
 
-- `plan_mode: true` marks a profile as plan-capable.
-- `exit_target_profile: <profile>` declares which profile `plan.exit` should hand off to.
-- `plan.exit` is not an ambient tool. Expose it only on planner profiles that intentionally set
+- `plan_mode: true` marks an agent as plan-capable.
+- `exit_target_profile: <agent>` declares which agent `plan.exit` should hand off to.
+- `plan.exit` is not an ambient tool. Expose it only on planner agents that intentionally set
   `plan_mode: true`.
 
-In practice this means the common worker profile stays native without `plan.exit`, while an
-explicit planner profile can expose `plan.exit` when it owns handoff into another native profile.
+In practice this means the common worker agent stays native without `plan.exit`, while an
+explicit planner agent can expose `plan.exit` when it owns handoff into another native agent.
 
 ## Hashline Spec
 
