@@ -1,3 +1,6 @@
+use std::fs;
+use std::path::PathBuf;
+
 use harness_core::config::load_config_from_str;
 use harness_core::perm::{PermissionKind, PolicyDecision};
 
@@ -215,4 +218,34 @@ fn opencode_primary_agents_enforce_build_and_plan_permissions() {
             .evaluate(Some("plan"), PermissionKind::Task),
         PolicyDecision::Deny
     );
+}
+
+#[test]
+fn shipped_plan_build_docs_exist_and_stay_linked_from_readme() {
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let readme = fs::read_to_string(repo_root.join("README.md")).expect("read README");
+
+    for relative in [
+        "docs/config.md",
+        "docs/testing.md",
+        "docs/plan-build-workflow.md",
+    ] {
+        let path = repo_root.join(relative);
+        assert!(path.is_file(), "expected {relative} to exist");
+        assert!(
+            readme.contains(relative),
+            "README should keep linking to {relative}"
+        );
+    }
+
+    let workflow = fs::read_to_string(repo_root.join("docs/plan-build-workflow.md"))
+        .expect("read plan/build workflow doc");
+    assert!(workflow.contains("plan.exit"));
+    assert!(workflow.contains("read-only"));
+    assert!(workflow.contains("build"));
+
+    let testing =
+        fs::read_to_string(repo_root.join("docs/testing.md")).expect("read testing signoff doc");
+    assert!(testing.contains("live_proxy_e2e"));
+    assert!(testing.contains("plan_exit_handoff"));
 }

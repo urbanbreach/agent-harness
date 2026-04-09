@@ -66,6 +66,8 @@ Inside the running harness, use `/model` or the command palette `switch_model` a
 
 - `configs/harness.example.jsonc` — canonical example config
 - `docs/plan-build-workflow.md` — first-run and handoff docs
+- `docs/config.md` — shipped config surface for the blessed Plan/Build path
+- `docs/testing.md` — canonical Plan/Build signoff map and known gaps
 - `crates/harness-tools/tests/native_control_plane_tools.rs` — `plan.exit` behavior coverage
 - `crates/harness-testkit/tests/live_proxy_e2e.rs` — shipped config/signoff coverage
 

@@ -1040,6 +1040,12 @@ fn tool_call_finished_plan_exit_handoff_emits_switch_model_then_submit_prompt() 
     ));
 
     assert_eq!(app.active_profile(), "build");
+    assert_eq!(app.runtime_context_identity_line(), "plan · mock/model-1");
+    assert_eq!(
+        app.runtime_context_summary_segment_text(),
+        Some("Next turns: build · model-1".to_string())
+    );
+    assert_eq!(app.launch_mode_label(), Some("Demo"));
     assert!(app
         .launch_metadata
         .available_models()

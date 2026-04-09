@@ -29,7 +29,7 @@ Secondary/supporting agents:
 
 - As of now subagent functionality is something that is planned but not yet implemented. Only start planning and implementing subagents when `plan` and `build` agents have been successfully and thoroughly tested and implemented.
 
-- [ ] Plan and Build agents have been successfully implemented, tested and are on par with the ones in Opencode.
+- [x] Plan and Build agents have been successfully implemented, tested and are on par with the ones in Opencode.
 
 ## Core parity and verification
 

@@ -1843,6 +1843,9 @@ fn example_config_ships_canonical_plan_build_and_audit_agents() {
         .get("system_prompt")
         .and_then(Value::as_str)
         .expect("plan system prompt present");
+    assert!(plan_prompt.contains("Remain read-only"));
+    assert!(plan_prompt.contains("do not edit files"));
+    assert!(plan_prompt.contains("verification steps"));
     assert!(plan_prompt.contains("plan.exit"));
     assert!(plan_prompt.contains("hand off"));
 
@@ -1874,6 +1877,15 @@ fn example_config_ships_canonical_plan_build_and_audit_agents() {
             "build should expose {required_tool} in the shipped example config"
         );
     }
+    let build_prompt = build
+        .get("system_prompt")
+        .and_then(Value::as_str)
+        .expect("build system prompt present");
+    assert!(build_prompt.contains("Implement only the approved plan"));
+    assert!(build_prompt.contains("narrowest useful verification"));
+    assert!(build_prompt.contains("changed files"));
+    assert!(build_prompt.contains("what was not tested"));
+    assert!(build_prompt.contains("remaining risks"));
 
     let tool_audit = config
         .get("agent")
