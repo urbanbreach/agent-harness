@@ -93,6 +93,7 @@ enum OperatorRailItem {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RuntimeHealthState {
     Healthy,
+    Paused,
     Unhealthy,
 }
 
@@ -137,6 +138,7 @@ struct OperatorRailBody {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum OperatorRailBodySection {
     Context { items: Vec<String> },
+    Orchestration { items: Vec<OperatorRailItem> },
     Mcp { items: Vec<OperatorRailItem> },
     Lsp { items: Vec<OperatorRailItem> },
     ModifiedFiles { items: Vec<String>, collapsed: bool },
@@ -151,6 +153,7 @@ impl OperatorRailBodySection {
     fn heading(&self) -> String {
         match self {
             Self::Context { .. } => "Context".to_string(),
+            Self::Orchestration { .. } => "Orchestration".to_string(),
             Self::Mcp { .. } => "MCP".to_string(),
             Self::Lsp { .. } => "LSP".to_string(),
             Self::ModifiedFiles { collapsed, .. } => {
@@ -166,6 +169,7 @@ impl OperatorRailBodySection {
     fn heading_style(&self, theme: &Theme) -> Style {
         match self {
             Self::Context { .. }
+            | Self::Orchestration { .. }
             | Self::Mcp { .. }
             | Self::Lsp { .. }
             | Self::ModifiedFiles { .. } => Style::default()
@@ -178,7 +182,7 @@ impl OperatorRailBodySection {
     fn item_texts(&self) -> Vec<String> {
         match self {
             Self::Context { items } | Self::ModifiedFiles { items, .. } => items.clone(),
-            Self::Mcp { items } | Self::Lsp { items } => {
+            Self::Orchestration { items } | Self::Mcp { items } | Self::Lsp { items } => {
                 items.iter().map(|item| item.text().to_string()).collect()
             }
         }
@@ -293,15 +297,16 @@ pub(crate) fn exact_test_operator_rail_section_model_builds_pinned_summary() {
 
     assert_eq!(model.title, None);
     assert_eq!(model.body.sections[0].heading(), "Context");
-    assert_eq!(model.body.sections[1].heading(), "MCP");
-    assert_eq!(model.body.sections[2].heading(), "LSP");
-    assert_eq!(model.body.sections[3].heading(), "▼ Modified Files");
+    assert_eq!(model.body.sections[1].heading(), "Orchestration");
+    assert_eq!(model.body.sections[2].heading(), "MCP");
+    assert_eq!(model.body.sections[3].heading(), "LSP");
+    assert_eq!(model.body.sections[4].heading(), "▼ Modified Files");
     assert_eq!(
         model.body.sections[0].item_texts(),
         ["0 tokens".to_string()]
     );
     assert_eq!(
-        model.body.sections[3].item_texts(),
+        model.body.sections[4].item_texts(),
         ["src/ui_secondary.rs".to_string()]
     );
 }
@@ -361,6 +366,7 @@ pub(crate) fn exact_test_operator_rail_section_model_hides_empty_sources_but_pre
             .collect::<Vec<_>>(),
         vec![
             "Context".to_string(),
+            "Orchestration".to_string(),
             "MCP".to_string(),
             "LSP".to_string(),
             "▼ Modified Files".to_string(),
@@ -394,7 +400,7 @@ pub(crate) fn exact_test_operator_rail_section_model_separates_mcp_from_native_t
 
     let app = operator_rail_activity_test_app();
     let model = build_operator_rail_model(&app);
-    assert_eq!(model.body.sections[1].heading(), "MCP");
+    assert_eq!(model.body.sections[2].heading(), "MCP");
     assert_eq!(
         operator_sidebar_mcp_items(&app)
             .into_iter()
@@ -480,12 +486,13 @@ pub(crate) fn exact_test_operator_rail_section_model_keeps_native_prefix_tools_o
             .collect::<Vec<_>>(),
         vec![
             "Context".to_string(),
+            "Orchestration".to_string(),
             "MCP".to_string(),
             "LSP".to_string(),
             "▼ Modified Files".to_string(),
         ]
     );
-    let mcp_items = model.body.sections[1].item_texts();
+    let mcp_items = model.body.sections[2].item_texts();
     assert!(
         matches!(
             mcp_items.as_slice(),
@@ -532,6 +539,10 @@ pub(crate) fn exact_test_operator_rail_low_activity_presentation_prefers_primary
         assert!(
             rendered.contains("Context"),
             "missing context section\n{rendered}"
+        );
+        assert!(
+            rendered.contains("Orchestration"),
+            "missing orchestration section\n{rendered}"
         );
         assert!(rendered.contains("MCP"), "missing MCP section\n{rendered}");
         assert!(rendered.contains("LSP"), "missing LSP section\n{rendered}");
@@ -631,7 +642,7 @@ pub(crate) fn exact_test_operator_rail_section_model_counts_generic_mcp_activity
 
     let model = build_operator_rail_model(&app);
 
-    assert_eq!(model.body.sections[1].heading(), "MCP");
+    assert_eq!(model.body.sections[2].heading(), "MCP");
     assert_eq!(
         operator_sidebar_mcp_items(&app)
             .into_iter()
@@ -1072,6 +1083,11 @@ fn help_text(app: &AppState) -> String {
             String::new(),
             "Live shell:".to_string(),
             help_row(app, Action::CloseReviewSurface, "Return to session shell"),
+            help_row(
+                app,
+                Action::ToggleOrchestration,
+                "Pause or resume orchestration",
+            ),
             String::new(),
             "Prompt (when focused):".to_string(),
             help_row(app, Action::SubmitPrompt, "Submit prompt"),
@@ -1204,25 +1220,30 @@ fn build_operator_rail_body_text(
 }
 
 fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
+    let mut sections = vec![OperatorRailBodySection::Context {
+        items: operator_sidebar_context_items(app),
+    }];
+    if !app.replay_mode {
+        sections.push(OperatorRailBodySection::Orchestration {
+            items: operator_sidebar_orchestration_items(app),
+        });
+    }
+    sections.extend([
+        OperatorRailBodySection::Mcp {
+            items: operator_sidebar_mcp_items(app),
+        },
+        OperatorRailBodySection::Lsp {
+            items: operator_sidebar_lsp_items(app),
+        },
+        OperatorRailBodySection::ModifiedFiles {
+            items: operator_sidebar_modified_file_items(app),
+            collapsed: app.operator_sidebar_modified_files_collapsed(),
+        },
+    ]);
+
     OperatorRailModel {
         title: operator_sidebar_session_title(app),
-        body: OperatorRailBody {
-            sections: vec![
-                OperatorRailBodySection::Context {
-                    items: operator_sidebar_context_items(app),
-                },
-                OperatorRailBodySection::Mcp {
-                    items: operator_sidebar_mcp_items(app),
-                },
-                OperatorRailBodySection::Lsp {
-                    items: operator_sidebar_lsp_items(app),
-                },
-                OperatorRailBodySection::ModifiedFiles {
-                    items: operator_sidebar_modified_file_items(app),
-                    collapsed: app.operator_sidebar_modified_files_collapsed(),
-                },
-            ],
-        },
+        body: OperatorRailBody { sections },
     }
 }
 
@@ -1259,9 +1280,9 @@ fn append_operator_rail_section(
             .cloned()
             .map(OperatorRailItem::Plain)
             .collect::<Vec<_>>(),
-        OperatorRailBodySection::Mcp { items } | OperatorRailBodySection::Lsp { items } => {
-            items.clone()
-        }
+        OperatorRailBodySection::Orchestration { items }
+        | OperatorRailBodySection::Mcp { items }
+        | OperatorRailBodySection::Lsp { items } => items.clone(),
         OperatorRailBodySection::ModifiedFiles { items, collapsed } => {
             if *collapsed {
                 Vec::new()
@@ -1311,6 +1332,7 @@ fn append_operator_rail_item(
         OperatorRailItem::Status { state, .. } => {
             let dot_color = match state {
                 RuntimeHealthState::Healthy => theme.status.success,
+                RuntimeHealthState::Paused => theme.status.warning,
                 RuntimeHealthState::Unhealthy => theme.status.error,
             };
             lines.push(Line::from(vec![
@@ -1378,6 +1400,31 @@ fn operator_sidebar_context_items(app: &AppState) -> Vec<String> {
     items
 }
 
+fn operator_sidebar_orchestration_items(app: &AppState) -> Vec<OperatorRailItem> {
+    let summary = app.orchestration_summary();
+    let mut items = Vec::new();
+    items.push(OperatorRailItem::Status {
+        label: if app.orchestration_enabled() {
+            "Delegation Enabled".to_string()
+        } else {
+            "Delegation Paused".to_string()
+        },
+        state: if app.orchestration_enabled() {
+            RuntimeHealthState::Healthy
+        } else {
+            RuntimeHealthState::Paused
+        },
+    });
+    items.push(OperatorRailItem::Plain(format!(
+        "{} agents · {} queued · {} running · {} stale",
+        summary.active_agents, summary.queued, summary.running, summary.stale
+    )));
+    if let Some(warning) = app.orchestration_latest_warning() {
+        items.push(OperatorRailItem::Plain(format!("Watch · {warning}")));
+    }
+    items
+}
+
 fn operator_sidebar_mcp_items(app: &AppState) -> Vec<OperatorRailItem> {
     let Some(integrations) = harness_core::config::registered_integrations_config() else {
         return vec![OperatorRailItem::Plain(
@@ -1431,6 +1478,7 @@ fn operator_sidebar_mcp_items(app: &AppState) -> Vec<OperatorRailItem> {
                     "{name} {}",
                     match state {
                         RuntimeHealthState::Healthy => "Connected",
+                        RuntimeHealthState::Paused => "Paused",
                         RuntimeHealthState::Unhealthy => "Disconnected",
                     }
                 ),
@@ -1696,8 +1744,16 @@ fn orchestration_card_lines(
 fn orchestration_summary_line(app: &AppState, theme: &Theme, width: u16) -> Line<'static> {
     let summary = app.orchestration_summary();
     let text = format!(
-        "overview · {} active agents · {} queued · {} running · {} stale",
-        summary.active_agents, summary.queued, summary.running, summary.stale
+        "overview · {} · {} active agents · {} queued · {} running · {} stale",
+        if app.orchestration_enabled() {
+            "enabled"
+        } else {
+            "paused"
+        },
+        summary.active_agents,
+        summary.queued,
+        summary.running,
+        summary.stale
     );
     Line::from(Span::styled(
         truncate_plain_text(&text, usize::from(width)),

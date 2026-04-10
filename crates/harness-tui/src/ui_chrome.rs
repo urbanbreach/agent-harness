@@ -912,7 +912,8 @@ fn control_dock_summary_segment(
 
     let summary = app.orchestration_summary();
     let latest_warning = app.orchestration_latest_warning();
-    if latest_warning.is_none()
+    if app.orchestration_enabled()
+        && latest_warning.is_none()
         && summary.active_agents == 0
         && summary.queued == 0
         && summary.running == 0
@@ -921,11 +922,20 @@ fn control_dock_summary_segment(
         return None;
     }
 
-    let mut text = format!(
-        "orch {}a {}q {}r {}s",
-        summary.active_agents, summary.queued, summary.running, summary.stale
-    );
-    let tone = if let Some(latest_warning) = latest_warning {
+    let mut text = if app.orchestration_enabled() {
+        format!(
+            "orch {}a {}q {}r {}s",
+            summary.active_agents, summary.queued, summary.running, summary.stale
+        )
+    } else {
+        format!(
+            "orch paused · {}a {}q {}r {}s",
+            summary.active_agents, summary.queued, summary.running, summary.stale
+        )
+    };
+    let tone = if !app.orchestration_enabled() {
+        crate::view_model::ControlDockSummaryTone::Warning
+    } else if let Some(latest_warning) = latest_warning {
         text.push_str(&format!(" · warn {latest_warning}"));
         crate::view_model::ControlDockSummaryTone::Warning
     } else {

@@ -436,6 +436,37 @@ fn permission_modal_routes_q_to_quit_without_buffering() {
 }
 
 #[test]
+fn toggle_orchestration_emits_intent_and_updates_live_state() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let intent_sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(intent_sink));
+    app.focus = Focus::List;
+
+    assert!(app.orchestration_enabled());
+
+    app.handle_key(key(KeyCode::Char('o')));
+    assert!(!app.orchestration_enabled());
+
+    app.handle_key(key(KeyCode::Char('o')));
+    assert!(app.orchestration_enabled());
+
+    let intents = intents.lock().expect("lock intents");
+    assert_eq!(
+        intents.as_slice(),
+        &[
+            UiIntent::SetOrchestrationEnabled { enabled: false },
+            UiIntent::SetOrchestrationEnabled { enabled: true },
+        ]
+    );
+}
+
+#[test]
 fn question_permission_modal_collects_answers_and_emits_reason_payload() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let intent_sink = {

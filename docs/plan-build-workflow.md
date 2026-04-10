@@ -69,6 +69,7 @@ The shipped shell keeps the active lane visible through launch metadata and runt
 - interactive config guidance says the harness defaults to `build` and keeps the `plan -> build` handoff available
 - `/model` and the command palette can switch between configured profiles such as `build` and `plan`
 - the live shell identity shows the active profile/provider/model tuple
+- the operator HUD can pause or resume delegated subagent orchestration without changing the main `plan` / `build` path
 - the `plan.exit` handoff test proves the next-turn profile flips from `plan` to `build`
 
 ## Canonical touchpoints

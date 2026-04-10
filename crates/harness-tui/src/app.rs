@@ -906,6 +906,9 @@ pub enum UiIntent {
         text: String,
         launch_metadata: LaunchMetadata,
     },
+    SetOrchestrationEnabled {
+        enabled: bool,
+    },
     QuitRequested,
 }
 
@@ -1721,18 +1724,36 @@ fn preferred_model_option_for_profile<'a>(
     options.iter().find(|option| option.profile == profile)
 }
 
-#[derive(Default)]
 pub struct SessionProjection {
     pub(crate) events: Vec<EventEnvelopeV1>,
     pub(crate) activities: VecDeque<ActivityEntry>,
     pub(crate) memory_caps: MemoryCaps,
     pub(crate) events_trimmed_count: usize,
     pub(crate) transcript_trimmed_count: usize,
+    orchestration_enabled: bool,
     orchestration_tasks: BTreeMap<String, OrchestrationTaskRow>,
     agent_profiles: BTreeMap<String, String>,
     seen_seqs: BTreeSet<u64>,
     pending_permissions: BTreeMap<String, PendingPermission>,
     run_terminal_seen: bool,
+}
+
+impl Default for SessionProjection {
+    fn default() -> Self {
+        Self {
+            events: Vec::new(),
+            activities: VecDeque::new(),
+            memory_caps: MemoryCaps::default(),
+            events_trimmed_count: 0,
+            transcript_trimmed_count: 0,
+            orchestration_enabled: true,
+            orchestration_tasks: BTreeMap::new(),
+            agent_profiles: BTreeMap::new(),
+            seen_seqs: BTreeSet::new(),
+            pending_permissions: BTreeMap::new(),
+            run_terminal_seen: false,
+        }
+    }
 }
 
 pub struct AppState {
@@ -1891,6 +1912,7 @@ impl SessionProjection {
     fn reset(&mut self) {
         self.events.clear();
         self.activities.clear();
+        self.orchestration_enabled = true;
         self.orchestration_tasks.clear();
         self.agent_profiles.clear();
         self.seen_seqs.clear();
@@ -2191,6 +2213,10 @@ impl SessionProjection {
         summary
     }
 
+    pub fn orchestration_enabled(&self) -> bool {
+        self.orchestration_enabled
+    }
+
     pub fn orchestration_latest_warning(&self) -> Option<&str> {
         self.orchestration_tasks
             .values()
@@ -2291,6 +2317,16 @@ impl SessionProjection {
             EventV1::AgentSpawned(data) => {
                 self.agent_profiles
                     .insert(data.agent_id.clone(), data.profile.clone());
+            }
+            EventV1::UiIntentReceived(data) => {
+                if data.intent == "toggle_orchestration" {
+                    self.orchestration_enabled = match data.params.get("state").map(String::as_str)
+                    {
+                        Some("enabled") => true,
+                        Some("paused") => false,
+                        _ => self.orchestration_enabled,
+                    };
+                }
             }
             EventV1::UserMessageSubmitted(data) => {
                 if let Some(index) = self.activity_index_or_local_echo(&data.request_id, event.seq)
@@ -4299,6 +4335,10 @@ impl AppState {
         self.projection.orchestration_summary()
     }
 
+    pub fn orchestration_enabled(&self) -> bool {
+        self.projection.orchestration_enabled()
+    }
+
     pub fn orchestration_latest_warning(&self) -> Option<&str> {
         self.projection.orchestration_latest_warning()
     }
@@ -5214,6 +5254,9 @@ impl AppState {
             "close_review_surface" => self.close_review_surface_from_palette(),
             "open_event_log" => self.open_review_surface_from_palette(ReviewSurface::Events),
             "toggle_operator_sidebar" => self.toggle_operator_sidebar_from_palette(),
+            "pause_orchestration" | "resume_orchestration" => {
+                self.execute_action(Action::ToggleOrchestration)
+            }
             "toggle_follow" => self.execute_action(Action::ToggleFollow),
             "show_thinking" => self.show_transcript_thinking = true,
             "hide_thinking" => self.show_transcript_thinking = false,
@@ -5466,6 +5509,15 @@ impl AppState {
             self.active_review_surface.is_some()
         } else if command_id == "toggle_operator_sidebar" {
             !self.replay_mode && !self.post_run_handoff_visible()
+        } else if matches!(command_id, "pause_orchestration" | "resume_orchestration") {
+            !self.replay_mode
+                && !self.startup_shell_visible()
+                && !self.post_run_handoff_visible()
+                && if command_id == "pause_orchestration" {
+                    self.orchestration_enabled()
+                } else {
+                    !self.orchestration_enabled()
+                }
         } else if command_id == "open_event_log" {
             self.active_review_surface != Some(ReviewSurface::Events)
         } else {
@@ -5514,6 +5566,12 @@ impl AppState {
         if (!opening && self.focus == Focus::List) || (opening && self.focus == Focus::Prompt) {
             self.focus = Focus::Details;
         }
+    }
+
+    fn toggle_orchestration(&mut self) {
+        let enabled = !self.orchestration_enabled();
+        self.projection.orchestration_enabled = enabled;
+        self.emit_ui_intent(UiIntent::SetOrchestrationEnabled { enabled });
     }
 
     fn begin_session_history_picker(&mut self, action: StartupLauncherAction) {
@@ -6042,6 +6100,14 @@ impl AppState {
                 if self.follow_mode {
                     self.transcript_scroll = 0;
                 }
+            }
+            Action::ToggleOrchestration
+                if !self.replay_mode
+                    && !self.startup_shell_visible()
+                    && !self.post_run_handoff_visible()
+                    && self.focus != Focus::Prompt =>
+            {
+                self.toggle_orchestration();
             }
             Action::ToggleOperatorSidebar
                 if !self.replay_mode

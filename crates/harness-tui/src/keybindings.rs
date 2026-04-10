@@ -49,6 +49,7 @@ pub enum Action {
     /// Open/close the help tab
     Help,
     ToggleOperatorSidebar,
+    ToggleOrchestration,
     /// Toggle follow mode
     ToggleFollow,
     /// Submit the prompt
@@ -161,6 +162,22 @@ impl Action {
                 shortcut: "i",
                 search_terms: &["sidebar", "panel", "details", "files", "tools", "context"],
                 section: PaletteCommandSection::Session,
+            },
+            PaletteCommand {
+                id: "pause_orchestration",
+                label: "Pause orchestration",
+                description: "Pause delegated orchestration for new child-agent spawns",
+                shortcut: "o",
+                search_terms: &["pause", "orchestration", "delegation", "subagent", "agent"],
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "resume_orchestration",
+                label: "Resume orchestration",
+                description: "Resume delegated orchestration for new child-agent spawns",
+                shortcut: "o",
+                search_terms: &["resume", "orchestration", "delegation", "subagent", "agent"],
+                section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "show_shortcuts",
@@ -302,6 +319,7 @@ impl Action {
             Action::Palette => "palette",
             Action::Help => "help",
             Action::ToggleOperatorSidebar => "toggle_operator_sidebar",
+            Action::ToggleOrchestration => "toggle_orchestration",
             Action::ToggleFollow => "toggle_follow",
             Action::SubmitPrompt => "submit_prompt",
             Action::InsertNewline => "insert_newline",
@@ -354,6 +372,14 @@ impl Action {
             (
                 "toggle_operator_sidebar",
                 "Show or hide the operator sidebar",
+            ),
+            (
+                "pause_orchestration",
+                "Pause delegated orchestration for new child-agent spawns",
+            ),
+            (
+                "resume_orchestration",
+                "Resume delegated orchestration for new child-agent spawns",
             ),
             ("toggle_follow", "Toggle follow mode"),
             (
@@ -472,6 +498,7 @@ impl FromStr for Action {
             "palette" => Ok(Action::Palette),
             "help" => Ok(Action::Help),
             "toggle_operator_sidebar" => Ok(Action::ToggleOperatorSidebar),
+            "toggle_orchestration" => Ok(Action::ToggleOrchestration),
             "toggle_follow" => Ok(Action::ToggleFollow),
             "submit_prompt" => Ok(Action::SubmitPrompt),
             "insert_newline" => Ok(Action::InsertNewline),
@@ -655,6 +682,10 @@ impl KeyMap {
         keymap.bind(
             KeyBinding::new(KeyCode::Char('i'), KeyModifiers::NONE),
             Action::ToggleOperatorSidebar,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('o'), KeyModifiers::NONE),
+            Action::ToggleOrchestration,
         );
 
         // Actions

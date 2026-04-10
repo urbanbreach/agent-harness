@@ -6006,6 +6006,7 @@ fn command_palette_renders_and_filters() {
             "cycle_variant".to_string(),
             "open_event_log".to_string(),
             "toggle_operator_sidebar".to_string(),
+            "pause_orchestration".to_string(),
             "show_shortcuts".to_string(),
             "toggle_follow".to_string(),
             "hide_thinking".to_string(),
@@ -6020,7 +6021,7 @@ fn command_palette_renders_and_filters() {
     let open_debug = render_live_screen(&app, 120, 36);
     assert!(open_debug.contains("Command palette"));
     assert!(open_debug.contains("New session"));
-    assert!(open_debug.contains("15 matches"));
+    assert!(open_debug.contains("16 matches"));
     assert!(open_debug.contains("Search commands, aliases, sections, or shortcuts"));
 
     app.handle_key(key(crossterm::event::KeyCode::Char('n')));
@@ -8638,6 +8639,9 @@ fn assert_operator_sidebar_expanded(
     );
     assert_eq!(plan.wheel_hit_areas.overlay, Some(sidebar));
     assert!(sidebar_text.contains("Context"));
+    if !app.replay_mode {
+        assert!(sidebar_text.contains("Orchestration"));
+    }
     assert!(sidebar_text.contains("MCP"));
     assert!(sidebar_text.contains("LSP"));
     assert!(sidebar_text.contains("▼ Modified Files"));
@@ -8664,7 +8668,7 @@ fn live_shell_details_drawer_orchestration_snapshot() {
 
     println!("{card_body}");
     insta::assert_snapshot!(card_body, @r###"
-overview · 1 active agents · 2 queued · 1 running · 1 stale
+overview · enabled · 1 active agents · 2 queued · 1 running · 1 stale
 watch · stale for 3001 ms
  stale  task_stale · w1/deep · scan
  running  task_run · supervisor/n/a · queue:none
@@ -8683,6 +8687,7 @@ fn live_shell_details_drawer_orchestration_primary_snapshot() {
     println!("{rendered}");
     assert!(rendered.contains("Explain the refactor"));
     assert!(rendered.contains("Context"));
+    assert!(rendered.contains("Orchestration"));
     assert!(rendered.contains("MCP"));
     assert!(rendered.contains("LSP"));
     assert!(rendered.contains("▼ Modified Files"));
@@ -8704,7 +8709,7 @@ fn live_shell_details_drawer_orchestration_overflow_snapshot() {
 
     println!("{card_body}");
     insta::assert_snapshot!(card_body, @r###"
-overview · 1 active agents · 2 queued · 1 running · 1 stale
+overview · enabled · 1 active agents · 2 queued · 1 running · 1 stale
 watch · stale for 3001 ms
  stale  task_stale · w1/deep · scan
  running  task_run · supervisor/n/a · queue:none
@@ -8726,7 +8731,9 @@ fn live_details_drawer_orchestration_warning_fallback() {
 
     let card_body = orchestration_details_drawer_card_body(&app, 7, 76);
     assert!(card_body.contains("watch · none"));
-    assert!(card_body.contains("overview · 0 active agents · 1 queued · 0 running · 0 stale"));
+    assert!(
+        card_body.contains("overview · enabled · 0 active agents · 1 queued · 0 running · 0 stale")
+    );
 }
 
 #[cfg(test)]
@@ -9529,6 +9536,7 @@ fn operator_sidebar_matches_parity_information_architecture() {
         &[
             "Explain the refactor",
             "Context",
+            "Orchestration",
             "MCP",
             "LSP",
             "▼ Modified Files",
@@ -9605,6 +9613,7 @@ fn operator_sidebar_limits_disclosure_affordance_to_modified_files() {
         &[
             "Explain the refactor",
             "Context",
+            "Orchestration",
             "MCP",
             "LSP",
             "▼ Modified Files",
@@ -9628,8 +9637,9 @@ fn operator_sidebar_plain_rows_use_indented_copy_instead_of_list_bullets() {
     assert!(!empty_sidebar.contains("\n• No MCP integrations configured"));
     assert!(!empty_sidebar.contains("\n• No active LSP servers"));
     assert!(!empty_sidebar.contains("\n• No modified files"));
-    assert!(empty_sidebar.contains("0 tokens\nMCP"));
-    assert!(empty_sidebar.contains("No MCP integrations configured\nLSP"));
+    assert!(empty_sidebar.contains("0 tokens\nOrchestration"));
+    assert!(empty_sidebar.contains("● Delegation Enabled"));
+    assert!(empty_sidebar.contains("MCP"));
 
     let modified_sidebar = operator_sidebar_text(&operator_sidebar_modified_files_live_app());
     assert!(modified_sidebar.contains("\n  src/ui_secondary.rs"));
@@ -9744,6 +9754,7 @@ fn operator_sidebar_preserves_section_order_and_copy() {
         &[
             "Explain the refactor",
             "Context",
+            "Orchestration",
             "MCP",
             "LSP",
             "▼ Modified Files",
@@ -9753,6 +9764,7 @@ fn operator_sidebar_preserves_section_order_and_copy() {
     let empty = operator_sidebar_text(&app::AppState::new_live(None, false, None));
     assert!(empty.contains("Context"));
     assert!(empty.contains("0 tokens"));
+    assert!(empty.contains("Orchestration"));
     assert!(empty.contains("MCP"));
     assert!(empty.contains("LSP"));
     assert!(empty.contains("▼ Modified Files"));

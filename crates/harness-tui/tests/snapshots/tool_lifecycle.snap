@@ -3,16 +3,16 @@
 
      ┃ -     render_diff_tab, render_events_tab, render_help_tab,                            │ +     render_events_tab, render_help_tab, render_live_details_overlay,               Context
                                                                                                                                                                                     0 tokens
-                                                                                                                                                                                    MCP
-     ┃       render_operator_sidebar,                                                        │       render_operator_sidebar,                                                       No MCP integrations configured
-                                                                                                                                                                                    LSP
-                                                                                                                                                                                    No active LSP servers
-     ┃ ▸ ↗ Spawn researcher · audit tool lifecycle parity                                                                                                                           ▼ Modified Files
-     ┃ 2ms                                                                                                                                                                          crates/harness-tui/src/ui.rs · +1 -1
-     ┃ foreground · agent_worker · req_child · completed · 2 child tool calls
-     ┃ Found the whole-tool parity path.
-     ┃ Compat alias · task → agent.spawn
-
+                                                                                                                                                                                    Orchestration
+     ┃       render_operator_sidebar,                                                        │       render_operator_sidebar,                                                       ● Delegation Enabled
+                                                                                                                                                                                    0 agents · 0 queued · 0 running · 0
+                                                                                                                                                                                    stale
+     ┃ ▸ ↗ Spawn researcher · audit tool lifecycle parity                                                                                                                           MCP
+     ┃ 2ms                                                                                                                                                                          No MCP integrations configured
+     ┃ foreground · agent_worker · req_child · completed · 2 child tool calls                                                                                                       LSP
+     ┃ Found the whole-tool parity path.                                                                                                                                            No active LSP servers
+     ┃ Compat alias · task → agent.spawn                                                                                                                                            ▼ Modified Files
+                                                                                                                                                                                    crates/harness-tui/src/ui.rs · +1 -1
      ┃ # cargo test -p harness-tui in /workspace
      ┃ 2ms
      ┃ $ cargo test -p harness-tui

@@ -3,16 +3,16 @@
   ╰─
                                                                                                                         Context
   ╭─ Hello world                                                                                                        0 tokens
-  ╰─ ● Assistant · model-1 · 4ms                                                                                        MCP
+  ╰─ ● Assistant · model-1 · 4ms                                                                                        Orchestration
+                                                                                                                        ● Delegation Enabled
+                                                                                                                        0 agents · 0 queued · 0 running · 0
+                                                                                                                        stale
+                                                                                                                        MCP
                                                                                                                         No MCP integrations configured
                                                                                                                         LSP
                                                                                                                         No active LSP servers
                                                                                                                         ▼ Modified Files
                                                                                                                         No modified files
-
-
-
-
 
 
 

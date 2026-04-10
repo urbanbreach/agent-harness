@@ -32,7 +32,7 @@ use crate::event::{
     RunFinishedEvent, RunStartedEvent, StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent,
     TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState,
     TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallStartedEvent,
-    ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent,
+    ToolCallStatus, ToolIdentityMetadata, UiIntentReceivedEvent, UserMessageSubmittedEvent,
 };
 use crate::perm::{
     permission_kind_for_tool, permission_kind_for_tool_call, PermissionDecision, PermissionKind,
@@ -45,7 +45,8 @@ use crate::sched::{
 };
 use crate::store::{EventEnvelopeWithoutSeqV1, EventStore, EventStoreError, JsonlFileEventStore};
 use crate::tool::{
-    canonical_tool_id_for, sanitize_tool_function_name, ToolContext, ToolRegistry, ToolResult,
+    canonical_tool_id_for, sanitize_tool_function_name, ToolCapability, ToolContext, ToolRegistry,
+    ToolResult,
 };
 use harness_providers::Provider;
 
@@ -78,6 +79,7 @@ pub struct CoordinatorConfig {
     pub provider: Arc<dyn Provider>,
     pub agent_profiles: BTreeMap<String, AgentProfile>,
     pub plan_profiles: BTreeMap<String, PlanProfileConfig>,
+    pub orchestration_enabled: bool,
     pub prompt_compaction: PromptCompactionConfig,
     pub hook_runtime_config: HookRuntimeConfig,
     pub config_digest: String,
@@ -107,6 +109,7 @@ impl CoordinatorConfig {
             provider: default_provider(),
             agent_profiles: BTreeMap::new(),
             plan_profiles: BTreeMap::new(),
+            orchestration_enabled: true,
             prompt_compaction: PromptCompactionConfig::default(),
             hook_runtime_config: registered_hook_runtime_config(),
             config_digest: "none".to_string(),
@@ -206,6 +209,11 @@ pub enum Command {
         tool_id: String,
         args_json: Value,
         respond_to: oneshot::Sender<Result<ToolResult, String>>,
+    },
+    SetOrchestrationEnabled {
+        actor: EventActor,
+        enabled: bool,
+        respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
     },
     RequestQuestion {
         actor: EventActor,
@@ -564,6 +572,26 @@ impl CoordinatorHandle {
             .map_err(|_| CoordinatorError::ResponseChannelClosed.to_string())?
     }
 
+    pub async fn set_orchestration_enabled(
+        &self,
+        actor: EventActor,
+        enabled: bool,
+    ) -> Result<(), CoordinatorError> {
+        let (respond_to, response_rx) = oneshot::channel();
+        self.tx
+            .send(Command::SetOrchestrationEnabled {
+                actor,
+                enabled,
+                respond_to,
+            })
+            .await
+            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
+
+        response_rx
+            .await
+            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+    }
+
     pub async fn job_progress(
         &self,
         task_id: impl Into<String>,
@@ -795,6 +823,14 @@ impl Coordinator {
                     )
                     .await;
             }
+            Command::SetOrchestrationEnabled {
+                actor,
+                enabled,
+                respond_to,
+            } => {
+                let result = self.set_orchestration_enabled_internal(actor, enabled);
+                let _ = respond_to.send(result);
+            }
             Command::RequestQuestion {
                 actor,
                 tool_call_id,
@@ -968,6 +1004,7 @@ impl Coordinator {
             next_permission_id: 1,
             agents: BTreeMap::new(),
             provider_context_by_agent: BTreeMap::new(),
+            orchestration_enabled: self.config.orchestration_enabled,
             prompt_compaction: self.config.prompt_compaction.clone(),
             tasks: BTreeMap::new(),
             task_hook_state: BTreeMap::new(),
@@ -1132,6 +1169,11 @@ impl Coordinator {
 
         let provider_context_by_agent =
             restore_provider_context_from_history(&self.config.session_dir, &run_id)?;
+        let orchestration_enabled = restore_orchestration_enabled_from_history(
+            &self.config.session_dir,
+            &run_id,
+            self.config.orchestration_enabled,
+        )?;
 
         let next_agent_id = checked_next_counter(max_agent_id, &run_id, "agent id")?;
         let next_tool_call_id = checked_next_counter(
@@ -1181,6 +1223,7 @@ impl Coordinator {
             next_permission_id,
             agents,
             provider_context_by_agent,
+            orchestration_enabled,
             prompt_compaction: self.config.prompt_compaction.clone(),
             tasks: BTreeMap::new(),
             task_hook_state: BTreeMap::new(),
@@ -2491,6 +2534,49 @@ impl Coordinator {
         Ok(())
     }
 
+    fn set_orchestration_enabled_internal(
+        &mut self,
+        actor: EventActor,
+        enabled: bool,
+    ) -> Result<(), CoordinatorError> {
+        let Some(run_state) = self.run_state.as_mut() else {
+            return Err(CoordinatorError::RunNotStarted);
+        };
+
+        if run_state.orchestration_enabled == enabled {
+            return Ok(());
+        }
+
+        run_state.orchestration_enabled = enabled;
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor,
+            Some(format!("run:{}", run_state.info.run_id)),
+            EventV1::UiIntentReceived(UiIntentReceivedEvent {
+                intent: "toggle_orchestration".to_string(),
+                params: BTreeMap::from([
+                    (
+                        "state".to_string(),
+                        if enabled {
+                            "enabled".to_string()
+                        } else {
+                            "paused".to_string()
+                        },
+                    ),
+                    ("scope".to_string(), "delegated_subagents".to_string()),
+                    (
+                        "effect".to_string(),
+                        "new_spawn_tool_calls_only".to_string(),
+                    ),
+                ]),
+            }),
+        )?;
+
+        Ok(())
+    }
+
     fn watchdog_tick_internal(&mut self) -> Result<(), CoordinatorError> {
         let Some(run_state) = self.run_state.as_mut() else {
             return Ok(());
@@ -3371,6 +3457,7 @@ struct RunState {
     next_permission_id: u64,
     agents: BTreeMap<String, AgentProfile>,
     provider_context_by_agent: BTreeMap<String, Vec<ProviderConversationTurn>>,
+    orchestration_enabled: bool,
     prompt_compaction: PromptCompactionConfig,
     tasks: BTreeMap<String, TaskState>,
     task_hook_state: BTreeMap<String, TaskHookState>,
@@ -4087,6 +4174,20 @@ where
         return Err(CoordinatorError::PolicyViolation(
             "tool capability forbidden for actor".to_string(),
         ));
+    }
+
+    if tool.capability() == ToolCapability::SpawnAgent && !run_state.orchestration_enabled {
+        append_failed_tool_call_finished_event(
+            clock,
+            redactor,
+            run_state,
+            &tool_call_id,
+            "delegated orchestration is paused in the HUD",
+            request_correlation_id.as_deref(),
+            requested_tool_call_metadata(&tool_id, &args_json),
+            &[],
+        )?;
+        return Ok(());
     }
 
     let hashline_edit = hashline_edit_metadata(&tool_id, &args_json, &tool_call_id);
@@ -5937,6 +6038,77 @@ fn restore_provider_context_from_history(
     }
 
     Ok(histories)
+}
+
+fn restore_orchestration_enabled_from_history(
+    session_dir: &Path,
+    run_id: &str,
+    default_enabled: bool,
+) -> Result<bool, CoordinatorError> {
+    let events_path = session_dir.join(run_id).join("events.jsonl");
+    let file =
+        fs::File::open(&events_path).map_err(|source| CoordinatorError::ResumeRestoreFailed {
+            run_id: run_id.to_string(),
+            reason: format!(
+                "failed to open historical events {}: {source}",
+                events_path.display()
+            ),
+        })?;
+
+    let mut enabled = default_enabled;
+    let mut expected_seq = 1_u64;
+
+    for (line_number, line) in BufReader::new(file).lines().enumerate() {
+        let line = line.map_err(|source| CoordinatorError::ResumeRestoreFailed {
+            run_id: run_id.to_string(),
+            reason: format!(
+                "failed to read historical event line {} in {}: {source}",
+                line_number + 1,
+                events_path.display()
+            ),
+        })?;
+
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        let event: EventEnvelopeV1 = serde_json::from_str(&line).map_err(|source| {
+            CoordinatorError::ResumeRestoreFailed {
+                run_id: run_id.to_string(),
+                reason: format!(
+                    "invalid historical event line {} in {}: {source}",
+                    line_number + 1,
+                    events_path.display()
+                ),
+            }
+        })?;
+
+        if event.seq != expected_seq {
+            return Err(CoordinatorError::ResumeRestoreFailed {
+                run_id: run_id.to_string(),
+                reason: format!(
+                    "historical sequence mismatch at {}: expected {expected_seq}, got {}",
+                    events_path.display(),
+                    event.seq
+                ),
+            });
+        }
+        expected_seq = expected_seq.saturating_add(1);
+
+        let EventV1::UiIntentReceived(payload) = &event.payload else {
+            continue;
+        };
+        if payload.intent != "toggle_orchestration" {
+            continue;
+        }
+        enabled = match payload.params.get("state").map(String::as_str) {
+            Some("enabled") => true,
+            Some("paused") => false,
+            _ => enabled,
+        };
+    }
+
+    Ok(enabled)
 }
 
 fn parse_prefixed_counter(id: &str, expected_prefix: &str) -> Option<u64> {

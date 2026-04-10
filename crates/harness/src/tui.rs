@@ -932,7 +932,8 @@ fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> InteractiveWorkfl
         Some(UiIntent::QuitRequested)
         | None
         | Some(UiIntent::ResolvePermission { .. })
-        | Some(UiIntent::SwitchModel { .. }) => InteractiveWorkflow::Quit,
+        | Some(UiIntent::SwitchModel { .. })
+        | Some(UiIntent::SetOrchestrationEnabled { .. }) => InteractiveWorkflow::Quit,
     }
 }
 
@@ -1224,7 +1225,8 @@ fn live_workflow_from_intent(intent: &UiIntent) -> Option<InteractiveWorkflow> {
         UiIntent::QuitRequested => Some(InteractiveWorkflow::Quit),
         UiIntent::ResolvePermission { .. }
         | UiIntent::SubmitPrompt { .. }
-        | UiIntent::SwitchModel { .. } => None,
+        | UiIntent::SwitchModel { .. }
+        | UiIntent::SetOrchestrationEnabled { .. } => None,
     }
 }
 
@@ -1234,6 +1236,7 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
         UiIntent::ResolvePermission { .. }
             | UiIntent::SubmitPrompt { .. }
             | UiIntent::SwitchModel { .. }
+            | UiIntent::SetOrchestrationEnabled { .. }
             | UiIntent::QuitRequested
     )
 }
@@ -1854,6 +1857,12 @@ async fn handle_ui_intents(
                 target.agent_id = Some(agent_id);
                 target.profile = profile;
             }
+            UiIntent::SetOrchestrationEnabled { enabled } => {
+                coordinator
+                    .set_orchestration_enabled(user_actor.clone(), enabled)
+                    .await
+                    .map_err(|err| err.to_string())?;
+            }
             UiIntent::NewSession
             | UiIntent::ReplaySession { .. }
             | UiIntent::ContinueSession { .. } => {}
@@ -2049,6 +2058,13 @@ pub(crate) fn assert_startup_command_workflow_maps_model_and_session_intents_cor
         profile: "ops".to_string(),
         launch_metadata: switched_metadata,
     }));
+    assert!(forward_intent_to_live_run(
+        &UiIntent::SetOrchestrationEnabled { enabled: false }
+    ));
+    assert_eq!(
+        live_workflow_from_intent(&UiIntent::SetOrchestrationEnabled { enabled: true }),
+        None
+    );
 }
 
 #[cfg(test)]
