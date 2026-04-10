@@ -1703,6 +1703,24 @@ fn metadata_for_profile_identity(
     Some(metadata)
 }
 
+fn preferred_model_option_for_profile<'a>(
+    options: &'a [ModelOption],
+    profile: &str,
+) -> Option<&'a ModelOption> {
+    if let Some(metadata) = registered_profile_model_metadata(profile) {
+        if let Some(option) = options.iter().find(|option| {
+            option.profile == profile
+                && option.provider == metadata.provider
+                && option.model == metadata.model
+                && option.variant.as_deref() == metadata.variant.as_deref()
+        }) {
+            return Some(option);
+        }
+    }
+
+    options.iter().find(|option| option.profile == profile)
+}
+
 #[derive(Default)]
 pub struct SessionProjection {
     pub(crate) events: Vec<EventEnvelopeV1>,
@@ -4127,52 +4145,48 @@ impl AppState {
 
         let handoff = envelope.plan_exit_handoff;
         let mut available_models = self.launch_metadata.available_models().to_vec();
-        let mut launch_metadata = self
-            .launch_metadata
-            .available_models()
-            .iter()
-            .find(|option| option.profile == handoff.target_profile)
-            .map(LaunchMetadata::from_model_option)
-            .unwrap_or_else(|| {
-                LaunchMetadata::new(
-                    handoff.target_profile.clone(),
-                    self.launch_metadata.provider().to_string(),
-                    self.launch_metadata.model().map(str::to_owned),
-                )
-            })
-            .with_available_models({
-                if !available_models
-                    .iter()
-                    .any(|option| option.profile == handoff.target_profile)
-                {
-                    available_models.push(ModelOption {
-                        profile: handoff.target_profile.clone(),
-                        provider: self.launch_metadata.provider().to_string(),
-                        model: self
-                            .launch_metadata
-                            .model()
-                            .map(str::to_string)
-                            .unwrap_or_default(),
-                        variant: self.launch_metadata.variant().map(str::to_string),
-                        display_label: self.launch_metadata.display_label().map(str::to_string),
-                        token_window_label: self
-                            .launch_metadata
-                            .token_window_label()
-                            .map(str::to_string),
-                        context_window_tokens: self.launch_metadata.context_window_tokens(),
-                        max_input_tokens: self.launch_metadata.max_input_tokens(),
-                        max_output_tokens: self.launch_metadata.max_output_tokens(),
-                        description: self.launch_metadata.description().map(str::to_string),
-                        reasoning_effort: self
-                            .launch_metadata
-                            .reasoning_effort()
-                            .map(str::to_string),
-                        text_verbosity: self.launch_metadata.text_verbosity().map(str::to_string),
-                        recommended_for: self.launch_metadata.recommended_for().map(str::to_string),
-                    });
-                }
-                available_models
-            });
+        let mut launch_metadata = preferred_model_option_for_profile(
+            self.launch_metadata.available_models(),
+            &handoff.target_profile,
+        )
+        .map(LaunchMetadata::from_model_option)
+        .unwrap_or_else(|| {
+            LaunchMetadata::new(
+                handoff.target_profile.clone(),
+                self.launch_metadata.provider().to_string(),
+                self.launch_metadata.model().map(str::to_owned),
+            )
+        })
+        .with_available_models({
+            if !available_models
+                .iter()
+                .any(|option| option.profile == handoff.target_profile)
+            {
+                available_models.push(ModelOption {
+                    profile: handoff.target_profile.clone(),
+                    provider: self.launch_metadata.provider().to_string(),
+                    model: self
+                        .launch_metadata
+                        .model()
+                        .map(str::to_string)
+                        .unwrap_or_default(),
+                    variant: self.launch_metadata.variant().map(str::to_string),
+                    display_label: self.launch_metadata.display_label().map(str::to_string),
+                    token_window_label: self
+                        .launch_metadata
+                        .token_window_label()
+                        .map(str::to_string),
+                    context_window_tokens: self.launch_metadata.context_window_tokens(),
+                    max_input_tokens: self.launch_metadata.max_input_tokens(),
+                    max_output_tokens: self.launch_metadata.max_output_tokens(),
+                    description: self.launch_metadata.description().map(str::to_string),
+                    reasoning_effort: self.launch_metadata.reasoning_effort().map(str::to_string),
+                    text_verbosity: self.launch_metadata.text_verbosity().map(str::to_string),
+                    recommended_for: self.launch_metadata.recommended_for().map(str::to_string),
+                });
+            }
+            available_models
+        });
         if let Some(mode_label) = self.launch_metadata.mode_label().map(str::to_owned) {
             launch_metadata = launch_metadata.with_mode_label(mode_label);
         }

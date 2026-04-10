@@ -1128,6 +1128,148 @@ fn tool_call_finished_plan_exit_handoff_emits_switch_model_then_submit_prompt() 
 }
 
 #[test]
+fn plan_exit_handoff_prefers_target_profile_configured_model() {
+    let config = harness_core::config::load_config_from_str(
+        r#"
+        {
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              api_mode: "responses",
+              timeout_ms: 60000,
+              models: {
+                "gpt-5.4": {
+                  display_name: "GPT-5.4"
+                },
+                "gpt-5.4-mini": {
+                  display_name: "GPT-5.4 Mini",
+                  variants: {
+                    low: {
+                      display_name: "Low",
+                      metadata: {
+                        reasoning_effort: "low"
+                      }
+                    },
+                    high: {
+                      display_name: "High",
+                      metadata: {
+                        reasoning_effort: "high"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          agents: {
+            plan_issue_119: {
+              description: "Planning",
+              model_ref: "default:gpt-5.4-mini",
+              variant: "low",
+              tools: []
+            },
+            build_issue_119: {
+              description: "Implementation",
+              model_ref: "default:gpt-5.4-mini",
+              variant: "high",
+              tools: []
+            }
+          },
+          permissions: {
+            defaults: {
+              edit: "allow",
+              shell: "allow",
+              network: "allow"
+            }
+          },
+          runtime: {
+            background_tasks: {
+              default_concurrency: 2,
+              provider_concurrency: 2,
+              model_concurrency: 2,
+              stale_timeout_ms: 15000,
+              message_staleness_timeout_ms: 5000
+            },
+            session_dir: ".agent-harness/sessions"
+          },
+          integrations: {
+            remote_search: {
+              endpoint: "https://mcp.exa.ai/mcp"
+            }
+          }
+        }
+        "#,
+    )
+    .expect("config should parse");
+    harness_core::config::refresh_profile_model_metadata_registry(&config)
+        .expect("profile model metadata should refresh");
+
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let preferred_launch_metadata =
+        LaunchMetadata::from_model_ref("build_issue_119", "default:gpt-5.4-mini")
+            .with_available_models(vec![
+                ModelOption::from_model_ref("plan_issue_119", "default:gpt-5.4-mini"),
+                ModelOption::from_model_ref("build_issue_119", "default:gpt-5.4"),
+                ModelOption::from_model_ref("build_issue_119", "default:gpt-5.4-mini"),
+            ])
+            .with_mode_label("Live");
+
+    let mut app = AppState::new_live(None, false, Some(sink));
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_ref("plan_issue_119", "default:gpt-5.4-mini")
+            .with_available_models(preferred_launch_metadata.available_models().to_vec())
+            .with_mode_label("Live"),
+    );
+
+    app.ingest_event(envelope(
+        1,
+        "req_plan_exit_handoff_issue_119",
+        EventV1::ToolCallFinished(ToolCallFinishedEvent {
+            tool_call_id: "tc_plan_exit_handoff_issue_119".to_string(),
+            status: ToolCallStatus::Succeeded,
+            output_summary: Some("plan exit handoff ready".to_string()),
+            output_digest: Some("digest-plan-exit".to_string()),
+            output_json: Some(serde_json::json!({
+                "plan_exit_handoff": {
+                    "source_profile": "plan_issue_119",
+                    "target_profile": "build_issue_119",
+                    "prompt": "Execute the approved build plan."
+                }
+            })),
+            metadata: None,
+        }),
+    ));
+
+    assert_eq!(app.active_profile(), "build_issue_119");
+    assert_eq!(app.launch_metadata.model(), Some("gpt-5.4-mini"));
+    assert_eq!(app.launch_metadata.variant(), Some("high"));
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[
+            UiIntent::SwitchModel {
+                profile: "build_issue_119".to_string(),
+                launch_metadata: preferred_launch_metadata.clone(),
+            },
+            UiIntent::SubmitPrompt {
+                text: "Execute the approved build plan.".to_string(),
+                launch_metadata: preferred_launch_metadata,
+            },
+        ]
+    );
+
+    let _ = take_pending_live_launch_metadata();
+}
+
+#[test]
 fn replay_mode_focus_cycle_skips_prompt_and_blocks_draft_edits() {
     let mut app = AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new());
 
