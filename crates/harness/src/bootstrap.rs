@@ -573,9 +573,15 @@ mod tests {
             default_interactive_system_prompt("plan", "Planning lane")
         );
         assert!(profiles["plan"].system_prompt.contains("Remain read-only"));
+        assert!(profiles["plan"]
+            .system_prompt
+            .contains("assumptions that still need confirmation"));
         assert!(profiles["build"]
             .system_prompt
             .contains("Implement only the approved plan"));
+        assert!(profiles["build"]
+            .system_prompt
+            .contains("reality no longer matches the plan"));
     }
 
     #[test]

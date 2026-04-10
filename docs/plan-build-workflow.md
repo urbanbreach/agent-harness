@@ -25,12 +25,13 @@ auto-discovery path.
 - default lane in `configs/harness.example.jsonc`
 - implementation-focused
 - may edit files, run shell verification, and delegate when it materially helps
+- should restate the approved scope, keep edits small and reversible in legible batches, verify narrow-first, and escalate blockers instead of quietly widening the rewrite when reality no longer matches the approved plan
 - expected to finish with concrete evidence, changed files, what was not tested, and remaining risks
 
 ### `plan`
 - explicit planning lane
 - read-only in practice and in policy
-- should inspect, ask questions, and produce a concrete implementation plan with scope, files, risks, and verification steps
+- should investigate first, separate confirmed facts from open questions and assumptions, call out assumptions still needing confirmation, ask targeted questions when a critical gap blocks a safe plan, and produce a concrete implementation plan with scope, likely files, ordered steps, risks, and verification steps
 - must not start implementation work
 - may call `plan.exit` only after the user explicitly approves implementation
 

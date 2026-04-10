@@ -7,6 +7,7 @@ This is the canonical verification map for the shipped Plan/Build path.
 - `build` is the shipped default lane
 - `plan` is explicitly read-only and approval-gated
 - `plan.exit` hands off clearly into `build`
+- the Build/Plan prompt contract stays aligned across code, shipped config, and signoff tests, including the stronger plan/build prompt wording
 - docs, README, config, and tests all describe the same workflow
 - verification evidence is recorded with remaining gaps called out honestly
 
@@ -19,7 +20,7 @@ Run the narrowest useful checks first, then widen only where needed.
 - `cargo test -p harness --test config_schema_cli`
 - `cargo test -p harness-tools --test native_control_plane_tools`
 
-These prove the shipped config keeps `build` as default, preserves plan metadata, and enforces the explicit `plan.exit` handoff contract.
+These prove the shipped config keeps `build` as default, preserves plan metadata, and enforces the explicit `plan.exit` handoff contract while keeping the named prompt defaults aligned with bootstrap/config loading.
 
 ### User-visible lane proof
 - `cargo test -p harness-tui app::tests::tool_call_finished_plan_exit_handoff_emits_switch_model_then_submit_prompt`

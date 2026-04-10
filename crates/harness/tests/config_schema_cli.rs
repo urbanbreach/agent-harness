@@ -497,6 +497,28 @@ fn config_validate_cli_accepts_shipped_example_config() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("config valid:"));
     assert!(stdout.contains("configs/harness.example.jsonc"));
+
+    let parsed =
+        load_config_from_file(&config_path).expect("load validated shipped example config");
+    let plan = parsed.agents.get("plan").expect("plan agent present");
+    assert_eq!(
+        plan.description,
+        named_agent_description("plan").expect("named plan description")
+    );
+    assert_eq!(
+        plan.system_prompt.as_deref(),
+        named_agent_system_prompt("plan")
+    );
+
+    let build = parsed.agents.get("build").expect("build agent present");
+    assert_eq!(
+        build.description,
+        named_agent_description("build").expect("named build description")
+    );
+    assert_eq!(
+        build.system_prompt.as_deref(),
+        named_agent_system_prompt("build")
+    );
 }
 
 #[test]

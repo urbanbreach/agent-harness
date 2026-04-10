@@ -226,6 +226,18 @@ fn opencode_primary_agents_enforce_build_and_plan_permissions() {
             .evaluate(Some("plan"), PermissionKind::Task),
         PolicyDecision::Deny
     );
+
+    let plan_prompt = named_agent_system_prompt("plan").expect("named plan prompt");
+    assert!(plan_prompt.contains("Remain read-only"));
+    assert!(plan_prompt.contains("ordered steps"));
+    assert!(plan_prompt.contains("assumptions that still need confirmation"));
+    assert!(plan_prompt.contains("keep planning instead of acting"));
+
+    let build_prompt = named_agent_system_prompt("build").expect("named build prompt");
+    assert!(build_prompt.contains("approved scope"));
+    assert!(build_prompt.contains("reality no longer matches the plan"));
+    assert!(build_prompt.contains("reversible batches"));
+    assert!(build_prompt.contains("what was not tested"));
 }
 
 #[test]

@@ -11,6 +11,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
+
 use time::{macros::format_description, OffsetDateTime};
 
 mod support;
@@ -2022,7 +2023,9 @@ fn example_config_ships_canonical_plan_build_and_audit_agents() {
         .and_then(Value::as_str)
         .expect("plan system prompt present");
     assert!(plan_prompt.contains("Remain read-only"));
-    assert!(plan_prompt.contains("do not edit files"));
+    assert!(plan_prompt.contains("open questions and assumptions"));
+    assert!(plan_prompt.contains("missing fact would change the plan"));
+    assert!(plan_prompt.contains("ordered steps"));
     assert!(plan_prompt.contains("verification steps"));
     assert!(plan_prompt.contains("plan.exit"));
     assert!(plan_prompt.contains("hand off"));
@@ -2060,7 +2063,9 @@ fn example_config_ships_canonical_plan_build_and_audit_agents() {
         .and_then(Value::as_str)
         .expect("build system prompt present");
     assert!(build_prompt.contains("Implement only the approved plan"));
-    assert!(build_prompt.contains("narrowest useful verification"));
+    assert!(build_prompt.contains("approved scope"));
+    assert!(build_prompt.contains("small and reversible"));
+    assert!(build_prompt.contains("material gap"));
     assert!(build_prompt.contains("changed files"));
     assert!(build_prompt.contains("what was not tested"));
     assert!(build_prompt.contains("remaining risks"));

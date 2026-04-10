@@ -55,7 +55,7 @@ The shipped example keeps docs, config, and live signoff aligned around a local 
 - edit + shell + task permissions enabled
 - includes file edit, shell, batch, and `agent.spawn` tools
 - when `description` or `system_prompt` is omitted, the harness fills in the shipped named Build lane defaults so compact configs stay legible
-- prompt requires focused implementation plus verification evidence
+- prompt requires the agent to restate approved scope, keep edits small and reversible in legible batches, verify narrow-first, surface plan/reality mismatches instead of inventing new scope, and close out with changed files, what was not tested, and remaining risks
 
 ### `plan`
 - explicit planning lane
@@ -64,7 +64,7 @@ The shipped example keeps docs, config, and live signoff aligned around a local 
 - edit + shell + task permissions denied
 - uses read-only investigation tools plus `plan.exit`
 - when `description` or `system_prompt` is omitted, the harness fills in the shipped named Plan lane defaults so compact configs stay legible
-- prompt requires a concrete plan before approval-gated handoff
+- prompt requires read-only investigation, a clear split between confirmed facts and open questions/assumptions, explicit assumptions still needing confirmation, targeted questions when critical gaps remain, and a concrete plan with scope, ordered steps, risks, and verification before approval-gated handoff
 
 ### Secondary shipped lanes
 - `tool_audit`: evidence-first signoff profile for shipped surface validation
