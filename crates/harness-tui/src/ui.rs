@@ -931,14 +931,16 @@ mod tests {
         ));
 
         let transcript = transcript_debug(&app);
-        let thinking_index = transcript
-            .find("Thinking: Drafting a document-like plan")
-            .expect("thinking summary");
+        let thinking_index = transcript.find("Thinking:").expect("thinking summary");
+        let reasoning_index = transcript
+            .find("Drafting a document-like plan")
+            .expect("reasoning text");
         let answer_index = transcript
             .find("Found the transcript renderer and the composer chrome.")
             .expect("answer text");
         let tool_index = transcript.find("Read src/ui.rs").expect("tool summary");
 
+        assert!(thinking_index < reasoning_index);
         assert!(thinking_index < tool_index);
         assert!(tool_index < answer_index);
     }

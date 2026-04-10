@@ -1,15 +1,16 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-assertion_line: 883
-expression: "checkpoint_visual_snapshot(&screen,\n&[\"Thinking: Drafting the inline parity pass.\",\n\"Inline transcript parity is easier to scan now.\",\n\"Bring native tool parity inline\", REPLAY_DENSE_READY_MARKER,],\n&thinking_visual,)"
+assertion_line: 885
+expression: "checkpoint_visual_snapshot(&screen,\n&[\"Thinking:\", \"Drafting the inline parity pass.\",\n\"Inline transcript parity is easier to scan now.\",\n\"Bring native tool parity inline\", REPLAY_DENSE_READY_MARKER,],\n&thinking_visual,)"
 ---
-Thinking: Drafting the inline parity pass.: true
+Thinking:: true
+Drafting the inline parity pass.: true
 Inline transcript parity is easier to scan now.: true
 Bring native tool parity inline: true
 Replay · read-only: true
-focus_marker: Thinking: Drafting the inline parity pass.
-focus_render_state_blake3: 7e713ac440baeeb5f02d781ef498a40146eead75703708fbe68387d626f81388
-focus_region_cells: row=6, col=5, height=5, width=40
+focus_marker: Thinking:
+focus_render_state_blake3: c97811e386e378030ce75f97c2e7dd564e32e56652c552ba1d4feaaef3238b5b
+focus_region_cells: row=5, col=5, height=5, width=40
 image: pty_native_tool_parity_thinking.png
 manifest_json: pty-manifests/transcript_shell/manifest.json
 manifest_jsonl: pty-manifests/transcript_shell/manifest.jsonl

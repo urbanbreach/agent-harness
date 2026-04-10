@@ -796,9 +796,10 @@ fn native_tool_parity_pty_lane() {
         "native_tool_parity_thinking",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("Thinking: Drafting the inline parity pass.", 40, 5),
+        FocusCapture::anchored_exact("Thinking:", 40, 5),
         &[
-            "Thinking: Drafting the inline parity pass.",
+            "Thinking:",
+            "Drafting the inline parity pass.",
             "Inline transcript parity is easier to scan now.",
             "Bring native tool parity inline",
             REPLAY_DENSE_READY_MARKER,
@@ -851,7 +852,8 @@ fn native_tool_parity_pty_lane() {
     .expect("capture native tool parity MCP background image");
 
     assert!(screen.contains("Bring native tool parity inline"));
-    assert!(screen.contains("Thinking: Drafting the inline parity pass."));
+    assert!(screen.contains("Thinking:"));
+    assert!(screen.contains("Drafting the inline parity pass."));
     assert!(screen.contains("Inline transcript parity is easier to scan now."));
     assert!(screen.contains("Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s"));
     assert!(screen.contains("Compat alias · read → fs.read"));
@@ -885,7 +887,8 @@ fn native_tool_parity_pty_lane() {
         checkpoint_visual_snapshot(
             &screen,
             &[
-                "Thinking: Drafting the inline parity pass.",
+                "Thinking:",
+                "Drafting the inline parity pass.",
                 "Inline transcript parity is easier to scan now.",
                 "Bring native tool parity inline",
                 REPLAY_DENSE_READY_MARKER,

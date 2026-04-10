@@ -1141,18 +1141,20 @@ fn native_visual_transcript_parity_inner() {
         .unwrap_or_else(|err| panic!("native transcript replay shell did not appear: {err}"));
     let transcript_screen =
         run_session_palette_command(&transcript_harness, "show timestamps", "14:37");
-    assert!(transcript_screen.contains("Thinking: Drafting the inline parity pass."));
+    assert!(transcript_screen.contains("Thinking:"));
+    assert!(transcript_screen.contains("Drafting the inline parity pass."));
     let thinking_checkpoint = transcript_harness
         .capture_checkpoint(
             &mut transcript_run,
             CHECKPOINT_STARTUP,
             &[
-                "Thinking: Drafting the inline parity pass.",
+                "Thinking:",
+                "Drafting the inline parity pass.",
                 "Inline transcript parity is easier to scan now.",
                 "Bring native tool parity inline",
                 REPLAY_DENSE_READY_MARKER,
             ],
-            &FocusCapture::anchored_exact("Thinking: Drafting the inline parity pass.", 40, 5),
+            &FocusCapture::anchored_exact("Thinking:", 40, 5),
             Some(json!({
                 "purpose": "native-tool-parity-thinking",
                 "family": "transcript_shell",

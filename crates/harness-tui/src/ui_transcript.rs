@@ -244,7 +244,7 @@ const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
 const TRANSCRIPT_SURFACE_BODY_PREFIX: &str = " ";
 const TRANSCRIPT_USER_BODY_PREFIX: &str = "   ";
 const TRANSCRIPT_ASSISTANT_BODY_PREFIX: &str = "   ";
-const TRANSCRIPT_REASONING_BODY_PREFIX: &str = "  ";
+const TRANSCRIPT_REASONING_BODY_PREFIX: &str = TRANSCRIPT_ASSISTANT_BODY_PREFIX;
 const TRANSCRIPT_NESTED_INDENT: &str = "  ";
 const TRANSCRIPT_OPCODE_EDIT_INDENT: &str = "    ";
 const TRANSCRIPT_RAIL_GLYPH: &str = "┃";
@@ -2231,12 +2231,6 @@ fn build_assistant_render_surfaces(
     let footer_target = assistant_footer_target_index(turn);
 
     for (index, part) in turn.assistant_parts.iter().enumerate() {
-        let prepend_gap = index > 0
-            && matches!(
-                turn.assistant_parts[index - 1],
-                TranscriptAssistantPart::Reasoning(_)
-            )
-            && matches!(part, TranscriptAssistantPart::Body(_));
         let append_footer = footer_target == Some(index);
         surfaces.push(build_assistant_part_render_surface(
             turn,
@@ -2244,7 +2238,6 @@ fn build_assistant_render_surfaces(
             theme,
             width,
             base_surface,
-            prepend_gap,
             append_footer,
             assistant_icon,
             assistant_color,
@@ -2291,7 +2284,6 @@ fn build_assistant_part_render_surface(
     theme: &Theme,
     width: u16,
     base_surface: Color,
-    prepend_gap: bool,
     append_footer: bool,
     assistant_icon: &str,
     assistant_color: Color,
@@ -2306,15 +2298,15 @@ fn build_assistant_part_render_surface(
                 thinking,
                 theme,
                 reasoning_surface,
-                transcript_surface_content_width(width, true),
+                transcript_surface_content_width(width, false),
             );
-            (true, theme.border.subtle, reasoning_surface)
+            (
+                false,
+                assistant_primary_rail_color(turn, theme),
+                reasoning_surface,
+            )
         }
         TranscriptAssistantPart::Body(block) => {
-            let body_start = usize::from(prepend_gap);
-            if prepend_gap {
-                lines.push(Line::default());
-            }
             match block {
                 TranscriptBodyBlock::RichText(text) => append_rich_text_block(
                     &mut lines,
@@ -2346,7 +2338,7 @@ fn build_assistant_part_render_surface(
                 )));
             }
             decorate_card_surface_lines(
-                &mut lines[body_start..],
+                &mut lines,
                 theme,
                 assistant_primary_rail_color(turn, theme),
                 body_surface,
@@ -2444,40 +2436,37 @@ fn append_reasoning_block(
         .fg(theme.text.secondary)
         .add_modifier(Modifier::DIM)
         .bg(surface);
-    let mut rendered_any_line = false;
+    append_prefixed_wrapped_spans_line(
+        lines,
+        TRANSCRIPT_REASONING_BODY_PREFIX,
+        reasoning_style,
+        vec![Span::styled(thinking.label.to_string(), label_style)],
+        width,
+    );
 
-    for (index, row) in thinking.text.lines().enumerate() {
-        let mut spans = Vec::new();
-        if index == 0 {
-            spans.push(Span::styled(thinking.label.to_string(), label_style));
-            if !row.is_empty() {
-                spans.push(Span::styled(" ".to_string(), reasoning_style));
-            }
-        }
-        if !row.is_empty() {
-            spans.extend(parse_inline_markdown_spans(
-                row,
-                reasoning_style,
-                theme.text.secondary,
-                theme,
-            ));
-        }
+    let mut rendered_body_line = false;
+    for row in thinking.text.lines() {
+        let spans = if row.is_empty() {
+            Vec::new()
+        } else {
+            parse_inline_markdown_spans(row, reasoning_style, theme.text.secondary, theme)
+        };
         append_prefixed_wrapped_spans_line(
             lines,
             TRANSCRIPT_REASONING_BODY_PREFIX,
             reasoning_style,
-            spans,
+            spans.clone(),
             width,
         );
-        rendered_any_line = true;
+        rendered_body_line |= !spans.is_empty() || row.is_empty();
     }
 
-    if !rendered_any_line {
+    if !rendered_body_line && thinking.text.is_empty() {
         append_prefixed_wrapped_spans_line(
             lines,
             TRANSCRIPT_REASONING_BODY_PREFIX,
             reasoning_style,
-            vec![Span::styled(thinking.label.to_string(), label_style)],
+            Vec::new(),
             width,
         );
     }
@@ -4343,10 +4332,16 @@ pub(crate) fn exact_test_transcript_reasoning_precedes_answer_and_tool_rows() {
         })
         .collect::<Vec<_>>();
 
-    let reasoning_row = lines
+    let thinking_heading_row = lines
         .iter()
-        .position(|line| line.contains("Thinking:") && line.contains("working through the plan"))
-        .expect("reasoning row");
+        .position(|line| line.contains("Thinking:"))
+        .expect("thinking heading row");
+    let reasoning_body_row = lines
+        .iter()
+        .enumerate()
+        .skip(thinking_heading_row + 1)
+        .find_map(|(index, line)| line.contains("working through the plan").then_some(index))
+        .expect("reasoning body row");
     let answer_row = lines
         .iter()
         .position(|line| line.contains("assistant answer"))
@@ -4358,7 +4353,8 @@ pub(crate) fn exact_test_transcript_reasoning_precedes_answer_and_tool_rows() {
         .find_map(|(index, line)| line.contains("Read src/ui.rs").then_some(index))
         .expect("tool row");
 
-    assert!(reasoning_row < answer_row);
+    assert!(thinking_heading_row < reasoning_body_row);
+    assert!(reasoning_body_row < answer_row);
     assert!(answer_row < tool_row);
     assert!(lines.iter().any(|line| line.contains("Thinking:")));
 }

@@ -252,8 +252,11 @@ fn transcript_turn_sections_keep_nested_tool_details() {
     let buffer = render_live_cells(&app, 100, 24);
     let theme = Theme::default();
     let lines = rendered.lines().collect::<Vec<_>>();
-    let reasoning_row = find_line_containing_all_from(&lines, 0, &["Thinking:", "tool planning"])
-        .unwrap_or_else(|| panic!("reasoning row\n{rendered}"));
+    let thinking_heading_row = find_line_containing(&lines, "Thinking:")
+        .unwrap_or_else(|| panic!("thinking heading row\n{rendered}"));
+    let reasoning_body_row =
+        find_line_containing_from(&lines, thinking_heading_row + 1, "tool planning")
+            .unwrap_or_else(|| panic!("reasoning body row\n{rendered}"));
     let body_row = find_line_containing(&lines, "Assistant body")
         .unwrap_or_else(|| panic!("assistant body row\n{rendered}"));
     let assistant_footer = find_line_containing_from(&lines, body_row + 1, "Assistant")
@@ -264,8 +267,8 @@ fn transcript_turn_sections_keep_nested_tool_details() {
         find_line_containing_all_from(&lines, tool_row + 1, &["error", "tool call failed"])
             .unwrap_or_else(|| panic!("tool error row\n{rendered}"));
 
-    assert!(reasoning_row < body_row);
-    assert!(reasoning_row + 1 < body_row);
+    assert!(thinking_heading_row < reasoning_body_row);
+    assert!(reasoning_body_row < body_row);
     assert!(body_row < assistant_footer);
     assert!(assistant_footer < tool_row);
     assert!(tool_row < error_row);
@@ -274,41 +277,52 @@ fn transcript_turn_sections_keep_nested_tool_details() {
     let assistant_body_column = first_alphanumeric_column(lines[body_row]);
     let assistant_body_rail = first_non_whitespace_column(lines[body_row]);
     let assistant_footer_column = first_alphanumeric_column(lines[assistant_footer]);
-    let (reasoning_row_text, reasoning_row_fgs, _) =
-        row_at(&buffer, 100, reasoning_row).expect("reasoning palette row");
-    let reasoning_rail_column = reasoning_row_text.find('┃').expect("reasoning rail");
-    let thinking_label_start = reasoning_row_text[..reasoning_row_text
+    let (thinking_heading_text, thinking_heading_fgs, _) =
+        row_at(&buffer, 100, thinking_heading_row).expect("thinking heading palette row");
+    let (reasoning_body_text, reasoning_body_fgs, _) =
+        row_at(&buffer, 100, reasoning_body_row).expect("reasoning body palette row");
+    let thinking_label_start = thinking_heading_text[..thinking_heading_text
         .find("Thinking:")
         .expect("thinking label start")]
         .chars()
         .count();
-    let thinking_body_start = reasoning_row_text[..reasoning_row_text
+    let thinking_body_start = reasoning_body_text[..reasoning_body_text
         .find("tool planning")
         .expect("thinking body start")]
         .chars()
         .count();
 
     assert!(
-        reasoning_row_text.contains("Thinking: tool planning"),
-        "thinking label and content should stay inline with a single space like Opencode\n{rendered}"
-    );
-    assert_eq!(
-        first_alphanumeric_column(lines[reasoning_row]),
-        assistant_body_column,
-        "thinking label should align with the assistant body instead of rendering as a nested labeled block\n{rendered}"
-    );
-    assert_eq!(
-        reasoning_row_fgs[reasoning_rail_column], theme.border.subtle,
-        "thinking rail should use the subtle border color\n{rendered}"
+        thinking_heading_text.contains("Thinking:"),
+        "thinking heading should render on its own muted row\n{rendered}"
     );
     assert!(
-        reasoning_row_fgs[thinking_label_start..thinking_label_start + "Thinking:".chars().count()]
+        reasoning_body_text.contains("tool planning"),
+        "thinking body should render beneath the heading on its own muted row\n{rendered}"
+    );
+    assert_eq!(
+        first_alphanumeric_column(lines[thinking_heading_row]),
+        assistant_body_column,
+        "thinking heading should align with the assistant body instead of rendering as a nested block\n{rendered}"
+    );
+    assert_eq!(
+        first_alphanumeric_column(lines[reasoning_body_row]),
+        assistant_body_column,
+        "thinking body should align with the assistant body instead of rendering as a nested block\n{rendered}"
+    );
+    assert!(
+        !thinking_heading_text.contains('┃') && !reasoning_body_text.contains('┃'),
+        "thinking traces should integrate into the assistant transcript surface instead of drawing a dedicated rail\n{rendered}"
+    );
+    assert!(
+        thinking_heading_fgs
+            [thinking_label_start..thinking_label_start + "Thinking:".chars().count()]
             .iter()
             .all(|color| *color == theme.text.secondary),
         "thinking label should stay muted like Opencode\n{rendered}"
     );
     assert!(
-        reasoning_row_fgs
+        reasoning_body_fgs
             [thinking_body_start..thinking_body_start + "tool planning".chars().count()]
             .iter()
             .all(|color| *color == theme.text.secondary),
@@ -4590,10 +4604,14 @@ fn module_live_shell_redesign_preserves_replay_overlay_and_permission_parity() {
             });
     let user_row = find_line_containing(&replay_lines, "Explain the refactor")
         .unwrap_or_else(|| panic!("replay shell should preserve the user turn\n{replay_render}"));
-    let thinking_row = find_line_containing_all_from(
+    let thinking_heading_row = find_line_containing_from(&replay_lines, user_row + 1, "Thinking:")
+        .unwrap_or_else(|| {
+            panic!("replay shell should preserve a visible thinking heading\n{replay_render}")
+        });
+    let thinking_body_row = find_line_containing_from(
         &replay_lines,
-        user_row + 1,
-        &["Thinking:", "Working through the steps."],
+        thinking_heading_row + 1,
+        "Working through the steps.",
     )
     .unwrap_or_else(|| {
         panic!("replay shell should preserve visible thinking text\n{replay_render}")
@@ -4601,7 +4619,7 @@ fn module_live_shell_redesign_preserves_replay_overlay_and_permission_parity() {
 
     assert!(replay_header_row < replay_disabled_row && replay_disabled_row < replay_shortcuts_row);
     assert!(
-        user_row < thinking_row,
+        user_row < thinking_heading_row && thinking_heading_row < thinking_body_row,
         "replay transcript should preserve turn order\n{replay_render}"
     );
     assert_alphanumeric_row_palette(
@@ -5266,15 +5284,17 @@ fn transcript_shell_remains_scannable_without_bubble_cards() {
     let lines = rendered.lines().collect::<Vec<_>>();
     let prompt_row =
         find_line_containing(&lines, "Restyle the transcript shell").expect("user prompt row");
-    let thinking_row = find_line_containing_all_from(
+    let thinking_heading_row = find_line_containing_from(&lines, prompt_row + 1, "Thinking:")
+        .expect("thinking heading row");
+    let reasoning_body_row = find_line_containing_from(
         &lines,
-        prompt_row + 1,
-        &["Thinking:", "Drafting a document-like plan"],
+        thinking_heading_row + 1,
+        "Drafting a document-like plan",
     )
-    .expect("reasoning row");
+    .expect("reasoning body row");
     let tool_row = find_line_containing_all_from(
         &lines,
-        thinking_row + 1,
+        reasoning_body_row + 1,
         &["Read src/ui.rs", "[offset=1, limit=24]"],
     )
     .expect("tool row");
@@ -5286,12 +5306,19 @@ fn transcript_shell_remains_scannable_without_bubble_cards() {
     .expect("assistant body row");
 
     assert!(prompt_row < body_row);
-    assert!(prompt_row < thinking_row);
-    assert!(thinking_row < tool_row);
+    assert!(prompt_row < thinking_heading_row);
+    assert!(thinking_heading_row < reasoning_body_row);
+    assert!(reasoning_body_row < tool_row);
     assert!(tool_row < body_row);
     assert!(
-        first_alphanumeric_column(lines[thinking_row]) == first_alphanumeric_column(lines[body_row]),
-        "reasoning should align with the assistant body instead of using a deeper nested rail\n{rendered}"
+        first_alphanumeric_column(lines[thinking_heading_row])
+            == first_alphanumeric_column(lines[body_row]),
+        "thinking heading should align with the assistant body instead of using a deeper nested rail\n{rendered}"
+    );
+    assert!(
+        first_alphanumeric_column(lines[reasoning_body_row])
+            == first_alphanumeric_column(lines[body_row]),
+        "reasoning body should align with the assistant body instead of using a deeper nested rail\n{rendered}"
     );
     assert!(
         first_alphanumeric_column(lines[tool_row]) > first_alphanumeric_column(lines[body_row]),
@@ -5361,15 +5388,20 @@ fn nested_transcript_rows_preserve_prefix_on_wrapped_continuations() {
 
     let rendered = render_live_lines(&app, 80, 24);
     let lines = rendered.lines().collect::<Vec<_>>();
-    let thinking_row =
-        find_line_containing_all_from(&lines, 0, &["Thinking:", "Drafting a document-like plan"])
-            .expect("wrapped reasoning row");
+    let thinking_heading_row =
+        find_line_containing(&lines, "Thinking:").expect("thinking heading row");
+    let reasoning_body_row = find_line_containing_from(
+        &lines,
+        thinking_heading_row + 1,
+        "Drafting a document-like plan",
+    )
+    .expect("wrapped reasoning body row");
     let body_row = find_line_containing(
         &lines,
         "Found the transcript renderer and the composer chrome.",
     )
     .expect("assistant body row");
-    let continuation_row = (thinking_row + 1..body_row)
+    let continuation_row = (reasoning_body_row + 1..body_row)
         .find(|row| !lines[*row].trim().is_empty())
         .expect("wrapped continuation row");
     let answer_gap_row = (continuation_row + 1..body_row)
@@ -5377,14 +5409,19 @@ fn nested_transcript_rows_preserve_prefix_on_wrapped_continuations() {
         .expect("blank gap row before assistant body");
 
     assert!(
-        first_alphanumeric_column(lines[thinking_row])
+        first_alphanumeric_column(lines[thinking_heading_row])
+            == first_alphanumeric_column(lines[body_row]),
+        "thinking heading should align with the assistant body while wrapping\n{rendered}"
+    );
+    assert!(
+        first_alphanumeric_column(lines[reasoning_body_row])
             == first_alphanumeric_column(lines[body_row]),
         "reasoning should align with the assistant body while wrapping\n{rendered}"
     );
     assert_eq!(
-        first_alphanumeric_column(lines[thinking_row]),
+        first_alphanumeric_column(lines[reasoning_body_row]),
         first_alphanumeric_column(lines[continuation_row]),
-        "wrapped nested continuation should repeat the nested prefix and rail\n{rendered}"
+        "wrapped thinking continuation should repeat the assistant-aligned prefix without drifting deeper\n{rendered}"
     );
     assert!(answer_gap_row < body_row);
 }
@@ -5395,16 +5432,19 @@ fn thinking_visibility_toggle_hides_and_restores_inline_thinking_rows() {
     let mut app = rich_transcript_fixture_app();
 
     let initial = render_live_lines(&app, 120, 30);
-    assert!(initial.contains("Thinking: Drafting a document-like plan"));
+    assert!(initial.contains("Thinking:"));
+    assert!(initial.contains("Drafting a document-like plan"));
 
     run_palette_command(&mut app, "hide thinking");
     let hidden = render_live_lines(&app, 120, 30);
-    assert!(!hidden.contains("Thinking: Drafting a document-like plan"));
+    assert!(!hidden.contains("Thinking:"));
+    assert!(!hidden.contains("Drafting a document-like plan"));
     assert!(hidden.contains("Found the transcript renderer and the composer chrome."));
 
     run_palette_command(&mut app, "show thinking");
     let restored = render_live_lines(&app, 120, 30);
-    assert!(restored.contains("Thinking: Drafting a document-like plan"));
+    assert!(restored.contains("Thinking:"));
+    assert!(restored.contains("Drafting a document-like plan"));
 }
 
 #[cfg(test)]
