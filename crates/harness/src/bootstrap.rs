@@ -170,6 +170,7 @@ pub fn build_interactive_coordinator_config(
     coordinator_config.agent_profiles =
         interactive_agent_profiles_with_extra_tools(cfg, &auto_tool_ids)?;
     coordinator_config.plan_profiles = interactive_plan_profiles(cfg);
+    coordinator_config.prompt_compaction = cfg.runtime.prompt.compaction.clone();
     Ok(coordinator_config)
 }
 
@@ -519,6 +520,33 @@ mod tests {
         assert_eq!(
             coordinator_config.agent_profiles["tool_audit"].system_prompt,
             configured_prompt
+        );
+    }
+
+    #[test]
+    fn interactive_coordinator_carries_prompt_compaction_config() {
+        let mut cfg = config_fixture(
+            r#"
+            deep: {
+              description: "Default deep execution profile",
+              model_ref: "default:gpt-5.4-mini",
+              tool_surface: "native",
+              tools: ["fs.read"],
+            },
+            "#,
+        );
+        cfg.runtime.prompt.compaction.enabled = false;
+        cfg.runtime.prompt.compaction.max_history_chars = 2048;
+        cfg.runtime.prompt.compaction.preserve_recent_turns = 3;
+
+        let coordinator_config =
+            build_interactive_coordinator_config(&cfg).expect("coordinator config");
+
+        assert!(!coordinator_config.prompt_compaction.enabled);
+        assert_eq!(coordinator_config.prompt_compaction.max_history_chars, 2048);
+        assert_eq!(
+            coordinator_config.prompt_compaction.preserve_recent_turns,
+            3
         );
     }
 

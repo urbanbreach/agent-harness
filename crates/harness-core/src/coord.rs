@@ -20,7 +20,7 @@ use crate::agent::{
 use crate::clock::Clock;
 use crate::config::{
     registered_hook_runtime_config, registered_mcp_server_first_class_tool_id, HookLifecycleEvent,
-    HookRuntimeConfig, LifecycleHookConfig, ShellAllowlist,
+    HookRuntimeConfig, LifecycleHookConfig, PromptCompactionConfig, ShellAllowlist,
 };
 use crate::edit::hashline::HashlinePatch;
 use crate::event::{
@@ -78,6 +78,7 @@ pub struct CoordinatorConfig {
     pub provider: Arc<dyn Provider>,
     pub agent_profiles: BTreeMap<String, AgentProfile>,
     pub plan_profiles: BTreeMap<String, PlanProfileConfig>,
+    pub prompt_compaction: PromptCompactionConfig,
     pub hook_runtime_config: HookRuntimeConfig,
     pub config_digest: String,
     pub harness_version: String,
@@ -106,6 +107,7 @@ impl CoordinatorConfig {
             provider: default_provider(),
             agent_profiles: BTreeMap::new(),
             plan_profiles: BTreeMap::new(),
+            prompt_compaction: PromptCompactionConfig::default(),
             hook_runtime_config: registered_hook_runtime_config(),
             config_digest: "none".to_string(),
             harness_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -966,6 +968,7 @@ impl Coordinator {
             next_permission_id: 1,
             agents: BTreeMap::new(),
             provider_context_by_agent: BTreeMap::new(),
+            prompt_compaction: self.config.prompt_compaction.clone(),
             tasks: BTreeMap::new(),
             task_hook_state: BTreeMap::new(),
             agent_hook_state: BTreeMap::new(),
@@ -1178,6 +1181,7 @@ impl Coordinator {
             next_permission_id,
             agents,
             provider_context_by_agent,
+            prompt_compaction: self.config.prompt_compaction.clone(),
             tasks: BTreeMap::new(),
             task_hook_state: BTreeMap::new(),
             agent_hook_state: BTreeMap::new(),
@@ -3367,6 +3371,7 @@ struct RunState {
     next_permission_id: u64,
     agents: BTreeMap<String, AgentProfile>,
     provider_context_by_agent: BTreeMap<String, Vec<ProviderConversationTurn>>,
+    prompt_compaction: PromptCompactionConfig,
     tasks: BTreeMap<String, TaskState>,
     task_hook_state: BTreeMap<String, TaskHookState>,
     agent_hook_state: BTreeMap<String, Vec<HookExecutionMetadata>>,
@@ -3389,6 +3394,7 @@ struct QueuedAgentTurn {
     profile: AgentProfile,
     request: AgentRequest,
     prior_turns: Vec<ProviderConversationTurn>,
+    prompt_compaction: PromptCompactionConfig,
     queue_key: ConcurrencyKey,
 }
 
@@ -4284,6 +4290,7 @@ where
         .get(&agent_id)
         .cloned()
         .unwrap_or_default();
+    let prompt_compaction = run_state.prompt_compaction.clone();
     let task_id = format!("task_{:06}", run_state.next_task_id);
     run_state.next_task_id += 1;
 
@@ -4325,6 +4332,7 @@ where
                     profile,
                     request,
                     prior_turns,
+                    prompt_compaction,
                     queue_key,
                 },
             )
@@ -4353,6 +4361,7 @@ where
                     profile,
                     request,
                     prior_turns,
+                    prompt_compaction,
                     queue_key,
                 },
             );
@@ -4497,6 +4506,7 @@ where
                     request_id: task.request_id.clone(),
                     request: task.request,
                     prior_turns: &task.prior_turns,
+                    prompt_compaction: task.prompt_compaction,
                 },
                 {
                     let job_tx = job_tx.clone();

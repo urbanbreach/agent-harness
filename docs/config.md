@@ -143,6 +143,16 @@ The example keeps defaults ask-gated, then grants stronger powers per-agent. Thi
 ### `runtime.background_tasks`
 Concurrency and stale-timeout settings are configured in the shipped example so the default interactive path stays responsive under background verification.
 
+### `runtime.prompt`
+Prompt runtime settings now cover both wait timing and history compaction. The shipped example enables a narrow checkpoint-style compaction pass:
+
+- `wait_timeout_ms` keeps the prompt CLI from waiting forever for completion evidence
+- `compaction.enabled` toggles deterministic prompt-history compaction
+- `compaction.max_history_chars` bounds how much verbatim older history stays in the next request before compaction kicks in
+- `compaction.preserve_recent_turns` keeps the newest full turns verbatim while older turns are folded into one checkpoint summary
+
+The current compaction path is intentionally conservative and understandable: it does **not** spin up a separate compaction agent or prune tool outputs independently. Instead it creates one bounded checkpoint summary from older turns and leaves the newest turns untouched. It also targets outbound request growth only for now; the coordinator still retains the full turn history in run state and event replay.
+
 ### `integrations`
 Remote search and MCP server definitions are part of the shipped config surface because they affect which read-only investigation tools are available in `plan` and `build`.
 

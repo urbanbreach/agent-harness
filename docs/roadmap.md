@@ -69,7 +69,7 @@ Secondary/supporting agents:
 - [x] Add named agents with fleshed-out system prompts for main flows such as Build and Plan.
 - [x] Flesh out subagents with configs available in JSON.
 - [ ] Improve main-agent prompt engineering with a Opencode/pi-like approach.
-- [ ] Compaction (Check how it's done from other harnesses and inspiration/ folder. The decide on the best path.)
+- [x] Compaction (Check how it's done from other harnesses and inspiration/ folder. The decide on the best path.)
 - [ ] Add orchestration functionality that is toggleable in the HUD and follows the general spirit of oh-my-openagent / oh-my-codex while staying understandable. (after main agents are implemented properly)
 - [ ] Add swarms and Ralph loops inspired by oh-my-codex. (after main agents are implemented properly)
 - [ ] Add approval and policy controls for orchestration/tool execution so multi-agent runs remain legible and predictable. (after main agents are implemented properly)

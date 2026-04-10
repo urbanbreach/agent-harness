@@ -12,7 +12,8 @@ use serde_json::Value;
 use tokio_stream::StreamExt;
 
 use crate::config::{
-    registered_profile_model_metadata, ResolvedModelCapabilities, ToolFailureMode,
+    registered_profile_model_metadata, PromptCompactionConfig, ResolvedModelCapabilities,
+    ToolFailureMode,
 };
 use crate::tool::{
     build_tool_function_name_mapping, resolve_tool_ids_for_surface, ToolRegistry, ToolResult,
@@ -156,6 +157,7 @@ pub struct MultiTurnStreamingRequest<'a> {
     pub request_id: String,
     pub request: AgentRequest,
     pub prior_turns: &'a [ProviderConversationTurn],
+    pub prompt_compaction: PromptCompactionConfig,
 }
 
 pub async fn run_single_turn_streaming<F, Fut>(
@@ -171,7 +173,12 @@ where
     Fut: Future<Output = ()>,
 {
     let model = AgentModelRef::parse(&request.model_ref);
-    let messages = build_provider_context_messages(profile, prior_turns, &request.prompt);
+    let messages = build_provider_context_messages(
+        profile,
+        prior_turns,
+        &request.prompt,
+        &PromptCompactionConfig::default(),
+    );
     let completion_request = build_completion_request(
         Some(model.provider_id.clone()),
         model.model_id.clone(),
@@ -276,6 +283,7 @@ where
         request_id,
         request,
         prior_turns,
+        prompt_compaction,
     } = request;
 
     let model = AgentModelRef::parse(&request.model_ref);
@@ -287,7 +295,8 @@ where
         Err(reason) => return AgentTurnOutcome::Failed { reason },
     };
 
-    let mut messages = build_provider_context_messages(profile, prior_turns, &request.prompt);
+    let mut messages =
+        build_provider_context_messages(profile, prior_turns, &request.prompt, &prompt_compaction);
 
     let mut total_tool_calls = 0usize;
 
@@ -513,8 +522,10 @@ pub fn build_provider_context_messages(
     profile: &AgentProfile,
     prior_turns: &[ProviderConversationTurn],
     prompt: &str,
+    prompt_compaction: &PromptCompactionConfig,
 ) -> Vec<CompletionMessage> {
-    let mut messages = Vec::with_capacity(2 + prior_turns.len().saturating_mul(2));
+    let compacted = compact_provider_history(prior_turns, prompt_compaction);
+    let mut messages = Vec::with_capacity(3 + compacted.recent_turns.len().saturating_mul(2));
     messages.push(CompletionMessage {
         role: MessageRole::System,
         content: profile.system_prompt.clone(),
@@ -523,7 +534,17 @@ pub fn build_provider_context_messages(
         assistant_tool_calls: None,
     });
 
-    for turn in prior_turns {
+    if let Some(summary) = compacted.summary {
+        messages.push(CompletionMessage {
+            role: MessageRole::System,
+            content: summary,
+            name: None,
+            tool_call_id: None,
+            assistant_tool_calls: None,
+        });
+    }
+
+    for turn in &compacted.recent_turns {
         messages.push(CompletionMessage {
             role: MessageRole::User,
             content: turn.user_prompt.clone(),
@@ -549,6 +570,77 @@ pub fn build_provider_context_messages(
     });
 
     messages
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CompactedProviderHistory {
+    summary: Option<String>,
+    recent_turns: Vec<ProviderConversationTurn>,
+}
+
+fn compact_provider_history(
+    prior_turns: &[ProviderConversationTurn],
+    prompt_compaction: &PromptCompactionConfig,
+) -> CompactedProviderHistory {
+    let total_history_chars = prior_turns
+        .iter()
+        .map(|turn| turn.user_prompt.chars().count() + turn.assistant_response.chars().count())
+        .sum::<usize>();
+
+    if !prompt_compaction.enabled
+        || prior_turns.len() <= prompt_compaction.preserve_recent_turns
+        || total_history_chars <= prompt_compaction.max_history_chars
+    {
+        return CompactedProviderHistory {
+            summary: None,
+            recent_turns: prior_turns.to_vec(),
+        };
+    }
+
+    let split_at = prior_turns
+        .len()
+        .saturating_sub(prompt_compaction.preserve_recent_turns);
+    let (older_turns, recent_turns) = prior_turns.split_at(split_at);
+    let summary_budget = prompt_compaction
+        .max_history_chars
+        .saturating_div(2)
+        .clamp(512, 4_096);
+
+    CompactedProviderHistory {
+        summary: Some(render_compaction_checkpoint(older_turns, summary_budget)),
+        recent_turns: recent_turns.to_vec(),
+    }
+}
+
+fn render_compaction_checkpoint(
+    turns: &[ProviderConversationTurn],
+    summary_budget: usize,
+) -> String {
+    let mut checkpoint = format!(
+        "Conversation checkpoint for {} earlier turn(s). This summary is deterministic and may omit detail; prefer the verbatim recent turns below if anything conflicts.\n",
+        turns.len()
+    );
+
+    for (index, turn) in turns.iter().enumerate() {
+        let line = format!(
+            "\n{}. User: {}\n   Assistant: {}",
+            index + 1,
+            truncate_inline(&turn.user_prompt, 160),
+            truncate_inline(&turn.assistant_response, 240),
+        );
+        if checkpoint.chars().count() + line.chars().count() > summary_budget {
+            checkpoint.push_str("\n…");
+            break;
+        }
+        checkpoint.push_str(&line);
+    }
+
+    truncate_summary(&checkpoint, summary_budget)
+}
+
+fn truncate_inline(text: &str, max_chars: usize) -> String {
+    let single_line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    truncate_summary(&single_line, max_chars)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -713,11 +805,11 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        build_provider_tool_defs, run_multi_turn_streaming, tool_result_to_message_content,
-        AgentModelSettings, AgentProfile, AgentRequest, AgentTurnOutcome,
-        MultiTurnStreamingRequest,
+        build_provider_context_messages, build_provider_tool_defs, run_multi_turn_streaming,
+        tool_result_to_message_content, AgentModelSettings, AgentProfile, AgentRequest,
+        AgentTurnOutcome, MultiTurnStreamingRequest, ProviderConversationTurn,
     };
-    use crate::config::ToolFailureMode;
+    use crate::config::{PromptCompactionConfig, ToolFailureMode};
     use crate::tool::{
         Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult, ToolSurface,
     };
@@ -804,6 +896,7 @@ mod tests {
                 request_id: "req_000001".to_string(),
                 request,
                 prior_turns: &[],
+                prompt_compaction: PromptCompactionConfig::default(),
             },
             {
                 let seen_calls = seen_calls.clone();
@@ -884,6 +977,7 @@ mod tests {
                 request_id: "req_000002".to_string(),
                 request,
                 prior_turns: &[],
+                prompt_compaction: PromptCompactionConfig::default(),
             },
             {
                 let call_count = call_count.clone();
@@ -959,6 +1053,7 @@ mod tests {
                 request_id: "req_000003".to_string(),
                 request,
                 prior_turns: &[],
+                prompt_compaction: PromptCompactionConfig::default(),
             },
             {
                 let call_count = call_count.clone();
@@ -1055,6 +1150,7 @@ mod tests {
                 request_id: "req_000004".to_string(),
                 request,
                 prior_turns: &[],
+                prompt_compaction: PromptCompactionConfig::default(),
             },
             move |_tool_id, _args_json| {
                 let error = error.clone();
@@ -1141,6 +1237,7 @@ mod tests {
                 request_id: "req_loop".to_string(),
                 request,
                 prior_turns: &[],
+                prompt_compaction: PromptCompactionConfig::default(),
             },
             {
                 let tool_call_count = tool_call_count.clone();
@@ -1304,6 +1401,7 @@ mod tests {
                 request_id: "req_000005".to_string(),
                 request,
                 prior_turns: &[],
+                prompt_compaction: PromptCompactionConfig::default(),
             },
             move |_tool_id, _args_json| async move { Err("command failed".to_string()) },
             |_event| async {},
@@ -1351,6 +1449,79 @@ mod tests {
                 ),
             }
         );
+    }
+
+    #[test]
+    fn build_provider_context_messages_injects_checkpoint_and_keeps_recent_turns() {
+        let profile = test_profile();
+        let prior_turns = vec![
+            ProviderConversationTurn {
+                user_prompt: "Inspect the coordinator state machine and event flow.".to_string(),
+                assistant_response: "Mapped the coordinator and found the resume path.".to_string(),
+            },
+            ProviderConversationTurn {
+                user_prompt: "Check config defaults and the shipped example.".to_string(),
+                assistant_response: "Prompt runtime only exposes wait_timeout today.".to_string(),
+            },
+            ProviderConversationTurn {
+                user_prompt: "Review the inspiration sources and decide on scope.".to_string(),
+                assistant_response: "Recommend narrow deterministic checkpoint compaction."
+                    .to_string(),
+            },
+        ];
+
+        let messages = build_provider_context_messages(
+            &profile,
+            &prior_turns,
+            "Implement the chosen path.",
+            &PromptCompactionConfig {
+                enabled: true,
+                max_history_chars: 40,
+                preserve_recent_turns: 1,
+            },
+        );
+
+        assert_eq!(messages[0].role, harness_providers::MessageRole::System);
+        assert!(
+            messages[1]
+                .content
+                .contains("Conversation checkpoint for 2 earlier turn(s)."),
+            "expected checkpoint summary, got: {}",
+            messages[1].content
+        );
+        assert_eq!(messages[2].role, harness_providers::MessageRole::User);
+        assert_eq!(messages[2].content, prior_turns[2].user_prompt);
+        assert_eq!(messages[3].role, harness_providers::MessageRole::Assistant);
+        assert_eq!(messages[3].content, prior_turns[2].assistant_response);
+        assert_eq!(messages[4].role, harness_providers::MessageRole::User);
+        assert_eq!(messages[4].content, "Implement the chosen path.");
+    }
+
+    #[test]
+    fn build_provider_context_messages_leaves_history_verbatim_when_disabled() {
+        let profile = test_profile();
+        let prior_turns = vec![ProviderConversationTurn {
+            user_prompt: "short user turn".to_string(),
+            assistant_response: "short assistant turn".to_string(),
+        }];
+
+        let messages = build_provider_context_messages(
+            &profile,
+            &prior_turns,
+            "next prompt",
+            &PromptCompactionConfig {
+                enabled: false,
+                max_history_chars: 1,
+                preserve_recent_turns: 0,
+            },
+        );
+
+        assert_eq!(messages.len(), 4);
+        assert_eq!(messages[1].role, harness_providers::MessageRole::User);
+        assert_eq!(messages[1].content, "short user turn");
+        assert_eq!(messages[2].role, harness_providers::MessageRole::Assistant);
+        assert_eq!(messages[2].content, "short assistant turn");
+        assert_eq!(messages[3].content, "next prompt");
     }
 
     fn test_request() -> AgentRequest {

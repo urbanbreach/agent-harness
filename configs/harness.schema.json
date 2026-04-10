@@ -140,6 +140,11 @@
           "ask_timeout_ms": 30000
         },
         "prompt": {
+          "compaction": {
+            "enabled": true,
+            "max_history_chars": 12000,
+            "preserve_recent_turns": 2
+          },
           "wait_timeout_ms": 30000
         },
         "session_dir": ".agent-harness/sessions"
@@ -1090,9 +1095,43 @@
       },
       "additionalProperties": false
     },
+    "PromptCompactionConfig": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "max_history_chars": {
+          "default": 12000,
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "preserve_recent_turns": {
+          "default": 2,
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
     "PromptRuntimeConfig": {
       "type": "object",
       "properties": {
+        "compaction": {
+          "default": {
+            "enabled": true,
+            "max_history_chars": 12000,
+            "preserve_recent_turns": 2
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/PromptCompactionConfig"
+            }
+          ]
+        },
         "wait_timeout_ms": {
           "default": 30000,
           "type": "integer",
@@ -1234,6 +1273,11 @@
         },
         "prompt": {
           "default": {
+            "compaction": {
+              "enabled": true,
+              "max_history_chars": 12000,
+              "preserve_recent_turns": 2
+            },
             "wait_timeout_ms": 30000
           },
           "allOf": [

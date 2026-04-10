@@ -321,6 +321,14 @@
       stale_timeout_ms: 30000,
       message_staleness_timeout_ms: 10000,
     },
+    prompt: {
+      wait_timeout_ms: 30000,
+      compaction: {
+        enabled: true,
+        max_history_chars: 12000,
+        preserve_recent_turns: 2,
+      },
+    },
     session_dir: "./.harness/sessions",
     deterministic: {
       enabled: false,

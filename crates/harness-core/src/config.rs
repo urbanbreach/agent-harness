@@ -658,12 +658,42 @@ impl Default for RuntimePermissionsConfig {
 pub struct PromptRuntimeConfig {
     #[serde(default = "default_prompt_wait_timeout_ms")]
     pub wait_timeout_ms: u64,
+    #[serde(default)]
+    pub compaction: PromptCompactionConfig,
 }
 
 impl Default for PromptRuntimeConfig {
     fn default() -> Self {
         Self {
             wait_timeout_ms: default_prompt_wait_timeout_ms(),
+            compaction: PromptCompactionConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PromptCompactionConfig {
+    #[serde(default = "default_prompt_compaction_enabled")]
+    pub enabled: bool,
+    #[serde(
+        default = "default_prompt_compaction_max_history_chars",
+        alias = "maxHistoryChars"
+    )]
+    pub max_history_chars: usize,
+    #[serde(
+        default = "default_prompt_compaction_preserve_recent_turns",
+        alias = "preserveRecentTurns"
+    )]
+    pub preserve_recent_turns: usize,
+}
+
+impl Default for PromptCompactionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_prompt_compaction_enabled(),
+            max_history_chars: default_prompt_compaction_max_history_chars(),
+            preserve_recent_turns: default_prompt_compaction_preserve_recent_turns(),
         }
     }
 }
@@ -1454,6 +1484,18 @@ fn default_runtime_ask_timeout_ms() -> u64 {
 
 fn default_prompt_wait_timeout_ms() -> u64 {
     30_000
+}
+
+fn default_prompt_compaction_enabled() -> bool {
+    true
+}
+
+fn default_prompt_compaction_max_history_chars() -> usize {
+    12_000
+}
+
+fn default_prompt_compaction_preserve_recent_turns() -> usize {
+    2
 }
 
 fn default_hook_timeout_ms() -> u64 {
@@ -2918,6 +2960,9 @@ mod tests {
         );
         assert_eq!(parsed.runtime.permissions.ask_timeout_ms, 45_000);
         assert_eq!(parsed.runtime.prompt.wait_timeout_ms, 15_000);
+        assert!(parsed.runtime.prompt.compaction.enabled);
+        assert_eq!(parsed.runtime.prompt.compaction.max_history_chars, 12_000);
+        assert_eq!(parsed.runtime.prompt.compaction.preserve_recent_turns, 2);
         assert_eq!(parsed.background_task.default_concurrency, 2);
         assert_eq!(
             parsed.paths.session_dir,
@@ -3654,6 +3699,8 @@ mod tests {
         assert!(!properties.contains_key("profiles"));
         assert!(schema.contains("\"ask_timeout_ms\""));
         assert!(schema.contains("\"wait_timeout_ms\""));
+        assert!(schema.contains("\"max_history_chars\""));
+        assert!(schema.contains("\"preserve_recent_turns\""));
         assert!(!schema.contains("HARNESS_PROMPT_WAIT_TIMEOUT_MS"));
     }
 
@@ -3724,6 +3771,55 @@ mod tests {
         let parsed = load_config_from_str(cfg).expect("json5 flavored config should parse");
         assert_eq!(parsed.schema.as_deref(), Some("./harness.schema.json"));
         assert_eq!(parsed.agents["deep"].model_ref, "default:gpt-4o-mini");
+    }
+
+    #[test]
+    fn prompt_compaction_aliases_parse() {
+        let cfg = r#"
+        {
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              models: {
+                "gpt-4o-mini": {
+                  display_name: "GPT-4o mini",
+                },
+              },
+            },
+          },
+          agents: {
+            deep: {
+              description: "Deep work",
+              model_ref: "default:gpt-4o-mini",
+              tools: ["fs.read"],
+            },
+          },
+          runtime: {
+            background_tasks: {
+              default_concurrency: 2,
+              provider_concurrency: 2,
+              model_concurrency: 2,
+              stale_timeout_ms: 15000,
+              message_staleness_timeout_ms: 5000,
+            },
+            prompt: {
+              wait_timeout_ms: 15000,
+              compaction: {
+                enabled: false,
+                maxHistoryChars: 2048,
+                preserveRecentTurns: 3,
+              },
+            },
+          },
+        }
+        "#;
+
+        let parsed = load_config_from_str(cfg).expect("config should parse");
+        assert!(!parsed.runtime.prompt.compaction.enabled);
+        assert_eq!(parsed.runtime.prompt.compaction.max_history_chars, 2048);
+        assert_eq!(parsed.runtime.prompt.compaction.preserve_recent_turns, 3);
     }
 
     #[test]
