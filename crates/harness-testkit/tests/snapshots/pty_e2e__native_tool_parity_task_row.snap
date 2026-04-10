@@ -1,6 +1,5 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-assertion_line: 878
 expression: "checkpoint_visual_snapshot(&screen,\n&[\"Bring native tool parity inline\",\n\"Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s\",\n\"Spawn researcher · audit transcript parity\", \"14:36 · 1.6s\",\n\"foreground · agent_worker · req_child · completed · 3 child tool calls\",],\n&task_visual,)"
 ---
 Bring native tool parity inline: true
@@ -9,7 +8,7 @@ Spawn researcher · audit transcript parity: true
 14:36 · 1.6s: true
 foreground · agent_worker · req_child · completed · 3 child tool calls: true
 focus_marker: Spawn researcher
-focus_render_state_blake3: fdf942516549a5770ee3b6614a840b1b8ba59aede6c781d287be96a0ed9f6296
+focus_render_state_blake3: ab76fc830752daf85e79bf68d12dcde5583eb6f59b2e79297f796fdac8107d01
 focus_region_cells: row=15, col=11, height=6, width=34
 image: pty_native_tool_parity_task_row.png
 manifest_json: pty-manifests/transcript_shell/manifest.json

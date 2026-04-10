@@ -1,6 +1,6 @@
 ---
 source: crates/harness-tui/src/tests.rs
-assertion_line: 1349
+assertion_line: 1358
 expression: normalized
 ---
 Buffer {
@@ -57,7 +57,7 @@ Buffer {
         x: 38, y: 21, fg: Reset, bg: Rgb(25, 25, 25), underline: Reset, modifier: NONE,
         x: 78, y: 21, fg: Reset, bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
         x: 2, y: 22, fg: Rgb(212, 139, 23), bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
-        x: 3, y: 22, fg: Rgb(25, 25, 25), bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
+        x: 3, y: 22, fg: Rgb(0, 0, 0), bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
         x: 78, y: 22, fg: Reset, bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
         x: 2, y: 23, fg: Rgb(212, 139, 23), bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
         x: 30, y: 23, fg: Reset, bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,

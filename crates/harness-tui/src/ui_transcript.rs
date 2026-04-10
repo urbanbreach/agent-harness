@@ -2298,17 +2298,15 @@ fn build_assistant_part_render_surface(
     let mut lines = Vec::new();
     let (show_outer_rail, rail_color, surface) = match part {
         TranscriptAssistantPart::Reasoning(thinking) => {
+            let reasoning_surface = transcript_emphasized_surface(theme, base_surface);
             append_reasoning_block(
                 &mut lines,
                 thinking,
                 theme,
+                reasoning_surface,
                 transcript_surface_content_width(width, true),
             );
-            (
-                true,
-                theme.border.subtle,
-                transcript_flat_surface(base_surface),
-            )
+            (true, theme.border.subtle, reasoning_surface)
         }
         TranscriptAssistantPart::Body(block) => {
             if prepend_gap {
@@ -2411,15 +2409,17 @@ fn append_reasoning_block(
     lines: &mut Vec<Line<'static>>,
     thinking: &TranscriptLabeledTextSection,
     theme: &Theme,
+    surface: Color,
     width: u16,
 ) {
     let label_style = Style::default()
         .fg(theme.text.secondary)
         .add_modifier(Modifier::DIM)
-        .add_modifier(Modifier::ITALIC);
+        .bg(surface);
     let reasoning_style = Style::default()
         .fg(theme.text.secondary)
-        .add_modifier(Modifier::DIM);
+        .add_modifier(Modifier::DIM)
+        .bg(surface);
     let mut rendered_any_line = false;
 
     for (index, row) in thinking.text.lines().enumerate() {
