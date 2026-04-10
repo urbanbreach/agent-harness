@@ -80,6 +80,8 @@
       description: "Planning lane: produce an approved plan and hand off to build.",
       system_prompt: "Stay in planning mode until the user approves the plan. Remain read-only: do not edit files, run shell commands, or delegate implementation. Use investigation tools to gather evidence and produce a concrete plan with scope, likely files, risks, and verification steps. Call plan.exit only after the user explicitly approves implementation so the harness can hand off to build.",
       model_ref: "default:gpt-5.4-mini",
+      // Optional profile-level override: set `reasoning_effort` here when you
+      // want the same reasoning preset to stay active after switching models.
       variant: "low",
       tool_surface: "native",
       plan_mode: true,

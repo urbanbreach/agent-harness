@@ -106,3 +106,36 @@ fn model_variant_resolution_rejects_unknown_variant() {
         "agent `deep` references unknown variant `ghost` for model `default:gpt-5.4-mini`; available variants: deterministic"
     );
 }
+
+#[test]
+fn profile_reasoning_effort_applies_when_model_selection_has_no_variant_reasoning() {
+    let mut config = variant_test_config();
+    let profile = config.agents.get_mut("deep").expect("deep profile");
+    profile.variant = None;
+    profile.reasoning_effort = Some(harness_core::config::ModelVariantReasoningEffort::High);
+
+    let metadata = resolve_profile_model_metadata(&config, "deep")
+        .expect("profile reasoning metadata should resolve");
+
+    assert_eq!(metadata.variant, None);
+    assert_eq!(metadata.display_label, "GPT-5.4 Mini");
+    assert_eq!(metadata.reasoning_effort.as_deref(), Some("high"));
+    assert_eq!(metadata.text_verbosity, None);
+}
+
+#[test]
+fn profile_reasoning_effort_overrides_variant_reasoning_after_model_selection() {
+    let mut config = variant_test_config();
+    config
+        .agents
+        .get_mut("deep")
+        .expect("deep profile")
+        .reasoning_effort = Some(harness_core::config::ModelVariantReasoningEffort::High);
+
+    let metadata = resolve_profile_model_metadata(&config, "deep")
+        .expect("profile reasoning metadata should resolve");
+
+    assert_eq!(metadata.variant.as_deref(), Some("deterministic"));
+    assert_eq!(metadata.reasoning_effort.as_deref(), Some("high"));
+    assert_eq!(metadata.text_verbosity.as_deref(), Some("low"));
+}

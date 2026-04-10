@@ -10,7 +10,8 @@ use clap::Args;
 use harness_core::agent::{default_model_settings_for_profile, AgentModelSettings};
 use harness_core::clock::{Clock, FakeClock, RealClock};
 use harness_core::config::{
-    resolve_config_path, resolve_configured_model_metadata, ShellAllowlist,
+    profile_reasoning_effort_label, resolve_config_path, resolve_configured_model_metadata,
+    ShellAllowlist,
 };
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1};
@@ -575,9 +576,14 @@ fn resolve_prompt_model_override(
         let resolved =
             resolve_configured_model_metadata(config, &provider, &model, cmd.variant.as_deref())
                 .map_err(|err| err.to_string())?;
+        let reasoning_effort = config
+            .agents
+            .get(profile_name)
+            .and_then(profile_reasoning_effort_label)
+            .or_else(|| resolved.reasoning_effort.clone());
 
         model_settings.variant = resolved.variant.clone();
-        model_settings.reasoning_effort = resolved.reasoning_effort.clone();
+        model_settings.reasoning_effort = reasoning_effort;
         model_settings.text_verbosity = resolved.text_verbosity.clone();
         model_settings.reasoning_summary =
             if resolved.supports_reasoning_summaries && model_settings.reasoning_effort.is_some() {

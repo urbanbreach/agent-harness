@@ -271,6 +271,64 @@ async fn prompt_cli_model_variant_and_thinking_flags_stream_reasoning_output() {
     assert!(stdout.contains("Hello world"));
 }
 
+#[tokio::test]
+async fn prompt_cli_profile_reasoning_effort_applies_after_model_selection() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .and(body_string_contains(
+            "\"reasoning\":{\"effort\":\"high\",\"summary\":\"auto\"}",
+        ))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(reasoning_responses_sse_transcript(), "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.profile-reasoning.jsonc");
+    let session_dir = temp.path().join("sessions");
+
+    let mut config: serde_json::Value = serde_json::from_str(&prompt_cli_config(
+        &format!("{}/v1", server.uri()),
+        &session_dir,
+        &[],
+    ))
+    .expect("prompt cli config should parse as json");
+    config["agents"]["deep"]["reasoning_effort"] = serde_json::Value::String("high".to_string());
+    fs::write(
+        &config_path,
+        serde_json::to_string_pretty(&config).expect("serialize config"),
+    )
+    .expect("write config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "prompt",
+            "--text",
+            "Hello",
+            "--model",
+            "default:gpt-4o-mini",
+        ])
+        .output()
+        .expect("run harness prompt with profile reasoning");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Hello world"));
+}
+
 #[test]
 fn models_cli_lists_configured_variants() {
     let temp = tempdir().expect("tempdir");

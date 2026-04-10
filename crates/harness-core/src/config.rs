@@ -942,6 +942,8 @@ pub struct ProfileConfig {
     pub model_ref: String,
     #[serde(default)]
     pub variant: Option<String>,
+    #[serde(default, alias = "reasoningEffort")]
+    pub reasoning_effort: Option<ModelVariantReasoningEffort>,
     #[serde(default)]
     /// When unset, the runtime omits `temperature` from provider requests so
     /// the provider default applies.
@@ -1952,12 +1954,14 @@ pub fn resolve_profile_model_metadata(
         max_input_tokens,
         max_output_tokens,
         description: variant.and_then(|(_, variant_cfg)| variant_cfg.metadata.description.clone()),
-        reasoning_effort: variant.and_then(|(_, variant_cfg)| {
-            variant_cfg
-                .metadata
-                .reasoning_effort
-                .map(model_variant_reasoning_effort_label)
-                .map(str::to_string)
+        reasoning_effort: profile_reasoning_effort_label(profile).or_else(|| {
+            variant.and_then(|(_, variant_cfg)| {
+                variant_cfg
+                    .metadata
+                    .reasoning_effort
+                    .map(model_variant_reasoning_effort_label)
+                    .map(str::to_string)
+            })
         }),
         text_verbosity: variant.and_then(|(_, variant_cfg)| {
             variant_cfg
@@ -2145,6 +2149,13 @@ fn model_variant_reasoning_effort_label(effort: ModelVariantReasoningEffort) -> 
         ModelVariantReasoningEffort::High => "high",
         ModelVariantReasoningEffort::Xhigh => "xhigh",
     }
+}
+
+pub fn profile_reasoning_effort_label(profile: &ProfileConfig) -> Option<String> {
+    profile
+        .reasoning_effort
+        .map(model_variant_reasoning_effort_label)
+        .map(str::to_string)
 }
 
 fn model_variant_text_verbosity_label(verbosity: ModelVariantTextVerbosity) -> &'static str {

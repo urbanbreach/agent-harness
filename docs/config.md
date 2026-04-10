@@ -66,6 +66,14 @@ The harness chooses a model from config through the selected agent/profile:
 - `ui.default_profile` picks which configured profile `harness tui` and `harness prompt` start with when you do not pass `--profile`
 - switching `ui.default_profile` or a profile `model_ref` therefore changes the default runtime model choice without requiring CLI flags
 
+## Reasoning preset selection from config
+
+Profiles can also pin a reasoning preset with `reasoning_effort`:
+
+- set `agents.<name>.reasoning_effort` to `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`
+- the harness applies that preset after model selection, so the configured reasoning behavior stays predictable when a profile switches models
+- configured variant metadata can still supply model-specific defaults, but an explicit profile `reasoning_effort` wins when both are set
+
 ## Other shipped settings that matter to the Plan/Build path
 
 ### `permissions`

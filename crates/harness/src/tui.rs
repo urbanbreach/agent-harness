@@ -14,8 +14,8 @@ use clap::Args;
 use harness_core::agent::{AgentModelSettings, AgentProfile};
 use harness_core::clock::{Clock, FakeClock, RealClock};
 use harness_core::config::{
-    configured_model_catalog, load_config_from_file, resolve_config_path,
-    resolve_profile_model_metadata, HarnessConfig, ShellAllowlist,
+    configured_model_catalog, load_config_from_file, profile_reasoning_effort_label,
+    resolve_config_path, resolve_profile_model_metadata, HarnessConfig, ShellAllowlist,
 };
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle,
@@ -493,7 +493,11 @@ fn configured_profile_model_options(
     let mut options = agent_profiles
         .keys()
         .flat_map(|profile| {
-            catalog_entries.iter().map(|entry| ModelOption {
+            let profile_reasoning_effort = config
+                .agents
+                .get(profile)
+                .and_then(profile_reasoning_effort_label);
+            catalog_entries.iter().map(move |entry| ModelOption {
                 profile: profile.clone(),
                 provider: entry.provider.clone(),
                 model: entry.model.clone(),
@@ -504,7 +508,9 @@ fn configured_profile_model_options(
                 max_input_tokens: entry.max_input_tokens,
                 max_output_tokens: entry.max_output_tokens,
                 description: entry.description.clone(),
-                reasoning_effort: entry.reasoning_effort.clone(),
+                reasoning_effort: profile_reasoning_effort
+                    .clone()
+                    .or_else(|| entry.reasoning_effort.clone()),
                 text_verbosity: entry.text_verbosity.clone(),
                 recommended_for: entry.recommended_for.clone(),
             })
@@ -2633,6 +2639,80 @@ mod tests {
             .available_models()
             .iter()
             .any(|option| option.profile == "plan" && option.variant() == Some("low")));
+    }
+
+    #[test]
+    fn interactive_launch_metadata_applies_profile_reasoning_after_base_model_selection() {
+        let config = load_config_from_str(
+            r#"
+            {
+              providers: {
+                default: {
+                  type: "openai_compatible",
+                  base_url: "http://127.0.0.1:8317/v1",
+                  api_key: "test-key",
+                  api_mode: "responses",
+                  timeout_ms: 60000,
+                  models: {
+                    "gpt-5.4-mini": {
+                      display_name: "GPT-5.4 Mini",
+                      metadata: {
+                        supports_reasoning_summaries: true
+                      }
+                    }
+                  }
+                }
+              },
+              agent: {
+                build: {
+                  description: "Implementation",
+                  model_ref: "default:gpt-5.4-mini",
+                  reasoning_effort: "low",
+                  tools: []
+                }
+              },
+              default_agent: "build",
+              permissions: {
+                defaults: {
+                  edit: "allow",
+                  shell: "allow",
+                  network: "allow"
+                }
+              },
+              runtime: {
+                background_tasks: {
+                  default_concurrency: 2,
+                  provider_concurrency: 2,
+                  model_concurrency: 2,
+                  stale_timeout_ms: 15000,
+                  message_staleness_timeout_ms: 5000
+                },
+                session_dir: ".agent-harness/sessions"
+              },
+              integrations: {
+                remote_search: {
+                  endpoint: "https://mcp.exa.ai/mcp"
+                }
+              }
+            }
+            "#,
+        )
+        .expect("config should parse");
+
+        let agent_profiles = bootstrap::interactive_agent_profiles(&config)
+            .expect("interactive agent profiles should build");
+        let metadata = interactive_launch_metadata(Some(&config), &agent_profiles, "build")
+            .expect("launch metadata should build");
+
+        assert_eq!(metadata.profile(), "build");
+        assert_eq!(metadata.variant(), None);
+        assert_eq!(metadata.reasoning_effort(), Some("low"));
+        assert!(metadata.available_models().iter().any(|option| {
+            option.profile == "build"
+                && option.model == "gpt-5.4-mini"
+                && option.variant().is_none()
+                && option.reasoning_effort() == Some("low")
+        }));
     }
 
     #[test]
