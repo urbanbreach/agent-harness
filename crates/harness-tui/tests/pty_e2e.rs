@@ -498,8 +498,10 @@ fn pty_live_details_drawer_remains_reachable() {
             )
             .expect("wait for dense session shell after sidebar toggle");
 
-            assert!(!screen.contains("Context"));
+            assert!(screen.contains("Context"));
             assert!(screen.contains("Current runtime:"));
+            assert!(!screen.contains("▼ Modified Files"));
+            assert!(!screen.contains("No modified files"));
         } else {
             let screen = wait_for_screen_contains(
                 &mut helper.parser,

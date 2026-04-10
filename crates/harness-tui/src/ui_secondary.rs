@@ -1337,7 +1337,7 @@ fn operator_sidebar_session_title(app: &AppState) -> Option<String> {
         .filter(|text| !text.is_empty())
 }
 
-fn operator_sidebar_total_tokens(app: &AppState) -> u64 {
+pub(crate) fn operator_sidebar_total_tokens(app: &AppState) -> u64 {
     app.activities
         .iter()
         .filter_map(|activity| activity.usage)
@@ -1345,7 +1345,7 @@ fn operator_sidebar_total_tokens(app: &AppState) -> u64 {
         .sum()
 }
 
-fn operator_sidebar_context_window_tokens(app: &AppState) -> Option<u32> {
+pub(crate) fn operator_sidebar_context_window_tokens(app: &AppState) -> Option<u32> {
     let model_id = app.activities.back().and_then(|activity| {
         (!activity.model_id.trim().is_empty()).then_some(activity.model_id.clone())
     });
@@ -1354,7 +1354,7 @@ fn operator_sidebar_context_window_tokens(app: &AppState) -> Option<u32> {
     metadata.context_window_tokens()
 }
 
-fn format_token_count(value: u64) -> String {
+pub(crate) fn format_token_count(value: u64) -> String {
     let digits = value.to_string();
     let mut out = String::with_capacity(digits.len() + (digits.len() / 3));
     for (index, character) in digits.chars().enumerate() {

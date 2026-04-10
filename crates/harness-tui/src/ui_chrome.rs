@@ -2204,6 +2204,59 @@ fn composer_disclosure_hint_candidates(
     candidates
 }
 
+fn composer_context_summary_candidates(
+    app: &AppState,
+    theme: &Theme,
+    surface: Color,
+) -> Vec<Vec<Span<'static>>> {
+    let total_tokens = crate::ui::ui_secondary::operator_sidebar_total_tokens(app);
+    let tokens = format!(
+        "{} tokens",
+        crate::ui::ui_secondary::format_token_count(total_tokens)
+    );
+    let mut candidates = Vec::new();
+
+    if let Some(context_window_tokens) =
+        crate::ui::ui_secondary::operator_sidebar_context_window_tokens(app)
+            .filter(|value| *value > 0)
+    {
+        let percent = ((total_tokens as f64 / f64::from(context_window_tokens)) * 100.0)
+            .round()
+            .clamp(0.0, 999.0) as u64;
+        candidates.push(vec![
+            disclosure_segment("Context", ComposerMetadataTone::Primary, theme, surface),
+            disclosure_separator(theme, surface),
+            disclosure_segment(
+                tokens.clone(),
+                ComposerMetadataTone::Secondary,
+                theme,
+                surface,
+            ),
+            disclosure_separator(theme, surface),
+            disclosure_segment(
+                format!("{percent}% used"),
+                ComposerMetadataTone::Secondary,
+                theme,
+                surface,
+            ),
+        ]);
+    }
+
+    candidates.push(vec![
+        disclosure_segment("Context", ComposerMetadataTone::Primary, theme, surface),
+        disclosure_separator(theme, surface),
+        disclosure_segment(tokens, ComposerMetadataTone::Secondary, theme, surface),
+    ]);
+    candidates.push(vec![disclosure_segment(
+        "Context",
+        ComposerMetadataTone::Primary,
+        theme,
+        surface,
+    )]);
+
+    candidates
+}
+
 fn composer_disclosure_summary_candidates(
     app: &AppState,
     dock: &crate::view_model::ControlDockViewModel,
@@ -2212,7 +2265,15 @@ fn composer_disclosure_summary_candidates(
 ) -> Vec<Vec<Span<'static>>> {
     let runtime_state = app.runtime_state();
     let runtime_tone = runtime_kind_metadata_tone(runtime_state.kind);
-    let mut candidates = Vec::new();
+    let mut candidates = if !app.startup_shell_visible()
+        && !app.completed_session_shell_active()
+        && !app.replay_mode
+        && !dock.composer_disabled
+    {
+        composer_context_summary_candidates(app, theme, surface)
+    } else {
+        Vec::new()
+    };
     let short_runtime_summary = runtime_state
         .summary
         .split(" · ")

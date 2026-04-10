@@ -1142,7 +1142,7 @@ fn dense_live_composer_keeps_blank_spacer_before_metadata() {
 
 #[cfg(test)]
 #[test]
-fn live_composer_control_strip_surfaces_runtime_and_commands() {
+fn live_composer_control_strip_surfaces_context_and_commands() {
     let mut ready = app::AppState::new_live(None, false, None);
     let mut events = session_view_events();
     events.pop();
@@ -1157,9 +1157,31 @@ fn live_composer_control_strip_surfaces_runtime_and_commands() {
         .unwrap_or_else(|| panic!("live composer disclosure row\n{rendered}"));
 
     assert!(lines[metadata_row].contains("Streaming"));
-    assert!(lines[disclosure_row].contains("tool finished"));
+    assert!(lines[disclosure_row].contains("Context"));
+    assert!(lines[disclosure_row].contains("0 tokens"));
     assert!(lines[disclosure_row].contains("Enter send"));
     assert!(lines[disclosure_row].contains("Ctrl+p commands"));
+}
+
+#[cfg(test)]
+#[test]
+fn live_composer_under_input_row_surfaces_context_summary() {
+    let mut ready = app::AppState::new_live(None, false, None);
+    let mut events = session_view_events();
+    events.pop();
+    for event in events {
+        ready.ingest_event(event);
+    }
+
+    let rendered = render_live_lines(&ready, 100, 24);
+    let lines = rendered.lines().collect::<Vec<_>>();
+    let metadata_row = find_line_containing(&lines, "Current runtime: default · gpt-5-codex")
+        .unwrap_or_else(|| panic!("live composer metadata row\n{rendered}"));
+    let disclosure_row = find_line_containing_from(&lines, metadata_row + 1, "Enter send")
+        .unwrap_or_else(|| panic!("live composer disclosure row\n{rendered}"));
+
+    assert!(lines[disclosure_row].contains("Context"));
+    assert!(lines[disclosure_row].contains("0 tokens"));
 }
 
 #[cfg(test)]
@@ -7627,11 +7649,11 @@ fn live_empty_state_disappears_after_first_activity() {
 #[test]
 fn live_shell_orchestration_status_strip_snapshot() {
     let app = orchestration_status_strip_fixture();
-    let status_row = live_status_strip_row(&app, 160, 30, "ready for first turn");
+    let status_row = live_status_strip_row(&app, 160, 30, "Context");
 
     insta::assert_snapshot!(
         status_row,
-        @"ready for first turn                    Enter send  ·  Ctrl+p commands  ·  Shift+Enter/Ctrl+j newline  ·  ↑/↓ history"
+        @"Context  ·  0 tokens                    Enter send  ·  Ctrl+p commands  ·  Shift+Enter/Ctrl+j newline  ·  ↑/↓ history"
     );
 }
 
