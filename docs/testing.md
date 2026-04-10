@@ -88,6 +88,27 @@ discoverable path and that missing-config guidance points users at the new boots
 - `cargo check --workspace`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 
+## Issue #126 verification path
+
+Keep the subagent surface bounded: prove the shipped config exposes explicit
+delegated lanes on the existing JSON agent surface and that spawned children
+receive an explicit delegation contract.
+
+### Focused subagent checks
+- `cargo test -p harness-core --lib opencode_compat_named_subagents_get_named_default_prompts -- --exact`
+- `cargo test -p harness --test bootstrap_profiles delegated_named_agents_get_default_prompts_in_runtime_config -- --exact`
+- `cargo test -p harness --test config_schema_cli config_validate_cli_injects_named_subagent_defaults_for_compact_configs -- --exact`
+- `cargo test -p harness-tools --lib agent_ops::tests::child_prompt_wraps_task_in_bounded_delegation_contract -- --exact`
+- `cargo test -p harness-tools --lib agent_ops::tests::child_prompt_includes_optional_skill_and_command_context_after_bounded_contract -- --exact`
+- `cargo test -p harness-testkit --test live_proxy_e2e example_config_ships_canonical_plan_build_and_audit_agents -- --exact`
+- `cargo test -p harness-testkit --test live_proxy_e2e example_config_ships_bounded_subagent_agents -- --exact`
+
+### Config + workspace baseline
+- `cargo run -p harness -- config validate --config configs/harness.example.jsonc`
+- `cargo fmt --all -- --check`
+- `cargo check --workspace --all-targets --all-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+
 ## Known remaining gaps
 
 - This signoff does not cover future orchestration surfaces such as swarms, Ralph loops, `$` commands, or plugins.

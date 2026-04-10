@@ -1,7 +1,9 @@
 use std::fs;
 use std::path::PathBuf;
 
-use harness_core::config::{load_config_from_str, named_agent_system_prompt};
+use harness_core::config::{
+    load_config_from_str, named_agent_description, named_agent_system_prompt,
+};
 use harness_core::perm::{PermissionKind, PolicyDecision};
 
 #[allow(dead_code)]
@@ -238,6 +240,105 @@ fn opencode_primary_agents_enforce_build_and_plan_permissions() {
     assert!(build_prompt.contains("reality no longer matches the plan"));
     assert!(build_prompt.contains("reversible batches"));
     assert!(build_prompt.contains("what was not tested"));
+}
+
+#[test]
+fn delegated_named_agents_get_default_prompts_in_runtime_config() {
+    let config = load_config_from_str(
+        r#"
+        {
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              api_mode: "responses",
+              timeout_ms: 60000,
+              models: {
+                "gpt-4o-mini": {
+                  display_name: "GPT-4o mini",
+                },
+              },
+            },
+          },
+          agents: {
+            researcher: {
+              model_ref: "default:gpt-4o-mini",
+              permissions: {
+                edit: "deny",
+                shell: "deny",
+                task: "deny",
+              },
+              tools: ["fs.read", "search.code", "tool.batch"],
+            },
+            implementer: {
+              model_ref: "default:gpt-4o-mini",
+              permissions: {
+                edit: "allow",
+                shell: "allow",
+                task: "deny",
+              },
+              tools: ["fs.read", "fs.write", "shell.run", "edit.hashline_apply"],
+            },
+            reviewer: {
+              model_ref: "default:gpt-4o-mini",
+              permissions: {
+                edit: "deny",
+                shell: "allow",
+                task: "deny",
+              },
+              tools: ["fs.read", "shell.run", "tool.batch"],
+            },
+          },
+          permissions: {
+            defaults: {
+              edit: "ask",
+              shell: "ask",
+              network: "ask",
+              task: "ask",
+            },
+            shell_allowlist: {
+              executables: ["git"],
+              cwd_roots: ["."],
+            },
+          },
+          runtime: {
+            background_tasks: {
+              default_concurrency: 2,
+              provider_concurrency: 2,
+              model_concurrency: 2,
+              stale_timeout_ms: 15000,
+              message_staleness_timeout_ms: 5000,
+            },
+            session_dir: ".agent-harness/sessions",
+          },
+          integrations: {
+            remote_search: {
+              endpoint: "https://mcp.exa.ai/mcp",
+            },
+          },
+        }
+        "#,
+    )
+    .expect("config should parse");
+
+    let coordinator_config =
+        bootstrap::build_interactive_coordinator_config(&config).expect("build config");
+
+    for profile_name in ["researcher", "implementer", "reviewer"] {
+        assert_eq!(
+            config.agents[profile_name].description,
+            named_agent_description(profile_name).expect("named delegated description")
+        );
+        assert_eq!(
+            config.agents[profile_name].system_prompt.as_deref(),
+            named_agent_system_prompt(profile_name)
+        );
+        assert_eq!(
+            coordinator_config.agent_profiles[profile_name].system_prompt,
+            named_agent_system_prompt(profile_name).expect("named delegated prompt")
+        );
+    }
 }
 
 #[test]

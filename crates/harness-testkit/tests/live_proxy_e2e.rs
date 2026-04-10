@@ -2233,6 +2233,123 @@ fn example_config_ships_canonical_plan_build_and_audit_agents() {
 }
 
 #[test]
+fn example_config_ships_bounded_subagent_agents() {
+    let config = load_json5_config(&repo_root().join("configs").join("harness.example.jsonc"))
+        .expect("load shipped example config");
+    let agents = config
+        .get("agent")
+        .and_then(Value::as_object)
+        .expect("agent object present in example config");
+
+    for (name, expected_variant, required_tools, forbidden_tools, prompt_needles) in [
+        (
+            "researcher",
+            "low",
+            vec![
+                "search.web",
+                "web.fetch",
+                "search.code",
+                "code.lsp",
+                "fs.read",
+                "tool.batch",
+            ],
+            vec!["fs.write", "shell.run", "agent.spawn"],
+            vec![
+                "Stay read-only",
+                "Do not edit files",
+                "Do not claim the parent task is complete",
+            ],
+        ),
+        (
+            "implementer",
+            "high",
+            vec![
+                "search.code",
+                "code.lsp",
+                "fs.read",
+                "fs.write",
+                "shell.run",
+                "edit.hashline_apply",
+                "edit.hashline_scan",
+                "tool.batch",
+            ],
+            vec!["agent.spawn", "user.question", "search.web"],
+            vec![
+                "Execute only the approved slice",
+                "Edit only the files needed",
+                "Do not claim the parent task is complete",
+            ],
+        ),
+        (
+            "reviewer",
+            "low",
+            vec![
+                "search.code",
+                "code.lsp",
+                "fs.read",
+                "shell.run",
+                "tool.batch",
+            ],
+            vec!["fs.write", "edit.hashline_apply", "agent.spawn"],
+            vec![
+                "Verify the delegated slice without editing code",
+                "Do not make edits",
+                "pass/fail-style verdict",
+            ],
+        ),
+    ] {
+        let agent = agents
+            .get(name)
+            .and_then(Value::as_object)
+            .unwrap_or_else(|| panic!("{name} agent present in example config"));
+        assert_eq!(
+            agent.get("model_ref").and_then(Value::as_str),
+            Some("default:gpt-5.4-mini")
+        );
+        assert_eq!(
+            agent.get("variant").and_then(Value::as_str),
+            Some(expected_variant)
+        );
+        let permissions = agent
+            .get("permissions")
+            .and_then(Value::as_object)
+            .unwrap_or_else(|| panic!("{name} permissions present"));
+        assert_eq!(
+            permissions.get("task").and_then(Value::as_str),
+            Some("deny"),
+            "{name} should stay bounded by denying task spawning"
+        );
+        let tools = agent
+            .get("tools")
+            .and_then(Value::as_array)
+            .unwrap_or_else(|| panic!("{name} tools array present"));
+        for required_tool in required_tools {
+            assert!(
+                tools.contains(&Value::String(required_tool.to_string())),
+                "{name} should expose {required_tool} in the shipped example config"
+            );
+        }
+        for forbidden_tool in forbidden_tools {
+            assert!(
+                !tools.contains(&Value::String(forbidden_tool.to_string())),
+                "{name} should not expose {forbidden_tool} in the shipped example config"
+            );
+        }
+        let prompt = agent
+            .get("system_prompt")
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| panic!("{name} system prompt present"));
+        let normalized_prompt = prompt.to_ascii_lowercase();
+        for needle in prompt_needles {
+            assert!(
+                normalized_prompt.contains(&needle.to_ascii_lowercase()),
+                "{name} prompt should mention `{needle}` for bounded delegation"
+            );
+        }
+    }
+}
+
+#[test]
 fn tool_flow_evidence_detects_ordered_same_file_sequence() {
     let workspace_root = unique_temp_dir("live-proxy-tool-flow-evidence-workspace");
     fs::create_dir_all(workspace_root.join("tmp")).expect("create tool-flow tmp dir");

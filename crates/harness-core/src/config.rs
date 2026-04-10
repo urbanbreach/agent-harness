@@ -1004,6 +1004,15 @@ pub fn named_agent_system_prompt(agent_name: &str) -> Option<&'static str> {
         "build" => Some(
             "Implement only the approved plan after the explicit plan.exit handoff. Start by restating the approved scope, keep edits small and reversible, and verify the narrowest useful change before widening. Prefer reversible batches that keep progress legible. If the approved plan leaves a material gap or reality no longer matches the plan, stop and ask instead of inventing new scope. Use subagents only when they materially help, and finish with concrete evidence, changed files, what was not tested, and remaining risks.",
         ),
+        "researcher" => Some(
+            "You are the Researcher subagent for delegated harness work. Stay read-only, evidence-first, and tightly scoped to the delegated slice. Gather only the context needed to answer the parent agent's request, keep notes concise, and favor file references plus concrete findings over long narration. Do not edit files, do not run shell commands, do not broaden scope, and do not claim the parent task is complete. Finish with findings, referenced files or tools, verification-ready evidence, and any blocker the parent must resolve.",
+        ),
+        "implementer" => Some(
+            "You are the Implementer subagent for delegated harness work. Execute only the approved slice already handed to you, prefer the smallest coherent diff, and keep every change legible for the parent agent to review. Edit only the files needed for this slice, run the narrowest verification that proves it, and report concrete changed files plus evidence. Do not widen scope, do not introduce speculative redesign, do not ask the user new questions, and do not claim the parent task is complete. If the slice needs broader authority or a bigger design choice, stop and hand the blocker back to the parent agent.",
+        ),
+        "reviewer" => Some(
+            "You are the Reviewer subagent for delegated harness work. Verify the delegated slice without editing code: inspect the relevant files, run only the checks that matter, and surface concrete correctness, maintainability, or risk findings. Keep the review bounded to the requested slice, cite the files, commands, or outputs that support each conclusion, and clearly separate confirmed issues from possible follow-ups. Do not make edits, do not broaden scope, and do not claim the parent task is complete. Finish with a concise pass/fail-style verdict, evidence, and any blocker or recommendation for the parent agent.",
+        ),
         _ => None,
     }
 }
@@ -1050,6 +1059,9 @@ pub fn named_agent_description(agent_name: &str) -> Option<&'static str> {
     match agent_name {
         "build" => Some("Implementation lane: execute an approved plan with scoped edits and verification."),
         "plan" => Some("Planning lane: investigate read-only, produce an explicit plan, and hand off to build after approval."),
+        "researcher" => Some("Read-only delegated research lane for scoped evidence gathering."),
+        "implementer" => Some("Focused delegated implementation lane for approved file-scoped edits."),
+        "reviewer" => Some("Read-only delegated review lane for targeted verification and risk checks."),
         _ => None,
     }
 }
@@ -3416,6 +3428,52 @@ mod tests {
             parsed.agents["plan"].system_prompt.as_deref(),
             named_agent_system_prompt("plan")
         );
+    }
+
+    #[test]
+    fn opencode_compat_named_subagents_get_named_default_prompts() {
+        let cfg = r#"
+        {
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              models: {
+                "gpt-4o-mini": {
+                  display_name: "GPT-4o mini"
+                }
+              }
+            }
+          },
+          agent: {
+            researcher: {
+              model: "default/gpt-4o-mini",
+              tools: ["fs.read", "search.code"]
+            },
+            implementer: {
+              model: "default/gpt-4o-mini",
+              tools: ["fs.read", "fs.write", "shell.run"]
+            },
+            reviewer: {
+              model: "default/gpt-4o-mini",
+              tools: ["fs.read", "shell.run"]
+            }
+          }
+        }
+        "#;
+
+        let parsed = load_config_from_str(cfg).expect("opencode compat config should parse");
+        for agent_name in ["researcher", "implementer", "reviewer"] {
+            assert_eq!(
+                parsed.agents[agent_name].description,
+                named_agent_description(agent_name).expect("named delegated description")
+            );
+            assert_eq!(
+                parsed.agents[agent_name].system_prompt.as_deref(),
+                named_agent_system_prompt(agent_name)
+            );
+        }
     }
 
     #[test]

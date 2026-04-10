@@ -49,6 +49,10 @@ The shipped example keeps docs, config, and live signoff aligned around a local 
 
 ## Agent contract
 
+The same `agent` / canonical `agents` map is also the supported JSON surface for
+bounded delegated subagents. A parent agent can target one of these named lanes
+through native `agent.spawn.profile` or compat `task.subagent_type`.
+
 ### `build`
 - default implementation lane
 - `variant: "high"`
@@ -67,8 +71,44 @@ The shipped example keeps docs, config, and live signoff aligned around a local 
 - prompt requires read-only investigation, a clear split between confirmed facts and open questions/assumptions, explicit assumptions still needing confirmation, targeted questions when critical gaps remain, and a concrete plan with scope, ordered steps, risks, and verification before approval-gated handoff
 
 ### Secondary shipped lanes
+- `researcher`: read-only delegated evidence-gathering lane
+- `implementer`: focused delegated file-edit lane
+- `reviewer`: read-only delegated verification lane
 - `tool_audit`: evidence-first signoff profile for shipped surface validation
 - `deep_compat`: compat regression profile for alias/tool-surface parity
+
+### Bounded delegated lanes
+- `researcher`, `implementer`, and `reviewer` are the shipped examples for
+  JSON-configurable subagents on the existing agent surface.
+- when `description` or `system_prompt` is omitted for those delegated lanes,
+  the harness fills in shipped named defaults so compact JSON configs can stay
+  legible without losing the bounded delegation contract.
+- they stay bounded by profile-specific permissions and toolsets instead of a
+  separate orchestration schema.
+- they are intended to be targeted from a parent lane, not selected as the
+  default interactive workflow.
+- delegated children also receive a runtime child-prompt wrapper that restates
+  the slice boundary, asks them not to widen scope, and requires slice-local
+  evidence / blockers instead of claiming the parent task is complete.
+
+Compact delegated-lane configs can therefore stay focused on model/tool/policy
+choices, for example:
+
+```jsonc
+{
+  "agents": {
+    "reviewer": {
+      "model_ref": "default:gpt-5.4-mini",
+      "permissions": {
+        "edit": "deny",
+        "shell": "allow",
+        "task": "deny"
+      },
+      "tools": ["fs.read", "shell.run", "tool.batch"]
+    }
+  }
+}
+```
 
 ## Model selection from config
 

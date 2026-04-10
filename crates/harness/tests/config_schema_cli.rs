@@ -522,6 +522,91 @@ fn config_validate_cli_accepts_shipped_example_config() {
 }
 
 #[test]
+fn config_validate_cli_injects_named_subagent_defaults_for_compact_configs() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("delegated-agents.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              models: {
+                "gpt-4o-mini": {
+                  display_name: "GPT-4o mini"
+                }
+              }
+            }
+          },
+          agents: {
+            researcher: {
+              model_ref: "default:gpt-4o-mini",
+              permissions: {
+                edit: "deny",
+                shell: "deny",
+                task: "deny"
+              },
+              tools: ["fs.read", "search.code", "tool.batch"]
+            },
+            implementer: {
+              model_ref: "default:gpt-4o-mini",
+              permissions: {
+                edit: "allow",
+                shell: "allow",
+                task: "deny"
+              },
+              tools: ["fs.read", "fs.write", "shell.run", "edit.hashline_apply"]
+            },
+            reviewer: {
+              model_ref: "default:gpt-4o-mini",
+              permissions: {
+                edit: "deny",
+                shell: "allow",
+                task: "deny"
+              },
+              tools: ["fs.read", "shell.run", "tool.batch"]
+            }
+          }
+        }
+        "#,
+    )
+    .expect("write compact delegated config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "config",
+            "validate",
+        ])
+        .output()
+        .expect("run harness config validate with compact delegated config");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let parsed =
+        load_config_from_file(&config_path).expect("load validated compact delegated config");
+    for agent_name in ["researcher", "implementer", "reviewer"] {
+        assert_eq!(
+            parsed.agents[agent_name].description,
+            named_agent_description(agent_name).expect("named delegated description")
+        );
+        assert_eq!(
+            parsed.agents[agent_name].system_prompt.as_deref(),
+            named_agent_system_prompt(agent_name)
+        );
+    }
+}
+
+#[test]
 fn shipped_example_config_resolves_loopback_placeholder_key_without_openai_api_key() {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
     let config_path = repo_root.join("configs").join("harness.example.jsonc");

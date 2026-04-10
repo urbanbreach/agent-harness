@@ -27,7 +27,9 @@ Primary agents for roadmap work:
 
 Secondary/supporting agents:
 
-- As of now subagent functionality is something that is planned but not yet implemented. Only start planning and implementing subagents when `plan` and `build` agents have been successfully and thoroughly tested and implemented.
+- Bounded delegated subagent lanes are now implemented on the existing JSON
+  `agent` / `agents` surface. Keep follow-up work focused on refining those
+  lanes and their verification until broader orchestration work starts.
 
 - [x] Plan and Build agents have been successfully implemented, tested and are on par with the ones in Opencode.
 
@@ -65,7 +67,7 @@ Secondary/supporting agents:
 ## Agents, orchestration, and prompt quality
 
 - [x] Add named agents with fleshed-out system prompts for main flows such as Build and Plan.
-- [ ] Flesh out subagents with configs available in JSON.
+- [x] Flesh out subagents with configs available in JSON.
 - [ ] Improve main-agent prompt engineering with a Opencode/pi-like approach.
 - [ ] Compaction (Check how it's done from other harnesses and inspiration/ folder. The decide on the best path.)
 - [ ] Add orchestration functionality that is toggleable in the HUD and follows the general spirit of oh-my-openagent / oh-my-codex while staying understandable. (after main agents are implemented properly)

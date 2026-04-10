@@ -35,6 +35,20 @@ auto-discovery path.
 - must not start implementation work
 - may call `plan.exit` only after the user explicitly approves implementation
 
+### Bounded delegated lanes
+
+The shipped config also demonstrates bounded delegated lanes on the same
+`agent` / `agents` surface:
+
+- `researcher` for read-only evidence gathering
+- `implementer` for focused file-scoped implementation slices
+- `reviewer` for read-only verification and risk checks
+
+These are intentionally narrower than the main `build` / `plan` lanes. Parents
+can target them through `agent.spawn.profile` or compat `task.subagent_type`,
+and the runtime wraps delegated prompts with an explicit delegation contract so
+child work stays scoped and legible.
+
 ## How the handoff works
 
 `plan.exit` is only exposed on plan-capable agents. When the user approves implementation, the harness:

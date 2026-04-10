@@ -523,11 +523,37 @@ fn normalize_batch_calls(args: BatchArgs) -> Result<Vec<BatchCall>, ToolError> {
 }
 
 fn build_child_prompt(request: &AgentSpawnRequest) -> String {
-    if request.load_skills.is_empty() && request.command.is_none() {
-        return request.prompt.clone();
+    let description = request.description.trim();
+    let prompt_body = request.prompt.trim();
+    let has_explicit_description = !description.is_empty() && description != "Delegated task";
+
+    let mut prompt = String::new();
+    if has_explicit_description {
+        prompt.push_str("Delegated task: ");
+        prompt.push_str(description);
+        prompt.push_str("\n\n");
     }
 
-    let mut prompt = String::from("Delegation context from parent:\n");
+    prompt.push_str(prompt_body);
+    prompt.push_str("\n\nDelegation contract:\n");
+    prompt.push_str(
+        "- Stay inside the selected profile's system prompt, permissions, and tool surface.\n",
+    );
+    prompt.push_str(
+        "- Complete only this delegated slice; do not widen scope or claim the parent task is finished.\n",
+    );
+    prompt.push_str(
+        "- Use the narrowest verification that proves your slice and report concrete findings, changed files, evidence, and blockers relevant to this slice only.\n",
+    );
+    prompt.push_str(
+        "- If the task needs broader scope, more authority, or extra delegated work, stop and hand that blocker back to the parent agent.\n",
+    );
+
+    if request.load_skills.is_empty() && request.command.is_none() {
+        return prompt;
+    }
+
+    prompt.push_str("\nDelegation context from parent:\n");
     if !request.load_skills.is_empty() {
         prompt.push_str("- Load and apply these skills before starting: ");
         prompt.push_str(&request.load_skills.join(", "));
@@ -538,8 +564,6 @@ fn build_child_prompt(request: &AgentSpawnRequest) -> String {
         prompt.push_str(command);
         prompt.push('\n');
     }
-    prompt.push_str("\nTask:\n");
-    prompt.push_str(&request.prompt);
     prompt
 }
 
@@ -879,5 +903,51 @@ fn batch_detail_json(outcome: BatchCallOutcome) -> Value {
                 "result": result,
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_child_prompt, AgentSpawnRequest};
+
+    fn spawn_request() -> AgentSpawnRequest {
+        AgentSpawnRequest {
+            description: "Review the parser regression".to_string(),
+            profile_name: "reviewer".to_string(),
+            prompt: "Inspect the affected files and summarize the regression.".to_string(),
+            task_id: None,
+            session_id: None,
+            run_in_background: false,
+            load_skills: Vec::new(),
+            command: None,
+        }
+    }
+
+    #[test]
+    fn child_prompt_wraps_task_in_bounded_delegation_contract() {
+        let prompt = build_child_prompt(&spawn_request());
+        assert!(prompt.contains("Delegated task: Review the parser regression"));
+        assert!(prompt.contains("Inspect the affected files and summarize the regression."));
+        assert!(prompt.contains("Delegation contract:"));
+        assert!(prompt.contains("selected profile's system prompt, permissions, and tool surface"));
+        assert!(prompt.contains("do not widen scope or claim the parent task is finished"));
+        assert!(prompt.contains("report concrete findings, changed files, evidence, and blockers"));
+    }
+
+    #[test]
+    fn child_prompt_includes_optional_skill_and_command_context_after_bounded_contract() {
+        let mut request = spawn_request();
+        request.description = "Delegated task".to_string();
+        request.load_skills = vec!["rust-best-practices".to_string()];
+        request.command = Some("delegate-review".to_string());
+
+        let prompt = build_child_prompt(&request);
+        assert!(prompt.starts_with("Inspect the affected files and summarize the regression."));
+        assert!(prompt.contains("Delegation contract:"));
+        assert!(prompt.contains("Delegation context from parent:"));
+        assert!(prompt.contains("Load and apply these skills before starting: rust-best-practices"));
+        assert!(
+            prompt.contains("Treat this command as required execution context: delegate-review")
+        );
     }
 }
