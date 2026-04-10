@@ -25,6 +25,7 @@ Its shipped defaults are:
 | `default_agent` | Default interactive/prompt agent, which the shipped example sets to `build`. |
 | `hooks` | Optional hook configuration for runtime lifecycle integration. |
 | `integrations` | Remote search and MCP integration settings used by read-only investigation tools. |
+| `instructions` | Optional extra instruction files appended to each configured agent prompt. |
 | `logging` | Log and artifact output controls. |
 | `lsp` | Language-server integration settings for `code.lsp`. |
 | `permissions` | Global permission defaults and shell allowlist policy. |
@@ -85,6 +86,22 @@ Concurrency and stale-timeout settings are configured in the shipped example so 
 ### `integrations`
 Remote search and MCP server definitions are part of the shipped config surface because they affect which read-only investigation tools are available in `plan` and `build`.
 
+### `instructions`
+The harness also accepts an `instructions` array inspired by Opencode. Each entry is read as a workspace-visible file path and appended to every configured agent prompt at runtime. This keeps the behavior explicit and legible: the prompt still starts from each profile's configured `system_prompt`, then adds the extra instruction file contents in order.
+
+## Opencode-like compatibility aliases
+
+The loader now accepts a focused set of Opencode-style config aliases and normalizes them into the canonical harness shape:
+
+- top-level `mcp` -> `integrations.mcp.servers`
+- top-level `permission` -> `permissions.defaults` for the overlapping ask/allow/deny fields
+- agent `model` -> `model_ref` (`provider/model` becomes `provider:model`)
+- agent `prompt` -> `system_prompt`
+- agent `steps` / `maxSteps` -> `max_iters`
+- agent `permission` -> per-agent `permissions`
+
+When `permissions`, `runtime`, or `integrations` are omitted entirely, the harness now fills them with safe defaults before validation so compact Opencode-like configs stay loadable. Command-specific shell permission rules are still out of scope for now; only the wildcard `bash: { "*": ... }` form is normalized.
+
 ## `HarnessConfig` schema reference
 
 | Key | Notes |
@@ -95,6 +112,7 @@ Remote search and MCP server definitions are part of the shipped config surface 
 | `default_agent` | Default selected agent/profile. |
 | `hooks` | Hook definitions and execution policy. |
 | `integrations` | MCP and remote-search integration config. |
+| `instructions` | Extra prompt-instruction file paths. |
 | `logging` | Session/event logging config. |
 | `lsp` | LSP server wiring and feature toggles. |
 | `permissions` | Permission defaults, overrides, and shell allowlist. |

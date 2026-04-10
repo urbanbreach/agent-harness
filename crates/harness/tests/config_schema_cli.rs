@@ -609,9 +609,7 @@ fn config_validate_cli_does_not_merge_lower_precedence_files_into_explicit_confi
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("config validation failed:"));
-    assert!(stderr.contains(
-        "missing required config sections: agent/agents, integrations, permissions, runtime"
-    ));
+    assert!(stderr.contains("missing required config sections: agent/agents"));
 }
 
 #[test]
@@ -906,7 +904,7 @@ fn config_validate_cli_rejects_unknown_ui_default_profile() {
 }
 
 #[test]
-fn config_validate_cli_accepts_opencode_style_agent_shape() {
+fn config_validate_cli_accepts_opencode_style_agent_shape_and_aliases() {
     let temp = tempdir().expect("tempdir");
     let config_path = temp.path().join("harness.jsonc");
     let config = serde_json::json!({
@@ -926,58 +924,49 @@ fn config_validate_cli_accepts_opencode_style_agent_shape() {
         },
         "agent": {
             "build": {
-                "description": "Build profile",
-                "model_ref": "default:gpt-4o-mini",
-                "permissions": {
+                "model": "default/gpt-4o-mini",
+                "prompt": "Build with narrow diffs.",
+                "steps": 8,
+                "permission": {
                     "edit": "allow",
-                    "shell": "allow"
+                    "bash": {
+                        "*": "allow"
+                    }
                 },
                 "tools": []
             },
             "plan": {
-                "description": "Plan profile",
-                "model_ref": "default:gpt-4o-mini",
+                "model": "default/gpt-4o-mini",
                 "plan_mode": true,
                 "exit_target_profile": "build",
-                "permissions": {
+                "permission": {
                     "edit": "deny",
-                    "shell": "deny",
+                    "bash": "deny",
                     "task": "deny"
                 },
                 "tools": []
             }
         },
         "default_agent": "build",
-        "permissions": {
-            "defaults": {
-                "edit": "allow",
-                "shell": "allow",
-                "network": "allow"
-            },
-            "shell_allowlist": {
-                "executables": ["git"],
-                "cwd_roots": ["."]
+        "permission": {
+            "edit": "allow",
+            "bash": "ask",
+            "network": "deny"
+        },
+        "instructions": [
+            "CONTRIBUTING.md"
+        ],
+        "mcp": {
+            "docs": {
+                "type": "local",
+                "command": [
+                    "bunx",
+                    "-y",
+                    "@nuskey8/docs-rs-mcp@latest"
+                ],
+                "enabled": true
             }
         },
-        "runtime": {
-            "background_tasks": {
-                "default_concurrency": 2,
-                "provider_concurrency": 2,
-                "model_concurrency": 2,
-                "stale_timeout_ms": 30000,
-                "message_staleness_timeout_ms": 10000
-            },
-            "session_dir": temp.path().join("sessions"),
-            "deterministic": {
-                "enabled": false,
-                "seed": 42
-            }
-        },
-        "integrations": {
-            "remote_search": {
-                "endpoint": "https://mcp.exa.ai/mcp"
-            }
-        }
     });
     write_config(&config_path, &config);
 
@@ -996,6 +985,18 @@ fn config_validate_cli_accepts_opencode_style_agent_shape() {
 
     let parsed = load_config_from_file(&config_path).expect("load validated opencode-style config");
     assert_eq!(parsed.ui.default_profile.as_deref(), Some("build"));
+    assert_eq!(parsed.instructions, vec!["CONTRIBUTING.md".to_string()]);
+    assert_eq!(
+        parsed.permissions.defaults.network,
+        harness_core::config::PermissionMode::Deny
+    );
     assert!(parsed.agents.contains_key("build"));
     assert!(parsed.agents.contains_key("plan"));
+    assert_eq!(parsed.agents["build"].model_ref, "default:gpt-4o-mini");
+    assert_eq!(parsed.agents["build"].max_iters, 8);
+    assert_eq!(
+        parsed.agents["build"].system_prompt.as_deref(),
+        Some("Build with narrow diffs.")
+    );
+    assert!(parsed.integrations.mcp.servers.contains_key("docs"));
 }

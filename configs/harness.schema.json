@@ -3,10 +3,7 @@
   "title": "HarnessConfig",
   "type": "object",
   "required": [
-    "integrations",
-    "permissions",
-    "providers",
-    "runtime"
+    "providers"
   ],
   "properties": {
     "$schema": {
@@ -47,8 +44,32 @@
         }
       ]
     },
+    "instructions": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "integrations": {
-      "$ref": "#/definitions/IntegrationsConfig"
+      "default": {
+        "mcp": {
+          "servers": {}
+        },
+        "remote_search": {
+          "auth_token": null,
+          "endpoint": "https://mcp.exa.ai/mcp",
+          "max_retries": 1,
+          "require_auth": false,
+          "retry_backoff_ms": 250,
+          "timeout_secs": 30
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/IntegrationsConfig"
+        }
+      ]
     },
     "logging": {
       "default": {
@@ -73,7 +94,28 @@
       ]
     },
     "permissions": {
-      "$ref": "#/definitions/PermissionsConfig"
+      "default": {
+        "defaults": {
+          "codesearch": null,
+          "edit": "ask",
+          "lsp": null,
+          "network": "ask",
+          "question": "ask",
+          "shell": "ask",
+          "task": "allow",
+          "webfetch": null,
+          "websearch": null
+        },
+        "shell_allowlist": {
+          "cwd_roots": [],
+          "executables": []
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/PermissionsConfig"
+        }
+      ]
     },
     "providers": {
       "type": "object",
@@ -82,7 +124,31 @@
       }
     },
     "runtime": {
-      "$ref": "#/definitions/RuntimeConfig"
+      "default": {
+        "background_tasks": {
+          "defaultConcurrency": 4,
+          "messageStalenessTimeoutMs": 10000,
+          "modelConcurrency": 2,
+          "providerConcurrency": 4,
+          "staleTimeoutMs": 30000
+        },
+        "deterministic": {
+          "enabled": false,
+          "seed": 0
+        },
+        "permissions": {
+          "ask_timeout_ms": 30000
+        },
+        "prompt": {
+          "wait_timeout_ms": 30000
+        },
+        "session_dir": ".agent-harness/sessions"
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/RuntimeConfig"
+        }
+      ]
     },
     "skills": {
       "default": {

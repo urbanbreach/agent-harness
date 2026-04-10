@@ -52,7 +52,7 @@ pub enum ConfigError {
     SerializeSchema(String),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
 pub struct HarnessConfig {
     #[serde(rename = "$schema", default)]
@@ -62,11 +62,16 @@ pub struct HarnessConfig {
     pub agents: BTreeMap<String, ProfileConfig>,
     #[serde(default)]
     pub agent: BTreeMap<String, ProfileConfig>,
+    #[serde(default)]
     pub permissions: PermissionsConfig,
+    #[serde(default)]
     pub runtime: RuntimeConfig,
+    #[serde(default)]
     pub integrations: IntegrationsConfig,
     #[serde(default)]
     pub hooks: HooksConfig,
+    #[serde(default)]
+    pub instructions: Vec<String>,
     #[serde(default)]
     pub skills: SkillsConfig,
     #[serde(default)]
@@ -621,6 +626,18 @@ pub struct RuntimeConfig {
     pub deterministic: DeterministicConfig,
 }
 
+impl Default for RuntimeConfig {
+    fn default() -> Self {
+        Self {
+            background_tasks: BackgroundTaskSettings::default(),
+            session_dir: default_session_dir(),
+            permissions: RuntimePermissionsConfig::default(),
+            prompt: PromptRuntimeConfig::default(),
+            deterministic: DeterministicConfig::default(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimePermissionsConfig {
@@ -1015,7 +1032,7 @@ pub enum PermissionMode {
     Ask,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
 pub struct PermissionsConfig {
     pub defaults: PermissionDefaultsConfig,
@@ -1055,6 +1072,22 @@ pub struct PermissionDefaultsConfig {
     pub codesearch: Option<PermissionMode>,
     #[serde(default, alias = "codeLsp")]
     pub lsp: Option<PermissionMode>,
+}
+
+impl Default for PermissionDefaultsConfig {
+    fn default() -> Self {
+        Self {
+            edit: PermissionMode::Ask,
+            shell: PermissionMode::Ask,
+            network: PermissionMode::Ask,
+            question: Some(PermissionMode::Ask),
+            task: Some(PermissionMode::Allow),
+            webfetch: None,
+            websearch: None,
+            codesearch: None,
+            lsp: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
@@ -1515,15 +1548,14 @@ fn resolve_env_reference(value: &str) -> Result<String, ConfigError> {
     }
 }
 
-const REQUIRED_CONFIG_SECTIONS: [&str; 4] = ["integrations", "permissions", "providers", "runtime"];
-
-const ALLOWED_TOP_LEVEL_CONFIG_KEYS: [&str; 13] = [
+const ALLOWED_TOP_LEVEL_CONFIG_KEYS: [&str; 14] = [
     "$schema",
     "agent",
     "agents",
     "default_agent",
     "hooks",
     "integrations",
+    "instructions",
     "lsp",
     "logging",
     "permissions",
@@ -1562,11 +1594,10 @@ fn validate_root_config_object(
         )));
     }
 
-    let mut missing = REQUIRED_CONFIG_SECTIONS
-        .iter()
-        .copied()
-        .filter(|key| !object.contains_key(*key))
-        .collect::<Vec<_>>();
+    let mut missing = Vec::new();
+    if !object.contains_key("providers") {
+        missing.push("providers");
+    }
     if !object.contains_key("agent") && !object.contains_key("agents") {
         missing.push("agent/agents");
     }
@@ -1598,6 +1629,317 @@ fn parse_model_ref(model_ref: &str) -> Option<(&str, &str)> {
         return None;
     }
     Some((provider_name, model_name))
+}
+
+fn normalize_public_config_root(root: &mut serde_json::Value) -> Result<(), ConfigError> {
+    let object = root.as_object_mut().ok_or(ConfigError::InvalidRootObject)?;
+    normalize_opencode_mcp_alias(object)?;
+    normalize_opencode_permission_alias(object)?;
+    normalize_opencode_agent_aliases(object)?;
+    Ok(())
+}
+
+fn normalize_opencode_mcp_alias(
+    object: &mut serde_json::Map<String, serde_json::Value>,
+) -> Result<(), ConfigError> {
+    let Some(mcp) = object.remove("mcp") else {
+        return Ok(());
+    };
+    let mcp_servers = mcp.as_object().ok_or_else(|| {
+        ConfigError::InvalidReference(
+            "top-level `mcp` must be a JSON object keyed by server id".to_string(),
+        )
+    })?;
+
+    let integrations = object
+        .entry("integrations")
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+    let integrations = integrations.as_object_mut().ok_or_else(|| {
+        ConfigError::InvalidReference(
+            "top-level `integrations` must be a JSON object when used with `mcp`".to_string(),
+        )
+    })?;
+
+    if integrations.contains_key("mcp") {
+        return Err(ConfigError::InvalidReference(
+            "top-level `mcp` conflicts with `integrations.mcp`; use one location".to_string(),
+        ));
+    }
+
+    let mut normalized_mcp = serde_json::Map::new();
+    normalized_mcp.insert(
+        "servers".to_string(),
+        serde_json::Value::Object(mcp_servers.clone()),
+    );
+    integrations.insert("mcp".to_string(), serde_json::Value::Object(normalized_mcp));
+    Ok(())
+}
+
+fn normalize_opencode_permission_alias(
+    object: &mut serde_json::Map<String, serde_json::Value>,
+) -> Result<(), ConfigError> {
+    let Some(permission) = object.remove("permission") else {
+        return Ok(());
+    };
+    if object.contains_key("permissions") {
+        return Err(ConfigError::InvalidReference(
+            "top-level `permission` conflicts with `permissions`; use one location".to_string(),
+        ));
+    }
+
+    let permissions = compat_permission_value_to_json(
+        &permission,
+        "top-level `permission`",
+        CompatPermissionTarget::Global,
+    )?;
+    let mut normalized = serde_json::Map::new();
+    normalized.insert(
+        "defaults".to_string(),
+        serde_json::Value::Object(permissions),
+    );
+    object.insert(
+        "permissions".to_string(),
+        serde_json::Value::Object(normalized),
+    );
+    Ok(())
+}
+
+fn normalize_opencode_agent_aliases(
+    object: &mut serde_json::Map<String, serde_json::Value>,
+) -> Result<(), ConfigError> {
+    for section in ["agent", "agents"] {
+        let Some(agents) = object.get_mut(section) else {
+            continue;
+        };
+        let agents = agents.as_object_mut().ok_or_else(|| {
+            ConfigError::InvalidReference(format!(
+                "top-level `{section}` must be a JSON object keyed by agent name"
+            ))
+        })?;
+
+        for (agent_name, agent_value) in agents.iter_mut() {
+            let agent = agent_value.as_object_mut().ok_or_else(|| {
+                ConfigError::InvalidReference(format!(
+                    "`{section}.{agent_name}` must be a JSON object"
+                ))
+            })?;
+            normalize_single_opencode_agent_alias(section, agent_name, agent)?;
+        }
+    }
+    Ok(())
+}
+
+fn normalize_single_opencode_agent_alias(
+    section: &str,
+    agent_name: &str,
+    agent: &mut serde_json::Map<String, serde_json::Value>,
+) -> Result<(), ConfigError> {
+    let location = format!("`{section}.{agent_name}`");
+
+    if let Some(model_value) = agent.remove("model") {
+        let normalized = compat_model_ref_value(&model_value, &format!("{location}.model"))?;
+        match agent.get("model_ref") {
+            Some(existing) => {
+                let existing = existing.as_str().ok_or_else(|| {
+                    ConfigError::InvalidReference(format!("{location}.model_ref must be a string"))
+                })?;
+                if existing != normalized {
+                    return Err(ConfigError::InvalidReference(format!(
+                        "{location}.model `{normalized}` conflicts with existing model_ref `{existing}`"
+                    )));
+                }
+            }
+            None => {
+                agent.insert(
+                    "model_ref".to_string(),
+                    serde_json::Value::String(normalized),
+                );
+            }
+        }
+    }
+
+    if let Some(prompt_value) = agent.remove("prompt") {
+        match agent.get("system_prompt") {
+            Some(existing) if existing != &prompt_value => {
+                return Err(ConfigError::InvalidReference(format!(
+                    "{location}.prompt conflicts with existing system_prompt"
+                )));
+            }
+            Some(_) => {}
+            None => {
+                agent.insert("system_prompt".to_string(), prompt_value);
+            }
+        }
+    }
+
+    let steps_value = agent.remove("steps");
+    let max_steps_value = agent.remove("maxSteps");
+    if let Some(step_value) = steps_value.or(max_steps_value) {
+        match agent.get("max_iters") {
+            Some(existing) if existing != &step_value => {
+                return Err(ConfigError::InvalidReference(format!(
+                    "{location}.steps conflicts with existing max_iters"
+                )));
+            }
+            Some(_) => {}
+            None => {
+                agent.insert("max_iters".to_string(), step_value);
+            }
+        }
+    }
+
+    if let Some(permission_value) = agent.remove("permission") {
+        let permissions = compat_permission_value_to_json(
+            &permission_value,
+            &format!("{location}.permission"),
+            CompatPermissionTarget::Profile,
+        )?;
+        match agent.get("permissions") {
+            Some(existing) if existing != &serde_json::Value::Object(permissions.clone()) => {
+                return Err(ConfigError::InvalidReference(format!(
+                    "{location}.permission conflicts with existing permissions"
+                )));
+            }
+            Some(_) => {}
+            None => {
+                agent.insert(
+                    "permissions".to_string(),
+                    serde_json::Value::Object(permissions),
+                );
+            }
+        }
+    }
+
+    agent
+        .entry("description".to_string())
+        .or_insert_with(|| serde_json::Value::String(format!("{agent_name} profile")));
+
+    Ok(())
+}
+
+fn compat_model_ref_value(
+    value: &serde_json::Value,
+    location: &str,
+) -> Result<String, ConfigError> {
+    let model = value
+        .as_str()
+        .ok_or_else(|| ConfigError::InvalidReference(format!("{location} must be a string")))?;
+    if let Some((provider, model_name)) = model.split_once('/') {
+        if provider.is_empty() || model_name.is_empty() {
+            return Err(ConfigError::InvalidReference(format!(
+                "{location} must use `provider/model`"
+            )));
+        }
+        return Ok(format!("{provider}:{model_name}"));
+    }
+    if parse_model_ref(model).is_some() {
+        return Ok(model.to_string());
+    }
+    Err(ConfigError::InvalidReference(format!(
+        "{location} must use `provider/model` or `provider:model`"
+    )))
+}
+
+#[derive(Clone, Copy)]
+enum CompatPermissionTarget {
+    Global,
+    Profile,
+}
+
+fn compat_permission_value_to_json(
+    value: &serde_json::Value,
+    location: &str,
+    target: CompatPermissionTarget,
+) -> Result<serde_json::Map<String, serde_json::Value>, ConfigError> {
+    let permission = value.as_object().ok_or_else(|| {
+        ConfigError::InvalidReference(format!("{location} must be a JSON object"))
+    })?;
+    let mut normalized = serde_json::Map::new();
+
+    for (key, mode_value) in permission {
+        match key.as_str() {
+            "*" => {
+                let mode = compat_permission_mode(mode_value, &format!("{location}.*"))?;
+                for field in [
+                    "edit",
+                    "shell",
+                    "network",
+                    "question",
+                    "task",
+                    "webfetch",
+                    "websearch",
+                    "codesearch",
+                    "lsp",
+                ] {
+                    normalized.insert(field.to_string(), serde_json::Value::String(mode.clone()));
+                }
+            }
+            "bash" | "shell" => {
+                let mode = compat_shell_permission_mode(mode_value, &format!("{location}.{key}"))?;
+                normalized.insert("shell".to_string(), serde_json::Value::String(mode));
+            }
+            "edit" | "network" | "question" | "task" | "webfetch" | "websearch"
+            | "codesearch" | "lsp" => {
+                let mode = compat_permission_mode(mode_value, &format!("{location}.{key}"))?;
+                normalized.insert(key.clone(), serde_json::Value::String(mode));
+            }
+            unsupported => match target {
+                CompatPermissionTarget::Global => {
+                    return Err(ConfigError::InvalidReference(format!(
+                        "{location} contains unsupported permission key `{unsupported}`; supported keys are `*`, `bash`, `shell`, `edit`, `network`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, and `lsp`"
+                    )))
+                }
+                CompatPermissionTarget::Profile => {
+                    return Err(ConfigError::InvalidReference(format!(
+                        "{location} contains unsupported profile permission key `{unsupported}`; supported keys are `*`, `bash`, `shell`, `edit`, `network`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, and `lsp`"
+                    )))
+                }
+            },
+        }
+    }
+
+    Ok(normalized)
+}
+
+fn compat_shell_permission_mode(
+    value: &serde_json::Value,
+    location: &str,
+) -> Result<String, ConfigError> {
+    if let Some(mode) = value.as_str() {
+        return compat_permission_mode(&serde_json::Value::String(mode.to_string()), location);
+    }
+
+    let object = value.as_object().ok_or_else(|| {
+        ConfigError::InvalidReference(format!(
+            "{location} must be a permission mode string or an object containing only `*`"
+        ))
+    })?;
+    if object.len() != 1 || !object.contains_key("*") {
+        return Err(ConfigError::InvalidReference(format!(
+            "{location} only supports the wildcard `*`; command-specific shell rules are not yet supported"
+        )));
+    }
+    compat_permission_mode(
+        object.get("*").expect("wildcard presence checked"),
+        &format!("{location}.*"),
+    )
+}
+
+fn compat_permission_mode(
+    value: &serde_json::Value,
+    location: &str,
+) -> Result<String, ConfigError> {
+    let mode = value.as_str().ok_or_else(|| {
+        ConfigError::InvalidReference(format!(
+            "{location} must be one of `allow`, `deny`, or `ask`"
+        ))
+    })?;
+    match mode {
+        "allow" | "deny" | "ask" => Ok(mode.to_string()),
+        _ => Err(ConfigError::InvalidReference(format!(
+            "{location} must be one of `allow`, `deny`, or `ask`"
+        ))),
+    }
 }
 
 fn validate_skill_root(root: &Path, location: &str) -> Result<(), ConfigError> {
@@ -2176,14 +2518,15 @@ pub fn load_config_from_file(path: &Path) -> Result<HarnessConfig, ConfigError> 
 }
 
 pub fn load_config_from_str(raw: &str) -> Result<HarnessConfig, ConfigError> {
-    let root: serde_json::Value =
+    let mut root: serde_json::Value =
         json5::from_str(raw).map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
+    normalize_public_config_root(&mut root)?;
 
     let object = root.as_object().ok_or(ConfigError::InvalidRootObject)?;
     validate_root_config_object(object)?;
 
     let mut parsed: HarnessConfig =
-        json5::from_str(raw).map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
+        serde_json::from_value(root).map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
     parsed.normalize_public_config_aliases()?;
     parsed.sync_derived_runtime_sections();
     parsed.apply_env_substitutions()?;
@@ -2556,7 +2899,7 @@ mod tests {
         let err = load_config_from_str(r#"{"version":1}"#).expect_err("must fail");
         assert_eq!(
             err.to_string(),
-            "missing required config sections: agent/agents, integrations, permissions, providers, runtime"
+            "missing required config sections: agent/agents, providers"
         );
     }
 
@@ -2641,7 +2984,7 @@ mod tests {
         let err = load_config_from_str(cfg).expect_err("unknown top-level key must fail");
         assert_eq!(
             err.to_string(),
-            "unknown top-level config keys: `extraTopLevel`; expected only `$schema`, `agent`, `agents`, `default_agent`, `hooks`, `integrations`, `lsp`, `logging`, `permissions`, `providers`, `runtime`, `skills`, `ui`"
+            "unknown top-level config keys: `extraTopLevel`; expected only `$schema`, `agent`, `agents`, `default_agent`, `hooks`, `integrations`, `instructions`, `lsp`, `logging`, `permissions`, `providers`, `runtime`, `skills`, `ui`"
         );
     }
 
@@ -2925,6 +3268,80 @@ mod tests {
     }
 
     #[test]
+    fn opencode_compat_agent_mcp_permission_and_defaults_parse() {
+        let cfg = r#"
+        {
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              models: {
+                "gpt-4o-mini": {
+                  display_name: "GPT-4o mini"
+                }
+              }
+            }
+          },
+          agent: {
+            build: {
+              model: "default/gpt-4o-mini",
+              prompt: "Implement only the approved diff.",
+              steps: 7,
+              permission: {
+                edit: "allow",
+                bash: { "*": "ask" },
+                network: "deny"
+              },
+              tools: ["fs.read"]
+            }
+          },
+          permission: {
+            edit: "ask",
+            bash: "ask",
+            network: "deny"
+          },
+          instructions: ["CONTRIBUTING.md"],
+          mcp: {
+            docs: {
+              type: "local",
+              command: ["bunx", "-y", "@nuskey8/docs-rs-mcp@latest"],
+              enabled: true
+            }
+          }
+        }
+        "#;
+
+        let parsed = load_config_from_str(cfg).expect("opencode compat config should parse");
+        assert_eq!(parsed.instructions, vec!["CONTRIBUTING.md".to_string()]);
+        assert_eq!(
+            parsed.runtime.session_dir,
+            PathBuf::from(".agent-harness/sessions")
+        );
+        assert_eq!(parsed.permissions.defaults.edit, PermissionMode::Ask);
+        assert_eq!(parsed.permissions.defaults.shell, PermissionMode::Ask);
+        assert_eq!(parsed.permissions.defaults.network, PermissionMode::Deny);
+        assert_eq!(parsed.agents["build"].description, "build profile");
+        assert_eq!(parsed.agents["build"].model_ref, "default:gpt-4o-mini");
+        assert_eq!(
+            parsed.agents["build"].system_prompt.as_deref(),
+            Some("Implement only the approved diff.")
+        );
+        assert_eq!(parsed.agents["build"].max_iters, 7);
+        let permissions = parsed.agents["build"]
+            .permissions
+            .as_ref()
+            .expect("profile permissions");
+        assert_eq!(permissions.edit, Some(PermissionMode::Allow));
+        assert_eq!(permissions.shell, Some(PermissionMode::Ask));
+        assert_eq!(permissions.network, Some(PermissionMode::Deny));
+        assert!(matches!(
+            parsed.integrations.mcp.servers.get("docs"),
+            Some(McpServerConfig::Stdio { enabled: true, .. })
+        ));
+    }
+
+    #[test]
     fn relative_paths_remain_cwd_relative_when_loading_from_file() {
         let temp = tempfile::tempdir().expect("tempdir");
         let config_path = temp.path().join("nested/config.jsonc");
@@ -3017,6 +3434,7 @@ mod tests {
         assert!(properties.contains_key("permissions"));
         assert!(properties.contains_key("runtime"));
         assert!(properties.contains_key("hooks"));
+        assert!(properties.contains_key("instructions"));
         assert!(properties.contains_key("skills"));
         assert!(properties.contains_key("lsp"));
         assert!(properties.contains_key("integrations"));

@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -116,6 +117,42 @@ fn default_interactive_system_prompt(profile_name: &str, description: &str) -> S
     format!("You are the {profile_name} agent. {description}")
 }
 
+fn configured_system_prompt(
+    cfg: &HarnessConfig,
+    profile_name: &str,
+    profile_cfg: &harness_core::config::ProfileConfig,
+) -> Result<String, String> {
+    let base_prompt = profile_cfg.system_prompt.clone().unwrap_or_else(|| {
+        default_interactive_system_prompt(profile_name, &profile_cfg.description)
+    });
+    append_instruction_files(&base_prompt, &cfg.instructions)
+}
+
+fn append_instruction_files(
+    base_prompt: &str,
+    instruction_paths: &[String],
+) -> Result<String, String> {
+    if instruction_paths.is_empty() {
+        return Ok(base_prompt.to_string());
+    }
+
+    let mut rendered = Vec::with_capacity(instruction_paths.len());
+    for instruction_path in instruction_paths {
+        let contents = fs::read_to_string(instruction_path).map_err(|err| {
+            format!("failed to read instruction file `{instruction_path}`: {err}")
+        })?;
+        rendered.push(format!(
+            "Instruction file `{instruction_path}`:\n{}",
+            contents.trim()
+        ));
+    }
+
+    Ok(format!(
+        "{base_prompt}\n\nAdditional instructions from config:\n\n{}",
+        rendered.join("\n\n")
+    ))
+}
+
 pub fn interactive_agent_profiles(
     cfg: &HarnessConfig,
 ) -> Result<BTreeMap<String, AgentProfile>, String> {
@@ -137,9 +174,7 @@ fn interactive_agent_profiles_with_extra_tools(
                 name: profile_name.clone(),
                 category: profile_name.clone(),
                 model_ref: profile_cfg.model_ref.clone(),
-                system_prompt: profile_cfg.system_prompt.clone().unwrap_or_else(|| {
-                    default_interactive_system_prompt(profile_name, &profile_cfg.description)
-                }),
+                system_prompt: configured_system_prompt(cfg, profile_name, profile_cfg)?,
                 max_iters: profile_cfg.max_iters,
                 temperature: profile_cfg.temperature,
                 tool_failure_mode: profile_cfg.tool_failure_mode,
@@ -199,9 +234,12 @@ fn interactive_plan_profiles(cfg: &HarnessConfig) -> BTreeMap<String, PlanProfil
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use harness_core::config::load_config_from_str;
 
     use super::*;
+    use tempfile::tempdir;
 
     fn config_fixture(agents: &str) -> HarnessConfig {
         let raw = format!(
@@ -346,6 +384,42 @@ mod tests {
             profiles["deep"].system_prompt,
             default_interactive_system_prompt("deep", "Default deep execution profile")
         );
+    }
+
+    #[test]
+    fn interactive_agents_append_instruction_files_to_system_prompt() {
+        let temp = tempdir().expect("tempdir");
+        let instruction_path = temp.path().join("instructions.md");
+        fs::write(
+            &instruction_path,
+            "Honor CONTRIBUTING.md before touching workspace files.",
+        )
+        .expect("write instruction file");
+
+        let cfg = config_fixture(
+            r#"
+            deep: {
+              description: "Default deep execution profile",
+              model: "default/gpt-5.4-mini",
+              prompt: "Start with a focused read-only pass.",
+              steps: 9,
+              permission: {
+                edit: "deny",
+                bash: { "*": "ask" }
+              },
+              tools: ["fs.read"],
+            },
+            "#,
+        );
+        let mut cfg = cfg;
+        cfg.instructions = vec![instruction_path.display().to_string()];
+
+        let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles");
+        let prompt = &profiles["deep"].system_prompt;
+        assert!(prompt.contains("Start with a focused read-only pass."));
+        assert!(prompt.contains("Additional instructions from config:"));
+        assert!(prompt.contains("Honor CONTRIBUTING.md before touching workspace files."));
+        assert_eq!(profiles["deep"].max_iters, 9);
     }
 
     #[test]

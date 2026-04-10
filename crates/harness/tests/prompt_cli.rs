@@ -272,6 +272,74 @@ async fn prompt_cli_model_variant_and_thinking_flags_stream_reasoning_output() {
 }
 
 #[tokio::test]
+async fn prompt_cli_appends_instruction_files_to_system_prompt() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .and(body_string_contains("Stay focused."))
+        .and(body_string_contains("Additional instructions from config:"))
+        .and(body_string_contains(
+            "Follow repo guidance before editing files.",
+        ))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    deterministic_responses_sse_transcript(),
+                    "text/event-stream",
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().expect("tempdir");
+    let instruction_path = temp.path().join("instructions.md");
+    fs::write(
+        &instruction_path,
+        "Follow repo guidance before editing files.",
+    )
+    .expect("write instruction file");
+
+    let config_path = temp.path().join("harness.instructions.jsonc");
+    let session_dir = temp.path().join("sessions");
+
+    let mut config: serde_json::Value = serde_json::from_str(&prompt_cli_config(
+        &format!("{}/v1", server.uri()),
+        &session_dir,
+        &[],
+    ))
+    .expect("prompt cli config should parse as json");
+    config["instructions"] =
+        serde_json::json!([instruction_path.to_str().expect("instruction path utf-8")]);
+    config["agents"]["deep"]["system_prompt"] =
+        serde_json::Value::String("Stay focused.".to_string());
+    fs::write(
+        &config_path,
+        serde_json::to_string_pretty(&config).expect("serialize config"),
+    )
+    .expect("write config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "prompt",
+            "--text",
+            "Hello",
+        ])
+        .output()
+        .expect("run harness prompt");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test]
 async fn prompt_cli_profile_reasoning_effort_applies_after_model_selection() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
