@@ -16,9 +16,9 @@
     ╭CallRequestedEvent { now "correlation_id": "req_tool_lifecycle",
     ╰tool_call_idt · model-1 ·"stream_key": "run:run_fixture",
 
-  ┃
-  ┃
-  ┃
-  ┃   Success   Current runtime: default · model-1 · provider mock
-  ┃
-  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+    ┃
+    ┃
+    ┃
+    ┃   Success   Current runtime: default · model-1 · provider mock
+    ┃
+    ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀

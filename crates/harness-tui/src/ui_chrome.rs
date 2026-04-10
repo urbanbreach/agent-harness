@@ -541,6 +541,18 @@ pub(super) fn control_dock_section(
     unified_bottom_dock(theme, variant)
 }
 
+fn control_dock_content_area(
+    area: Rect,
+    theme: &Theme,
+    variant: crate::view_model::ControlDockVariant,
+) -> Rect {
+    if variant == crate::view_model::ControlDockVariant::Live {
+        inset_rect(area, theme.live_shell.rhythm.transcript_gutter_x, 0)
+    } else {
+        area
+    }
+}
+
 pub(super) fn chromeless_shell_section(theme: &Theme) -> Block<'static> {
     live_transcript_shell_section(theme)
 }
@@ -947,11 +959,7 @@ fn render_document_composer_content(
     let surface = control_dock_surface(theme, context.dock.variant);
     let active_composer_surface = theme.token_families().semantic.composer.primary.surface;
     let composer_surface = active_composer_surface;
-    let prompt_area = if context.dock.variant == crate::view_model::ControlDockVariant::Live {
-        inset_rect(area, theme.live_shell.rhythm.transcript_gutter_x, 0)
-    } else {
-        area
-    };
+    let prompt_area = control_dock_content_area(area, theme, context.dock.variant);
     frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
 
     if prompt_area.width == 0 || prompt_area.height == 0 {
@@ -1884,11 +1892,7 @@ fn render_control_dock_disclosure(
 
     let surface = control_dock_surface(theme, dock.variant);
     let base = Style::default().bg(surface);
-    let content_area = if dock.variant == crate::view_model::ControlDockVariant::Live {
-        inset_rect(area, theme.live_shell.rhythm.transcript_gutter_x, 0)
-    } else {
-        area
-    };
+    let content_area = control_dock_content_area(area, theme, dock.variant);
 
     frame.render_widget(Block::default().style(base), area);
     if content_area.width == 0 || content_area.height == 0 {
@@ -2447,10 +2451,12 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
         .expect("draw live shell frame");
 
     let buffer = terminal.backend().buffer().clone();
-    let content = control_dock_content_area(dock.shell, &theme, crate::view_model::ControlDockVariant::Live);
-    let content_right_edge = content
-        .x
-        .saturating_add(content.width.saturating_sub(1));
+    let content = control_dock_content_area(
+        dock.shell,
+        &theme,
+        crate::view_model::ControlDockVariant::Live,
+    );
+    let content_right_edge = content.x.saturating_add(content.width.saturating_sub(1));
     let outer_right_edge = dock
         .shell
         .x
