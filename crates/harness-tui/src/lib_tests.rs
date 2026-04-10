@@ -4584,6 +4584,13 @@ fn module_quiet_overlay_helper_rows_use_semantic_chrome_palette() {
         theme.text.accent,
         theme.surface.panel_elevated,
     );
+    assert_row_segment_palette(
+        &palette_buffer,
+        width,
+        "7 matches",
+        theme.text.inverse,
+        theme.status.info,
+    );
 
     let mut sessions = app::AppState::new_startup(
         vec![exact_test_session_entry(
@@ -6202,7 +6209,7 @@ fn command_palette_filtered_results_preserve_group_order() {
     );
 
     let rendered = render_live_lines(&app, 120, 30);
-    let session_header = rendered.find("Session").expect("session section");
+    let session_header = rendered.find("SESSION · 4").expect("session section");
     let continue_session = rendered
         .find("Continue session")
         .expect("continue session command");
@@ -6903,10 +6910,10 @@ fn startup_palette_remains_secondary_and_draft_safe() {
     assert!(overlay_render.contains("Command palette"));
     assert!(overlay_render.contains("Continue session"));
     assert!(overlay_render.contains("Replay session"));
-    assert!(overlay_render.contains("Suggested"));
+    assert!(overlay_render.contains("SUGGESTED · 3"));
     let session_headers = overlay_render
         .lines()
-        .filter(|line| line.trim() == "Session")
+        .filter(|line| line.trim().starts_with("SESSION"))
         .count();
     assert_eq!(session_headers, 0, "{overlay_render}");
     let continue_session = overlay_render

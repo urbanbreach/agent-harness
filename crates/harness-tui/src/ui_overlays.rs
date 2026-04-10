@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::BTreeMap;
 
 pub(super) fn render_overlays(
     frame: &mut Frame,
@@ -37,11 +38,16 @@ fn render_command_palette_overlay(
     render_overlay_backdrop(frame, root, ui_chrome::quiet_modal_backdrop_surface(theme));
 
     let title = if app.session_history_visible {
-        session_history_overlay_title(app)
+        Line::from(Span::styled(
+            session_history_overlay_title(app),
+            Style::default()
+                .fg(theme.text.accent)
+                .add_modifier(Modifier::BOLD),
+        ))
     } else {
-        "Command palette".to_string()
+        command_palette_overlay_title(app, theme)
     };
-    let Some(inner) = render_overlay_surface(frame, theme, overlay, &title) else {
+    let Some(inner) = render_overlay_surface(frame, theme, overlay, title) else {
         return;
     };
 
@@ -149,7 +155,6 @@ fn render_command_palette_status(frame: &mut Frame, app: &AppState, theme: &Them
         return;
     }
 
-    let match_count = app.palette_filtered.len();
     let status = if app.palette_filtered.is_empty() {
         if app.palette_input.is_empty() {
             "No commands available".to_string()
@@ -161,10 +166,7 @@ fn render_command_palette_status(frame: &mut Frame, app: &AppState, theme: &Them
             )
         }
     } else {
-        format!(
-            "{match_count} match{} · ↑↓ move · Enter run · Esc close",
-            if match_count == 1 { "" } else { "es" },
-        )
+        "Type to filter · ↑↓ move · Enter run · Esc close".to_string()
     };
 
     frame.render_widget(
@@ -216,15 +218,23 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
             .saturating_add(u16::try_from(row - scroll).unwrap_or(u16::MAX));
         let row_area = Rect::new(area.x, row_y, area.width, 1);
         match palette_row {
-            PaletteOverlayRow::Section(section) => {
+            PaletteOverlayRow::Section { section, count } => {
                 frame.render_widget(
-                    Paragraph::new(Line::from(Span::styled(
-                        section.label(),
-                        Style::default()
-                            .fg(theme.text.accent)
-                            .bg(theme.surface.overlay)
-                            .add_modifier(Modifier::BOLD),
-                    ))),
+                    Paragraph::new(Line::from(vec![
+                        Span::styled(
+                            section.label().to_uppercase(),
+                            Style::default()
+                                .fg(theme.text.accent)
+                                .bg(theme.surface.overlay)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(
+                            format!(" · {count}"),
+                            Style::default()
+                                .fg(theme.text.tertiary)
+                                .bg(theme.surface.overlay),
+                        ),
+                    ])),
                     row_area,
                 );
             }
@@ -261,7 +271,10 @@ fn command_palette_search_scope() -> &'static str {
 }
 
 enum PaletteOverlayRow<'a> {
-    Section(crate::keybindings::PaletteCommandSection),
+    Section {
+        section: crate::keybindings::PaletteCommandSection,
+        count: usize,
+    },
     Command {
         command: &'a str,
         selected_index: usize,
@@ -271,12 +284,22 @@ enum PaletteOverlayRow<'a> {
 fn palette_overlay_rows(app: &AppState) -> Vec<PaletteOverlayRow<'_>> {
     let mut rows = Vec::new();
     let mut last_section = None;
+    let mut section_counts = BTreeMap::new();
+
+    for command in &app.palette_filtered {
+        if let Some(section) = app.palette_command_section_for_current_state(command.as_str()) {
+            *section_counts.entry(section).or_insert(0usize) += 1;
+        }
+    }
 
     for (selected_index, command) in app.palette_filtered.iter().enumerate() {
         let section = app.palette_command_section_for_current_state(command.as_str());
         if section != last_section {
             if let Some(section) = section {
-                rows.push(PaletteOverlayRow::Section(section));
+                rows.push(PaletteOverlayRow::Section {
+                    section,
+                    count: *section_counts.get(&section).unwrap_or(&0),
+                });
             }
             last_section = section;
         }
@@ -287,6 +310,24 @@ fn palette_overlay_rows(app: &AppState) -> Vec<PaletteOverlayRow<'_>> {
     }
 
     rows
+}
+
+fn command_palette_overlay_title(app: &AppState, theme: &Theme) -> Line<'static> {
+    let match_count = app.palette_filtered.len();
+    let badge = format!(
+        "{match_count} match{}",
+        if match_count == 1 { "" } else { "es" }
+    );
+    Line::from(vec![
+        Span::styled(
+            "Command palette".to_string(),
+            Style::default()
+                .fg(theme.text.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("  "),
+        ui_chrome::status_badge(badge, theme.status.info, theme),
+    ])
 }
 
 fn command_palette_row(
@@ -311,17 +352,30 @@ fn command_palette_row(
     let label_style = if is_selected {
         row_style.add_modifier(Modifier::BOLD)
     } else {
-        row_style.fg(theme.text.primary)
+        row_style
+            .fg(theme.text.primary)
+            .add_modifier(Modifier::BOLD)
     };
     let description_style = if is_selected {
         row_style
     } else {
         row_style.fg(theme.text.secondary)
     };
-    let shortcut_style = if is_selected {
-        row_style.add_modifier(Modifier::BOLD)
+    let separator_style = if is_selected {
+        row_style
     } else {
-        row_style.fg(theme.text.secondary)
+        row_style.fg(theme.text.tertiary)
+    };
+    let shortcut_style = if is_selected {
+        Style::default()
+            .fg(theme.text.inverse)
+            .bg(theme.surface.overlay)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(theme.text.primary)
+            .bg(theme.surface.panel_elevated)
+            .add_modifier(Modifier::BOLD)
     };
 
     let prefix = if is_selected { "› " } else { "  " };
@@ -330,7 +384,7 @@ fn command_palette_row(
     let reserved_shortcut = if shortcut.is_empty() {
         0
     } else {
-        shortcut.chars().count().saturating_add(2)
+        shortcut.chars().count().saturating_add(5)
     };
     let body_width = row_width.saturating_sub(reserved_shortcut);
 
@@ -338,11 +392,13 @@ fn command_palette_row(
     used_width = used_width.saturating_add(label.chars().count());
     spans.push(Span::styled(label, label_style));
 
-    let gap_width = 2;
+    let gap_width = 3;
     let available_description = body_width.saturating_sub(used_width.saturating_add(gap_width));
     let description = truncate_plain_text(description, available_description);
     if !description.is_empty() {
-        spans.push(Span::styled("  ", row_style));
+        spans.push(Span::styled(" ", row_style));
+        spans.push(Span::styled("•", separator_style));
+        spans.push(Span::styled(" ", row_style));
         used_width = used_width.saturating_add(gap_width);
         used_width = used_width.saturating_add(description.chars().count());
         spans.push(Span::styled(description, description_style));
@@ -353,8 +409,10 @@ fn command_palette_row(
     }
 
     if !shortcut.is_empty() {
-        spans.push(Span::styled("  ", row_style));
+        spans.push(Span::styled(" ", row_style));
+        spans.push(Span::styled(" ", shortcut_style));
         spans.push(Span::styled(shortcut.to_string(), shortcut_style));
+        spans.push(Span::styled(" ", shortcut_style));
     } else if is_selected && body_width < row_width {
         spans.push(Span::styled(" ".repeat(row_width - body_width), row_style));
     }
@@ -981,19 +1039,14 @@ fn render_overlay_surface(
     frame: &mut Frame,
     theme: &Theme,
     overlay: Rect,
-    title: &str,
+    title: Line<'static>,
 ) -> Option<Rect> {
     if overlay.width == 0 || overlay.height == 0 {
         return None;
     }
 
     let block = ui_chrome::elevated_card_block(
-        Line::from(Span::styled(
-            title.to_string(),
-            Style::default()
-                .fg(theme.text.accent)
-                .add_modifier(Modifier::BOLD),
-        )),
+        title,
         ui_chrome::elevated_card_surface(theme),
         theme.border.focus,
         theme.text.accent,

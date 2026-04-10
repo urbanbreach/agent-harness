@@ -7,15 +7,15 @@
 
 
 
-                 Command palette
+                 Command palette   7 matches
 
                    > █ Search commands, aliases, sections, or shortcuts
-                   7 matches · ↑↓ move · Enter run · Esc close
-                   Suggested
-                   › Continue session  Continue a prior session when resumable
-                     New session  Start a fresh live session
-                     Replay session  Replay a previous session as read-only
-                   Agent
-                     Switch model  Browse available provider/model optio…  /model
-                     Cycle reasoning preset  Cycle the configured model …  Ctrl+t
-                   System
+                   Type to filter · ↑↓ move · Enter run · Esc close
+                   SUGGESTED · 3
+                   › Continue session • Continue a prior session when resumable
+                     New session • Start a fresh live session
+                     Replay session • Replay a previous session as read-only
+                   AGENT · 2
+                     Switch model • Browse available provider/model o…  /model
+                     Cycle reasoning preset • Cycle the configured mo…  Ctrl+t
+                   SYSTEM · 2
