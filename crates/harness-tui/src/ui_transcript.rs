@@ -242,7 +242,7 @@ enum ParsedTextBlock {
 
 const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
 const TRANSCRIPT_SURFACE_BODY_PREFIX: &str = " ";
-const TRANSCRIPT_USER_BODY_PREFIX: &str = "  ";
+const TRANSCRIPT_USER_BODY_PREFIX: &str = "   ";
 const TRANSCRIPT_ASSISTANT_BODY_PREFIX: &str = "   ";
 const TRANSCRIPT_REASONING_BODY_PREFIX: &str = "  ";
 const TRANSCRIPT_NESTED_INDENT: &str = "  ";
@@ -2168,12 +2168,7 @@ fn build_user_render_surface(
 ) -> TranscriptRenderSurface {
     let surface = transcript_emphasized_surface(theme, base_surface);
     let content_width = transcript_surface_content_width(width, true);
-    let mut lines = vec![user_surface_line(
-        Vec::new(),
-        Style::default().fg(theme.text.primary),
-        content_width,
-        surface,
-    )];
+    let mut lines = Vec::new();
     append_user_surface_rich_text_block(
         &mut lines,
         &user_msg.text,
@@ -2188,9 +2183,16 @@ fn build_user_render_surface(
         content_width,
         surface,
     ));
+    decorate_card_surface_lines(
+        &mut lines,
+        theme,
+        theme.text.accent,
+        surface,
+        TRANSCRIPT_USER_BODY_PREFIX.chars().count(),
+    );
 
     TranscriptRenderSurface {
-        show_outer_rail: true,
+        show_outer_rail: false,
         rail_color: theme.text.accent,
         surface,
         lines,
@@ -2309,6 +2311,7 @@ fn build_assistant_part_render_surface(
             (true, theme.border.subtle, reasoning_surface)
         }
         TranscriptAssistantPart::Body(block) => {
+            let body_start = usize::from(prepend_gap);
             if prepend_gap {
                 lines.push(Line::default());
             }
@@ -2328,10 +2331,31 @@ fn build_assistant_part_render_surface(
                     TRANSCRIPT_ASSISTANT_BODY_PREFIX,
                 ),
             }
+            let body_surface = transcript_flat_surface(base_surface);
+            if append_footer {
+                lines.push(build_assistant_footer_line(
+                    turn,
+                    assistant_icon,
+                    assistant_color,
+                    assistant_status,
+                    theme,
+                ));
+            } else {
+                lines.push(Line::from(Span::raw(
+                    TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string(),
+                )));
+            }
+            decorate_card_surface_lines(
+                &mut lines[body_start..],
+                theme,
+                assistant_primary_rail_color(turn, theme),
+                body_surface,
+                TRANSCRIPT_ASSISTANT_BODY_PREFIX.chars().count(),
+            );
             (
                 false,
                 assistant_primary_rail_color(turn, theme),
-                transcript_flat_surface(base_surface),
+                body_surface,
             )
         }
         TranscriptAssistantPart::ToolCall(tool_call) => {
@@ -2365,7 +2389,7 @@ fn build_assistant_part_render_surface(
         }
     };
 
-    if append_footer {
+    if append_footer && !matches!(part, TranscriptAssistantPart::Body(_)) {
         lines.push(build_assistant_footer_line(
             turn,
             assistant_icon,
@@ -3893,6 +3917,91 @@ fn nested_surface_line(
     Line::from(prefix)
 }
 
+fn decorate_card_surface_lines(
+    lines: &mut [Line<'static>],
+    theme: &Theme,
+    rail_color: Color,
+    surface: Color,
+    prefix_width: usize,
+) {
+    let total = lines.len();
+    if total == 0 {
+        return;
+    }
+
+    for (index, line) in lines.iter_mut().enumerate() {
+        let prefix = if index == 0 {
+            card_surface_prefix(theme.live_shell.transcript_glyphs.card_top, prefix_width)
+        } else if index + 1 == total {
+            card_surface_prefix(theme.live_shell.transcript_glyphs.card_bottom, prefix_width)
+        } else {
+            card_surface_prefix(theme.live_shell.transcript_glyphs.card_mid, prefix_width)
+        };
+        line.spans = replace_leading_space_prefix(
+            std::mem::take(&mut line.spans),
+            prefix_width,
+            surface_span(prefix, Style::default().fg(rail_color), surface),
+        );
+    }
+}
+
+fn card_surface_prefix(glyph: &str, prefix_width: usize) -> String {
+    let glyph_width = glyph.chars().count();
+    if glyph_width >= prefix_width {
+        glyph.chars().take(prefix_width).collect()
+    } else {
+        format!(
+            "{glyph}{}",
+            " ".repeat(prefix_width.saturating_sub(glyph_width))
+        )
+    }
+}
+
+fn replace_leading_space_prefix(
+    spans: Vec<Span<'static>>,
+    prefix_width: usize,
+    prefix_span: Span<'static>,
+) -> Vec<Span<'static>> {
+    let mut remaining_prefix = prefix_width;
+    let mut replaced = vec![prefix_span];
+
+    for span in spans {
+        if remaining_prefix == 0 {
+            replaced.push(span);
+            continue;
+        }
+
+        let content = span.content.into_owned();
+        let mut chars = content.chars();
+        let mut consumed = 0usize;
+        while consumed < remaining_prefix {
+            match chars.next() {
+                Some(' ') => consumed += 1,
+                Some(other) => {
+                    let mut tail = String::new();
+                    tail.push(other);
+                    tail.extend(&mut chars);
+                    replaced.push(Span::styled(tail, span.style));
+                    remaining_prefix = 0;
+                    consumed = prefix_width;
+                    break;
+                }
+                None => break,
+            }
+        }
+
+        remaining_prefix = remaining_prefix.saturating_sub(consumed.min(remaining_prefix));
+        if remaining_prefix == 0 {
+            let tail: String = chars.collect();
+            if !tail.is_empty() {
+                replaced.push(Span::styled(tail, span.style));
+            }
+        }
+    }
+
+    replaced
+}
+
 fn wrap_surface_spans(spans: Vec<Span<'static>>, width: usize) -> Vec<Vec<Span<'static>>> {
     if spans.is_empty() {
         return Vec::new();
@@ -4252,6 +4361,91 @@ pub(crate) fn exact_test_transcript_reasoning_precedes_answer_and_tool_rows() {
     assert!(reasoning_row < answer_row);
     assert!(answer_row < tool_row);
     assert!(lines.iter().any(|line| line.contains("Thinking:")));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_top_level_turns_render_card_framed_chat_boxes() {
+    let mut app = AppState::default();
+    let mut activity = transcript_section_model_test_activity(
+        "request-card-frame",
+        ActivityStatus::Done,
+        "Transcript layout looks closer to target.",
+    );
+    activity.user_message = Some(harness_core::event::UserMessageSubmittedEvent {
+        request_id: "request-card-frame".to_string(),
+        text: "Restyle the transcript shell".to_string(),
+    });
+    activity.user_timestamp = Some("2026-03-22T14:35:00Z".to_string());
+    app.activities = std::collections::VecDeque::from(vec![activity]);
+
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        120,
+    ));
+
+    assert!(
+        lines.iter().any(|line| line
+            .trim_start()
+            .starts_with("╭─ Restyle the transcript shell")),
+        "user message should render inside a framed card\n{}",
+        lines.join("\n")
+    );
+    assert!(
+        lines.iter().any(|line| line
+            .trim_start()
+            .starts_with("╭─ Transcript layout looks closer to target.")),
+        "assistant reply should share the same top-level card framing\n{}",
+        lines.join("\n")
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.trim_start().starts_with("╰─ ● Assistant")),
+        "assistant footer should close the framed reply block\n{}",
+        lines.join("\n")
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_transcript_turns_keep_a_blank_row_between_top_level_cards() {
+    let mut app = AppState::default();
+    app.activities = std::collections::VecDeque::from(vec![
+        transcript_section_model_test_activity(
+            "request-gap-a",
+            ActivityStatus::Done,
+            "first reply",
+        ),
+        transcript_section_model_test_activity(
+            "request-gap-b",
+            ActivityStatus::Done,
+            "second reply",
+        ),
+    ]);
+
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ));
+    let first_turn_end = lines
+        .iter()
+        .position(|line| line.trim() == "╰─")
+        .expect("first turn closing edge");
+
+    assert_eq!(
+        lines.get(first_turn_end + 1).map(String::as_str),
+        Some(""),
+        "top-level turns should keep a blank separator row between cards\n{}",
+        lines.join("\n")
+    );
+    assert!(
+        lines
+            .get(first_turn_end + 2)
+            .is_some_and(|line| line.trim_start().starts_with("╭─ second reply")),
+        "the next turn should start with a new framed card after the separator\n{}",
+        lines.join("\n")
+    );
 }
 
 #[cfg(test)]
@@ -5575,8 +5769,8 @@ mod tests {
             80,
         ));
 
-        assert_eq!(lines[0], "   Waiting for response…");
-        assert_eq!(lines[1], "   ⠋ Assistant · gpt-5.4-mini · active");
+        assert_eq!(lines[0], "╭─ Waiting for response…");
+        assert_eq!(lines[1], "╰─ ⠋ Assistant · gpt-5.4-mini · active");
     }
 
     #[test]
@@ -5716,7 +5910,8 @@ mod tests {
         assert!(lines.iter().any(|line| line.contains("09:45")));
         assert!(lines
             .iter()
-            .any(|line| line == "   ● Assistant · gpt-5.4-mini · 0ms · 09:45"));
+            .any(|line| line == "╰─ ● Assistant · gpt-5.4-mini · 0ms · 09:45"));
+        assert!(lines.iter().any(|line| line == "╭─ hello"));
         assert!(lines.iter().any(|line| line.contains("hello")));
         assert!(lines.iter().any(|line| line.contains("reply")));
     }
@@ -5773,7 +5968,7 @@ mod tests {
             80,
         ));
 
-        assert_eq!(first[1], "   ⠋ Assistant · gpt-5.4-mini · active");
-        assert_eq!(second[1], "   ⠙ Assistant · gpt-5.4-mini · active");
+        assert_eq!(first[1], "╰─ ⠋ Assistant · gpt-5.4-mini · active");
+        assert_eq!(second[1], "╰─ ⠙ Assistant · gpt-5.4-mini · active");
     }
 }

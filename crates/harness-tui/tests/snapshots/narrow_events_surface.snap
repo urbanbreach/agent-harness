@@ -13,8 +13,8 @@
      dEvent { request_id      "kind": "system",
          3tderr: snapshot mism"agent_id": "pty-helper"
      ToolCallRequested(Tool   },
-     CallRequestedEvent { now "correlation_id": "req_tool_lifecycle",
-     tool_call_idt · model-1 ·"stream_key": "run:run_fixture",
+    ╭CallRequestedEvent { now "correlation_id": "req_tool_lifecycle",
+    ╰tool_call_idt · model-1 ·"stream_key": "run:run_fixture",
 
   ┃
   ┃

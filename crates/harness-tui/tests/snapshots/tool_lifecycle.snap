@@ -19,8 +19,8 @@
      ┃ exit code: 1
      ┃ stderr: snapshot mismatch
 
-     Tool summaries are now easier to scan, and edits stay inline.
-     ● Assistant · model-1 · 17ms
+  ╭─ Tool summaries are now easier to scan, and edits stay inline.
+  ╰─ ● Assistant · model-1 · 17ms
 
 ┃
 ┃

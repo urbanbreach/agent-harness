@@ -197,6 +197,7 @@ pub(crate) use ui_transcript::{
     exact_test_inline_tool_rows_wrap_long_subtitles_cleanly,
     exact_test_mcp_tool_transcript_rows_use_effective_identity_without_generic_fallback,
     exact_test_native_tool_transcript_rows_show_disclosure_timestamps_and_task_metadata,
+    exact_test_top_level_turns_render_card_framed_chat_boxes,
     exact_test_transcript_edit_tool_matches_opencode_inline_diff_shape,
     exact_test_transcript_follow_mode_uses_measured_surface_heights,
     exact_test_transcript_pending_permission_stays_after_last_activity,
@@ -207,6 +208,7 @@ pub(crate) use ui_transcript::{
     exact_test_transcript_section_model_preserves_activity_order,
     exact_test_transcript_task_rows_show_child_status_duration_and_counts,
     exact_test_transcript_tool_rows_follow_chronological_turn_order,
+    exact_test_transcript_turns_keep_a_blank_row_between_top_level_cards,
 };
 
 #[cfg(test)]
