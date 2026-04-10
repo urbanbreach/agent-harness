@@ -11,6 +11,16 @@ use wiremock::matchers::{body_string_contains, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn prompt_cli_config(base_url: &str, session_dir: &std::path::Path, tools: &[&str]) -> String {
+    prompt_cli_config_with_metadata(base_url, session_dir, tools, None, Some(true))
+}
+
+fn prompt_cli_config_with_metadata(
+    base_url: &str,
+    session_dir: &std::path::Path,
+    tools: &[&str],
+    supports_tool_calls: Option<bool>,
+    supports_reasoning_summaries: Option<bool>,
+) -> String {
     serde_json::json!({
         "providers": {
             "default": {
@@ -23,7 +33,8 @@ fn prompt_cli_config(base_url: &str, session_dir: &std::path::Path, tools: &[&st
                     "gpt-4o-mini": {
                         "display_name": "GPT-4o mini",
                         "metadata": {
-                            "supports_reasoning_summaries": true
+                            "supports_tool_calls": supports_tool_calls,
+                            "supports_reasoning_summaries": supports_reasoning_summaries
                         },
                         "variants": {
                             "low": {
@@ -1020,17 +1031,173 @@ async fn prompt_cli_executes_fs_grep_and_completes_turn() {
     assert!(events_body.contains("fixtures/notes.md:2: BETA match"));
 }
 
+#[tokio::test]
+async fn prompt_cli_omits_provider_tools_when_model_disables_tool_calls() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    tool_followup_text_sse_transcript(
+                        "Tool calls are unavailable for this model, so I answered directly.",
+                    ),
+                    "text/event-stream",
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().expect("tempdir");
+    fs::write(temp.path().join("tool-target.txt"), "alpha\nbeta\ngamma\n")
+        .expect("write tool target");
+
+    let output = run_prompt_with_metadata(
+        temp.path(),
+        &server,
+        &["fs.read"],
+        Some(false),
+        Some(true),
+        "Read tool-target.txt and summarize it.",
+    )
+    .await;
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let events_body = fs::read_to_string(temp.path().join("events.jsonl")).expect("read events");
+    assert!(!events_body.contains("\"event_type\":\"tool_call_requested\""));
+
+    let requests = server
+        .received_requests()
+        .await
+        .expect("request recording must be enabled");
+    assert_eq!(
+        requests.len(),
+        1,
+        "tool-disabled model should avoid the tool loop"
+    );
+
+    let request_body: serde_json::Value =
+        requests[0].body_json().expect("request body must be JSON");
+    assert!(
+        request_body.get("tools").is_none(),
+        "provider request should omit tools when tool calls degrade: {request_body}"
+    );
+}
+
+#[tokio::test]
+async fn prompt_cli_thinking_warns_and_omits_reasoning_summaries_when_model_disables_them() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    deterministic_responses_sse_transcript(),
+                    "text/event-stream",
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.reasoning-disabled.jsonc");
+    let session_dir = temp.path().join("sessions");
+
+    fs::write(
+        &config_path,
+        prompt_cli_config_with_metadata(
+            &format!("{}/v1", server.uri()),
+            &session_dir,
+            &[],
+            Some(true),
+            Some(false),
+        ),
+    )
+    .expect("write config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "prompt",
+            "--text",
+            "Hello",
+            "--model",
+            "default:gpt-4o-mini",
+            "--thinking",
+        ])
+        .output()
+        .expect("run harness prompt with degraded thinking");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("capability note: model `default:gpt-4o-mini`"));
+    assert!(stderr.contains("supports_reasoning_summaries: false"));
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Hello"));
+    assert!(
+        !stdout.contains("Thinking:"),
+        "visible thinking should stay disabled when summaries are unsupported: {stdout}"
+    );
+
+    let requests = server
+        .received_requests()
+        .await
+        .expect("request recording must be enabled");
+    assert_eq!(requests.len(), 1);
+    let request_body: serde_json::Value =
+        requests[0].body_json().expect("request body must be JSON");
+    assert!(
+        request_body.get("reasoning").is_none(),
+        "provider request should omit reasoning summaries when unsupported: {request_body}"
+    );
+}
+
 async fn run_prompt_with_single_tool(
     workspace_root: &std::path::Path,
     server: &MockServer,
     tools: &[&str],
     prompt_text: &str,
 ) -> std::process::Output {
+    run_prompt_with_metadata(workspace_root, server, tools, None, Some(true), prompt_text).await
+}
+
+async fn run_prompt_with_metadata(
+    workspace_root: &std::path::Path,
+    server: &MockServer,
+    tools: &[&str],
+    supports_tool_calls: Option<bool>,
+    supports_reasoning_summaries: Option<bool>,
+    prompt_text: &str,
+) -> std::process::Output {
     let config_path = workspace_root.join("harness.tool.jsonc");
     let session_dir = workspace_root.join("sessions");
     let out_path = workspace_root.join("events.jsonl");
 
-    let config = prompt_cli_config(&format!("{}/v1", server.uri()), &session_dir, tools);
+    let config = prompt_cli_config_with_metadata(
+        &format!("{}/v1", server.uri()),
+        &session_dir,
+        tools,
+        supports_tool_calls,
+        supports_reasoning_summaries,
+    );
 
     fs::write(&config_path, config).expect("write config");
 

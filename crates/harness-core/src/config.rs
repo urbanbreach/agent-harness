@@ -875,6 +875,8 @@ pub struct ResolvedProfileModelMetadata {
     pub reasoning_effort: Option<String>,
     pub text_verbosity: Option<String>,
     pub recommended_for: Option<String>,
+    pub capabilities: ResolvedModelCapabilities,
+    pub degraded_features: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -891,7 +893,15 @@ pub struct ResolvedModelCatalogEntry {
     pub reasoning_effort: Option<String>,
     pub text_verbosity: Option<String>,
     pub recommended_for: Option<String>,
-    pub supports_reasoning_summaries: bool,
+    pub capabilities: ResolvedModelCapabilities,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ResolvedModelCapabilities {
+    #[serde(default)]
+    pub supports_tool_calls: Option<bool>,
+    #[serde(default)]
+    pub supports_reasoning_summaries: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
@@ -2218,6 +2228,22 @@ pub fn registered_profile_model_metadata(profile: &str) -> Option<ResolvedProfil
     with_profile_model_metadata_registry(|registry| registry.get(profile).cloned())
 }
 
+pub fn profile_capability_notice_lines(cfg: &HarnessConfig) -> Result<Vec<String>, ConfigError> {
+    cfg.agents
+        .keys()
+        .map(|profile_name| {
+            let metadata = resolve_profile_model_metadata(cfg, profile_name)?;
+            let model_ref = format!("{}:{}", metadata.provider, metadata.model);
+            Ok(metadata
+                .degraded_features
+                .into_iter()
+                .filter_map(|feature| capability_notice_line(profile_name, &model_ref, &feature))
+                .collect::<Vec<_>>())
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(|lines| lines.into_iter().flatten().collect())
+}
+
 pub fn resolve_profile_model_metadata(
     cfg: &HarnessConfig,
     profile_name: &str,
@@ -2272,6 +2298,7 @@ pub fn resolve_profile_model_metadata(
         Ok((variant_name, variant))
     });
     let variant = variant.transpose()?;
+    let capabilities = resolve_model_capabilities(model);
 
     let display_label = build_model_display_label(model, variant);
     let max_input_tokens = variant
@@ -2280,6 +2307,17 @@ pub fn resolve_profile_model_metadata(
     let max_output_tokens = variant
         .and_then(|(_, variant_cfg)| variant_cfg.max_output_tokens)
         .or(model.max_output_tokens);
+    let reasoning_effort = profile_reasoning_effort_label(profile).or_else(|| {
+        variant.and_then(|(_, variant_cfg)| {
+            variant_cfg
+                .metadata
+                .reasoning_effort
+                .map(model_variant_reasoning_effort_label)
+                .map(str::to_string)
+        })
+    });
+    let degraded_features =
+        resolve_profile_degraded_features(profile, reasoning_effort.as_deref(), &capabilities);
 
     Ok(ResolvedProfileModelMetadata {
         profile: profile_name.to_string(),
@@ -2296,15 +2334,7 @@ pub fn resolve_profile_model_metadata(
         max_input_tokens,
         max_output_tokens,
         description: variant.and_then(|(_, variant_cfg)| variant_cfg.metadata.description.clone()),
-        reasoning_effort: profile_reasoning_effort_label(profile).or_else(|| {
-            variant.and_then(|(_, variant_cfg)| {
-                variant_cfg
-                    .metadata
-                    .reasoning_effort
-                    .map(model_variant_reasoning_effort_label)
-                    .map(str::to_string)
-            })
-        }),
+        reasoning_effort,
         text_verbosity: variant.and_then(|(_, variant_cfg)| {
             variant_cfg
                 .metadata
@@ -2314,6 +2344,8 @@ pub fn resolve_profile_model_metadata(
         }),
         recommended_for: variant
             .and_then(|(_, variant_cfg)| variant_cfg.metadata.recommended_for.clone()),
+        capabilities,
+        degraded_features,
     })
 }
 
@@ -2399,6 +2431,7 @@ fn build_resolved_model_catalog_entry(
     model: &ModelConfig,
     variant: Option<(&str, &ModelVariantConfig)>,
 ) -> ResolvedModelCatalogEntry {
+    let capabilities = resolve_model_capabilities(model);
     let max_input_tokens = variant
         .and_then(|(_, variant_cfg)| variant_cfg.max_input_tokens)
         .or(model.max_input_tokens);
@@ -2436,7 +2469,44 @@ fn build_resolved_model_catalog_entry(
         }),
         recommended_for: variant
             .and_then(|(_, variant_cfg)| variant_cfg.metadata.recommended_for.clone()),
-        supports_reasoning_summaries: model.metadata.supports_reasoning_summaries.unwrap_or(false),
+        capabilities,
+    }
+}
+
+fn resolve_model_capabilities(model: &ModelConfig) -> ResolvedModelCapabilities {
+    ResolvedModelCapabilities {
+        supports_tool_calls: model.metadata.supports_tool_calls,
+        supports_reasoning_summaries: model.metadata.supports_reasoning_summaries,
+    }
+}
+
+fn resolve_profile_degraded_features(
+    profile: &ProfileConfig,
+    reasoning_effort: Option<&str>,
+    capabilities: &ResolvedModelCapabilities,
+) -> Vec<String> {
+    let mut degraded = Vec::new();
+
+    if capabilities.supports_tool_calls == Some(false) && !profile.tools.is_empty() {
+        degraded.push("tool_calls".to_string());
+    }
+
+    if capabilities.supports_reasoning_summaries == Some(false) && reasoning_effort.is_some() {
+        degraded.push("reasoning_summaries".to_string());
+    }
+
+    degraded
+}
+
+fn capability_notice_line(profile_name: &str, model_ref: &str, feature: &str) -> Option<String> {
+    match feature {
+        "tool_calls" => Some(format!(
+            "agent `{profile_name}` will disable provider tool calls at runtime because model `{model_ref}` declares `supports_tool_calls: false`"
+        )),
+        "reasoning_summaries" => Some(format!(
+            "agent `{profile_name}` will disable reasoning summaries at runtime because model `{model_ref}` declares `supports_reasoning_summaries: false`"
+        )),
+        _ => None,
     }
 }
 

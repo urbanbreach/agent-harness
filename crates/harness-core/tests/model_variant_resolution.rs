@@ -139,3 +139,49 @@ fn profile_reasoning_effort_overrides_variant_reasoning_after_model_selection() 
     assert_eq!(metadata.reasoning_effort.as_deref(), Some("high"));
     assert_eq!(metadata.text_verbosity.as_deref(), Some("low"));
 }
+
+#[test]
+fn profile_metadata_marks_tool_calls_degraded_when_model_disables_them() {
+    let mut config = variant_test_config();
+    let harness_core::config::ProviderConfig::OpenAiCompatible(provider) =
+        config.providers.get_mut("default").unwrap();
+    provider
+        .models
+        .get_mut("gpt-5.4-mini")
+        .unwrap()
+        .metadata
+        .supports_tool_calls = Some(false);
+
+    let metadata = resolve_profile_model_metadata(&config, "deep")
+        .expect("metadata should resolve with degraded tool calls");
+
+    assert_eq!(metadata.capabilities.supports_tool_calls, Some(false));
+    assert_eq!(metadata.degraded_features, vec!["tool_calls".to_string()]);
+}
+
+#[test]
+fn profile_metadata_marks_reasoning_summaries_degraded_when_model_disables_them() {
+    let mut config = variant_test_config();
+    config.agents.get_mut("deep").unwrap().reasoning_effort =
+        Some(harness_core::config::ModelVariantReasoningEffort::High);
+    let harness_core::config::ProviderConfig::OpenAiCompatible(provider) =
+        config.providers.get_mut("default").unwrap();
+    provider
+        .models
+        .get_mut("gpt-5.4-mini")
+        .unwrap()
+        .metadata
+        .supports_reasoning_summaries = Some(false);
+
+    let metadata = resolve_profile_model_metadata(&config, "deep")
+        .expect("metadata should resolve with degraded reasoning summaries");
+
+    assert_eq!(
+        metadata.capabilities.supports_reasoning_summaries,
+        Some(false)
+    );
+    assert_eq!(
+        metadata.degraded_features,
+        vec!["reasoning_summaries".to_string()]
+    );
+}

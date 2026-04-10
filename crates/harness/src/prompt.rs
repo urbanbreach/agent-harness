@@ -289,6 +289,12 @@ async fn run_prompt(
         .await
         .map_err(|err| err.to_string())?;
 
+    if let Some(model_override) = &model_override {
+        for notice in &model_override.notices {
+            eprintln!("{notice}");
+        }
+    }
+
     let request_id = match model_override {
         Some(model_override) => {
             coordinator
@@ -404,6 +410,11 @@ async fn run_resumed_prompt(
     }
 
     let model_override = resolve_prompt_model_override(cmd, settings, &resume_profile)?;
+    if let Some(model_override) = &model_override {
+        for notice in &model_override.notices {
+            eprintln!("{notice}");
+        }
+    }
     let request_id = match model_override {
         Some(model_override) => {
             coordinator
@@ -549,6 +560,7 @@ async fn wait_for_prompt_completion_with_output(
 struct PromptModelOverride {
     model_ref: Option<String>,
     model_settings: AgentModelSettings,
+    notices: Vec<String>,
 }
 
 fn resolve_prompt_model_override(
@@ -562,14 +574,15 @@ fn resolve_prompt_model_override(
 
     let mut model_settings = default_model_settings_for_profile(profile_name);
     let mut model_ref_override = None;
+    let mut notices = Vec::new();
 
     if let Some(config) = settings.logging_config.as_ref() {
+        let profile = config.agents.get(profile_name).ok_or_else(|| {
+            format!("unknown agent `{profile_name}` while resolving prompt model override")
+        })?;
         let (provider, model) = if let Some(model_ref) = cmd.model.as_deref() {
             parse_cli_model_ref(model_ref)?
         } else {
-            let profile = config.agents.get(profile_name).ok_or_else(|| {
-                format!("unknown agent `{profile_name}` while resolving prompt model override")
-            })?;
             parse_cli_model_ref(&profile.model_ref)?
         };
 
@@ -581,23 +594,40 @@ fn resolve_prompt_model_override(
             .get(profile_name)
             .and_then(profile_reasoning_effort_label)
             .or_else(|| resolved.reasoning_effort.clone());
+        let model_ref = format!("{}:{}", resolved.provider, resolved.model);
 
         model_settings.variant = resolved.variant.clone();
         model_settings.reasoning_effort = reasoning_effort;
         model_settings.text_verbosity = resolved.text_verbosity.clone();
+        model_settings.capabilities = resolved.capabilities.clone();
         model_settings.reasoning_summary =
-            if resolved.supports_reasoning_summaries && model_settings.reasoning_effort.is_some() {
+            if model_settings.capabilities.supports_reasoning_summaries == Some(false) {
+                None
+            } else if model_settings.reasoning_effort.is_some() {
                 Some("auto".to_string())
             } else {
                 None
             };
 
-        if cmd.thinking && model_settings.reasoning_summary.is_none() {
+        if cmd.thinking
+            && model_settings.capabilities.supports_reasoning_summaries != Some(false)
+            && model_settings.reasoning_summary.is_none()
+        {
             model_settings.reasoning_summary = Some("auto".to_string());
+        }
+        if resolved.capabilities.supports_tool_calls == Some(false) && !profile.tools.is_empty() {
+            notices.push(format!(
+                "capability note: model `{model_ref}` declares `supports_tool_calls: false`; continuing without provider tool calls for agent `{profile_name}`"
+            ));
+        }
+        if cmd.thinking && resolved.capabilities.supports_reasoning_summaries == Some(false) {
+            notices.push(format!(
+                "capability note: model `{model_ref}` declares `supports_reasoning_summaries: false`; continuing without visible thinking summaries"
+            ));
         }
 
         if cmd.model.is_some() || cmd.variant.is_some() || cmd.thinking {
-            model_ref_override = Some(format!("{}:{}", resolved.provider, resolved.model));
+            model_ref_override = Some(model_ref);
         }
     } else {
         if let Some(model_ref) = cmd.model.as_deref() {
@@ -615,6 +645,7 @@ fn resolve_prompt_model_override(
     Ok(Some(PromptModelOverride {
         model_ref: model_ref_override,
         model_settings,
+        notices,
     }))
 }
 

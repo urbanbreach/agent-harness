@@ -8,7 +8,8 @@ use std::{path::PathBuf, process::ExitCode};
 
 use clap::{Args, Parser, Subcommand};
 use harness_core::config::{
-    harness_schema_pretty_json, load_config_from_file, resolve_config_path,
+    harness_schema_pretty_json, load_config_from_file, profile_capability_notice_lines,
+    resolve_config_path,
 };
 
 mod bootstrap;
@@ -148,6 +149,16 @@ fn main() -> ExitCode {
                     Ok(mut config) => {
                         config.apply_session_dir_override(session_dir);
                         println!("config valid: {}", config_path.display());
+                        let notices = match profile_capability_notice_lines(&config) {
+                            Ok(notices) => notices,
+                            Err(err) => {
+                                eprintln!("config validation failed: {err}");
+                                return ExitCode::from(1);
+                            }
+                        };
+                        for notice in notices {
+                            println!("capability note: {notice}");
+                        }
                         ExitCode::SUCCESS
                     }
                     Err(err) => {

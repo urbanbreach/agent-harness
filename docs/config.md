@@ -75,6 +75,15 @@ Profiles can also pin a reasoning preset with `reasoning_effort`:
 - the harness applies that preset after model selection, so the configured reasoning behavior stays predictable when a profile switches models
 - configured variant metadata can still supply model-specific defaults, but an explicit profile `reasoning_effort` wins when both are set
 
+## Provider capability metadata
+
+Model metadata can also declare capability flags that keep unsupported features from failing late:
+
+- `providers.<provider>.models.<model>.metadata.supports_tool_calls: false` tells the runtime to omit provider tool definitions for agents using that model, while `harness config validate` reports the degradation up front.
+- `providers.<provider>.models.<model>.metadata.supports_reasoning_summaries: false` tells the runtime to omit visible reasoning summaries for that model, while `harness config validate` reports the degradation when the selected agent pins a reasoning preset.
+
+Missing capability flags stay non-binding: the harness only degrades these features when the config explicitly sets the flag to `false`.
+
 ## Other shipped settings that matter to the Plan/Build path
 
 ### `permissions`

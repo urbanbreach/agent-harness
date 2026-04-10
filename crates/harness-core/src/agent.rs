@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio_stream::StreamExt;
 
-use crate::config::{registered_profile_model_metadata, ToolFailureMode};
+use crate::config::{
+    registered_profile_model_metadata, ResolvedModelCapabilities, ToolFailureMode,
+};
 use crate::tool::{
     build_tool_function_name_mapping, resolve_tool_ids_for_surface, ToolRegistry, ToolResult,
     ToolSurface,
@@ -73,6 +75,8 @@ pub struct AgentModelSettings {
     pub text_verbosity: Option<String>,
     #[serde(default)]
     pub reasoning_summary: Option<String>,
+    #[serde(default)]
+    pub capabilities: ResolvedModelCapabilities,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -276,7 +280,10 @@ where
 
     let model = AgentModelRef::parse(&request.model_ref);
     let tool_defs = match build_provider_tool_defs(profile, tool_registry.as_ref()) {
-        Ok(tool_defs) => tool_defs,
+        Ok(tool_defs) if request.model_settings.capabilities.supports_tool_calls != Some(false) => {
+            tool_defs
+        }
+        Ok(_) => Vec::new(),
         Err(reason) => return AgentTurnOutcome::Failed { reason },
     };
 
@@ -621,7 +628,16 @@ fn build_completion_request(
         reasoning_effort,
         text_verbosity,
         reasoning_summary,
+        capabilities,
     } = model_settings;
+    let reasoning_summary = if capabilities.supports_reasoning_summaries == Some(false) {
+        None
+    } else {
+        reasoning_summary
+    };
+    let supports_tool_calls = capabilities.supports_tool_calls != Some(false);
+    let tools = supports_tool_calls.then_some(tools).flatten();
+    let tool_choice = tools.as_ref().and(tool_choice);
 
     CompletionRequest {
         provider_id,
@@ -648,10 +664,11 @@ pub fn default_model_settings_for_profile(profile_name: &str) -> AgentModelSetti
         variant: metadata.variant,
         reasoning_effort: metadata.reasoning_effort.clone(),
         text_verbosity: metadata.text_verbosity,
-        reasoning_summary: metadata
-            .reasoning_effort
-            .as_ref()
-            .map(|_| "auto".to_string()),
+        reasoning_summary: metadata.reasoning_effort.as_ref().and_then(|_| {
+            (metadata.capabilities.supports_reasoning_summaries != Some(false))
+                .then(|| "auto".to_string())
+        }),
+        capabilities: metadata.capabilities,
     }
 }
 

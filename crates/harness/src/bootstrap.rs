@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use harness_core::agent::AgentProfile;
 use harness_core::config::{
-    load_config_from_file, refresh_profile_model_metadata_registry, HarnessConfig,
-    OpenAiApiMode as CoreOpenAiApiMode, ProviderConfig,
+    load_config_from_file, refresh_profile_model_metadata_registry, resolve_profile_model_metadata,
+    HarnessConfig, OpenAiApiMode as CoreOpenAiApiMode, ProviderConfig,
 };
 use harness_core::coord::{CoordinatorConfig, PlanProfileConfig};
 use harness_core::perm::PermissionPolicy;
@@ -117,15 +117,47 @@ fn default_interactive_system_prompt(profile_name: &str, description: &str) -> S
     format!("You are the {profile_name} agent. {description}")
 }
 
+fn append_capability_notes(system_prompt: String, degraded_features: &[String]) -> String {
+    let mut notes = Vec::new();
+
+    if degraded_features
+        .iter()
+        .any(|feature| feature == "tool_calls")
+    {
+        notes.push(
+            "Capability note: this model declares `supports_tool_calls: false`, so runtime tool calls are disabled for this profile. Answer directly without attempting tool invocations."
+                .to_string(),
+        );
+    }
+
+    if degraded_features
+        .iter()
+        .any(|feature| feature == "reasoning_summaries")
+    {
+        notes.push(
+            "Capability note: this model declares `supports_reasoning_summaries: false`, so visible thinking summaries are unavailable for this profile."
+                .to_string(),
+        );
+    }
+
+    if notes.is_empty() {
+        system_prompt
+    } else {
+        format!("{system_prompt}\n\n{}", notes.join("\n"))
+    }
+}
+
 fn configured_system_prompt(
     cfg: &HarnessConfig,
     profile_name: &str,
     profile_cfg: &harness_core::config::ProfileConfig,
+    degraded_features: &[String],
 ) -> Result<String, String> {
     let base_prompt = profile_cfg.system_prompt.clone().unwrap_or_else(|| {
         default_interactive_system_prompt(profile_name, &profile_cfg.description)
     });
     append_instruction_files(&base_prompt, &cfg.instructions)
+        .map(|prompt| append_capability_notes(prompt, degraded_features))
 }
 
 fn append_instruction_files(
@@ -168,13 +200,20 @@ fn interactive_agent_profiles_with_extra_tools(
     let mut profiles = BTreeMap::new();
 
     for (profile_name, profile_cfg) in &cfg.agents {
+        let metadata =
+            resolve_profile_model_metadata(cfg, profile_name).map_err(|err| err.to_string())?;
         profiles.insert(
             profile_name.clone(),
             AgentProfile {
                 name: profile_name.clone(),
                 category: profile_name.clone(),
                 model_ref: profile_cfg.model_ref.clone(),
-                system_prompt: configured_system_prompt(cfg, profile_name, profile_cfg)?,
+                system_prompt: configured_system_prompt(
+                    cfg,
+                    profile_name,
+                    profile_cfg,
+                    &metadata.degraded_features,
+                )?,
                 max_iters: profile_cfg.max_iters,
                 temperature: profile_cfg.temperature,
                 tool_failure_mode: profile_cfg.tool_failure_mode,

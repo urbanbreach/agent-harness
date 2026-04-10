@@ -569,6 +569,7 @@ fn launch_metadata_model_settings(launch_metadata: &LaunchMetadata) -> AgentMode
         reasoning_summary: launch_metadata
             .reasoning_effort()
             .map(|_| "auto".to_string()),
+        capabilities: Default::default(),
     }
 }
 

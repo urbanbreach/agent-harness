@@ -478,6 +478,62 @@ fn config_validate_cli_accepts_rich_parity_config() {
 }
 
 #[test]
+fn config_validate_cli_reports_tool_call_degradation_when_model_disables_it() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("tool-call-degradation.jsonc");
+    let mut config = rich_parity_config_value(&temp.path().join("sessions"));
+    config["providers"]["default"]["models"]["gpt-5.4-mini"]["metadata"]["supports_tool_calls"] =
+        serde_json::Value::Bool(false);
+    config["agents"]["deep"]["tools"] = serde_json::json!(["fs.read"]);
+    write_config(&config_path, &config);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "config",
+            "validate",
+        ])
+        .output()
+        .expect("run harness config validate with tool-call degradation");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("config valid:"));
+    assert!(stdout.contains("capability note:"));
+    assert!(stdout.contains("supports_tool_calls: false"));
+    assert!(stdout.contains("agent `deep`"));
+}
+
+#[test]
+fn config_validate_cli_reports_reasoning_summary_degradation_when_model_disables_it() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("reasoning-summary-degradation.jsonc");
+    let mut config = rich_parity_config_value(&temp.path().join("sessions"));
+    config["providers"]["default"]["models"]["gpt-5.4-mini"]["metadata"]
+        ["supports_reasoning_summaries"] = serde_json::Value::Bool(false);
+    config["agents"]["deep"]["reasoning_effort"] = serde_json::Value::String("high".to_string());
+    write_config(&config_path, &config);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "config",
+            "validate",
+        ])
+        .output()
+        .expect("run harness config validate with reasoning summary degradation");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("config valid:"));
+    assert!(stdout.contains("capability note:"));
+    assert!(stdout.contains("supports_reasoning_summaries: false"));
+    assert!(stdout.contains("agent `deep`"));
+}
+
+#[test]
 fn config_validate_cli_accepts_gpt_5_4_mini_defaults() {
     let temp = tempdir().expect("tempdir");
     let config_path = temp.path().join("harness.gpt-5.4-mini.jsonc");
