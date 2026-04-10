@@ -890,6 +890,7 @@ fn command_palette_groups_commands_like_opencode() {
     let filtered = render_live_lines(&live_app, 120, 30);
     assert!(filtered.contains("Command palette"));
     assert!(filtered.contains("Toggle follow"));
+    assert!(filtered.contains("1 match"));
 
     let mut system_app = app::AppState::new_startup(Vec::new(), None);
     system_app.handle_key(key_with_modifiers(
@@ -5873,6 +5874,8 @@ fn command_palette_renders_and_filters() {
     let open_debug = render_live_screen(&app, 120, 36);
     assert!(open_debug.contains("Command palette"));
     assert!(open_debug.contains("New session"));
+    assert!(open_debug.contains("13 matches"));
+    assert!(open_debug.contains("Search commands, sections, or shortcuts"));
 
     app.handle_key(key(crossterm::event::KeyCode::Char('n')));
 
@@ -5883,6 +5886,7 @@ fn command_palette_renders_and_filters() {
     let filtered_debug = render_live_screen(&app, 120, 36);
     assert!(filtered_debug.contains("Command palette"));
     assert!(filtered_debug.contains("Start a fresh live session"));
+    assert!(filtered_debug.contains("1 match"));
     assert!(!filtered_debug.contains("Review diff artifact"));
 }
 
@@ -5903,7 +5907,64 @@ fn command_palette_empty_state_renders() {
     let debug = render_live_screen(&app, 100, 24);
     println!("EMPTY\n{debug}");
     assert!(debug.contains("Command palette"));
-    assert!(debug.contains("No commands"));
+    assert!(debug.contains("No commands match this filter"));
+    assert!(debug.contains("No matches for \"z\""));
+}
+
+#[cfg(test)]
+#[test]
+fn command_palette_matches_shortcuts() {
+    let mut app = app::AppState::new_live(None, false, None);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "ctrl+t".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+
+    assert_eq!(app.palette_filtered, vec!["cycle_variant".to_string()]);
+
+    let rendered = render_live_lines(&app, 120, 30);
+    assert!(rendered.contains("Cycle reasoning preset"));
+}
+
+#[cfg(test)]
+#[test]
+fn command_palette_filtered_results_preserve_group_order() {
+    let mut app = app::AppState::new_live(None, false, None);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "session".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+
+    assert_eq!(
+        app.palette_filtered,
+        vec![
+            "resume_session".to_string(),
+            "replay_session".to_string(),
+            "open_event_log".to_string(),
+        ]
+    );
+
+    let rendered = render_live_lines(&app, 120, 30);
+    let session_header = rendered.find("Session").expect("session section");
+    let continue_session = rendered
+        .find("Continue session")
+        .expect("continue session command");
+    let replay_session = rendered
+        .find("Replay session")
+        .expect("replay session command");
+    let event_log = rendered.find("Event log").expect("event log command");
+    assert!(session_header < continue_session);
+    assert!(continue_session < replay_session);
+    assert!(replay_session < event_log);
+    assert!(!rendered.contains("Suggested"));
 }
 
 #[cfg(test)]

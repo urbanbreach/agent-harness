@@ -966,7 +966,7 @@ fn command_palette_overlay_width(shell: LiveShellLayout, app: &AppState) -> u16 
 
 fn command_palette_overlay_height(app: &AppState) -> u16 {
     const OVERLAY_FRAME_ROWS: u16 = 2;
-    const MAX_LIST_ROWS: usize = 6;
+    const MAX_LIST_ROWS: usize = 8;
 
     let body_rows = if app.session_history_visible {
         let history_rows = app.session_history_filtered.len().clamp(1, MAX_LIST_ROWS);
@@ -987,7 +987,7 @@ fn command_palette_overlay_height(app: &AppState) -> u16 {
             .0
             .clamp(1, MAX_LIST_ROWS);
         let command_rows = u16::try_from(command_rows).unwrap_or(u16::MAX);
-        1u16.saturating_add(command_rows)
+        2u16.saturating_add(command_rows)
     };
 
     body_rows.saturating_add(OVERLAY_FRAME_ROWS)
@@ -1102,6 +1102,6 @@ mod tests {
         let shell = theme.live_shell_layout(100, 30);
 
         assert_eq!(overlay.width, shell.permission_modal_width);
-        assert_eq!(overlay.height, 9);
+        assert_eq!(overlay.height, 12);
     }
 }

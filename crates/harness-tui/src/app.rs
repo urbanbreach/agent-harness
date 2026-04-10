@@ -4928,8 +4928,15 @@ impl AppState {
     }
 
     fn update_palette_filter(&mut self) {
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+        enum PaletteMatchBucket {
+            Prefix,
+            Contains,
+            Description,
+        }
+
         let input = self.palette_input.to_lowercase();
-        let filtered = self
+        let mut filtered = self
             .palette_commands()
             .iter()
             .enumerate()
@@ -4939,37 +4946,45 @@ impl AppState {
                 let id = palette_command.id.to_lowercase();
                 let description = palette_command.description.to_lowercase();
                 let section = palette_command.section.label().to_lowercase();
-                let prefix_match = input.is_empty()
+                let shortcut = palette_command.shortcut.to_lowercase();
+                let match_bucket = if input.is_empty()
                     || label.starts_with(&input)
                     || id.starts_with(&input)
-                    || section.starts_with(&input);
-                let contains_match = prefix_match
-                    || label.contains(&input)
+                    || shortcut.starts_with(&input)
+                    || section.starts_with(&input)
+                {
+                    Some(PaletteMatchBucket::Prefix)
+                } else if label.contains(&input)
                     || id.contains(&input)
-                    || description.contains(&input)
-                    || section.contains(&input);
-                contains_match.then_some((
-                    prefix_match,
-                    palette_command.section,
-                    index,
-                    palette_command.id.to_string(),
-                ))
+                    || shortcut.contains(&input)
+                    || section.contains(&input)
+                {
+                    Some(PaletteMatchBucket::Contains)
+                } else if description.contains(&input) {
+                    Some(PaletteMatchBucket::Description)
+                } else {
+                    None
+                };
+                match_bucket.map(|bucket| {
+                    (
+                        bucket,
+                        palette_command.section,
+                        index,
+                        palette_command.id.to_string(),
+                    )
+                })
             })
             .collect::<Vec<_>>();
-        let has_prefix_matches = filtered.iter().any(|(prefix_match, _, _, _)| *prefix_match);
-        let mut filtered = filtered
-            .into_iter()
-            .filter(|(prefix_match, _, _, _)| !has_prefix_matches || *prefix_match)
-            .collect::<Vec<_>>();
+        let best_bucket = filtered.iter().map(|(bucket, _, _, _)| *bucket).min();
+        if let Some(best_bucket) = best_bucket {
+            filtered.retain(|(bucket, _, _, _)| *bucket == best_bucket);
+        }
         filtered.sort_by(|left, right| {
-            if input.is_empty() {
-                left.1
-                    .cmp(&right.1)
-                    .then_with(|| left.2.cmp(&right.2))
-                    .then_with(|| left.3.cmp(&right.3))
-            } else {
-                left.3.cmp(&right.3)
-            }
+            left.0
+                .cmp(&right.0)
+                .then_with(|| left.1.cmp(&right.1))
+                .then_with(|| left.2.cmp(&right.2))
+                .then_with(|| left.3.cmp(&right.3))
         });
         self.palette_filtered = filtered
             .into_iter()

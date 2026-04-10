@@ -52,11 +52,16 @@ fn render_command_palette_overlay(
     } else {
         let sections = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Min(0)])
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Min(0),
+            ])
             .split(inner);
 
         render_command_palette_input(frame, app, theme, sections[0]);
-        render_command_palette_list(frame, app, theme, sections[1]);
+        render_command_palette_status(frame, app, theme, sections[1]);
+        render_command_palette_list(frame, app, theme, sections[2]);
     }
 }
 
@@ -113,13 +118,18 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
 
     frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
 
-    let mut input = app.palette_input.clone();
-    let cursor_byte = input
-        .char_indices()
-        .nth(app.palette_cursor)
-        .map(|(index, _)| index)
-        .unwrap_or(input.len());
-    input.insert(cursor_byte, '█');
+    let input = if app.palette_input.is_empty() {
+        format!("█ Search {}", command_palette_search_scope())
+    } else {
+        let mut input = app.palette_input.clone();
+        let cursor_byte = input
+            .char_indices()
+            .nth(app.palette_cursor)
+            .map(|(index, _)| index)
+            .unwrap_or(input.len());
+        input.insert(cursor_byte, '█');
+        input
+    };
 
     let line = Line::from(vec![
         Span::styled(
@@ -134,15 +144,55 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
     frame.render_widget(Paragraph::new(line), area);
 }
 
+fn render_command_palette_status(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let match_count = app.palette_filtered.len();
+    let status = if app.palette_filtered.is_empty() {
+        if app.palette_input.is_empty() {
+            "No commands available".to_string()
+        } else {
+            format!(
+                "No matches for \"{}\" · try {}",
+                app.palette_input,
+                command_palette_search_scope()
+            )
+        }
+    } else {
+        format!(
+            "{match_count} match{} · type {} · Enter run · Esc close",
+            if match_count == 1 { "" } else { "es" },
+            command_palette_search_scope()
+        )
+    };
+
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            truncate_plain_text(&status, usize::from(area.width)),
+            Style::default()
+                .fg(theme.text.secondary)
+                .bg(theme.surface.overlay),
+        ))),
+        area,
+    );
+}
+
 fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
     if area.width == 0 || area.height == 0 {
         return;
     }
 
     if app.palette_filtered.is_empty() {
+        let empty = if app.palette_input.is_empty() {
+            "No commands available right now."
+        } else {
+            "No commands match this filter — try name, section, or shortcut."
+        };
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
-                "No commands",
+                truncate_plain_text(empty, usize::from(area.width)),
                 Style::default().fg(theme.text.secondary),
             ))),
             area,
@@ -205,6 +255,10 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
             }
         }
     }
+}
+
+fn command_palette_search_scope() -> &'static str {
+    "commands, sections, or shortcuts"
 }
 
 enum PaletteOverlayRow<'a> {
