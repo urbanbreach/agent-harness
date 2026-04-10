@@ -109,7 +109,7 @@ fn transcript_turn_sections_render_card_framed_surfaces() {
     assert!(
         assistant_footer_bgs[assistant_footer_column..assistant_footer_column + 9]
             .iter()
-            .all(|color| *color == theme.surface.shell)
+            .all(|color| *color == theme.surface.panel)
     );
     assert!(
         assistant_card - user_card <= 3,
@@ -161,6 +161,48 @@ fn transcript_turn_sections_render_card_framed_surfaces() {
 #[test]
 fn transcript_turn_sections_render_card_framed_semantics() {
     transcript_turn_sections_render_card_framed_surfaces();
+}
+
+#[cfg(test)]
+#[test]
+fn live_chat_box_edges_align_with_composer_band() {
+    for (width, height) in [(100, 24), (80, 24), (60, 18)] {
+        let mut app = app::AppState::new_live(None, false, None);
+        app.activities =
+            std::collections::VecDeque::from(vec![transcript_turn_group_test_activity(
+                "req_box_alignment",
+                app::ActivityStatus::Done,
+                Some("Tighten the chat shell"),
+                "Align the dock with the transcript cards",
+            )]);
+        app.selected_activity_index = 0;
+        app.prompt_buffer = "next turn".to_string();
+        app.prompt_cursor = app.prompt_buffer.chars().count();
+
+        let rendered = render_live_lines(&app, width, height);
+        let lines = rendered.lines().collect::<Vec<_>>();
+        let assistant_card =
+            find_line_containing(&lines, "╭─ Align the dock with the transcript cards")
+                .unwrap_or_else(|| panic!("assistant card line at {width}x{height}\n{rendered}"));
+        let disclosure_row = find_line_containing(&lines, "Context")
+            .unwrap_or_else(|| panic!("disclosure row at {width}x{height}\n{rendered}"));
+        let composer_row = find_line_containing_from(&lines, assistant_card + 1, "next turn")
+            .unwrap_or_else(|| panic!("composer input row at {width}x{height}\n{rendered}"));
+
+        let assistant_card_column = first_non_whitespace_column(lines[assistant_card]);
+        let disclosure_column = first_non_whitespace_column(lines[disclosure_row]);
+        let composer_column = first_alphanumeric_column(lines[composer_row]);
+
+        assert_eq!(
+            disclosure_column, assistant_card_column,
+            "under-input disclosure copy should align with the transcript card edge at {width}x{height}\n{rendered}"
+        );
+        assert_eq!(
+            composer_column,
+            assistant_card_column.saturating_add(3),
+            "composer input text should keep the dock rail inset while staying visually grouped with the transcript cards at {width}x{height}\n{rendered}"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -7643,7 +7685,7 @@ fn live_shell_orchestration_status_strip_snapshot() {
 
     insta::assert_snapshot!(
         status_row,
-        @"Context  ·  0 tokens                    Enter send  ·  Ctrl+p commands  ·  Shift+Enter/Ctrl+j newline  ·  ↑/↓ history"
+        @"Context  ·  0 tokens                Enter send  ·  Ctrl+p commands  ·  Shift+Enter/Ctrl+j newline  ·  ↑/↓ history"
     );
 }
 
@@ -8941,7 +8983,7 @@ fn first_non_whitespace_column(line: &str) -> usize {
 fn live_shell_composer_input_span(lines: &[&str]) -> (usize, usize, usize) {
     let composer_first_row = (0..lines.len())
         .find(|&index| composer_shell_line(lines[index]))
-        .expect("composer shell row");
+        .unwrap_or_else(|| panic!("composer shell row\n{}", lines.join("\n")));
     let composer_input_row = (composer_first_row..lines.len())
         .find(|&index| line_has_composer_text(lines[index]))
         .expect("composer input row");

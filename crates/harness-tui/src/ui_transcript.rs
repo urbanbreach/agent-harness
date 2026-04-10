@@ -2331,7 +2331,7 @@ fn build_assistant_part_render_surface(
                     TRANSCRIPT_ASSISTANT_BODY_PREFIX,
                 ),
             }
-            let body_surface = transcript_flat_surface(base_surface);
+            let body_surface = transcript_emphasized_surface(theme, base_surface);
             if append_footer {
                 lines.push(build_assistant_footer_line(
                     turn,
@@ -2418,7 +2418,7 @@ fn build_footer_only_render_surface(
     TranscriptRenderSurface {
         show_outer_rail: false,
         rail_color: assistant_primary_rail_color(turn, theme),
-        surface: transcript_flat_surface(base_surface),
+        surface: transcript_emphasized_surface(theme, base_surface),
         lines: vec![build_assistant_footer_line(
             turn,
             assistant_icon,

@@ -1,6 +1,5 @@
 ---
 source: crates/harness-tui/src/lib_tests.rs
-assertion_line: 6841
 expression: "completed_shell_render.lines().map(str::trim_end).collect::<Vec<_>>().join(\"\\n\")"
 ---
 
@@ -21,9 +20,9 @@ expression: "completed_shell_render.lines().map(str::trim_end).collect::<Vec<_>>
 
 
 
-            ┃
-            ┃  keep this draft
-            ┃
-            ┃   Ready   default · local/-
-            ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-            ready for first turn                Tab focus  ·  Ctrl+p commands  ·  q quit
+              ┃
+              ┃  keep this draft
+              ┃
+              ┃   Ready   default · local/-
+              ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+              ready for first turn            Tab focus  ·  Ctrl+p commands  ·  q quit

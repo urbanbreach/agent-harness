@@ -47,7 +47,7 @@ Secondary/supporting agents:
 - [ ] Show modified files in the sidebar like Opencode, show +/- and have the element be collapsible.
 - [ ] Clean up the area under the text input box in chat view so it is 1:1 with Opencode. Move Context data there like Opencode has it.
 - [ ] Make the chat layout look 1:1 with Opencode, need improvements/polish all over.
-- [ ] Make chat boxes and surrounding elements feel 1:1 with Opencode.
+- [x] Make chat boxes and surrounding elements feel 1:1 with Opencode.
 - [ ] Make thinking traces look exactly like Opencode.
 - [ ] Flesh out the commands menu.
 - [ ] Polish the commands menu UI to match the level of fit and finish seen in Opencode.

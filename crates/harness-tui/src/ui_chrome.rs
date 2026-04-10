@@ -947,7 +947,11 @@ fn render_document_composer_content(
     let surface = control_dock_surface(theme, context.dock.variant);
     let active_composer_surface = theme.token_families().semantic.composer.primary.surface;
     let composer_surface = active_composer_surface;
-    let prompt_area = area;
+    let prompt_area = if context.dock.variant == crate::view_model::ControlDockVariant::Live {
+        inset_rect(area, theme.live_shell.rhythm.transcript_gutter_x, 0)
+    } else {
+        area
+    };
     frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
 
     if prompt_area.width == 0 || prompt_area.height == 0 {
@@ -1880,15 +1884,25 @@ fn render_control_dock_disclosure(
 
     let surface = control_dock_surface(theme, dock.variant);
     let base = Style::default().bg(surface);
+    let content_area = if dock.variant == crate::view_model::ControlDockVariant::Live {
+        inset_rect(area, theme.live_shell.rhythm.transcript_gutter_x, 0)
+    } else {
+        area
+    };
 
     frame.render_widget(Block::default().style(base), area);
+    if content_area.width == 0 || content_area.height == 0 {
+        return;
+    }
     if dock.variant == crate::view_model::ControlDockVariant::Startup {
         let palette = app.keymap.get_binding_str(Action::Palette);
         let newline = composer_newline_binding_hint(app);
         let candidates = startup_disclosure_candidates(theme, surface, &palette, &newline);
         let spans = candidates
             .into_iter()
-            .find(|candidate| startup_disclosure_width(candidate) <= usize::from(area.width))
+            .find(|candidate| {
+                startup_disclosure_width(candidate) <= usize::from(content_area.width)
+            })
             .unwrap_or_else(|| {
                 vec![
                     Span::styled("  ", base),
@@ -1901,7 +1915,10 @@ fn render_control_dock_disclosure(
                     ),
                     Span::styled("  ", base),
                     Span::styled(
-                        truncate_plain_text(&palette, usize::from(area.width).saturating_sub(8)),
+                        truncate_plain_text(
+                            &palette,
+                            usize::from(content_area.width).saturating_sub(8),
+                        ),
                         Style::default()
                             .fg(theme.text.primary)
                             .bg(surface)
@@ -1909,13 +1926,13 @@ fn render_control_dock_disclosure(
                     ),
                 ]
             });
-        frame.render_widget(Paragraph::new(Line::from(spans)).style(base), area);
+        frame.render_widget(Paragraph::new(Line::from(spans)).style(base), content_area);
         return;
     }
 
     let mut hint_candidates = composer_disclosure_hint_candidates(app, dock, theme, surface);
     let summary_candidates = composer_disclosure_summary_candidates(app, dock, theme, surface);
-    let max_width = usize::from(area.width);
+    let max_width = usize::from(content_area.width);
 
     if !app.startup_shell_visible()
         && !app.completed_session_shell_active()
@@ -1955,7 +1972,7 @@ fn render_control_dock_disclosure(
                         Constraint::Min(0),
                         Constraint::Length(u16::try_from(hint_width).unwrap_or(u16::MAX)),
                     ])
-                    .split(area);
+                    .split(content_area);
                 if !summary_spans.is_empty() && columns[0].width > 0 {
                     frame.render_widget(
                         Paragraph::new(Line::from(summary_spans)).style(base),
@@ -2015,7 +2032,7 @@ fn render_control_dock_disclosure(
                 Constraint::Min(0),
                 Constraint::Length(u16::try_from(hint_width).unwrap_or(u16::MAX)),
             ])
-            .split(area);
+            .split(content_area);
         if !summary_spans.is_empty() && columns[0].width > 0 {
             frame.render_widget(
                 Paragraph::new(Line::from(summary_spans.to_vec())).style(base),
@@ -2034,7 +2051,10 @@ fn render_control_dock_disclosure(
     }
 
     if let Some(summary_spans) = summary_candidates.first().cloned() {
-        frame.render_widget(Paragraph::new(Line::from(summary_spans)).style(base), area);
+        frame.render_widget(
+            Paragraph::new(Line::from(summary_spans)).style(base),
+            content_area,
+        );
     }
 }
 
@@ -2427,35 +2447,43 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
         .expect("draw live shell frame");
 
     let buffer = terminal.backend().buffer().clone();
-    let right_edge = dock
+    let content = control_dock_content_area(dock.shell, &theme, crate::view_model::ControlDockVariant::Live);
+    let content_right_edge = content
+        .x
+        .saturating_add(content.width.saturating_sub(1));
+    let outer_right_edge = dock
         .shell
         .x
         .saturating_add(dock.shell.width.saturating_sub(1));
 
     assert_eq!(
-        buffer[(right_edge, composer.y)].bg,
+        buffer[(content_right_edge, composer.y)].bg,
         theme.surface.panel_elevated
     );
     assert_eq!(
         buffer[(
-            right_edge,
+            content_right_edge,
             composer.y.saturating_add(composer.height.saturating_sub(1))
         )]
             .bg,
         control_dock_surface(&theme, crate::view_model::ControlDockVariant::Live)
     );
     assert_eq!(
-        buffer[(right_edge, dock.shell.y)].bg,
+        buffer[(content_right_edge, dock.shell.y)].bg,
         theme.surface.panel_elevated
     );
     assert_ne!(
-        buffer[(right_edge, dock.shell.y)].symbol(),
+        buffer[(content_right_edge, dock.shell.y)].symbol(),
         "─",
         "quiet dock chrome should rely on surface spacing instead of a hard divider"
     );
     assert_eq!(
+        buffer[(outer_right_edge, dock.shell.y)].bg,
+        control_dock_surface(&theme, crate::view_model::ControlDockVariant::Live)
+    );
+    assert_eq!(
         buffer[(
-            right_edge,
+            content_right_edge,
             composer.y.saturating_add(composer.height.saturating_sub(1)),
         )]
             .bg,
