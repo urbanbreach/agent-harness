@@ -122,8 +122,8 @@ pub(crate) fn exact_test_replay_prompt_pane_is_visibly_read_only() {
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(debug.contains("Replay · read-only"));
     assert!(debug.contains("Context"));
-    assert!(debug.contains("▼ MCP"));
-    assert!(debug.contains("▼ LSP"));
+    assert!(debug.contains("MCP"));
+    assert!(debug.contains("LSP"));
     assert!(debug.contains("▼ Modified Files"));
     assert!(debug.contains("Replay is read-only"));
     assert!(!debug.contains("Type a prompt for the next turn"));
@@ -177,6 +177,7 @@ pub(crate) use ui_secondary::operator_sidebar_text_for_test;
 #[cfg(test)]
 pub(crate) use ui_secondary::orchestration_card_text_for_test;
 #[cfg(test)]
+#[allow(unused_imports)]
 pub(crate) use ui_secondary::{
     exact_test_operator_rail_low_activity_presentation_prefers_primary_stack,
     exact_test_operator_rail_sanitizes_control_chars_in_sidebar_strings,
@@ -232,6 +233,7 @@ pub(crate) fn exact_test_wheel_target_hits_transcript_when_hovered() {
 
 #[cfg(test)]
 pub(crate) fn exact_test_wheel_target_hits_inspector_inside_live_overlay() {
+    let _guard = ui_secondary::operator_sidebar_config_test_guard();
     harness_core::config::clear_registered_integrations_config();
     harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
 
@@ -251,6 +253,7 @@ pub(crate) fn exact_test_wheel_target_hits_inspector_inside_live_overlay() {
 
 #[cfg(test)]
 pub(crate) fn exact_test_wheel_target_excludes_activity_portion_of_live_overlay() {
+    let _guard = ui_secondary::operator_sidebar_config_test_guard();
     harness_core::config::clear_registered_integrations_config();
     harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
 
@@ -277,6 +280,7 @@ pub(crate) fn exact_test_wheel_target_excludes_activity_portion_of_live_overlay(
 
 #[cfg(test)]
 pub(crate) fn exact_test_compact_operator_rail_does_not_capture_wheel() {
+    let _guard = ui_secondary::operator_sidebar_config_test_guard();
     harness_core::config::clear_registered_integrations_config();
     harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
 
@@ -1366,8 +1370,8 @@ mod tests {
         assert!(sidebar_text.contains("Read the file"));
         assert!(sidebar_text.contains("Context"));
         assert!(sidebar_text.contains("0 tokens"));
-        assert!(sidebar_text.contains("▼ MCP"));
-        assert!(sidebar_text.contains("▼ LSP"));
+        assert!(sidebar_text.contains("MCP"));
+        assert!(sidebar_text.contains("LSP"));
         assert!(sidebar_text.contains("▼ Modified Files"));
     }
 
@@ -1430,8 +1434,8 @@ mod tests {
         let sidebar_text = super::ui_secondary::operator_sidebar_text_for_test(&app).join("\n");
         assert!(sidebar_text.contains("Context"));
         assert!(sidebar_text.contains("0 tokens"));
-        assert!(sidebar_text.contains("▼ MCP"));
-        assert!(sidebar_text.contains("▼ LSP"));
+        assert!(sidebar_text.contains("MCP"));
+        assert!(sidebar_text.contains("LSP"));
         assert!(sidebar_text.contains("▼ Modified Files"));
         assert!(sidebar_text.contains("No modified files"));
         assert!(!sidebar_text.contains("Permission context:"));

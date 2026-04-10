@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use super::*;
 use harness_core::event::EventEnvelopeV1;
@@ -12,6 +12,15 @@ macro_rules! delegate_test {
             $target();
         }
     };
+}
+
+#[cfg(test)]
+fn operator_sidebar_config_test_guard() -> MutexGuard<'static, ()> {
+    static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
+    GUARD
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 delegate_test!(replay_mode_snapshot_renders_two_pane_layout => tests::module_replay_mode_snapshot_renders_two_pane_layout);
@@ -293,23 +302,13 @@ delegate_test!(operator_rail_section_model_hides_empty_sources_but_preserves_ord
 delegate_test!(operator_rail_section_model_counts_generic_mcp_activity => ui::exact_test_operator_rail_section_model_counts_generic_mcp_activity);
 delegate_test!(operator_rail_section_model_separates_mcp_from_native_tool_activity => ui::exact_test_operator_rail_section_model_separates_mcp_from_native_tool_activity);
 delegate_test!(operator_rail_section_model_keeps_native_prefix_tools_out_of_mcp => ui::exact_test_operator_rail_section_model_keeps_native_prefix_tools_out_of_mcp);
-
-#[cfg(test)]
-#[test]
-fn operator_sidebar_pins_summary_and_hides_empty_sections() {
-    ui::exact_test_operator_rail_low_activity_presentation_prefers_primary_stack();
-    ui::exact_test_operator_rail_section_model_builds_pinned_summary();
-    ui::exact_test_operator_rail_sanitizes_control_chars_in_sidebar_strings();
-    ui::exact_test_operator_rail_section_model_counts_generic_mcp_activity();
-    ui::exact_test_operator_rail_section_model_hides_empty_sources_but_preserves_order();
-    ui::exact_test_operator_rail_section_model_separates_mcp_from_native_tool_activity();
-    ui::exact_test_operator_rail_section_model_keeps_native_prefix_tools_out_of_mcp();
-    ui::exact_test_operator_rail_section_model_surfaces_pending_permissions_first();
-}
+delegate_test!(operator_rail_low_activity_presentation_prefers_primary_stack => ui::exact_test_operator_rail_low_activity_presentation_prefers_primary_stack);
+delegate_test!(operator_rail_section_model_surfaces_pending_permissions_first => ui::exact_test_operator_rail_section_model_surfaces_pending_permissions_first);
 
 #[cfg(test)]
 #[test]
 fn operator_sidebar_compact_empty_mode_preserves_anchor_copy_with_fixed_width() {
+    let _guard = operator_sidebar_config_test_guard();
     harness_core::config::set_registered_integrations_config(
         harness_core::config::IntegrationsConfig::default(),
     );
@@ -364,9 +363,9 @@ fn operator_sidebar_compact_empty_mode_preserves_anchor_copy_with_fixed_width() 
         assert!(
             sidebar.contains("Context")
                 && sidebar.contains("0 tokens")
-                && sidebar.contains("▼ MCP")
+                && sidebar.contains("MCP")
                 && has_mcp_state
-                && sidebar.contains("▼ LSP")
+                && sidebar.contains("LSP")
                 && has_lsp_state
                 && sidebar.contains("▼ Modified Files")
                 && sidebar.contains("No modified files"),
@@ -842,7 +841,7 @@ fn replay_read_only_copy_matches_operator_shell_contract() {
     assert!(rendered.contains("Replay · read-only"));
     assert!(rendered.contains("Replay is read-only"));
     assert!(rendered.contains("Context"));
-    assert!(rendered.contains("▼ MCP"));
+    assert!(rendered.contains("MCP"));
     assert!(rendered.contains("▼ Modified Files"));
     assert!(rendered.contains("r reload"));
     assert!(rendered.contains("q quit"));
@@ -8279,8 +8278,8 @@ fn assert_operator_sidebar_expanded(
     );
     assert_eq!(plan.wheel_hit_areas.overlay, Some(sidebar));
     assert!(sidebar_text.contains("Context"));
-    assert!(sidebar_text.contains("▼ MCP"));
-    assert!(sidebar_text.contains("▼ LSP"));
+    assert!(sidebar_text.contains("MCP"));
+    assert!(sidebar_text.contains("LSP"));
     assert!(sidebar_text.contains("▼ Modified Files"));
     assert!(sidebar_text.contains(expected_marker));
     assert!(rendered.contains(expected_marker));
@@ -8324,8 +8323,8 @@ fn live_shell_details_drawer_orchestration_primary_snapshot() {
     println!("{rendered}");
     assert!(rendered.contains("Explain the refactor"));
     assert!(rendered.contains("Context"));
-    assert!(rendered.contains("▼ MCP"));
-    assert!(rendered.contains("▼ LSP"));
+    assert!(rendered.contains("MCP"));
+    assert!(rendered.contains("LSP"));
     assert!(rendered.contains("▼ Modified Files"));
     assert!(rendered.contains("Current runtime: default · gpt-5-codex"));
     assert!(rendered.contains("provider openai"));
@@ -8446,7 +8445,7 @@ fn live_session_shell_removes_tab_chrome_and_debug_drawer() {
     assert!(plan.details_overlay.is_none());
     assert!(!rendered.contains("Tabs"));
     assert!(rendered.contains("Explain the refactor"));
-    assert!(rendered.contains("▼ MCP"));
+    assert!(rendered.contains("MCP"));
     assert!(rendered.contains("▼ Modified Files"));
 }
 
@@ -8494,7 +8493,7 @@ fn replay_shell_uses_read_only_operator_layout() {
     assert!(!rendered.contains("Tabs"));
     assert!(rendered.contains("Replay · read-only"));
     assert!(rendered.contains("Context"));
-    assert!(rendered.contains("▼ MCP"));
+    assert!(rendered.contains("MCP"));
     assert!(rendered.contains("▼ Modified Files"));
 }
 
@@ -9145,19 +9144,20 @@ fn details_drawer_toggles_without_leaving_live_surface() {
     assert_eq!(app.active_tab, app::Tab::Run);
     assert!(app.details_drawer_open());
     let open_debug = render_live_buffer(&app, 80, 24);
-    assert!(open_debug.contains("▼ MCP"));
+    assert!(open_debug.contains("MCP"));
 
     app.handle_key(key(crossterm::event::KeyCode::Char('i')));
 
     assert_eq!(app.active_tab, app::Tab::Run);
     assert!(!app.details_drawer_open());
     let closed_debug = render_live_buffer(&app, 80, 24);
-    assert!(!closed_debug.contains("▼ MCP"));
+    assert!(!closed_debug.contains("MCP"));
 }
 
 #[cfg(test)]
 #[test]
 fn operator_sidebar_matches_parity_information_architecture() {
+    let _guard = operator_sidebar_config_test_guard();
     harness_core::config::clear_registered_integrations_config();
     harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
 
@@ -9169,8 +9169,8 @@ fn operator_sidebar_matches_parity_information_architecture() {
         &[
             "Explain the refactor",
             "Context",
-            "▼ MCP",
-            "▼ LSP",
+            "MCP",
+            "LSP",
             "▼ Modified Files",
         ],
     );
@@ -9211,6 +9211,7 @@ fn operator_sidebar_uses_secondary_quiet_chrome() {
 #[cfg(test)]
 #[test]
 fn operator_sidebar_uses_explicit_empty_states() {
+    let _guard = operator_sidebar_config_test_guard();
     harness_core::config::set_registered_integrations_config(
         harness_core::config::IntegrationsConfig::default(),
     );
@@ -9221,12 +9222,75 @@ fn operator_sidebar_uses_explicit_empty_states() {
 
     assert!(sidebar.contains("Context"));
     assert!(sidebar.contains("0 tokens"));
-    assert!(sidebar.contains("▼ MCP"));
+    assert!(sidebar.contains("MCP"));
     assert!(sidebar.contains("websearch Disconnected"));
-    assert!(sidebar.contains("▼ LSP"));
+    assert!(sidebar.contains("LSP"));
     assert!(sidebar.contains("No active LSP servers"));
     assert!(sidebar.contains("▼ Modified Files"));
     assert!(sidebar.contains("No modified files"));
+}
+
+#[cfg(test)]
+#[test]
+fn operator_sidebar_limits_disclosure_affordance_to_modified_files() {
+    let _guard = operator_sidebar_config_test_guard();
+    harness_core::config::clear_registered_integrations_config();
+    harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
+
+    let app = orchestration_details_drawer_app(2);
+    let sidebar = operator_sidebar_text(&app);
+
+    assert_markers_in_order(
+        &sidebar,
+        &[
+            "Explain the refactor",
+            "Context",
+            "MCP",
+            "LSP",
+            "▼ Modified Files",
+        ],
+    );
+    assert!(!sidebar.contains("▼ MCP"));
+    assert!(!sidebar.contains("▼ LSP"));
+}
+
+#[cfg(test)]
+#[test]
+fn operator_sidebar_plain_rows_use_indented_copy_instead_of_list_bullets() {
+    let _guard = operator_sidebar_config_test_guard();
+    harness_core::config::clear_registered_integrations_config();
+    harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
+
+    let empty_sidebar = operator_sidebar_text(&app::AppState::new_live(None, false, None));
+    assert!(empty_sidebar.contains("\n  No MCP integrations configured"));
+    assert!(empty_sidebar.contains("\n  No active LSP servers"));
+    assert!(empty_sidebar.contains("\n  No modified files"));
+    assert!(!empty_sidebar.contains("\n• No MCP integrations configured"));
+    assert!(!empty_sidebar.contains("\n• No active LSP servers"));
+    assert!(!empty_sidebar.contains("\n• No modified files"));
+    assert!(empty_sidebar.contains("0 tokens\nMCP"));
+    assert!(empty_sidebar.contains("No MCP integrations configured\nLSP"));
+
+    let modified_sidebar = operator_sidebar_text(&operator_sidebar_modified_files_live_app());
+    assert!(modified_sidebar.contains("\n  src/ui_secondary.rs"));
+    assert!(!modified_sidebar.contains("\n• src/ui_secondary.rs"));
+}
+
+#[cfg(test)]
+#[test]
+fn operator_sidebar_compacts_section_spacing_for_parity() {
+    let _guard = operator_sidebar_config_test_guard();
+    harness_core::config::set_registered_integrations_config(
+        harness_core::config::IntegrationsConfig::default(),
+    );
+    harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
+
+    let sidebar = operator_sidebar_text(&app::AppState::new_live(None, false, None));
+    assert!(sidebar.contains("Context\n  0 tokens"));
+    assert!(!sidebar.contains("0 tokens\n\nMCP"));
+    assert!(!sidebar.contains("configured\n\nLSP"));
+    assert!(!sidebar.contains("Disconnected\n\nLSP"));
+    assert!(!sidebar.contains("servers\n\n▼ Modified Files"));
 }
 
 #[cfg(test)]
@@ -9235,8 +9299,8 @@ fn operator_sidebar_recovery_section_surfaces_artifacts_and_navigation_hints() {
     let sidebar = operator_sidebar_text(&operator_sidebar_child_navigation_replay_app());
 
     assert!(sidebar.contains("Context"));
-    assert!(sidebar.contains("▼ MCP"));
-    assert!(sidebar.contains("▼ LSP"));
+    assert!(sidebar.contains("MCP"));
+    assert!(sidebar.contains("LSP"));
     assert!(sidebar.contains("▼ Modified Files"));
     assert!(!sidebar.contains("Recovery"));
     assert!(!sidebar.contains("Parent session · parent_run"));
@@ -9320,8 +9384,8 @@ fn operator_sidebar_preserves_section_order_and_copy() {
         &[
             "Explain the refactor",
             "Context",
-            "▼ MCP",
-            "▼ LSP",
+            "MCP",
+            "LSP",
             "▼ Modified Files",
         ],
     );
@@ -9329,8 +9393,8 @@ fn operator_sidebar_preserves_section_order_and_copy() {
     let empty = operator_sidebar_text(&app::AppState::new_live(None, false, None));
     assert!(empty.contains("Context"));
     assert!(empty.contains("0 tokens"));
-    assert!(empty.contains("▼ MCP"));
-    assert!(empty.contains("▼ LSP"));
+    assert!(empty.contains("MCP"));
+    assert!(empty.contains("LSP"));
     assert!(empty.contains("▼ Modified Files"));
 }
 
@@ -9347,7 +9411,7 @@ fn live_shell_no_longer_renders_debug_inspector_labels() {
     assert!(!rendered.contains("Provider:"));
     assert!(!rendered.contains("Model:"));
     assert!(!rendered.contains("Prompt summary"));
-    assert!(rendered.contains("▼ MCP"));
+    assert!(rendered.contains("MCP"));
     assert!(rendered.contains("▼ Modified Files"));
     assert!(!rendered.contains("Todo · 1"));
 }

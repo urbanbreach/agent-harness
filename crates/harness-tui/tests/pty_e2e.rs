@@ -547,8 +547,8 @@ fn operator_sidebar_matches_opencode_information_architecture() {
         &[
             "Inspect sidebar parity",
             "Context",
-            "▼ MCP",
-            "▼ LSP",
+            "MCP",
+            "LSP",
             "▼ Modified Files",
         ],
     );

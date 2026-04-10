@@ -3,15 +3,15 @@
 
      ┃ -     render_diff_tab, render_events_tab, render_help_tab,                            │ +     render_events_tab, render_help_tab, render_live_details_overlay,               Context
                                                                                                                                                                                     0 tokens
-
-     ┃       render_operator_sidebar,                                                        │       render_operator_sidebar,                                                       ▼ MCP
-                                                                                                                                                                                    • No MCP integrations configured
-
-     ┃ ▸ ↗ Spawn researcher · audit tool lifecycle parity                                                                                                                           ▼ LSP
-     ┃ 2ms                                                                                                                                                                          • No active LSP servers
+                                                                                                                                                                                    MCP
+     ┃       render_operator_sidebar,                                                        │       render_operator_sidebar,                                                       No MCP integrations configured
+                                                                                                                                                                                    LSP
+                                                                                                                                                                                    No active LSP servers
+     ┃ ▸ ↗ Spawn researcher · audit tool lifecycle parity                                                                                                                           ▼ Modified Files
+     ┃ 2ms                                                                                                                                                                          crates/harness-tui/src/ui.rs · +1 -1
      ┃ foreground · agent_worker · req_child · completed · 2 child tool calls
-     ┃ Found the whole-tool parity path.                                                                                                                                            ▼ Modified Files
-     ┃ Compat alias · task → agent.spawn                                                                                                                                            • crates/harness-tui/src/ui.rs · +1 -1
+     ┃ Found the whole-tool parity path.
+     ┃ Compat alias · task → agent.spawn
 
      ┃ # cargo test -p harness-tui in /workspace
      ┃ 2ms

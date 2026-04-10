@@ -3,15 +3,15 @@
   ┃  Hello from PTY
   ┃                                                                                                                     Context
                                                                                                                         0 tokens
-     Hello world
-     ● Assistant · model-1 · 4ms                                                                                        ▼ MCP
-                                                                                                                        • No MCP integrations configured
-
-                                                                                                                        ▼ LSP
-                                                                                                                        • No active LSP servers
-
+     Hello world                                                                                                        MCP
+     ● Assistant · model-1 · 4ms                                                                                        No MCP integrations configured
+                                                                                                                        LSP
+                                                                                                                        No active LSP servers
                                                                                                                         ▼ Modified Files
-                                                                                                                        • No modified files
+                                                                                                                        No modified files
+
+
+
 
 
 
