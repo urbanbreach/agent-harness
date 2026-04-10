@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
+use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use harness_core::agent::AgentProfile;
@@ -20,11 +21,26 @@ use harness_tools::coordinator_registry_with_mcp;
 
 const DEFAULT_INTERACTIVE_PROFILE: &str = "build";
 const LEGACY_INTERACTIVE_PROFILE: &str = "deep";
+const DEFAULT_LOCAL_CONFIG_PATH: &str = "harness.jsonc";
+const SHIPPED_EXAMPLE_CONFIG: &str = include_str!("../../../configs/harness.example.jsonc");
 
 const CONFIG_SEARCH_LOCATIONS: [&str; 2] = [
     "./harness.jsonc",
     "$XDG_CONFIG_HOME/harness/config.jsonc (fallback: ~/.config/harness/config.jsonc)",
 ];
+
+#[derive(Debug, Clone)]
+pub enum ConfigInitTarget {
+    CurrentDir,
+    Xdg,
+    Explicit(PathBuf),
+}
+
+#[derive(Debug, Clone)]
+pub struct ConfigInitOutcome {
+    pub path: PathBuf,
+    pub uses_auto_discovery: bool,
+}
 
 pub fn load_harness_config(path: &Path) -> Result<HarnessConfig, String> {
     load_config_from_file(path).map_err(|err| format!("{} ({})", err, path.display()))
@@ -32,9 +48,107 @@ pub fn load_harness_config(path: &Path) -> Result<HarnessConfig, String> {
 
 pub fn interactive_config_guidance() -> String {
     format!(
-        "interactive mode requires a config file; pass --config <path> or create {}. A starting point lives at configs/harness.example.jsonc and defaults to the build agent while keeping the plan -> build handoff available. If you want the demo/mock UI instead, re-run with --mock",
+        "interactive mode requires a config file; {}. {} and defaults to the build agent while keeping the plan -> build handoff available. If you want the demo/mock UI instead, re-run with --mock",
+        config_bootstrap_hint(),
+        shipped_example_hint()
+    )
+}
+
+pub fn config_validate_guidance() -> String {
+    format!(
+        "no config file found; {}. {}",
+        config_bootstrap_hint(),
+        shipped_example_hint()
+    )
+}
+
+pub fn prompt_config_guidance() -> String {
+    format!(
+        "prompt mode requires a config file; {}. {}, or re-run with --mock",
+        prompt_bootstrap_hint(),
+        shipped_example_hint()
+    )
+}
+
+pub fn models_config_guidance() -> String {
+    format!(
+        "models requires a config file; {}. {}",
+        config_bootstrap_hint(),
+        shipped_example_hint()
+    )
+}
+
+pub fn init_config(target: ConfigInitTarget, force: bool) -> Result<ConfigInitOutcome, String> {
+    let (path, uses_auto_discovery) = match target {
+        ConfigInitTarget::CurrentDir => (PathBuf::from(DEFAULT_LOCAL_CONFIG_PATH), true),
+        ConfigInitTarget::Xdg => (xdg_config_path()?, true),
+        ConfigInitTarget::Explicit(path) => (path, false),
+    };
+
+    if path.exists() && !force {
+        return Err(format!(
+            "config already exists at {}; re-run with --force to overwrite",
+            path.display()
+        ));
+    }
+
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent).map_err(|err| {
+            format!(
+                "failed to create config directory {}: {err}",
+                parent.display()
+            )
+        })?;
+    }
+
+    fs::write(&path, SHIPPED_EXAMPLE_CONFIG)
+        .map_err(|err| format!("failed to write config {}: {err}", path.display()))?;
+
+    Ok(ConfigInitOutcome {
+        path,
+        uses_auto_discovery,
+    })
+}
+
+pub fn config_init_next_steps(outcome: &ConfigInitOutcome) -> Vec<String> {
+    if outcome.uses_auto_discovery {
+        vec!["harness config validate".to_string(), "harness".to_string()]
+    } else {
+        let display = outcome.path.display();
+        vec![
+            format!("harness --config {display} config validate"),
+            format!("harness --config {display}"),
+        ]
+    }
+}
+
+fn xdg_config_path() -> Result<PathBuf, String> {
+    let base = env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
+        .ok_or_else(|| {
+            "cannot resolve XDG config path because neither XDG_CONFIG_HOME nor HOME is set"
+                .to_string()
+        })?;
+    Ok(base.join("harness").join("config.jsonc"))
+}
+
+fn config_bootstrap_hint() -> String {
+    format!(
+        "run `harness config init` to create ./harness.jsonc, pass --config <path>, or create the config manually at {}",
         CONFIG_SEARCH_LOCATIONS.join(" or ")
     )
+}
+
+fn prompt_bootstrap_hint() -> &'static str {
+    "run `harness config init` to create ./harness.jsonc, pass --config <path>, or create harness.jsonc manually"
+}
+
+fn shipped_example_hint() -> &'static str {
+    "A starting point lives at configs/harness.example.jsonc"
 }
 
 pub fn build_interactive_coordinator_config(

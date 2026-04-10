@@ -51,10 +51,22 @@ Validate the shipped example config:
 cargo run -p harness -- --config configs/harness.example.jsonc config validate
 ```
 
+Bootstrap a first-run local config in the auto-discovered location:
+
+```bash
+cargo run -p harness -- config init
+```
+
+Validate the generated local config:
+
+```bash
+cargo run -p harness -- config validate
+```
+
 Launch the interactive harness with the canonical plan -> build split:
 
 ```bash
-cargo run -p harness -- --config configs/harness.example.jsonc
+cargo run -p harness --
 ```
 
 The shipped config starts in the `build` agent by default. When you want a planning-first pass, launch `plan` explicitly and use `plan.exit` to hand off to `build` after approval.

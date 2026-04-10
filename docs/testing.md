@@ -69,6 +69,19 @@ This keeps the shipped `configs/harness.example.jsonc` honest by preparing a res
 
 Once the focused prepared-config regression is green, treat any remaining failures in the live follow-up as downstream lane-specific blockers instead of alias-shape setup failures.
 
+## Issue #123 verification path
+
+Keep the first-boot flow explicit: prove the CLI can write the shipped example config into a
+discoverable path and that missing-config guidance points users at the new bootstrap command.
+
+### Focused CLI/bootstrap checks
+- `cargo test -p harness --test config_schema_cli config_init_cli_writes_default_harness_jsonc -- --exact`
+- `cargo test -p harness --test config_schema_cli config_init_cli_writes_explicit_path_and_prints_explicit_commands -- --exact`
+- `cargo test -p harness --test config_schema_cli config_init_cli_writes_xdg_config_when_requested -- --exact`
+- `cargo test -p harness --test config_schema_cli config_init_cli_refuses_to_overwrite_without_force -- --exact`
+- `cargo test -p harness --test config_schema_cli config_validate_cli_reports_missing_config -- --exact`
+- `cargo test -p harness --test tui_cli tui_cli_without_config_prints_config_guidance -- --exact`
+
 ### Workspace baseline
 - `cargo fmt --all -- --check`
 - `cargo check --workspace`

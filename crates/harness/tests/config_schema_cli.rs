@@ -334,7 +334,139 @@ fn config_validate_cli_reports_missing_config() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("no config file found"));
+    assert!(stderr.contains("harness config init"));
     assert!(stderr.contains("configs/harness.example.jsonc"));
+}
+
+#[test]
+fn config_init_cli_writes_default_harness_jsonc() {
+    let temp = tempdir().expect("tempdir");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args(["config", "init"])
+        .output()
+        .expect("run harness config init");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("wrote config: harness.jsonc"));
+    assert!(stdout.contains("harness config validate"));
+    assert!(stdout.contains("\n  - harness\n"));
+
+    let parsed = with_env_var_state("OPENAI_API_KEY", None, || {
+        load_config_from_file(&temp.path().join("harness.jsonc"))
+            .expect("generated harness.jsonc should parse")
+    });
+    let ProviderConfig::OpenAiCompatible(provider) = parsed
+        .providers
+        .get("default")
+        .expect("default provider present in generated config");
+    assert_eq!(provider.base_url, "http://127.0.0.1:8317/v1");
+    assert_eq!(provider.api_key, "sk-zerolimit");
+    assert_eq!(parsed.ui.default_profile.as_deref(), Some("build"));
+}
+
+#[test]
+fn config_init_cli_writes_explicit_path_and_prints_explicit_commands() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("configs/first-boot.jsonc");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args([
+            "config",
+            "init",
+            "--path",
+            config_path.to_str().expect("config path utf-8"),
+        ])
+        .output()
+        .expect("run harness config init with explicit path");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(&format!("wrote config: {}", config_path.display())));
+    assert!(stdout.contains(&format!(
+        "harness --config {} config validate",
+        config_path.display()
+    )));
+    assert!(stdout.contains(&format!("harness --config {}", config_path.display())));
+    assert!(
+        config_path.exists(),
+        "explicit config path should be written"
+    );
+}
+
+#[test]
+fn config_init_cli_writes_xdg_config_when_requested() {
+    let temp = tempdir().expect("tempdir");
+    let xdg_root = temp.path().join("xdg");
+    let xdg_config_path = xdg_root.join("harness/config.jsonc");
+    let xdg_root_str = xdg_root.to_string_lossy().into_owned();
+
+    let output = with_env_var_state("XDG_CONFIG_HOME", Some(xdg_root_str.as_str()), || {
+        Command::new(env!("CARGO_BIN_EXE_harness"))
+            .current_dir(temp.path())
+            .args(["config", "init", "--xdg"])
+            .output()
+            .expect("run harness config init --xdg")
+    });
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(&format!("wrote config: {}", xdg_config_path.display())));
+    assert!(stdout.contains("harness config validate"));
+    assert!(stdout.contains("\n  - harness\n"));
+    assert!(
+        xdg_config_path.exists(),
+        "xdg config path should be written"
+    );
+}
+
+#[test]
+fn config_init_cli_refuses_to_overwrite_without_force() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    fs::write(&config_path, "sentinel").expect("write sentinel config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args(["config", "init"])
+        .output()
+        .expect("run harness config init without force");
+
+    assert!(
+        !output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("config init failed:"));
+    assert!(stderr.contains("re-run with --force"));
+    assert_eq!(
+        fs::read_to_string(&config_path).expect("read sentinel config"),
+        "sentinel"
+    );
 }
 
 #[test]

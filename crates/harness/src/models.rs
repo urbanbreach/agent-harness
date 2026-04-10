@@ -4,6 +4,8 @@ use std::process::ExitCode;
 use clap::Args;
 use harness_core::config::{configured_model_catalog, load_config_from_file, resolve_config_path};
 
+use crate::bootstrap;
+
 #[derive(Debug, Args, Clone, Default)]
 pub struct ModelsCommand {}
 
@@ -11,9 +13,7 @@ pub fn execute(cmd: ModelsCommand, config_path: Option<PathBuf>) -> ExitCode {
     let _ = cmd;
 
     let Some(config_path) = resolve_config_path(config_path.as_deref()) else {
-        eprintln!(
-            "models requires a config file; pass --config <path> or create ./harness.jsonc. A starting point lives at configs/harness.example.jsonc"
-        );
+        eprintln!("{}", bootstrap::models_config_guidance());
         return ExitCode::from(2);
     };
 

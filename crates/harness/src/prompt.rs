@@ -136,10 +136,8 @@ fn resolve_settings(
         return resolve_mock_settings(config_path, global_session_dir);
     }
 
-    let explicit_config = resolve_config_path(config_path.as_deref()).ok_or_else(|| {
-        "prompt mode requires a config file; pass --config <path> or create harness.jsonc. A starting point lives at configs/harness.example.jsonc, or re-run with --mock"
-            .to_string()
-    })?;
+    let explicit_config = resolve_config_path(config_path.as_deref())
+        .ok_or_else(bootstrap::prompt_config_guidance)?;
 
     let mut config = bootstrap::load_harness_config(&explicit_config)?;
     config.apply_session_dir_override(global_session_dir);

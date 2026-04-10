@@ -22,10 +22,10 @@ That means the bundled starter pack acts as a safe fallback. To override a shipp
 
 ## Using the shipped example config
 The repo also ships `configs/harness.example.jsonc`, but the CLI only auto-discovers
-`./harness.jsonc` or the XDG config path. For a fresh checkout, run with:
+`./harness.jsonc` or the XDG config path. For a fresh checkout, bootstrap the local config with:
 
 ```bash
-cargo run -p harness -- --config configs/harness.example.jsonc tui
+cargo run -p harness -- config init
 ```
 
-or copy the example config to `./harness.jsonc`.
+Then run `cargo run -p harness --`. If you want to keep using the example file directly, `--config configs/harness.example.jsonc` still works.

@@ -25,6 +25,7 @@ mod tui;
 
 use crate::prompt::PromptCommand;
 use crate::tui::TuiCommand;
+use bootstrap::ConfigInitTarget;
 use models::ModelsCommand;
 use replay::ReplayCommand;
 use run::RunCommand;
@@ -96,6 +97,19 @@ enum Commands {
 #[derive(Debug, Subcommand)]
 enum ConfigCommands {
     Validate,
+    Init(ConfigInitCommand),
+}
+
+#[derive(Debug, Args, Clone, Default)]
+struct ConfigInitCommand {
+    #[arg(long, conflicts_with = "xdg")]
+    path: Option<PathBuf>,
+
+    #[arg(long, default_value_t = false, conflicts_with = "path")]
+    xdg: bool,
+
+    #[arg(long, default_value_t = false)]
+    force: bool,
 }
 
 fn main() -> ExitCode {
@@ -139,9 +153,7 @@ fn main() -> ExitCode {
         Commands::Config { command } => match command {
             ConfigCommands::Validate => {
                 let Some(config_path) = resolve_config_path(config.as_deref()) else {
-                    eprintln!(
-                        "no config file found; pass --config <path> or create ./harness.jsonc or $XDG_CONFIG_HOME/harness/config.jsonc. A starting point lives at configs/harness.example.jsonc"
-                    );
+                    eprintln!("{}", bootstrap::config_validate_guidance());
                     return ExitCode::from(2);
                 };
 
@@ -163,6 +175,29 @@ fn main() -> ExitCode {
                     }
                     Err(err) => {
                         eprintln!("config validation failed: {err}");
+                        ExitCode::from(1)
+                    }
+                }
+            }
+            ConfigCommands::Init(command) => {
+                let target = match (command.path, command.xdg) {
+                    (Some(path), false) => ConfigInitTarget::Explicit(path),
+                    (None, true) => ConfigInitTarget::Xdg,
+                    (None, false) => ConfigInitTarget::CurrentDir,
+                    (Some(_), true) => unreachable!("clap enforces config init target exclusivity"),
+                };
+
+                match bootstrap::init_config(target, command.force) {
+                    Ok(outcome) => {
+                        println!("wrote config: {}", outcome.path.display());
+                        println!("next steps:");
+                        for step in bootstrap::config_init_next_steps(&outcome) {
+                            println!("  - {step}");
+                        }
+                        ExitCode::SUCCESS
+                    }
+                    Err(err) => {
+                        eprintln!("config init failed: {err}");
                         ExitCode::from(1)
                     }
                 }

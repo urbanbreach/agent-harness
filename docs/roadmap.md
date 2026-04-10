@@ -60,7 +60,7 @@ Secondary/supporting agents:
 - [x] Support reasoning/thinking preset selection from config.
 - [ ] Support all major parameters that Opencode's opencode.json supports.
 - [x] Add provider capability detection so unsupported features degrade cleanly instead of failing late.
-- [ ] Set up a first-boot CLI flow so users can get from install to a working config with minimal friction.
+- [x] Set up a first-boot CLI flow so users can get from install to a working config with minimal friction.
 
 ## Agents, orchestration, and prompt quality
 

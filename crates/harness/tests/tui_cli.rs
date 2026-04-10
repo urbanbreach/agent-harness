@@ -874,6 +874,10 @@ fn tui_cli_without_config_prints_config_guidance() {
         "expected config guidance prefix, got:\n{stderr}"
     );
     assert!(
+        stderr.contains("harness config init"),
+        "expected config init first-boot hint, got:\n{stderr}"
+    );
+    assert!(
         stderr.contains("./harness.jsonc"),
         "expected current-directory config location, got:\n{stderr}"
     );

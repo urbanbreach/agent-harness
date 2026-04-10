@@ -9,6 +9,15 @@ The current shipped workflow is intentionally narrow:
 
 This is the workflow issue #104 signs off. It is the default path that later orchestration work depends on.
 
+For a fresh install/checkout, create the local bootstrap config first:
+
+```bash
+harness config init
+```
+
+That writes the shipped example to `./harness.jsonc`, after which bare `harness` uses the normal
+auto-discovery path.
+
 ## Lane contract
 
 ### `build`

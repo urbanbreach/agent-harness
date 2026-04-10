@@ -6,6 +6,15 @@ This document describes the currently blessed config surface for the shipped Pla
 
 The authoritative example is [`configs/harness.example.jsonc`](../configs/harness.example.jsonc).
 
+For first boot, the CLI can materialize that shipped example into an auto-discovered config path:
+
+```bash
+harness config init
+```
+
+By default this writes `./harness.jsonc`. Use `harness config init --xdg` for the XDG path or
+`harness config init --path <path>` when you want an explicit location outside the discovery path.
+
 Its shipped defaults are:
 
 - provider: `default`
