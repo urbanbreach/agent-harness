@@ -139,7 +139,7 @@ enum OperatorRailBodySection {
     Context { items: Vec<String> },
     Mcp { items: Vec<OperatorRailItem> },
     Lsp { items: Vec<OperatorRailItem> },
-    ModifiedFiles { items: Vec<String> },
+    ModifiedFiles { items: Vec<String>, collapsed: bool },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,7 +153,13 @@ impl OperatorRailBodySection {
             Self::Context { .. } => "Context".to_string(),
             Self::Mcp { .. } => "▼ MCP".to_string(),
             Self::Lsp { .. } => "▼ LSP".to_string(),
-            Self::ModifiedFiles { .. } => "▼ Modified Files".to_string(),
+            Self::ModifiedFiles { collapsed, .. } => {
+                if *collapsed {
+                    "▶ Modified Files".to_string()
+                } else {
+                    "▼ Modified Files".to_string()
+                }
+            }
         }
     }
 
@@ -171,7 +177,7 @@ impl OperatorRailBodySection {
     #[cfg(test)]
     fn item_texts(&self) -> Vec<String> {
         match self {
-            Self::Context { items } | Self::ModifiedFiles { items } => items.clone(),
+            Self::Context { items } | Self::ModifiedFiles { items, .. } => items.clone(),
             Self::Mcp { items } | Self::Lsp { items } => {
                 items.iter().map(|item| item.text().to_string()).collect()
             }
@@ -1199,6 +1205,7 @@ fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
                 },
                 OperatorRailBodySection::ModifiedFiles {
                     items: operator_sidebar_modified_file_items(app),
+                    collapsed: app.operator_sidebar_modified_files_collapsed(),
                 },
             ],
         },
@@ -1244,11 +1251,17 @@ fn append_operator_rail_section(
         OperatorRailBodySection::Mcp { items } | OperatorRailBodySection::Lsp { items } => {
             items.clone()
         }
-        OperatorRailBodySection::ModifiedFiles { items } => items
-            .iter()
-            .cloned()
-            .map(OperatorRailItem::Plain)
-            .collect::<Vec<_>>(),
+        OperatorRailBodySection::ModifiedFiles { items, collapsed } => {
+            if *collapsed {
+                Vec::new()
+            } else {
+                items
+                    .iter()
+                    .cloned()
+                    .map(OperatorRailItem::Plain)
+                    .collect::<Vec<_>>()
+            }
+        }
     };
 
     for item in &items {

@@ -1697,6 +1697,7 @@ pub struct AppState {
     show_tool_details: bool,
     show_generic_tool_output: bool,
     stacked_transcript_diffs: bool,
+    operator_sidebar_modified_files_collapsed: bool,
     expanded_tool_outputs: BTreeSet<String>,
     pub startup_mode: bool,
     pub startup_launcher_action: StartupLauncherAction,
@@ -1765,6 +1766,7 @@ impl Default for AppState {
             show_tool_details: true,
             show_generic_tool_output: false,
             stacked_transcript_diffs: false,
+            operator_sidebar_modified_files_collapsed: false,
             expanded_tool_outputs: BTreeSet::new(),
             startup_mode: false,
             startup_launcher_action: StartupLauncherAction::default(),
@@ -2660,6 +2662,7 @@ impl AppState {
         let mut state = Self::new();
         state.focus = Focus::Prompt;
         state.live_details_drawer_open = false;
+        state.reset_operator_sidebar_modified_files_disclosure();
         state.session_path = session_path;
         state.auto_exit_on_finish = auto_exit_on_finish;
         state.on_ui_intent = on_ui_intent;
@@ -2675,6 +2678,7 @@ impl AppState {
     pub fn new_replay(session_path: PathBuf, events: Vec<EventEnvelopeV1>) -> Self {
         let mut state = Self::new();
         state.replay_mode = true;
+        state.reset_operator_sidebar_modified_files_disclosure();
         state.session_path = Some(session_path);
         state.replace_events(events);
         state.normalize_focus_for_active_surface();
@@ -2855,6 +2859,7 @@ impl AppState {
 
     fn restore_session_snapshot(&mut self, snapshot: SessionNavigationSnapshot) {
         self.replay_mode = true;
+        self.reset_operator_sidebar_modified_files_disclosure();
         self.session_path = Some(snapshot.session_path);
         self.replace_events(snapshot.events);
         self.set_launch_metadata(snapshot.launch_metadata);
@@ -3018,6 +3023,7 @@ impl AppState {
         self.dismissed_permissions.clear();
         self.submitted_permission_id = None;
         self.expanded_tool_outputs.clear();
+        self.reset_operator_sidebar_modified_files_disclosure();
 
         for event in events {
             self.ingest_event(event);
@@ -3756,6 +3762,7 @@ impl AppState {
         self.prompt_history_index = None;
         self.replay_mode = false;
         self.session_path = None;
+        self.reset_operator_sidebar_modified_files_disclosure();
         self.palette_visible = false;
         self.palette_input.clear();
         self.palette_cursor = 0;
@@ -4194,6 +4201,28 @@ impl AppState {
 
     fn session_shell_operator_rail_interactive(&self) -> bool {
         self.details_drawer_open() || (!self.replay_mode && self.operator_rail_has_sections())
+    }
+
+    pub(crate) fn operator_sidebar_modified_files_collapsed(&self) -> bool {
+        self.operator_sidebar_modified_files_collapsed
+    }
+
+    fn reset_operator_sidebar_modified_files_disclosure(&mut self) {
+        self.operator_sidebar_modified_files_collapsed = false;
+    }
+
+    fn can_toggle_operator_sidebar_modified_files(&self) -> bool {
+        !self.replay_mode
+            && self.active_review_surface.is_none()
+            && self.active_tab == Tab::Run
+            && self.focus == Focus::Details
+            && self.details_drawer_open()
+    }
+
+    fn toggle_operator_sidebar_modified_files(&mut self) {
+        self.operator_sidebar_modified_files_collapsed =
+            !self.operator_sidebar_modified_files_collapsed;
+        self.details_scroll = 0;
     }
 
     pub fn review_surface(&self) -> Option<ReviewSurface> {
@@ -5298,6 +5327,7 @@ impl AppState {
             StartupLauncherAction::ReplaySession => {
                 self.continue_disabled_banner = None;
                 self.replay_mode = true;
+                self.reset_operator_sidebar_modified_files_disclosure();
                 set_pending_live_prompt_draft(Some(self.prompt_buffer.clone()));
                 self.emit_ui_intent(UiIntent::ReplaySession {
                     run_id: selected_run_id,
@@ -5320,6 +5350,7 @@ impl AppState {
 
                 self.continue_disabled_banner = None;
                 self.replay_mode = false;
+                self.reset_operator_sidebar_modified_files_disclosure();
                 set_pending_live_prompt_draft(Some(self.prompt_buffer.clone()));
                 self.emit_ui_intent(UiIntent::ContinueSession {
                     run_id: selected_run_id,
@@ -5355,6 +5386,7 @@ impl AppState {
         self.prompt_history_index = None;
         self.replay_mode = false;
         self.session_path = None;
+        self.reset_operator_sidebar_modified_files_disclosure();
         self.continued_post_run_handoff_active = false;
         self.continued_live_reopen_surface_active = false;
         self.active_tab = Tab::Run;
@@ -5560,6 +5592,13 @@ impl AppState {
 
     fn execute_action(&mut self, action: Action) {
         if self.execute_permission_action(action) {
+            return;
+        }
+
+        if matches!(action, Action::SubmitPrompt)
+            && self.can_toggle_operator_sidebar_modified_files()
+        {
+            self.toggle_operator_sidebar_modified_files();
             return;
         }
 

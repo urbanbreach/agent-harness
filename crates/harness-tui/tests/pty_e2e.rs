@@ -559,15 +559,53 @@ fn operator_sidebar_matches_opencode_information_architecture() {
         &[
             "No MCP integrations configured",
             "● rust",
-            "src/ui_secondary.rs",
-            "src/layout.rs",
-            "src/theme.rs",
+            "src/ui_secondary.rs · +2 -1",
+            "src/layout.rs · +1 -1",
+            "src/theme.rs · +2 -1",
         ],
     );
     assert!(!screen.contains("Todo ·"));
     assert!(!screen.contains("Recovery ·"));
     assert!(!screen.contains("Network ·"));
     assert!(!screen.contains("Batch ·"));
+
+    show_live_operator_sidebar(&mut helper);
+    wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "src/ui_secondary.rs · +2 -1",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for operator sidebar after focusing transcript shell details");
+    send_key(helper.writer.as_mut(), b'\r').expect("collapse modified files section");
+    let collapsed = wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "▶ Modified Files",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for collapsed modified files section");
+    assert!(!collapsed.contains("src/ui_secondary.rs · +2 -1"));
+    assert!(!collapsed.contains("src/layout.rs · +1 -1"));
+    assert!(!collapsed.contains("src/theme.rs · +2 -1"));
+
+    send_key(helper.writer.as_mut(), b'\r').expect("expand modified files section");
+    let reexpanded = wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "src/ui_secondary.rs · +2 -1",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for re-expanded modified files section");
+    assert!(reexpanded.contains("▼ Modified Files"));
+    assert_screen_contains_all(
+        &reexpanded,
+        &[
+            "src/ui_secondary.rs · +2 -1",
+            "src/layout.rs · +1 -1",
+            "src/theme.rs · +2 -1",
+        ],
+    );
 
     terminate_child(helper.child);
 }
@@ -803,6 +841,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
             });
         }
         HelperScenario::OpencodeSidebarSessionParity => {
+            write_opencode_sidebar_diff_fixtures(run_dir.path());
             let sidebar_tx = tx.clone();
             thread::spawn(move || {
                 for event in opencode_sidebar_session_parity_events() {
@@ -1251,6 +1290,26 @@ fn write_tool_lifecycle_diff_fixture(run_dir: &Path) {
     .expect("write tool lifecycle diff fixture");
 }
 
+fn write_opencode_sidebar_diff_fixtures(run_dir: &Path) {
+    let artifacts_dir = run_dir.join("artifacts");
+    fs::create_dir_all(&artifacts_dir).expect("create opencode sidebar artifacts dir");
+    fs::write(
+        artifacts_dir.join("edit-sidebar-1.diff"),
+        "--- src/ui_secondary.rs\n+++ src/ui_secondary.rs\n@@ -1,2 +1,3 @@\n alpha\n-beta\n+beta\n+gamma\n",
+    )
+    .expect("write opencode sidebar diff fixture 1");
+    fs::write(
+        artifacts_dir.join("edit-sidebar-2.diff"),
+        "--- src/layout.rs\n+++ src/layout.rs\n@@ -1,2 +1,2 @@\n-alpha\n+layout\n beta\n",
+    )
+    .expect("write opencode sidebar diff fixture 2");
+    fs::write(
+        artifacts_dir.join("edit-sidebar-3.diff"),
+        "--- src/theme.rs\n+++ src/theme.rs\n@@ -1,2 +1,3 @@\n alpha\n-beta\n+theme\n+polish\n",
+    )
+    .expect("write opencode sidebar diff fixture 3");
+}
+
 fn details_drawer_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_details_drawer";
     vec![
@@ -1441,8 +1500,8 @@ fn opencode_sidebar_session_parity_events() -> Vec<EventEnvelopeV1> {
                 edit_id: "edit_sidebar_1".to_string(),
                 path: "src/ui_secondary.rs".to_string(),
                 new_file_digest: "digest-edit-sidebar-1".to_string(),
-                diff_rel_path: None,
-                diff_digest: None,
+                diff_rel_path: Some("artifacts/edit-sidebar-1.diff".to_string()),
+                diff_digest: Some("digest-edit-sidebar-diff-1".to_string()),
             }),
         ),
         envelope(
@@ -1452,8 +1511,8 @@ fn opencode_sidebar_session_parity_events() -> Vec<EventEnvelopeV1> {
                 edit_id: "edit_sidebar_2".to_string(),
                 path: "src/layout.rs".to_string(),
                 new_file_digest: "digest-edit-sidebar-2".to_string(),
-                diff_rel_path: None,
-                diff_digest: None,
+                diff_rel_path: Some("artifacts/edit-sidebar-2.diff".to_string()),
+                diff_digest: Some("digest-edit-sidebar-diff-2".to_string()),
             }),
         ),
         envelope(
@@ -1463,8 +1522,8 @@ fn opencode_sidebar_session_parity_events() -> Vec<EventEnvelopeV1> {
                 edit_id: "edit_sidebar_3".to_string(),
                 path: "src/theme.rs".to_string(),
                 new_file_digest: "digest-edit-sidebar-3".to_string(),
-                diff_rel_path: None,
-                diff_digest: None,
+                diff_rel_path: Some("artifacts/edit-sidebar-3.diff".to_string()),
+                diff_digest: Some("digest-edit-sidebar-diff-3".to_string()),
             }),
         ),
     ]

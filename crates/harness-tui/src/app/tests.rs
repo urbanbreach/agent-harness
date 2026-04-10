@@ -4,12 +4,12 @@ use crate::ui::WheelTarget;
 use crate::view_model;
 use crossterm::event::MouseEvent;
 use harness_core::event::{
-    ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
-    PermissionResolvedEvent, ProviderReasoningDeltaEvent, ProviderRequestStartedEvent,
-    ProviderStreamDeltaEvent, RunFailedEvent, RunFinishedEvent, RunStartedEvent,
-    TaskCompletedEvent, TaskLineageMetadata, ToolCallFinishedEvent, ToolCallLifecycleState,
-    ToolCallMetadata, ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus,
-    UserMessageSubmittedEvent, SCHEMA_VERSION,
+    ActorKind, AgentSpawnedEvent, EditAppliedEvent, EventActor, EventEnvelopeV1, EventV1,
+    PermissionRequestedEvent, PermissionResolvedEvent, ProviderReasoningDeltaEvent,
+    ProviderRequestStartedEvent, ProviderStreamDeltaEvent, RunFailedEvent, RunFinishedEvent,
+    RunStartedEvent, TaskCompletedEvent, TaskLineageMetadata, ToolCallFinishedEvent,
+    ToolCallLifecycleState, ToolCallMetadata, ToolCallRequestedEvent, ToolCallStartedEvent,
+    ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -102,6 +102,20 @@ fn agent_spawned(seq: u64, agent_id: &str, profile: &str) -> EventEnvelopeV1 {
             agent_id: agent_id.to_string(),
             profile: profile.to_string(),
             parent_agent_id: None,
+        }),
+    )
+}
+
+fn modified_files_event(seq: u64, path: &str) -> EventEnvelopeV1 {
+    envelope(
+        seq,
+        "req_modified_files",
+        EventV1::EditApplied(EditAppliedEvent {
+            edit_id: format!("edit_{seq}"),
+            path: path.to_string(),
+            new_file_digest: format!("digest-edit-{seq}"),
+            diff_rel_path: None,
+            diff_digest: None,
         }),
     )
 }
@@ -248,6 +262,50 @@ fn tool_call_entries_prefer_resolved_identity_and_lifecycle_contract() {
         ToolCallLifecycleState::Completed
     );
     assert_eq!(tool_call.status, ToolCallDisplayStatus::Succeeded);
+}
+
+#[test]
+fn modified_files_toggle_requires_open_details_drawer() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(modified_files_event(1, "src/ui_secondary.rs"));
+    app.focus = Focus::Details;
+
+    app.handle_key(key(KeyCode::Enter));
+    assert!(
+        !app.operator_sidebar_modified_files_collapsed(),
+        "enter should not toggle modified files when the operator sidebar is not explicitly open"
+    );
+
+    app.live_details_drawer_open = true;
+    app.handle_key(key(KeyCode::Enter));
+    assert!(
+        app.operator_sidebar_modified_files_collapsed(),
+        "enter should toggle modified files when the operator sidebar drawer is open"
+    );
+}
+
+#[test]
+fn modified_files_disclosure_resets_across_replay_and_new_session_transitions() {
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/live-session")), false, None);
+    app.operator_sidebar_modified_files_collapsed = true;
+
+    app.restore_session_snapshot(SessionNavigationSnapshot {
+        session_path: PathBuf::from("/tmp/replay-session"),
+        events: vec![modified_files_event(1, "src/ui_secondary.rs")],
+        launch_metadata: app.launch_metadata.clone(),
+        child_session_ids: Vec::new(),
+    });
+    assert!(
+        !app.operator_sidebar_modified_files_collapsed(),
+        "restoring a replay snapshot should reset modified files disclosure to expanded"
+    );
+
+    app.operator_sidebar_modified_files_collapsed = true;
+    app.apply_new_session_launcher_selection();
+    assert!(
+        !app.operator_sidebar_modified_files_collapsed(),
+        "starting a new session should reset modified files disclosure to expanded"
+    );
 }
 
 #[test]

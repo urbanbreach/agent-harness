@@ -8126,6 +8126,23 @@ fn operator_sidebar_modified_files_live_app() -> app::AppState {
 }
 
 #[cfg(test)]
+fn operator_sidebar_modified_files_live_app_with_diff_fixture() -> (tempfile::TempDir, app::AppState)
+{
+    let run_dir = tempfile::tempdir().expect("create modified files temp run dir");
+    let artifacts_dir = run_dir.path().join("artifacts");
+    std::fs::create_dir_all(&artifacts_dir).expect("create modified files artifacts dir");
+    std::fs::write(
+        artifacts_dir.join("edit-1.diff"),
+        "--- src/ui_secondary.rs\n+++ src/ui_secondary.rs\n@@ -1,2 +1,3 @@\n alpha\n-beta\n+beta\n+gamma\n",
+    )
+    .expect("write modified files diff fixture");
+
+    let mut app = app::AppState::new_live(Some(run_dir.path().to_path_buf()), false, None);
+    app.ingest_event(operator_sidebar_edit_only_event(1));
+    (run_dir, app)
+}
+
+#[cfg(test)]
 fn operator_sidebar_todo_replay_app() -> app::AppState {
     app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), session_view_events())
 }
@@ -9174,6 +9191,61 @@ fn operator_sidebar_modified_files_include_diff_artifact_paths() {
     assert_markers_in_order(&sidebar, &["▼ Modified Files", "src/ui_secondary.rs"]);
     assert!(!sidebar.contains("artifacts/edit-1.diff"));
     assert!(!sidebar.contains("Recovery"));
+}
+
+#[cfg(test)]
+#[test]
+fn operator_sidebar_modified_files_show_plus_minus_counts_when_diff_is_available() {
+    let (_run_dir, app) = operator_sidebar_modified_files_live_app_with_diff_fixture();
+    let sidebar = operator_sidebar_text(&app);
+
+    assert_markers_in_order(
+        &sidebar,
+        &["▼ Modified Files", "src/ui_secondary.rs · +2 -1"],
+    );
+    assert!(!sidebar.contains("artifacts/edit-1.diff"));
+}
+
+#[cfg(test)]
+#[test]
+fn operator_sidebar_modified_files_enter_toggles_in_live_transcript_shell_only() {
+    let (_run_dir, mut app) = operator_sidebar_modified_files_live_app_with_diff_fixture();
+    app.focus = app::Focus::Details;
+    app.live_details_drawer_open = true;
+
+    let expanded = operator_sidebar_text(&app);
+    assert!(expanded.contains("▼ Modified Files"));
+    assert!(expanded.contains("src/ui_secondary.rs · +2 -1"));
+
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+    let collapsed = operator_sidebar_text(&app);
+    assert!(collapsed.contains("▶ Modified Files"));
+    assert!(!collapsed.contains("src/ui_secondary.rs · +2 -1"));
+
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+    let reexpanded = operator_sidebar_text(&app);
+    assert!(reexpanded.contains("▼ Modified Files"));
+    assert!(reexpanded.contains("src/ui_secondary.rs · +2 -1"));
+}
+
+#[cfg(test)]
+#[test]
+fn operator_sidebar_modified_files_enter_does_not_toggle_in_review_or_replay_modes() {
+    let (_run_dir, mut live) = operator_sidebar_modified_files_live_app_with_diff_fixture();
+    live.focus = app::Focus::Details;
+    live.live_details_drawer_open = true;
+    live.active_review_surface = Some(app::ReviewSurface::Help);
+
+    live.handle_key(key(crossterm::event::KeyCode::Enter));
+    assert!(!live.operator_sidebar_modified_files_collapsed());
+    assert!(operator_sidebar_text(&live).contains("▼ Modified Files"));
+
+    let mut replay = operator_sidebar_modified_files_replay_app();
+    replay.focus = app::Focus::Details;
+    replay.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    assert!(!replay.operator_sidebar_modified_files_collapsed());
+    assert!(operator_sidebar_text(&replay).contains("▼ Modified Files"));
 }
 
 #[cfg(test)]
