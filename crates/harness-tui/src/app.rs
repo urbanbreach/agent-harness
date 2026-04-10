@@ -5112,17 +5112,24 @@ impl AppState {
                 let description = palette_command.description.to_lowercase();
                 let section = palette_command.section.label().to_lowercase();
                 let shortcut = palette_command.shortcut.to_lowercase();
+                let search_terms = palette_command
+                    .search_terms
+                    .iter()
+                    .map(|term| term.to_lowercase())
+                    .collect::<Vec<_>>();
                 let match_bucket = if input.is_empty()
                     || label.starts_with(&input)
                     || id.starts_with(&input)
                     || shortcut.starts_with(&input)
                     || section.starts_with(&input)
+                    || search_terms.iter().any(|term| term.starts_with(&input))
                 {
                     Some(PaletteMatchBucket::Prefix)
                 } else if label.contains(&input)
                     || id.contains(&input)
                     || shortcut.contains(&input)
                     || section.contains(&input)
+                    || search_terms.iter().any(|term| term.contains(&input))
                 {
                     Some(PaletteMatchBucket::Contains)
                 } else if description.contains(&input) {
@@ -5188,9 +5195,11 @@ impl AppState {
             "switch_model" => {
                 self.open_model_switcher();
             }
+            "show_shortcuts" => self.toggle_help_from_palette(),
             "cycle_variant" => self.execute_action(Action::VariantCycle),
-            "close_review_surface" => self.execute_action(Action::CloseReviewSurface),
-            "open_event_log" => self.execute_action(Action::OpenEventLog),
+            "close_review_surface" => self.close_review_surface_from_palette(),
+            "open_event_log" => self.open_review_surface_from_palette(ReviewSurface::Events),
+            "toggle_operator_sidebar" => self.toggle_operator_sidebar_from_palette(),
             "toggle_follow" => self.execute_action(Action::ToggleFollow),
             "show_thinking" => self.show_transcript_thinking = true,
             "hide_thinking" => self.show_transcript_thinking = false,
@@ -5206,6 +5215,7 @@ impl AppState {
             }
             "stack_transcript_diffs" => self.stacked_transcript_diffs = true,
             "split_transcript_diffs" => self.stacked_transcript_diffs = false,
+            "reload_replay" => self.reload_requested = true,
             "quit" => self.execute_action(Action::Quit),
             _ => {}
         }
@@ -5332,6 +5342,17 @@ impl AppState {
             .filter(|command| self.palette_command_available(command.id))
             .collect::<Vec<_>>();
 
+        if self.startup_shell_visible() {
+            for command in &mut commands {
+                if matches!(
+                    command.id,
+                    "new_session" | "resume_session" | "replay_session"
+                ) {
+                    command.section = crate::keybindings::PaletteCommandSection::Suggested;
+                }
+            }
+        }
+
         if self.startup_shell_visible()
             && self.session_history_entries.iter().any(|entry| {
                 entry.catalog.is_resumable
@@ -5361,10 +5382,14 @@ impl AppState {
             return !self.replay_mode;
         }
 
+        if command_id == "reload_replay" {
+            return self.replay_mode;
+        }
+
         if self.startup_shell_visible() {
             matches!(
                 command_id,
-                "new_session" | "resume_session" | "replay_session" | "quit"
+                "new_session" | "resume_session" | "replay_session" | "show_shortcuts" | "quit"
             )
         } else if matches!(command_id, "show_timestamps" | "hide_timestamps") {
             self.active_review_surface.is_none()
@@ -5425,10 +5450,55 @@ impl AppState {
                 }
         } else if command_id == "close_review_surface" {
             self.active_review_surface.is_some()
+        } else if command_id == "toggle_operator_sidebar" {
+            !self.replay_mode && !self.post_run_handoff_visible()
         } else if command_id == "open_event_log" {
             self.active_review_surface != Some(ReviewSurface::Events)
         } else {
             true
+        }
+    }
+
+    pub(crate) fn palette_command_section_for_current_state(
+        &self,
+        command_id: &str,
+    ) -> Option<crate::keybindings::PaletteCommandSection> {
+        self.palette_commands()
+            .into_iter()
+            .find_map(|command| (command.id == command_id).then_some(command.section))
+    }
+
+    fn preserve_palette_command_focus_change(&mut self) {
+        self.palette_focus_return = None;
+    }
+
+    fn toggle_help_from_palette(&mut self) {
+        self.preserve_palette_command_focus_change();
+        if self.active_review_surface == Some(ReviewSurface::Help) {
+            self.close_review_surface();
+        } else {
+            self.open_review_surface(ReviewSurface::Help);
+        }
+    }
+
+    fn close_review_surface_from_palette(&mut self) {
+        self.preserve_palette_command_focus_change();
+        self.close_review_surface();
+    }
+
+    fn open_review_surface_from_palette(&mut self, surface: ReviewSurface) {
+        self.preserve_palette_command_focus_change();
+        self.open_review_surface(surface);
+    }
+
+    fn toggle_operator_sidebar_from_palette(&mut self) {
+        self.preserve_palette_command_focus_change();
+        let opening = self.active_review_surface.is_some() || !self.details_drawer_open();
+        self.active_tab = Tab::Run;
+        self.active_review_surface = None;
+        self.live_details_drawer_open = opening;
+        if (!opening && self.focus == Focus::List) || (opening && self.focus == Focus::Prompt) {
+            self.focus = Focus::Details;
         }
     }
 

@@ -49,7 +49,7 @@ Secondary/supporting agents:
 - [ ] Make the chat layout look 1:1 with Opencode, need improvements/polish all over.
 - [x] Make chat boxes and surrounding elements feel 1:1 with Opencode.
 - [ ] Make thinking traces look exactly like Opencode.
-- [ ] Flesh out the commands menu.
+- [x] Flesh out the commands menu.
 - [ ] Polish the commands menu UI to match the level of fit and finish seen in Opencode.
 - [x] Implement Opencode's theme/Color scheme.
 - [x] Improve session recovery and reopen flow so returning to previous work feels obvious and low-friction. Implement it like it is done in Opencode.

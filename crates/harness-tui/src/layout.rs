@@ -980,7 +980,7 @@ fn command_palette_overlay_height(app: &AppState) -> u16 {
             .palette_filtered
             .iter()
             .fold((0usize, None), |(rows, last_section), command| {
-                let section = crate::Action::palette_command_section(command.as_str());
+                let section = app.palette_command_section_for_current_state(command.as_str());
                 let header_rows = usize::from(section != last_section);
                 (rows.saturating_add(header_rows).saturating_add(1), section)
             })

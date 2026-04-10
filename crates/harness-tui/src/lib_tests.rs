@@ -947,7 +947,7 @@ fn command_palette_groups_commands_like_opencode() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "toggle".chars() {
+    for ch in "follow".chars() {
         live_app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     let filtered = render_live_lines(&live_app, 120, 30);
@@ -5998,6 +5998,8 @@ fn command_palette_renders_and_filters() {
             "switch_model".to_string(),
             "cycle_variant".to_string(),
             "open_event_log".to_string(),
+            "toggle_operator_sidebar".to_string(),
+            "show_shortcuts".to_string(),
             "toggle_follow".to_string(),
             "hide_thinking".to_string(),
             "show_timestamps".to_string(),
@@ -6011,8 +6013,8 @@ fn command_palette_renders_and_filters() {
     let open_debug = render_live_screen(&app, 120, 36);
     assert!(open_debug.contains("Command palette"));
     assert!(open_debug.contains("New session"));
-    assert!(open_debug.contains("13 matches"));
-    assert!(open_debug.contains("Search commands, sections, or shortcuts"));
+    assert!(open_debug.contains("15 matches"));
+    assert!(open_debug.contains("Search commands, aliases, sections, or shortcuts"));
 
     app.handle_key(key(crossterm::event::KeyCode::Char('n')));
 
@@ -6046,6 +6048,7 @@ fn command_palette_empty_state_renders() {
     assert!(debug.contains("Command palette"));
     assert!(debug.contains("No commands match this filter"));
     assert!(debug.contains("No matches for \"z\""));
+    assert!(debug.contains("alias"));
 }
 
 #[cfg(test)]
@@ -6069,6 +6072,114 @@ fn command_palette_matches_shortcuts() {
 
 #[cfg(test)]
 #[test]
+fn command_palette_matches_aliases_for_shortcuts_surface() {
+    let mut app = app::AppState::new_live(None, false, None);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "help".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+
+    assert_eq!(app.palette_filtered, vec!["show_shortcuts".to_string()]);
+
+    let rendered = render_live_lines(&app, 120, 30);
+    assert!(rendered.contains("Shortcuts"));
+    assert!(rendered.contains("Open or close the shortcuts review surface"));
+    assert!(rendered.contains("?"));
+    assert!(!rendered.contains("resume"));
+}
+
+#[cfg(test)]
+#[test]
+fn command_palette_matches_sidebar_aliases() {
+    let mut app = app::AppState::new_live(None, false, None);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "sidebar".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+
+    assert_eq!(
+        app.palette_filtered,
+        vec!["toggle_operator_sidebar".to_string()]
+    );
+
+    let rendered = render_live_lines(&app, 120, 30);
+    assert!(rendered.contains("Toggle sidebar"));
+    assert!(rendered.contains("Show or hide the operator sidebar"));
+    assert!(rendered.contains("i"));
+}
+
+#[cfg(test)]
+#[test]
+fn replay_palette_includes_reload_command() {
+    let mut app =
+        app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), session_view_events());
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "reload".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+
+    assert_eq!(app.palette_filtered, vec!["reload_replay".to_string()]);
+
+    let rendered = render_live_lines(&app, 120, 30);
+    assert!(rendered.contains("Reload replay"));
+    assert!(rendered.contains("Reload the current replay"));
+    assert!(rendered.contains("r"));
+}
+
+#[cfg(test)]
+#[test]
+fn palette_event_log_command_opens_from_prompt_focus() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.focus = app::Focus::Prompt;
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "event".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    assert_eq!(app.review_surface(), Some(app::ReviewSurface::Events));
+    assert!(!app.palette_visible);
+    assert_ne!(app.focus, app::Focus::Prompt);
+}
+
+#[cfg(test)]
+#[test]
+fn palette_sidebar_command_opens_from_prompt_focus() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.focus = app::Focus::Prompt;
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "sidebar".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    assert!(app.details_drawer_open());
+    assert!(!app.palette_visible);
+    assert_eq!(app.focus, app::Focus::Details);
+}
+
+#[cfg(test)]
+#[test]
 fn command_palette_filtered_results_preserve_group_order() {
     let mut app = app::AppState::new_live(None, false, None);
 
@@ -6086,6 +6197,7 @@ fn command_palette_filtered_results_preserve_group_order() {
             "resume_session".to_string(),
             "replay_session".to_string(),
             "open_event_log".to_string(),
+            "toggle_operator_sidebar".to_string(),
         ]
     );
 
@@ -6098,9 +6210,13 @@ fn command_palette_filtered_results_preserve_group_order() {
         .find("Replay session")
         .expect("replay session command");
     let event_log = rendered.find("Event log").expect("event log command");
+    let toggle_sidebar = rendered
+        .find("Toggle sidebar")
+        .expect("toggle sidebar command");
     assert!(session_header < continue_session);
     assert!(continue_session < replay_session);
     assert!(replay_session < event_log);
+    assert!(event_log < toggle_sidebar);
     assert!(!rendered.contains("Suggested"));
 }
 
@@ -6787,6 +6903,12 @@ fn startup_palette_remains_secondary_and_draft_safe() {
     assert!(overlay_render.contains("Command palette"));
     assert!(overlay_render.contains("Continue session"));
     assert!(overlay_render.contains("Replay session"));
+    assert!(overlay_render.contains("Suggested"));
+    let session_headers = overlay_render
+        .lines()
+        .filter(|line| line.trim() == "Session")
+        .count();
+    assert_eq!(session_headers, 0, "{overlay_render}");
     let continue_session = overlay_render
         .find("Continue session")
         .expect("continue session command");

@@ -162,9 +162,8 @@ fn render_command_palette_status(frame: &mut Frame, app: &AppState, theme: &Them
         }
     } else {
         format!(
-            "{match_count} match{} · type {} · Enter run · Esc close",
+            "{match_count} match{} · ↑↓ move · Enter run · Esc close",
             if match_count == 1 { "" } else { "es" },
-            command_palette_search_scope()
         )
     };
 
@@ -188,7 +187,7 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
         let empty = if app.palette_input.is_empty() {
             "No commands available right now."
         } else {
-            "No commands match this filter — try name, section, or shortcut."
+            "No commands match this filter — try name, alias, section, or shortcut."
         };
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
@@ -258,7 +257,7 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
 }
 
 fn command_palette_search_scope() -> &'static str {
-    "commands, sections, or shortcuts"
+    "commands, aliases, sections, or shortcuts"
 }
 
 enum PaletteOverlayRow<'a> {
@@ -274,7 +273,7 @@ fn palette_overlay_rows(app: &AppState) -> Vec<PaletteOverlayRow<'_>> {
     let mut last_section = None;
 
     for (selected_index, command) in app.palette_filtered.iter().enumerate() {
-        let section = Action::palette_command_section(command.as_str());
+        let section = app.palette_command_section_for_current_state(command.as_str());
         if section != last_section {
             if let Some(section) = section {
                 rows.push(PaletteOverlayRow::Section(section));
@@ -792,10 +791,7 @@ fn session_history_status_color(entry: &crate::app::SessionHistoryEntry, theme: 
 }
 
 fn palette_command_description(command: &str) -> &'static str {
-    Action::palette_commands()
-        .iter()
-        .find_map(|(candidate, description)| (*candidate == command).then_some(*description))
-        .unwrap_or("")
+    Action::palette_command_description(command)
 }
 
 fn render_permission_modal(

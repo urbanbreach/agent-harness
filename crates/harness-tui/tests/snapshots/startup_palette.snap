@@ -9,13 +9,13 @@
 
                  Command palette
 
-                   > █ Search commands, sections, or shortcuts
-                   6 matches · type commands, sections, or shortcuts · Enter run…
-                   Session
-                   › Continue session  Continue a prior session when res…  resume
+                   > █ Search commands, aliases, sections, or shortcuts
+                   7 matches · ↑↓ move · Enter run · Esc close
                    Suggested
-                     New session  Start a fresh live session                  new
-                   Session
-                     Replay session  Replay a previous session as read-o…  replay
+                   › Continue session  Continue a prior session when resumable
+                     New session  Start a fresh live session
+                     Replay session  Replay a previous session as read-only
                    Agent
-                     Switch model  Browse available provider/model options  model
+                     Switch model  Browse available provider/model optio…  /model
+                     Cycle reasoning preset  Cycle the configured model …  Ctrl+t
+                   System

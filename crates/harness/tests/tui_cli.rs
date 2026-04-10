@@ -1053,7 +1053,7 @@ fn command_palette_includes_task5_session_actions() {
     assert!(
         palette_surface.contains("open_event_log:open the review event log surface")
             && !palette_surface.contains("open_diff_review:")
-            && !palette_surface.contains("help:"),
+            && palette_surface.contains("show_shortcuts:open or close the shortcuts review surface"),
         "expected the ctrl-p surface to expose the event-log review surface without stale diff-review or tab chrome commands, got:
 {palette_surface}"
     );

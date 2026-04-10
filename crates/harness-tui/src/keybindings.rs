@@ -31,6 +31,7 @@ pub struct PaletteCommand {
     pub label: &'static str,
     pub description: &'static str,
     pub shortcut: &'static str,
+    pub search_terms: &'static [&'static str],
     pub section: PaletteCommandSection,
 }
 
@@ -101,56 +102,80 @@ impl Action {
                 id: "new_session",
                 label: "New session",
                 description: "Start a fresh live session",
-                shortcut: "new",
+                shortcut: "",
+                search_terms: &["new", "start", "fresh"],
                 section: PaletteCommandSection::Suggested,
             },
             PaletteCommand {
                 id: "resume_session",
                 label: "Continue session",
                 description: "Continue a prior session when resumable",
-                shortcut: "resume",
+                shortcut: "",
+                search_terms: &["resume", "continue", "reopen", "recover", "saved"],
                 section: PaletteCommandSection::Session,
             },
             PaletteCommand {
                 id: "replay_session",
                 label: "Replay session",
                 description: "Replay a previous session as read-only",
-                shortcut: "replay",
+                shortcut: "",
+                search_terms: &["replay", "history", "saved", "read-only"],
                 section: PaletteCommandSection::Session,
             },
             PaletteCommand {
                 id: "switch_model",
                 label: "Switch model",
                 description: "Browse available provider/model options",
-                shortcut: "model",
+                shortcut: "/model",
+                search_terms: &["model", "profile", "provider", "agent"],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "cycle_variant",
                 label: "Cycle reasoning preset",
                 description: "Cycle the configured model variant/reasoning preset",
-                shortcut: "ctrl+t",
+                shortcut: "Ctrl+t",
+                search_terms: &["cycle", "variant", "reasoning", "preset"],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "close_review_surface",
                 label: "Session shell",
                 description: "Return to the transcript-first session shell",
-                shortcut: "esc",
+                shortcut: "Esc",
+                search_terms: &["session", "shell", "back", "close"],
                 section: PaletteCommandSection::Session,
             },
             PaletteCommand {
                 id: "open_event_log",
                 label: "Event log",
                 description: "Open the review event log surface",
-                shortcut: "",
+                shortcut: "3",
+                search_terms: &["event", "events", "log", "review"],
                 section: PaletteCommandSection::Session,
+            },
+            PaletteCommand {
+                id: "toggle_operator_sidebar",
+                label: "Toggle sidebar",
+                description: "Show or hide the operator sidebar",
+                shortcut: "i",
+                search_terms: &["sidebar", "panel", "details", "files", "tools", "context"],
+                section: PaletteCommandSection::Session,
+            },
+            PaletteCommand {
+                id: "show_shortcuts",
+                label: "Shortcuts",
+                description: "Open or close the shortcuts review surface",
+                shortcut: "?",
+                search_terms: &["help", "shortcuts", "keys", "bindings"],
+                section: PaletteCommandSection::System,
             },
             PaletteCommand {
                 id: "toggle_follow",
                 label: "Toggle follow",
                 description: "Toggle follow mode",
-                shortcut: "space",
+                shortcut: "Space",
+                search_terms: &["follow", "autoscroll", "scroll"],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -158,6 +183,7 @@ impl Action {
                 label: "Show thinking",
                 description: "Restore inline thinking rows in the transcript",
                 shortcut: "",
+                search_terms: &["show", "thinking", "reasoning", "trace"],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -165,6 +191,7 @@ impl Action {
                 label: "Hide thinking",
                 description: "Hide inline thinking rows in the transcript",
                 shortcut: "",
+                search_terms: &["hide", "thinking", "reasoning", "trace"],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -172,6 +199,7 @@ impl Action {
                 label: "Show timestamps",
                 description: "Reveal user message timestamps in the transcript",
                 shortcut: "",
+                search_terms: &["show", "timestamps", "time", "clock"],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -179,6 +207,7 @@ impl Action {
                 label: "Hide timestamps",
                 description: "Hide user message timestamps in the transcript",
                 shortcut: "",
+                search_terms: &["hide", "timestamps", "time", "clock"],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -186,6 +215,7 @@ impl Action {
                 label: "Show tool details",
                 description: "Show completed successful tools in the transcript",
                 shortcut: "",
+                search_terms: &["show", "tool", "tools", "details"],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -193,6 +223,7 @@ impl Action {
                 label: "Hide tool details",
                 description: "Hide completed successful tools in the transcript",
                 shortcut: "",
+                search_terms: &["hide", "tool", "tools", "details"],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -200,6 +231,7 @@ impl Action {
                 label: "Show generic tool output",
                 description: "Expand generic tool payload blocks in the transcript",
                 shortcut: "",
+                search_terms: &["show", "generic", "tool", "output", "payload"],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -207,6 +239,7 @@ impl Action {
                 label: "Hide generic tool output",
                 description: "Collapse generic tool payload blocks in the transcript",
                 shortcut: "",
+                search_terms: &["hide", "generic", "tool", "output", "payload"],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -214,6 +247,7 @@ impl Action {
                 label: "Expand turn results",
                 description: "Expand overflow tool output in the selected turn",
                 shortcut: "",
+                search_terms: &["expand", "turn", "results", "overflow", "tool output"],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -221,6 +255,7 @@ impl Action {
                 label: "Collapse turn results",
                 description: "Collapse overflow tool output in the selected turn",
                 shortcut: "",
+                search_terms: &["collapse", "turn", "results", "overflow", "tool output"],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -228,6 +263,7 @@ impl Action {
                 label: "Use stacked diffs",
                 description: "Force unified stacked transcript diffs",
                 shortcut: "",
+                search_terms: &["stacked", "diff", "diffs", "unified"],
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -235,13 +271,23 @@ impl Action {
                 label: "Use split diffs",
                 description: "Allow side-by-side transcript diffs when wide",
                 shortcut: "",
+                search_terms: &["split", "diff", "diffs", "side-by-side"],
                 section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "reload_replay",
+                label: "Reload replay",
+                description: "Reload the current replay session from disk",
+                shortcut: "r",
+                search_terms: &["reload", "refresh", "replay"],
+                section: PaletteCommandSection::System,
             },
             PaletteCommand {
                 id: "quit",
                 label: "Quit",
                 description: "Quit the application",
                 shortcut: "q",
+                search_terms: &["quit", "exit", "close"],
                 section: PaletteCommandSection::System,
             },
         ]
@@ -293,6 +339,10 @@ impl Action {
             ("replay_session", "Replay a previous session as read-only"),
             ("switch_model", "Browse available provider/model options"),
             (
+                "show_shortcuts",
+                "Open or close the shortcuts review surface",
+            ),
+            (
                 "cycle_variant",
                 "Cycle the configured model variant/reasoning preset",
             ),
@@ -301,6 +351,10 @@ impl Action {
                 "Return to the transcript-first session shell",
             ),
             ("open_event_log", "Open the review event log surface"),
+            (
+                "toggle_operator_sidebar",
+                "Show or hide the operator sidebar",
+            ),
             ("toggle_follow", "Toggle follow mode"),
             (
                 "show_thinking",
@@ -350,6 +404,10 @@ impl Action {
                 "split_transcript_diffs",
                 "Allow side-by-side transcript diffs when wide",
             ),
+            (
+                "reload_replay",
+                "Reload the current replay session from disk",
+            ),
             ("quit", "Quit the application"),
         ]
     }
@@ -387,6 +445,15 @@ impl Action {
             .find_map(|palette_command| {
                 (palette_command.id == command).then_some(palette_command.section)
             })
+    }
+
+    pub fn palette_command_search_terms(command: &str) -> &'static [&'static str] {
+        Self::grouped_palette_commands()
+            .iter()
+            .find_map(|palette_command| {
+                (palette_command.id == command).then_some(palette_command.search_terms)
+            })
+            .unwrap_or(&[])
     }
 
     pub fn grouped_palette_commands_for_overlay() -> &'static [PaletteCommand] {
@@ -979,5 +1046,21 @@ mod tests {
             Some(Action::VariantCycle)
         );
         assert_eq!(keymap.get_binding_str(Action::VariantCycle), "Ctrl+t");
+    }
+
+    #[test]
+    fn palette_commands_keep_search_aliases_separate_from_visible_hints() {
+        assert_eq!(Action::palette_command_shortcut("new_session"), "");
+        assert_eq!(Action::palette_command_shortcut("switch_model"), "/model");
+        assert_eq!(Action::palette_command_shortcut("show_shortcuts"), "?");
+
+        assert!(
+            Action::palette_command_search_terms("resume_session").contains(&"resume"),
+            "resume_session should stay searchable by resume aliases"
+        );
+        assert!(
+            Action::palette_command_search_terms("reload_replay").contains(&"refresh"),
+            "reload_replay should stay searchable by refresh aliases"
+        );
     }
 }
