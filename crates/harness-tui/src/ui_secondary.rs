@@ -169,7 +169,7 @@ impl OperatorRailBodySection {
             | Self::Mcp { .. }
             | Self::Lsp { .. }
             | Self::ModifiedFiles { .. } => Style::default()
-                .fg(theme.text.primary)
+                .fg(theme.text.secondary)
                 .add_modifier(Modifier::BOLD),
         }
     }
@@ -1296,12 +1296,12 @@ fn append_operator_rail_item(
         return;
     };
 
-    let primary_color = if matches!(section, OperatorRailBodySection::Context { .. }) {
-        theme.text.secondary
-    } else {
-        theme.text.primary
-    };
-    let secondary_color = theme.text.secondary;
+    let (primary_color, secondary_color) =
+        if matches!(section, OperatorRailBodySection::Context { .. }) {
+            (theme.text.tertiary, theme.text.tertiary)
+        } else {
+            (theme.text.primary, theme.text.secondary)
+        };
 
     match item {
         OperatorRailItem::Plain(_) => lines.push(Line::from(Span::styled(

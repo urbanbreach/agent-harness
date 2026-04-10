@@ -2498,6 +2498,7 @@ fn append_opencode_inline_tool_section_lines(
 ) {
     let fg = inline_tool_color(tool_call, theme);
     let style = tool_call_header_style(tool_call, fg);
+    let surface = transcript_nested_surface(theme, base_surface);
 
     let mut spans = Vec::new();
     if let Some(disclosure_state) = tool_call.header.disclosure_state {
@@ -2518,7 +2519,7 @@ fn append_opencode_inline_tool_section_lines(
     append_surface_row(
         lines,
         TRANSCRIPT_ASSISTANT_BODY_PREFIX,
-        transcript_flat_surface(base_surface),
+        surface,
         spans,
         transcript_surface_content_width(width, false),
     );
@@ -2533,7 +2534,7 @@ fn append_opencode_block_tool_section_lines(
     width: u16,
     base_surface: Color,
 ) {
-    let surface = transcript_emphasized_surface(theme, base_surface);
+    let surface = transcript_nested_surface(theme, base_surface);
     let rail_color = block_tool_rail_color(tool_call, theme);
     let card_shell = TranscriptToolCardShell {
         indent: TRANSCRIPT_ASSISTANT_BODY_PREFIX,
@@ -2641,7 +2642,7 @@ fn append_tool_call_message_block(
 
     let surface = card_shell
         .map(|shell| shell.surface)
-        .unwrap_or_else(|| transcript_flat_surface(base_surface));
+        .unwrap_or_else(|| transcript_nested_surface(theme, base_surface));
 
     for row in text.split('\n') {
         let spans = if row.is_empty() {
@@ -2675,7 +2676,7 @@ fn inline_tool_color(tool_call: &TranscriptToolCallSection, theme: &Theme) -> Co
         ToolCallDisplayStatus::PendingPermission => theme.status.warning,
         ToolCallDisplayStatus::Queued => theme.text.secondary,
         ToolCallDisplayStatus::Running => theme.status.info,
-        ToolCallDisplayStatus::Succeeded => theme.text.tertiary,
+        ToolCallDisplayStatus::Succeeded => theme.text.secondary,
         ToolCallDisplayStatus::Failed => theme.status.error,
     }
 }
@@ -2686,7 +2687,7 @@ fn block_tool_color(tool_call: &TranscriptToolCallSection, theme: &Theme) -> Col
         ToolCallDisplayStatus::Running => theme.status.info,
         ToolCallDisplayStatus::Failed => theme.status.error,
         ToolCallDisplayStatus::Queued => theme.text.secondary,
-        ToolCallDisplayStatus::Succeeded => theme.text.tertiary,
+        ToolCallDisplayStatus::Succeeded => theme.text.secondary,
     }
 }
 
@@ -2695,7 +2696,7 @@ fn block_tool_rail_color(tool_call: &TranscriptToolCallSection, theme: &Theme) -
         ToolCallDisplayStatus::PendingPermission => theme.status.warning,
         ToolCallDisplayStatus::Queued => theme.text.secondary,
         ToolCallDisplayStatus::Running => theme.status.info,
-        ToolCallDisplayStatus::Succeeded => theme.border.subtle,
+        ToolCallDisplayStatus::Succeeded => theme.text.secondary,
         ToolCallDisplayStatus::Failed => theme.status.error,
     }
 }
@@ -2709,9 +2710,7 @@ fn tool_call_header_style(tool_call: &TranscriptToolCallSection, color: Color) -
         | ToolCallDisplayStatus::Failed => {
             style = style.add_modifier(Modifier::BOLD);
         }
-        ToolCallDisplayStatus::Succeeded => {
-            style = style.add_modifier(Modifier::DIM);
-        }
+        ToolCallDisplayStatus::Succeeded => {}
     }
     if tool_call.header.struck_out {
         style = style.add_modifier(Modifier::CROSSED_OUT);
@@ -3679,10 +3678,6 @@ fn transcript_emphasized_surface(theme: &Theme, base_surface: Color) -> Color {
     }
 }
 
-fn transcript_flat_surface(base_surface: Color) -> Color {
-    base_surface
-}
-
 fn build_assistant_footer_line(
     turn: &TranscriptTurnSection,
     assistant_icon: &str,
@@ -3762,16 +3757,21 @@ fn assistant_primary_label_color(turn: &TranscriptTurnSection, theme: &Theme) ->
 fn assistant_primary_rail_color(turn: &TranscriptTurnSection, theme: &Theme) -> Color {
     match turn.header.status {
         ActivityStatus::Streaming => theme.text.accent,
-        ActivityStatus::Done | ActivityStatus::Error => theme.text.secondary,
+        ActivityStatus::Done => theme.text.secondary,
+        ActivityStatus::Error => theme.status.error,
     }
 }
 
 fn transcript_nested_rail_color(theme: &Theme) -> Color {
-    theme.text.secondary
+    theme.border.subtle
 }
 
-fn transcript_nested_surface(_theme: &Theme, base_surface: Color) -> Color {
-    transcript_flat_surface(base_surface)
+fn transcript_nested_surface(theme: &Theme, base_surface: Color) -> Color {
+    if base_surface == theme.surface.shell || base_surface == theme.surface.panel {
+        theme.surface.panel_elevated
+    } else {
+        theme.surface.overlay
+    }
 }
 
 fn format_duration_ms(duration_ms: u64) -> String {

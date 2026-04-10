@@ -753,30 +753,30 @@ impl Theme {
     pub fn opencode_dark() -> Self {
         Self {
             surface: SurfaceColors {
-                canvas: rgb(0x00, 0x00, 0x00),
-                shell: rgb(0x00, 0x00, 0x00),
-                panel: rgb(0x11, 0x11, 0x11),
-                panel_elevated: rgb(0x19, 0x19, 0x19),
-                overlay: rgb(0x19, 0x19, 0x19),
+                canvas: rgb(0x0A, 0x0A, 0x0A),
+                shell: rgb(0x0A, 0x0A, 0x0A),
+                panel: rgb(0x1A, 0x1A, 0x1A),
+                panel_elevated: rgb(0x1F, 0x1F, 0x1F),
+                overlay: rgb(0x1F, 0x1F, 0x1F),
             },
             border: BorderColors {
-                subtle: rgb(0x8C, 0x88, 0x83),
-                strong: rgb(0xD4, 0x8B, 0x17),
-                focus: rgb(0xD4, 0x8B, 0x17),
+                subtle: rgb(0x2E, 0x2E, 0x2E),
+                strong: rgb(0xFF, 0xB2, 0x24),
+                focus: rgb(0xFF, 0xB2, 0x24),
             },
             text: TextColors {
-                primary: rgb(0xE7, 0xE3, 0xDE),
-                secondary: rgb(0x8C, 0x88, 0x83),
-                tertiary: rgb(0x8C, 0x88, 0x83),
-                accent: rgb(0xD4, 0x8B, 0x17),
-                inverse: rgb(0x00, 0x00, 0x00),
+                primary: rgb(0xED, 0xED, 0xED),
+                secondary: rgb(0x8F, 0x8F, 0x8F),
+                tertiary: rgb(0x78, 0x78, 0x78),
+                accent: rgb(0xFF, 0xB2, 0x24),
+                inverse: rgb(0x0A, 0x0A, 0x0A),
             },
             status: StatusColors {
-                success: rgb(0x73, 0xC0, 0x6B),
-                warning: rgb(0xC9, 0xA2, 0x27),
-                error: rgb(0xD9, 0x6A, 0x6A),
-                info: rgb(0xD4, 0x8B, 0x17),
-                disabled: rgb(0x8C, 0x88, 0x83),
+                success: rgb(0x46, 0xA7, 0x58),
+                warning: rgb(0xF2, 0xA7, 0x00),
+                error: rgb(0xE5, 0x48, 0x4D),
+                info: rgb(0xFF, 0xB2, 0x24),
+                disabled: rgb(0x78, 0x78, 0x78),
             },
             live_shell: Self::OPENCODE_SHELL,
         }
@@ -804,24 +804,24 @@ mod tests {
     #[test]
     fn opencode_dark_theme_matches_palette_contract() {
         let theme = Theme::opencode_dark();
-        assert_eq!(theme.surface.canvas, rgb(0x00, 0x00, 0x00));
-        assert_eq!(theme.surface.shell, rgb(0x00, 0x00, 0x00));
-        assert_eq!(theme.surface.panel, rgb(0x11, 0x11, 0x11));
-        assert_eq!(theme.surface.panel_elevated, rgb(0x19, 0x19, 0x19));
-        assert_eq!(theme.surface.overlay, rgb(0x19, 0x19, 0x19));
-        assert_eq!(theme.border.subtle, rgb(0x8C, 0x88, 0x83));
-        assert_eq!(theme.border.strong, rgb(0xD4, 0x8B, 0x17));
-        assert_eq!(theme.border.focus, rgb(0xD4, 0x8B, 0x17));
-        assert_eq!(theme.text.primary, rgb(0xE7, 0xE3, 0xDE));
-        assert_eq!(theme.text.secondary, rgb(0x8C, 0x88, 0x83));
-        assert_eq!(theme.text.tertiary, rgb(0x8C, 0x88, 0x83));
-        assert_eq!(theme.text.accent, rgb(0xD4, 0x8B, 0x17));
-        assert_eq!(theme.text.inverse, rgb(0x00, 0x00, 0x00));
-        assert_eq!(theme.status.success, rgb(0x73, 0xC0, 0x6B));
-        assert_eq!(theme.status.warning, rgb(0xC9, 0xA2, 0x27));
-        assert_eq!(theme.status.error, rgb(0xD9, 0x6A, 0x6A));
-        assert_eq!(theme.status.info, rgb(0xD4, 0x8B, 0x17));
-        assert_eq!(theme.status.disabled, rgb(0x8C, 0x88, 0x83));
+        assert_eq!(theme.surface.canvas, rgb(0x0A, 0x0A, 0x0A));
+        assert_eq!(theme.surface.shell, rgb(0x0A, 0x0A, 0x0A));
+        assert_eq!(theme.surface.panel, rgb(0x1A, 0x1A, 0x1A));
+        assert_eq!(theme.surface.panel_elevated, rgb(0x1F, 0x1F, 0x1F));
+        assert_eq!(theme.surface.overlay, rgb(0x1F, 0x1F, 0x1F));
+        assert_eq!(theme.border.subtle, rgb(0x2E, 0x2E, 0x2E));
+        assert_eq!(theme.border.strong, rgb(0xFF, 0xB2, 0x24));
+        assert_eq!(theme.border.focus, rgb(0xFF, 0xB2, 0x24));
+        assert_eq!(theme.text.primary, rgb(0xED, 0xED, 0xED));
+        assert_eq!(theme.text.secondary, rgb(0x8F, 0x8F, 0x8F));
+        assert_eq!(theme.text.tertiary, rgb(0x78, 0x78, 0x78));
+        assert_eq!(theme.text.accent, rgb(0xFF, 0xB2, 0x24));
+        assert_eq!(theme.text.inverse, rgb(0x0A, 0x0A, 0x0A));
+        assert_eq!(theme.status.success, rgb(0x46, 0xA7, 0x58));
+        assert_eq!(theme.status.warning, rgb(0xF2, 0xA7, 0x00));
+        assert_eq!(theme.status.error, rgb(0xE5, 0x48, 0x4D));
+        assert_eq!(theme.status.info, rgb(0xFF, 0xB2, 0x24));
+        assert_eq!(theme.status.disabled, rgb(0x78, 0x78, 0x78));
     }
 
     #[test]

@@ -420,7 +420,7 @@ pub(super) fn divided_shell_surface(theme: &Theme) -> Color {
 }
 
 pub(super) fn live_control_dock_surface(theme: &Theme) -> Color {
-    theme.surface.shell
+    theme.surface.panel
 }
 
 pub(super) fn control_dock_surface(
@@ -2465,6 +2465,17 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
     assert_eq!(
         buffer[(content_right_edge, composer.y)].bg,
         theme.surface.panel_elevated
+    );
+    assert_eq!(
+        control_dock_surface(&theme, crate::view_model::ControlDockVariant::Live),
+        theme.surface.panel
+    );
+    assert_eq!(
+        control_dock_surface(
+            &theme,
+            crate::view_model::ControlDockVariant::ReplayReadOnly
+        ),
+        theme.surface.panel
     );
     assert_eq!(
         buffer[(

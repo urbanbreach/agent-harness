@@ -281,6 +281,8 @@ fn transcript_turn_sections_keep_nested_tool_details() {
         row_at(&buffer, 100, thinking_heading_row).expect("thinking heading palette row");
     let (reasoning_body_text, reasoning_body_fgs, _) =
         row_at(&buffer, 100, reasoning_body_row).expect("reasoning body palette row");
+    let (tool_text, _, tool_bgs) = row_at(&buffer, 100, tool_row).expect("tool row");
+    let (error_text, _, error_bgs) = row_at(&buffer, 100, error_row).expect("error row");
     let thinking_label_start = thinking_heading_text[..thinking_heading_text
         .find("Thinking:")
         .expect("thinking label start")]
@@ -327,6 +329,22 @@ fn transcript_turn_sections_keep_nested_tool_details() {
             .iter()
             .all(|color| *color == theme.text.secondary),
         "thinking body should stay muted like Opencode\n{rendered}"
+    );
+    let tool_label_start = tool_text.find("$ false").expect("tool row label start");
+    let tool_label_start = tool_text[..tool_label_start].chars().count();
+    let error_label_start = error_text.find("error").expect("error row label start");
+    let error_label_start = error_text[..error_label_start].chars().count();
+    assert!(
+        tool_bgs[tool_label_start..tool_label_start + "$ false".chars().count()]
+            .iter()
+            .all(|color| *color == theme.surface.panel_elevated),
+        "nested tool rows should stay on the elevated transcript surface\n{rendered}"
+    );
+    assert!(
+        error_bgs[error_label_start..error_label_start + "error".chars().count()]
+            .iter()
+            .all(|color| *color == theme.surface.panel_elevated),
+        "nested transcript errors should stay on the elevated transcript surface\n{rendered}"
     );
     let nested_detail_columns = [tool_row, error_row]
         .into_iter()
@@ -1884,76 +1902,102 @@ fn opencode_dark_theme_has_exact_palette() {
 
     assert_eq!(
         theme.surface.canvas,
-        ratatui::style::Color::Rgb(0x00, 0x00, 0x00)
+        ratatui::style::Color::Rgb(0x0A, 0x0A, 0x0A)
     );
     assert_eq!(
         theme.surface.shell,
-        ratatui::style::Color::Rgb(0x00, 0x00, 0x00)
+        ratatui::style::Color::Rgb(0x0A, 0x0A, 0x0A)
     );
     assert_eq!(
         theme.surface.panel,
-        ratatui::style::Color::Rgb(0x11, 0x11, 0x11)
+        ratatui::style::Color::Rgb(0x1A, 0x1A, 0x1A)
     );
     assert_eq!(
         theme.surface.panel_elevated,
-        ratatui::style::Color::Rgb(0x19, 0x19, 0x19)
+        ratatui::style::Color::Rgb(0x1F, 0x1F, 0x1F)
     );
     assert_eq!(
         theme.surface.overlay,
-        ratatui::style::Color::Rgb(0x19, 0x19, 0x19)
+        ratatui::style::Color::Rgb(0x1F, 0x1F, 0x1F)
     );
     assert_eq!(
         theme.border.subtle,
-        ratatui::style::Color::Rgb(0x8C, 0x88, 0x83)
+        ratatui::style::Color::Rgb(0x2E, 0x2E, 0x2E)
     );
     assert_eq!(
         theme.border.strong,
-        ratatui::style::Color::Rgb(0xD4, 0x8B, 0x17)
+        ratatui::style::Color::Rgb(0xFF, 0xB2, 0x24)
     );
     assert_eq!(
         theme.border.focus,
-        ratatui::style::Color::Rgb(0xD4, 0x8B, 0x17)
+        ratatui::style::Color::Rgb(0xFF, 0xB2, 0x24)
     );
     assert_eq!(
         theme.text.primary,
-        ratatui::style::Color::Rgb(0xE7, 0xE3, 0xDE)
+        ratatui::style::Color::Rgb(0xED, 0xED, 0xED)
     );
     assert_eq!(
         theme.text.secondary,
-        ratatui::style::Color::Rgb(0x8C, 0x88, 0x83)
+        ratatui::style::Color::Rgb(0x8F, 0x8F, 0x8F)
     );
     assert_eq!(
         theme.text.tertiary,
-        ratatui::style::Color::Rgb(0x8C, 0x88, 0x83)
+        ratatui::style::Color::Rgb(0x78, 0x78, 0x78)
     );
     assert_eq!(
         theme.text.accent,
-        ratatui::style::Color::Rgb(0xD4, 0x8B, 0x17)
+        ratatui::style::Color::Rgb(0xFF, 0xB2, 0x24)
     );
     assert_eq!(
         theme.text.inverse,
-        ratatui::style::Color::Rgb(0x00, 0x00, 0x00)
+        ratatui::style::Color::Rgb(0x0A, 0x0A, 0x0A)
     );
     assert_eq!(
         theme.status.success,
-        ratatui::style::Color::Rgb(0x73, 0xC0, 0x6B)
+        ratatui::style::Color::Rgb(0x46, 0xA7, 0x58)
     );
     assert_eq!(
         theme.status.warning,
-        ratatui::style::Color::Rgb(0xC9, 0xA2, 0x27)
+        ratatui::style::Color::Rgb(0xF2, 0xA7, 0x00)
     );
     assert_eq!(
         theme.status.error,
-        ratatui::style::Color::Rgb(0xD9, 0x6A, 0x6A)
+        ratatui::style::Color::Rgb(0xE5, 0x48, 0x4D)
     );
     assert_eq!(
         theme.status.info,
-        ratatui::style::Color::Rgb(0xD4, 0x8B, 0x17)
+        ratatui::style::Color::Rgb(0xFF, 0xB2, 0x24)
     );
     assert_eq!(
         theme.status.disabled,
-        ratatui::style::Color::Rgb(0x8C, 0x88, 0x83)
+        ratatui::style::Color::Rgb(0x78, 0x78, 0x78)
     );
+}
+
+#[cfg(test)]
+#[test]
+fn inline_tool_rows_use_elevated_surface_and_quiet_success_tone() {
+    let mut app = app::AppState::new_live(None, false, None);
+    for event in session_view_events() {
+        app.ingest_event(event);
+    }
+
+    let rendered = render_live_lines(&app, 120, 32);
+    let buffer = render_live_cells(&app, 120, 32);
+    let theme = Theme::default();
+    let lines = rendered.lines().collect::<Vec<_>>();
+    let tool_row = find_line_containing(&lines, "Read src/app.rs").expect("tool row");
+    let (tool_text, tool_fgs, tool_bgs) = row_at(&buffer, 120, tool_row).expect("tool row cells");
+    let tool_start = tool_text.find("Read src/app.rs").expect("tool text start");
+    let tool_start = tool_text[..tool_start].chars().count();
+    let tool_end = tool_start + "Read src/app.rs".chars().count();
+
+    assert!(tool_bgs[tool_start..tool_end]
+        .iter()
+        .all(|color| *color == theme.surface.panel_elevated));
+    assert!(tool_fgs[tool_start..tool_end]
+        .iter()
+        .all(|color| *color == theme.text.secondary));
 }
 
 #[cfg(test)]
@@ -4627,7 +4671,7 @@ fn module_live_shell_redesign_preserves_replay_overlay_and_permission_parity() {
         100,
         replay_disabled_row,
         theme.status.disabled,
-        theme.surface.shell,
+        theme.surface.panel,
         "replay disabled composer",
     );
     assert_row_segment_palette(
@@ -4635,7 +4679,7 @@ fn module_live_shell_redesign_preserves_replay_overlay_and_permission_parity() {
         100,
         "? shortcuts",
         theme.text.secondary,
-        theme.surface.shell,
+        theme.surface.panel,
     );
 
     let mut degraded = app::AppState::new_live(None, false, None);
