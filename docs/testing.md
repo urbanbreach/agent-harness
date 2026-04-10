@@ -53,6 +53,22 @@ If the PTY lane fails with unchanged markers/focus region and only snapshot/hash
 
 Broader Batch 1 parity wrappers remain out of scope for issue #105. If the live environment is unavailable, call that out explicitly as a remaining risk instead of silently skipping it.
 
+## Issue #106 verification path
+
+Reproduce the alias/setup blocker first, then prove the prepared config stays runtime-loadable before relying on live signoff lanes.
+
+### Focused prepared-config regression
+- `cargo test -p harness-testkit prepared_restricted_tools_config_from_example_loads_in_harness_prompt -- --exact`
+
+This keeps the shipped `configs/harness.example.jsonc` honest by preparing a restricted-tools live config from the legacy top-level `agent` shape, asserting the rendered config keeps only canonical `agents` / `ui.default_profile`, and running a real harness prompt against a local wiremock responses endpoint. If this fails, treat it as a prepared-config regression before widening into live-provider debugging.
+
+### Live follow-up
+- `HARNESS_LIVE_PROXY=1 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc HARNESS_LIVE_PROXY_PROVIDER=default HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini cargo test -p harness-testkit live_proxy_preflight -- --ignored --exact`
+- `HARNESS_LIVE_PROXY=1 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc HARNESS_LIVE_PROXY_PROVIDER=default HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini cargo test -p harness-testkit live_proxy_prompt_chat_tool_flow -- --ignored --exact`
+- `HARNESS_LIVE_PROXY=1 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc HARNESS_LIVE_PROXY_PROVIDER=default HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini HARNESS_VISUAL_ARTIFACT_DIR=target/pty-visual-artifacts cargo test -p harness-testkit live_proxy_e2e_tui_tool_flow -- --ignored --exact`
+
+Once the focused prepared-config regression is green, treat any remaining failures in the live follow-up as downstream lane-specific blockers instead of alias-shape setup failures.
+
 ### Workspace baseline
 - `cargo fmt --all -- --check`
 - `cargo check --workspace`

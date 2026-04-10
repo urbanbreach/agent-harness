@@ -1275,6 +1275,117 @@ async fn live_proxy_prompt_wiremock_falls_back_to_chat_on_cliproxy_400() {
     );
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn prepared_restricted_tools_config_from_example_loads_in_harness_prompt() {
+    let server = MockServer::start().await;
+    let response_template = ResponseTemplate::new(200)
+        .insert_header("content-type", "text/event-stream")
+        .set_body_raw(deterministic_responses_sse_fixture(), "text/event-stream");
+
+    Mock::given(method("POST"))
+        .and(path(RESPONSES_ENDPOINT_PATH))
+        .respond_with(response_template)
+        .mount(&server)
+        .await;
+
+    let namespace = LiveNamespaceAllocation::allocate("live-proxy-example-restricted-tools")
+        .expect("allocate example restricted-tools namespace");
+    let source_config_path = namespace.artifact_file("source-config", "jsonc");
+    let source_session_dir = namespace.session_dir("source-session");
+    let mut source_config =
+        load_json5_config(&repo_root().join("configs").join("harness.example.jsonc"))
+            .expect("load shipped example config");
+    source_config
+        .get_mut("providers")
+        .and_then(Value::as_object_mut)
+        .and_then(|providers| providers.get_mut(DEFAULT_LIVE_PROXY_PROVIDER))
+        .and_then(Value::as_object_mut)
+        .expect("example default provider present")
+        .extend([
+            (
+                "base_url".to_string(),
+                Value::String(format!("{}/v1", server.uri())),
+            ),
+            ("api_key".to_string(), Value::String("test-key".to_string())),
+            ("api_mode".to_string(), Value::String("auto".to_string())),
+        ]);
+    source_config
+        .get_mut("runtime")
+        .and_then(Value::as_object_mut)
+        .expect("example runtime present")
+        .insert(
+            "session_dir".to_string(),
+            Value::String(source_session_dir.to_string_lossy().into_owned()),
+        );
+    fs::write(
+        &source_config_path,
+        serde_json::to_string_pretty(&source_config).expect("serialize example source config"),
+    )
+    .expect("write example source config");
+
+    let run_config = prepare_prompt_run_config_with_contract(
+        &source_config_path,
+        DEFAULT_LIVE_PROXY_PROVIDER,
+        DEFAULT_LIVE_PROXY_MODEL,
+        Some(DEFAULT_LIVE_PROXY_VARIANT),
+        LIVE_PROXY_CHAT_TODO_FLOW_PROFILE,
+        PreparedLiveConfigContract::RestrictedTools {
+            paths: PreparedLiveConfigPaths {
+                workspace_root: namespace.root_dir().to_path_buf(),
+                session_dir: namespace.session_dir("prepared-session"),
+                prepared_config_path: namespace.artifact_file("prepared-config", "jsonc"),
+            },
+            description: "Execute the live chat todo flow via todowrite.".to_string(),
+            tools: vec!["todowrite".to_string()],
+        },
+    )
+    .expect("prepare restricted-tools config from shipped example");
+
+    let prepared = load_json5_config(&run_config.config_path).expect("load prepared config");
+    assert_prepared_config_uses_canonical_profile_keys(&prepared);
+
+    let harness_bin = resolve_harness_bin();
+    let events_path = namespace.artifact_file("events", "jsonl");
+    let harness_bin_for_run = harness_bin.clone();
+    let events_path_for_run = events_path.clone();
+    let run_config_for_run = run_config.clone();
+    let output = tokio::task::spawn_blocking(move || {
+        Command::new(&harness_bin_for_run)
+            .arg("prompt")
+            .arg("--text")
+            .arg("Return hello from the prepared restricted-tools config.")
+            .arg("--profile")
+            .arg(&run_config_for_run.profile)
+            .arg("--config")
+            .arg(&run_config_for_run.config_path)
+            .arg("--out")
+            .arg(&events_path_for_run)
+            .env(
+                "HARNESS_PROMPT_WAIT_TIMEOUT_MS",
+                DEFAULT_LIVE_PROXY_WAIT_TIMEOUT_MS,
+            )
+            .current_dir(&run_config_for_run.workspace_root)
+            .output()
+            .expect("spawn harness prompt for prepared restricted-tools config")
+    })
+    .await
+    .expect("join blocking harness run");
+
+    assert!(
+        output.status.success(),
+        "prepared restricted-tools harness prompt failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let events_body = fs::read_to_string(&events_path)
+        .unwrap_or_else(|err| panic!("failed reading {}: {err}", events_path.display()));
+    assert_provider_turn_completed(&collect_provider_turn_observation(&events_body))
+        .unwrap_or_else(|err| {
+            panic!("prepared restricted-tools provider-turn evidence mismatch: {err}")
+        });
+}
+
 #[test]
 fn prepare_prompt_run_config_rejects_chat_completions_mode() {
     let source_config_path = unique_temp_file("live-proxy-chat-mode", "jsonc");
@@ -1329,6 +1440,7 @@ fn prepare_live_prompt_run_config_applies_low_variant_when_available() {
         .and_then(|agents| agents.get(DEFAULT_LIVE_PROXY_PROFILE))
         .and_then(Value::as_object)
         .expect("prepared live smoke agent present");
+    assert_prepared_config_uses_canonical_profile_keys(&prepared);
     assert_eq!(
         prepared
             .get("ui")
@@ -1346,6 +1458,43 @@ fn prepare_live_prompt_run_config_applies_low_variant_when_available() {
         prepared_profile.get("variant").and_then(Value::as_str),
         Some(DEFAULT_LIVE_PROXY_VARIANT)
     );
+}
+
+#[test]
+fn prepare_live_tool_flow_run_config_canonicalizes_example_agent_alias() {
+    let request = LivePromptRequest {
+        source_config_path: repo_root().join("configs").join("harness.example.jsonc"),
+        provider_name: DEFAULT_LIVE_PROXY_PROVIDER.to_string(),
+        primary_model: DEFAULT_LIVE_PROXY_MODEL.to_string(),
+        primary_variant: Some(DEFAULT_LIVE_PROXY_VARIANT.to_string()),
+        vision_model: DEFAULT_LIVE_PROXY_MODEL.to_string(),
+        profile: DEFAULT_LIVE_PROXY_PROFILE.to_string(),
+        prompt_text: DEFAULT_LIVE_PROXY_PROMPT.to_string(),
+        wait_timeout_ms: DEFAULT_LIVE_PROXY_WAIT_TIMEOUT_MS.to_string(),
+    };
+
+    let run_config = prepare_live_tool_flow_run_config(
+        &request,
+        LiveToolFlowNamespaces {
+            live_tui_session: LIVE_TUI_SESSION_NAMESPACE,
+            tool_flow_session: TOOL_FLOW_SESSION_NAMESPACE,
+            vision_verifier_session: VISION_VERIFIER_SESSION_NAMESPACE,
+            visual_test_name: LIVE_PROXY_TUI_TOOL_FLOW_TEST_NAME,
+        },
+    )
+    .expect("prepare live tool-flow config from example config");
+
+    let tool_flow_config = load_json5_config(&run_config.tool_flow.config_path)
+        .expect("load prepared tool-flow config");
+    assert_prepared_config_uses_canonical_profile_keys(&tool_flow_config);
+    assert!(tool_flow_config
+        .get("agents")
+        .and_then(Value::as_object)
+        .is_some_and(|agents| agents.contains_key(LIVE_PROXY_TOOL_FLOW_PROFILE)));
+
+    let vision_config = load_json5_config(&run_config.vision_verifier.config_path)
+        .expect("load prepared vision verifier config");
+    assert_prepared_config_uses_canonical_profile_keys(&vision_config);
 }
 
 #[test]
@@ -1635,6 +1784,9 @@ fn prepare_live_prompt_chat_tool_run_config_builds_restricted_agents() {
         load_json5_config(&run_config.question.config_path).expect("load prepared question config");
     let skill_config =
         load_json5_config(&run_config.skill.config_path).expect("load prepared skill config");
+    assert_prepared_config_uses_canonical_profile_keys(&todo_config);
+    assert_prepared_config_uses_canonical_profile_keys(&question_config);
+    assert_prepared_config_uses_canonical_profile_keys(&skill_config);
 
     let todo_profile = todo_config
         .get("agents")
@@ -1683,6 +1835,32 @@ fn prepare_live_prompt_chat_tool_run_config_builds_restricted_agents() {
             .exists(),
         "prepared chat tool workspace should seed rust-best-practices into a local project skill root"
     );
+}
+
+#[test]
+fn prepare_live_prompt_chat_tool_run_config_canonicalizes_example_agent_alias() {
+    let request = LivePromptRequest {
+        source_config_path: repo_root().join("configs").join("harness.example.jsonc"),
+        provider_name: DEFAULT_LIVE_PROXY_PROVIDER.to_string(),
+        primary_model: DEFAULT_LIVE_PROXY_MODEL.to_string(),
+        primary_variant: Some(DEFAULT_LIVE_PROXY_VARIANT.to_string()),
+        vision_model: DEFAULT_LIVE_PROXY_MODEL.to_string(),
+        profile: DEFAULT_LIVE_PROXY_PROFILE.to_string(),
+        prompt_text: DEFAULT_LIVE_PROXY_PROMPT.to_string(),
+        wait_timeout_ms: DEFAULT_LIVE_PROXY_WAIT_TIMEOUT_MS.to_string(),
+    };
+
+    let run_config = prepare_live_prompt_chat_tool_run_config(&request)
+        .expect("prepare live prompt chat tool config from example config");
+
+    for prepared_path in [
+        &run_config.todo_flow.config_path,
+        &run_config.question.config_path,
+        &run_config.skill.config_path,
+    ] {
+        let prepared = load_json5_config(prepared_path).expect("load prepared chat tool config");
+        assert_prepared_config_uses_canonical_profile_keys(&prepared);
+    }
 }
 
 #[test]
@@ -3958,6 +4136,7 @@ fn prepare_prompt_run_config_with_contract(
         } => apply_restricted_tools_contract(&mut config, profile_name, description, tools)?,
         PreparedLiveConfigContract::VisionVerifier(_) => {}
     }
+    normalize_legacy_profile_aliases(&mut config)?;
 
     let rendered = serde_json::to_string_pretty(&config)
         .map_err(|err| format!("failed to render prepared config JSON: {err}"))?;
@@ -5625,6 +5804,7 @@ fn normalize_legacy_profile_aliases(config: &mut Value) -> Result<(), String> {
             root.insert("agents".to_string(), agent_alias);
         }
     }
+    root.remove("agent");
 
     let default_profile = root
         .get("default_agent")
@@ -5642,8 +5822,32 @@ fn normalize_legacy_profile_aliases(config: &mut Value) -> Result<(), String> {
         ui.entry("default_profile".to_string())
             .or_insert_with(|| Value::String(default_profile));
     }
+    root.remove("default_agent");
 
     Ok(())
+}
+
+fn assert_prepared_config_uses_canonical_profile_keys(config: &Value) {
+    assert!(
+        config.get("agent").is_none(),
+        "prepared config should not retain legacy top-level `agent`: {config:#}"
+    );
+    assert!(
+        config.get("agents").and_then(Value::as_object).is_some(),
+        "prepared config should retain canonical top-level `agents`: {config:#}"
+    );
+    assert!(
+        config.get("default_agent").is_none(),
+        "prepared config should not retain legacy top-level `default_agent`: {config:#}"
+    );
+    assert!(
+        config
+            .get("ui")
+            .and_then(Value::as_object)
+            .and_then(|ui| ui.get("default_profile"))
+            .is_some(),
+        "prepared config should retain canonical `ui.default_profile`: {config:#}"
+    );
 }
 
 fn ensure_profile_model_ref(
