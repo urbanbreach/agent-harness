@@ -16,13 +16,13 @@
 
 
 
-
                         ╻ ╻  ┏━┓  ┏━┓  ┏┓╻  ┏━╸  ┏━┓  ┏━┓
                         ┣━┫  ┣━┫  ┣┳┛  ┃┗┫  ┣╸   ┗━┓  ┗━┓
                         ╹ ╹  ╹ ╹  ╹┗╸  ╹ ╹  ┗━╸  ┗━┛  ┗━┛
                             Launch: worker · model-1
                               Provider mock · Demo
-                     open a fresh session in this directory
+                  Continue alpha-run · updated 2026-03-08 12:34
+        Enter reopen alpha-run · updated 2026-03-08 12:34 · ↑/↓ switch …
 
 
   ┃
@@ -31,4 +31,4 @@
   ┃   Ready   Launch: worker · model-1 · provider mock · Demo
   ┃
   ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-    ● Tip  Ctrl+p opens saved sessions · Shift+Enter/Ctrl+j adds a newline
+    ● Tip  Ctrl+p reopens saved work · Shift+Enter/Ctrl+j adds a newline

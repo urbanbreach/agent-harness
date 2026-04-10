@@ -1901,7 +1901,7 @@ fn render_control_dock_disclosure(
     if dock.variant == crate::view_model::ControlDockVariant::Startup {
         let palette = app.keymap.get_binding_str(Action::Palette);
         let newline = composer_newline_binding_hint(app);
-        let candidates = startup_disclosure_candidates(theme, surface, &palette, &newline);
+        let candidates = startup_disclosure_candidates(app, theme, surface, &palette, &newline);
         let spans = candidates
             .into_iter()
             .find(|candidate| {
@@ -2341,6 +2341,7 @@ fn composer_disclosure_summary_candidates(
 }
 
 fn startup_disclosure_candidates(
+    app: &AppState,
     theme: &Theme,
     surface: Color,
     palette: &str,
@@ -2363,7 +2364,11 @@ fn startup_disclosure_candidates(
             Span::styled("● Tip", tip),
             Span::styled("  ", base),
             Span::styled(palette.to_string(), key),
-            Span::styled(" opens saved sessions · ", text),
+            Span::styled(
+                app.startup_saved_sessions_disclosure_text().to_string(),
+                text,
+            ),
+            Span::styled(" · ", text),
             Span::styled(newline.to_string(), key),
             Span::styled(" adds a newline", text),
         ],
@@ -2372,7 +2377,10 @@ fn startup_disclosure_candidates(
             Span::styled("● Tip", tip),
             Span::styled("  ", base),
             Span::styled(palette.to_string(), key),
-            Span::styled(" opens saved sessions", text),
+            Span::styled(
+                app.startup_saved_sessions_disclosure_text().to_string(),
+                text,
+            ),
         ],
         vec![
             Span::styled("  ", base),

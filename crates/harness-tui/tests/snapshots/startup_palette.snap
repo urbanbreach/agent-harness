@@ -11,11 +11,11 @@
 
                    > █ Search commands, sections, or shortcuts
                    6 matches · type commands, sections, or shortcuts · Enter run…
-                   Suggested
-                   › New session  Start a fresh live session                  new
                    Session
-                     Continue session  Continue a prior session when res…  resume
+                   › Continue session  Continue a prior session when res…  resume
+                   Suggested
+                     New session  Start a fresh live session                  new
+                   Session
                      Replay session  Replay a previous session as read-o…  replay
                    Agent
                      Switch model  Browse available provider/model options  model
-                     Cycle reasoning preset  Cycle the configured model …  ctrl+t

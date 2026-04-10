@@ -128,6 +128,10 @@ pub(crate) fn render_startup_lifecycle_flow(
     let logo_height = startup_logo_height(content_area);
     let runtime_summary = app.runtime_context_primary_summary();
     let runtime_detail = startup_runtime_detail(app);
+    let purpose = app
+        .startup_recovery_summary()
+        .unwrap_or_else(|| app.startup_lifecycle_purpose().to_string());
+    let secondary_hint = app.startup_lifecycle_secondary_hint();
     let summary_visible = content_area.height >= logo_height.saturating_add(1);
     let detail_visible =
         runtime_detail.is_some() && content_area.height >= logo_height.saturating_add(2);
@@ -136,10 +140,18 @@ pub(crate) fn render_startup_lifecycle_flow(
             .saturating_add(u16::from(summary_visible))
             .saturating_add(u16::from(detail_visible))
             .saturating_add(1);
+    let secondary_visible = secondary_hint.is_some()
+        && content_area.height
+            >= logo_height
+                .saturating_add(u16::from(summary_visible))
+                .saturating_add(u16::from(detail_visible))
+                .saturating_add(u16::from(purpose_visible))
+                .saturating_add(1);
     let content_height = logo_height
         .saturating_add(u16::from(summary_visible))
         .saturating_add(u16::from(detail_visible))
-        .saturating_add(u16::from(purpose_visible));
+        .saturating_add(u16::from(purpose_visible))
+        .saturating_add(u16::from(secondary_visible));
     let top_gap = content_area.height.saturating_sub(content_height) / 2;
 
     frame.render_widget(
@@ -159,6 +171,7 @@ pub(crate) fn render_startup_lifecycle_flow(
             Constraint::Length(u16::from(summary_visible)),
             Constraint::Length(u16::from(detail_visible)),
             Constraint::Length(u16::from(purpose_visible)),
+            Constraint::Length(u16::from(secondary_visible)),
             Constraint::Min(0),
         ])
         .split(content_area);
@@ -200,10 +213,22 @@ pub(crate) fn render_startup_lifecycle_flow(
         render_lifecycle_copy_line(
             frame,
             rows[4],
-            theme.live_shell.startup.new_session_purpose,
+            &purpose,
             Style::default().fg(theme.text.secondary).bg(surface),
             Alignment::Center,
         );
+    }
+
+    if secondary_visible && rows[5].height > 0 {
+        if let Some(secondary_hint) = secondary_hint.as_deref() {
+            render_lifecycle_copy_line(
+                frame,
+                rows[5],
+                secondary_hint,
+                Style::default().fg(theme.text.secondary).bg(surface),
+                Alignment::Center,
+            );
+        }
     }
 }
 

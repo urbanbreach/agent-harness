@@ -1,4 +1,4 @@
-use std::cmp::Reverse;
+use std::cmp::{Ordering, Reverse};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::ops::{Deref, DerefMut};
@@ -1026,6 +1026,19 @@ pub(crate) fn session_history_provider_model_label(entry: &SessionHistoryEntry) 
         .unwrap_or("<unavailable>")
 }
 
+fn session_history_latest_first_cmp(
+    left: &SessionHistoryEntry,
+    right: &SessionHistoryEntry,
+) -> std::cmp::Ordering {
+    left.catalog
+        .last_updated_at
+        .as_deref()
+        .unwrap_or("")
+        .cmp(right.catalog.last_updated_at.as_deref().unwrap_or(""))
+        .then_with(|| session_history_run_name(left).cmp(session_history_run_name(right)))
+        .then_with(|| left.catalog.run_id.cmp(&right.catalog.run_id))
+}
+
 pub(crate) fn session_history_resumability_label(entry: &SessionHistoryEntry) -> String {
     if entry.catalog.is_resumable {
         "continue ready".to_string()
@@ -1096,6 +1109,45 @@ fn session_history_entry_matches_action(
             SessionModeSource::ScenarioFixture | SessionModeSource::ReplayOnly
         ),
     }
+}
+
+fn compare_session_history_entries(
+    left_entry: &SessionHistoryEntry,
+    right_entry: &SessionHistoryEntry,
+    action: StartupLauncherAction,
+) -> Ordering {
+    session_history_action_sort_bucket(left_entry, action)
+        .cmp(&session_history_action_sort_bucket(right_entry, action))
+        .then_with(|| {
+            right_entry
+                .catalog
+                .last_updated_at
+                .as_deref()
+                .unwrap_or("")
+                .cmp(left_entry.catalog.last_updated_at.as_deref().unwrap_or(""))
+        })
+        .then_with(|| {
+            session_history_run_name(left_entry).cmp(session_history_run_name(right_entry))
+        })
+        .then_with(|| left_entry.catalog.run_id.cmp(&right_entry.catalog.run_id))
+}
+
+fn sorted_session_history_indexes(
+    entries: &[SessionHistoryEntry],
+    action: StartupLauncherAction,
+    input: &str,
+) -> Vec<usize> {
+    let mut filtered = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| session_history_entry_matches_action(entry, action))
+        .filter(|(_, entry)| session_history_filter_matches(entry, input))
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    filtered.sort_by(|left_index, right_index| {
+        compare_session_history_entries(&entries[*left_index], &entries[*right_index], action)
+    });
+    filtered
 }
 
 const fn session_history_action_sort_bucket(
@@ -2697,6 +2749,7 @@ impl AppState {
             state.set_launch_metadata(launch_metadata);
         }
         state.set_session_history_entries(session_history_entries);
+        state.reset_startup_launcher_selection();
         if let Some(pending_prompt) = take_pending_live_prompt() {
             state.replace_prompt_input(pending_prompt.text);
         }
@@ -3256,6 +3309,61 @@ impl AppState {
         )
     }
 
+    pub(crate) fn startup_lifecycle_purpose(&self) -> &'static str {
+        let startup = &self.theme.live_shell.startup;
+        if self.session_history_entries.is_empty() {
+            return startup.new_session_purpose;
+        }
+
+        match self.startup_launcher_action {
+            StartupLauncherAction::NewSession => startup.new_session_purpose,
+            StartupLauncherAction::ContinueSession => startup.continue_session_purpose,
+            StartupLauncherAction::ReplaySession => startup.replay_session_purpose,
+        }
+    }
+
+    pub(crate) fn startup_lifecycle_secondary_hint(&self) -> Option<String> {
+        let startup = &self.theme.live_shell.startup;
+        if self.session_history_entries.is_empty() {
+            return None;
+        }
+
+        let hint = match self.startup_launcher_action {
+            StartupLauncherAction::NewSession => startup.secondary_hint.to_string(),
+            StartupLauncherAction::ContinueSession => {
+                match self.startup_quick_pick_entry(StartupLauncherAction::ContinueSession) {
+                    Some(entry) if entry.catalog.is_resumable => format!(
+                        "Enter reopen {} · {} · ↑/↓ switch action",
+                        session_history_run_name(entry),
+                        session_history_recency_label(entry)
+                    ),
+                    Some(entry) => format!(
+                        "Continue blocked for {} · {} · Ctrl+P browse saved sessions",
+                        session_history_run_name(entry),
+                        entry
+                            .catalog
+                            .resume_disabled_reason
+                            .as_deref()
+                            .unwrap_or("continue unavailable")
+                    ),
+                    None => "No resumable runs ready · Ctrl+P browse saved sessions".to_string(),
+                }
+            }
+            StartupLauncherAction::ReplaySession => {
+                match self.startup_quick_pick_entry(StartupLauncherAction::ReplaySession) {
+                    Some(entry) => format!(
+                        "Enter replay {} · {} · ↑/↓ switch action",
+                        session_history_run_name(entry),
+                        session_history_recency_label(entry)
+                    ),
+                    None => "No saved runs ready · Ctrl+P browse saved sessions".to_string(),
+                }
+            }
+        };
+
+        Some(hint)
+    }
+
     pub(crate) fn footer_hints_view_model(&self) -> view_model::FooterHintsViewModel {
         view_model::footer_hints_view_model(view_model::FooterHintsInput {
             replay_mode: self.replay_mode,
@@ -3273,6 +3381,60 @@ impl AppState {
             && self
                 .launch_mode_label()
                 .is_some_and(|label| label.eq_ignore_ascii_case("continued"))
+    }
+
+    pub(crate) fn startup_recovery_summary(&self) -> Option<String> {
+        let resumable_entries = self
+            .session_history_entries
+            .iter()
+            .filter(|entry| {
+                entry.catalog.is_resumable
+                    && session_history_entry_matches_action(
+                        entry,
+                        StartupLauncherAction::ContinueSession,
+                    )
+            })
+            .collect::<Vec<_>>();
+        let resumable_count = resumable_entries.len();
+
+        if let Some(latest_resumable) = resumable_entries
+            .into_iter()
+            .max_by(|left, right| session_history_latest_first_cmp(left, right))
+        {
+            return Some(if resumable_count == 1 {
+                format!(
+                    "Continue {} · {}",
+                    session_history_run_name(latest_resumable),
+                    session_history_recency_label(latest_resumable)
+                )
+            } else {
+                format!(
+                    "{resumable_count} sessions ready to continue · latest {}",
+                    session_history_run_name(latest_resumable)
+                )
+            });
+        }
+
+        self.session_history_entries
+            .iter()
+            .filter(|entry| {
+                session_history_entry_matches_action(entry, StartupLauncherAction::NewSession)
+            })
+            .max_by(|left, right| session_history_latest_first_cmp(left, right))
+            .map(|latest_saved| {
+                format!(
+                    "Replay {} from saved history",
+                    session_history_run_name(latest_saved)
+                )
+            })
+    }
+
+    pub(crate) fn startup_saved_sessions_disclosure_text(&self) -> &'static str {
+        if self.startup_recovery_summary().is_some() {
+            " reopens saved work"
+        } else {
+            " opens saved sessions"
+        }
     }
 
     fn post_run_can_reopen(&self) -> bool {
@@ -3754,7 +3916,7 @@ impl AppState {
         self.active_tab = Tab::Run;
         self.live_details_drawer_open = false;
         self.startup_mode = true;
-        self.startup_launcher_action = StartupLauncherAction::NewSession;
+        self.reset_startup_launcher_selection();
         self.status_banner = None;
         self.details_scroll = 0;
         self.transcript_scroll = 0;
@@ -4240,6 +4402,9 @@ impl AppState {
 
     pub fn set_session_history_entries(&mut self, entries: Vec<SessionHistoryEntry>) {
         self.session_history_entries = entries;
+        if self.startup_mode {
+            self.reset_startup_launcher_selection();
+        }
         self.update_session_history_filter();
         self.rebuild_model_options();
         self.session_history_selected = self
@@ -4995,40 +5160,11 @@ impl AppState {
 
     fn update_session_history_filter(&mut self) {
         let input = self.palette_input.to_lowercase();
-        let mut filtered = self
-            .session_history_entries
-            .iter()
-            .enumerate()
-            .filter(|(_, entry)| {
-                session_history_entry_matches_action(entry, self.startup_launcher_action)
-            })
-            .filter(|(_, entry)| session_history_filter_matches(entry, &input))
-            .map(|(index, entry)| {
-                (
-                    index,
-                    session_history_action_sort_bucket(entry, self.startup_launcher_action),
-                )
-            })
-            .collect::<Vec<_>>();
-        filtered.sort_by(|(left_index, left_bucket), (right_index, right_bucket)| {
-            let left_entry = &self.session_history_entries[*left_index];
-            let right_entry = &self.session_history_entries[*right_index];
-            left_bucket
-                .cmp(right_bucket)
-                .then_with(|| {
-                    right_entry
-                        .catalog
-                        .last_updated_at
-                        .as_deref()
-                        .unwrap_or("")
-                        .cmp(left_entry.catalog.last_updated_at.as_deref().unwrap_or(""))
-                })
-                .then_with(|| {
-                    session_history_run_name(left_entry).cmp(session_history_run_name(right_entry))
-                })
-                .then_with(|| left_entry.catalog.run_id.cmp(&right_entry.catalog.run_id))
-        });
-        self.session_history_filtered = filtered.into_iter().map(|(index, _)| index).collect();
+        self.session_history_filtered = sorted_session_history_indexes(
+            &self.session_history_entries,
+            self.startup_launcher_action,
+            &input,
+        );
         self.session_history_selected = 0;
     }
 
@@ -5190,11 +5326,30 @@ impl AppState {
     }
 
     fn palette_commands(&self) -> Vec<crate::keybindings::PaletteCommand> {
-        Action::grouped_palette_commands_for_overlay()
+        let mut commands = Action::grouped_palette_commands_for_overlay()
             .iter()
             .copied()
             .filter(|command| self.palette_command_available(command.id))
-            .collect()
+            .collect::<Vec<_>>();
+
+        if self.startup_shell_visible()
+            && self.session_history_entries.iter().any(|entry| {
+                entry.catalog.is_resumable
+                    && session_history_entry_matches_action(
+                        entry,
+                        StartupLauncherAction::ContinueSession,
+                    )
+            })
+        {
+            commands.sort_by_key(|command| match command.id {
+                "resume_session" => 0_u8,
+                "new_session" => 1,
+                "replay_session" => 2,
+                _ => 3,
+            });
+        }
+
+        commands
     }
 
     fn palette_command_available(&self, command_id: &str) -> bool {
@@ -5304,6 +5459,59 @@ impl AppState {
         self.close_palette();
     }
 
+    fn recommended_startup_launcher_action(&self) -> StartupLauncherAction {
+        if self
+            .startup_quick_pick_entry(StartupLauncherAction::ContinueSession)
+            .is_some_and(|entry| entry.catalog.is_resumable)
+        {
+            StartupLauncherAction::ContinueSession
+        } else if self
+            .startup_quick_pick_entry(StartupLauncherAction::ReplaySession)
+            .is_some()
+        {
+            StartupLauncherAction::ReplaySession
+        } else {
+            StartupLauncherAction::NewSession
+        }
+    }
+
+    fn reset_startup_launcher_selection(&mut self) {
+        self.startup_launcher_action = self.recommended_startup_launcher_action();
+        self.continue_disabled_banner = None;
+    }
+
+    fn startup_quick_pick_entry(
+        &self,
+        action: StartupLauncherAction,
+    ) -> Option<&SessionHistoryEntry> {
+        sorted_session_history_indexes(&self.session_history_entries, action, "")
+            .into_iter()
+            .next()
+            .and_then(|index| self.session_history_entries.get(index))
+    }
+
+    fn launch_replay_session(&mut self, run_id: String, run_dir: PathBuf) {
+        self.continue_disabled_banner = None;
+        self.replay_mode = true;
+        self.reset_operator_sidebar_modified_files_disclosure();
+        set_pending_live_prompt_draft(Some(self.prompt_buffer.clone()));
+        self.emit_ui_intent(UiIntent::ReplaySession { run_id, run_dir });
+        if self.startup_mode {
+            self.should_quit = true;
+        }
+    }
+
+    fn launch_continue_session(&mut self, run_id: String, run_dir: PathBuf) {
+        self.continue_disabled_banner = None;
+        self.replay_mode = false;
+        self.reset_operator_sidebar_modified_files_disclosure();
+        set_pending_live_prompt_draft(Some(self.prompt_buffer.clone()));
+        self.emit_ui_intent(UiIntent::ContinueSession { run_id, run_dir });
+        if self.startup_mode {
+            self.should_quit = true;
+        }
+    }
+
     fn execute_selected_session_launcher_action(&mut self) {
         if self.session_history_entries.is_empty() {
             if matches!(
@@ -5340,17 +5548,7 @@ impl AppState {
                 self.apply_new_session_launcher_selection();
             }
             StartupLauncherAction::ReplaySession => {
-                self.continue_disabled_banner = None;
-                self.replay_mode = true;
-                self.reset_operator_sidebar_modified_files_disclosure();
-                set_pending_live_prompt_draft(Some(self.prompt_buffer.clone()));
-                self.emit_ui_intent(UiIntent::ReplaySession {
-                    run_id: selected_run_id,
-                    run_dir: selected_run_dir,
-                });
-                if self.startup_mode {
-                    self.should_quit = true;
-                }
+                self.launch_replay_session(selected_run_id, selected_run_dir);
                 self.close_session_history();
             }
             StartupLauncherAction::ContinueSession => {
@@ -5363,17 +5561,7 @@ impl AppState {
                     return;
                 }
 
-                self.continue_disabled_banner = None;
-                self.replay_mode = false;
-                self.reset_operator_sidebar_modified_files_disclosure();
-                set_pending_live_prompt_draft(Some(self.prompt_buffer.clone()));
-                self.emit_ui_intent(UiIntent::ContinueSession {
-                    run_id: selected_run_id,
-                    run_dir: selected_run_dir,
-                });
-                if self.startup_mode {
-                    self.should_quit = true;
-                }
+                self.launch_continue_session(selected_run_id, selected_run_dir);
                 self.close_session_history();
             }
         }
@@ -5432,9 +5620,26 @@ impl AppState {
         match self.startup_launcher_action {
             StartupLauncherAction::NewSession => self.apply_new_session_launcher_selection(),
             StartupLauncherAction::ReplaySession => {
+                if let Some(entry) =
+                    self.startup_quick_pick_entry(StartupLauncherAction::ReplaySession)
+                {
+                    self.launch_replay_session(entry.catalog.run_id.clone(), entry.run_dir.clone());
+                    return;
+                }
                 self.begin_session_history_picker(StartupLauncherAction::ReplaySession);
             }
             StartupLauncherAction::ContinueSession => {
+                if let Some(entry) =
+                    self.startup_quick_pick_entry(StartupLauncherAction::ContinueSession)
+                {
+                    if entry.catalog.is_resumable {
+                        self.launch_continue_session(
+                            entry.catalog.run_id.clone(),
+                            entry.run_dir.clone(),
+                        );
+                        return;
+                    }
+                }
                 self.begin_session_history_picker(StartupLauncherAction::ContinueSession);
             }
         }

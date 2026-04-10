@@ -52,7 +52,7 @@ Secondary/supporting agents:
 - [ ] Flesh out the commands menu.
 - [ ] Polish the commands menu UI to match the level of fit and finish seen in Opencode.
 - [x] Implement Opencode's theme/Color scheme.
-- [ ] Improve session recovery and reopen flow so returning to previous work feels obvious and low-friction. Implement it like it is done in Opencode.
+- [x] Improve session recovery and reopen flow so returning to previous work feels obvious and low-friction. Implement it like it is done in Opencode.
 
 ## Models, providers, and config
 

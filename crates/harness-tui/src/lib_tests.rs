@@ -4535,7 +4535,7 @@ fn module_overlays_share_elevated_card_language() {
         &palette,
         width,
         height,
-        "New session",
+        "Continue session",
         theme.border.focus,
     );
 
@@ -6643,12 +6643,92 @@ fn startup_surface_renders_primary_actions() {
     assert!(rendered.contains("Launch: worker · model-1"));
     assert!(rendered.contains("Provider mock · Demo"));
     assert!(rendered.contains("Launch: worker · model-1 · provider mock · Demo"));
-    assert!(rendered.contains("Ctrl+p opens saved sessions"));
+    assert!(rendered.contains("Ctrl+p reopens saved work"));
+    assert!(rendered.contains("Continue run-run_resume"));
+    assert!(rendered.contains("Enter reopen run-run_resume"));
     assert!(!rendered.contains("Enter select"));
     assert!(rendered.contains("Ask Harness anything…"));
     assert!(rendered.contains("● Tip"));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
     assert!(!rendered.contains("Actions:"));
+}
+
+#[cfg(test)]
+#[test]
+fn startup_enter_reopens_latest_resumable_session() {
+    let intents = Arc::new(std::sync::Mutex::new(Vec::<UiIntent>::new()));
+    let intent_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+    let mut app = app::AppState::new_startup(
+        vec![startup_session_entry(
+            "run_resume",
+            "/tmp/sessions/run_resume",
+            true,
+            None,
+        )],
+        Some(intent_sink),
+    );
+
+    assert_eq!(
+        app.startup_launcher_action,
+        app::StartupLauncherAction::ContinueSession
+    );
+
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    let intents = intents.lock().expect("lock intents");
+    assert_eq!(
+        intents.as_slice(),
+        &[UiIntent::ContinueSession {
+            run_id: "run_resume".to_string(),
+            run_dir: PathBuf::from("/tmp/sessions/run_resume"),
+        }]
+    );
+    drop(intents);
+    assert!(app.should_quit);
+}
+
+#[cfg(test)]
+#[test]
+fn startup_enter_falls_back_to_replay_when_continue_is_unavailable() {
+    let intents = Arc::new(std::sync::Mutex::new(Vec::<UiIntent>::new()));
+    let intent_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+    let mut app = app::AppState::new_startup(
+        vec![startup_session_entry(
+            "run_prompt_only",
+            "/tmp/sessions/run_prompt_only",
+            false,
+            Some("prompt runs are not resumable"),
+        )],
+        Some(intent_sink),
+    );
+
+    assert_eq!(
+        app.startup_launcher_action,
+        app::StartupLauncherAction::ReplaySession
+    );
+
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    let intents = intents.lock().expect("lock intents");
+    assert_eq!(
+        intents.as_slice(),
+        &[UiIntent::ReplaySession {
+            run_id: "run_prompt_only".to_string(),
+            run_dir: PathBuf::from("/tmp/sessions/run_prompt_only"),
+        }]
+    );
+    drop(intents);
+    assert!(app.should_quit);
 }
 
 #[cfg(test)]
@@ -6705,9 +6785,18 @@ fn startup_palette_remains_secondary_and_draft_safe() {
     assert!(app.palette_visible);
     let overlay_render = render_live_lines(&app, 100, 24);
     assert!(overlay_render.contains("Command palette"));
-    assert!(overlay_render.contains("New session"));
     assert!(overlay_render.contains("Continue session"));
     assert!(overlay_render.contains("Replay session"));
+    let continue_session = overlay_render
+        .find("Continue session")
+        .expect("continue session command");
+    let new_session = overlay_render
+        .find("New session")
+        .expect("new session command");
+    assert!(
+        continue_session < new_session,
+        "startup palette should prioritize continue before new when resumable history exists:\n{overlay_render}"
+    );
 
     app.handle_key(key(crossterm::event::KeyCode::Esc));
 
@@ -6944,10 +7033,10 @@ fn lifecycle_shell_snapshots() {
 
     let startup_render = render_live_lines(&startup, 100, 24);
     assert!(startup_render.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻") || startup_render.contains("Harness"));
-    assert!(startup_render.contains("Ctrl+p opens saved sessions"));
+    assert!(startup_render.contains("Ctrl+p reopens saved work"));
     assert!(!startup_render.contains("Enter select"));
     assert!(startup_render.contains("Ask Harness anything…"));
-    assert!(startup_render.contains("opens saved sessions"));
+    assert!(startup_render.contains("Continue run-run_resume"));
     assert!(
         !startup_render.contains("Dispatch a new run, reopen live work, or inspect saved history.")
     );
@@ -7163,6 +7252,9 @@ fn new_session_resets_transcript_but_keeps_unsent_draft() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
+    for ch in "new".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
     assert!(app.events.is_empty());
