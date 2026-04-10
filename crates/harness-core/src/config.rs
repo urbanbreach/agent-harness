@@ -996,6 +996,18 @@ pub struct ProfileConfig {
 /// Legacy compatibility alias kept for migration shims and older category-named call sites.
 pub type CategoryConfig = ProfileConfig;
 
+pub fn named_agent_system_prompt(agent_name: &str) -> Option<&'static str> {
+    match agent_name {
+        "plan" => Some(
+            "Stay in planning mode until the user approves the plan. Remain read-only: do not edit files, run shell commands, or delegate implementation. Use investigation tools to gather evidence and produce a concrete plan with scope, likely files, risks, and verification steps. Call plan.exit only after the user explicitly approves implementation so the harness can hand off to build.",
+        ),
+        "build" => Some(
+            "Implement only the approved plan after the explicit plan.exit handoff. Make the smallest useful edits, run the narrowest useful verification before widening, use subagents only when they materially help, and finish with concrete evidence, changed files, what was not tested, and remaining risks.",
+        ),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
 pub struct ProfilePermissions {
@@ -1779,6 +1791,13 @@ fn normalize_single_opencode_agent_alias(
             None => {
                 agent.insert("system_prompt".to_string(), prompt_value);
             }
+        }
+    } else if !agent.contains_key("system_prompt") {
+        if let Some(default_prompt) = named_agent_system_prompt(agent_name) {
+            agent.insert(
+                "system_prompt".to_string(),
+                serde_json::Value::String(default_prompt.to_string()),
+            );
         }
     }
 
@@ -3335,6 +3354,48 @@ mod tests {
         let parsed = load_config_from_str(cfg).expect("invalid default should fall back to build");
         assert_eq!(parsed.ui.default_profile.as_deref(), Some("build"));
         assert_eq!(parsed.default_agent.as_deref(), Some("build"));
+    }
+
+    #[test]
+    fn opencode_compat_agent_build_and_plan_get_named_default_prompts() {
+        let cfg = r#"
+        {
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              models: {
+                "gpt-4o-mini": {
+                  display_name: "GPT-4o mini"
+                }
+              }
+            }
+          },
+          agent: {
+            build: {
+              model: "default/gpt-4o-mini",
+              tools: ["fs.read"]
+            },
+            plan: {
+              model: "default/gpt-4o-mini",
+              plan_mode: true,
+              exit_target_profile: "build",
+              tools: ["fs.read", "plan.exit"]
+            }
+          }
+        }
+        "#;
+
+        let parsed = load_config_from_str(cfg).expect("opencode compat config should parse");
+        assert_eq!(
+            parsed.agents["build"].system_prompt.as_deref(),
+            named_agent_system_prompt("build")
+        );
+        assert_eq!(
+            parsed.agents["plan"].system_prompt.as_deref(),
+            named_agent_system_prompt("plan")
+        );
     }
 
     #[test]

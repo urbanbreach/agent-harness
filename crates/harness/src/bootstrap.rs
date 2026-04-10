@@ -6,8 +6,9 @@ use std::sync::Arc;
 
 use harness_core::agent::AgentProfile;
 use harness_core::config::{
-    load_config_from_file, refresh_profile_model_metadata_registry, resolve_profile_model_metadata,
-    HarnessConfig, OpenAiApiMode as CoreOpenAiApiMode, ProviderConfig,
+    load_config_from_file, named_agent_system_prompt, refresh_profile_model_metadata_registry,
+    resolve_profile_model_metadata, HarnessConfig, OpenAiApiMode as CoreOpenAiApiMode,
+    ProviderConfig,
 };
 use harness_core::coord::{CoordinatorConfig, PlanProfileConfig};
 use harness_core::perm::PermissionPolicy;
@@ -228,7 +229,9 @@ fn map_openai_api_mode(mode: CoreOpenAiApiMode) -> ProviderOpenAiApiMode {
 }
 
 fn default_interactive_system_prompt(profile_name: &str, description: &str) -> String {
-    format!("You are the {profile_name} agent. {description}")
+    named_agent_system_prompt(profile_name)
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("You are the {profile_name} agent. {description}"))
 }
 
 fn append_capability_notes(system_prompt: String, degraded_features: &[String]) -> String {
@@ -537,6 +540,42 @@ mod tests {
             profiles["deep"].system_prompt,
             default_interactive_system_prompt("deep", "Default deep execution profile")
         );
+    }
+
+    #[test]
+    fn interactive_build_and_plan_agents_use_named_default_prompts_when_missing() {
+        let cfg = config_fixture(
+            r#"
+            build: {
+              description: "Implementation lane",
+              model_ref: "default:gpt-5.4-mini",
+              tool_surface: "native",
+              tools: ["fs.read"],
+            },
+            plan: {
+              description: "Planning lane",
+              model_ref: "default:gpt-5.4-mini",
+              tool_surface: "native",
+              plan_mode: true,
+              exit_target_profile: "build",
+              tools: ["fs.read", "plan.exit"],
+            },
+            "#,
+        );
+
+        let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles");
+        assert_eq!(
+            profiles["build"].system_prompt,
+            default_interactive_system_prompt("build", "Implementation lane")
+        );
+        assert_eq!(
+            profiles["plan"].system_prompt,
+            default_interactive_system_prompt("plan", "Planning lane")
+        );
+        assert!(profiles["plan"].system_prompt.contains("Remain read-only"));
+        assert!(profiles["build"]
+            .system_prompt
+            .contains("Implement only the approved plan"));
     }
 
     #[test]

@@ -64,7 +64,7 @@ Secondary/supporting agents:
 
 ## Agents, orchestration, and prompt quality
 
-- [ ] Add named agents with fleshed-out system prompts for main flows such as Build and Plan.
+- [x] Add named agents with fleshed-out system prompts for main flows such as Build and Plan.
 - [ ] Flesh out subagents with configs available in JSON.
 - [ ] Improve main-agent prompt engineering with a Opencode/pi-like approach.
 - [ ] Compaction (Check how it's done from other harnesses and inspiration/ folder. The decide on the best path.)

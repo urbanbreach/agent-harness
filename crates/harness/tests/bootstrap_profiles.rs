@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use harness_core::config::load_config_from_str;
+use harness_core::config::{load_config_from_str, named_agent_system_prompt};
 use harness_core::perm::{PermissionKind, PolicyDecision};
 
 #[allow(dead_code)]
@@ -181,6 +181,14 @@ fn opencode_primary_agents_enforce_build_and_plan_permissions() {
         bootstrap::build_interactive_coordinator_config(&config).expect("build config");
 
     assert_eq!(bootstrap::interactive_profile_name(&config), "build");
+    assert_eq!(
+        coordinator_config.agent_profiles["plan"].system_prompt,
+        named_agent_system_prompt("plan").expect("named plan prompt")
+    );
+    assert_eq!(
+        coordinator_config.agent_profiles["build"].system_prompt,
+        named_agent_system_prompt("build").expect("named build prompt")
+    );
     assert!(coordinator_config.plan_profiles["plan"].plan_mode);
     assert_eq!(
         coordinator_config.plan_profiles["plan"]
