@@ -4,7 +4,10 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 
-use harness_core::config::{load_config_from_file, OpenAiApiMode, ProviderConfig};
+use harness_core::config::{
+    load_config_from_file, named_agent_description, named_agent_system_prompt, OpenAiApiMode,
+    ProviderConfig,
+};
 use tempfile::tempdir;
 
 fn openai_api_key_env_lock() -> &'static Mutex<()> {
@@ -1180,11 +1183,23 @@ fn config_validate_cli_accepts_opencode_style_agent_shape_and_aliases() {
     );
     assert!(parsed.agents.contains_key("build"));
     assert!(parsed.agents.contains_key("plan"));
+    assert_eq!(
+        parsed.agents["build"].description,
+        named_agent_description("build").expect("named build description")
+    );
+    assert_eq!(
+        parsed.agents["plan"].description,
+        named_agent_description("plan").expect("named plan description")
+    );
     assert_eq!(parsed.agents["build"].model_ref, "default:gpt-4o-mini");
     assert_eq!(parsed.agents["build"].max_iters, 8);
     assert_eq!(
         parsed.agents["build"].system_prompt.as_deref(),
         Some("Build with narrow diffs.")
+    );
+    assert_eq!(
+        parsed.agents["plan"].system_prompt.as_deref(),
+        named_agent_system_prompt("plan")
     );
     assert!(parsed.integrations.mcp.servers.contains_key("docs"));
 }

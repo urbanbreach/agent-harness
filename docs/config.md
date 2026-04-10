@@ -54,7 +54,7 @@ The shipped example keeps docs, config, and live signoff aligned around a local 
 - `variant: "high"`
 - edit + shell + task permissions enabled
 - includes file edit, shell, batch, and `agent.spawn` tools
-- when `system_prompt` is omitted, the harness falls back to the shipped named Build prompt for approved-plan execution and evidence-first closeout
+- when `description` or `system_prompt` is omitted, the harness fills in the shipped named Build lane defaults so compact configs stay legible
 - prompt requires focused implementation plus verification evidence
 
 ### `plan`
@@ -63,7 +63,7 @@ The shipped example keeps docs, config, and live signoff aligned around a local 
 - `exit_target_profile: "build"`
 - edit + shell + task permissions denied
 - uses read-only investigation tools plus `plan.exit`
-- when `system_prompt` is omitted, the harness falls back to the shipped named Plan prompt for read-only planning and approval-gated handoff
+- when `description` or `system_prompt` is omitted, the harness fills in the shipped named Plan lane defaults so compact configs stay legible
 - prompt requires a concrete plan before approval-gated handoff
 
 ### Secondary shipped lanes

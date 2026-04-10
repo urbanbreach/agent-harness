@@ -1,6 +1,6 @@
 # Shipped Plan -> Build workflow
 
-The current shipped workflow is intentionally narrow. The harness now also treats `plan` and `build` as named first-class agents: if a config omits their `system_prompt`, bootstrap falls back to the shipped Plan/Build prompts instead of a generic profile intro.
+The current shipped workflow is intentionally narrow. The harness now also treats `plan` and `build` as named first-class agents: if a config omits their `description` or `system_prompt`, the config/bootstrap path fills in the shipped Plan/Build lane copy instead of falling back to generic profile text.
 
 
 1. start in `build`

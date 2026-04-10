@@ -1046,6 +1046,14 @@ fn default_max_iters() -> usize {
     12
 }
 
+pub fn named_agent_description(agent_name: &str) -> Option<&'static str> {
+    match agent_name {
+        "build" => Some("Implementation lane: execute an approved plan and verify the result."),
+        "plan" => Some("Planning lane: produce an approved plan and hand off to build."),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum PermissionMode {
@@ -1839,9 +1847,13 @@ fn normalize_single_opencode_agent_alias(
         }
     }
 
-    agent
-        .entry("description".to_string())
-        .or_insert_with(|| serde_json::Value::String(format!("{agent_name} profile")));
+    agent.entry("description".to_string()).or_insert_with(|| {
+        let description = match named_agent_description(agent_name) {
+            Some(description) => description.to_string(),
+            None => format!("{agent_name} profile"),
+        };
+        serde_json::Value::String(description)
+    });
 
     Ok(())
 }
@@ -3389,6 +3401,14 @@ mod tests {
 
         let parsed = load_config_from_str(cfg).expect("opencode compat config should parse");
         assert_eq!(
+            parsed.agents["build"].description,
+            named_agent_description("build").expect("named build description")
+        );
+        assert_eq!(
+            parsed.agents["plan"].description,
+            named_agent_description("plan").expect("named plan description")
+        );
+        assert_eq!(
             parsed.agents["build"].system_prompt.as_deref(),
             named_agent_system_prompt("build")
         );
@@ -3452,7 +3472,10 @@ mod tests {
         assert_eq!(parsed.permissions.defaults.edit, PermissionMode::Ask);
         assert_eq!(parsed.permissions.defaults.shell, PermissionMode::Ask);
         assert_eq!(parsed.permissions.defaults.network, PermissionMode::Deny);
-        assert_eq!(parsed.agents["build"].description, "build profile");
+        assert_eq!(
+            parsed.agents["build"].description,
+            named_agent_description("build").expect("named build description")
+        );
         assert_eq!(parsed.agents["build"].model_ref, "default:gpt-4o-mini");
         assert_eq!(
             parsed.agents["build"].system_prompt.as_deref(),
