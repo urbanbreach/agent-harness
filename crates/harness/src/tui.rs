@@ -2180,6 +2180,110 @@ mod tests {
     }
 
     #[test]
+    fn resolve_live_settings_uses_ui_default_profile_model_selection() {
+        let _guard = mock_mode_cwd_test_lock()
+            .lock()
+            .expect("mock mode cwd lock poisoned");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config_path = temp.path().join("harness.jsonc");
+        std::fs::write(
+            &config_path,
+            r#"{
+              providers: {
+                default: {
+                  type: "openai_compatible",
+                  base_url: "http://127.0.0.1:8317/v1",
+                  api_key: "test-key",
+                  api_mode: "responses",
+                  timeout_ms: 60000,
+                  models: {
+                    "gpt-5.4-mini": {
+                      display_name: "GPT-5.4 Mini"
+                    }
+                  }
+                },
+                anthropic: {
+                  type: "openai_compatible",
+                  base_url: "http://127.0.0.1:8418/v1",
+                  api_key: "anthropic-key",
+                  api_mode: "responses",
+                  timeout_ms: 60000,
+                  models: {
+                    "claude-3.7": {
+                      display_name: "Claude 3.7"
+                    }
+                  }
+                }
+              },
+              agent: {
+                build: {
+                  description: "Implementation",
+                  model_ref: "default:gpt-5.4-mini",
+                  tools: []
+                },
+                review: {
+                  description: "Review",
+                  model_ref: "anthropic:claude-3.7",
+                  tools: []
+                }
+              },
+              ui: {
+                default_profile: "review"
+              },
+              permissions: {
+                defaults: {
+                  edit: "allow",
+                  shell: "allow",
+                  network: "allow"
+                }
+              },
+              runtime: {
+                background_tasks: {
+                  default_concurrency: 2,
+                  provider_concurrency: 2,
+                  model_concurrency: 2,
+                  stale_timeout_ms: 15000,
+                  message_staleness_timeout_ms: 5000
+                },
+                session_dir: ".agent-harness/sessions"
+              },
+              integrations: {
+                remote_search: {
+                  endpoint: "https://mcp.exa.ai/mcp"
+                }
+              }
+            }"#,
+        )
+        .expect("write discovered cwd config");
+
+        let previous_dir = std::env::current_dir().expect("read current dir");
+        std::env::set_current_dir(temp.path()).expect("enter temp dir");
+
+        let result = resolve_live_settings(
+            &TuiCommand {
+                replay: None,
+                continue_session: None,
+                scenario: None,
+                mock: false,
+                deterministic: false,
+                session_dir: None,
+                exit_on_finish: false,
+                profile: None,
+            },
+            Some(config_path.clone()),
+            None,
+        );
+
+        std::env::set_current_dir(previous_dir).expect("restore current dir");
+
+        let settings = result.expect("live mode settings should resolve");
+        assert_eq!(settings.launch_mode_label, "Live");
+        assert_eq!(settings.launch_metadata.profile(), "review");
+        assert_eq!(settings.launch_metadata.provider(), "anthropic");
+        assert_eq!(settings.launch_metadata.model(), Some("claude-3.7"));
+    }
+
+    #[test]
     fn live_new_session_uses_current_workspace_instead_of_seeded_demo_workspace() {
         let _guard = mock_mode_cwd_test_lock()
             .lock()

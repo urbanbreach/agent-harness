@@ -56,7 +56,7 @@ Secondary/supporting agents:
 
 ## Models, providers, and config
 
-- [ ] Support model selection in harness from config.
+- [x] Support model selection in harness from config.
 - [ ] Support reasoning/thinking preset selection from config.
 - [ ] Support all major parameters that Opencode's opencode.json supports.
 - [ ] Add provider capability detection so unsupported features degrade cleanly instead of failing late.

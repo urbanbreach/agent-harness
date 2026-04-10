@@ -82,6 +82,7 @@ fn prompt_cli_multi_provider_config(
     default_base_url: &str,
     ops_base_url: &str,
     session_dir: &std::path::Path,
+    default_profile: &str,
 ) -> String {
     serde_json::json!({
         "providers": {
@@ -149,7 +150,7 @@ fn prompt_cli_multi_provider_config(
             }
         },
         "ui": {
-            "default_profile": "deep"
+            "default_profile": default_profile
         }
     })
     .to_string()
@@ -438,6 +439,7 @@ async fn prompt_cli_routes_non_default_profile_to_matching_provider() {
         &format!("{}/v1", default_server.uri()),
         &format!("{}/v1", ops_server.uri()),
         &session_dir,
+        "deep",
     );
     fs::write(&config_path, config).expect("write config");
 
@@ -489,6 +491,97 @@ async fn prompt_cli_routes_non_default_profile_to_matching_provider() {
         1,
         "expected prompt CLI to hit the selected non-default provider exactly once"
     );
+}
+
+#[tokio::test]
+async fn prompt_cli_uses_ui_default_profile_model_without_profile_flag() {
+    let default_server = MockServer::start().await;
+    let ops_server = MockServer::start().await;
+
+    for server in [&default_server, &ops_server] {
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(
+                        deterministic_responses_sse_transcript(),
+                        "text/event-stream",
+                    ),
+            )
+            .mount(server)
+            .await;
+    }
+
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.multi-provider.jsonc");
+    let session_dir = temp.path().join("sessions");
+
+    let config = prompt_cli_multi_provider_config(
+        &format!("{}/v1", default_server.uri()),
+        &format!("{}/v1", ops_server.uri()),
+        &session_dir,
+        "ops",
+    );
+    fs::write(&config_path, config).expect("write config");
+
+    let config_arg = config_path.clone();
+    let events_out = temp.path().join("events.jsonl");
+    let temp_path = temp.path().to_path_buf();
+    let output = tokio::task::spawn_blocking(move || {
+        Command::new(env!("CARGO_BIN_EXE_harness"))
+            .current_dir(temp_path)
+            .args([
+                "--config",
+                config_arg.to_str().expect("config path utf-8"),
+                "prompt",
+                "--text",
+                "Hello from config default",
+                "--out",
+                events_out.to_str().expect("events out utf-8"),
+            ])
+            .output()
+            .expect("run harness prompt")
+    })
+    .await
+    .expect("join blocking command");
+
+    assert!(
+        output.status.success(),
+        "stdout:
+{}
+stderr:
+{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let default_requests = default_server
+        .received_requests()
+        .await
+        .expect("default request recording must be enabled");
+    let ops_requests = ops_server
+        .received_requests()
+        .await
+        .expect("ops request recording must be enabled");
+
+    assert!(
+        default_requests.is_empty(),
+        "config-selected default prompt profile should not hit providers.default"
+    );
+    assert_eq!(
+        ops_requests
+            .iter()
+            .filter(|req| req.url.path() == "/v1/responses")
+            .count(),
+        1,
+        "expected prompt CLI to use the config-selected provider exactly once"
+    );
+
+    let events_body =
+        fs::read_to_string(temp.path().join("events.jsonl")).expect("read exported prompt events");
+    assert!(events_body.contains("\"provider_id\":\"anthropic\""));
+    assert!(events_body.contains("\"model_id\":\"claude-3.7\""));
 }
 
 #[tokio::test]

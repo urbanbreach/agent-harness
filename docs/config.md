@@ -58,6 +58,14 @@ The shipped example keeps docs, config, and live signoff aligned around a local 
 - `tool_audit`: evidence-first signoff profile for shipped surface validation
 - `deep_compat`: compat regression profile for alias/tool-surface parity
 
+## Model selection from config
+
+The harness chooses a model from config through the selected agent/profile:
+
+- each profile's `model_ref` selects its provider/model pair
+- `ui.default_profile` picks which configured profile `harness tui` and `harness prompt` start with when you do not pass `--profile`
+- switching `ui.default_profile` or a profile `model_ref` therefore changes the default runtime model choice without requiring CLI flags
+
 ## Other shipped settings that matter to the Plan/Build path
 
 ### `permissions`
