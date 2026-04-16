@@ -22,11 +22,11 @@ The preflight verifies:
 - the harness binary is available
 - the configured proxy host:port is reachable
 - the later live visual lane can use the bundled PTY→PNG capture path and the shell-free
-  `fs.write` bootstrap used by the file-edit review flow
+  `write` bootstrap used by the file-edit review flow
 
 The live visual review lane does **not** require KDE, `konsole`, or `spectacle`. When you run the
 later live TUI/tool-flow lanes, screenshots are rendered from captured PTY state into PNGs inside
-the harness, and the tool-flow bootstrap uses `fs.write` instead of `shell.run`, so the signoff
+the harness, and the tool-flow bootstrap uses `write` instead of `bash`, so the signoff
 path no longer depends on a desktop session or a local POSIX shell. `live_proxy_preflight` itself
 only verifies config/provider reachability plus the prepared live-config path.
 
@@ -113,8 +113,8 @@ HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
 cargo test -p harness-testkit live_proxy_prompt_native_tool_flow -- --ignored --exact
 ```
 
-This keeps the headless signoff aligned with the same `fs.write` → `fs.read` →
-`edit.hashline_scan` → `edit.hashline_apply` → `fs.read` path that the TUI live lane exercises.
+This keeps the headless signoff aligned with the same `write` → `read` →
+`edit.hashline_scan` → `edit.hashline_apply` → `read` path that the TUI live lane exercises.
 
 Then run the compat file-edit lane:
 

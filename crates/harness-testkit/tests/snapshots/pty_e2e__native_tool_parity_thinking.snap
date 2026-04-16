@@ -1,6 +1,6 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-assertion_line: 865
+assertion_line: 833
 expression: "checkpoint_visual_snapshot(&screen,\n&[\"Thinking: Drafting the inline parity pass.\",\n\"Inline transcript parity is easier to scan now.\",\n\"Bring native tool parity inline\", REPLAY_DENSE_READY_MARKER,],\n&thinking_visual,)"
 ---
 Thinking: Drafting the inline parity pass.: true
@@ -8,7 +8,7 @@ Inline transcript parity is easier to scan now.: true
 Bring native tool parity inline: true
 Replay · read-only: true
 focus_marker: Thinking: Drafting the inline parity pass.
-focus_render_state_blake3: ad036ade2e9b32d8b64d545c085d471aec4a328519240030d1afcac61f5a97db
+focus_render_state_blake3: 35deb1a3d2af063638ea710f979df44b5bf3f57d11aad558aa18e59d3b83e02b
 focus_region_cells: row=6, col=5, height=5, width=40
 image: pty_native_tool_parity_thinking.png
 manifest_json: pty-manifests/transcript_shell/manifest.json

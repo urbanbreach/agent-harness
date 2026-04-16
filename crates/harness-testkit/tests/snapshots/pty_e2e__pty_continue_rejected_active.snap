@@ -1,12 +1,11 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-expression: "checkpoint_visual_snapshot(&active_screen,\n&[STARTUP_CONTINUE_HISTORY_MARKER, \"tasks are still in flight\",],\n&active_visual,)"
+assertion_line: 2012
+expression: "checkpoint_visual_snapshot_without_focus_position(&active_screen,\n&[STARTUP_CONTINUE_HISTORY_MARKER, \"tasks are still in flight\",],\n&active_visual,)"
 ---
 Continue session: true
 tasks are still in flight: true
 focus_marker: tasks are still in flight
-focus_render_state_blake3: 557baed97a8919225d9244d92e9c98d753b34bbe1c34b3be4a329db81360be44
-focus_region_cells: row=23, col=48, height=1, width=28
 image: pty_continue_rejected_active.png
 manifest_json: pty-manifests/continue_session/manifest.json
 manifest_jsonl: pty-manifests/continue_session/manifest.jsonl

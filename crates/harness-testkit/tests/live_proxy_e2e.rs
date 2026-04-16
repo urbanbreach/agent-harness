@@ -82,7 +82,7 @@ const LIVE_CHAT_TODO_FLOW_PROMPT: &str = concat!(
 );
 const LIVE_CHAT_QUESTION_ANSWERS: &str = r#"[["Yes"]]"#;
 const LIVE_CHAT_QUESTION_PROMPT: &str = concat!(
-    "Call user.question with exactly one question using header=Choice and options Yes/No. ",
+    "Call question with exactly one question using header=Choice and options Yes/No. ",
     "Use this exact payload shape: ",
     r#"[{\"question\":\"Pick one\",\"header\":\"Choice\",\"options\":[{\"label\":\"Yes\",\"description\":\"Choose yes\"},{\"label\":\"No\",\"description\":\"Choose no\"}]}]"#,
     ". After the tool call, reply with exactly LIVE_CHAT_QUESTION_CONFIRMED and nothing else."
@@ -129,21 +129,21 @@ const LIVE_COMPAT_EDIT_DELETE_PROMPT: &str = concat!(
 );
 const LIVE_TOOL_FLOW_CREATE_PROMPT: &str = concat!(
     "You must use tools only. Use exactly tmp/live_tool_flow.md. ",
-    "Now perform only step 1: call fs.write with this exact payload shape: ",
-    r#"{"path":"tmp/live_tool_flow.md","content":"alpha\nbeta\ngamma\n"}"#,
-    ". Return exactly one fs.write tool call and zero prose. Do not call any other tool."
+    "Now perform only step 1: call write with this exact payload shape: ",
+    r#"{"filePath":"tmp/live_tool_flow.md","content":"alpha\nbeta\ngamma\n"}"#,
+    ". Return exactly one write tool call and zero prose. Do not call any other tool."
 );
 const LIVE_TOOL_FLOW_READ_PROMPT: &str = concat!(
-    "Now perform only step 2 on the same file: call fs.read with path=tmp/live_tool_flow.md. ",
-    "Return exactly one fs.read tool call and zero prose. Do not call any other tool."
+    "Now perform only step 2 on the same file: call read with filePath=tmp/live_tool_flow.md. ",
+    "Return exactly one read tool call and zero prose. Do not call any other tool."
 );
 const LIVE_TOOL_FLOW_SCAN_PROMPT: &str = concat!(
     "Now perform only step 3 on the same file: call edit.hashline_scan with path=tmp/live_tool_flow.md start_line=1 limit=20. ",
     "Return exactly one edit.hashline_scan tool call and zero prose. Do not call any other tool."
 );
 const LIVE_TOOL_FLOW_FINAL_READ_PROMPT: &str = concat!(
-    "Now perform steps 5 and 6 only: call fs.read with path=tmp/live_tool_flow.md again, then summarize the final contents. ",
-    "Do not make any more edits and do not use any other file path. Before the summary, there must be exactly one fs.read tool call."
+    "Now perform steps 5 and 6 only: call read with filePath=tmp/live_tool_flow.md again, then summarize the final contents. ",
+    "Do not make any more edits and do not use any other file path. Before the summary, there must be exactly one read tool call."
 );
 const DEFAULT_LIVE_PROXY_PROMPT: &str = "Say hello in exactly five words.";
 const DEFAULT_LIVE_PROXY_WAIT_TIMEOUT_MS: &str = "120000";
@@ -155,6 +155,7 @@ const LIVE_TUI_ASSISTANT_STREAMING_MARKER: &str = "assistant · streaming…";
 const LIVE_TUI_WAITING_FOR_RESPONSE_MARKER: &str = "Waiting for response…";
 const LIVE_TUI_READ_POLL_TIMEOUT: Duration = Duration::from_millis(50);
 const LIVE_TUI_STABLE_WINDOW: Duration = Duration::from_millis(180);
+const WIREMOCK_REQUEST_SETTLE_TIMEOUT: Duration = Duration::from_secs(2);
 const LIVE_TUI_STABLE_TIMEOUT: Duration = Duration::from_secs(2);
 const LIVE_TUI_STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 const LIVE_VISUAL_STARTUP_MARKERS: &[&str] = &[LIVE_TUI_READY_MARKER];
@@ -358,12 +359,7 @@ enum ToolFlowStage {
 impl ToolFlowStage {
     fn tools(self) -> &'static [&'static str] {
         match self {
-            Self::Full => &[
-                "fs.write",
-                "fs.read",
-                "edit.hashline_scan",
-                "edit.hashline_apply",
-            ],
+            Self::Full => &["write", "read", "edit.hashline_scan", "edit.hashline_apply"],
         }
     }
 
@@ -371,7 +367,7 @@ impl ToolFlowStage {
         match self {
             Self::Full => concat!(
                 "Execute the full live tool-flow task in one session. ",
-                "Use only fs.write, fs.read, edit.hashline_scan, and edit.hashline_apply against tmp/live_tool_flow.md."
+                "Use only write, read, edit.hashline_scan, and edit.hashline_apply against tmp/live_tool_flow.md."
             ),
         }
     }
@@ -581,11 +577,11 @@ fn live_proxy_prompt_chat_tool_flow() {
         &[("HARNESS_QUESTION_ANSWERS", LIVE_CHAT_QUESTION_ANSWERS)],
     )
     .unwrap_or_else(|err| panic!("live prompt question stage failed: {err}"));
-    assert_requested_tool_sequence(&question_result.events_body, &["user.question"])
+    assert_requested_tool_sequence(&question_result.events_body, &["question"])
         .unwrap_or_else(|err| panic!("question-stage tool sequence mismatch: {err}"));
     assert_requested_tool_args(
         &question_result.events_body,
-        "user.question",
+        "question",
         &json!({
             "questions": [{
                 "question": "Pick one",
@@ -600,7 +596,7 @@ fn live_proxy_prompt_chat_tool_flow() {
     .unwrap_or_else(|err| panic!("question-stage tool arguments mismatch: {err}"));
     assert_tool_call_output_contains(
         &question_result.events_body,
-        "user.question",
+        "question",
         "\"Pick one\"=\"Yes\"",
     )
     .unwrap_or_else(|err| panic!("question-stage answer evidence mismatch: {err}"));
@@ -671,7 +667,7 @@ fn live_proxy_prompt_native_tool_flow() {
         &[],
     )
     .unwrap_or_else(|err| panic!("live prompt native tool-flow create stage failed: {err}"));
-    assert_requested_tool_sequence(&create_result.events_body, &["fs.write"])
+    assert_requested_tool_sequence(&create_result.events_body, &["write"])
         .unwrap_or_else(|err| panic!("native tool-flow create tool sequence mismatch: {err}"));
     assert_run_records_live_runtime_context(
         &create_result.run_dir,
@@ -688,7 +684,7 @@ fn live_proxy_prompt_native_tool_flow() {
         &[],
     )
     .unwrap_or_else(|err| panic!("live prompt native tool-flow first-read stage failed: {err}"));
-    assert_requested_tool_sequence(&first_read_result.events_body, &["fs.read"])
+    assert_requested_tool_sequence(&first_read_result.events_body, &["read"])
         .unwrap_or_else(|err| panic!("native tool-flow first-read tool sequence mismatch: {err}"));
 
     let scan_result = run_live_prompt_stage(
@@ -721,7 +717,7 @@ fn live_proxy_prompt_native_tool_flow() {
         &[],
     )
     .unwrap_or_else(|err| panic!("live prompt native tool-flow final-read stage failed: {err}"));
-    assert_requested_tool_sequence(&final_read_result.events_body, &["fs.read"])
+    assert_requested_tool_sequence(&final_read_result.events_body, &["read"])
         .unwrap_or_else(|err| panic!("native tool-flow final-read tool sequence mismatch: {err}"));
     assert_event_log_contains(&final_read_result.events_body, "BETA")
         .unwrap_or_else(|err| panic!("native tool-flow final-read confirmation mismatch: {err}"));
@@ -1089,6 +1085,7 @@ async fn live_proxy_prompt_wiremock_smoke_uses_responses_and_model_override() {
     let run_config_for_run = run_config.clone();
     let output = tokio::task::spawn_blocking(move || {
         Command::new(&harness_bin_for_run)
+            .env_clear()
             .arg("prompt")
             .arg("--text")
             .arg("Return hello from wiremock")
@@ -1121,10 +1118,13 @@ async fn live_proxy_prompt_wiremock_smoke_uses_responses_and_model_override() {
     assert_provider_turn_completed(&collect_provider_turn_observation(&events_body))
         .unwrap_or_else(|err| panic!("wiremock provider-turn evidence mismatch: {err}"));
 
-    let requests = server
-        .received_requests()
-        .await
-        .expect("request recording must be enabled");
+    let requests = wait_for_wiremock_request_path(
+        &server,
+        run_config.endpoint.path(),
+        WIREMOCK_REQUEST_SETTLE_TIMEOUT,
+    )
+    .await
+    .unwrap_or_else(|err| panic!("failed waiting for wiremock responses request: {err}"));
     let responses_request = requests
         .iter()
         .find(|request| request.url.path() == run_config.endpoint.path())
@@ -1213,6 +1213,7 @@ async fn live_proxy_prompt_wiremock_falls_back_to_chat_on_cliproxy_400() {
     let run_config_for_run = run_config.clone();
     let output = tokio::task::spawn_blocking(move || {
         Command::new(&harness_bin_for_run)
+            .env_clear()
             .arg("prompt")
             .arg("--text")
             .arg("Return hello from fallback wiremock")
@@ -1244,10 +1245,13 @@ async fn live_proxy_prompt_wiremock_falls_back_to_chat_on_cliproxy_400() {
         .unwrap_or_else(|err| panic!("failed reading {}: {err}", events_path.display()));
     assert_events_show_successful_provider_turn(provider_name, &events_body);
 
-    let requests = server
-        .received_requests()
-        .await
-        .expect("request recording must be enabled");
+    let requests = wait_for_wiremock_request_path(
+        &server,
+        "/v1/chat/completions",
+        WIREMOCK_REQUEST_SETTLE_TIMEOUT,
+    )
+    .await
+    .unwrap_or_else(|err| panic!("failed waiting for wiremock fallback request: {err}"));
     assert!(
         requests
             .iter()
@@ -1478,8 +1482,8 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
     assert_eq!(
         tool_flow_profile.get("tools").and_then(Value::as_array),
         Some(&vec![
-            Value::String("fs.write".to_string()),
-            Value::String("fs.read".to_string()),
+            Value::String("write".to_string()),
+            Value::String("read".to_string()),
             Value::String("edit.hashline_scan".to_string()),
             Value::String("edit.hashline_apply".to_string()),
         ])
@@ -1655,11 +1659,7 @@ fn prepare_live_prompt_chat_tool_run_config_builds_restricted_agents() {
         .expect("question agent present");
     assert_eq!(
         question_profile.get("tools").and_then(Value::as_array),
-        Some(&vec![Value::String("user.question".to_string())])
-    );
-    assert_eq!(
-        question_profile.get("tool_surface").and_then(Value::as_str),
-        Some("native")
+        Some(&vec![Value::String("question".to_string())])
     );
 
     let skill_profile = skill_config
@@ -1788,11 +1788,19 @@ fn example_config_ships_canonical_plan_build_and_audit_agents() {
         .and_then(Value::as_object)
         .expect("default provider present in example config");
     assert_eq!(
-        default_provider.get("base_url").and_then(Value::as_str),
+        default_provider
+            .get("options")
+            .and_then(Value::as_object)
+            .and_then(|options| options.get("baseURL"))
+            .and_then(Value::as_str),
         Some("http://127.0.0.1:8317/v1")
     );
     assert_eq!(
-        default_provider.get("api_key").and_then(Value::as_str),
+        default_provider
+            .get("options")
+            .and_then(Value::as_object)
+            .and_then(|options| options.get("apiKey"))
+            .and_then(Value::as_str),
         Some("${OPENAI_API_KEY:-sk-zerolimit}")
     );
     assert_eq!(
@@ -1825,14 +1833,20 @@ fn example_config_ships_canonical_plan_build_and_audit_agents() {
         .and_then(Value::as_array)
         .expect("plan tools array present");
     for required_tool in [
-        "plan.exit",
-        "todo.write",
-        "todo.read",
-        "user.question",
-        "search.web",
-        "web.fetch",
-        "search.code",
-        "code.lsp",
+        "plan_exit",
+        "todowrite",
+        "todoread",
+        "question",
+        "skill",
+        "websearch",
+        "webfetch",
+        "codesearch",
+        "lsp",
+        "read",
+        "glob",
+        "grep",
+        "list",
+        "batch",
     ] {
         assert!(
             plan_tools.contains(&Value::String(required_tool.to_string())),
@@ -1843,7 +1857,7 @@ fn example_config_ships_canonical_plan_build_and_audit_agents() {
         .get("system_prompt")
         .and_then(Value::as_str)
         .expect("plan system prompt present");
-    assert!(plan_prompt.contains("plan.exit"));
+    assert!(plan_prompt.contains("plan_exit"));
     assert!(plan_prompt.contains("hand off"));
 
     let build = config
@@ -1862,12 +1876,24 @@ fn example_config_ships_canonical_plan_build_and_audit_agents() {
         .and_then(Value::as_array)
         .expect("build tools array present");
     for required_tool in [
-        "fs.write",
-        "shell.run",
-        "edit.hashline_apply",
-        "edit.hashline_scan",
-        "tool.batch",
-        "agent.spawn",
+        "todowrite",
+        "todoread",
+        "question",
+        "skill",
+        "websearch",
+        "webfetch",
+        "codesearch",
+        "lsp",
+        "read",
+        "glob",
+        "grep",
+        "list",
+        "write",
+        "edit",
+        "apply_patch",
+        "bash",
+        "batch",
+        "task",
     ] {
         assert!(
             build_tools.contains(&Value::String(required_tool.to_string())),
@@ -1900,14 +1926,14 @@ fn example_config_ships_canonical_plan_build_and_audit_agents() {
         .and_then(Value::as_array)
         .expect("tool_audit tools array present");
     for required_tool in [
-        "skill.load",
-        "user.question",
-        "code.lsp",
-        "agent.spawn",
-        "tool.batch",
-        "tool.invalid",
-        "todo.write",
-        "todo.read",
+        "skill",
+        "question",
+        "lsp",
+        "task",
+        "batch",
+        "invalid",
+        "todowrite",
+        "todoread",
     ] {
         assert!(
             tools.contains(&Value::String(required_tool.to_string())),
@@ -2025,15 +2051,24 @@ fn example_config_ships_canonical_plan_build_and_audit_agents() {
         Some("interactive_live")
     );
 
-    let deep_compat = config
+    let tool_audit = config
         .get("agent")
         .and_then(Value::as_object)
-        .and_then(|agents| agents.get("deep_compat"))
+        .and_then(|agents| agents.get("tool_audit"))
         .and_then(Value::as_object)
-        .expect("deep_compat agent present in example config");
+        .expect("tool_audit agent present in example config");
     assert_eq!(
-        deep_compat.get("tool_surface").and_then(Value::as_str),
-        Some("compat")
+        tool_audit.get("tools").and_then(Value::as_array),
+        Some(&vec![
+            Value::String("skill".to_string()),
+            Value::String("question".to_string()),
+            Value::String("lsp".to_string()),
+            Value::String("task".to_string()),
+            Value::String("batch".to_string()),
+            Value::String("invalid".to_string()),
+            Value::String("todowrite".to_string()),
+            Value::String("todoread".to_string()),
+        ])
     );
 }
 
@@ -2093,9 +2128,9 @@ fn tool_flow_evidence_detects_ordered_same_file_sequence() {
         requested(
             1,
             "call-write",
-            "fs.write",
+            "write",
             json!({
-                "path": LIVE_TOOL_FLOW_RELATIVE_PATH,
+                "filePath": LIVE_TOOL_FLOW_RELATIVE_PATH,
                 "content": "alpha\nbeta\ngamma\n",
             }),
         ),
@@ -2103,12 +2138,11 @@ fn tool_flow_evidence_detects_ordered_same_file_sequence() {
         requested(
             3,
             "call-read-1",
-            "fs.read",
+            "read",
             json!({
-                "path": LIVE_TOOL_FLOW_RELATIVE_PATH,
+                "filePath": LIVE_TOOL_FLOW_RELATIVE_PATH,
                 "offset": 1,
                 "limit": 2000,
-                "line_numbers": true,
             }),
         ),
         finished(4, "call-read-1"),
@@ -2160,12 +2194,11 @@ fn tool_flow_evidence_detects_ordered_same_file_sequence() {
         requested(
             11,
             "call-read-2",
-            "fs.read",
+            "read",
             json!({
-                "path": LIVE_TOOL_FLOW_RELATIVE_PATH,
+                "filePath": LIVE_TOOL_FLOW_RELATIVE_PATH,
                 "offset": 1,
                 "limit": 2000,
-                "line_numbers": true,
             }),
         ),
         finished(12, "call-read-2"),
@@ -2261,9 +2294,9 @@ fn tool_flow_evidence_collect_many_merges_stage_runs() {
             requested(
                 1,
                 "call-write",
-                "fs.write",
+                "write",
                 json!({
-                    "path": LIVE_TOOL_FLOW_RELATIVE_PATH,
+                    "filePath": LIVE_TOOL_FLOW_RELATIVE_PATH,
                     "content": "alpha\nbeta\ngamma\n",
                 }),
             ),
@@ -2276,12 +2309,11 @@ fn tool_flow_evidence_collect_many_merges_stage_runs() {
             requested(
                 3,
                 "call-read-1",
-                "fs.read",
+                "read",
                 json!({
-                    "path": LIVE_TOOL_FLOW_RELATIVE_PATH,
+                    "filePath": LIVE_TOOL_FLOW_RELATIVE_PATH,
                     "offset": 1,
                     "limit": 2000,
-                    "line_numbers": true,
                 }),
             ),
             finished(4, "call-read-1"),
@@ -2346,12 +2378,11 @@ fn tool_flow_evidence_collect_many_merges_stage_runs() {
             requested(
                 11,
                 "call-read-2",
-                "fs.read",
+                "read",
                 json!({
-                    "path": LIVE_TOOL_FLOW_RELATIVE_PATH,
+                    "filePath": LIVE_TOOL_FLOW_RELATIVE_PATH,
                     "offset": 1,
                     "limit": 2000,
-                    "line_numbers": true,
                 }),
             ),
             finished(12, "call-read-2"),
@@ -2405,21 +2436,17 @@ fn resolve_tagged_run_dir_rejects_collisions() {
 }
 
 #[test]
-fn tool_flow_tool_call_state_recognizes_fs_write_same_file_success() {
+fn tool_flow_tool_call_state_recognizes_write_same_file_success() {
     let events = concat!(
-        r#"{"payload":{"event_type":"tool_call_requested","data":{"tool_call_id":"toolcall_000001","tool_id":"fs.write","args_summary":"{\"content\":\"alpha\\nbeta\\ngamma\\n\",\"path\":\"tmp/live_tool_flow.md\"}"}}}"#,
+        r#"{"payload":{"event_type":"tool_call_requested","data":{"tool_call_id":"toolcall_000001","tool_id":"write","args_summary":"{\"content\":\"alpha\\nbeta\\ngamma\\n\",\"filePath\":\"tmp/live_tool_flow.md\"}"}}}"#,
         "\n",
         r#"{"payload":{"event_type":"tool_call_finished","data":{"tool_call_id":"toolcall_000001","status":"succeeded"}}}"#,
         "\n"
     );
 
-    let state = tool_flow_tool_call_state(
-        events,
-        Path::new(LIVE_TOOL_FLOW_RELATIVE_PATH),
-        "fs.write",
-        1,
-    )
-    .expect("fs.write tool-flow state should parse");
+    let state =
+        tool_flow_tool_call_state(events, Path::new(LIVE_TOOL_FLOW_RELATIVE_PATH), "write", 1)
+            .expect("write tool-flow state should parse");
 
     assert_eq!(state, ToolFlowToolCallState::Succeeded);
 }
@@ -2974,7 +3001,7 @@ fn live_visual_checkpoint_marker_assertions_respect_required_and_forbidden_state
         LIVE_TUI_READY_MARKER,
         LIVE_TUI_STATUS_SUCCESS_MARKER,
         LIVE_TUI_FINISHED_MARKER,
-        "fs.read",
+        "read",
     ]);
     let checkpoint = visual_run
         .capture_checkpoint(
@@ -2986,7 +3013,7 @@ fn live_visual_checkpoint_marker_assertions_respect_required_and_forbidden_state
                 LIVE_TUI_FINISHED_MARKER,
                 LIVE_TUI_ASSISTANT_STREAMING_MARKER,
             ],
-            &FocusCapture::anchored_exact("fs.read", 28, 5),
+            &FocusCapture::anchored_exact("read", 28, 5),
         )
         .expect("capture run-finished checkpoint");
 
@@ -3574,7 +3601,7 @@ fn prepare_live_prompt_chat_tool_run_config(
                 prepared_config_path: namespace.artifact_file("chat-tool-question-config", "jsonc"),
             },
             description: "Execute the live question flow and stop after answering.".to_string(),
-            tools: vec!["user.question".to_string()],
+            tools: vec!["question".to_string()],
         },
     )?;
 
@@ -4224,9 +4251,9 @@ fn run_live_tui_tool_flow(
         &run_config.tool_flow.session_dir,
         &run_config.canonical_relative_path,
         &tool_flow_namespace,
-        "fs.write",
+        "write",
         1,
-        remaining_before(deadline, "fs.write tool completion")?,
+        remaining_before(deadline, "write tool completion")?,
     )?;
     let create_events = wait_for_tui_provider_turn_count(
         &run_config.tool_flow.session_dir,
@@ -4242,22 +4269,18 @@ fn run_live_tui_tool_flow(
     wait_for_screen_contains(
         &mut stage.parser,
         &stage.output_rx,
-        "fs.write",
+        "write",
         Duration::from_secs(5),
     )?;
     let shell_create_finished_checkpoint = live_visual.capture_checkpoint_with_metadata(
         CHECKPOINT_FILE_WRITE_FINISHED,
         &stage.parser,
-        &[
-            LIVE_TUI_READY_MARKER,
-            "fs.write",
-            LIVE_TOOL_FLOW_RELATIVE_PATH,
-        ],
-        &FocusCapture::anchored_exact("fs.write", 28, 5),
+        &[LIVE_TUI_READY_MARKER, "write", LIVE_TOOL_FLOW_RELATIVE_PATH],
+        &FocusCapture::anchored_exact("write", 28, 5),
         Some(json!({
             "purpose": "tool-flow-stage-finished",
             "stage": "create",
-            "stage_tool": "fs.write",
+            "stage_tool": "write",
             "session_dir": run_config.tool_flow.session_dir.display().to_string(),
         })),
     )?;
@@ -4273,9 +4296,9 @@ fn run_live_tui_tool_flow(
         &run_config.tool_flow.session_dir,
         &run_config.canonical_relative_path,
         &tool_flow_namespace,
-        "fs.read",
+        "read",
         1,
-        remaining_before(deadline, "first fs.read completion")?,
+        remaining_before(deadline, "first read completion")?,
     )?;
     let first_read_events = wait_for_tui_provider_turn_count(
         &run_config.tool_flow.session_dir,
@@ -4370,9 +4393,9 @@ fn run_live_tui_tool_flow(
         &run_config.tool_flow.session_dir,
         &run_config.canonical_relative_path,
         &tool_flow_namespace,
-        "fs.read",
+        "read",
         2,
-        remaining_before(deadline, "final verification fs.read completion")?,
+        remaining_before(deadline, "final verification read completion")?,
     )?;
     let final_read_events = wait_for_tui_provider_turn_count(
         &run_config.tool_flow.session_dir,
@@ -4387,7 +4410,7 @@ fn run_live_tui_tool_flow(
     wait_for_screen_contains(
         &mut stage.parser,
         &stage.output_rx,
-        "fs.read",
+        "read",
         Duration::from_secs(5),
     )?;
     wait_for_screen_state(
@@ -4396,7 +4419,7 @@ fn run_live_tui_tool_flow(
         &[
             LIVE_TUI_STATUS_SUCCESS_MARKER,
             LIVE_TUI_FINISHED_MARKER,
-            "fs.read",
+            "read",
         ],
         &[
             LIVE_TUI_ASSISTANT_STREAMING_MARKER,
@@ -4412,13 +4435,13 @@ fn run_live_tui_tool_flow(
             LIVE_TUI_FINISHED_MARKER,
             LIVE_TUI_ASSISTANT_STREAMING_MARKER,
             LIVE_TUI_WAITING_FOR_RESPONSE_MARKER,
-            "fs.read",
+            "read",
         ],
-        &FocusCapture::anchored_exact("fs.read", 28, 5),
+        &FocusCapture::anchored_exact("read", 28, 5),
         Some(json!({
             "purpose": "tool-flow-stage-finished",
             "stage": "final_read",
-            "stage_tool": "fs.read",
+            "stage_tool": "read",
             "session_dir": run_config.tool_flow.session_dir.display().to_string(),
         })),
     )?;
@@ -4448,7 +4471,7 @@ fn assert_final_visual_checkpoint(artifacts: &LiveToolFlowArtifacts) -> Result<(
         &[
             LIVE_TUI_STATUS_SUCCESS_MARKER,
             LIVE_TUI_FINISHED_MARKER,
-            "fs.read",
+            "read",
         ],
         &[
             LIVE_TUI_ASSISTANT_STREAMING_MARKER,
@@ -4693,7 +4716,7 @@ fn live_vision_checkpoint_contracts() -> &'static [LiveVisionCheckpointContract]
             checkpoint_id: CHECKPOINT_FILE_WRITE_FINISHED,
             expected_markers: &[
                 "UI shows file-creation progress for tmp/live_tool_flow.md.",
-                "fs.write",
+                "write",
                 LIVE_TOOL_FLOW_RELATIVE_PATH,
             ],
         },
@@ -4709,7 +4732,7 @@ fn live_vision_checkpoint_contracts() -> &'static [LiveVisionCheckpointContract]
             checkpoint_id: CHECKPOINT_RUN_FINISHED,
             expected_markers: &[
                 "Final state shows verification read or assistant confirmation for tmp/live_tool_flow.md.",
-                "fs.read",
+                "read",
                 LIVE_TOOL_FLOW_RELATIVE_PATH,
             ],
         },
@@ -4887,7 +4910,7 @@ fn tool_flow_tool_call_state(
                     .to_string();
                 if status != "succeeded" {
                     return Ok(ToolFlowToolCallState::Failed(status));
-                } else if expected_tool_id == "shell.run"
+                } else if expected_tool_id == "bash"
                     && data
                         .get("output_json")
                         .and_then(|output| output.get("success"))
@@ -5000,13 +5023,19 @@ fn tool_call_targets_path(tool_id: &str, args_summary: &str, canonical_path: &st
     let args_json = serde_json::from_str::<Value>(args_summary).ok();
 
     match tool_id {
-        "fs.write" | "fs.read" | "edit.hashline_scan" | "edit.hashline_apply" => args_json
+        "write" => args_json
             .as_ref()
-            .and_then(|value| value.get("path"))
+            .and_then(|value| value.get("filePath"))
             .and_then(Value::as_str)
             .map(|path| path == canonical_path)
             .unwrap_or_else(|| args_summary.contains(canonical_path)),
-        "shell.run" => args_json
+        "read" | "edit.hashline_scan" | "edit.hashline_apply" => args_json
+            .as_ref()
+            .and_then(|value| value.get("path").or_else(|| value.get("filePath")))
+            .and_then(Value::as_str)
+            .map(|path| path == canonical_path)
+            .unwrap_or_else(|| args_summary.contains(canonical_path)),
+        "bash" => args_json
             .as_ref()
             .map(|value| json_value_contains_path(value, canonical_path))
             .unwrap_or_else(|| args_summary.contains(canonical_path)),
@@ -5322,6 +5351,39 @@ fn wait_for_tui_provider_turn(
     timeout: Duration,
 ) -> Result<String, String> {
     wait_for_tui_provider_turn_count(session_dir, session_namespace, 1, timeout)
+}
+
+async fn wait_for_wiremock_request_path(
+    server: &MockServer,
+    expected_path: &str,
+    timeout: Duration,
+) -> Result<Vec<wiremock::Request>, String> {
+    let deadline = Instant::now() + timeout;
+
+    loop {
+        let requests = server
+            .received_requests()
+            .await
+            .ok_or_else(|| "request recording must be enabled".to_string())?;
+        if requests
+            .iter()
+            .any(|request| request.url.path() == expected_path)
+        {
+            return Ok(requests);
+        }
+
+        if Instant::now() >= deadline {
+            let observed_paths = requests
+                .iter()
+                .map(|request| request.url.path().to_string())
+                .collect::<Vec<_>>();
+            return Err(format!(
+                "timed out waiting for {expected_path} after {timeout:?}; observed paths: {observed_paths:?}"
+            ));
+        }
+
+        tokio::time::sleep(LIVE_TUI_READ_POLL_TIMEOUT).await;
+    }
 }
 
 fn wait_for_tui_provider_turn_count(
@@ -5994,10 +6056,6 @@ fn apply_restricted_tools_contract(
         Value::String(description.to_string()),
     );
     profile.insert(
-        "tool_surface".to_string(),
-        Value::String(restricted_tools_surface(tools).to_string()),
-    );
-    profile.insert(
         "permissions".to_string(),
         json!({
             "edit": "allow",
@@ -6010,14 +6068,6 @@ fn apply_restricted_tools_contract(
         Value::Array(tools.iter().cloned().map(Value::String).collect()),
     );
     Ok(())
-}
-
-fn restricted_tools_surface(tools: &[String]) -> &'static str {
-    if tools.iter().any(|tool| tool.contains('.')) {
-        "native"
-    } else {
-        "compat"
-    }
 }
 
 fn assert_requested_tool_args(
@@ -6211,8 +6261,8 @@ fn assert_todo_state_matches(run_dir: &Path) -> Result<(), String> {
 }
 
 fn assert_question_state_matches(run_dir: &Path, events_body: &str) -> Result<(), String> {
-    let tool_call_id = first_requested_tool_call_id(events_body, "user.question")?
-        .ok_or_else(|| "expected requested user.question tool_call_id".to_string())?;
+    let tool_call_id = first_requested_tool_call_id(events_body, "question")?
+        .ok_or_else(|| "expected requested question tool_call_id".to_string())?;
     let question_path = run_dir
         .join("opencode-compat")
         .join("questions")

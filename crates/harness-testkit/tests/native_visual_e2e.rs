@@ -469,7 +469,7 @@ fn native_visual_navigation_views_inner() {
                 STARTUP_CONTINUE_HISTORY_MARKER,
                 STARTUP_REPLAY_HISTORY_MARKER,
             ],
-            &FocusCapture::anchored_exact(STARTUP_COMMAND_PALETTE_MARKER, 28, 5),
+            &FocusCapture::anchored_exact(STARTUP_COMMAND_PALETTE_MARKER, 56, 9),
             Some(json!({
                 "purpose": "startup-command-palette",
                 "family": "startup_command_palette",
@@ -506,6 +506,17 @@ fn native_visual_navigation_views_inner() {
         "replay",
         STARTUP_REPLAY_HISTORY_MARKER,
     );
+    let replay_history_screen = replay_history_harness
+        .wait_for_all_text(
+            &[
+                STARTUP_REPLAY_HISTORY_MARKER,
+                "Read-only replays",
+                "interactive and prompt runs stay available",
+            ],
+            STARTUP_TIMEOUT,
+        )
+        .unwrap_or_else(|err| panic!("native replay history markers did not stabilize: {err}"));
+    assert!(replay_history_screen.contains("interactive and prompt runs stay available"));
     let replay_history_checkpoint = replay_history_harness
         .capture_checkpoint(
             &mut replay_history_run,
@@ -515,7 +526,7 @@ fn native_visual_navigation_views_inner() {
                 "Read-only replays",
                 "interactive and prompt runs stay available",
             ],
-            &FocusCapture::anchored_exact(STARTUP_REPLAY_HISTORY_MARKER, 28, 3),
+            &FocusCapture::anchored_exact(STARTUP_REPLAY_HISTORY_MARKER, 28, 2),
             Some(json!({
                 "purpose": "startup-replay-history",
                 "family": "startup_session_history",

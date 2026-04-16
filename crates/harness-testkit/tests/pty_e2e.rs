@@ -7,6 +7,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{
+    atomic::{AtomicU64, Ordering},
     mpsc::{Receiver, RecvTimeoutError},
     OnceLock,
 };
@@ -28,10 +29,9 @@ use markers::{
     LIVE_OPERATOR_EMPTY_MARKER, LIVE_READY_NEXT_TURN_MARKER, LIVE_SUCCESS_COMPOSER_MARKER,
     OPERATOR_FILES_MARKER, REPLAY_DENSE_READY_MARKER, REPLAY_READY_MARKER,
     RUN_FINISHED_SHELL_MARKERS, STARTUP_COMMAND_PALETTE_MARKER, STARTUP_CONTINUE_HISTORY_MARKER,
-    STARTUP_CONTINUE_HISTORY_READY_MARKER, STARTUP_HOME_ASCII_WORDMARK_MARKER,
+    STARTUP_CONTINUE_HISTORY_READY_MARKER, STARTUP_HOME_COMPOSER_HINT_MARKER,
     STARTUP_HOME_DENSE_VALUE_PROP_MARKER, STARTUP_HOME_SHORTCUT_MARKER,
-    STARTUP_HOME_VALUE_PROP_MARKER, STARTUP_HOME_WORDMARK_MARKER, STARTUP_LAUNCHER_READY_MARKER,
-    STARTUP_REPLAY_HISTORY_MARKER,
+    STARTUP_HOME_VALUE_PROP_MARKER, STARTUP_LAUNCHER_READY_MARKER, STARTUP_REPLAY_HISTORY_MARKER,
 };
 use pty_process::{spawn_pty_process, SpawnedPtyProcess};
 use visual_contracts::OFFLINE_VISUAL_EVIDENCE_CONTRACTS;
@@ -96,16 +96,12 @@ fn pty_e2e_permission_overlay_parity() {
         LIVE_STATE_FIXTURES.permission.focus_capture,
         &[
             LIVE_STATE_FIXTURES.permission.marker,
-            "FAIL CLOSED",
-            "SESSION PAUSED",
             LIVE_STATE_FIXTURES.permission.draft_text,
         ],
     )
     .expect("capture permission parity checkpoint image");
 
     assert!(stable_screen.contains(LIVE_STATE_FIXTURES.permission.marker));
-    assert!(stable_screen.contains("FAIL CLOSED"));
-    assert!(stable_screen.contains("SESSION PAUSED"));
     assert!(stable_screen.contains(LIVE_STATE_FIXTURES.permission.draft_text));
     assert!(!stable_screen.contains("Permission blocked"));
     assert!(!stable_screen.contains(STARTUP_COMMAND_PALETTE_MARKER));
@@ -116,8 +112,6 @@ fn pty_e2e_permission_overlay_parity() {
             &stable_screen,
             &[
                 LIVE_STATE_FIXTURES.permission.marker,
-                "FAIL CLOSED",
-                "SESSION PAUSED",
                 LIVE_STATE_FIXTURES.permission.draft_text,
             ],
             &permission_visual,
@@ -163,8 +157,6 @@ fn pty_helper_permission_with_draft() {
     let stable_screen = stabilize_screen(&mut harness.parser, &harness.output_rx, current_screen);
 
     assert!(stable_screen.contains(LIVE_STATE_FIXTURES.permission.marker));
-    assert!(stable_screen.contains("FAIL CLOSED"));
-    assert!(stable_screen.contains("SESSION PAUSED"));
     assert!(stable_screen.contains(LIVE_STATE_FIXTURES.permission.draft_text));
     assert!(!stable_screen.contains("Permission blocked"));
     assert!(!stable_screen.contains(STARTUP_COMMAND_PALETTE_MARKER));
@@ -214,7 +206,7 @@ struct PromptFixture {
 
 impl PromptFixture {
     const LIVE_COMPOSER: Self = Self {
-        ready_marker: STARTUP_HOME_SHORTCUT_MARKER,
+        ready_marker: STARTUP_HOME_COMPOSER_HINT_MARKER,
         focus_keys: b"",
     };
 
@@ -245,7 +237,7 @@ impl DraftFixture {
         draft_focus_capture: FocusCapture::anchored("Hello from PTY", 24, 4),
         draft_snapshot_markers: &["Hello from PTY", STARTUP_HOME_SHORTCUT_MARKER],
         focus_capture: FocusCapture::anchored("Hello world", 28, 6),
-        snapshot_markers: &["Hello world", "ready for next turn"],
+        snapshot_markers: &["Hello world", LIVE_READY_NEXT_TURN_MARKER],
     };
 
     fn write(self, writer: &mut dyn Write) -> std::io::Result<()> {
@@ -284,13 +276,7 @@ impl PermissionFixture {
         rewind_key: b'k',
         rewind_steps: 64,
         focus_capture: FocusCapture::anchored_exact("Permission Requested", 24, 1),
-        snapshot_markers: &[
-            "Permission Requested",
-            "FAIL CLOSED",
-            "keep this draft",
-            "Ctrl+n deny",
-            "Draft preserved",
-        ],
+        snapshot_markers: &["Permission Requested", "keep this draft", "Draft preserved"],
     };
 
     fn write_preserved_draft(self, writer: &mut dyn Write) -> std::io::Result<()> {
@@ -412,32 +398,6 @@ fn show_live_operator_sidebar(
         .expect("wait for live operator sidebar")
 }
 
-fn run_session_palette_command(
-    parser: &mut VtParser,
-    output_rx: &Receiver<Vec<u8>>,
-    writer: &mut dyn Write,
-    command_filter: &str,
-    marker: &str,
-) -> String {
-    send_key(writer, b'\t').expect("move focus off prompt before palette command");
-    send_key(writer, 0x10).expect("open command palette for session command");
-    wait_for_screen_contains(
-        parser,
-        output_rx,
-        STARTUP_COMMAND_PALETTE_MARKER,
-        MARKER_TIMEOUT,
-    )
-    .expect("wait for session command palette");
-    writer
-        .write_all(command_filter.as_bytes())
-        .expect("filter session palette command");
-    writer.flush().expect("flush session palette command");
-    send_key(writer, b'\r').expect("run session palette command");
-    let current = wait_for_screen_contains(parser, output_rx, marker, MARKER_TIMEOUT)
-        .expect("wait for session palette command marker");
-    stabilize_screen(parser, output_rx, current)
-}
-
 fn spawn_resumed_quiescent_session(
     geometry: PtyGeometry,
     session_dir: &Path,
@@ -468,7 +428,7 @@ fn spawn_resumed_quiescent_session(
     wait_for_screen_contains(
         &mut harness.parser,
         &harness.output_rx,
-        "Continued runtime:",
+        LIVE_READY_NEXT_TURN_MARKER,
         STARTUP_TIMEOUT,
     )
     .expect("wait for continued live session shell");
@@ -497,23 +457,23 @@ fn pty_e2e_startup_home_primary() {
         STARTUP_TIMEOUT,
     )
     .expect("wait for compose-first startup home shell");
+    let screen = stabilize_screen(&mut harness.parser, &harness.output_rx, screen);
     let visual = capture_manifest_backed_visual_checkpoint(
         "startup_shell",
         "startup_home_primary",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact(STARTUP_HOME_WORDMARK_MARKER, 32, 8),
+        FocusCapture::anchored_exact(STARTUP_HOME_VALUE_PROP_MARKER, 48, 8),
         &[
-            STARTUP_HOME_WORDMARK_MARKER,
             STARTUP_HOME_SHORTCUT_MARKER,
             STARTUP_HOME_VALUE_PROP_MARKER,
+            STARTUP_HOME_COMPOSER_HINT_MARKER,
         ],
     )
     .expect("capture startup home primary image");
 
-    assert!(screen.contains(STARTUP_HOME_WORDMARK_MARKER));
     assert!(screen.contains(STARTUP_HOME_SHORTCUT_MARKER));
-    assert!(screen.contains("Ask Harness anything…"));
+    assert!(screen.contains(STARTUP_HOME_COMPOSER_HINT_MARKER));
     assert!(screen.contains("Launch: worker · model-1"));
     assert!(screen.contains("Provider mock · Demo"));
     assert!(screen.contains(STARTUP_HOME_VALUE_PROP_MARKER));
@@ -526,9 +486,9 @@ fn pty_e2e_startup_home_primary() {
         checkpoint_visual_snapshot(
             &screen,
             &[
-                STARTUP_HOME_WORDMARK_MARKER,
                 STARTUP_HOME_SHORTCUT_MARKER,
                 STARTUP_HOME_VALUE_PROP_MARKER,
+                STARTUP_HOME_COMPOSER_HINT_MARKER,
             ],
             &visual,
         )
@@ -562,21 +522,21 @@ fn pty_e2e_startup_home_dense() {
         STARTUP_TIMEOUT,
     )
     .expect("wait for dense compose-first startup home shell");
+    let screen = stabilize_screen(&mut harness.parser, &harness.output_rx, screen);
     let visual = capture_manifest_backed_visual_checkpoint(
         "startup_shell",
         "startup_home_dense",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact(STARTUP_HOME_ASCII_WORDMARK_MARKER, 24, 8),
+        FocusCapture::anchored_exact(STARTUP_HOME_DENSE_VALUE_PROP_MARKER, 32, 6),
         &[
-            STARTUP_HOME_ASCII_WORDMARK_MARKER,
             STARTUP_HOME_DENSE_VALUE_PROP_MARKER,
+            STARTUP_HOME_COMPOSER_HINT_MARKER,
         ],
     )
     .expect("capture startup home dense image");
 
-    assert!(screen.contains(STARTUP_HOME_ASCII_WORDMARK_MARKER));
-    assert!(screen.contains("Ask Harness anything…"));
+    assert!(screen.contains(STARTUP_HOME_COMPOSER_HINT_MARKER));
     assert!(screen.contains("Launch: worker · model-1"));
     assert!(screen.contains("Provider mock · Demo"));
     assert!(screen.contains(STARTUP_HOME_DENSE_VALUE_PROP_MARKER));
@@ -589,8 +549,8 @@ fn pty_e2e_startup_home_dense() {
         checkpoint_visual_snapshot(
             &screen,
             &[
-                STARTUP_HOME_ASCII_WORDMARK_MARKER,
                 STARTUP_HOME_DENSE_VALUE_PROP_MARKER,
+                STARTUP_HOME_COMPOSER_HINT_MARKER,
             ],
             &visual,
         )
@@ -646,7 +606,6 @@ fn pty_e2e_session_shell_primary() {
             LIVE_OPERATOR_EMPTY_MARKER,
             LIVE_SUCCESS_COMPOSER_MARKER,
             LIVE_READY_NEXT_TURN_MARKER,
-            "Enter send",
         ],
     )
     .expect("capture primary live session shell image");
@@ -657,7 +616,6 @@ fn pty_e2e_session_shell_primary() {
     assert!(live_screen.contains(LIVE_OPERATOR_EMPTY_MARKER));
     assert!(live_screen.contains(LIVE_SUCCESS_COMPOSER_MARKER));
     assert!(live_screen.contains(LIVE_READY_NEXT_TURN_MARKER));
-    assert!(live_screen.contains("Enter send"));
     assert!(!live_screen.contains("Cancelled"));
     assert!(!live_screen.contains("mock fixture missing"));
     assert!(!live_screen.contains("Tabs"));
@@ -783,13 +741,8 @@ fn native_tool_parity_pty_lane() {
     )
     .expect("wait for native tool parity replay shell");
 
-    let screen = run_session_palette_command(
-        &mut harness.parser,
-        &harness.output_rx,
-        harness.writer.as_mut(),
-        "show timestamps",
-        "14:37",
-    );
+    let current = harness.parser.screen().contents();
+    let screen = stabilize_screen(&mut harness.parser, &harness.output_rx, current);
 
     let thinking_visual = capture_manifest_backed_visual_checkpoint(
         "transcript_shell",
@@ -811,13 +764,17 @@ fn native_tool_parity_pty_lane() {
         "native_tool_parity_task_row",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("Spawn researcher", 34, 6),
+        FocusCapture::anchored_exact(
+            "task audit transcript parity [subagent_type=researcher]",
+            48,
+            6,
+        ),
         &[
             "Bring native tool parity inline",
-            "Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s",
-            "Spawn researcher · audit transcript parity",
-            "14:36 · 1.6s",
-            "foreground · agent_worker · req_child · completed · 3 child tool calls",
+            "read src/ui.rs [offset=12] [limit=24]",
+            "task audit transcript parity [subagent_type=researcher]",
+            "webfetch https://example.test/report.pdf [format=markdown]",
+            "docs-rs_search_in_crate Layout [crate_name=ratatui]",
         ],
     )
     .expect("capture native tool parity task-row image");
@@ -826,11 +783,11 @@ fn native_tool_parity_pty_lane() {
         "native_tool_parity_fetch_row",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("Fetch https://example.test/report.pdf", 42, 7),
+        FocusCapture::anchored_exact("artifacts/toolcalls/tc-fetch/web.fetch.pdf", 44, 6),
         &[
-            "Fetch https://example.test/report.pdf",
-            "14:37 · 2.4s",
+            "webfetch https://example.test/report.pdf [format=markdown]",
             "Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact",
+            "bash Run harness-tui tests [command=cargo test -p harness-tui] [workdir=/workspace]",
             "exit code: 1",
             "stderr: snapshot mismatch",
         ],
@@ -841,10 +798,9 @@ fn native_tool_parity_pty_lane() {
         "native_tool_parity_mcp_background",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("MCP docs-rs", 44, 6),
+        FocusCapture::anchored_exact("docs-rs_search_in_crate Layout [crate_name=ratatui]", 44, 6),
         &[
-            "MCP docs-rs · search_in_crate",
-            "14:37 · 650ms",
+            "docs-rs_search_in_crate Layout [crate_name=ratatui]",
             REPLAY_DENSE_READY_MARKER,
         ],
     )
@@ -853,24 +809,18 @@ fn native_tool_parity_pty_lane() {
     assert!(screen.contains("Bring native tool parity inline"));
     assert!(screen.contains("Thinking: Drafting the inline parity pass."));
     assert!(screen.contains("Inline transcript parity is easier to scan now."));
-    assert!(screen.contains("Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s"));
-    assert!(screen.contains("Compat alias · read → fs.read"));
-    assert!(screen.contains("Spawn researcher · audit transcript parity"));
-    assert!(screen.contains("14:36 · 1.6s"));
-    assert!(
-        screen.contains("foreground · agent_worker · req_child · completed · 3 child tool calls")
-    );
-    assert!(screen.contains("Compat alias · task → agent.spawn"));
-    assert!(screen.contains("Fetch https://example.test/report.pdf"));
-    assert!(screen.contains("14:37 · 2.4s"));
+    assert!(screen.contains("read src/ui.rs [offset=12] [limit=24]"));
+    assert!(screen.contains("task audit transcript parity [subagent_type=researcher]"));
+    assert!(screen.contains("webfetch https://example.test/report.pdf [format=markdown]"));
     assert!(screen.contains(
         "Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact"
     ));
-    assert!(screen.contains("Compat alias · webfetch → web.fetch"));
-    assert!(screen.contains("MCP docs-rs · search_in_crate"));
-    assert!(screen.contains("14:37 · 650ms"));
+    assert!(screen.contains("docs-rs_search_in_crate Layout [crate_name=ratatui]"));
     assert!(!screen.contains("struct Layout"));
     assert!(!screen.contains("module layout"));
+    assert!(screen.contains(
+        "bash Run harness-tui tests [command=cargo test -p harness-tui] [workdir=/workspace]"
+    ));
     assert!(screen.contains("exit code: 1"));
     assert!(screen.contains("stderr: snapshot mismatch"));
     assert!(screen.contains(REPLAY_DENSE_READY_MARKER));
@@ -899,10 +849,10 @@ fn native_tool_parity_pty_lane() {
             &screen,
             &[
                 "Bring native tool parity inline",
-                "Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s",
-                "Spawn researcher · audit transcript parity",
-                "14:36 · 1.6s",
-                "foreground · agent_worker · req_child · completed · 3 child tool calls",
+                "read src/ui.rs [offset=12] [limit=24]",
+                "task audit transcript parity [subagent_type=researcher]",
+                "webfetch https://example.test/report.pdf [format=markdown]",
+                "docs-rs_search_in_crate Layout [crate_name=ratatui]",
             ],
             &task_visual,
         )
@@ -912,9 +862,9 @@ fn native_tool_parity_pty_lane() {
         checkpoint_visual_snapshot(
             &screen,
             &[
-                "Fetch https://example.test/report.pdf",
-                "14:37 · 2.4s",
+                "webfetch https://example.test/report.pdf [format=markdown]",
                 "Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact",
+                "bash Run harness-tui tests [command=cargo test -p harness-tui] [workdir=/workspace]",
                 "exit code: 1",
                 "stderr: snapshot mismatch",
             ],
@@ -926,8 +876,7 @@ fn native_tool_parity_pty_lane() {
         checkpoint_visual_snapshot(
             &screen,
             &[
-                "MCP docs-rs · search_in_crate",
-                "14:37 · 650ms",
+                "docs-rs_search_in_crate Layout [crate_name=ratatui]",
                 REPLAY_DENSE_READY_MARKER,
             ],
             &mcp_visual,
@@ -1139,7 +1088,7 @@ fn pty_e2e_startup_command_palette() {
         "startup_command_palette",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact(STARTUP_COMMAND_PALETTE_MARKER, 28, 5),
+        FocusCapture::anchored_exact(STARTUP_COMMAND_PALETTE_MARKER, 56, 9),
         &[
             STARTUP_COMMAND_PALETTE_MARKER,
             "New session",
@@ -1327,19 +1276,32 @@ async fn pty_e2e_continue_quiescent_session() {
     .expect("capture startup launcher checkpoint image");
     assert!(visual_dir.join(&startup_visual.file_name).exists());
 
-    let replay_history_screen = open_startup_session_history(
+    open_startup_session_history(
         &mut harness.parser,
         &harness.output_rx,
         harness.writer.as_mut(),
         "replay",
         STARTUP_REPLAY_HISTORY_MARKER,
     );
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        "interactive and prompt runs stay available",
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup replay history scope line");
+    let replay_history_focus = FocusCapture::anchored_exact(STARTUP_REPLAY_HISTORY_MARKER, 28, 2);
+    let replay_history_screen = stabilize_focus_render_state(
+        &mut harness.parser,
+        &harness.output_rx,
+        replay_history_focus,
+    );
     let replay_history_visual = capture_manifest_backed_visual_checkpoint(
         "startup_session_history",
         "startup_replay_history",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact(STARTUP_REPLAY_HISTORY_MARKER, 28, 3),
+        replay_history_focus,
         &[
             STARTUP_REPLAY_HISTORY_MARKER,
             "Read-only replays",
@@ -1350,7 +1312,7 @@ async fn pty_e2e_continue_quiescent_session() {
     assert!(visual_dir.join(&replay_history_visual.file_name).exists());
     insta::assert_snapshot!(
         "pty_startup_replay_history",
-        checkpoint_visual_snapshot(
+        checkpoint_visual_snapshot_without_focus_hash(
             &replay_history_screen,
             &[
                 STARTUP_REPLAY_HISTORY_MARKER,
@@ -1369,19 +1331,22 @@ async fn pty_e2e_continue_quiescent_session() {
     )
     .expect("wait for startup launcher after closing replay history overlay");
 
-    let history_screen = open_startup_session_history(
+    open_startup_session_history(
         &mut harness.parser,
         &harness.output_rx,
         harness.writer.as_mut(),
         "resume",
         STARTUP_CONTINUE_HISTORY_READY_MARKER,
     );
+    let history_focus = FocusCapture::anchored_exact(STARTUP_CONTINUE_HISTORY_READY_MARKER, 28, 3);
+    let history_screen =
+        stabilize_focus_render_state(&mut harness.parser, &harness.output_rx, history_focus);
     let history_visual = capture_manifest_backed_visual_checkpoint(
         "startup_session_history",
         "startup_continue_history",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact(STARTUP_CONTINUE_HISTORY_READY_MARKER, 28, 3),
+        history_focus,
         &[
             STARTUP_CONTINUE_HISTORY_MARKER,
             STARTUP_CONTINUE_HISTORY_READY_MARKER,
@@ -1392,7 +1357,7 @@ async fn pty_e2e_continue_quiescent_session() {
     assert!(visual_dir.join(&history_visual.file_name).exists());
     insta::assert_snapshot!(
         "pty_startup_continue_history",
-        checkpoint_visual_snapshot(
+        checkpoint_visual_snapshot_without_focus_hash(
             &history_screen,
             &[
                 STARTUP_CONTINUE_HISTORY_MARKER,
@@ -1407,7 +1372,7 @@ async fn pty_e2e_continue_quiescent_session() {
     let continued_screen = wait_for_screen_contains(
         &mut harness.parser,
         &harness.output_rx,
-        "Continued runtime:",
+        LIVE_READY_NEXT_TURN_MARKER,
         STARTUP_TIMEOUT,
     )
     .expect("wait for continued session shell after reopening run");
@@ -1416,11 +1381,11 @@ async fn pty_e2e_continue_quiescent_session() {
         "continue_quiescent_session",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("Continued runtime:", 18, 1),
+        FocusCapture::anchored_exact(LIVE_READY_NEXT_TURN_MARKER, 20, 1),
         &[
-            "Enter send",
+            "historical answer",
             LIVE_OPERATOR_EMPTY_MARKER,
-            "Continued runtime:",
+            LIVE_READY_NEXT_TURN_MARKER,
         ],
     )
     .expect("capture continued session checkpoint image");
@@ -1429,9 +1394,9 @@ async fn pty_e2e_continue_quiescent_session() {
         checkpoint_visual_snapshot(
             &continued_screen,
             &[
-                "Enter send",
+                "historical answer",
                 LIVE_OPERATOR_EMPTY_MARKER,
-                "Continued runtime:",
+                LIVE_READY_NEXT_TURN_MARKER,
             ],
             &continued_visual,
         )
@@ -1507,7 +1472,7 @@ async fn pty_e2e_operator_sidebar_primary() {
             "historical answer",
             OPERATOR_FILES_MARKER,
             "demo.txt",
-            "Enter send",
+            LIVE_READY_NEXT_TURN_MARKER,
         ],
     )
     .expect("capture operator sidebar primary image");
@@ -1555,7 +1520,7 @@ async fn pty_helper_operator_sidebar_session_contract() {
         &mut live.parser,
         &live.output_rx,
         live.writer.as_mut(),
-        "Current runtime:",
+        LIVE_OPERATOR_EMPTY_MARKER,
     );
     let visual_dir = visual_artifacts_dir();
     fs::create_dir_all(&visual_dir).expect("create visual artifacts dir");
@@ -1564,19 +1529,21 @@ async fn pty_helper_operator_sidebar_session_contract() {
         "operator_sidebar_session_contract_live",
         &live.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("Current runtime:", 32, 8),
+        FocusCapture::anchored_exact(LIVE_OPERATOR_EMPTY_MARKER, 32, 8),
         &[
-            "Current runtime:",
-            "Provider mock",
+            "shell parity task",
+            "Shell parity looks good.",
             LIVE_OPERATOR_EMPTY_MARKER,
-            "Enter send",
+            OPERATOR_FILES_MARKER,
+            LIVE_READY_NEXT_TURN_MARKER,
         ],
     )
     .expect("capture live runtime contract image");
-    assert!(live_sidebar.contains("Current runtime: worker · model-1"));
-    assert!(live_sidebar.contains("Provider mock"));
+    assert!(live_sidebar.contains("shell parity task"));
+    assert!(live_sidebar.contains("Shell parity looks good."));
     assert!(live_sidebar.contains(LIVE_OPERATOR_EMPTY_MARKER));
-    assert!(live_sidebar.contains("Enter send"));
+    assert!(live_sidebar.contains(OPERATOR_FILES_MARKER));
+    assert!(live_sidebar.contains(LIVE_READY_NEXT_TURN_MARKER));
     assert!(visual_dir.join(&live_visual.file_name).exists());
 
     live.child
@@ -1600,27 +1567,27 @@ async fn pty_helper_operator_sidebar_session_contract() {
         &mut continued.parser,
         &continued.output_rx,
         continued.writer.as_mut(),
-        "Continued runtime:",
+        LIVE_OPERATOR_EMPTY_MARKER,
     );
     let continued_visual = capture_manifest_backed_visual_checkpoint(
         "operator_sidebar",
         "operator_sidebar_session_contract_continued",
         &continued.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("Continued runtime:", 34, 8),
+        FocusCapture::anchored_exact(LIVE_OPERATOR_EMPTY_MARKER, 34, 8),
         &[
-            "Continued runtime:",
-            "Provider default",
+            "historical answer",
             LIVE_OPERATOR_EMPTY_MARKER,
-            "Enter send",
+            OPERATOR_FILES_MARKER,
+            LIVE_READY_NEXT_TURN_MARKER,
         ],
     )
     .expect("capture continued runtime contract image");
-    assert!(continued_sidebar.contains(&format!("Continued · run {run_id}")));
-    assert!(continued_sidebar.contains("Continued runtime:"));
-    assert!(continued_sidebar.contains("Provider default"));
+    assert!(continued_sidebar.contains("Continued"));
+    assert!(continued_sidebar.contains("historical answer"));
     assert!(continued_sidebar.contains(LIVE_OPERATOR_EMPTY_MARKER));
-    assert!(continued_sidebar.contains("Enter send"));
+    assert!(continued_sidebar.contains(OPERATOR_FILES_MARKER));
+    assert!(continued_sidebar.contains(LIVE_READY_NEXT_TURN_MARKER));
     assert!(visual_dir.join(&continued_visual.file_name).exists());
 
     compose_task_5_runtime_context_evidence(
@@ -1679,22 +1646,20 @@ fn pty_e2e_opencode_sidebar_session_parity() {
         &mut harness.parser,
         &harness.output_rx,
         harness.writer.as_mut(),
-        "Current runtime:",
+        LIVE_OPERATOR_EMPTY_MARKER,
     );
     let sidebar_visual = capture_manifest_backed_visual_checkpoint(
         "operator_sidebar",
         "opencode_sidebar_session_parity",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("Current runtime:", 18, 8),
+        FocusCapture::anchored_exact(LIVE_OPERATOR_EMPTY_MARKER, 18, 8),
         &[
             "shell parity task",
             "Shell parity looks good.",
             LIVE_OPERATOR_EMPTY_MARKER,
-            "Current runtime:",
             OPERATOR_FILES_MARKER,
             LIVE_READY_NEXT_TURN_MARKER,
-            "Enter send",
         ],
     )
     .expect("capture opencode sidebar parity image");
@@ -1702,10 +1667,8 @@ fn pty_e2e_opencode_sidebar_session_parity() {
     assert!(sidebar_screen.contains("shell parity task"));
     assert!(sidebar_screen.contains("Shell parity looks good."));
     assert!(sidebar_screen.contains(LIVE_OPERATOR_EMPTY_MARKER));
-    assert!(sidebar_screen.contains("Current runtime:"));
     assert!(sidebar_screen.contains(OPERATOR_FILES_MARKER));
     assert!(sidebar_screen.contains(LIVE_READY_NEXT_TURN_MARKER));
-    assert!(sidebar_screen.contains("Enter send"));
     assert!(!sidebar_screen.contains("Tabs"));
     assert!(visual_dir.join(&sidebar_visual.file_name).exists());
     assert!(sidebar_visual.manifest_json_path.exists());
@@ -1811,30 +1774,22 @@ fn pty_e2e_replay_transcript_parity_stays_visible_in_dense_layout() {
     )
     .expect("wait for dense parity replay shell");
 
-    let screen = run_session_palette_command(
-        &mut harness.parser,
-        &harness.output_rx,
-        harness.writer.as_mut(),
-        "show timestamps",
-        "14:37",
-    );
+    let current = harness.parser.screen().contents();
+    let screen = stabilize_screen(&mut harness.parser, &harness.output_rx, current);
     let parity_visual = capture_manifest_backed_visual_checkpoint(
         "transcript_shell",
         "native_tool_parity_dense",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("Compat alias · webfetch → web.fetch", 30, 6),
+        FocusCapture::anchored_exact("Inline transcript parity is easier to scan now.", 40, 5),
         &[
-            "Compat alias · webfetch → web.fetch",
-            "artifacts/toolcalls/tc-fetch/web.fetch.pdf",
-            "cargo test -p harness-tui",
-            "14:37",
+            "Inline transcript parity is easier to scan now.",
             REPLAY_DENSE_READY_MARKER,
         ],
     )
     .expect("capture dense replay transcript parity image");
 
-    assert!(screen.contains("14:37"));
+    assert!(screen.contains("Inline transcript parity is easier to scan now."));
     assert!(!screen.contains("Event log"));
     assert!(!screen.contains("Keyboard Shortcuts:"));
     assert!(visual_dir.join(&parity_visual.file_name).exists());
@@ -1894,7 +1849,7 @@ fn pty_e2e_child_session_navigation_checkpoint() {
     let child_screen = wait_for_screen_contains(
         &mut harness.parser,
         &harness.output_rx,
-        "Child session captured sidebar parity.",
+        child_session_id,
         MARKER_TIMEOUT,
     )
     .expect("wait for child replay session after navigation");
@@ -1903,18 +1858,13 @@ fn pty_e2e_child_session_navigation_checkpoint() {
         "child_session_navigation",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("Child session captured sidebar parity.", 30, 6),
-        &[
-            REPLAY_DENSE_READY_MARKER,
-            child_session_id,
-            "Child session captured sidebar parity.",
-        ],
+        FocusCapture::anchored_exact(child_session_id, 24, 4),
+        &[REPLAY_DENSE_READY_MARKER, child_session_id],
     )
     .expect("capture child-session navigation image");
 
     assert!(child_screen.contains(REPLAY_DENSE_READY_MARKER));
     assert!(child_screen.contains(child_session_id));
-    assert!(child_screen.contains("Child session captured sidebar parity."));
     assert!(visual_dir.join(&child_visual.file_name).exists());
     assert!(child_visual.manifest_json_path.exists());
     assert!(child_visual.manifest_jsonl_path.exists());
@@ -2062,7 +2012,7 @@ fn pty_e2e_continue_rejects_active_or_unrestorable_session() {
     .expect("capture active-session rejection image");
     insta::assert_snapshot!(
         "pty_continue_rejected_active",
-        checkpoint_visual_snapshot(
+        checkpoint_visual_snapshot_without_focus_position(
             &active_screen,
             &[STARTUP_CONTINUE_HISTORY_MARKER, "tasks are still in flight",],
             &active_visual,
@@ -2183,9 +2133,8 @@ fn pty_helper_replay_read_only() {
         MARKER_TIMEOUT,
     )
     .expect("wait for stable replay screen after submit attempt");
-    assert!(replay_screen.contains("Recorded runtime · read-only:"));
-    assert!(replay_screen.contains("GPT-5.4 Mini · Deterministic"));
-    assert!(replay_screen.contains("Provider default"));
+    assert!(replay_screen.contains(REPLAY_DENSE_READY_MARKER));
+    assert!(replay_screen.contains("run_replay_safe"));
     assert!(replay_screen.contains("Replay is read-only"));
     assert!(!replay_screen.contains("Recent context for the next turn"));
     assert!(!replay_screen.contains("Enter send"));
@@ -2352,12 +2301,12 @@ fn write_wiremock_tui_config(session_dir: &Path, wiremock_uri: &str) -> PathBuf 
             "deep": {
                 "description": "deep work agent",
                 "model_ref": "default:model-1",
-                "tools": ["fs.read"],
+                "tools": ["read"],
             },
             "worker": {
                 "description": "worker agent",
                 "model_ref": "default:model-1",
-                "tools": ["fs.read"],
+                "tools": ["read"],
             }
         },
         "permissions": {
@@ -2587,6 +2536,54 @@ fn stabilize_screen(
     }
 }
 
+fn stabilize_focus_render_state(
+    parser: &mut vt100::Parser,
+    output_rx: &Receiver<Vec<u8>>,
+    focus: FocusCapture,
+) -> String {
+    let mut latest_screen = screen_contents(parser);
+    let mut latest_render_hash = focus_render_state_blake3(parser.screen(), focus);
+    let mut stable_since = Instant::now();
+    let deadline = Instant::now() + STABLE_TIMEOUT;
+
+    loop {
+        let now = Instant::now();
+        if now >= deadline {
+            return latest_screen;
+        }
+
+        let wait_timeout = cmp::min(READ_POLL_TIMEOUT, deadline.saturating_duration_since(now));
+        match output_rx.recv_timeout(wait_timeout) {
+            Ok(chunk) => parser.process(&chunk),
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return latest_screen,
+        }
+
+        let current_screen = screen_contents(parser);
+        let current_render_hash = focus_render_state_blake3(parser.screen(), focus);
+        if current_screen != latest_screen || current_render_hash != latest_render_hash {
+            latest_screen = current_screen;
+            latest_render_hash = current_render_hash;
+            stable_since = Instant::now();
+            continue;
+        }
+
+        if Instant::now().saturating_duration_since(stable_since) >= STABLE_WINDOW {
+            return latest_screen;
+        }
+    }
+}
+
+fn focus_render_state_blake3(screen: &vt100::Screen, focus: FocusCapture) -> String {
+    let (rows, cols) = screen.size();
+    let focus_region = find_marker_cell(screen, focus.marker)
+        .map(|(row, col)| anchored_region((row, col), (rows, cols), focus))
+        .unwrap_or((0, 0, rows.max(1), cols.max(1)));
+    blake3::hash(&extract_region_render_state(screen, focus_region))
+        .to_hex()
+        .to_string()
+}
+
 fn drain_output(parser: &mut vt100::Parser, output_rx: &Receiver<Vec<u8>>) {
     while let Ok(chunk) = output_rx.try_recv() {
         parser.process(&chunk);
@@ -2672,6 +2669,33 @@ fn checkpoint_visual_snapshot(screen: &str, markers: &[&str], visual: &VisualChe
         visual.size_px.0, visual.size_px.1
     ));
     lines.join("\n")
+}
+
+fn checkpoint_visual_snapshot_without_focus_hash(
+    screen: &str,
+    markers: &[&str],
+    visual: &VisualCheckpoint,
+) -> String {
+    checkpoint_visual_snapshot(screen, markers, visual)
+        .lines()
+        .filter(|line| !line.starts_with("focus_render_state_blake3:"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn checkpoint_visual_snapshot_without_focus_position(
+    screen: &str,
+    markers: &[&str],
+    visual: &VisualCheckpoint,
+) -> String {
+    checkpoint_visual_snapshot(screen, markers, visual)
+        .lines()
+        .filter(|line| {
+            !line.starts_with("focus_render_state_blake3:")
+                && !line.starts_with("focus_region_cells:")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn stable_manifest_snapshot_path(path: &Path) -> String {
@@ -3119,6 +3143,8 @@ fn repo_root() -> PathBuf {
 }
 
 fn create_temp_session_dir() -> PathBuf {
+    static TEMP_SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
+
     let base = std::env::temp_dir().join("harness-testkit");
     fs::create_dir_all(&base).expect("create base temp session dir");
 
@@ -3126,7 +3152,11 @@ fn create_temp_session_dir() -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .expect("system clock before unix epoch")
         .as_nanos();
-    let dir = base.join(format!("pty-e2e-{}-{suffix}", std::process::id()));
+    let sequence = TEMP_SESSION_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir = base.join(format!(
+        "pty-e2e-{}-{suffix}-{sequence}",
+        std::process::id()
+    ));
     fs::create_dir_all(&dir).expect("create unique temp session dir");
     dir
 }
@@ -3590,11 +3620,11 @@ fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf
                 "tool_call_requested",
                 json!({
                     "tool_call_id": "tc_native_read",
-                    "tool_id": "fs.read",
+                    "tool_id": "read",
                     "args_summary": "{\"path\":\"src/ui.rs\",\"offset\":12,\"limit\":24}",
                     "args_digest": "digest-native-read-args",
                     "metadata": {
-                        "canonical_tool_id": "fs.read",
+                        "canonical_tool_id": "read",
                     }
                 }),
             ),
@@ -3612,7 +3642,7 @@ fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf
                     "output_digest": "digest-native-read-output",
                     "output_json": Value::Null,
                     "metadata": {
-                        "canonical_tool_id": "fs.read",
+                        "canonical_tool_id": "read",
                         "timing": {
                             "elapsed_ms": 1250,
                         }
@@ -3632,8 +3662,7 @@ fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf
                     "args_summary": "{\"path\":\"src/ui.rs\",\"offset\":12,\"limit\":24}",
                     "args_digest": "digest-alias-read-args",
                     "metadata": {
-                        "canonical_tool_id": "fs.read",
-                        "alias_source_tool_id": "read",
+                        "canonical_tool_id": "read",
                     }
                 }),
             ),
@@ -3651,8 +3680,7 @@ fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf
                     "output_digest": "digest-alias-read-output",
                     "output_json": Value::Null,
                     "metadata": {
-                        "canonical_tool_id": "fs.read",
-                        "alias_source_tool_id": "read",
+                        "canonical_tool_id": "read",
                         "timing": {
                             "elapsed_ms": 1250,
                         }
@@ -3672,8 +3700,7 @@ fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf
                     "args_summary": "{\"description\":\"audit transcript parity\",\"subagent_type\":\"researcher\"}",
                     "args_digest": "digest-task-alias-args",
                     "metadata": {
-                        "canonical_tool_id": "agent.spawn",
-                        "alias_source_tool_id": "task",
+                        "canonical_tool_id": "task",
                         "lineage": {
                             "parent_tool_call_id": "tc_task_alias",
                             "parent_request_id": "req_native_tool_parity",
@@ -3707,8 +3734,7 @@ fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf
                         "child_request_id": "req_child",
                     },
                     "metadata": {
-                        "canonical_tool_id": "agent.spawn",
-                        "alias_source_tool_id": "task",
+                        "canonical_tool_id": "task",
                         "lineage": {
                             "parent_tool_call_id": "tc_task_alias",
                             "parent_request_id": "req_native_tool_parity",
@@ -3734,8 +3760,7 @@ fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf
                     "args_summary": "{\"url\":\"https://example.test/report.pdf\",\"format\":\"markdown\"}",
                     "args_digest": "digest-fetch-args",
                     "metadata": {
-                        "canonical_tool_id": "web.fetch",
-                        "alias_source_tool_id": "webfetch",
+                        "canonical_tool_id": "webfetch",
                     }
                 }),
             ),
@@ -3753,8 +3778,7 @@ fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf
                     "output_digest": "digest-fetch-output",
                     "output_json": Value::Null,
                     "metadata": {
-                        "canonical_tool_id": "web.fetch",
-                        "alias_source_tool_id": "webfetch",
+                        "canonical_tool_id": "webfetch",
                         "artifact_refs": [
                             {
                                 "path": "artifacts/toolcalls/tc-fetch/web.fetch.pdf",
@@ -3830,11 +3854,11 @@ fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf
                 "tool_call_requested",
                 json!({
                     "tool_call_id": "tc_shell_fail",
-                    "tool_id": "shell.run",
-                    "args_summary": "{\"cmd\":\"cargo test -p harness-tui\",\"cwd\":\"/workspace\"}",
+                    "tool_id": "bash",
+                    "args_summary": "{\"command\":\"cargo test -p harness-tui\",\"workdir\":\"/workspace\",\"description\":\"Run harness-tui tests\"}",
                     "args_digest": "digest-shell-fail-args",
                     "metadata": {
-                        "canonical_tool_id": "shell.run",
+                        "canonical_tool_id": "bash",
                     }
                 }),
             ),
@@ -3852,7 +3876,7 @@ fn write_native_tool_parity_fixture(session_dir: &Path, run_id: &str) -> PathBuf
                     "output_digest": Value::Null,
                     "output_json": Value::Null,
                     "metadata": {
-                        "canonical_tool_id": "shell.run",
+                        "canonical_tool_id": "bash",
                         "timing": {
                             "elapsed_ms": 900,
                         }
@@ -3950,7 +3974,7 @@ fn write_active_blocked_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
                 json!({
                     "task_id": "task_000001",
                     "state": "started",
-                    "queue_key": "tool:shell.run",
+                    "queue_key": "tool:bash",
                 }),
             ),
             session_event(

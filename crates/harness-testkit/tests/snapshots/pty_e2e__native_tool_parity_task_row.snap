@@ -1,16 +1,16 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-assertion_line: 878
-expression: "checkpoint_visual_snapshot(&screen,\n&[\"Bring native tool parity inline\",\n\"Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s\",\n\"Spawn researcher · audit transcript parity\", \"14:36 · 1.6s\",\n\"foreground · agent_worker · req_child · completed · 3 child tool calls\",],\n&task_visual,)"
+assertion_line: 845
+expression: "checkpoint_visual_snapshot(&screen,\n&[\"Bring native tool parity inline\", \"read src/ui.rs [offset=12] [limit=24]\",\n\"task audit transcript parity [subagent_type=researcher]\",\n\"webfetch https://example.test/report.pdf [format=markdown]\",\n\"docs-rs_search_in_crate Layout [crate_name=ratatui]\",], &task_visual,)"
 ---
 Bring native tool parity inline: true
-Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s: true
-Spawn researcher · audit transcript parity: true
-14:36 · 1.6s: true
-foreground · agent_worker · req_child · completed · 3 child tool calls: true
-focus_marker: Spawn researcher
-focus_render_state_blake3: fdf942516549a5770ee3b6614a840b1b8ba59aede6c781d287be96a0ed9f6296
-focus_region_cells: row=15, col=11, height=6, width=34
+read src/ui.rs [offset=12] [limit=24]: true
+task audit transcript parity [subagent_type=researcher]: true
+webfetch https://example.test/report.pdf [format=markdown]: true
+docs-rs_search_in_crate Layout [crate_name=ratatui]: true
+focus_marker: task audit transcript parity [subagent_type=researcher]
+focus_render_state_blake3: aed044c40313e4ebb666ca45d3162a025eb1ce9f1e400e78d99d447e4f3df04e
+focus_region_cells: row=11, col=7, height=6, width=48
 image: pty_native_tool_parity_task_row.png
 manifest_json: pty-manifests/transcript_shell/manifest.json
 manifest_jsonl: pty-manifests/transcript_shell/manifest.jsonl

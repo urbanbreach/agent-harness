@@ -395,13 +395,19 @@ fn tool_targets_canonical_path(tool_id: &str, args_summary: &str, canonical_path
     let args_json = serde_json::from_str::<Value>(args_summary).ok();
 
     match tool_id {
-        "fs.write" | "fs.read" | "edit.hashline_scan" | "edit.hashline_apply" => args_json
+        "write" => args_json
             .as_ref()
-            .and_then(|value| value.get("path"))
+            .and_then(|value| value.get("filePath"))
             .and_then(Value::as_str)
             .map(|path| path == canonical_path)
             .unwrap_or_else(|| args_summary.contains(canonical_path)),
-        "shell.run" => args_json
+        "read" | "edit.hashline_scan" | "edit.hashline_apply" => args_json
+            .as_ref()
+            .and_then(|value| value.get("path").or_else(|| value.get("filePath")))
+            .and_then(Value::as_str)
+            .map(|path| path == canonical_path)
+            .unwrap_or_else(|| args_summary.contains(canonical_path)),
+        "bash" => args_json
             .as_ref()
             .map(|value| json_value_contains_path(value, canonical_path))
             .unwrap_or_else(|| args_summary.contains(canonical_path)),
@@ -424,16 +430,16 @@ fn json_value_contains_path(value: &Value, canonical_path: &str) -> bool {
 
 fn expected_same_file_sequence() -> Vec<(String, ToolFlowPhase)> {
     vec![
-        ("fs.write".to_string(), ToolFlowPhase::Requested),
-        ("fs.write".to_string(), ToolFlowPhase::Finished),
-        ("fs.read".to_string(), ToolFlowPhase::Requested),
-        ("fs.read".to_string(), ToolFlowPhase::Finished),
+        ("write".to_string(), ToolFlowPhase::Requested),
+        ("write".to_string(), ToolFlowPhase::Finished),
+        ("read".to_string(), ToolFlowPhase::Requested),
+        ("read".to_string(), ToolFlowPhase::Finished),
         ("edit.hashline_scan".to_string(), ToolFlowPhase::Requested),
         ("edit.hashline_scan".to_string(), ToolFlowPhase::Finished),
         ("edit.hashline_apply".to_string(), ToolFlowPhase::Requested),
         ("edit.hashline_apply".to_string(), ToolFlowPhase::Finished),
-        ("fs.read".to_string(), ToolFlowPhase::Requested),
-        ("fs.read".to_string(), ToolFlowPhase::Finished),
+        ("read".to_string(), ToolFlowPhase::Requested),
+        ("read".to_string(), ToolFlowPhase::Finished),
     ]
 }
 
