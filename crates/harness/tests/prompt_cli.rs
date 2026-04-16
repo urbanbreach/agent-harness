@@ -215,6 +215,76 @@ async fn prompt_cli_calls_responses_endpoint() {
 }
 
 #[tokio::test]
+async fn prompt_cli_creates_durable_run_logs_under_run_dir() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    deterministic_responses_sse_transcript(),
+                    "text/event-stream",
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.logging.jsonc");
+    let session_dir = temp.path().join("sessions");
+
+    fs::write(
+        &config_path,
+        prompt_cli_config(&format!("{}/v1", server.uri()), &session_dir, &[]),
+    )
+    .expect("write config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "prompt",
+            "--text",
+            "Hello",
+            "--print-run-dir",
+        ])
+        .output()
+        .expect("run harness prompt with logging");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let run_dir_line = stdout
+        .lines()
+        .rev()
+        .find(|line| line.contains("prompt_") || line.contains("run_"))
+        .expect("run dir line in prompt output");
+    let log_path = std::path::Path::new(run_dir_line)
+        .join("logs")
+        .join("harness.log");
+    assert!(
+        log_path.exists(),
+        "expected log file at {}",
+        log_path.display()
+    );
+
+    let log_body = fs::read_to_string(&log_path).expect("read harness log file");
+    assert!(
+        log_body.contains("initialized harness file logging"),
+        "expected logging init marker in {}\n{}",
+        log_path.display(),
+        log_body
+    );
+}
+
+#[tokio::test]
 async fn prompt_cli_model_variant_and_thinking_flags_stream_reasoning_output() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -531,7 +601,7 @@ async fn prompt_cli_executes_tool_call_and_completes_turn() {
     fs::write(temp.path().join("tool-target.txt"), "alpha\nbeta\ngamma\n")
         .expect("write tool target");
 
-    let config = prompt_cli_config(&format!("{}/v1", server.uri()), &session_dir, &["fs.read"]);
+    let config = prompt_cli_config(&format!("{}/v1", server.uri()), &session_dir, &["read"]);
 
     fs::write(&config_path, config).expect("write config");
 
@@ -658,12 +728,12 @@ async fn prompt_cli_executes_fs_glob_and_completes_turn() {
     Mock::given(method("POST"))
         .and(path("/v1/responses"))
         .and(body_string_contains(
-            "Use fs.glob on fixtures and summarize the matches.",
+            "Use glob on fixtures and summarize the matches.",
         ))
         .respond_with(
             ResponseTemplate::new(200)
                 .insert_header("content-type", "text/event-stream")
-                .set_body_raw(tool_call_fs_glob_sse_transcript(), "text/event-stream"),
+                .set_body_raw(tool_call_glob_sse_transcript(), "text/event-stream"),
         )
         .with_priority(2)
         .mount(&server)
@@ -678,13 +748,13 @@ async fn prompt_cli_executes_fs_glob_and_completes_turn() {
     let output = run_prompt_with_single_tool(
         temp.path(),
         &server,
-        &["fs.glob"],
-        "Use fs.glob on fixtures and summarize the matches.",
+        &["glob"],
+        "Use glob on fixtures and summarize the matches.",
     )
     .await;
 
     let events_body = fs::read_to_string(temp.path().join("events.jsonl")).expect("read events");
-    assert_successful_tool_roundtrip(&output, &events_body, "fs.glob");
+    assert_successful_tool_roundtrip(&output, &events_body, "glob");
     assert!(events_body.contains("fixtures/a.txt"));
     assert!(events_body.contains("fixtures/nested/b.txt"));
 }
@@ -713,12 +783,12 @@ async fn prompt_cli_executes_fs_ls_and_completes_turn() {
     Mock::given(method("POST"))
         .and(path("/v1/responses"))
         .and(body_string_contains(
-            "Use fs.ls on fixtures and summarize the entries.",
+            "Use list on fixtures and summarize the entries.",
         ))
         .respond_with(
             ResponseTemplate::new(200)
                 .insert_header("content-type", "text/event-stream")
-                .set_body_raw(tool_call_fs_ls_sse_transcript(), "text/event-stream"),
+                .set_body_raw(tool_call_list_sse_transcript(), "text/event-stream"),
         )
         .with_priority(2)
         .mount(&server)
@@ -732,13 +802,13 @@ async fn prompt_cli_executes_fs_ls_and_completes_turn() {
     let output = run_prompt_with_single_tool(
         temp.path(),
         &server,
-        &["fs.ls"],
-        "Use fs.ls on fixtures and summarize the entries.",
+        &["list"],
+        "Use list on fixtures and summarize the entries.",
     )
     .await;
 
     let events_body = fs::read_to_string(temp.path().join("events.jsonl")).expect("read events");
-    assert_successful_tool_roundtrip(&output, &events_body, "fs.ls");
+    assert_successful_tool_roundtrip(&output, &events_body, "list");
     assert!(events_body.contains("alpha/"));
     assert!(events_body.contains("beta.txt"));
     assert!(events_body.contains("zeta.log"));
@@ -768,12 +838,12 @@ async fn prompt_cli_executes_fs_grep_and_completes_turn() {
     Mock::given(method("POST"))
         .and(path("/v1/responses"))
         .and(body_string_contains(
-            "Use fs.grep in fixtures for BETA and summarize the hit.",
+            "Use grep in fixtures for BETA and summarize the hit.",
         ))
         .respond_with(
             ResponseTemplate::new(200)
                 .insert_header("content-type", "text/event-stream")
-                .set_body_raw(tool_call_fs_grep_sse_transcript(), "text/event-stream"),
+                .set_body_raw(tool_call_grep_sse_transcript(), "text/event-stream"),
         )
         .with_priority(2)
         .mount(&server)
@@ -791,13 +861,13 @@ async fn prompt_cli_executes_fs_grep_and_completes_turn() {
     let output = run_prompt_with_single_tool(
         temp.path(),
         &server,
-        &["fs.grep"],
-        "Use fs.grep in fixtures for BETA and summarize the hit.",
+        &["grep"],
+        "Use grep in fixtures for BETA and summarize the hit.",
     )
     .await;
 
     let events_body = fs::read_to_string(temp.path().join("events.jsonl")).expect("read events");
-    assert_successful_tool_roundtrip(&output, &events_body, "fs.grep");
+    assert_successful_tool_roundtrip(&output, &events_body, "grep");
     assert!(events_body.contains("fixtures/notes.md:2: BETA match"));
 }
 
@@ -888,11 +958,11 @@ fn reasoning_responses_sse_transcript() -> String {
 fn tool_call_responses_sse_transcript() -> String {
     [
         "event: response.output_item.added\n",
-        "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"item_1\",\"call_id\":\"call_1\",\"name\":\"fs_read\",\"arguments\":\"{\\\"path\\\":\\\"tool-target.txt\\\",\\\"offset\\\":1\"}}\n\n",
+        "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"item_1\",\"call_id\":\"call_1\",\"name\":\"read\",\"arguments\":\"{\\\"path\\\":\\\"tool-target.txt\\\",\\\"offset\\\":1\"}}\n\n",
         "event: response.function_call_arguments.delta\n",
-        "data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"item_1\",\"delta\":\",\\\"limit\\\":20,\\\"line_numbers\\\":true}\"}\n\n",
+        "data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"item_1\",\"delta\":\",\\\"limit\\\":20}\"}\n\n",
         "event: response.output_item.done\n",
-        "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"item_1\",\"call_id\":\"call_1\",\"name\":\"fs_read\",\"arguments\":\"{\\\"path\\\":\\\"tool-target.txt\\\",\\\"offset\\\":1,\\\"limit\\\":20,\\\"line_numbers\\\":true}\"}}\n\n",
+        "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"item_1\",\"call_id\":\"call_1\",\"name\":\"read\",\"arguments\":\"{\\\"path\\\":\\\"tool-target.txt\\\",\\\"offset\\\":1,\\\"limit\\\":20}\"}}\n\n",
         "event: response.completed\n",
         "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":12,\"output_tokens\":3,\"total_tokens\":15}}}\n\n",
         "data: [DONE]\n\n",
@@ -925,14 +995,14 @@ fn tool_followup_text_sse_transcript(text: &str) -> String {
     .concat()
 }
 
-fn tool_call_fs_glob_sse_transcript() -> String {
+fn tool_call_glob_sse_transcript() -> String {
     [
         "event: response.output_item.added\n",
-        "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"item_glob\",\"call_id\":\"call_glob\",\"name\":\"fs_glob\",\"arguments\":\"{\\\"pattern\\\":\\\"**/*.txt\\\",\\\"path\\\":\\\"fixtures\\\"\"}}\n\n",
+        "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"item_glob\",\"call_id\":\"call_glob\",\"name\":\"glob\",\"arguments\":\"{\\\"pattern\\\":\\\"**/*.txt\\\",\\\"path\\\":\\\"fixtures\\\"\"}}\n\n",
         "event: response.function_call_arguments.delta\n",
-        "data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"item_glob\",\"delta\":\",\\\"limit\\\":10}\"}\n\n",
+        "data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"item_glob\",\"delta\":\"}\"}\n\n",
         "event: response.output_item.done\n",
-        "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"item_glob\",\"call_id\":\"call_glob\",\"name\":\"fs_glob\",\"arguments\":\"{\\\"pattern\\\":\\\"**/*.txt\\\",\\\"path\\\":\\\"fixtures\\\",\\\"limit\\\":10}\"}}\n\n",
+        "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"item_glob\",\"call_id\":\"call_glob\",\"name\":\"glob\",\"arguments\":\"{\\\"pattern\\\":\\\"**/*.txt\\\",\\\"path\\\":\\\"fixtures\\\"}\"}}\n\n",
         "event: response.completed\n",
         "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":12,\"output_tokens\":3,\"total_tokens\":15}}}\n\n",
         "data: [DONE]\n\n",
@@ -940,14 +1010,14 @@ fn tool_call_fs_glob_sse_transcript() -> String {
     .concat()
 }
 
-fn tool_call_fs_ls_sse_transcript() -> String {
+fn tool_call_list_sse_transcript() -> String {
     [
         "event: response.output_item.added\n",
-        "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"item_ls\",\"call_id\":\"call_ls\",\"name\":\"fs_ls\",\"arguments\":\"{\\\"path\\\":\\\"fixtures\\\"\"}}\n\n",
+        "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"item_ls\",\"call_id\":\"call_ls\",\"name\":\"list\",\"arguments\":\"{\\\"path\\\":\\\"fixtures\\\"\"}}\n\n",
         "event: response.function_call_arguments.delta\n",
-        "data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"item_ls\",\"delta\":\",\\\"limit\\\":10}\"}\n\n",
+        "data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"item_ls\",\"delta\":\"}\"}\n\n",
         "event: response.output_item.done\n",
-        "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"item_ls\",\"call_id\":\"call_ls\",\"name\":\"fs_ls\",\"arguments\":\"{\\\"path\\\":\\\"fixtures\\\",\\\"limit\\\":10}\"}}\n\n",
+        "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"item_ls\",\"call_id\":\"call_ls\",\"name\":\"list\",\"arguments\":\"{\\\"path\\\":\\\"fixtures\\\"}\"}}\n\n",
         "event: response.completed\n",
         "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":12,\"output_tokens\":3,\"total_tokens\":15}}}\n\n",
         "data: [DONE]\n\n",
@@ -955,14 +1025,14 @@ fn tool_call_fs_ls_sse_transcript() -> String {
     .concat()
 }
 
-fn tool_call_fs_grep_sse_transcript() -> String {
+fn tool_call_grep_sse_transcript() -> String {
     [
         "event: response.output_item.added\n",
-        "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"item_grep\",\"call_id\":\"call_grep\",\"name\":\"fs_grep\",\"arguments\":\"{\\\"pattern\\\":\\\"BETA\\\",\\\"path\\\":\\\"fixtures\\\"\"}}\n\n",
+        "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"item_grep\",\"call_id\":\"call_grep\",\"name\":\"grep\",\"arguments\":\"{\\\"pattern\\\":\\\"BETA\\\",\\\"path\\\":\\\"fixtures\\\"\"}}\n\n",
         "event: response.function_call_arguments.delta\n",
-        "data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"item_grep\",\"delta\":\",\\\"include\\\":\\\"*.md\\\",\\\"limit\\\":10,\\\"context\\\":0}\"}\n\n",
+        "data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"item_grep\",\"delta\":\",\\\"include\\\":\\\"*.md\\\"}\"}\n\n",
         "event: response.output_item.done\n",
-        "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"item_grep\",\"call_id\":\"call_grep\",\"name\":\"fs_grep\",\"arguments\":\"{\\\"pattern\\\":\\\"BETA\\\",\\\"path\\\":\\\"fixtures\\\",\\\"include\\\":\\\"*.md\\\",\\\"limit\\\":10,\\\"context\\\":0}\"}}\n\n",
+        "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"item_grep\",\"call_id\":\"call_grep\",\"name\":\"grep\",\"arguments\":\"{\\\"pattern\\\":\\\"BETA\\\",\\\"path\\\":\\\"fixtures\\\",\\\"include\\\":\\\"*.md\\\"}\"}}\n\n",
         "event: response.completed\n",
         "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":12,\"output_tokens\":3,\"total_tokens\":15}}}\n\n",
         "data: [DONE]\n\n",

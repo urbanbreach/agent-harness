@@ -28,7 +28,6 @@ use harness_core::perm::{PermissionDecision as RuntimePermissionDecision, Permis
 use harness_core::proj::{inspect_resume_plan, ChildSessionTerminalState, LifecycleSegmentStatus};
 use harness_core::redact::DefaultRedactor;
 use harness_core::store::EventStoreError;
-use harness_core::tool::ToolSurface;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 use harness_providers::mock::{request_digest, MockProvider};
 use harness_providers::{
@@ -3763,7 +3762,6 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             max_iters: 12,
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-            tool_surface: ToolSurface::Native,
             toolset: vec![],
         },
     );
@@ -3777,7 +3775,6 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             max_iters: 12,
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-            tool_surface: ToolSurface::Native,
             toolset: vec![],
         },
     );

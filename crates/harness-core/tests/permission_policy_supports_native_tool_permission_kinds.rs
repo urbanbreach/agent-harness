@@ -35,7 +35,7 @@ fn permission_policy_supports_native_tool_permission_kinds() {
                 websearch: "allow",
                 lsp: "ask",
               },
-              tools: ["agent.spawn", "search.web", "code.lsp", "tool.batch"],
+              tools: ["task", "websearch", "lsp", "batch"],
             },
           },
           permissions: {
@@ -121,51 +121,30 @@ fn permission_policy_supports_native_tool_permission_kinds() {
     );
 
     assert_eq!(
-        permission_kind_for_tool("user.question"),
-        Some(PermissionKind::Question)
-    );
-    assert_eq!(
         permission_kind_for_tool("question"),
         Some(PermissionKind::Question)
     );
-    assert_eq!(
-        permission_kind_for_tool("agent.spawn"),
-        Some(PermissionKind::Task)
-    );
     assert_eq!(permission_kind_for_tool("task"), Some(PermissionKind::Task));
-    assert_eq!(
-        permission_kind_for_tool("web.fetch"),
-        Some(PermissionKind::WebFetch)
-    );
     assert_eq!(
         permission_kind_for_tool("webfetch"),
         Some(PermissionKind::WebFetch)
-    );
-    assert_eq!(
-        permission_kind_for_tool("search.web"),
-        Some(PermissionKind::WebSearch)
     );
     assert_eq!(
         permission_kind_for_tool("websearch"),
         Some(PermissionKind::WebSearch)
     );
     assert_eq!(
-        permission_kind_for_tool("search.code"),
-        Some(PermissionKind::CodeSearch)
-    );
-    assert_eq!(
         permission_kind_for_tool("codesearch"),
         Some(PermissionKind::CodeSearch)
     );
-    assert_eq!(
-        permission_kind_for_tool("code.lsp"),
-        Some(PermissionKind::Lsp)
-    );
     assert_eq!(permission_kind_for_tool("lsp"), Some(PermissionKind::Lsp));
     assert_eq!(
-        permission_kind_for_tool("code.lsp.rename"),
+        permission_kind_for_tool("lsp.rename"),
         Some(PermissionKind::EditFs)
     );
+    assert_eq!(permission_kind_for_tool("agent.spawn"), None);
+    assert_eq!(permission_kind_for_tool("search.web"), None);
+    assert_eq!(permission_kind_for_tool("code.lsp"), None);
     assert_eq!(permission_kind_for_tool("tool.batch"), None);
     assert_eq!(permission_kind_for_tool("batch"), None);
     assert_eq!(permission_kind_for_tool("todo.write"), None);

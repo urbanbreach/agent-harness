@@ -94,11 +94,11 @@ impl LspOperation {
             "fileDiagnostics" => Ok(Self::FileDiagnostics),
             "workspaceDiagnostics" => Ok(Self::WorkspaceDiagnostics),
             "prepareRename" | "renameSymbol" => Err(ToolError::InvalidArguments(format!(
-                "unsupported code.lsp operation: {value}; use code.lsp.rename for the explicit write-capable rename flow; supported operations: {}",
+                "unsupported lsp operation: {value}; use lsp.rename for the explicit write-capable rename flow; supported operations: {}",
                 SUPPORTED_LSP_OPERATION_NAMES.join(", ")
             ))),
             _ => Err(ToolError::InvalidArguments(format!(
-                "unsupported code.lsp operation: {value}; supported operations: {}",
+                "unsupported lsp operation: {value}; supported operations: {}",
                 SUPPORTED_LSP_OPERATION_NAMES.join(", ")
             ))),
         }
@@ -710,13 +710,13 @@ impl LspServerSpec {
     fn validate_runtime(&self) -> Result<(), ToolError> {
         if self.command.is_empty() {
             return Err(ToolError::InvalidArguments(format!(
-                "configured code.lsp server `{}` has no command",
+                "configured lsp server `{}` has no command",
                 self.name
             )));
         }
         if self.extensions.is_empty() {
             return Err(ToolError::InvalidArguments(format!(
-                "configured code.lsp server `{}` has no extensions",
+                "configured lsp server `{}` has no extensions",
                 self.name
             )));
         }
@@ -751,7 +751,7 @@ fn resolved_server_specs(cfg: &LspConfig) -> Result<BTreeMap<String, LspServerSp
 fn server_for_path(path: &Path, cfg: &LspConfig) -> Result<LspServerSpec, ToolError> {
     if cfg.disabled {
         return Err(ToolError::InvalidArguments(
-            "code.lsp is disabled by config".to_string(),
+            "lsp is disabled by config".to_string(),
         ));
     }
 
@@ -813,7 +813,7 @@ fn unsupported_language_error_with_specs<'a>(
     supported.dedup();
 
     ToolError::InvalidArguments(format!(
-        "unsupported code.lsp language extension: {}; supported extensions: {}",
+        "unsupported lsp language extension: {}; supported extensions: {}",
         extension.unwrap_or("<none>"),
         if supported.is_empty() {
             "<none>".to_string()
@@ -831,7 +831,7 @@ fn disabled_server_error(extension: &str, servers: &[&str]) -> ToolError {
         .join(", ");
     let verb = if servers.len() == 1 { "is" } else { "are" };
     ToolError::InvalidArguments(format!(
-        "configured code.lsp server {names} {verb} disabled for extension {extension}"
+        "configured lsp server {names} {verb} disabled for extension {extension}"
     ))
 }
 
@@ -1259,7 +1259,7 @@ mod tests {
         let err = LspOperation::parse("renameSymbol").expect_err("operation should fail");
         assert!(
             matches!(err, ToolError::InvalidArguments(message) if message == format!(
-                "unsupported code.lsp operation: renameSymbol; use code.lsp.rename for the explicit write-capable rename flow; supported operations: {}",
+                "unsupported lsp operation: renameSymbol; use lsp.rename for the explicit write-capable rename flow; supported operations: {}",
                 SUPPORTED_LSP_OPERATION_NAMES.join(", ")
             ))
         );
@@ -1275,7 +1275,7 @@ mod tests {
             Err(err) => err,
         };
         assert!(
-            matches!(err, ToolError::InvalidArguments(message) if message.contains("unsupported code.lsp language extension: .lua"))
+            matches!(err, ToolError::InvalidArguments(message) if message.contains("unsupported lsp language extension: .lua"))
         );
     }
 

@@ -275,7 +275,7 @@ async fn run_prompt(
         .map_err(|err| err.to_string())?;
 
     if let Some(config) = &settings.logging_config {
-        logging::init_logging(config, &run.artifacts_dir)?;
+        let _ = logging::init_logging(config, &run.run_dir)?;
     }
 
     let profile_name = cmd
@@ -399,7 +399,7 @@ async fn run_resumed_prompt(
         .map_err(|err| err.to_string())?;
 
     if let Some(config) = &settings.logging_config {
-        logging::init_logging(config, &run.artifacts_dir)?;
+        let _ = logging::init_logging(config, &run.run_dir)?;
     }
 
     let model_override = resolve_prompt_model_override(cmd, settings, &resume_profile)?;

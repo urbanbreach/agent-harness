@@ -254,65 +254,62 @@ async fn native_code_search_uses_shared_client_and_respects_tokens_contract() {
     ]);
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let native = registry.get("search.code").expect("search.code tool");
-    let compat = registry.get("codesearch").expect("codesearch tool");
+    let codesearch = registry.get("codesearch").expect("codesearch tool");
 
-    let min_result = native
+    let min_result = codesearch
         .call(
-            test_context(&workspace, "native-code-search-min"),
+            test_context(&workspace, "codesearch-min"),
             json!({
                 "query": "Tokio JoinSet rust example",
                 "tokensNum": 25,
             }),
         )
         .await
-        .expect("native search.code min clamp");
-    let default_result = native
+        .expect("codesearch min clamp");
+    let default_result = codesearch
         .call(
-            test_context(&workspace, "native-code-search-default"),
+            test_context(&workspace, "codesearch-default"),
             json!({
                 "query": "Tokio JoinSet rust example default"
             }),
         )
         .await
-        .expect("native search.code default");
-    let compat_result = compat
+        .expect("codesearch default");
+    let max_result = codesearch
         .call(
-            test_context(&workspace, "compat-codesearch-max"),
+            test_context(&workspace, "codesearch-max"),
             json!({
                 "query": "Tokio JoinSet rust example max",
                 "tokensNum": 90_000,
             }),
         )
         .await
-        .expect("compat codesearch max clamp");
+        .expect("codesearch max clamp");
 
     assert_eq!(
         min_result.display_text,
         "Tokio JoinSet examples\nspawn multiple tasks"
     );
     assert_eq!(min_result.display_text, default_result.display_text);
-    assert_eq!(min_result.display_text, compat_result.display_text);
+    assert_eq!(min_result.display_text, max_result.display_text);
 
     let min_json = min_result.structured_json.expect("min structured json");
     let default_json = default_result
         .structured_json
         .expect("default structured json");
-    let compat_json = compat_result
-        .structured_json
-        .expect("compat structured json");
+    let max_json = max_result.structured_json.expect("max structured json");
     assert_eq!(min_json["tokensNum"], json!(1000));
     assert_eq!(default_json["tokensNum"], json!(5000));
-    assert_eq!(compat_json["tokensNum"], json!(50000));
+    assert_eq!(max_json["tokensNum"], json!(50000));
     assert_eq!(min_json["empty"], json!(false));
     assert_eq!(default_json["empty"], json!(false));
-    assert_eq!(compat_json["empty"], json!(false));
+    assert_eq!(max_json["empty"], json!(false));
 
     let requests = requests.lock().expect("request log");
     assert_eq!(
         requests.len(),
         3,
-        "native + compat should hit same backend path"
+        "codesearch should hit the shared backend path for each request"
     );
     for (request, (query, tokens_num)) in requests.iter().zip([
         ("Tokio JoinSet rust example", 1000),
@@ -369,8 +366,8 @@ async fn native_code_search_handles_timeout_and_empty_context_cleanly() {
     ]);
     let timeout_registry = coordinator_registry(ShellAllowlist::default());
     let timeout_error = timeout_registry
-        .get("search.code")
-        .expect("search.code tool")
+        .get("codesearch")
+        .expect("codesearch tool")
         .call(
             test_context(&workspace, "timeout-code-search"),
             json!({
@@ -402,8 +399,8 @@ async fn native_code_search_handles_timeout_and_empty_context_cleanly() {
     ]);
     let empty_registry = coordinator_registry(ShellAllowlist::default());
     let empty_result = empty_registry
-        .get("search.code")
-        .expect("search.code tool")
+        .get("codesearch")
+        .expect("codesearch tool")
         .call(
             test_context(&workspace, "empty-code-search"),
             json!({

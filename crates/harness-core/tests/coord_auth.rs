@@ -12,9 +12,7 @@ use harness_core::coord::{
 use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionDecision};
 use harness_core::perm::PermissionPolicy;
 use harness_core::redact::DefaultRedactor;
-use harness_core::tool::{
-    Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult, ToolSurface,
-};
+use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 use serde_json::json;
 
 struct TestShellTool;
@@ -211,7 +209,6 @@ fn worker_profile(category: &str, toolset: Vec<String>) -> AgentProfile {
         max_iters: 12,
         temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-        tool_surface: ToolSurface::Native,
         toolset,
     }
 }

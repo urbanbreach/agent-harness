@@ -27,141 +27,132 @@ const DEFAULT_LIST_LIMIT: usize = 100;
 const SKIPPED_DIR_NAMES: &[&str] = &[".git", "target"];
 const SKIPPED_RELATIVE_DIRS: &[&str] = &[".agent-harness/sessions"];
 
-pub(crate) struct ReadCompatTool;
-pub(crate) struct ListCompatTool;
-pub(crate) struct GlobCompatTool;
-pub(crate) struct GrepCompatTool;
-pub(crate) struct BashCompatTool {
+pub(crate) struct ReadTool;
+pub(crate) struct ListTool;
+pub(crate) struct GlobTool;
+pub(crate) struct GrepTool;
+pub(crate) struct BashTool {
     allowlist: ShellAllowlist,
 }
-pub(crate) struct WriteCompatTool {
+pub(crate) struct WriteTool {
     executor: Arc<WorkspaceEditExecutor>,
 }
-pub(crate) struct ApplyPatchCompatTool {
-    executor: Arc<WorkspaceEditExecutor>,
-}
-pub(crate) struct WebFetchCompatTool {
+pub(crate) struct WebFetchTool {
     executor: Arc<NetworkExecutor>,
 }
-pub(crate) struct TodoWriteCompatTool {
+pub(crate) struct TodoWriteTool {
     executor: Arc<ControlPlaneExecutor>,
 }
-pub(crate) struct TodoReadCompatTool {
+pub(crate) struct TodoReadTool {
     executor: Arc<ControlPlaneExecutor>,
 }
-pub(crate) struct TaskCompatTool {
+pub(crate) struct TaskTool {
     executor: Arc<AgentOpsExecutor>,
 }
-pub(crate) struct BatchCompatTool {
+pub(crate) struct BatchTool {
     executor: Arc<AgentOpsExecutor>,
 }
-pub(crate) struct SkillCompatTool {
+pub(crate) struct SkillTool {
     executor: Arc<ControlPlaneExecutor>,
 }
-pub(crate) struct InvalidCompatTool {
+pub(crate) struct InvalidTool {
     executor: Arc<ControlPlaneExecutor>,
 }
-pub(crate) struct PlanExitCompatTool {
+pub(crate) struct PlanExitTool {
     executor: Arc<ControlPlaneExecutor>,
 }
-pub(crate) struct WebSearchCompatTool {
+pub(crate) struct WebSearchTool {
     executor: Arc<NetworkExecutor>,
 }
-pub(crate) struct CodeSearchCompatTool {
+pub(crate) struct CodeSearchTool {
     executor: Arc<NetworkExecutor>,
 }
-pub(crate) struct QuestionCompatTool {
+pub(crate) struct QuestionTool {
     executor: Arc<ControlPlaneExecutor>,
 }
-pub(crate) struct LspCompatTool {
+pub(crate) struct LspTool {
     executor: Arc<CodeLspExecutor>,
 }
 
-impl WebFetchCompatTool {
+impl WebFetchTool {
     pub(crate) fn new(executor: Arc<NetworkExecutor>) -> Self {
         Self { executor }
     }
 }
 
-impl WriteCompatTool {
+impl WriteTool {
     pub(crate) fn new(executor: Arc<WorkspaceEditExecutor>) -> Self {
         Self { executor }
     }
 }
 
-impl ApplyPatchCompatTool {
-    pub(crate) fn new(executor: Arc<WorkspaceEditExecutor>) -> Self {
-        Self { executor }
-    }
-}
-
-impl TodoWriteCompatTool {
+impl TodoWriteTool {
     pub(crate) fn new(executor: Arc<ControlPlaneExecutor>) -> Self {
         Self { executor }
     }
 }
 
-impl TodoReadCompatTool {
+impl TodoReadTool {
     pub(crate) fn new(executor: Arc<ControlPlaneExecutor>) -> Self {
         Self { executor }
     }
 }
 
-impl TaskCompatTool {
+impl TaskTool {
     pub(crate) fn new(executor: Arc<AgentOpsExecutor>) -> Self {
         Self { executor }
     }
 }
 
-impl BatchCompatTool {
+impl BatchTool {
     pub(crate) fn new(executor: Arc<AgentOpsExecutor>) -> Self {
         Self { executor }
     }
 }
 
-impl SkillCompatTool {
+impl SkillTool {
     pub(crate) fn new(executor: Arc<ControlPlaneExecutor>) -> Self {
         Self { executor }
     }
 }
 
-impl InvalidCompatTool {
+impl InvalidTool {
     pub(crate) fn new(executor: Arc<ControlPlaneExecutor>) -> Self {
         Self { executor }
     }
 }
 
-impl PlanExitCompatTool {
+impl PlanExitTool {
     pub(crate) fn new(executor: Arc<ControlPlaneExecutor>) -> Self {
         Self { executor }
     }
 }
 
-impl BashCompatTool {
+impl BashTool {
     pub(crate) fn new(allowlist: ShellAllowlist) -> Self {
         Self { allowlist }
     }
 }
 
-impl WebSearchCompatTool {
+impl WebSearchTool {
     pub(crate) fn new(executor: Arc<NetworkExecutor>) -> Self {
         Self { executor }
     }
 }
 
-impl CodeSearchCompatTool {
+impl CodeSearchTool {
     pub(crate) fn new(executor: Arc<NetworkExecutor>) -> Self {
         Self { executor }
     }
 }
 
-impl QuestionCompatTool {
+impl QuestionTool {
     pub(crate) fn new(executor: Arc<ControlPlaneExecutor>) -> Self {
         Self { executor }
     }
 }
 
-impl LspCompatTool {
+impl LspTool {
     pub(crate) fn new(executor: Arc<CodeLspExecutor>) -> Self {
         Self { executor }
     }
@@ -176,6 +167,47 @@ struct ReadArgs {
     offset: Option<u32>,
     #[serde(default)]
     limit: Option<u32>,
+    #[serde(default, rename = "hashlineAnchors", alias = "hashline_anchors")]
+    hashline_anchors: bool,
+}
+
+fn read_parameters_json_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "filePath": {
+                "type": "string",
+                "description": "The path to the file or directory to read"
+            },
+            "offset": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The line number to start reading from (1-indexed)"
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The maximum number of lines to read (defaults to 2000)"
+            },
+            "hashlineAnchors": {
+                "type": "boolean",
+                "default": false,
+                "description": "When true, render lines as LINE#HASH|text and return anchor metadata for robust hashline edits"
+            }
+        },
+        "required": ["filePath"],
+        "additionalProperties": false
+    })
+}
+
+fn normalize_read_offset(offset: Option<u32>) -> u32 {
+    offset.filter(|value| *value >= 1).unwrap_or(1)
+}
+
+fn normalize_read_limit(limit: Option<u32>) -> u32 {
+    limit
+        .filter(|value| *value >= 1)
+        .unwrap_or(DEFAULT_READ_LIMIT as u32)
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -222,13 +254,6 @@ struct WriteArgs {
     content: String,
     #[serde(rename = "filePath", alias = "path")]
     file_path: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct ApplyPatchArgs {
-    #[serde(rename = "patchText")]
-    patch_text: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -329,17 +354,17 @@ struct QuestionArgs {
 struct PlanExitArgs {}
 
 #[async_trait]
-impl Tool for ReadCompatTool {
+impl Tool for ReadTool {
     fn id(&self) -> &str {
         "read"
     }
 
     fn description(&self) -> &str {
-        "Reads a file or directory using Opencode-compatible arguments and formatting."
+        "Reads a file or directory using the canonical harness tool contract. For robust edits, set hashlineAnchors=true to get LINE#HASH|text anchors you can feed into edit.hashline_apply."
     }
 
     fn parameters_json_schema(&self) -> Value {
-        super::json_schema_for::<ReadArgs>()
+        read_parameters_json_schema()
     }
 
     fn capability(&self) -> ToolCapability {
@@ -349,13 +374,8 @@ impl Tool for ReadCompatTool {
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: ReadArgs = serde_json::from_value(args_json)
             .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
-        let offset = args.offset.unwrap_or(1);
-        let limit = args.limit.unwrap_or(DEFAULT_READ_LIMIT as u32);
-        if offset == 0 || limit == 0 {
-            return Err(ToolError::InvalidArguments(
-                "offset and limit must be >= 1".to_string(),
-            ));
-        }
+        let offset = normalize_read_offset(args.offset);
+        let limit = normalize_read_limit(args.limit);
 
         let resolved = resolve_existing_path(&ctx, &args.file_path)?;
         if resolved.is_dir() {
@@ -378,6 +398,7 @@ impl Tool for ReadCompatTool {
                     "offset": offset,
                     "limit": limit,
                     "line_numbers": true,
+                    "hashline_anchors": args.hashline_anchors,
                 }),
             )
             .await
@@ -385,13 +406,13 @@ impl Tool for ReadCompatTool {
 }
 
 #[async_trait]
-impl Tool for ListCompatTool {
+impl Tool for ListTool {
     fn id(&self) -> &str {
         "list"
     }
 
     fn description(&self) -> &str {
-        "Recursively lists directory contents in an Opencode-compatible tree format."
+        "Recursively lists directory contents in the canonical tree format."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -421,13 +442,13 @@ impl Tool for ListCompatTool {
 }
 
 #[async_trait]
-impl Tool for GlobCompatTool {
+impl Tool for GlobTool {
     fn id(&self) -> &str {
         "glob"
     }
 
     fn description(&self) -> &str {
-        "Matches files by glob pattern with absolute/relative Opencode-compatible arguments."
+        "Matches files by glob pattern with canonical harness arguments."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -455,13 +476,13 @@ impl Tool for GlobCompatTool {
 }
 
 #[async_trait]
-impl Tool for GrepCompatTool {
+impl Tool for GrepTool {
     fn id(&self) -> &str {
         "grep"
     }
 
     fn description(&self) -> &str {
-        "Searches file contents by regex using Opencode-compatible arguments."
+        "Searches file contents by regex using canonical harness arguments."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -491,13 +512,13 @@ impl Tool for GrepCompatTool {
 }
 
 #[async_trait]
-impl Tool for BashCompatTool {
+impl Tool for BashTool {
     fn id(&self) -> &str {
         "bash"
     }
 
     fn description(&self) -> &str {
-        "Executes a shell command using Opencode-compatible bash arguments."
+        "Executes a shell command using the canonical bash arguments."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -526,13 +547,13 @@ impl Tool for BashCompatTool {
 }
 
 #[async_trait]
-impl Tool for WriteCompatTool {
+impl Tool for WriteTool {
     fn id(&self) -> &str {
         "write"
     }
 
     fn description(&self) -> &str {
-        "Writes file contents using Opencode-compatible write semantics."
+        "Writes file contents using the canonical write semantics."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -552,32 +573,7 @@ impl Tool for WriteCompatTool {
 }
 
 #[async_trait]
-impl Tool for ApplyPatchCompatTool {
-    fn id(&self) -> &str {
-        "apply_patch"
-    }
-
-    fn description(&self) -> &str {
-        "Applies stripped-down apply_patch diffs compatible with Opencode's patch envelope."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
-        super::json_schema_for::<ApplyPatchArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::EditFs
-    }
-
-    async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: ApplyPatchArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
-        self.executor.apply_patch(&ctx, &args.patch_text)
-    }
-}
-
-#[async_trait]
-impl Tool for WebFetchCompatTool {
+impl Tool for WebFetchTool {
     fn id(&self) -> &str {
         "webfetch"
     }
@@ -611,13 +607,13 @@ impl Tool for WebFetchCompatTool {
 }
 
 #[async_trait]
-impl Tool for TodoWriteCompatTool {
+impl Tool for TodoWriteTool {
     fn id(&self) -> &str {
         "todowrite"
     }
 
     fn description(&self) -> &str {
-        "Stores a per-run todo list compatible with Opencode's todowrite contract."
+        "Stores a per-run todo list."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -636,7 +632,7 @@ impl Tool for TodoWriteCompatTool {
 }
 
 #[async_trait]
-impl Tool for TodoReadCompatTool {
+impl Tool for TodoReadTool {
     fn id(&self) -> &str {
         "todoread"
     }
@@ -664,7 +660,7 @@ impl Tool for TodoReadCompatTool {
 }
 
 #[async_trait]
-impl Tool for TaskCompatTool {
+impl Tool for TaskTool {
     fn id(&self) -> &str {
         "task"
     }
@@ -705,7 +701,7 @@ impl Tool for TaskCompatTool {
 }
 
 #[async_trait]
-impl Tool for BatchCompatTool {
+impl Tool for BatchTool {
     fn id(&self) -> &str {
         "batch"
     }
@@ -730,7 +726,7 @@ impl Tool for BatchCompatTool {
 }
 
 #[async_trait]
-impl Tool for SkillCompatTool {
+impl Tool for SkillTool {
     fn id(&self) -> &str {
         "skill"
     }
@@ -757,13 +753,13 @@ impl Tool for SkillCompatTool {
 }
 
 #[async_trait]
-impl Tool for InvalidCompatTool {
+impl Tool for InvalidTool {
     fn id(&self) -> &str {
         "invalid"
     }
 
     fn description(&self) -> &str {
-        "Fallback invalid-tool response compatible with Opencode's invalid tool."
+        "Builds a deterministic invalid-tool response."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -782,13 +778,13 @@ impl Tool for InvalidCompatTool {
 }
 
 #[async_trait]
-impl Tool for PlanExitCompatTool {
+impl Tool for PlanExitTool {
     fn id(&self) -> &str {
         "plan_exit"
     }
 
     fn description(&self) -> &str {
-        "Compatibility alias for plan.exit."
+        "Requests approval to leave plan mode and hand off to the configured build profile."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -805,13 +801,13 @@ impl Tool for PlanExitCompatTool {
 }
 
 #[async_trait]
-impl Tool for WebSearchCompatTool {
+impl Tool for WebSearchTool {
     fn id(&self) -> &str {
         "websearch"
     }
 
     fn description(&self) -> &str {
-        "Compatibility alias for search.web."
+        "Searches the public web via the configured backend."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -838,13 +834,13 @@ impl Tool for WebSearchCompatTool {
 }
 
 #[async_trait]
-impl Tool for CodeSearchCompatTool {
+impl Tool for CodeSearchTool {
     fn id(&self) -> &str {
         "codesearch"
     }
 
     fn description(&self) -> &str {
-        "Compatibility alias for search.code."
+        "Searches code context via the configured backend."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -868,13 +864,13 @@ impl Tool for CodeSearchCompatTool {
 }
 
 #[async_trait]
-impl Tool for QuestionCompatTool {
+impl Tool for QuestionTool {
     fn id(&self) -> &str {
         "question"
     }
 
     fn description(&self) -> &str {
-        "Translates compat question calls into the native user.question flow."
+        "Asks structured questions and waits for answers from the coordinator."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -893,13 +889,13 @@ impl Tool for QuestionCompatTool {
 }
 
 #[async_trait]
-impl Tool for LspCompatTool {
+impl Tool for LspTool {
     fn id(&self) -> &str {
         "lsp"
     }
 
     fn description(&self) -> &str {
-        "Performs Opencode-compatible LSP operations through local language servers."
+        "Performs LSP operations through local language servers."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -1165,7 +1161,7 @@ pub(crate) fn validate_bash_command(
         }
         if matches!(executable.as_str(), "source" | ".") {
             return Err(ToolError::CommandBlocked(
-                "source and . are not allowed in compat bash".to_string(),
+                "source and . are not allowed in bash".to_string(),
             ));
         }
         if is_shell_builtin_allowed(executable.as_str()) {
@@ -1191,8 +1187,7 @@ fn reject_unsupported_bash_constructs(command: &str) -> Result<(), ToolError> {
         || command.contains(">(")
     {
         return Err(ToolError::CommandBlocked(
-            "command substitution and process substitution are not allowed in compat bash"
-                .to_string(),
+            "command substitution and process substitution are not allowed in bash".to_string(),
         ));
     }
 

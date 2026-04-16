@@ -282,11 +282,27 @@ enum RequestStrategy {
     Auto,
 }
 
+fn warn_stream_send_failure(context: &str) {
+    tracing::warn!(
+        context,
+        "provider stream receiver dropped before event delivery"
+    );
+}
+
+fn warn_stream_processing_failure(context: &str, message: &str) {
+    tracing::warn!(
+        context,
+        message,
+        "openai_compatible stream processing failed"
+    );
+}
+
 async fn consume_chat_sse_stream(
     response: reqwest::Response,
     tx: mpsc::Sender<ProviderStreamEvent>,
 ) {
     if tx.send(ProviderStreamEvent::Start).await.is_err() {
+        warn_stream_send_failure("chat.start");
         return;
     }
 
@@ -299,6 +315,10 @@ async fn consume_chat_sse_stream(
         let event = match next_event {
             Ok(event) => event,
             Err(_) => {
+                warn_stream_processing_failure(
+                    "chat.transport",
+                    "openai_compatible SSE stream transport error",
+                );
                 let _ = tx
                     .send(ProviderStreamEvent::Error {
                         message: "openai_compatible SSE stream transport error".to_string(),
@@ -314,8 +334,8 @@ async fn consume_chat_sse_stream(
                 return;
             }
 
-            if !done_emitted {
-                let _ = tx.send(ProviderStreamEvent::Done { usage }).await;
+            if !done_emitted && tx.send(ProviderStreamEvent::Done { usage }).await.is_err() {
+                warn_stream_send_failure("chat.done");
             }
             return;
         }
@@ -323,6 +343,10 @@ async fn consume_chat_sse_stream(
         let chunk: OpenAiChatCompletionsChunk = match serde_json::from_str(data) {
             Ok(chunk) => chunk,
             Err(_) => {
+                warn_stream_processing_failure(
+                    "chat.invalid_json",
+                    "openai_compatible returned invalid SSE JSON chunk",
+                );
                 let _ = tx
                     .send(ProviderStreamEvent::Error {
                         message: "openai_compatible returned invalid SSE JSON chunk".to_string(),
@@ -389,6 +413,7 @@ async fn consume_chat_sse_stream(
                 .await
                 .is_err()
             {
+                warn_stream_send_failure("chat.done_after_finish_reason");
                 return;
             }
         }
@@ -398,8 +423,8 @@ async fn consume_chat_sse_stream(
         return;
     }
 
-    if !done_emitted {
-        let _ = tx.send(ProviderStreamEvent::Done { usage }).await;
+    if !done_emitted && tx.send(ProviderStreamEvent::Done { usage }).await.is_err() {
+        warn_stream_send_failure("chat.done_after_stream_end");
     }
 }
 
@@ -532,6 +557,7 @@ async fn emit_tool_call_completions(
             .await
             .is_err()
         {
+            warn_stream_send_failure("chat.tool_call_complete");
             return false;
         }
     }
@@ -544,6 +570,7 @@ async fn consume_responses_sse_stream(
     tx: mpsc::Sender<ProviderStreamEvent>,
 ) {
     if tx.send(ProviderStreamEvent::Start).await.is_err() {
+        warn_stream_send_failure("responses.start");
         return;
     }
 
@@ -556,6 +583,10 @@ async fn consume_responses_sse_stream(
         let event = match next_event {
             Ok(event) => event,
             Err(_) => {
+                warn_stream_processing_failure(
+                    "responses.transport",
+                    "openai_compatible SSE stream transport error",
+                );
                 let _ = tx
                     .send(ProviderStreamEvent::Error {
                         message: "openai_compatible SSE stream transport error".to_string(),
@@ -570,8 +601,8 @@ async fn consume_responses_sse_stream(
             continue;
         }
         if data == "[DONE]" {
-            if !done_emitted {
-                let _ = tx.send(ProviderStreamEvent::Done { usage }).await;
+            if !done_emitted && tx.send(ProviderStreamEvent::Done { usage }).await.is_err() {
+                warn_stream_send_failure("responses.done");
             }
             return;
         }
@@ -579,6 +610,13 @@ async fn consume_responses_sse_stream(
         let parsed: OpenAiResponsesEvent = match serde_json::from_str(data) {
             Ok(parsed) => parsed,
             Err(err) => {
+                warn_stream_processing_failure(
+                    "responses.invalid_json",
+                    &format!(
+                        "openai_compatible returned invalid SSE JSON chunk: {err}; sample={}",
+                        summarize_sse_data(data)
+                    ),
+                );
                 let _ = tx
                     .send(ProviderStreamEvent::Error {
                         message: format!(
@@ -646,6 +684,7 @@ async fn consume_responses_sse_stream(
                     if let Err(message) =
                         emit_responses_tool_call_complete(&tx, &state_key, state).await
                     {
+                        warn_stream_processing_failure("responses.tool_completion", &message);
                         let _ = tx.send(ProviderStreamEvent::Error { message }).await;
                         return;
                     }
@@ -660,11 +699,16 @@ async fn consume_responses_sse_stream(
                         .await
                         .is_err()
                     {
+                        warn_stream_send_failure("responses.done_after_completion");
                         return;
                     }
                 }
             }
             "response.error" => {
+                warn_stream_processing_failure(
+                    "responses.error_event",
+                    "openai_compatible responses stream returned error event",
+                );
                 let _ = tx
                     .send(ProviderStreamEvent::Error {
                         message: "openai_compatible responses stream returned error event"
@@ -677,8 +721,8 @@ async fn consume_responses_sse_stream(
         }
     }
 
-    if !done_emitted {
-        let _ = tx.send(ProviderStreamEvent::Done { usage }).await;
+    if !done_emitted && tx.send(ProviderStreamEvent::Done { usage }).await.is_err() {
+        warn_stream_send_failure("responses.done_after_stream_end");
     }
 }
 
@@ -867,6 +911,7 @@ async fn emit_responses_tool_call_complete(
     })
     .await
     .map_err(|_| {
+        warn_stream_send_failure("responses.tool_call_complete");
         "openai_compatible stream receiver closed while sending tool completion".to_string()
     })
 }
@@ -1174,13 +1219,23 @@ impl OpenAiResponsesInputItem {
             MessageRole::Tool => unreachable!("tool messages handled above"),
         };
 
-        let mut items = vec![Self::Message {
-            role: openai_role(&role),
-            content: vec![OpenAiResponsesContentItem {
-                item_type: item_type.to_string(),
-                text: content,
-            }],
-        }];
+        let has_assistant_tool_calls = assistant_tool_calls
+            .as_ref()
+            .is_some_and(|tool_calls| !tool_calls.is_empty());
+        let omit_assistant_message = matches!(role, MessageRole::Assistant)
+            && has_assistant_tool_calls
+            && content.trim().is_empty();
+
+        let mut items = Vec::new();
+        if !omit_assistant_message {
+            items.push(Self::Message {
+                role: openai_role(&role),
+                content: vec![OpenAiResponsesContentItem {
+                    item_type: item_type.to_string(),
+                    text: content,
+                }],
+            });
+        }
 
         if matches!(role, MessageRole::Assistant) {
             if let Some(tool_calls) = assistant_tool_calls {
@@ -1611,7 +1666,7 @@ mod tests {
                 },
                 CompletionMessage {
                     role: MessageRole::Tool,
-                    content: "{\"display_text\":\"ok\"}".to_string(),
+                    content: "ok".to_string(),
                     name: Some("filesystem_read".to_string()),
                     tool_call_id: Some("call_1".to_string()),
                     assistant_tool_calls: None,
@@ -1704,10 +1759,95 @@ mod tests {
         );
         assert_eq!(
             input[function_call_output_index].get("output"),
-            Some(&serde_json::Value::String(
-                "{\"display_text\":\"ok\"}".to_string()
-            ))
+            Some(&serde_json::Value::String("ok".to_string()))
         );
+    }
+
+    #[test]
+    fn openai_responses_request_omits_empty_assistant_output_text_for_tool_only_turns() {
+        let request = CompletionRequest {
+            provider_id: None,
+            model_id: "gpt-4o-mini".to_string(),
+            messages: vec![
+                CompletionMessage {
+                    role: MessageRole::System,
+                    content: "sys".to_string(),
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: None,
+                },
+                CompletionMessage {
+                    role: MessageRole::User,
+                    content: "Use a tool".to_string(),
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: None,
+                },
+                CompletionMessage {
+                    role: MessageRole::Assistant,
+                    content: String::new(),
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: Some(vec![crate::AssistantToolCall {
+                        tool_call_id: "call_1".to_string(),
+                        function_name: "read".to_string(),
+                        arguments_json: "{\"filePath\":\"/tmp/demo.txt\"}".to_string(),
+                    }]),
+                },
+                CompletionMessage {
+                    role: MessageRole::Tool,
+                    content: "1: demo".to_string(),
+                    name: Some("read".to_string()),
+                    tool_call_id: Some("call_1".to_string()),
+                    assistant_tool_calls: None,
+                },
+            ],
+            temperature: Some(0.0),
+            max_tokens: None,
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
+            tools: None,
+            tool_choice: None,
+            stream: true,
+        };
+
+        let body = serde_json::to_value(OpenAiResponsesRequest::from(request))
+            .expect("serialize responses request");
+        let input = body
+            .get("input")
+            .and_then(serde_json::Value::as_array)
+            .expect("responses request input array");
+
+        let function_call_index = input
+            .iter()
+            .position(|item| {
+                item.get("type") == Some(&serde_json::Value::String("function_call".to_string()))
+            })
+            .expect("assistant tool call should replay as function_call item");
+        let function_call_output_index = input
+            .iter()
+            .position(|item| {
+                item.get("type")
+                    == Some(&serde_json::Value::String(
+                        "function_call_output".to_string(),
+                    ))
+            })
+            .expect("tool result should serialize as function_call_output item");
+
+        assert_eq!(
+            function_call_index, 2,
+            "empty assistant output_text should be omitted"
+        );
+        assert_eq!(function_call_output_index, 3);
+        assert!(input.iter().all(|item| {
+            item.get("content")
+                .and_then(serde_json::Value::as_array)
+                .and_then(|content| content.first())
+                .and_then(|item| item.get("text"))
+                != Some(&serde_json::Value::String(String::new()))
+        }));
     }
 
     #[test]
@@ -1743,7 +1883,7 @@ mod tests {
                 },
                 CompletionMessage {
                     role: MessageRole::Tool,
-                    content: "{\"display_text\":\"ok\"}".to_string(),
+                    content: "ok".to_string(),
                     name: Some("filesystem_read".to_string()),
                     tool_call_id: Some("call_1".to_string()),
                     assistant_tool_calls: None,
@@ -1800,6 +1940,10 @@ mod tests {
         assert_eq!(
             tool_message.get("tool_call_id"),
             Some(&serde_json::Value::String("call_1".to_string()))
+        );
+        assert_eq!(
+            tool_message.get("content"),
+            Some(&serde_json::Value::String("ok".to_string()))
         );
     }
 

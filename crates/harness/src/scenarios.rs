@@ -8,7 +8,6 @@ use harness_core::agent::AgentProfile;
 use harness_core::edit::hashline::{compute_line_hash, HashlineOp, HashlinePatch, LineAnchor};
 use harness_core::event::{ActorKind, EventActor};
 use harness_core::perm::PermissionPolicy;
-use harness_core::tool::ToolSurface;
 use harness_providers::mock::{request_digest, MockProvider};
 use harness_providers::{
     CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, ProviderStreamEvent,
@@ -418,7 +417,6 @@ pub fn golden_path_profiles() -> BTreeMap<String, AgentProfile> {
             max_iters: 12,
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-            tool_surface: ToolSurface::Native,
             toolset: vec![],
         },
     );
@@ -432,7 +430,6 @@ pub fn golden_path_profiles() -> BTreeMap<String, AgentProfile> {
             max_iters: 12,
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-            tool_surface: ToolSurface::Native,
             toolset: vec!["edit.hashline_apply".to_string()],
         },
     );

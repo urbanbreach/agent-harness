@@ -13,7 +13,6 @@ use harness_core::event::{
 };
 use harness_core::perm::PermissionPolicy;
 use harness_core::redact::DefaultRedactor;
-use harness_core::tool::ToolSurface;
 use harness_tools::coordinator_registry;
 use serde_json::{json, Value};
 use tokio::time::{sleep, Duration, Instant};
@@ -31,7 +30,6 @@ fn worker_profile(toolset: &[&str]) -> AgentProfile {
         max_iters: 12,
         temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-        tool_surface: ToolSurface::Native,
         toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
     }
 }
@@ -89,14 +87,7 @@ async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
     config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
     config.agent_profiles = BTreeMap::from([(
         "deep".to_string(),
-        worker_profile(&[
-            "agent.spawn",
-            "task",
-            "tool.batch",
-            "batch",
-            "fs.read",
-            "shell.run",
-        ]),
+        worker_profile(&["task", "batch", "read", "bash"]),
     )]);
 
     let handle = spawn_coordinator(
@@ -129,18 +120,18 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
         .request_tool_call(
             worker_actor(&worker_id),
             Some("deep".to_string()),
-            "agent.spawn",
+            "task",
             json!({
-                "profile": "deep",
+                "category": "deep",
                 "description": "Native background child",
                 "prompt": "Say hello from native child",
-                "background": true,
-                "skills": ["rust-best-practices"],
+                "run_in_background": true,
+                "load_skills": ["rust-best-practices"],
                 "command": "delegate-native",
             }),
         )
         .await
-        .expect("request native agent.spawn");
+        .expect("request native task");
     wait_for_tool_call_finish(&run.events_path, &native_spawn_tool_call_id).await;
 
     let compat_task_tool_call_id = handle
@@ -164,23 +155,23 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
         .request_tool_call(
             worker_actor(&worker_id),
             Some("deep".to_string()),
-            "tool.batch",
+            "batch",
             json!({
-                "calls": [
-                    {"tool_id": "fs.read", "args": {"path": "fixture.txt"}},
-                    {"tool_id": "shell.run", "args": {"cmd": "ls", "args": []}},
+                "tool_calls": [
+                    {"tool": "read", "parameters": {"filePath": "fixture.txt"}},
+                    {"tool": "bash", "parameters": {"command": "ls", "workdir": ".", "description": "List workspace"}},
                     {
-                        "tool_id": "batch",
-                        "args": {
-                            "tool_calls": [{"tool": "fs.read", "parameters": {"path": "fixture.txt"}}]
+                        "tool": "batch",
+                        "parameters": {
+                            "tool_calls": [{"tool": "read", "parameters": {"filePath": "fixture.txt"}}]
                         }
                     },
-                    {"tool_id": "fs.read", "args": {"path": "fixture.txt", "offset": 1, "limit": 1}}
+                    {"tool": "read", "parameters": {"filePath": "fixture.txt", "offset": 1, "limit": 1}}
                 ]
             }),
         )
         .await
-        .expect("request native tool.batch");
+        .expect("request native batch");
     wait_for_tool_call_finish(&run.events_path, &native_batch_tool_call_id).await;
 
     let compat_batch_tool_call_id = handle
@@ -190,8 +181,8 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
             "batch",
             json!({
                 "tool_calls": [
-                    {"tool": "fs.read", "parameters": {"path": "fixture.txt", "offset": 2, "limit": 1}},
-                    {"tool": "fs.read", "parameters": {"path": "fixture.txt", "offset": 1, "limit": 1}}
+                    {"tool": "read", "parameters": {"filePath": "fixture.txt", "offset": 2, "limit": 1}},
+                    {"tool": "read", "parameters": {"filePath": "fixture.txt", "offset": 1, "limit": 1}}
                 ]
             }),
         )
@@ -210,7 +201,7 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
         .expect("native spawn metadata");
     assert_eq!(
         native_spawn_metadata.canonical_tool_id.as_deref(),
-        Some("agent.spawn")
+        Some("task")
     );
     assert_eq!(native_spawn_metadata.alias_source_tool_id.as_deref(), None);
     let native_spawn_output = native_spawn_finished
@@ -282,12 +273,9 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
         .expect("compat task metadata");
     assert_eq!(
         compat_task_metadata.canonical_tool_id.as_deref(),
-        Some("agent.spawn")
-    );
-    assert_eq!(
-        compat_task_metadata.alias_source_tool_id.as_deref(),
         Some("task")
     );
+    assert_eq!(compat_task_metadata.alias_source_tool_id.as_deref(), None);
     let compat_task_output = compat_task_finished
         .output_json
         .as_ref()
@@ -310,7 +298,7 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
         .expect("native batch metadata");
     assert_eq!(
         native_batch_metadata.canonical_tool_id.as_deref(),
-        Some("tool.batch")
+        Some("batch")
     );
     assert_eq!(native_batch_metadata.alias_source_tool_id.as_deref(), None);
     let native_batch_output = native_batch_finished
@@ -343,15 +331,15 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
         .expect("native batch details array");
     assert_eq!(native_details.len(), 4);
     assert_eq!(native_details[0].get("index"), Some(&json!(0)));
-    assert_eq!(native_details[0].get("tool_id"), Some(&json!("fs.read")));
+    assert_eq!(native_details[0].get("tool_id"), Some(&json!("read")));
     assert_eq!(
-        native_details[0].pointer("/request/parameters/path"),
+        native_details[0].pointer("/request/parameters/filePath"),
         Some(&json!("fixture.txt"))
     );
     assert_eq!(native_details[0].get("success"), Some(&json!(true)));
 
     assert_eq!(native_details[1].get("index"), Some(&json!(1)));
-    assert_eq!(native_details[1].get("tool_id"), Some(&json!("shell.run")));
+    assert_eq!(native_details[1].get("tool_id"), Some(&json!("bash")));
     assert_eq!(native_details[1].get("success"), Some(&json!(false)));
     assert!(native_details[1]
         .get("error")
@@ -369,7 +357,7 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
         .contains("cannot be nested"));
 
     assert_eq!(native_details[3].get("index"), Some(&json!(3)));
-    assert_eq!(native_details[3].get("tool_id"), Some(&json!("fs.read")));
+    assert_eq!(native_details[3].get("tool_id"), Some(&json!("read")));
     assert_eq!(native_details[3].get("success"), Some(&json!(true)));
 
     assert!(events.iter().any(|event| {
@@ -388,12 +376,9 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
         .expect("compat batch metadata");
     assert_eq!(
         compat_batch_metadata.canonical_tool_id.as_deref(),
-        Some("tool.batch")
-    );
-    assert_eq!(
-        compat_batch_metadata.alias_source_tool_id.as_deref(),
         Some("batch")
     );
+    assert_eq!(compat_batch_metadata.alias_source_tool_id.as_deref(), None);
 
     let compat_batch_output = compat_batch_finished
         .output_json
@@ -451,16 +436,16 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
             "batch",
             json!({
                 "tool_calls": [
-                    {"tool": "fs.read", "parameters": {"path": "fixture.txt", "offset": 2, "limit": 1}},
+                    {"tool": "read", "parameters": {"filePath": "fixture.txt", "offset": 2, "limit": 1}},
                     {
-                        "tool": "tool.batch",
+                        "tool": "batch",
                         "parameters": {
-                            "calls": [
-                                {"tool_id": "fs.read", "args": {"path": "fixture.txt"}}
+                            "tool_calls": [
+                                {"tool": "read", "parameters": {"filePath": "fixture.txt"}}
                             ]
                         }
                     },
-                    {"tool": "fs.read", "parameters": {"path": "fixture.txt", "offset": 1, "limit": 1}}
+                    {"tool": "read", "parameters": {"filePath": "fixture.txt", "offset": 1, "limit": 1}}
                 ]
             }),
         )
@@ -479,12 +464,9 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
         .expect("compat task metadata");
     assert_eq!(
         compat_task_metadata.canonical_tool_id.as_deref(),
-        Some("agent.spawn")
-    );
-    assert_eq!(
-        compat_task_metadata.alias_source_tool_id.as_deref(),
         Some("task")
     );
+    assert_eq!(compat_task_metadata.alias_source_tool_id.as_deref(), None);
     let compat_task_output = compat_task_finished
         .output_json
         .as_ref()
@@ -518,12 +500,9 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
         .expect("compat batch metadata");
     assert_eq!(
         compat_batch_metadata.canonical_tool_id.as_deref(),
-        Some("tool.batch")
-    );
-    assert_eq!(
-        compat_batch_metadata.alias_source_tool_id.as_deref(),
         Some("batch")
     );
+    assert_eq!(compat_batch_metadata.alias_source_tool_id.as_deref(), None);
     let compat_batch_output = compat_batch_finished
         .output_json
         .as_ref()
@@ -554,14 +533,14 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
         .expect("compat batch details");
     assert_eq!(compat_details.len(), 3);
     assert_eq!(compat_details[0].get("index"), Some(&json!(0)));
-    assert_eq!(compat_details[0].get("tool_id"), Some(&json!("fs.read")));
+    assert_eq!(compat_details[0].get("tool_id"), Some(&json!("read")));
     assert_eq!(
-        compat_details[0].pointer("/request/parameters/path"),
+        compat_details[0].pointer("/request/parameters/filePath"),
         Some(&json!("fixture.txt"))
     );
     assert_eq!(
         compat_details[0].get("canonical_tool_id"),
-        Some(&json!("fs.read"))
+        Some(&json!("read"))
     );
     assert_eq!(compat_details[0].get("success"), Some(&json!(true)));
     assert!(compat_details[0]
@@ -570,10 +549,10 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
         .expect("first compat summary")
         .contains("2: beta"));
     assert_eq!(compat_details[1].get("index"), Some(&json!(1)));
-    assert_eq!(compat_details[1].get("tool_id"), Some(&json!("tool.batch")));
+    assert_eq!(compat_details[1].get("tool_id"), Some(&json!("batch")));
     assert_eq!(
         compat_details[1].get("canonical_tool_id"),
-        Some(&json!("tool.batch"))
+        Some(&json!("batch"))
     );
     assert_eq!(compat_details[1].get("success"), Some(&json!(false)));
     assert!(compat_details[1]
@@ -582,10 +561,10 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
         .expect("nested compat batch error")
         .contains("cannot be nested"));
     assert_eq!(compat_details[2].get("index"), Some(&json!(2)));
-    assert_eq!(compat_details[2].get("tool_id"), Some(&json!("fs.read")));
+    assert_eq!(compat_details[2].get("tool_id"), Some(&json!("read")));
     assert_eq!(
         compat_details[2].get("canonical_tool_id"),
-        Some(&json!("fs.read"))
+        Some(&json!("read"))
     );
     assert_eq!(compat_details[2].get("success"), Some(&json!(true)));
     assert!(compat_details[2]

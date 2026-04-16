@@ -59,6 +59,21 @@ const DEFAULT_QUESTION_TIMEOUT_MS: u64 = 300_000;
 const COORDINATOR_AGENT_ID: &str = "coordinator";
 const HASHLINE_APPLY_TOOL_ID: &str = "edit.hashline_apply";
 
+fn warn_oneshot_send_failure<T>(result: Result<(), T>, operation: &str) {
+    if result.is_err() {
+        tracing::warn!(
+            operation,
+            "coordinator response receiver dropped before result delivery"
+        );
+    }
+}
+
+fn warn_command_send_failure(result: Result<(), mpsc::error::SendError<Command>>, operation: &str) {
+    if result.is_err() {
+        tracing::warn!(operation, "coordinator background command channel closed");
+    }
+}
+
 #[cfg(test)]
 mod tests;
 
@@ -688,11 +703,22 @@ impl Coordinator {
                         self.handle_command(command).await;
                     }
                 }
-                _ = watchdog.tick() => {
-                    let _ = self.watchdog_tick_internal();
+                _ = watchdog.tick(), if self.has_running_tasks() => {
+                    if let Err(err) = self.watchdog_tick_internal() {
+                        tracing::warn!(error = %err, "coordinator watchdog tick failed");
+                    }
                 }
             }
         }
+    }
+
+    fn has_running_tasks(&self) -> bool {
+        self.run_state.as_ref().is_some_and(|run_state| {
+            run_state
+                .tasks
+                .values()
+                .any(|task| task.state == TaskExecutionState::Running)
+        })
     }
 
     async fn handle_command(&mut self, command: Command) {
@@ -705,7 +731,7 @@ impl Coordinator {
                 let result = self
                     .start_run_internal_async(run_name, workspace_root)
                     .await;
-                let _ = respond_to.send(result);
+                warn_oneshot_send_failure(respond_to.send(result), "start_run");
             }
             Command::ResumeRun {
                 run_id,
@@ -713,15 +739,15 @@ impl Coordinator {
                 respond_to,
             } => {
                 let result = self.resume_run_internal(run_id, run_name);
-                let _ = respond_to.send(result);
+                warn_oneshot_send_failure(respond_to.send(result), "resume_run");
             }
             Command::StopRun { respond_to } => {
                 let result = self.stop_run_internal("run stopped".to_string()).await;
-                let _ = respond_to.send(result);
+                warn_oneshot_send_failure(respond_to.send(result), "stop_run");
             }
             Command::GetEventStore { respond_to } => {
                 let result = self.get_event_store_internal();
-                let _ = respond_to.send(result);
+                warn_oneshot_send_failure(respond_to.send(result), "get_event_store");
             }
             Command::SpawnAgent {
                 actor,
@@ -732,7 +758,7 @@ impl Coordinator {
                 let result = self
                     .spawn_agent_internal(actor, profile, parent_agent_id, true)
                     .await;
-                let _ = respond_to.send(result);
+                warn_oneshot_send_failure(respond_to.send(result), "spawn_agent");
             }
             Command::SpawnAgentIdle {
                 actor,
@@ -743,7 +769,7 @@ impl Coordinator {
                 let result = self
                     .spawn_agent_internal(actor, profile, parent_agent_id, false)
                     .await;
-                let _ = respond_to.send(result);
+                warn_oneshot_send_failure(respond_to.send(result), "spawn_agent_idle");
             }
             Command::RequestAgentTurn {
                 actor,
@@ -762,7 +788,7 @@ impl Coordinator {
                         model_settings_override,
                     )
                     .await;
-                let _ = respond_to.send(result);
+                warn_oneshot_send_failure(respond_to.send(result), "request_agent_turn");
             }
             Command::RequestToolCall {
                 actor,
@@ -774,7 +800,7 @@ impl Coordinator {
                 let result = self
                     .request_tool_call_internal(actor, category, tool_id, args_json, None)
                     .await;
-                let _ = respond_to.send(result);
+                warn_oneshot_send_failure(respond_to.send(result), "request_tool_call");
             }
             Command::ExecuteAgentToolCall {
                 actor,
@@ -812,7 +838,7 @@ impl Coordinator {
                 let result = self
                     .resolve_permission_internal(permission_id, decision, reason)
                     .await;
-                let _ = respond_to.send(result);
+                warn_oneshot_send_failure(respond_to.send(result), "resolve_permission");
             }
             Command::PermissionTimedOut { permission_id } => {
                 self.resolve_permission_timeout_internal(permission_id)
@@ -827,7 +853,7 @@ impl Coordinator {
                 respond_to,
             } => {
                 let result = self.cancel_task_internal(task_id, reason);
-                let _ = respond_to.send(result);
+                warn_oneshot_send_failure(respond_to.send(result), "cancel_task");
             }
             Command::JobFinished { task_id, outcome } => {
                 let _ = self.job_finished_internal_async(task_id, outcome).await;
@@ -1675,8 +1701,7 @@ impl Coordinator {
             &self.config.agent_profiles,
         );
 
-        let skip_outer_question_permission =
-            canonical_tool_id_for(&tool_id) == Some("user.question");
+        let skip_outer_question_permission = canonical_tool_id_for(&tool_id) == Some("question");
         let maybe_kind = if skip_outer_question_permission {
             None
         } else {
@@ -1830,7 +1855,7 @@ impl Coordinator {
                                     Some(tool_id.clone())
                                 }
                                 PendingPermissionResolution::Question { .. } => {
-                                    Some("user.question".to_string())
+                                    Some("question".to_string())
                                 }
                             },
                             provider_id: None,
@@ -1966,7 +1991,7 @@ impl Coordinator {
             PendingPermissionResolution::Question { actor, .. } => (
                 actor.clone(),
                 actor.agent_id.clone(),
-                Some("user.question".to_string()),
+                Some("question".to_string()),
                 None,
             ),
         };
@@ -2144,7 +2169,7 @@ impl Coordinator {
             PendingPermissionResolution::Question { actor, .. } => (
                 actor.clone(),
                 actor.agent_id.clone(),
-                Some("user.question".to_string()),
+                Some("question".to_string()),
                 None,
             ),
         };
@@ -2274,8 +2299,8 @@ impl Coordinator {
             let permission_id = format!("perm_{:06}", run_state.next_permission_id);
             run_state.next_permission_id += 1;
             let request_correlation_id = tool_request_correlation_id(run_state, &actor);
-            let kind = permission_kind_for_tool("user.question")
-                .expect("user.question must resolve to a formal permission kind");
+            let kind = permission_kind_for_tool("question")
+                .expect("question must resolve to a formal permission kind");
             let timeout_ms = question_request_timeout_ms(&self.config.permission_policy);
             let request_summary = serde_json::to_string(&request_json)?;
             let request_digest = permission_request_digest(kind.as_str(), &request_json);
@@ -2606,36 +2631,50 @@ impl Coordinator {
         match outcome {
             JobOutcome::Succeeded { result } => {
                 let result_for_response = result.clone();
-                if let Some(metadata) = task.hashline_edit.as_ref() {
-                    match workspace_file_digest(&run_state.info.workspace_root, &metadata.path) {
-                        Ok(new_file_digest) => {
-                            let (diff_rel_path, diff_digest) = hashline_diff_refs(&result);
-                            append_edit_applied_event(
-                                self.clock.as_ref(),
-                                self.redactor.as_ref(),
-                                run_state,
-                                EditAppliedEventArgs {
-                                    tool_call_id: &task.tool_call_id,
-                                    metadata,
-                                    new_file_digest,
-                                    diff_rel_path,
-                                    diff_digest,
-                                    request_correlation_id: request_correlation_id.as_deref(),
-                                },
-                            )?;
+                for applied_edit in applied_tool_edit_metadata(
+                    &task_hook_state.tool_id,
+                    &result_for_response,
+                    task.hashline_edit.as_ref(),
+                ) {
+                    let AppliedToolEditMetadata {
+                        metadata,
+                        diff_rel_path,
+                        diff_digest,
+                        deleted,
+                    } = applied_edit;
+                    let new_file_digest = if deleted {
+                        digest12(b"")
+                    } else {
+                        match workspace_file_digest(&run_state.info.workspace_root, &metadata.path)
+                        {
+                            Ok(new_file_digest) => new_file_digest,
+                            Err(reason) => {
+                                append_edit_rejected_event(
+                                    self.clock.as_ref(),
+                                    self.redactor.as_ref(),
+                                    run_state,
+                                    &task.tool_call_id,
+                                    &metadata,
+                                    format!("failed to compute file digest: {reason}"),
+                                    request_correlation_id.as_deref(),
+                                )?;
+                                continue;
+                            }
                         }
-                        Err(reason) => {
-                            append_edit_rejected_event(
-                                self.clock.as_ref(),
-                                self.redactor.as_ref(),
-                                run_state,
-                                &task.tool_call_id,
-                                metadata,
-                                format!("failed to compute file digest: {reason}"),
-                                request_correlation_id.as_deref(),
-                            )?;
-                        }
-                    }
+                    };
+                    append_edit_applied_event(
+                        self.clock.as_ref(),
+                        self.redactor.as_ref(),
+                        run_state,
+                        EditAppliedEventArgs {
+                            tool_call_id: &task.tool_call_id,
+                            metadata: &metadata,
+                            new_file_digest,
+                            diff_rel_path,
+                            diff_digest,
+                            request_correlation_id: request_correlation_id.as_deref(),
+                        },
+                    )?;
                 }
 
                 let result_summary = result.display_text;
@@ -3415,6 +3454,14 @@ struct HashlineEditMetadata {
     path: String,
     summary: String,
     patch_digest: String,
+}
+
+#[derive(Debug, Clone)]
+struct AppliedToolEditMetadata {
+    metadata: HashlineEditMetadata,
+    diff_rel_path: Option<String>,
+    diff_digest: Option<String>,
+    deleted: bool,
 }
 
 struct TaskState {
@@ -4462,14 +4509,17 @@ where
     );
 
     if let Some(reason) = started_hook_batch.critical_failure {
-        let _ = job_tx
-            .send(Command::AgentTurnFinished {
-                task_id: task.task_id,
-                agent_id: task.agent_id,
-                request_id: task.request_id,
-                outcome: AgentTurnTaskOutcome::Failed { reason },
-            })
-            .await;
+        warn_command_send_failure(
+            job_tx
+                .send(Command::AgentTurnFinished {
+                    task_id: task.task_id,
+                    agent_id: task.agent_id,
+                    request_id: task.request_id,
+                    outcome: AgentTurnTaskOutcome::Failed { reason },
+                })
+                .await,
+            "agent_turn_finished_from_hook_failure",
+        );
         return Ok(());
     }
 
@@ -4480,14 +4530,14 @@ where
 
         tokio::select! {
             _ = cancellation_token.cancelled() => {
-                let _ = job_tx.send(Command::AgentTurnFinished {
+                warn_command_send_failure(job_tx.send(Command::AgentTurnFinished {
                     task_id,
                     agent_id,
                     request_id,
                     outcome: AgentTurnTaskOutcome::Failed {
                         reason: "job cancelled".to_string(),
                     },
-                }).await;
+                }).await, "agent_turn_finished_from_cancellation");
             }
             outcome = run_multi_turn_streaming(
                 MultiTurnStreamingRequest {
@@ -4531,7 +4581,7 @@ where
                     async move {
                         match event {
                             AgentRuntimeEvent::ProviderRequestStarted(started) => {
-                                let _ = job_tx.send(Command::AgentProviderRequestStarted {
+                                warn_command_send_failure(job_tx.send(Command::AgentProviderRequestStarted {
                                     task_id,
                                     agent_id,
                                     request_id: started.request_id,
@@ -4539,33 +4589,33 @@ where
                                     model_id: started.model_id,
                                     prompt_summary: started.prompt_summary,
                                     request_digest: started.request_digest,
-                                }).await;
+                                }).await, "agent_provider_request_started");
                             }
                             AgentRuntimeEvent::ProviderStreamDelta { request_id, delta } => {
-                                let _ = job_tx.send(Command::AgentProviderStreamDelta {
+                                warn_command_send_failure(job_tx.send(Command::AgentProviderStreamDelta {
                                     task_id,
                                     agent_id,
                                     request_id,
                                     delta,
-                                }).await;
+                                }).await, "agent_provider_stream_delta");
                             }
                             AgentRuntimeEvent::ProviderReasoningDelta { request_id, delta } => {
-                                let _ = job_tx.send(Command::AgentProviderReasoningDelta {
+                                warn_command_send_failure(job_tx.send(Command::AgentProviderReasoningDelta {
                                     task_id,
                                     agent_id,
                                     request_id,
                                     delta,
-                                }).await;
+                                }).await, "agent_provider_reasoning_delta");
                             }
                             AgentRuntimeEvent::ProviderRequestFinished(finished) => {
-                                let _ = job_tx.send(Command::AgentProviderRequestFinished {
+                                warn_command_send_failure(job_tx.send(Command::AgentProviderRequestFinished {
                                     task_id,
                                     agent_id,
                                     request_id: finished.request_id,
                                     finish_reason: finished.finish_reason,
                                     output_digest: finished.output_digest,
                                     usage: finished.usage,
-                                }).await;
+                                }).await, "agent_provider_request_finished");
                             }
                         }
                     }
@@ -4575,12 +4625,12 @@ where
                     AgentTurnOutcome::Succeeded { output } => AgentTurnTaskOutcome::Succeeded { output },
                     AgentTurnOutcome::Failed { reason } => AgentTurnTaskOutcome::Failed { reason },
                 };
-                let _ = job_tx.send(Command::AgentTurnFinished {
+                warn_command_send_failure(job_tx.send(Command::AgentTurnFinished {
                     task_id: task.task_id,
                     agent_id: task.agent_id,
                     request_id: task.request_id,
                     outcome,
-                }).await;
+                }).await, "agent_turn_finished");
             }
         }
     });
@@ -5357,7 +5407,8 @@ fn hashline_edit_metadata(
     tool_call_id: &str,
 ) -> Option<HashlineEditMetadata> {
     if tool_id != HASHLINE_APPLY_TOOL_ID {
-        if canonical_tool_id_for(tool_id) != Some("fs.write") {
+        let canonical_tool_id = canonical_tool_id_for(tool_id)?;
+        if canonical_tool_id != "write" && canonical_tool_id != "edit" {
             return None;
         }
 
@@ -5367,10 +5418,22 @@ fn hashline_edit_metadata(
             .and_then(Value::as_str)?;
         let canonical_request = serde_json::to_vec(args_json).unwrap_or_else(|_| b"null".to_vec());
 
+        let (edit_id, summary) = match canonical_tool_id {
+            "write" => (
+                format!("fs-write-{tool_call_id}"),
+                "rewrite file through hashline workspace op".to_string(),
+            ),
+            "edit" => (
+                format!("edit-{tool_call_id}"),
+                "rewrite file through native edit tool".to_string(),
+            ),
+            _ => return None,
+        };
+
         return Some(HashlineEditMetadata {
-            edit_id: format!("fs-write-{tool_call_id}"),
+            edit_id,
             path: path.to_string(),
-            summary: "rewrite file through hashline workspace op".to_string(),
+            summary,
             patch_digest: digest12(&canonical_request),
         });
     }
@@ -5414,6 +5477,70 @@ fn hashline_diff_refs(result: &ToolResult) -> (Option<String>, Option<String>) {
     )
 }
 
+fn applied_tool_edit_metadata(
+    tool_id: &str,
+    result: &ToolResult,
+    fallback: Option<&HashlineEditMetadata>,
+) -> Vec<AppliedToolEditMetadata> {
+    if canonical_tool_id_for(tool_id) == Some("apply_patch") {
+        return result
+            .structured_json
+            .as_ref()
+            .and_then(|value| value.get("edits"))
+            .and_then(Value::as_array)
+            .map(|edits| {
+                edits
+                    .iter()
+                    .filter_map(|edit| {
+                        let edit_id = edit.get("edit_id").and_then(Value::as_str)?.trim();
+                        let path = edit.get("path").and_then(Value::as_str)?.trim();
+                        if edit_id.is_empty() || path.is_empty() {
+                            return None;
+                        }
+                        let summary = edit
+                            .get("summary")
+                            .and_then(Value::as_str)
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .unwrap_or("apply patch update");
+                        Some(AppliedToolEditMetadata {
+                            metadata: HashlineEditMetadata {
+                                edit_id: edit_id.to_string(),
+                                path: path.to_string(),
+                                summary: summary.to_string(),
+                                patch_digest: digest12(edit_id.as_bytes()),
+                            },
+                            diff_rel_path: edit
+                                .get("diff_rel_path")
+                                .and_then(Value::as_str)
+                                .map(ToOwned::to_owned),
+                            diff_digest: edit
+                                .get("diff_digest")
+                                .and_then(Value::as_str)
+                                .map(ToOwned::to_owned),
+                            deleted: edit
+                                .get("deleted")
+                                .and_then(Value::as_bool)
+                                .unwrap_or(false),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+    }
+
+    let Some(metadata) = fallback else {
+        return Vec::new();
+    };
+    let (diff_rel_path, diff_digest) = hashline_diff_refs(result);
+    vec![AppliedToolEditMetadata {
+        metadata: metadata.clone(),
+        diff_rel_path,
+        diff_digest,
+        deleted: false,
+    }]
+}
+
 fn requested_tool_call_metadata(tool_id: &str, args_json: &Value) -> Option<ToolCallMetadata> {
     let tool_identity = tool_identity_metadata(tool_id, args_json);
     tool_call_metadata(tool_identity.as_ref(), None, Vec::new(), None, Vec::new())
@@ -5427,12 +5554,9 @@ fn tool_identity_metadata(tool_id: &str, args_json: &Value) -> Option<ToolIdenti
         });
     }
 
-    let canonical_tool_id = canonical_tool_id_for(tool_id).map(ToOwned::to_owned)?;
-    let alias_source_tool_id = (canonical_tool_id != tool_id).then(|| tool_id.to_string());
-
     Some(ToolIdentityMetadata {
-        canonical_tool_id: Some(canonical_tool_id),
-        alias_source_tool_id,
+        canonical_tool_id: Some(tool_id.to_string()),
+        alias_source_tool_id: None,
     })
 }
 

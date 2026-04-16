@@ -75,8 +75,10 @@ async fn openai_compatible_serializes_native_tool_schema_without_alias_dupes() {
                 .expect("responses tool name")
         })
         .collect::<Vec<_>>();
-    assert_eq!(names, vec!["fs_read", "shell_run"]);
-    assert!(!names.iter().any(|name| matches!(*name, "read" | "bash")));
+    assert_eq!(names, vec!["read", "bash"]);
+    assert!(!names
+        .iter()
+        .any(|name| matches!(*name, "fs_read" | "shell_run")));
 }
 
 fn native_surface_request() -> CompletionRequest {
@@ -98,8 +100,8 @@ fn native_surface_request() -> CompletionRequest {
         reasoning_summary: None,
         tools: Some(vec![
             ToolDef {
-                tool_id: "fs.read".to_string(),
-                function_name: "fs_read".to_string(),
+                tool_id: "read".to_string(),
+                function_name: "read".to_string(),
                 description: Some("Read a file".to_string()),
                 parameters: json!({
                     "type": "object",
@@ -111,8 +113,8 @@ fn native_surface_request() -> CompletionRequest {
                 }),
             },
             ToolDef {
-                tool_id: "shell.run".to_string(),
-                function_name: "shell_run".to_string(),
+                tool_id: "bash".to_string(),
+                function_name: "bash".to_string(),
                 description: Some("Run a shell command".to_string()),
                 parameters: json!({
                     "type": "object",

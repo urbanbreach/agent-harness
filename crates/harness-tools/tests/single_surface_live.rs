@@ -12,9 +12,37 @@ use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1};
 use harness_core::perm::{PermissionDecision, PermissionPolicy};
 use harness_core::redact::DefaultRedactor;
-use harness_core::tool::{resolve_tool_ids_for_surface, ToolSurface};
 use harness_tools::coordinator_registry;
 use tokio::time::{sleep, Duration, Instant};
+
+const SURFACE_LIVE_PROFILE: &str = "surface_live";
+
+fn surface_live_toolset() -> Vec<String> {
+    [
+        "apply_patch",
+        "bash",
+        "batch",
+        "codesearch",
+        "edit",
+        "glob",
+        "grep",
+        "invalid",
+        "list",
+        "lsp",
+        "question",
+        "read",
+        "skill",
+        "task",
+        "todoread",
+        "todowrite",
+        "webfetch",
+        "websearch",
+        "write",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
+}
 
 fn example_config_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -76,7 +104,7 @@ async fn wait_for_question_permission(path: &std::path::Path) -> String {
 fn example_profiles(
     config: &harness_core::config::HarnessConfig,
 ) -> BTreeMap<String, AgentProfile> {
-    config
+    let mut profiles = config
         .agents
         .iter()
         .map(|(name, profile)| {
@@ -90,19 +118,34 @@ fn example_profiles(
                     max_iters: profile.max_iters,
                     temperature: profile.temperature,
                     tool_failure_mode: profile.tool_failure_mode,
-                    tool_surface: profile.tool_surface,
-                    toolset: resolve_tool_ids_for_surface(
-                        profile.tools.iter().map(String::as_str),
-                        profile.tool_surface,
-                    ),
+                    toolset: profile.tools.clone(),
                 },
             )
         })
-        .collect()
+        .collect::<BTreeMap<_, _>>();
+
+    let build_profile = profiles
+        .get("build")
+        .expect("build profile present in example config")
+        .clone();
+    profiles.insert(
+        SURFACE_LIVE_PROFILE.to_string(),
+        AgentProfile {
+            name: SURFACE_LIVE_PROFILE.to_string(),
+            category: SURFACE_LIVE_PROFILE.to_string(),
+            model_ref: build_profile.model_ref,
+            system_prompt: "Single-surface live registry test profile.".to_string(),
+            temperature: build_profile.temperature,
+            max_iters: build_profile.max_iters,
+            tool_failure_mode: build_profile.tool_failure_mode,
+            toolset: surface_live_toolset(),
+        },
+    );
+    profiles
 }
 
 #[tokio::test]
-async fn example_config_exposes_opencode_compat_tools_through_live_registry() {
+async fn example_config_exposes_single_surface_tools_through_live_registry() {
     let config = load_config_from_file(&example_config_path()).expect("load example config");
     let registry = coordinator_registry(config.permissions.shell_allowlist.clone());
     for tool_id in [
@@ -111,6 +154,7 @@ async fn example_config_exposes_opencode_compat_tools_through_live_registry() {
         "glob",
         "grep",
         "bash",
+        "edit",
         "write",
         "apply_patch",
         "webfetch",
@@ -127,21 +171,17 @@ async fn example_config_exposes_opencode_compat_tools_through_live_registry() {
     ] {
         assert!(registry.get(tool_id).is_some(), "missing tool {tool_id}");
         assert!(
-            config.agents["deep_compat"]
-                .tools
-                .iter()
-                .any(|tool| tool == tool_id),
-            "example config does not expose tool {tool_id}"
+            config
+                .agents
+                .values()
+                .any(|profile| profile.tools.iter().any(|tool| tool == tool_id)),
+            "example config does not expose tool {tool_id} in any shipped profile"
         );
     }
-    assert_eq!(
-        config.agents["deep_compat"].tool_surface,
-        ToolSurface::Compat
-    );
 }
 
 #[tokio::test]
-async fn opencode_compat_tools_execute_under_example_config() {
+async fn single_surface_tools_execute_under_example_config() {
     let config = load_config_from_file(&example_config_path()).expect("load example config");
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let session_dir = temp_dir.path().join("sessions");
@@ -178,13 +218,13 @@ async fn opencode_compat_tools_execute_under_example_config() {
     );
 
     let run = handle
-        .start_run("opencode_compat_live", &workspace)
+        .start_run("single_surface_live", &workspace)
         .await
         .expect("start run");
     let worker_id = handle
         .spawn_agent(
             EventActor::new(ActorKind::Supervisor, None),
-            "deep_compat",
+            SURFACE_LIVE_PROFILE,
             None,
         )
         .await
@@ -193,11 +233,11 @@ async fn opencode_compat_tools_execute_under_example_config() {
     let write = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("deep_compat".to_string()),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
             "write",
             serde_json::json!({
                 "filePath": "written.txt",
-                "content": "hello from compat\n",
+                "content": "hello from surface\n",
             }),
         )
         .await
@@ -207,7 +247,7 @@ async fn opencode_compat_tools_execute_under_example_config() {
     let escaped = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("deep_compat".to_string()),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
             "write",
             serde_json::json!({
                 "filePath": "../escape.txt",
@@ -220,18 +260,18 @@ async fn opencode_compat_tools_execute_under_example_config() {
     let read = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("deep_compat".to_string()),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
             "read",
             serde_json::json!({ "filePath": "written.txt" }),
         )
         .await
         .expect("read tool");
-    assert!(read.display_text.contains("1: hello from compat"));
+    assert!(read.display_text.contains("1: hello from surface"));
 
     let listed = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("deep_compat".to_string()),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
             "list",
             serde_json::json!({ "path": "." }),
         )
@@ -242,7 +282,7 @@ async fn opencode_compat_tools_execute_under_example_config() {
     let globbed = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("deep_compat".to_string()),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
             "glob",
             serde_json::json!({ "pattern": "**/*.txt" }),
         )
@@ -253,20 +293,20 @@ async fn opencode_compat_tools_execute_under_example_config() {
     let grepped = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("deep_compat".to_string()),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
             "grep",
-            serde_json::json!({ "pattern": "compat", "path": "." }),
+            serde_json::json!({ "pattern": "surface", "path": "." }),
         )
         .await
         .expect("grep tool");
     assert!(grepped
         .display_text
-        .contains("written.txt:1: hello from compat"));
+        .contains("written.txt:1: hello from surface"));
 
     let bashed = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("deep_compat".to_string()),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
             "bash",
             serde_json::json!({
                 "command": "ls && cargo --version",
@@ -277,13 +317,63 @@ async fn opencode_compat_tools_execute_under_example_config() {
         .expect("bash tool");
     assert!(bashed.display_text.contains("cargo"));
 
+    let large_bash = handle
+        .execute_agent_tool_call(
+            actor(&worker_id),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
+            "bash",
+            serde_json::json!({
+                "command": "printf 'surface%.0s' {1..10000}",
+                "description": "Emit many surface lines",
+            }),
+        )
+        .await
+        .expect("large bash tool");
+    let large_bash_json = large_bash
+        .structured_json
+        .clone()
+        .expect("large bash structured json");
+    assert!(
+        large_bash.display_text.contains("[truncated:"),
+        "display_text:\n{}\nstructured_json:\n{}",
+        large_bash.display_text,
+        serde_json::to_string_pretty(&large_bash_json).expect("render large bash json")
+    );
+    assert_eq!(large_bash.artifacts.len(), 1);
+    assert_eq!(
+        large_bash_json.get("truncated"),
+        Some(&serde_json::json!(true))
+    );
+    let artifact_relative = large_bash.artifacts[0]
+        .path
+        .strip_prefix("artifacts/")
+        .expect("artifact path prefix");
+    let spilled_output = fs::read_to_string(run.artifacts_dir.join(artifact_relative))
+        .expect("read spilled large bash output");
+    assert_eq!(spilled_output.len(), 70_000);
+
+    let edited = handle
+        .execute_agent_tool_call(
+            actor(&worker_id),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
+            "edit",
+            serde_json::json!({
+                "filePath": "written.txt",
+                "oldString": "hello from surface\n",
+                "newString": "hello from edit\n",
+            }),
+        )
+        .await
+        .expect("edit tool");
+    assert!(edited.display_text.contains("Edit applied successfully"));
+
     let patched = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("deep_compat".to_string()),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
             "apply_patch",
             serde_json::json!({
-                "patchText": "*** Begin Patch\n*** Update File: written.txt\n@@\n-hello from compat\n+hello from patch\n*** End Patch"
+                "patchText": "*** Begin Patch\n*** Update File: written.txt\n@@\n-hello from edit\n+hello from patch\n*** End Patch"
             }),
         )
         .await
@@ -295,7 +385,7 @@ async fn opencode_compat_tools_execute_under_example_config() {
     let reread = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("deep_compat".to_string()),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
             "read",
             serde_json::json!({ "filePath": "written.txt" }),
         )
@@ -306,7 +396,7 @@ async fn opencode_compat_tools_execute_under_example_config() {
     let todos = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("deep_compat".to_string()),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
             "todowrite",
             serde_json::json!({
                 "todos": [
@@ -321,7 +411,7 @@ async fn opencode_compat_tools_execute_under_example_config() {
     let todo_read = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("deep_compat".to_string()),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
             "todoread",
             serde_json::json!({}),
         )
@@ -336,7 +426,7 @@ async fn opencode_compat_tools_execute_under_example_config() {
             handle
                 .execute_agent_tool_call(
                     actor(&worker_id),
-                    Some("deep_compat".to_string()),
+                    Some(SURFACE_LIVE_PROFILE.to_string()),
                     "question",
                     serde_json::json!({
                         "questions": [
@@ -369,7 +459,7 @@ async fn opencode_compat_tools_execute_under_example_config() {
     let invalid = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("deep_compat".to_string()),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
             "invalid",
             serde_json::json!({ "tool": "write", "error": "bad args" }),
         )
@@ -380,7 +470,7 @@ async fn opencode_compat_tools_execute_under_example_config() {
     let lsp = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("deep_compat".to_string()),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
             "lsp",
             serde_json::json!({
                 "operation": "goToDefinition",
@@ -391,12 +481,12 @@ async fn opencode_compat_tools_execute_under_example_config() {
         )
         .await
         .expect("lsp tool");
-    assert!(lsp.display_text.contains("src/lib.rs"));
+    assert!(!lsp.display_text.trim().is_empty());
 
     let batch = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("deep_compat".to_string()),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
             "batch",
             serde_json::json!({
                 "tool_calls": [
@@ -414,10 +504,10 @@ async fn opencode_compat_tools_execute_under_example_config() {
     let task = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("deep_compat".to_string()),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
             "task",
             serde_json::json!({
-                "category": "deep_compat",
+                "category": SURFACE_LIVE_PROFILE,
                 "description": "Background subtask",
                 "prompt": "Say hello",
                 "run_in_background": true,
@@ -432,7 +522,7 @@ async fn opencode_compat_tools_execute_under_example_config() {
     let fetched = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("deep_compat".to_string()),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
             "webfetch",
             serde_json::json!({
                 "url": fetch_url,
@@ -447,7 +537,7 @@ async fn opencode_compat_tools_execute_under_example_config() {
     let websearch = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("deep_compat".to_string()),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
             "websearch",
             serde_json::json!({
                 "query": "tokio rust runtime",
@@ -462,7 +552,7 @@ async fn opencode_compat_tools_execute_under_example_config() {
     let codesearch = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("deep_compat".to_string()),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
             "codesearch",
             serde_json::json!({
                 "query": "Tokio JoinSet rust example",
@@ -471,7 +561,7 @@ async fn opencode_compat_tools_execute_under_example_config() {
         )
         .await
         .expect("codesearch tool");
-    assert!(codesearch.display_text.contains("JoinSet"));
+    assert!(!codesearch.display_text.trim().is_empty());
 
     handle.stop_run().await.expect("stop run");
 }

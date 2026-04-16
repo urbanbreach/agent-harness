@@ -1,13 +1,31 @@
 use std::collections::BTreeSet;
 
-use harness_core::tool::{
-    build_tool_function_name_mapping, canonical_tool_id_for, native_and_alias_tool_ids,
-    native_tool_parity_matrix,
-};
+use harness_core::tool::{build_tool_function_name_mapping, canonical_tool_id_for};
 
 #[test]
-fn function_name_mapping_is_stable_for_native_and_alias_tool_ids() {
-    let tool_ids = native_and_alias_tool_ids();
+fn function_name_mapping_is_stable_for_single_surface_tool_ids() {
+    let tool_ids = vec![
+        "apply_patch",
+        "bash",
+        "batch",
+        "codesearch",
+        "edit",
+        "glob",
+        "grep",
+        "invalid",
+        "list",
+        "lsp",
+        "plan_exit",
+        "question",
+        "read",
+        "skill",
+        "task",
+        "todoread",
+        "todowrite",
+        "webfetch",
+        "websearch",
+        "write",
+    ];
     let mapping_a = build_tool_function_name_mapping(tool_ids.iter().copied());
 
     let mut reversed_tool_ids = tool_ids.clone();
@@ -28,14 +46,8 @@ fn function_name_mapping_is_stable_for_native_and_alias_tool_ids() {
         .collect::<BTreeSet<_>>();
     assert_eq!(unique_function_names.len(), tool_ids.len());
 
-    for entry in native_tool_parity_matrix() {
-        assert_eq!(
-            canonical_tool_id_for(entry.canonical_id),
-            Some(entry.canonical_id)
-        );
-        for alias in entry.aliases {
-            assert_eq!(canonical_tool_id_for(alias), Some(entry.canonical_id));
-        }
+    for tool_id in &tool_ids {
+        assert_eq!(canonical_tool_id_for(tool_id), Some(*tool_id));
     }
 
     for (function_name, tool_id) in mapping_a.function_to_tool_id() {

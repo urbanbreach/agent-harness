@@ -18,7 +18,6 @@ use harness_core::proj::{
     SessionModeSource,
 };
 use harness_core::redact::DefaultRedactor;
-use harness_core::tool::ToolSurface;
 
 const PROFILE_NAME: &str = "task1_deep";
 const MODEL_REF: &str = "default:gpt-5.4-mini";
@@ -50,10 +49,15 @@ async fn recorded_runtime_context_meta_roundtrips() {
     let metadata: RunMetadata = serde_json::from_str(&meta_body).expect("parse run metadata");
     let expected_context = RecordedRuntimeContext {
         profile: PROFILE_NAME.to_string(),
+        profile_description: Some("Deep work".to_string()),
         provider: "default".to_string(),
+        provider_display_label: Some("default".to_string()),
+        provider_backend_label: Some("OpenAI".to_string()),
         model: "gpt-5.4-mini".to_string(),
         variant: Some("deterministic".to_string()),
         display_label: "GPT-5.4 Mini · Deterministic".to_string(),
+        model_display_label: Some("GPT-5.4 Mini".to_string()),
+        variant_display_label: Some("Deterministic".to_string()),
         token_window_label: Some("128k ctx · 128k in · 4k out".to_string()),
         context_window_tokens: Some(128000),
         max_input_tokens: Some(128000),
@@ -257,7 +261,6 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             max_iters: 12,
             temperature: Some(0.0),
             tool_failure_mode: ToolFailureMode::FailTurn,
-            tool_surface: ToolSurface::Native,
             toolset: Vec::new(),
         },
     );

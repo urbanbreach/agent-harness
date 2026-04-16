@@ -7,7 +7,9 @@ use std::time::{Duration, Instant};
 
 use clap::Args;
 use harness_core::clock::{Clock, FakeClock, RealClock};
-use harness_core::config::{load_config_from_file, resolve_config_path, ShellAllowlist};
+use harness_core::config::{
+    load_config_from_file, resolve_config_path, HarnessConfig, ShellAllowlist,
+};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::event::{EventEnvelopeV1, EventV1, ToolCallStatus};
 use harness_core::perm::PermissionDecision;
@@ -15,6 +17,7 @@ use harness_core::redact::DefaultRedactor;
 use harness_tools::coordinator_registry;
 use uuid::Uuid;
 
+use crate::logging;
 use crate::scenarios::{
     create_workspace, default_permission_policy, golden_path_patch, golden_path_profiles,
     golden_path_provider, supervisor_actor, worker_actor, ScenarioName,
@@ -22,6 +25,7 @@ use crate::scenarios::{
 
 const DEFAULT_SESSION_DIR: &str = ".agent-harness/sessions";
 const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
+const EVENT_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 #[derive(Debug, Args, Clone)]
 pub struct RunCommand {
@@ -42,6 +46,7 @@ pub struct RunCommand {
 }
 
 struct RunSettings {
+    config: Option<HarnessConfig>,
     session_dir: PathBuf,
     shell_allowlist: ShellAllowlist,
     deterministic: bool,
@@ -112,6 +117,7 @@ fn resolve_settings(
     let mut config_deterministic = false;
     let mut config_seed = 0;
     let mut config_digest = "none".to_string();
+    let mut loaded_config = None;
 
     if let Some(path) = explicit_config {
         let config =
@@ -119,10 +125,11 @@ fn resolve_settings(
         let config_bytes = fs::read(&path)
             .map_err(|err| format!("failed to read config file {}: {err}", path.display()))?;
         config_digest = blake3::hash(&config_bytes).to_hex().to_string();
-        shell_allowlist = config.permissions.shell_allowlist;
-        config_session_dir = config.paths.session_dir;
+        shell_allowlist = config.permissions.shell_allowlist.clone();
+        config_session_dir = config.paths.session_dir.clone();
         config_deterministic = config.deterministic.enabled;
         config_seed = config.deterministic.seed;
+        loaded_config = Some(config);
     }
 
     let session_dir = cmd
@@ -135,6 +142,7 @@ fn resolve_settings(
         || matches!(std::env::var("HARNESS_DETERMINISTIC").as_deref(), Ok("1"));
 
     Ok(RunSettings {
+        config: loaded_config,
         session_dir,
         shell_allowlist,
         deterministic,
@@ -198,6 +206,10 @@ async fn run_once(cmd: &RunCommand, settings: &RunSettings) -> Result<RunOutcome
         .start_run(cmd.scenario.as_str(), &workspace)
         .await
         .map_err(|err| err.to_string())?;
+
+    if let Some(config) = &settings.config {
+        let _ = logging::init_logging(config, &run.run_dir)?;
+    }
 
     coordinator
         .spawn_agent(supervisor_actor(), "planner", None)
@@ -288,7 +300,7 @@ async fn wait_for_permission_id(
             ));
         }
 
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::sleep(EVENT_WAIT_POLL_INTERVAL).await;
     }
 }
 
@@ -315,7 +327,7 @@ async fn wait_for_tool_finished(
             ));
         }
 
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::sleep(EVENT_WAIT_POLL_INTERVAL).await;
     }
 }
 
@@ -369,6 +381,7 @@ mod tests {
     async fn deterministic_golden_path_twice_produces_identical_sha256_digest() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let settings = RunSettings {
+            config: None,
             session_dir: temp_dir.path().join("sessions"),
             shell_allowlist: ShellAllowlist::default(),
             deterministic: true,
@@ -412,6 +425,7 @@ mod tests {
     async fn deterministic_run_writes_stable_meta_json_with_null_created_at() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let settings = RunSettings {
+            config: None,
             session_dir: temp_dir.path().join("sessions"),
             shell_allowlist: ShellAllowlist::default(),
             deterministic: true,
@@ -446,6 +460,7 @@ mod tests {
     async fn replay_summary_matches_expected_values_for_golden_path() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let settings = RunSettings {
+            config: None,
             session_dir: temp_dir.path().join("sessions"),
             shell_allowlist: ShellAllowlist::default(),
             deterministic: true,
@@ -476,6 +491,7 @@ mod tests {
     async fn edit_applied_diff_refs_match_artifact_written() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let settings = RunSettings {
+            config: None,
             session_dir: temp_dir.path().join("sessions"),
             shell_allowlist: ShellAllowlist::default(),
             deterministic: true,

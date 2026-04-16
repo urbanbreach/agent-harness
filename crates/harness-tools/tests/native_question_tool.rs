@@ -97,8 +97,8 @@ async fn native_question_tool_uses_permission_answers() {
         .expect("start run");
 
     let question_tool = coordinator_registry(Default::default())
-        .get("user.question")
-        .expect("user.question tool");
+        .get("question")
+        .expect("question tool");
     let tool_call_id = "native-question-success";
     let tool_task = tokio::spawn({
         let question_tool = question_tool.clone();
@@ -215,8 +215,8 @@ async fn native_question_tool_rejects_or_times_out_cleanly() {
         .expect("start reject run");
 
     let question_tool = coordinator_registry(Default::default())
-        .get("user.question")
-        .expect("user.question tool");
+        .get("question")
+        .expect("question tool");
     let reject_task = tokio::spawn({
         let question_tool = question_tool.clone();
         let context = question_tool_context(

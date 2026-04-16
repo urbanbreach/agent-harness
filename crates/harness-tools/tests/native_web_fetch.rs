@@ -167,8 +167,7 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let registry = coordinator_registry(ShellAllowlist::default());
-    let web_fetch = registry.get("web.fetch").expect("web.fetch tool");
-    let compat = registry.get("webfetch").expect("webfetch tool");
+    let web_fetch = registry.get("webfetch").expect("webfetch tool");
 
     let requests = Arc::new(Mutex::new(Vec::<TestRequest>::new()));
     let counts = Arc::new(Mutex::new(BTreeMap::<String, usize>::new()));
@@ -283,19 +282,19 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
         )
         .await
         .expect("markdown fetch");
-    let compat_markdown = compat
+    let repeated_markdown = web_fetch
         .call(
-            test_context(&workspace, "compat-markdown"),
+            test_context(&workspace, "repeat-markdown"),
             json!({
                 "url": format!("{base_url}/markdown"),
                 "format": "markdown",
             }),
         )
         .await
-        .expect("compat markdown fetch");
+        .expect("repeat markdown fetch");
     assert_eq!(markdown.display_text, "# Hello markdown\n\nBody\n");
-    assert_eq!(markdown.display_text, compat_markdown.display_text);
-    assert_eq!(markdown.structured_json, compat_markdown.structured_json);
+    assert_eq!(markdown.display_text, repeated_markdown.display_text);
+    assert_eq!(markdown.structured_json, repeated_markdown.structured_json);
 
     let html = web_fetch
         .call(
@@ -404,7 +403,7 @@ async fn native_web_fetch_rejects_invalid_scheme_large_response_and_timeout() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let registry = coordinator_registry(ShellAllowlist::default());
-    let web_fetch = registry.get("web.fetch").expect("web.fetch tool");
+    let web_fetch = registry.get("webfetch").expect("webfetch tool");
 
     let base_url = spawn_http_server(Arc::new(|request| match request.path.as_str() {
         "/large" => TestResponse {

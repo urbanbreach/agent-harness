@@ -1046,6 +1046,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
+ "tracing",
 ]
 
 [[package]]
@@ -1062,6 +1063,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
+ "tracing",
  "wiremock",
 ]
 

@@ -41,6 +41,7 @@ use tokio::task::JoinHandle;
 use uuid::Uuid;
 
 use crate::bootstrap;
+use crate::logging;
 use crate::replay::inspect_session_catalog;
 use crate::scenarios::{
     create_workspace, default_permission_policy, golden_path_patch, golden_path_profiles,
@@ -50,6 +51,7 @@ use crate::scenarios::{
 const DEFAULT_SESSION_DIR: &str = ".agent-harness/sessions";
 const DEFAULT_MOCK_PROFILE: &str = "worker";
 const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
+const EVENT_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 fn handoff_profile_file() -> Option<&'static Mutex<std::fs::File>> {
     static PROFILE_FILE: OnceLock<Option<Mutex<std::fs::File>>> = OnceLock::new();
@@ -496,14 +498,19 @@ fn configured_profile_model_options(
             catalog_entries.iter().map(|entry| ModelOption {
                 profile: profile.clone(),
                 provider: entry.provider.clone(),
+                provider_display_label: Some(entry.provider_display_label.clone()),
+                provider_backend_label: entry.provider_backend_label.clone(),
                 model: entry.model.clone(),
+                model_display_label: Some(entry.model_display_label.clone()),
                 variant: entry.variant.clone(),
+                variant_display_label: entry.variant_display_label.clone(),
                 display_label: Some(entry.display_label.clone()),
                 token_window_label: entry.token_window_label.clone(),
                 context_window_tokens: entry.context_window_tokens,
                 max_input_tokens: entry.max_input_tokens,
                 max_output_tokens: entry.max_output_tokens,
                 description: entry.description.clone(),
+                profile_description: None,
                 reasoning_effort: entry.reasoning_effort.clone(),
                 text_verbosity: entry.text_verbosity.clone(),
                 recommended_for: entry.recommended_for.clone(),
@@ -516,14 +523,19 @@ fn configured_profile_model_options(
             let preferred = ModelOption {
                 profile: profile.clone(),
                 provider: metadata.provider,
+                provider_display_label: Some(metadata.provider_display_label),
+                provider_backend_label: metadata.provider_backend_label,
                 model: metadata.model,
+                model_display_label: Some(metadata.model_display_label),
                 variant: metadata.variant,
+                variant_display_label: metadata.variant_display_label,
                 display_label: Some(metadata.display_label),
                 token_window_label: metadata.token_window_label,
                 context_window_tokens: metadata.context_window_tokens,
                 max_input_tokens: metadata.max_input_tokens,
                 max_output_tokens: metadata.max_output_tokens,
                 description: metadata.description,
+                profile_description: metadata.profile_description,
                 reasoning_effort: metadata.reasoning_effort,
                 text_verbosity: metadata.text_verbosity,
                 recommended_for: metadata.recommended_for,
@@ -997,6 +1009,9 @@ async fn run_continue_session_bootstrap(
         .await
         .map_err(|err| err.to_string())?;
     profile_handoff("continue_bootstrap.resume_run_done");
+    if let Some(config) = settings.config.as_ref() {
+        let _ = logging::init_logging(config, &run.run_dir)?;
+    }
     let store = coordinator
         .event_store()
         .await
@@ -1119,8 +1134,12 @@ fn launch_metadata_from_recorded_runtime_context(
     LaunchMetadata::from_model_option(&ModelOption {
         profile: recorded_runtime_context.profile.clone(),
         provider: recorded_runtime_context.provider.clone(),
+        provider_display_label: recorded_runtime_context.provider_display_label.clone(),
+        provider_backend_label: recorded_runtime_context.provider_backend_label.clone(),
         model: recorded_runtime_context.model.clone(),
+        model_display_label: recorded_runtime_context.model_display_label.clone(),
         variant: recorded_runtime_context.variant.clone(),
+        variant_display_label: recorded_runtime_context.variant_display_label.clone(),
         display_label: Some(recorded_runtime_context.display_label.clone())
             .filter(|value| !value.trim().is_empty()),
         token_window_label: recorded_runtime_context.token_window_label.clone(),
@@ -1128,6 +1147,7 @@ fn launch_metadata_from_recorded_runtime_context(
         max_input_tokens: recorded_runtime_context.max_input_tokens,
         max_output_tokens: recorded_runtime_context.max_output_tokens,
         description: recorded_runtime_context.description.clone(),
+        profile_description: recorded_runtime_context.profile_description.clone(),
         reasoning_effort: recorded_runtime_context.reasoning_effort.clone(),
         text_verbosity: recorded_runtime_context.text_verbosity.clone(),
         recommended_for: recorded_runtime_context.recommended_for.clone(),
@@ -1420,6 +1440,9 @@ async fn run_new_live_session(
         .await
         .map_err(|err| err.to_string())?;
     profile_handoff("new_live.start_run_done");
+    if let Some(config) = settings.config.as_ref() {
+        let _ = logging::init_logging(config, &run.run_dir)?;
+    }
     let store = coordinator
         .event_store()
         .await
@@ -1569,6 +1592,9 @@ async fn run_live_mode(
         .map_err(|_| "scenario runner exited before live TUI bootstrap was ready".to_string())?;
 
     let LiveBootstrap { store, run_dir } = bootstrap;
+    if let Some(config) = settings.config.as_ref() {
+        let _ = logging::init_logging(config, &run_dir)?;
+    }
 
     let event_forwarder_task =
         tokio::spawn(async move { forward_events_to_tui(store, live_update_tx, 1).await });
@@ -1909,7 +1935,7 @@ async fn wait_for_permission_id(
             ));
         }
 
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::sleep(EVENT_WAIT_POLL_INTERVAL).await;
     }
 }
 
@@ -1957,7 +1983,7 @@ async fn wait_for_tool_finished(
             }
         }
 
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::sleep(EVENT_WAIT_POLL_INTERVAL).await;
     }
 }
 
@@ -2576,7 +2602,7 @@ mod tests {
                 build: {
                   description: "Implementation",
                   model_ref: "default:gpt-5.4-mini",
-                  tools: ["fs.read"]
+                  tools: ["read"]
                 }
               },
               default_agent: "build",
@@ -2644,7 +2670,7 @@ mod tests {
             assert_eq!(first.session_dir, session_dir);
             assert_eq!(second.session_dir, session_dir);
             assert!(first.agent_profiles.contains_key("build"));
-            assert!(second.tool_registry.get("fs.read").is_some());
+            assert!(second.tool_registry.get("read").is_some());
         });
     }
 
@@ -2692,10 +2718,15 @@ mod tests {
         }];
         let recorded_runtime_context = RecordedRuntimeContext {
             profile: "recorded-profile".to_string(),
+            profile_description: Some("Recorded agent".to_string()),
             provider: "recorded-provider".to_string(),
+            provider_display_label: Some("Recorded Provider".to_string()),
+            provider_backend_label: Some("OpenAI".to_string()),
             model: "recorded-model".to_string(),
             variant: Some("recorded-variant".to_string()),
             display_label: "Recorded Model".to_string(),
+            model_display_label: Some("Recorded Model".to_string()),
+            variant_display_label: Some("Recorded Variant".to_string()),
             token_window_label: Some("128k ctx".to_string()),
             context_window_tokens: Some(128_000),
             max_input_tokens: Some(64_000),
@@ -2745,10 +2776,15 @@ mod tests {
         }];
         let recorded_runtime_context = RecordedRuntimeContext {
             profile: "recorded-profile".to_string(),
+            profile_description: Some("Recorded agent".to_string()),
             provider: "recorded-provider".to_string(),
+            provider_display_label: Some("Recorded Provider".to_string()),
+            provider_backend_label: Some("OpenAI".to_string()),
             model: "recorded-model".to_string(),
             variant: None,
             display_label: "Recorded Replay Model".to_string(),
+            model_display_label: Some("Recorded Replay Model".to_string()),
+            variant_display_label: None,
             token_window_label: None,
             context_window_tokens: None,
             max_input_tokens: None,

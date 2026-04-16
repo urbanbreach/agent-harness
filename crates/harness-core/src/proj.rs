@@ -43,10 +43,20 @@ pub enum SessionModeSource {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct RecordedRuntimeContext {
     pub profile: String,
+    #[serde(default)]
+    pub profile_description: Option<String>,
     pub provider: String,
+    #[serde(default)]
+    pub provider_display_label: Option<String>,
+    #[serde(default)]
+    pub provider_backend_label: Option<String>,
     pub model: String,
     pub variant: Option<String>,
     pub display_label: String,
+    #[serde(default)]
+    pub model_display_label: Option<String>,
+    #[serde(default)]
+    pub variant_display_label: Option<String>,
     pub token_window_label: Option<String>,
     pub context_window_tokens: Option<u32>,
     pub max_input_tokens: Option<u32>,
@@ -68,10 +78,15 @@ impl RecordedRuntimeContext {
 
         Self {
             profile: profile.to_string(),
+            profile_description: None,
             provider: model_ref.provider_id,
+            provider_display_label: None,
+            provider_backend_label: None,
             model: model_ref.model_id,
             variant: None,
             display_label,
+            model_display_label: None,
+            variant_display_label: None,
             token_window_label: None,
             context_window_tokens: None,
             max_input_tokens: None,
@@ -88,10 +103,15 @@ impl From<ResolvedProfileModelMetadata> for RecordedRuntimeContext {
     fn from(metadata: ResolvedProfileModelMetadata) -> Self {
         Self {
             profile: metadata.profile,
+            profile_description: metadata.profile_description,
             provider: metadata.provider,
+            provider_display_label: Some(metadata.provider_display_label),
+            provider_backend_label: metadata.provider_backend_label,
             model: metadata.model,
             variant: metadata.variant,
             display_label: metadata.display_label,
+            model_display_label: Some(metadata.model_display_label),
+            variant_display_label: metadata.variant_display_label,
             token_window_label: metadata.token_window_label,
             context_window_tokens: metadata.context_window_tokens,
             max_input_tokens: metadata.max_input_tokens,

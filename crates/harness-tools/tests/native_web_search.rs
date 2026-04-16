@@ -263,12 +263,11 @@ async fn native_web_search_uses_shared_client_and_fixture_backend() {
     ]);
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let native = registry.get("search.web").expect("search.web tool");
-    let compat = registry.get("websearch").expect("websearch tool");
+    let websearch = registry.get("websearch").expect("websearch tool");
 
-    let native_result = native
+    let first_result = websearch
         .call(
-            test_context(&workspace, "native-web-search"),
+            test_context(&workspace, "websearch-first"),
             json!({
                 "query": "tokio runtime",
                 "numResults": 2,
@@ -278,10 +277,10 @@ async fn native_web_search_uses_shared_client_and_fixture_backend() {
             }),
         )
         .await
-        .expect("native search.web");
-    let compat_result = compat
+        .expect("websearch first");
+    let second_result = websearch
         .call(
-            test_context(&workspace, "compat-websearch"),
+            test_context(&workspace, "websearch-second"),
             json!({
                 "query": "tokio runtime",
                 "numResults": 2,
@@ -291,27 +290,27 @@ async fn native_web_search_uses_shared_client_and_fixture_backend() {
             }),
         )
         .await
-        .expect("compat websearch");
+        .expect("websearch second");
 
     assert_eq!(
-        native_result.display_text,
+        first_result.display_text,
         "Tokio runtime docs\nJoinSet guide"
     );
-    assert_eq!(native_result.display_text, compat_result.display_text);
-    assert_eq!(native_result.structured_json, compat_result.structured_json);
-    let native_json = native_result.structured_json.expect("structured json");
-    assert_eq!(native_json["query"], json!("tokio runtime"));
-    assert_eq!(native_json["numResults"], json!(2));
-    assert_eq!(native_json["livecrawl"], json!("preferred"));
-    assert_eq!(native_json["type"], json!("fast"));
-    assert_eq!(native_json["contextMaxCharacters"], json!(4096));
-    assert_eq!(native_json["empty"], json!(false));
+    assert_eq!(first_result.display_text, second_result.display_text);
+    assert_eq!(first_result.structured_json, second_result.structured_json);
+    let result_json = first_result.structured_json.expect("structured json");
+    assert_eq!(result_json["query"], json!("tokio runtime"));
+    assert_eq!(result_json["numResults"], json!(2));
+    assert_eq!(result_json["livecrawl"], json!("preferred"));
+    assert_eq!(result_json["type"], json!("fast"));
+    assert_eq!(result_json["contextMaxCharacters"], json!(4096));
+    assert_eq!(result_json["empty"], json!(false));
 
     let requests = requests.lock().expect("request log");
     assert_eq!(
         requests.len(),
         2,
-        "native + compat should hit same backend path"
+        "websearch should hit the shared backend path for each request"
     );
     for request in requests.iter() {
         assert_eq!(request.path, "/");
@@ -363,8 +362,8 @@ async fn native_web_search_handles_missing_auth_rate_limit_and_empty_results() {
     ]);
     let missing_auth_registry = coordinator_registry(ShellAllowlist::default());
     let missing_auth = missing_auth_registry
-        .get("search.web")
-        .expect("search.web tool")
+        .get("websearch")
+        .expect("websearch tool")
         .call(
             test_context(&workspace, "missing-auth"),
             json!({
@@ -400,8 +399,8 @@ async fn native_web_search_handles_missing_auth_rate_limit_and_empty_results() {
     ]);
     let rate_limit_registry = coordinator_registry(ShellAllowlist::default());
     let rate_limit_error = rate_limit_registry
-        .get("search.web")
-        .expect("search.web tool")
+        .get("websearch")
+        .expect("websearch tool")
         .call(
             test_context(&workspace, "rate-limit"),
             json!({
@@ -437,8 +436,8 @@ async fn native_web_search_handles_missing_auth_rate_limit_and_empty_results() {
     ]);
     let empty_registry = coordinator_registry(ShellAllowlist::default());
     let empty_result = empty_registry
-        .get("search.web")
-        .expect("search.web tool")
+        .get("websearch")
+        .expect("websearch tool")
         .call(
             test_context(&workspace, "empty-results"),
             json!({

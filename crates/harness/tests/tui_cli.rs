@@ -12,7 +12,6 @@ use harness_core::event::{
 };
 use harness_core::proj::RunMetadata;
 use harness_core::redact::DefaultRedactor;
-use harness_core::tool::ToolSurface;
 use harness_tui::app::{
     set_pending_live_launch_metadata, set_pending_live_prompt_draft, AppState, LaunchMetadata,
     RuntimeStateKind,
@@ -25,6 +24,9 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 #[allow(dead_code)]
 #[path = "../src/bootstrap.rs"]
 mod bootstrap;
+#[allow(dead_code)]
+#[path = "../src/logging.rs"]
+mod logging;
 #[allow(dead_code)]
 #[path = "../src/replay.rs"]
 mod replay;
@@ -231,7 +233,6 @@ async fn tui_new_live_bootstrap_stays_idle_until_first_user_prompt() {
             max_iters: 12,
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-            tool_surface: ToolSurface::Native,
             toolset: Vec::new(),
         },
     );
@@ -427,7 +428,6 @@ async fn new_live_session_persists_selected_runtime_context_into_run_metadata() 
             max_iters: 12,
             temperature: Some(0.0),
             tool_failure_mode: ToolFailureMode::FailTurn,
-            tool_surface: ToolSurface::Native,
             toolset: Vec::new(),
         },
     );
@@ -441,7 +441,6 @@ async fn new_live_session_persists_selected_runtime_context_into_run_metadata() 
             max_iters: 12,
             temperature: Some(0.0),
             tool_failure_mode: ToolFailureMode::FailTurn,
-            tool_surface: ToolSurface::Native,
             toolset: Vec::new(),
         },
     );

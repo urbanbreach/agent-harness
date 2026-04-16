@@ -12,7 +12,6 @@ use harness_core::event::{
 };
 use harness_core::perm::PermissionPolicy;
 use harness_core::redact::DefaultRedactor;
-use harness_core::tool::ToolSurface;
 use harness_tools::coordinator_registry;
 use serde_json::{json, Value};
 use tokio::time::{sleep, Duration, Instant};
@@ -30,7 +29,6 @@ fn profile(name: &str, category: &str, toolset: &[&str]) -> AgentProfile {
         max_iters: 12,
         temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-        tool_surface: ToolSurface::Native,
         toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
     }
 }
@@ -103,11 +101,11 @@ async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
     config.agent_profiles = BTreeMap::from([
         (
             "parent".to_string(),
-            profile("parent", "parent", &["agent.spawn", "shell.run"]),
+            profile("parent", "parent", &["task", "bash"]),
         ),
         (
             "restricted".to_string(),
-            profile("restricted", "restricted", &["shell.run"]),
+            profile("restricted", "restricted", &["bash"]),
         ),
     ]);
 
@@ -139,15 +137,15 @@ async fn agent_spawn_returns_child_session_status_duration_and_counts() {
         .request_tool_call(
             worker_actor(&worker_id),
             Some("parent".to_string()),
-            "agent.spawn",
+            "task",
             json!({
-                "profile": "parent",
+                "category": "parent",
                 "description": "Observe child failure metadata",
                 "prompt": "This child has no provider configured"
             }),
         )
         .await
-        .expect("request agent.spawn");
+        .expect("request task");
     wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
 
     handle.stop_run().await.expect("stop run");
@@ -209,11 +207,12 @@ async fn child_session_permission_inheritance_isolated_by_task() {
         .request_tool_call(
             worker_actor(&worker_id),
             Some("parent".to_string()),
-            "agent.spawn",
+            "task",
             json!({
-                "profile": "parent",
+                "category": "parent",
                 "description": "Inherited child scope",
-                "prompt": "Background child"
+                "prompt": "Background child",
+                "run_in_background": true
             }),
         )
         .await
@@ -224,12 +223,12 @@ async fn child_session_permission_inheritance_isolated_by_task() {
         .request_tool_call(
             worker_actor(&worker_id),
             Some("parent".to_string()),
-            "agent.spawn",
+            "task",
             json!({
-                "profile": "restricted",
+                "category": "restricted",
                 "description": "Restricted child scope",
                 "prompt": "Background child",
-                "background": true
+                "run_in_background": true
             }),
         )
         .await
@@ -254,14 +253,15 @@ async fn child_session_permission_inheritance_isolated_by_task() {
         .request_tool_call(
             worker_actor(inherited_child_session),
             Some("ignored-by-worker".to_string()),
-            "shell.run",
+            "bash",
             json!({
-                "cmd": "pwd",
-                "args": []
+                "command": "pwd",
+                "workdir": ".",
+                "description": "Print workspace"
             }),
         )
         .await
-        .expect("request inherited child shell.run");
+        .expect("request inherited child bash");
     wait_for_tool_call_finish(&run.events_path, &inherited_shell).await;
 
     let restricted_spawn_finished =
@@ -292,16 +292,17 @@ async fn child_session_permission_inheritance_isolated_by_task() {
         .request_tool_call(
             worker_actor(restricted_child_session),
             Some("ignored-by-worker".to_string()),
-            "shell.run",
+            "bash",
             json!({
-                "cmd": "pwd",
-                "args": []
+                "command": "pwd",
+                "workdir": ".",
+                "description": "Print workspace"
             }),
         )
         .await;
     assert!(
         restricted_shell.is_err(),
-        "restricted child shell.run should be denied"
+        "restricted child bash should be denied"
     );
 
     handle.stop_run().await.expect("stop run");

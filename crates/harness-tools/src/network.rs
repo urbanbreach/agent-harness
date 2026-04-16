@@ -1,10 +1,8 @@
 use std::env;
 use std::fs;
-use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
-use harness_core::tool::{ArtifactRef, Tool, ToolCapability, ToolContext, ToolError, ToolResult};
+use harness_core::tool::{ArtifactRef, ToolContext, ToolError, ToolResult};
 use regex::Regex;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -555,46 +553,12 @@ impl RemoteSearchConfig {
     }
 }
 
-pub(crate) struct WebFetchTool {
-    executor: Arc<NetworkExecutor>,
-}
-
-impl WebFetchTool {
-    pub(crate) fn new(executor: Arc<NetworkExecutor>) -> Self {
-        Self { executor }
-    }
-}
-
-pub(crate) struct SearchWebTool {
-    executor: Arc<NetworkExecutor>,
-}
-
-impl SearchWebTool {
-    pub(crate) fn new(executor: Arc<NetworkExecutor>) -> Self {
-        Self { executor }
-    }
-}
-
-pub(crate) struct SearchCodeTool {
-    executor: Arc<NetworkExecutor>,
-}
-
-impl SearchCodeTool {
-    pub(crate) fn new(executor: Arc<NetworkExecutor>) -> Self {
-        Self { executor }
-    }
-}
-
 #[derive(Debug, Deserialize, JsonSchema, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum WebFetchFormat {
     Text,
     Markdown,
     Html,
-}
-
-fn default_webfetch_format() -> WebFetchFormat {
-    WebFetchFormat::Markdown
 }
 
 #[derive(Debug, Clone)]
@@ -617,138 +581,6 @@ pub(crate) struct WebSearchRequest {
 pub(crate) struct CodeSearchRequest {
     pub(crate) query: String,
     pub(crate) tokens_num: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct WebFetchArgs {
-    url: String,
-    #[serde(default = "default_webfetch_format")]
-    format: WebFetchFormat,
-    #[serde(default)]
-    timeout: Option<u64>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct WebSearchArgs {
-    query: String,
-    #[serde(default)]
-    #[serde(rename = "numResults", alias = "num_results")]
-    num_results: Option<u32>,
-    #[serde(default)]
-    livecrawl: Option<String>,
-    #[serde(default)]
-    r#type: Option<String>,
-    #[serde(default)]
-    #[serde(rename = "contextMaxCharacters", alias = "context_max_characters")]
-    context_max_characters: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct CodeSearchArgs {
-    query: String,
-    #[serde(default)]
-    #[serde(rename = "tokensNum", alias = "tokens_num")]
-    tokens_num: Option<u32>,
-}
-
-#[async_trait]
-impl Tool for WebFetchTool {
-    fn id(&self) -> &str {
-        "web.fetch"
-    }
-
-    fn description(&self) -> &str {
-        "Fetches web content and returns text, markdown, or html."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
-        super::json_schema_for::<WebFetchArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::Network
-    }
-
-    async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: WebFetchArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
-        self.executor
-            .web_fetch(
-                &ctx,
-                WebFetchRequest {
-                    url: args.url,
-                    format: args.format,
-                    timeout_secs: args.timeout,
-                },
-            )
-            .await
-    }
-}
-
-#[async_trait]
-impl Tool for SearchWebTool {
-    fn id(&self) -> &str {
-        "search.web"
-    }
-
-    fn description(&self) -> &str {
-        "Searches the public web via the configured backend."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
-        super::json_schema_for::<WebSearchArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::Network
-    }
-
-    async fn call(&self, _ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: WebSearchArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
-        self.executor
-            .web_search(WebSearchRequest {
-                query: args.query,
-                num_results: args.num_results,
-                livecrawl: args.livecrawl,
-                search_type: args.r#type,
-                context_max_characters: args.context_max_characters,
-            })
-            .await
-    }
-}
-
-#[async_trait]
-impl Tool for SearchCodeTool {
-    fn id(&self) -> &str {
-        "search.code"
-    }
-
-    fn description(&self) -> &str {
-        "Searches code context via the configured backend."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
-        super::json_schema_for::<CodeSearchArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::Network
-    }
-
-    async fn call(&self, _ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: CodeSearchArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
-        self.executor
-            .code_search(CodeSearchRequest {
-                query: args.query,
-                tokens_num: args.tokens_num,
-            })
-            .await
-    }
 }
 
 fn build_http_client() -> reqwest::Client {

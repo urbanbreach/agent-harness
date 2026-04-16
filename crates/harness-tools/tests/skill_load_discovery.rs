@@ -15,7 +15,7 @@ use harness_core::coord::{spawn_coordinator, CoordinatorConfig, PlanProfileConfi
 use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1};
 use harness_core::perm::{PermissionDecision, PermissionPolicy};
 use harness_core::redact::DefaultRedactor;
-use harness_core::tool::{ToolContext, ToolSurface};
+use harness_core::tool::ToolContext;
 use harness_tools::coordinator_registry;
 use serde_json::json;
 use tokio::time::{sleep, Duration, Instant};
@@ -155,7 +155,6 @@ fn worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
         temperature: None,
         max_iters: 12,
         tool_failure_mode: ToolFailureMode::FailTurn,
-        tool_surface: ToolSurface::Native,
         toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
     }
 }
@@ -350,10 +349,9 @@ async fn skill_load_discovers_project_and_global_roots_with_precedence() {
     );
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let native = registry.get("skill.load").expect("skill.load tool");
-    let compat = registry.get("skill").expect("skill tool");
+    let skill_tool = registry.get("skill").expect("skill tool");
 
-    let native_shared = native
+    let native_shared = skill_tool
         .call(
             tool_context(&repo, "toolcall-native-shared"),
             json!({"name": "shared-skill"}),
@@ -377,17 +375,7 @@ async fn skill_load_discovers_project_and_global_roots_with_precedence() {
             .to_string()))
     );
 
-    let compat_shared = compat
-        .call(
-            tool_context(&repo, "toolcall-compat-shared"),
-            json!({"name": "shared-skill"}),
-        )
-        .await
-        .expect("compat shared skill");
-    assert_eq!(native_shared.display_text, compat_shared.display_text);
-    assert_eq!(native_shared.structured_json, compat_shared.structured_json);
-
-    let repo_only = native
+    let repo_only = skill_tool
         .call(
             tool_context(&repo, "toolcall-repo-only"),
             json!({"name": "repo-only"}),
@@ -396,7 +384,7 @@ async fn skill_load_discovers_project_and_global_roots_with_precedence() {
         .expect("repo-only skill");
     assert!(repo_only.display_text.contains("Repo only description"));
 
-    let global_only = native
+    let global_only = skill_tool
         .call(
             tool_context(&repo, "toolcall-global-only"),
             json!({"name": "global-only"}),
@@ -453,10 +441,10 @@ async fn skill_load_hides_denied_or_invalid_skills() {
     );
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let native = registry.get("skill.load").expect("skill.load tool");
+    let skill_tool = registry.get("skill").expect("skill tool");
     let compat = registry.get("skill").expect("skill tool");
 
-    let visible = native
+    let visible = skill_tool
         .call(
             tool_context(&repo, "toolcall-visible-skill"),
             json!({"name": "visible-skill"}),
@@ -465,7 +453,7 @@ async fn skill_load_hides_denied_or_invalid_skills() {
         .expect("visible skill");
     assert!(visible.display_text.contains("Visible description"));
 
-    let denied = native
+    let denied = skill_tool
         .call(
             tool_context(&repo, "toolcall-denied-skill"),
             json!({"name": "internal-secret"}),
@@ -486,7 +474,7 @@ async fn skill_load_hides_denied_or_invalid_skills() {
     assert_eq!(denied.to_string(), compat_denied.to_string());
 
     let _answers = ScopedEnvVar::set("HARNESS_QUESTION_ANSWERS", r#"[["Yes"]]"#);
-    let approved = native
+    let approved = skill_tool
         .call(
             tool_context(&repo, "toolcall-ask-skill"),
             json!({"name": "experimental-preview"}),
@@ -496,7 +484,7 @@ async fn skill_load_hides_denied_or_invalid_skills() {
     assert!(approved.display_text.contains("Ask description"));
     assert!(approved.display_text.contains("Ask body"));
 
-    let invalid = native
+    let invalid = skill_tool
         .call(
             tool_context(&repo, "toolcall-invalid-skill"),
             json!({"name": "broken-skill"}),
@@ -523,8 +511,8 @@ async fn shipped_starter_skill_pack_is_discoverable_from_repo_checkout() {
     let repo = repo_root();
     let _cwd = CurrentDirGuard::set(&repo);
     let registry = coordinator_registry(ShellAllowlist::default());
-    let native = registry.get("skill.load").expect("skill.load tool");
-    let skill = native
+    let skill_tool = registry.get("skill").expect("skill tool");
+    let skill = skill_tool
         .call(
             tool_context(&repo, "toolcall-shipped-rust-best-practices"),
             json!({"name": "rust-best-practices"}),
@@ -532,14 +520,16 @@ async fn shipped_starter_skill_pack_is_discoverable_from_repo_checkout() {
         .await
         .expect("shipped rust-best-practices skill");
     assert!(skill.display_text.contains("# Skill: rust-best-practices"));
-    assert!(skill.display_text.contains("cargo fmt --all -- --check"));
+    assert!(skill
+        .display_text
+        .contains("run cargo fmt, cargo check, cargo clippy, and relevant tests"));
     assert_eq!(
         skill
             .structured_json
             .as_ref()
             .and_then(|value| value.get("location")),
         Some(&json!(repo
-            .join(".agents/skills/rust-best-practices/SKILL.md")
+            .join(".opencode/skills/rust-best-practices/SKILL.md")
             .display()
             .to_string()))
     );
@@ -597,9 +587,9 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
     );
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let native = registry.get("skill.load").expect("skill.load tool");
+    let skill_tool = registry.get("skill").expect("skill tool");
 
-    let visible = native
+    let visible = skill_tool
         .call(
             tool_context(&repo, "toolcall-custom-visible"),
             json!({"name": "team-visible"}),
@@ -619,7 +609,7 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
     );
 
     let _answers = ScopedEnvVar::set("HARNESS_QUESTION_ANSWERS", r#"[["Yes"]]"#);
-    let gated = native
+    let gated = skill_tool
         .call(
             tool_context(&repo, "toolcall-custom-ask"),
             json!({"name": "team-secret"}),
@@ -628,7 +618,7 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
         .expect("exact permission override should load after approval");
     assert!(gated.display_text.contains("Team secret description"));
 
-    let repo_hidden = native
+    let repo_hidden = skill_tool
         .call(
             tool_context(&repo, "toolcall-custom-repo-hidden"),
             json!({"name": "team-repo"}),
@@ -639,7 +629,7 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
         .to_string()
         .contains("Skill \"team-repo\" not found"));
 
-    let global_visible = native
+    let global_visible = skill_tool
         .call(
             tool_context(&repo, "toolcall-custom-global"),
             json!({"name": "global-visible"}),
@@ -656,7 +646,7 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
     clippy::await_holding_lock,
     reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
 )]
-async fn skill_load_ask_permissions_use_question_approval_flow_for_native_and_compat() {
+async fn skill_load_ask_permissions_use_question_approval_flow() {
     let _guard = SKILL_DISCOVERY_ENV_LOCK.lock().expect("env test lock");
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("home");
@@ -680,39 +670,11 @@ async fn skill_load_ask_permissions_use_question_approval_flow_for_native_and_co
         "Ask body",
     );
 
-    let toolset = ["skill.load", "skill"];
+    let toolset = ["skill"];
     let agent_profiles = BTreeMap::from([("deep".to_string(), worker_profile("deep", &toolset))]);
     let (handle, run, worker_id) = spawn_worker_run(&repo, "deep", agent_profiles).await;
 
-    let native_task = {
-        let handle = handle.clone();
-        let worker_id = worker_id.clone();
-        tokio::spawn(async move {
-            handle
-                .execute_agent_tool_call(
-                    actor(&worker_id),
-                    Some("deep".to_string()),
-                    "skill.load",
-                    json!({"name": "experimental-preview"}),
-                )
-                .await
-        })
-    };
-    let native_permission_id = wait_for_question_permission(&run.events_path, None).await;
-    handle
-        .resolve_permission(
-            native_permission_id.clone(),
-            PermissionDecision::Allow,
-            Some(r#"[["Yes"]]"#.to_string()),
-        )
-        .await
-        .expect("approve native skill.load");
-    let native = native_task
-        .await
-        .expect("join native skill.load")
-        .expect("native skill.load result");
-
-    let compat_task = {
+    let skill_task = {
         let handle = handle.clone();
         let worker_id = worker_id.clone();
         tokio::spawn(async move {
@@ -726,28 +688,23 @@ async fn skill_load_ask_permissions_use_question_approval_flow_for_native_and_co
                 .await
         })
     };
-    let compat_permission_id =
-        wait_for_question_permission(&run.events_path, Some(&native_permission_id)).await;
+    let permission_id = wait_for_question_permission(&run.events_path, None).await;
     handle
         .resolve_permission(
-            compat_permission_id,
+            permission_id,
             PermissionDecision::Allow,
             Some(r#"[["Yes"]]"#.to_string()),
         )
         .await
-        .expect("approve compat skill");
-    let compat = compat_task
+        .expect("approve skill tool");
+    let skill = skill_task
         .await
-        .expect("join compat skill")
-        .expect("compat skill result");
+        .expect("join skill tool")
+        .expect("skill tool result");
 
-    assert_eq!(native.display_text, compat.display_text);
-    assert_eq!(native.structured_json, compat.structured_json);
-    assert!(native.display_text.contains("Ask description"));
-    assert!(native.display_text.contains("Ask body"));
-    assert!(native
-        .display_text
-        .contains("# Skill: experimental-preview"));
+    assert!(skill.display_text.contains("Ask description"));
+    assert!(skill.display_text.contains("Ask body"));
+    assert!(skill.display_text.contains("# Skill: experimental-preview"));
 
     handle.stop_run().await.expect("stop run");
 }

@@ -195,8 +195,8 @@ async fn replay_preserves_batch_and_child_task_metadata_for_native_and_compat_pa
     assert_tool_metadata(
         &events,
         &compat_task_call_id,
-        "agent.spawn",
-        Some("task"),
+        "task",
+        None,
         Some("child-compat-session"),
         Some("child-compat-request"),
     );
@@ -208,14 +208,7 @@ async fn replay_preserves_batch_and_child_task_metadata_for_native_and_compat_pa
         None,
         None,
     );
-    assert_tool_metadata(
-        &events,
-        &compat_batch_call_id,
-        "tool.batch",
-        Some("batch"),
-        None,
-        None,
-    );
+    assert_tool_metadata(&events, &compat_batch_call_id, "batch", None, None, None);
 
     let native_batch_finished = find_finished(&events, &native_batch_call_id);
     let native_batch_output = native_batch_finished
@@ -272,8 +265,8 @@ async fn replay_preserves_batch_and_child_task_metadata_for_native_and_compat_pa
         &plan,
         &compat_task_call_id,
         "task",
-        "agent.spawn",
-        Some("task"),
+        "task",
+        None,
         Some("child-compat-session"),
         Some("child-compat-request"),
     );
@@ -290,8 +283,8 @@ async fn replay_preserves_batch_and_child_task_metadata_for_native_and_compat_pa
         &plan,
         &compat_batch_call_id,
         "batch",
-        "tool.batch",
-        Some("batch"),
+        "batch",
+        None,
         None,
         None,
     );

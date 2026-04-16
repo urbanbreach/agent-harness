@@ -1,11 +1,7 @@
-use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use harness_core::event::{ActorKind, EventActor, EventV1, TaskScheduleState, ToolCallStatus};
-use harness_core::tool::{
-    canonical_tool_id_for, Tool, ToolCapability, ToolContext, ToolError, ToolResult,
-};
+use harness_core::tool::{canonical_tool_id_for, ToolContext, ToolError, ToolResult};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -15,7 +11,7 @@ use tokio_stream::StreamExt;
 
 const DEFAULT_TASK_WAIT_TIMEOUT_MS: u64 = 300_000;
 const MAX_BATCH_CALLS: usize = 25;
-const BATCH_NESTED_ERROR: &str = "tool.batch cannot be nested inside tool.batch";
+const BATCH_NESTED_ERROR: &str = "batch cannot be nested inside batch";
 const BATCH_MAX_CALLS_ERROR: &str = "Maximum of 25 tools allowed in batch";
 
 pub(crate) struct AgentOpsExecutor;
@@ -155,7 +151,7 @@ impl AgentOpsExecutor {
             }
 
             let canonical_tool_id = canonical_tool_id_for(&tool_id).map(str::to_string);
-            if canonical_tool_id.as_deref() == Some("tool.batch") {
+            if canonical_tool_id.as_deref() == Some("batch") {
                 outcomes.push(BatchCallOutcome {
                     index,
                     tool_id,
@@ -235,26 +231,6 @@ impl AgentOpsExecutor {
     }
 }
 
-pub(crate) struct AgentSpawnTool {
-    executor: Arc<AgentOpsExecutor>,
-}
-
-impl AgentSpawnTool {
-    pub(crate) fn new(executor: Arc<AgentOpsExecutor>) -> Self {
-        Self { executor }
-    }
-}
-
-pub(crate) struct ToolBatchTool {
-    executor: Arc<AgentOpsExecutor>,
-}
-
-impl ToolBatchTool {
-    pub(crate) fn new(executor: Arc<AgentOpsExecutor>) -> Self {
-        Self { executor }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct AgentSpawnRequest {
     pub(crate) description: String,
@@ -265,59 +241,6 @@ pub(crate) struct AgentSpawnRequest {
     pub(crate) run_in_background: bool,
     pub(crate) load_skills: Vec<String>,
     pub(crate) command: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct AgentSpawnArgs {
-    #[serde(default)]
-    description: Option<String>,
-    #[serde(default)]
-    profile: Option<String>,
-    #[serde(default)]
-    profile_name: Option<String>,
-    #[serde(default)]
-    system_prompt: Option<String>,
-    #[serde(default)]
-    prompt: Option<String>,
-    #[serde(default)]
-    task: Option<String>,
-    #[serde(default)]
-    task_id: Option<String>,
-    #[serde(default)]
-    session_id: Option<String>,
-    #[serde(default)]
-    background: Option<bool>,
-    #[serde(default)]
-    run_in_background: Option<bool>,
-    #[serde(default)]
-    skills: Option<Vec<String>>,
-    #[serde(default)]
-    load_skills: Option<Vec<String>>,
-    #[serde(default)]
-    command: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct BatchArgs {
-    #[serde(default)]
-    calls: Vec<BatchCallArgs>,
-    #[serde(default)]
-    tool_calls: Vec<BatchCallArgs>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct BatchCallArgs {
-    #[serde(default)]
-    tool_id: Option<String>,
-    #[serde(default)]
-    tool: Option<String>,
-    #[serde(default)]
-    args: Option<Value>,
-    #[serde(default)]
-    parameters: Option<Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -387,141 +310,6 @@ enum ChildTerminalState {
     TimedOut,
 }
 
-fn resolve_string_alias(
-    primary: Option<String>,
-    alias: Option<String>,
-    primary_name: &str,
-    alias_name: &str,
-) -> Result<Option<String>, ToolError> {
-    match (primary, alias) {
-        (Some(primary), Some(alias)) if primary != alias => Err(ToolError::InvalidArguments(
-            format!("{primary_name} and {alias_name} must match when both are provided"),
-        )),
-        (Some(primary), Some(_)) => Ok(Some(primary)),
-        (Some(primary), None) => Ok(Some(primary)),
-        (None, Some(alias)) => Ok(Some(alias)),
-        (None, None) => Ok(None),
-    }
-}
-
-fn resolve_bool_alias(
-    primary: Option<bool>,
-    alias: Option<bool>,
-    primary_name: &str,
-    alias_name: &str,
-) -> Result<Option<bool>, ToolError> {
-    match (primary, alias) {
-        (Some(primary), Some(alias)) if primary != alias => Err(ToolError::InvalidArguments(
-            format!("{primary_name} and {alias_name} must match when both are provided"),
-        )),
-        (Some(primary), Some(_)) => Ok(Some(primary)),
-        (Some(primary), None) => Ok(Some(primary)),
-        (None, Some(alias)) => Ok(Some(alias)),
-        (None, None) => Ok(None),
-    }
-}
-
-fn normalize_agent_spawn_args(args: AgentSpawnArgs) -> Result<AgentSpawnRequest, ToolError> {
-    let profile_name =
-        resolve_string_alias(args.profile, args.profile_name, "profile", "profile_name")?
-            .ok_or_else(|| ToolError::InvalidArguments("profile is required".to_string()))?;
-    if profile_name.trim().is_empty() {
-        return Err(ToolError::InvalidArguments(
-            "profile must not be empty".to_string(),
-        ));
-    }
-
-    let prompt = resolve_string_alias(args.prompt, args.task, "prompt", "task")?
-        .ok_or_else(|| ToolError::InvalidArguments("prompt is required".to_string()))?;
-    if prompt.trim().is_empty() {
-        return Err(ToolError::InvalidArguments(
-            "prompt must not be empty".to_string(),
-        ));
-    }
-
-    let run_in_background = resolve_bool_alias(
-        args.background,
-        args.run_in_background,
-        "background",
-        "run_in_background",
-    )?
-    .unwrap_or(false);
-
-    let load_skills = match (args.skills, args.load_skills) {
-        (Some(skills), Some(load_skills)) if skills != load_skills => {
-            return Err(ToolError::InvalidArguments(
-                "skills and load_skills must match when both are provided".to_string(),
-            ));
-        }
-        (Some(skills), Some(_)) => skills,
-        (Some(skills), None) => skills,
-        (None, Some(load_skills)) => load_skills,
-        (None, None) => Vec::new(),
-    };
-
-    let session_id = resolve_string_alias(args.session_id, args.task_id, "session_id", "task_id")?;
-
-    let _ = args.system_prompt.as_deref();
-
-    Ok(AgentSpawnRequest {
-        description: args
-            .description
-            .unwrap_or_else(|| "Delegated task".to_string()),
-        profile_name,
-        prompt,
-        task_id: session_id.clone(),
-        session_id,
-        run_in_background,
-        load_skills,
-        command: args.command,
-    })
-}
-
-fn normalize_batch_calls(args: BatchArgs) -> Result<Vec<BatchCall>, ToolError> {
-    let incoming = match (args.calls.is_empty(), args.tool_calls.is_empty()) {
-        (false, false) => {
-            return Err(ToolError::InvalidArguments(
-                "provide either calls or tool_calls, not both".to_string(),
-            ));
-        }
-        (false, true) => args.calls,
-        (true, false) => args.tool_calls,
-        (true, true) => Vec::new(),
-    };
-
-    incoming
-        .into_iter()
-        .enumerate()
-        .map(|(index, call)| {
-            let tool = resolve_string_alias(call.tool_id, call.tool, "tool_id", "tool")?
-                .ok_or_else(|| {
-                    ToolError::InvalidArguments(format!(
-                        "calls[{index}] must include tool_id (or tool)",
-                    ))
-                })?;
-            if tool.trim().is_empty() {
-                return Err(ToolError::InvalidArguments(format!(
-                    "calls[{index}] tool_id must not be empty",
-                )));
-            }
-
-            let parameters = match (call.args, call.parameters) {
-                (Some(args), Some(parameters)) if args != parameters => {
-                    return Err(ToolError::InvalidArguments(format!(
-                        "calls[{index}] args and parameters must match when both are provided",
-                    )));
-                }
-                (Some(args), Some(_)) => args,
-                (Some(args), None) => args,
-                (None, Some(parameters)) => parameters,
-                (None, None) => json!({}),
-            };
-
-            Ok(BatchCall { tool, parameters })
-        })
-        .collect()
-}
-
 fn build_child_prompt(request: &AgentSpawnRequest) -> String {
     if request.load_skills.is_empty() && request.command.is_none() {
         return request.prompt.clone();
@@ -541,59 +329,6 @@ fn build_child_prompt(request: &AgentSpawnRequest) -> String {
     prompt.push_str("\nTask:\n");
     prompt.push_str(&request.prompt);
     prompt
-}
-
-#[async_trait]
-impl Tool for AgentSpawnTool {
-    fn id(&self) -> &str {
-        "agent.spawn"
-    }
-
-    fn description(&self) -> &str {
-        "Spawns a child agent and optionally waits for completion. `load_skills`/`skills` and `command` are prepended to the child prompt as explicit delegation instructions."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
-        super::json_schema_for::<AgentSpawnArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::SpawnAgent
-    }
-
-    async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: AgentSpawnArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
-
-        let request = normalize_agent_spawn_args(args)?;
-        self.executor.spawn_agent(&ctx, request).await
-    }
-}
-
-#[async_trait]
-impl Tool for ToolBatchTool {
-    fn id(&self) -> &str {
-        "tool.batch"
-    }
-
-    fn description(&self) -> &str {
-        "Executes multiple tool calls through the coordinator and waits for all results."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
-        super::json_schema_for::<BatchArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
-
-    async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: BatchArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
-        let calls = normalize_batch_calls(args)?;
-        self.executor.execute_batch(&ctx, calls).await
-    }
 }
 
 pub(crate) fn select_profile_name(

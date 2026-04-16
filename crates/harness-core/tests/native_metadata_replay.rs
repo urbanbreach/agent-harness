@@ -18,7 +18,6 @@ use harness_core::event::{
 use harness_core::perm::PermissionPolicy;
 use harness_core::proj::inspect_resume_plan;
 use harness_core::redact::DefaultRedactor;
-use harness_core::tool::ToolSurface;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -93,7 +92,7 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
             }),
         )
         .await
-        .expect("request delegated task alias");
+        .expect("request delegated task");
 
     wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
     coordinator.stop_run().await.expect("stop run");
@@ -115,12 +114,9 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
         .expect("requested metadata should be present");
     assert_eq!(
         requested_metadata.canonical_tool_id.as_deref(),
-        Some("agent.spawn")
-    );
-    assert_eq!(
-        requested_metadata.alias_source_tool_id.as_deref(),
         Some("task")
     );
+    assert_eq!(requested_metadata.alias_source_tool_id.as_deref(), None);
 
     let finished = events
         .iter()
@@ -136,14 +132,8 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
         .metadata
         .as_ref()
         .expect("finished metadata should be present");
-    assert_eq!(
-        finished_metadata.canonical_tool_id.as_deref(),
-        Some("agent.spawn")
-    );
-    assert_eq!(
-        finished_metadata.alias_source_tool_id.as_deref(),
-        Some("task")
-    );
+    assert_eq!(finished_metadata.canonical_tool_id.as_deref(), Some("task"));
+    assert_eq!(finished_metadata.alias_source_tool_id.as_deref(), None);
     assert_eq!(
         finished_metadata
             .lineage
@@ -217,7 +207,7 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
             .tool_metadata
             .as_ref()
             .and_then(|metadata| metadata.canonical_tool_id.as_deref()),
-        Some("agent.spawn")
+        Some("task")
     );
 
     let plan = inspect_resume_plan(&run.run_dir);
@@ -238,21 +228,21 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
             .resolved_tool_identity
             .as_ref()
             .and_then(|identity| identity.effective_tool_id.as_deref()),
-        Some("agent.spawn")
+        Some("task")
     );
     assert_eq!(
         replay_tool
             .resolved_tool_identity
             .as_ref()
             .and_then(|identity| identity.canonical_tool_id.as_deref()),
-        Some("agent.spawn")
+        Some("task")
     );
     assert_eq!(
         replay_tool
             .resolved_tool_identity
             .as_ref()
             .and_then(|identity| identity.alias_source_tool_id.as_deref()),
-        Some("task")
+        None
     );
     assert_eq!(
         replay_tool.lifecycle_state,
@@ -264,14 +254,14 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
             .metadata
             .as_ref()
             .and_then(|metadata| metadata.canonical_tool_id.as_deref()),
-        Some("agent.spawn")
+        Some("task")
     );
     assert_eq!(
         replay_tool
             .metadata
             .as_ref()
             .and_then(|metadata| metadata.alias_source_tool_id.as_deref()),
-        Some("task")
+        None
     );
     assert_eq!(
         replay_tool
@@ -466,7 +456,6 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             max_iters: 12,
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-            tool_surface: ToolSurface::Native,
             toolset: vec![],
         },
     );

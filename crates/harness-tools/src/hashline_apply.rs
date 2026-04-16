@@ -18,7 +18,7 @@ impl Tool for HashlineApplyTool {
     }
 
     fn description(&self) -> &str {
-        "Applies a hashline patch to a workspace file and writes an artifact diff."
+        "Applies a hashline patch to a workspace file using LINE#HASH anchors and writes an artifact diff. Re-read anchors first if the file may have changed."
     }
 
     fn parameters_json_schema(&self) -> serde_json::Value {
@@ -221,15 +221,19 @@ pub(crate) fn resolve_workspace_target_path(
         .canonicalize()
         .map_err(|err| ToolError::Execution(format!("failed to resolve workspace root: {err}")))?;
     let input = Path::new(file_path);
-    if input.is_absolute() {
-        return Err(ToolError::PathEscapesWorkspace {
-            workspace_root: workspace.display().to_string(),
-            path: input.display().to_string(),
-        });
-    }
+    let relative = if input.is_absolute() {
+        input
+            .strip_prefix(&workspace)
+            .map_err(|_| ToolError::PathEscapesWorkspace {
+                workspace_root: workspace.display().to_string(),
+                path: input.display().to_string(),
+            })?
+    } else {
+        input
+    };
 
     let mut resolved = workspace.clone();
-    for component in input.components() {
+    for component in relative.components() {
         match component {
             std::path::Component::CurDir => {}
             std::path::Component::Normal(segment) => resolved.push(segment),

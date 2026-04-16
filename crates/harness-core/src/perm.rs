@@ -217,14 +217,15 @@ pub fn permission_kind_for_tool(tool_id: &str) -> Option<PermissionKind> {
     let canonical_tool_id = canonical_tool_id_for(tool_id).unwrap_or(tool_id);
 
     match canonical_tool_id {
-        "user.question" => Some(PermissionKind::Question),
-        "agent.spawn" => Some(PermissionKind::Task),
-        "web.fetch" => Some(PermissionKind::WebFetch),
-        "search.web" => Some(PermissionKind::WebSearch),
-        "search.code" => Some(PermissionKind::CodeSearch),
-        "code.lsp" => Some(PermissionKind::Lsp),
-        "code.lsp.rename" => Some(PermissionKind::EditFs),
-        "fs.write" => Some(PermissionKind::EditFs),
+        "question" => Some(PermissionKind::Question),
+        "task" => Some(PermissionKind::Task),
+        "webfetch" => Some(PermissionKind::WebFetch),
+        "websearch" => Some(PermissionKind::WebSearch),
+        "codesearch" => Some(PermissionKind::CodeSearch),
+        "lsp" => Some(PermissionKind::Lsp),
+        "lsp.rename" => Some(PermissionKind::EditFs),
+        "write" => Some(PermissionKind::EditFs),
+        "bash" => Some(PermissionKind::Shell),
         _ if canonical_tool_id.starts_with("edit.") => Some(PermissionKind::EditFs),
         _ if canonical_tool_id.starts_with("shell.") => Some(PermissionKind::Shell),
         _ if canonical_tool_id.starts_with("network.") || canonical_tool_id.starts_with("net.") => {
@@ -414,49 +415,35 @@ mod tests {
     }
 
     #[test]
-    fn native_tool_ids_and_aliases_resolve_to_shared_permission_kinds() {
-        assert_eq!(
-            permission_kind_for_tool("user.question"),
-            Some(PermissionKind::Question)
-        );
+    fn native_tool_ids_resolve_to_permission_kinds_without_aliases() {
         assert_eq!(
             permission_kind_for_tool("question"),
             Some(PermissionKind::Question)
         );
-        assert_eq!(
-            permission_kind_for_tool("agent.spawn"),
-            Some(PermissionKind::Task)
-        );
         assert_eq!(permission_kind_for_tool("task"), Some(PermissionKind::Task));
-        assert_eq!(
-            permission_kind_for_tool("web.fetch"),
-            Some(PermissionKind::WebFetch)
-        );
         assert_eq!(
             permission_kind_for_tool("webfetch"),
             Some(PermissionKind::WebFetch)
-        );
-        assert_eq!(
-            permission_kind_for_tool("search.web"),
-            Some(PermissionKind::WebSearch)
         );
         assert_eq!(
             permission_kind_for_tool("websearch"),
             Some(PermissionKind::WebSearch)
         );
         assert_eq!(
-            permission_kind_for_tool("search.code"),
-            Some(PermissionKind::CodeSearch)
-        );
-        assert_eq!(
             permission_kind_for_tool("codesearch"),
             Some(PermissionKind::CodeSearch)
         );
-        assert_eq!(
-            permission_kind_for_tool("code.lsp"),
-            Some(PermissionKind::Lsp)
-        );
         assert_eq!(permission_kind_for_tool("lsp"), Some(PermissionKind::Lsp));
+        assert_eq!(
+            permission_kind_for_tool("lsp.rename"),
+            Some(PermissionKind::EditFs)
+        );
+        assert_eq!(permission_kind_for_tool("user.question"), None);
+        assert_eq!(permission_kind_for_tool("agent.spawn"), None);
+        assert_eq!(permission_kind_for_tool("web.fetch"), None);
+        assert_eq!(permission_kind_for_tool("search.web"), None);
+        assert_eq!(permission_kind_for_tool("search.code"), None);
+        assert_eq!(permission_kind_for_tool("code.lsp"), None);
         assert_eq!(permission_kind_for_tool("tool.batch"), None);
         assert_eq!(permission_kind_for_tool("batch"), None);
         assert_eq!(permission_kind_for_tool("todo.write"), None);

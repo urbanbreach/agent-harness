@@ -11,7 +11,6 @@ use harness_core::edit::hashline::{compute_line_hash, HashlineOp, HashlinePatch,
 use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1, ToolCallStatus};
 use harness_core::perm::{PermissionDecision, PermissionPolicy};
 use harness_core::redact::DefaultRedactor;
-use harness_core::tool::ToolSurface;
 use harness_tools::coordinator_registry;
 
 #[tokio::test]
@@ -322,7 +321,6 @@ fn test_coordinator(session_dir: &Path, permission_policy: PermissionPolicy) -> 
             max_iters: 12,
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-            tool_surface: ToolSurface::Native,
             toolset: vec!["edit.hashline_apply".to_string()],
         },
     );

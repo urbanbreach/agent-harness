@@ -189,7 +189,7 @@ struct ParsedTextEdit {
 #[async_trait]
 impl Tool for CodeLspRenameTool {
     fn id(&self) -> &str {
-        "code.lsp.rename"
+        "lsp.rename"
     }
 
     fn description(&self) -> &str {
@@ -255,7 +255,7 @@ fn build_rename_plan(ctx: &ToolContext, workspace_edit: &Value) -> Result<Rename
                     .and_then(Value::as_str)
                     .ok_or_else(|| {
                         ToolError::Execution(
-                            "code.lsp.rename returned documentChanges without textDocument.uri"
+                            "lsp.rename returned documentChanges without textDocument.uri"
                                 .to_string(),
                         )
                     })
@@ -265,7 +265,7 @@ fn build_rename_plan(ctx: &ToolContext, workspace_edit: &Value) -> Result<Rename
                     .and_then(Value::as_array)
                     .ok_or_else(|| {
                         ToolError::Execution(
-                            "code.lsp.rename returned documentChanges without edits".to_string(),
+                            "lsp.rename returned documentChanges without edits".to_string(),
                         )
                     })?;
                 rewrite_path_from_text_edits(
@@ -282,7 +282,7 @@ fn build_rename_plan(ctx: &ToolContext, workspace_edit: &Value) -> Result<Rename
 
             let kind = change.get("kind").and_then(Value::as_str).ok_or_else(|| {
                 ToolError::Execution(
-                    "code.lsp.rename returned documentChanges with an unknown item".to_string(),
+                    "lsp.rename returned documentChanges with an unknown item".to_string(),
                 )
             })?;
             match kind {
@@ -292,7 +292,7 @@ fn build_rename_plan(ctx: &ToolContext, workspace_edit: &Value) -> Result<Rename
                         .and_then(Value::as_str)
                         .ok_or_else(|| {
                             ToolError::Execution(
-                                "code.lsp.rename create operation is missing uri".to_string(),
+                                "lsp.rename create operation is missing uri".to_string(),
                             )
                         })
                         .and_then(|uri| workspace_relative_path_from_uri(&workspace_root, uri))?;
@@ -314,7 +314,7 @@ fn build_rename_plan(ctx: &ToolContext, workspace_edit: &Value) -> Result<Rename
                         .and_then(Value::as_str)
                         .ok_or_else(|| {
                             ToolError::Execution(
-                                "code.lsp.rename rename operation is missing oldUri".to_string(),
+                                "lsp.rename rename operation is missing oldUri".to_string(),
                             )
                         })
                         .and_then(|uri| workspace_relative_path_from_uri(&workspace_root, uri))?;
@@ -323,7 +323,7 @@ fn build_rename_plan(ctx: &ToolContext, workspace_edit: &Value) -> Result<Rename
                         .and_then(Value::as_str)
                         .ok_or_else(|| {
                             ToolError::Execution(
-                                "code.lsp.rename rename operation is missing newUri".to_string(),
+                                "lsp.rename rename operation is missing newUri".to_string(),
                             )
                         })
                         .and_then(|uri| workspace_relative_path_from_uri(&workspace_root, uri))?;
@@ -346,7 +346,7 @@ fn build_rename_plan(ctx: &ToolContext, workspace_edit: &Value) -> Result<Rename
                         .and_then(Value::as_str)
                         .ok_or_else(|| {
                             ToolError::Execution(
-                                "code.lsp.rename delete operation is missing uri".to_string(),
+                                "lsp.rename delete operation is missing uri".to_string(),
                             )
                         })
                         .and_then(|uri| workspace_relative_path_from_uri(&workspace_root, uri))?;
@@ -364,7 +364,7 @@ fn build_rename_plan(ctx: &ToolContext, workspace_edit: &Value) -> Result<Rename
                 }
                 other => {
                     return Err(ToolError::Execution(format!(
-                        "code.lsp.rename returned unsupported workspace edit operation kind: {other}"
+                        "lsp.rename returned unsupported workspace edit operation kind: {other}"
                     )));
                 }
             }
@@ -374,7 +374,7 @@ fn build_rename_plan(ctx: &ToolContext, workspace_edit: &Value) -> Result<Rename
             let path = workspace_relative_path_from_uri(&workspace_root, uri)?;
             let edits = edits_value.as_array().ok_or_else(|| {
                 ToolError::Execution(
-                    "code.lsp.rename returned changes with a non-array edit list".to_string(),
+                    "lsp.rename returned changes with a non-array edit list".to_string(),
                 )
             })?;
             rewrite_path_from_text_edits(
@@ -389,7 +389,7 @@ fn build_rename_plan(ctx: &ToolContext, workspace_edit: &Value) -> Result<Rename
         }
     } else {
         return Err(ToolError::Execution(
-            "code.lsp.rename returned a workspace edit without changes".to_string(),
+            "lsp.rename returned a workspace edit without changes".to_string(),
         ));
     }
 
@@ -426,7 +426,7 @@ fn rewrite_path_from_text_edits(
 ) -> Result<(), ToolError> {
     let source = load_virtual_file(ctx, virtual_files, path)?.ok_or_else(|| {
         ToolError::Execution(format!(
-            "code.lsp.rename returned edits for a missing workspace path: {path}"
+            "lsp.rename returned edits for a missing workspace path: {path}"
         ))
     })?;
     let parsed_edits = parse_text_edits(&source, edits)?;
@@ -483,7 +483,7 @@ fn apply_create_operation(
             return Ok(());
         }
         return Err(ToolError::Execution(format!(
-            "code.lsp.rename create operation would overwrite existing path: {path}"
+            "lsp.rename create operation would overwrite existing path: {path}"
         )));
     }
 
@@ -531,7 +531,7 @@ fn apply_rename_operation(
         .unwrap_or(false);
     let source = load_virtual_file(ctx, virtual_files, from_path)?.ok_or_else(|| {
         ToolError::Execution(format!(
-            "code.lsp.rename rename operation source is missing: {from_path}"
+            "lsp.rename rename operation source is missing: {from_path}"
         ))
     })?;
     let destination = load_virtual_file(ctx, virtual_files, to_path)?;
@@ -548,7 +548,7 @@ fn apply_rename_operation(
             *next_operation_index += 1;
         } else {
             return Err(ToolError::Execution(format!(
-                "code.lsp.rename rename operation destination already exists: {to_path}"
+                "lsp.rename rename operation destination already exists: {to_path}"
             )));
         }
     }
@@ -596,7 +596,7 @@ fn apply_delete_operation(
             return Ok(());
         }
         return Err(ToolError::Execution(format!(
-            "code.lsp.rename delete operation target is missing: {path}"
+            "lsp.rename delete operation target is missing: {path}"
         )));
     }
 
@@ -675,9 +675,7 @@ fn parse_text_edits(source: &str, edits: &[Value]) -> Result<Vec<ParsedTextEdit>
         .iter()
         .map(|edit| {
             let range = edit.get("range").ok_or_else(|| {
-                ToolError::Execution(
-                    "code.lsp.rename returned a text edit without a range".to_string(),
-                )
+                ToolError::Execution("lsp.rename returned a text edit without a range".to_string())
             })?;
             let start = position_to_byte_offset(
                 source,
@@ -688,7 +686,7 @@ fn parse_text_edits(source: &str, edits: &[Value]) -> Result<Vec<ParsedTextEdit>
                     .and_then(Value::as_u64)
                     .ok_or_else(|| {
                         ToolError::Execution(
-                            "code.lsp.rename returned a text edit with an invalid start line"
+                            "lsp.rename returned a text edit with an invalid start line"
                                 .to_string(),
                         )
                     })?,
@@ -698,7 +696,7 @@ fn parse_text_edits(source: &str, edits: &[Value]) -> Result<Vec<ParsedTextEdit>
                     .and_then(Value::as_u64)
                     .ok_or_else(|| {
                         ToolError::Execution(
-                            "code.lsp.rename returned a text edit with an invalid start character"
+                            "lsp.rename returned a text edit with an invalid start character"
                                 .to_string(),
                         )
                     })?,
@@ -712,8 +710,7 @@ fn parse_text_edits(source: &str, edits: &[Value]) -> Result<Vec<ParsedTextEdit>
                     .and_then(Value::as_u64)
                     .ok_or_else(|| {
                         ToolError::Execution(
-                            "code.lsp.rename returned a text edit with an invalid end line"
-                                .to_string(),
+                            "lsp.rename returned a text edit with an invalid end line".to_string(),
                         )
                     })?,
                 range
@@ -722,7 +719,7 @@ fn parse_text_edits(source: &str, edits: &[Value]) -> Result<Vec<ParsedTextEdit>
                     .and_then(Value::as_u64)
                     .ok_or_else(|| {
                         ToolError::Execution(
-                            "code.lsp.rename returned a text edit with an invalid end character"
+                            "lsp.rename returned a text edit with an invalid end character"
                                 .to_string(),
                         )
                     })?,
@@ -735,7 +732,7 @@ fn parse_text_edits(source: &str, edits: &[Value]) -> Result<Vec<ParsedTextEdit>
                     .and_then(Value::as_str)
                     .ok_or_else(|| {
                         ToolError::Execution(
-                            "code.lsp.rename returned a text edit without newText".to_string(),
+                            "lsp.rename returned a text edit without newText".to_string(),
                         )
                     })?
                     .to_string(),
@@ -758,12 +755,12 @@ fn apply_text_edits(source: &str, edits: &[ParsedTextEdit]) -> Result<String, To
     for (start, end, _) in &ordered {
         if start > end {
             return Err(ToolError::Execution(
-                "code.lsp.rename returned a text edit with an inverted range".to_string(),
+                "lsp.rename returned a text edit with an inverted range".to_string(),
             ));
         }
         if *start < previous_end {
             return Err(ToolError::Execution(
-                "code.lsp.rename returned overlapping text edits".to_string(),
+                "lsp.rename returned overlapping text edits".to_string(),
             ));
         }
         previous_end = *end;

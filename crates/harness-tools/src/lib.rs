@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use harness_core::config::{McpConfig, ShellAllowlist};
+use harness_core::edit::hashline::compute_line_hash;
 use harness_core::event::ActorKind;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 use schemars::JsonSchema;
@@ -32,24 +33,23 @@ mod fs_grep;
 use fs_grep::FsGrepTool;
 
 mod workspace_edit;
-use workspace_edit::{FsWriteTool, WorkspaceEditExecutor};
+use workspace_edit::{
+    record_file_read, ApplyPatchTool, EditTool, FsWriteTool, PatchTool, WorkspaceEditExecutor,
+};
 
 mod network;
-use network::{NetworkExecutor, SearchCodeTool, SearchWebTool, WebFetchTool};
+use network::NetworkExecutor;
 
 mod mcp;
 
 mod control_plane;
-use control_plane::{
-    ControlPlaneExecutor, InvalidTool, PlanExitTool, SkillLoadTool, TodoReadTool, TodoWriteTool,
-    UserQuestionTool,
-};
+use control_plane::ControlPlaneExecutor;
 
 mod agent_ops;
-use agent_ops::{AgentOpsExecutor, AgentSpawnTool, ToolBatchTool};
+use agent_ops::AgentOpsExecutor;
 
 mod code_lsp;
-use code_lsp::{CodeLspExecutor, CodeLspTool};
+use code_lsp::CodeLspExecutor;
 
 mod github;
 use github::{GitHubExecutor, GitHubIssueTool, GitHubPullRequestTool};
@@ -59,19 +59,14 @@ use code_lsp_rename::{CodeLspRenameExecutor, CodeLspRenameTool};
 
 mod lsp_support;
 
-mod opencode_compat;
-use opencode_compat::{
-    ApplyPatchCompatTool, BashCompatTool, BatchCompatTool, CodeSearchCompatTool, GlobCompatTool,
-    GrepCompatTool, InvalidCompatTool, ListCompatTool, LspCompatTool, QuestionCompatTool,
-    ReadCompatTool, SkillCompatTool, TaskCompatTool, TodoReadCompatTool, TodoWriteCompatTool,
-    WebFetchCompatTool, WebSearchCompatTool, WriteCompatTool,
+mod opencode_tools;
+use opencode_tools::{
+    BashTool, BatchTool, CodeSearchTool, GlobTool, GrepTool, InvalidTool, ListTool, LspTool,
+    PlanExitTool, QuestionTool, ReadTool, SkillTool, TaskTool, TodoReadTool, TodoWriteTool,
+    WebFetchTool, WebSearchTool, WriteTool,
 };
 
-pub use harness_core::tool::{
-    canonical_tool_id_for, native_and_alias_tool_ids, native_tool_parity_matrix,
-    NativeToolMigrationStatus, NativeToolParityEntry, NativeToolPermissionClass,
-    NativeToolProviderExposure,
-};
+pub use harness_core::tool::canonical_tool_id_for;
 
 pub fn coordinator_registry(shell_allowlist: ShellAllowlist) -> ToolRegistry {
     coordinator_registry_with_mcp(shell_allowlist, McpConfig::default())
@@ -90,66 +85,35 @@ pub fn coordinator_registry_with_mcp(
     let workspace_edit_executor = Arc::new(WorkspaceEditExecutor::new());
 
     let mut registry = ToolRegistry::new();
-    registry.register(Arc::new(FsReadTool));
-    registry.register(Arc::new(FsGlobTool));
-    registry.register(Arc::new(FsLsTool));
-    registry.register(Arc::new(FsGrepTool));
-    registry.register(Arc::new(ReadCompatTool));
-    registry.register(Arc::new(ListCompatTool));
-    registry.register(Arc::new(GlobCompatTool));
-    registry.register(Arc::new(GrepCompatTool));
-    registry.register(Arc::new(AgentSpawnTool::new(agent_ops_executor.clone())));
-    registry.register(Arc::new(TaskCompatTool::new(agent_ops_executor.clone())));
+    registry.register(Arc::new(ReadTool));
+    registry.register(Arc::new(ListTool));
+    registry.register(Arc::new(GlobTool));
+    registry.register(Arc::new(GrepTool));
+    registry.register(Arc::new(TaskTool::new(agent_ops_executor.clone())));
     registry.register(Arc::new(HashlineScanTool));
     registry.register(Arc::new(HashlineApplyTool));
     registry.register(Arc::new(FsWriteTool::new(workspace_edit_executor.clone())));
-    registry.register(Arc::new(WriteCompatTool::new(
+    registry.register(Arc::new(EditTool::new(workspace_edit_executor.clone())));
+    registry.register(Arc::new(ApplyPatchTool::new(
         workspace_edit_executor.clone(),
     )));
-    registry.register(Arc::new(ApplyPatchCompatTool::new(
-        workspace_edit_executor.clone(),
-    )));
-    registry.register(Arc::new(ShellRunTool::new(shell_allowlist.clone())));
-    registry.register(Arc::new(BashCompatTool::new(shell_allowlist)));
+    registry.register(Arc::new(PatchTool::new(workspace_edit_executor.clone())));
+    registry.register(Arc::new(WriteTool::new(workspace_edit_executor.clone())));
+    registry.register(Arc::new(BashTool::new(shell_allowlist)));
     registry.register(Arc::new(WebFetchTool::new(network_executor.clone())));
-    registry.register(Arc::new(WebFetchCompatTool::new(network_executor.clone())));
-    registry.register(Arc::new(SearchWebTool::new(network_executor.clone())));
-    registry.register(Arc::new(WebSearchCompatTool::new(network_executor.clone())));
-    registry.register(Arc::new(SearchCodeTool::new(network_executor.clone())));
-    registry.register(Arc::new(CodeSearchCompatTool::new(
-        network_executor.clone(),
-    )));
+    registry.register(Arc::new(WebSearchTool::new(network_executor.clone())));
+    registry.register(Arc::new(CodeSearchTool::new(network_executor.clone())));
     registry.register(Arc::new(GitHubIssueTool::new(github_executor.clone())));
     registry.register(Arc::new(GitHubPullRequestTool::new(github_executor)));
     registry.register(Arc::new(TodoWriteTool::new(control_plane_executor.clone())));
-    registry.register(Arc::new(TodoWriteCompatTool::new(
-        control_plane_executor.clone(),
-    )));
     registry.register(Arc::new(TodoReadTool::new(control_plane_executor.clone())));
-    registry.register(Arc::new(TodoReadCompatTool::new(
-        control_plane_executor.clone(),
-    )));
-    registry.register(Arc::new(SkillLoadTool::new(control_plane_executor.clone())));
-    registry.register(Arc::new(SkillCompatTool::new(
-        control_plane_executor.clone(),
-    )));
-    registry.register(Arc::new(ToolBatchTool::new(agent_ops_executor.clone())));
-    registry.register(Arc::new(BatchCompatTool::new(agent_ops_executor.clone())));
-    registry.register(Arc::new(UserQuestionTool::new(
-        control_plane_executor.clone(),
-    )));
-    registry.register(Arc::new(QuestionCompatTool::new(
-        control_plane_executor.clone(),
-    )));
+    registry.register(Arc::new(SkillTool::new(control_plane_executor.clone())));
+    registry.register(Arc::new(BatchTool::new(agent_ops_executor.clone())));
+    registry.register(Arc::new(QuestionTool::new(control_plane_executor.clone())));
     registry.register(Arc::new(PlanExitTool::new(control_plane_executor.clone())));
-    registry.register(Arc::new(opencode_compat::PlanExitCompatTool::new(
-        control_plane_executor.clone(),
-    )));
-    registry.register(Arc::new(CodeLspTool::new(code_lsp_executor.clone())));
     registry.register(Arc::new(CodeLspRenameTool::new(code_lsp_rename_executor)));
-    registry.register(Arc::new(LspCompatTool::new(code_lsp_executor)));
-    registry.register(Arc::new(InvalidTool::new(control_plane_executor.clone())));
-    registry.register(Arc::new(InvalidCompatTool::new(control_plane_executor)));
+    registry.register(Arc::new(LspTool::new(code_lsp_executor)));
+    registry.register(Arc::new(InvalidTool::new(control_plane_executor)));
     mcp::register_mcp_tools(&mut registry, mcp_config);
     registry
 }
@@ -174,6 +138,8 @@ pub(crate) struct FsReadTool;
 
 const FS_READ_DEFAULT_OFFSET: u32 = 1;
 const FS_READ_DEFAULT_LIMIT: u32 = 2000;
+const TOOL_OUTPUT_INLINE_LINE_LIMIT: usize = 2_000;
+const TOOL_OUTPUT_INLINE_BYTE_LIMIT: usize = 51_200;
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -185,6 +151,8 @@ struct FsReadArgs {
     limit: u32,
     #[serde(default = "default_fs_read_line_numbers")]
     line_numbers: bool,
+    #[serde(default)]
+    hashline_anchors: bool,
 }
 
 fn default_fs_read_offset() -> u32 {
@@ -197,6 +165,50 @@ fn default_fs_read_limit() -> u32 {
 
 fn default_fs_read_line_numbers() -> bool {
     true
+}
+
+fn fs_read_parameters_json_schema() -> serde_json::Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string"
+            },
+            "offset": {
+                "type": "integer",
+                "minimum": 1,
+                "default": FS_READ_DEFAULT_OFFSET
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "default": FS_READ_DEFAULT_LIMIT
+            },
+            "line_numbers": {
+                "type": "boolean",
+                "default": true
+            },
+            "hashline_anchors": {
+                "type": "boolean",
+                "default": false,
+                "description": "When true, render lines as LINE#HASH|text for anchor-driven edit workflows"
+            }
+        },
+        "required": ["path"],
+        "additionalProperties": false
+    })
+}
+
+fn normalize_fs_read_offset(offset: u32) -> u32 {
+    offset.max(FS_READ_DEFAULT_OFFSET)
+}
+
+fn normalize_fs_read_limit(limit: u32) -> u32 {
+    if limit == 0 {
+        FS_READ_DEFAULT_LIMIT
+    } else {
+        limit
+    }
 }
 
 fn format_fs_read_lines(lines: &[&str], start_line_index: usize, line_numbers: bool) -> String {
@@ -214,6 +226,225 @@ fn format_fs_read_lines(lines: &[&str], start_line_index: usize, line_numbers: b
         .join("\n")
 }
 
+fn format_fs_read_hashline_lines(lines: &[&str], start_line_index: usize) -> String {
+    lines
+        .iter()
+        .enumerate()
+        .map(|(index, line)| {
+            format!(
+                "{}#{}|{}",
+                start_line_index + index + 1,
+                compute_line_hash(line),
+                line.strip_suffix('\r').unwrap_or(line)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn build_fs_read_anchor_payload(lines: &[&str], start_line_index: usize) -> serde_json::Value {
+    json!(lines
+        .iter()
+        .enumerate()
+        .map(|(index, line)| json!({
+            "line": start_line_index + index + 1,
+            "hash": compute_line_hash(line),
+            "text": line.strip_suffix('\r').unwrap_or(line),
+        }))
+        .collect::<Vec<_>>())
+}
+
+#[derive(Debug, Clone)]
+struct OutputPreview {
+    text: String,
+    total_bytes: usize,
+    total_lines: usize,
+    inline_bytes: usize,
+    inline_lines: usize,
+    truncated: bool,
+}
+
+fn preview_tool_output(text: &str, max_lines: usize, max_bytes: usize) -> OutputPreview {
+    let total_bytes = text.len();
+    let total_lines = rendered_line_count(text);
+
+    let mut preview_end = 0usize;
+
+    for (idx, ch) in text.char_indices() {
+        let next_end = idx + ch.len_utf8();
+        if next_end > max_bytes {
+            break;
+        }
+        preview_end = next_end;
+    }
+
+    let byte_limited_end = preview_end;
+    let line_limited_end = preview_end_for_line_limit(text, max_lines);
+    let preview_end = byte_limited_end.min(line_limited_end);
+    let truncated = preview_end < text.len();
+
+    let preview = text[..preview_end].to_string();
+    let inline_lines = rendered_line_count(&preview);
+
+    OutputPreview {
+        inline_bytes: preview.len(),
+        inline_lines,
+        text: preview,
+        total_bytes,
+        total_lines,
+        truncated,
+    }
+}
+
+fn rendered_line_count(text: &str) -> usize {
+    if text.is_empty() {
+        0
+    } else {
+        text.split_inclusive('\n').count()
+    }
+}
+
+fn preview_end_for_line_limit(text: &str, max_lines: usize) -> usize {
+    if text.is_empty() || max_lines == 0 {
+        return 0;
+    }
+
+    let mut line_end = 0usize;
+    for segment in text.split_inclusive('\n').take(max_lines) {
+        line_end += segment.len();
+    }
+    line_end
+}
+
+fn join_command_output(stdout: &str, stderr: &str) -> String {
+    if stderr.is_empty() {
+        stdout.to_string()
+    } else if stdout.is_empty() {
+        stderr.to_string()
+    } else {
+        format!("{stdout}\n{stderr}")
+    }
+}
+
+fn resolve_bash_executable() -> String {
+    for candidate in ["/bin/bash", "/usr/bin/bash"] {
+        if is_usable_bash_path(Path::new(candidate)) {
+            return candidate.to_string();
+        }
+    }
+
+    if let Some(shell) = shell_env_bash_candidate(std::env::var("SHELL").ok().as_deref()) {
+        return shell;
+    }
+
+    "bash".to_string()
+}
+
+fn shell_env_bash_candidate(shell: Option<&str>) -> Option<String> {
+    let shell = shell?.trim();
+    if shell.is_empty() {
+        return None;
+    }
+
+    let path = Path::new(shell);
+    if !path.is_absolute() || !is_usable_bash_path(path) {
+        return None;
+    }
+
+    Some(shell.to_string())
+}
+
+fn is_usable_bash_path(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("bash"))
+        && std::fs::metadata(path)
+            .map(|metadata| metadata.is_file())
+            .unwrap_or(false)
+}
+
+fn build_shell_run_result(
+    ctx: &ToolContext,
+    mut structured_json: serde_json::Map<String, serde_json::Value>,
+    stdout: String,
+    stderr: String,
+) -> Result<ToolResult, ToolError> {
+    structured_json.insert("stdout_bytes".to_string(), json!(stdout.len()));
+    structured_json.insert("stderr_bytes".to_string(), json!(stderr.len()));
+
+    let full_output = join_command_output(&stdout, &stderr);
+    let preview = preview_tool_output(
+        &full_output,
+        TOOL_OUTPUT_INLINE_LINE_LIMIT,
+        TOOL_OUTPUT_INLINE_BYTE_LIMIT,
+    );
+
+    if !preview.truncated {
+        structured_json.insert("stdout".to_string(), json!(stdout));
+        structured_json.insert("stderr".to_string(), json!(stderr));
+        structured_json.insert("truncated".to_string(), json!(false));
+        return Ok(ToolResult {
+            display_text: full_output,
+            structured_json: Some(serde_json::Value::Object(structured_json)),
+            artifacts: Vec::new(),
+        });
+    }
+
+    let artifact = ctx
+        .artifact_store()
+        .map_err(|err| ToolError::Execution(format!("failed to access artifact store: {err}")))?
+        .write_text(
+            &format!("toolcalls/{}/shell.output.txt", ctx.tool_call_id),
+            &full_output,
+        )
+        .map_err(|err| {
+            ToolError::Execution(format!("failed to write shell output artifact: {err}"))
+        })?;
+
+    structured_json.insert("truncated".to_string(), json!(true));
+    structured_json.insert(
+        "inline_output_bytes".to_string(),
+        json!(preview.inline_bytes),
+    );
+    structured_json.insert(
+        "inline_output_lines".to_string(),
+        json!(preview.inline_lines),
+    );
+    structured_json.insert("total_output_bytes".to_string(), json!(preview.total_bytes));
+    structured_json.insert("total_output_lines".to_string(), json!(preview.total_lines));
+    structured_json.insert(
+        "output_artifact".to_string(),
+        json!({
+            "path": artifact.path,
+            "digest": artifact.digest,
+        }),
+    );
+
+    let marker = format!(
+        "... [truncated: showing {} of {} lines and {} of {} bytes; full output: {}]",
+        preview.inline_lines,
+        preview.total_lines,
+        preview.inline_bytes,
+        preview.total_bytes,
+        artifact.path
+    );
+    let mut display_text = preview.text;
+    if display_text.is_empty() {
+        display_text = marker;
+    } else if display_text.ends_with('\n') {
+        display_text.push_str(&marker);
+    } else {
+        display_text.push('\n');
+        display_text.push_str(&marker);
+    }
+
+    Ok(ToolResult {
+        display_text,
+        structured_json: Some(serde_json::Value::Object(structured_json)),
+        artifacts: vec![artifact],
+    })
+}
+
 #[async_trait]
 impl Tool for FsReadTool {
     fn id(&self) -> &str {
@@ -225,7 +456,7 @@ impl Tool for FsReadTool {
     }
 
     fn parameters_json_schema(&self) -> serde_json::Value {
-        json_schema_for::<FsReadArgs>()
+        fs_read_parameters_json_schema()
     }
 
     fn capability(&self) -> ToolCapability {
@@ -239,23 +470,13 @@ impl Tool for FsReadTool {
     ) -> Result<ToolResult, ToolError> {
         let args: FsReadArgs = serde_json::from_value(args_json)
             .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let offset = normalize_fs_read_offset(args.offset);
+        let limit = normalize_fs_read_limit(args.limit);
 
         let path = Path::new(&args.path);
         if path.is_absolute() {
             return Err(ToolError::InvalidArguments(
                 "path must be relative to workspace root".to_string(),
-            ));
-        }
-
-        if args.offset == 0 {
-            return Err(ToolError::InvalidArguments(
-                "offset must be >= 1".to_string(),
-            ));
-        }
-
-        if args.limit == 0 {
-            return Err(ToolError::InvalidArguments(
-                "limit must be >= 1".to_string(),
             ));
         }
 
@@ -267,26 +488,32 @@ impl Tool for FsReadTool {
 
         let lines: Vec<&str> = text.lines().collect();
         let total_lines = lines.len();
-        let start_line_index = (args.offset - 1) as usize;
+        let start_line_index = (offset - 1) as usize;
 
         let available_lines: &[&str] = if start_line_index < total_lines {
             &lines[start_line_index..]
         } else {
-            &[]
+            &[][..]
         };
 
-        let line_limit = args.limit as usize;
+        let line_limit = limit as usize;
         let shown_count = available_lines.len().min(line_limit);
         let truncated = available_lines.len() > line_limit;
         let shown_lines = &available_lines[..shown_count];
 
-        let mut display_text =
-            format_fs_read_lines(shown_lines, start_line_index, args.line_numbers);
+        let mut display_text = if args.hashline_anchors {
+            format_fs_read_hashline_lines(shown_lines, start_line_index)
+        } else {
+            format_fs_read_lines(shown_lines, start_line_index, args.line_numbers)
+        };
         let mut artifacts = Vec::new();
 
         if truncated {
-            let full_output =
-                format_fs_read_lines(available_lines, start_line_index, args.line_numbers);
+            let full_output = if args.hashline_anchors {
+                format_fs_read_hashline_lines(available_lines, start_line_index)
+            } else {
+                format_fs_read_lines(available_lines, start_line_index, args.line_numbers)
+            };
             let artifact = ctx
                 .artifact_store()
                 .map_err(|err| {
@@ -318,14 +545,23 @@ impl Tool for FsReadTool {
             artifacts.push(artifact);
         }
 
+        record_file_read(&ctx, &resolved)?;
+
         Ok(ToolResult {
             display_text,
             structured_json: Some(json!({
                 "path": args.path,
                 "resolved_path": resolved.display().to_string(),
-                "offset": args.offset,
-                "limit": args.limit,
+                "offset": offset,
+                "limit": limit,
                 "total_lines": total_lines,
+                "line_numbers": args.line_numbers,
+                "hashline_anchors": args.hashline_anchors,
+                "anchors": if args.hashline_anchors {
+                    build_fs_read_anchor_payload(shown_lines, start_line_index)
+                } else {
+                    serde_json::Value::Null
+                },
                 "truncated": truncated,
             })),
             artifacts,
@@ -433,7 +669,7 @@ impl Tool for ShellRunTool {
         }
 
         let timeout_ms = args.timeout.unwrap_or(120_000);
-        let (display_text, structured_json) = if let Some(cmd) = args.cmd {
+        if let Some(cmd) = args.cmd {
             if !self.is_executable_allowed(&cmd) {
                 return Err(ToolError::CommandBlocked(cmd));
             }
@@ -453,38 +689,29 @@ impl Tool for ShellRunTool {
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
             let status = output.status.code().unwrap_or(-1);
-            let display_text = if stderr.is_empty() {
-                stdout.clone()
-            } else if stdout.is_empty() {
-                stderr.clone()
-            } else {
-                format!("{stdout}\n{stderr}")
-            };
             let structured_json = json!({
                 "cmd": cmd,
                 "args": args.args,
                 "cwd": args.cwd,
                 "status": status,
-                "stdout": stdout,
-                "stderr": stderr,
                 "success": output.status.success(),
-            });
+            })
+            .as_object()
+            .cloned()
+            .expect("shell json object");
 
-            (display_text, structured_json)
+            build_shell_run_result(&ctx, structured_json, stdout, stderr)
         } else {
             let command = args.command.expect("validated shell command presence");
             let workdir = args.workdir.or(args.cwd);
             let cwd = self.resolve_cwd(&ctx, workdir.as_deref())?;
-            crate::opencode_compat::validate_bash_command(
+            crate::opencode_tools::validate_bash_command(
                 &command,
                 &cwd,
                 &ctx.workspace_root,
                 &self.allowlist,
             )?;
-            let shell = std::env::var("SHELL")
-                .ok()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| "/bin/bash".to_string());
+            let shell = resolve_bash_executable();
             let output = tokio::time::timeout(
                 Duration::from_millis(timeout_ms),
                 tokio::process::Command::new(&shell)
@@ -500,31 +727,19 @@ impl Tool for ShellRunTool {
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
             let status = output.status.code().unwrap_or(-1);
-            let display_text = if stderr.is_empty() {
-                stdout.clone()
-            } else if stdout.is_empty() {
-                stderr.clone()
-            } else {
-                format!("{stdout}\n{stderr}")
-            };
             let structured_json = json!({
                 "description": args.description,
                 "command": command,
                 "workdir": workdir,
                 "status": status,
-                "stdout": stdout,
-                "stderr": stderr,
                 "success": output.status.success(),
-            });
+            })
+            .as_object()
+            .cloned()
+            .expect("shell json object");
 
-            (display_text, structured_json)
-        };
-
-        Ok(ToolResult {
-            display_text,
-            structured_json: Some(structured_json),
-            artifacts: Vec::new(),
-        })
+            build_shell_run_result(&ctx, structured_json, stdout, stderr)
+        }
     }
 }
 
@@ -611,21 +826,30 @@ mod tests {
         let registry = coordinator_registry(ShellAllowlist::default());
 
         for tool_id in [
-            "agent.spawn",
-            "code.lsp",
-            "code.lsp.rename",
-            "fs.read",
-            "fs.glob",
-            "fs.ls",
-            "fs.grep",
+            "apply_patch",
+            "bash",
+            "batch",
+            "codesearch",
+            "edit",
+            "lsp.rename",
             "github.issue",
             "github.pull_request",
+            "glob",
+            "grep",
+            "invalid",
+            "list",
             "lsp",
-            "plan.exit",
+            "patch",
             "plan_exit",
-            "shell.run",
-            "todo.read",
+            "question",
+            "read",
+            "skill",
             "todoread",
+            "todowrite",
+            "task",
+            "webfetch",
+            "websearch",
+            "write",
             "edit.hashline_apply",
             "edit.hashline_scan",
         ] {
@@ -695,6 +919,73 @@ mod tests {
         }
     }
 
+    #[test]
+    fn read_tool_schema_advertises_one_indexed_positive_paging() {
+        let registry = coordinator_registry(ShellAllowlist::default());
+        let schema = registry
+            .get("read")
+            .expect("read tool")
+            .parameters_json_schema();
+        let properties = schema["properties"].as_object().expect("read properties");
+
+        assert_eq!(properties["offset"]["minimum"], json!(1));
+        assert_eq!(properties["limit"]["minimum"], json!(1));
+        assert_eq!(properties["hashlineAnchors"]["default"], json!(false));
+        assert_eq!(schema["required"], json!(["filePath"]));
+    }
+
+    #[test]
+    fn preview_tool_output_enforces_line_limit_without_trailing_newline() {
+        let output = (1..=2_001)
+            .map(|idx| format!("line {idx}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let preview =
+            super::preview_tool_output(&output, super::TOOL_OUTPUT_INLINE_LINE_LIMIT, usize::MAX);
+
+        assert!(preview.truncated);
+        assert_eq!(preview.inline_lines, super::TOOL_OUTPUT_INLINE_LINE_LIMIT);
+        assert_eq!(preview.total_lines, 2_001);
+        assert!(preview.text.trim_end_matches('\n').ends_with("line 2000"));
+        assert!(!preview.text.contains("line 2001"));
+    }
+
+    #[test]
+    fn preview_tool_output_allows_exact_line_limit_without_trailing_newline() {
+        let output = (1..=super::TOOL_OUTPUT_INLINE_LINE_LIMIT)
+            .map(|idx| format!("line {idx}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let preview =
+            super::preview_tool_output(&output, super::TOOL_OUTPUT_INLINE_LINE_LIMIT, usize::MAX);
+
+        assert!(!preview.truncated);
+        assert_eq!(preview.inline_lines, super::TOOL_OUTPUT_INLINE_LINE_LIMIT);
+        assert_eq!(preview.total_lines, super::TOOL_OUTPUT_INLINE_LINE_LIMIT);
+        assert_eq!(preview.text, output);
+    }
+
+    #[test]
+    fn shell_env_bash_candidate_rejects_relative_and_missing_paths() {
+        assert_eq!(super::shell_env_bash_candidate(Some("bash")), None);
+        assert_eq!(
+            super::shell_env_bash_candidate(Some("/tmp/definitely-not-a-real-bash")),
+            None
+        );
+    }
+
+    #[test]
+    fn shell_env_bash_candidate_accepts_existing_absolute_bash_path() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let bash_path = temp.path().join("bash");
+        std::fs::write(&bash_path, "#!/usr/bin/env bash\n").expect("write bash stub");
+
+        let candidate = super::shell_env_bash_candidate(bash_path.to_str());
+        assert_eq!(candidate.as_deref(), bash_path.to_str());
+    }
+
     #[tokio::test]
     async fn fs_read_supports_offset_and_limit_with_line_numbers() {
         let temp = tempfile::tempdir().expect("tempdir");
@@ -722,6 +1013,138 @@ mod tests {
         assert_eq!(metadata["limit"], json!(2));
         assert_eq!(metadata["total_lines"], json!(3));
         assert_eq!(metadata["truncated"], json!(false));
+    }
+
+    #[tokio::test]
+    async fn fs_read_can_render_hashline_anchors() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("fixture.txt");
+        std::fs::write(&source, "alpha\nbeta\n").expect("write fixture");
+
+        let tool = FsReadTool;
+        let result = tool
+            .call(
+                fs_read_context(temp.path(), "toolcall-hashline-read"),
+                json!({
+                    "path": "fixture.txt",
+                    "hashline_anchors": true,
+                }),
+            )
+            .await
+            .expect("fs.read hashline mode should succeed");
+
+        assert_eq!(
+            result.display_text,
+            format!(
+                "1#{}|alpha\n2#{}|beta",
+                super::compute_line_hash("alpha"),
+                super::compute_line_hash("beta")
+            )
+        );
+
+        let metadata = result.structured_json.expect("structured json");
+        assert_eq!(metadata["hashline_anchors"], json!(true));
+        assert_eq!(metadata["anchors"][0]["line"], json!(1));
+        assert_eq!(
+            metadata["anchors"][0]["hash"],
+            json!(super::compute_line_hash("alpha"))
+        );
+        assert_eq!(metadata["anchors"][0]["text"], json!("alpha"));
+        assert_eq!(metadata["anchors"][1]["line"], json!(2));
+        assert_eq!(
+            metadata["anchors"][1]["hash"],
+            json!(super::compute_line_hash("beta"))
+        );
+        assert_eq!(metadata["anchors"][1]["text"], json!("beta"));
+    }
+
+    #[tokio::test]
+    async fn fs_read_normalizes_zero_offset_and_limit_to_defaults() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("fixture.txt");
+        std::fs::write(&source, "line one\nline two\nline three\n").expect("write fixture");
+
+        let tool = FsReadTool;
+        let result = tool
+            .call(
+                fs_read_context(temp.path(), "toolcall-zero-paging"),
+                json!({
+                    "path": "fixture.txt",
+                    "offset": 0,
+                    "limit": 0
+                }),
+            )
+            .await
+            .expect("fs.read should normalize zero paging values");
+
+        assert_eq!(
+            result.display_text,
+            "1: line one\n2: line two\n3: line three"
+        );
+
+        let metadata = result.structured_json.expect("structured json");
+        assert_eq!(metadata["offset"], json!(1));
+        assert_eq!(metadata["limit"], json!(super::FS_READ_DEFAULT_LIMIT));
+    }
+
+    #[tokio::test]
+    async fn read_tool_normalizes_zero_offset_and_limit_for_model_compatibility() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("fixture.txt");
+        std::fs::write(&source, "line one\nline two\nline three\n").expect("write fixture");
+
+        let registry = coordinator_registry(ShellAllowlist::default());
+        let read = registry.get("read").expect("read tool");
+        let result = read
+            .call(
+                fs_read_context(temp.path(), "toolcall-read-zero-paging"),
+                json!({
+                    "filePath": "fixture.txt",
+                    "offset": 0,
+                    "limit": 0
+                }),
+            )
+            .await
+            .expect("read should normalize zero paging values");
+
+        assert_eq!(
+            result.display_text,
+            "1: line one\n2: line two\n3: line three"
+        );
+
+        let metadata = result.structured_json.expect("structured json");
+        assert_eq!(metadata["offset"], json!(1));
+        assert_eq!(metadata["limit"], json!(super::FS_READ_DEFAULT_LIMIT));
+    }
+
+    #[tokio::test]
+    async fn read_tool_exposes_hashline_anchor_mode_for_model_workflows() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("fixture.txt");
+        std::fs::write(&source, "alpha\nbeta\n").expect("write fixture");
+
+        let registry = coordinator_registry(ShellAllowlist::default());
+        let read = registry.get("read").expect("read tool");
+        let result = read
+            .call(
+                fs_read_context(temp.path(), "toolcall-read-hashline"),
+                json!({
+                    "filePath": "fixture.txt",
+                    "hashlineAnchors": true,
+                }),
+            )
+            .await
+            .expect("read hashline mode should succeed");
+
+        assert!(result.display_text.contains("1#"));
+        assert!(result.display_text.contains("|alpha"));
+        assert!(result.display_text.contains("2#"));
+        assert!(result.display_text.contains("|beta"));
+
+        let metadata = result.structured_json.expect("structured json");
+        assert_eq!(metadata["hashline_anchors"], json!(true));
+        assert_eq!(metadata["anchors"][0]["line"], json!(1));
+        assert_eq!(metadata["anchors"][1]["line"], json!(2));
     }
 
     #[tokio::test]
@@ -782,5 +1205,42 @@ mod tests {
             ToolError::Execution(message) => assert_eq!(message, "binary file not supported"),
             other => panic!("unexpected error variant: {other}"),
         }
+    }
+
+    #[tokio::test]
+    async fn bash_spills_large_output_to_artifact_for_event_stability() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let registry = coordinator_registry(ShellAllowlist::default());
+        let bash = registry.get("bash").expect("bash tool");
+
+        let context = fs_read_context(temp.path(), "toolcall-bash-truncated");
+        let result = bash
+            .call(
+                context.clone(),
+                json!({
+                    "command": "printf 'alpha%.0s' {1..11000}",
+                    "description": "emit many lines"
+                }),
+            )
+            .await
+            .expect("bash should succeed");
+
+        assert!(result.display_text.contains("[truncated:"));
+        assert_eq!(result.artifacts.len(), 1);
+
+        let metadata = result.structured_json.expect("structured json");
+        assert_eq!(metadata["truncated"], json!(true));
+        assert!(metadata.get("stdout").is_none());
+        assert!(metadata.get("stderr").is_none());
+        assert_eq!(metadata["total_output_bytes"], json!(55_000));
+
+        let artifact_path = result.artifacts[0]
+            .path
+            .strip_prefix("artifacts/")
+            .expect("artifact path prefix");
+        let spilled = std::fs::read_to_string(context.artifacts_dir.join(artifact_path))
+            .expect("read spilled shell output artifact");
+        assert_eq!(spilled.len(), 55_000);
+        assert!(spilled.starts_with("alphaalphaalpha"));
     }
 }

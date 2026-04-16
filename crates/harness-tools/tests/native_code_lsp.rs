@@ -666,10 +666,9 @@ async fn native_code_lsp_supports_configured_custom_servers() {
     });
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let native = registry.get("code.lsp").expect("code.lsp tool");
-    let compat = registry.get("lsp").expect("lsp alias tool");
+    let lsp = registry.get("lsp").expect("lsp tool");
 
-    let rust_result = native
+    let rust_result = lsp
         .call(
             test_context(&workspace, "configured-rust"),
             json!({
@@ -699,7 +698,7 @@ async fn native_code_lsp_supports_configured_custom_servers() {
         first_diagnostic_message(&rust_json).contains("env_ok=True; lang_ok=True; init_ok=True")
     );
 
-    let compat_ts = compat
+    let ts_result = lsp
         .call(
             test_context(&workspace, "configured-typescript"),
             json!({
@@ -711,10 +710,10 @@ async fn native_code_lsp_supports_configured_custom_servers() {
         )
         .await
         .expect("configured typescript request");
-    assert!(compat_ts
+    assert!(ts_result
         .display_text
         .contains("typescript override diagnostic"));
-    let ts_json = compat_ts
+    let ts_json = ts_result
         .structured_json
         .clone()
         .expect("configured typescript structured json");
@@ -722,7 +721,7 @@ async fn native_code_lsp_supports_configured_custom_servers() {
     assert_eq!(ts_json["server"]["command"], json!(["custom-ts-lsp"]));
     assert!(first_diagnostic_message(&ts_json).contains("env_ok=True; lang_ok=True; init_ok=True"));
 
-    let custom_result = native
+    let custom_result = lsp
         .call(
             test_context(&workspace, "configured-custom"),
             json!({
@@ -898,9 +897,9 @@ async fn native_code_lsp_supports_additional_builtin_server_presets() {
     });
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let native = registry.get("code.lsp").expect("code.lsp tool");
+    let lsp = registry.get("lsp").expect("lsp tool");
 
-    let python_result = native
+    let python_result = lsp
         .call(
             test_context(&workspace, "builtin-python"),
             json!({
@@ -925,7 +924,7 @@ async fn native_code_lsp_supports_additional_builtin_server_presets() {
         first_diagnostic_message(&python_json).contains("env_ok=True; lang_ok=True; init_ok=True")
     );
 
-    let go_result = native
+    let go_result = lsp
         .call(
             test_context(&workspace, "builtin-go"),
             json!({
@@ -945,7 +944,7 @@ async fn native_code_lsp_supports_additional_builtin_server_presets() {
     assert_eq!(go_json["server"]["command"], json!(["custom-go-lsp"]));
     assert!(first_diagnostic_message(&go_json).contains("env_ok=True; lang_ok=True; init_ok=True"));
 
-    let json_result = native
+    let json_result = lsp
         .call(
             test_context(&workspace, "builtin-json"),
             json!({
@@ -970,7 +969,7 @@ async fn native_code_lsp_supports_additional_builtin_server_presets() {
         first_diagnostic_message(&json_json).contains("env_ok=True; lang_ok=True; init_ok=True")
     );
 
-    let yaml_result = native
+    let yaml_result = lsp
         .call(
             test_context(&workspace, "builtin-yaml"),
             json!({
@@ -1036,10 +1035,9 @@ async fn native_code_lsp_supports_direct_file_and_workspace_diagnostics() {
     });
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let native = registry.get("code.lsp").expect("code.lsp tool");
-    let compat = registry.get("lsp").expect("lsp alias tool");
+    let lsp = registry.get("lsp").expect("lsp tool");
 
-    let file_result = native
+    let file_result = lsp
         .call(
             test_context(&workspace, "direct-file-diagnostics"),
             json!({
@@ -1067,7 +1065,7 @@ async fn native_code_lsp_supports_direct_file_and_workspace_diagnostics() {
         first_diagnostic_message(&file_json).contains("env_ok=True; lang_ok=True; init_ok=True")
     );
 
-    let workspace_result = compat
+    let workspace_result = lsp
         .call(
             test_context(&workspace, "direct-workspace-diagnostics"),
             json!({
@@ -1143,9 +1141,9 @@ async fn native_code_lsp_reports_empty_direct_diagnostics_cleanly() {
     });
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let native = registry.get("code.lsp").expect("code.lsp tool");
+    let lsp = registry.get("lsp").expect("lsp tool");
 
-    let result = native
+    let result = lsp
         .call(
             test_context(&workspace, "empty-file-diagnostics"),
             json!({
@@ -1204,10 +1202,9 @@ async fn native_code_lsp_rejects_disabled_or_unsupported_servers() {
     });
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let native = registry.get("code.lsp").expect("code.lsp tool");
-    let compat = registry.get("lsp").expect("lsp alias tool");
+    let lsp = registry.get("lsp").expect("lsp tool");
 
-    let disabled_rust = native
+    let disabled_rust = lsp
         .call(
             test_context(&workspace, "disabled-rust"),
             json!({
@@ -1221,10 +1218,10 @@ async fn native_code_lsp_rejects_disabled_or_unsupported_servers() {
         .expect_err("disabled rust should fail");
     expect_invalid_arguments(
         disabled_rust,
-        "configured code.lsp server `rust` is disabled for extension .rs",
+        "configured lsp server `rust` is disabled for extension .rs",
     );
 
-    let compat_disabled_custom = compat
+    let disabled_custom = lsp
         .call(
             test_context(&workspace, "disabled-custom"),
             json!({
@@ -1237,11 +1234,11 @@ async fn native_code_lsp_rejects_disabled_or_unsupported_servers() {
         .await
         .expect_err("disabled custom server should fail");
     expect_invalid_arguments(
-        compat_disabled_custom,
-        "configured code.lsp server `custom-local` is disabled for extension .foo",
+        disabled_custom,
+        "configured lsp server `custom-local` is disabled for extension .foo",
     );
 
-    let unsupported_language = native
+    let unsupported_language = lsp
         .call(
             test_context(&workspace, "unsupported-language"),
             json!({
@@ -1255,7 +1252,7 @@ async fn native_code_lsp_rejects_disabled_or_unsupported_servers() {
         .expect_err("unsupported language should fail");
     expect_invalid_arguments(
         unsupported_language,
-        "unsupported code.lsp language extension: .lua",
+        "unsupported lsp language extension: .lua",
     );
 }
 
@@ -1269,10 +1266,9 @@ async fn native_code_lsp_validates_inputs_by_operation_shape() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let registry = coordinator_registry(ShellAllowlist::default());
-    let native = registry.get("code.lsp").expect("code.lsp tool");
-    let compat = registry.get("lsp").expect("lsp alias tool");
+    let lsp = registry.get("lsp").expect("lsp tool");
 
-    let missing_position = native
+    let missing_position = lsp
         .call(
             test_context(&workspace, "missing-position"),
             json!({
@@ -1284,7 +1280,7 @@ async fn native_code_lsp_validates_inputs_by_operation_shape() {
         .expect_err("hover should require cursor coordinates");
     expect_invalid_arguments(missing_position, "missing field `line`");
 
-    let file_only_rejects_cursor = compat
+    let file_only_rejects_cursor = lsp
         .call(
             test_context(&workspace, "file-only-rejects-cursor"),
             json!({
@@ -1298,7 +1294,7 @@ async fn native_code_lsp_validates_inputs_by_operation_shape() {
         .expect_err("documentSymbol should reject cursor coordinates");
     expect_invalid_arguments(file_only_rejects_cursor, "unknown field");
 
-    let missing_query = native
+    let missing_query = lsp
         .call(
             test_context(&workspace, "missing-query"),
             json!({
@@ -1352,9 +1348,9 @@ async fn native_code_lsp_supports_non_position_operations_without_cursor_placeho
     });
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let native = registry.get("code.lsp").expect("code.lsp tool");
+    let lsp = registry.get("lsp").expect("lsp tool");
 
-    let document_symbols = native
+    let document_symbols = lsp
         .call(
             test_context(&workspace, "document-symbol"),
             json!({
@@ -1376,7 +1372,7 @@ async fn native_code_lsp_supports_non_position_operations_without_cursor_placeho
     assert!(document_json.get("line").is_none());
     assert!(document_json.get("character").is_none());
 
-    let workspace_symbols = native
+    let workspace_symbols = lsp
         .call(
             test_context(&workspace, "workspace-symbol"),
             json!({
@@ -1402,10 +1398,9 @@ async fn native_code_lsp_rejects_unsupported_operation_cleanly() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let registry = coordinator_registry(ShellAllowlist::default());
-    let native = registry.get("code.lsp").expect("code.lsp tool");
-    let compat = registry.get("lsp").expect("lsp alias tool");
+    let lsp = registry.get("lsp").expect("lsp tool");
 
-    let unsupported_operation = native
+    let unsupported_operation = lsp
         .call(
             test_context(&workspace, "unsupported-operation"),
             json!({
@@ -1419,10 +1414,10 @@ async fn native_code_lsp_rejects_unsupported_operation_cleanly() {
         .expect_err("unsupported operation should fail");
     expect_invalid_arguments(
         unsupported_operation,
-        "use code.lsp.rename for the explicit write-capable rename flow",
+        "use lsp.rename for the explicit write-capable rename flow",
     );
 
-    let compat_unsupported_operation = compat
+    let repeated_unsupported_operation = lsp
         .call(
             test_context(&workspace, "compat-unsupported-operation"),
             json!({
@@ -1435,8 +1430,8 @@ async fn native_code_lsp_rejects_unsupported_operation_cleanly() {
         .await
         .expect_err("compat unsupported operation should fail");
     expect_invalid_arguments(
-        compat_unsupported_operation,
-        "use code.lsp.rename for the explicit write-capable rename flow",
+        repeated_unsupported_operation,
+        "use lsp.rename for the explicit write-capable rename flow",
     );
 }
 
@@ -1477,9 +1472,7 @@ async fn native_code_lsp_rename_previews_and_applies_workspace_edits() {
     });
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let rename_tool = registry
-        .get("code.lsp.rename")
-        .expect("code.lsp.rename tool");
+    let rename_tool = registry.get("lsp.rename").expect("lsp.rename tool");
 
     let preview = rename_tool
         .call(
@@ -1581,9 +1574,7 @@ async fn native_code_lsp_rename_reports_unsupported_server_behavior() {
     });
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let rename_tool = registry
-        .get("code.lsp.rename")
-        .expect("code.lsp.rename tool");
+    let rename_tool = registry.get("lsp.rename").expect("lsp.rename tool");
     let error = rename_tool
         .call(
             test_context(&workspace, "rename-unsupported"),

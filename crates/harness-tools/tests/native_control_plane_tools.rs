@@ -11,7 +11,6 @@ use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1};
 use harness_core::perm::PermissionDecision;
 use harness_core::perm::PermissionPolicy;
 use harness_core::redact::DefaultRedactor;
-use harness_core::tool::ToolSurface;
 use harness_tools::coordinator_registry;
 use serde_json::json;
 use tokio::time::{sleep, Duration, Instant};
@@ -29,24 +28,12 @@ fn worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
         max_iters: 12,
         temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-        tool_surface: ToolSurface::Native,
         toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
     }
 }
 
 fn control_plane_toolset() -> Vec<&'static str> {
-    vec![
-        "todo.write",
-        "todowrite",
-        "todo.read",
-        "todoread",
-        "skill.load",
-        "skill",
-        "tool.invalid",
-        "invalid",
-        "plan.exit",
-        "plan_exit",
-    ]
+    vec!["todowrite", "todoread", "skill", "invalid", "plan_exit"]
 }
 
 async fn spawn_worker_run(
@@ -157,16 +144,7 @@ async fn native_control_plane_tools_cover_invalid_todo_skill_and_plan_exit() {
     let todos_payload = json!({
         "todos": [{"content": "task", "status": "pending", "priority": "high"}]
     });
-    let native_todo_write = handle
-        .execute_agent_tool_call(
-            actor(&worker_id),
-            Some("plan".to_string()),
-            "todo.write",
-            todos_payload.clone(),
-        )
-        .await
-        .expect("todo.write");
-    let compat_todo_write = handle
+    let todo_write = handle
         .execute_agent_tool_call(
             actor(&worker_id),
             Some("plan".to_string()),
@@ -176,31 +154,20 @@ async fn native_control_plane_tools_cover_invalid_todo_skill_and_plan_exit() {
         .await
         .expect("todowrite");
     assert_eq!(
-        native_todo_write.display_text,
-        compat_todo_write.display_text
-    );
-    assert_eq!(
-        native_todo_write.structured_json,
-        compat_todo_write.structured_json
+        todo_write.structured_json,
+        Some(json!({
+            "todos": [{"content": "task", "status": "pending", "priority": "high"}]
+        }))
     );
     let state_path = todo_state_file(&run);
     assert!(
         state_path.ends_with(Path::new("opencode-compat/todos.json")),
-        "native control-plane state path should preserve the shared compat contract: {}",
+        "todo state path should stay stable until the on-disk contract is migrated explicitly: {}",
         state_path.display()
     );
     assert!(state_path.exists(), "todo state file should be written");
 
-    let native_todo_read = handle
-        .execute_agent_tool_call(
-            actor(&worker_id),
-            Some("plan".to_string()),
-            "todo.read",
-            json!({}),
-        )
-        .await
-        .expect("todo.read");
-    let compat_todo_read = handle
+    let todo_read = handle
         .execute_agent_tool_call(
             actor(&worker_id),
             Some("plan".to_string()),
@@ -209,42 +176,20 @@ async fn native_control_plane_tools_cover_invalid_todo_skill_and_plan_exit() {
         )
         .await
         .expect("todoread");
-    assert_eq!(native_todo_read.display_text, compat_todo_read.display_text);
-    assert_eq!(
-        native_todo_read.structured_json,
-        compat_todo_read.structured_json
-    );
+    assert!(todo_read.display_text.contains("task"));
 
-    let native_invalid = handle
-        .execute_agent_tool_call(
-            actor(&worker_id),
-            Some("plan".to_string()),
-            "tool.invalid",
-            json!({"tool": "todo.write", "error": "bad args"}),
-        )
-        .await
-        .expect("tool.invalid");
-    let compat_invalid = handle
+    let invalid = handle
         .execute_agent_tool_call(
             actor(&worker_id),
             Some("plan".to_string()),
             "invalid",
-            json!({"tool": "todo.write", "error": "bad args"}),
+            json!({"tool": "todowrite", "error": "bad args"}),
         )
         .await
         .expect("invalid");
-    assert_eq!(native_invalid.display_text, compat_invalid.display_text);
+    assert!(invalid.display_text.contains("bad args"));
 
-    let native_skill = handle
-        .execute_agent_tool_call(
-            actor(&worker_id),
-            Some("plan".to_string()),
-            "skill.load",
-            json!({"name": "rust-best-practices"}),
-        )
-        .await
-        .expect("skill.load");
-    let compat_skill = handle
+    let skill = handle
         .execute_agent_tool_call(
             actor(&worker_id),
             Some("plan".to_string()),
@@ -253,41 +198,9 @@ async fn native_control_plane_tools_cover_invalid_todo_skill_and_plan_exit() {
         )
         .await
         .expect("skill");
-    assert_eq!(native_skill.display_text, compat_skill.display_text);
-    assert_eq!(native_skill.structured_json, compat_skill.structured_json);
-    assert!(native_skill
-        .display_text
-        .contains("# Skill: rust-best-practices"));
+    assert!(skill.display_text.contains("# Skill: rust-best-practices"));
 
-    let native_plan_exit_handle = {
-        let handle = handle.clone();
-        let worker_id = worker_id.clone();
-        tokio::spawn(async move {
-            handle
-                .execute_agent_tool_call(
-                    actor(&worker_id),
-                    Some("plan".to_string()),
-                    "plan.exit",
-                    json!({}),
-                )
-                .await
-        })
-    };
-    let native_permission_id = wait_for_question_permission(&run.events_path, None).await;
-    handle
-        .resolve_permission(
-            native_permission_id.clone(),
-            PermissionDecision::Allow,
-            Some("[[\"Yes\"]]".to_string()),
-        )
-        .await
-        .expect("approve native plan.exit");
-    let native_plan_exit = native_plan_exit_handle
-        .await
-        .expect("join native plan.exit")
-        .expect("plan.exit");
-
-    let compat_plan_exit_handle = {
+    let plan_exit_handle = {
         let handle = handle.clone();
         let worker_id = worker_id.clone();
         tokio::spawn(async move {
@@ -301,26 +214,20 @@ async fn native_control_plane_tools_cover_invalid_todo_skill_and_plan_exit() {
                 .await
         })
     };
-    let compat_permission_id =
-        wait_for_question_permission(&run.events_path, Some(&native_permission_id)).await;
+    let permission_id = wait_for_question_permission(&run.events_path, None).await;
     handle
         .resolve_permission(
-            compat_permission_id,
+            permission_id,
             PermissionDecision::Allow,
             Some("[[\"Yes\"]]".to_string()),
         )
         .await
-        .expect("approve compat plan_exit");
-    let compat_plan_exit = compat_plan_exit_handle
+        .expect("approve plan_exit");
+    let plan_exit = plan_exit_handle
         .await
-        .expect("join compat plan_exit")
+        .expect("join plan_exit")
         .expect("plan_exit");
-    assert_eq!(native_plan_exit.display_text, compat_plan_exit.display_text);
-    assert_eq!(
-        native_plan_exit.structured_json,
-        compat_plan_exit.structured_json
-    );
-    let handoff = native_plan_exit
+    let handoff = plan_exit
         .structured_json
         .as_ref()
         .and_then(|value| value.get("plan_exit_handoff"))
@@ -364,11 +271,11 @@ async fn plan_exit_rejects_non_plan_profile_or_missing_build_target() {
         .execute_agent_tool_call(
             actor(&worker_id),
             Some("deep".to_string()),
-            "plan.exit",
+            "plan_exit",
             json!({}),
         )
         .await
-        .expect_err("plan.exit should reject non-plan profile");
+        .expect_err("plan_exit should reject non-plan profile");
     assert!(err.contains("not plan-capable"), "unexpected error: {err}");
 
     let missing_build_profiles =
@@ -391,11 +298,11 @@ async fn plan_exit_rejects_non_plan_profile_or_missing_build_target() {
         .execute_agent_tool_call(
             actor(&worker_id),
             Some("plan".to_string()),
-            "plan.exit",
+            "plan_exit",
             json!({}),
         )
         .await
-        .expect_err("plan.exit should reject missing build target");
+        .expect_err("plan_exit should reject missing build target");
     assert!(
         err.contains("configured exit target agent") && err.contains("build"),
         "unexpected error: {err}"
@@ -410,7 +317,7 @@ async fn native_todo_write_rejects_multiple_in_progress_items() {
 
     let agent_profiles = BTreeMap::from([(
         "deep".to_string(),
-        worker_profile("deep", &["todo.write", "todo.read"]),
+        worker_profile("deep", &["todowrite", "todoread"]),
     )]);
     let plan_profiles = BTreeMap::from([("deep".to_string(), PlanProfileConfig::default())]);
     let (handle, run, worker_id) =
@@ -420,7 +327,7 @@ async fn native_todo_write_rejects_multiple_in_progress_items() {
         .execute_agent_tool_call(
             actor(&worker_id),
             Some("deep".to_string()),
-            "todo.write",
+            "todowrite",
             json!({
                 "todos": [
                     {"content": "keep", "status": "pending", "priority": "high"}
@@ -428,7 +335,7 @@ async fn native_todo_write_rejects_multiple_in_progress_items() {
             }),
         )
         .await
-        .expect("initial todo.write");
+        .expect("initial todowrite");
     let state_path = todo_state_file(&run);
     let before = fs::read_to_string(&state_path).expect("todo state before invalid write");
 
@@ -436,7 +343,7 @@ async fn native_todo_write_rejects_multiple_in_progress_items() {
         .execute_agent_tool_call(
             actor(&worker_id),
             Some("deep".to_string()),
-            "todo.write",
+            "todowrite",
             json!({
                 "todos": [
                     {"content": "first", "status": "in_progress", "priority": "high"},
@@ -445,21 +352,21 @@ async fn native_todo_write_rejects_multiple_in_progress_items() {
             }),
         )
         .await
-        .expect_err("todo.write should reject multiple in_progress items");
+        .expect_err("todowrite should reject multiple in_progress items");
     assert!(err.contains("at most one item with status `in_progress`"));
 
     let after = fs::read_to_string(&state_path).expect("todo state after invalid write");
-    assert_eq!(before, after, "invalid todo.write should not replace state");
+    assert_eq!(before, after, "invalid todowrite should not replace state");
 
     let todo_read = handle
         .execute_agent_tool_call(
             actor(&worker_id),
             Some("deep".to_string()),
-            "todo.read",
+            "todoread",
             json!({}),
         )
         .await
-        .expect("todo.read");
+        .expect("todoread");
     assert_eq!(
         todo_read.structured_json,
         Some(json!({

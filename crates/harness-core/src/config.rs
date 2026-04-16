@@ -9,8 +9,6 @@ use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
-use crate::tool::ToolSurface;
-
 const CLIPROXY_LOOPBACK_DEFAULT_API_KEY: &str = "sk-zerolimit";
 
 static PROFILE_MODEL_METADATA_REGISTRY: OnceLock<
@@ -230,6 +228,10 @@ impl HarnessConfig {
                         .to_string(),
                 ));
             }
+        }
+
+        for provider in self.providers.values_mut() {
+            provider.normalize_public_config_aliases()?;
         }
 
         if let Some(default_agent) = self.default_agent.clone() {
@@ -785,14 +787,34 @@ impl ProviderConfig {
             Self::OpenAiCompatible(config) => &config.models,
         }
     }
+
+    fn display_label(&self, provider_name: &str) -> String {
+        match self {
+            Self::OpenAiCompatible(config) => config
+                .name
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or(provider_name)
+                .to_string(),
+        }
+    }
+
+    fn normalize_public_config_aliases(&mut self) -> Result<(), ConfigError> {
+        match self {
+            Self::OpenAiCompatible(config) => config.normalize_public_config_aliases(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct OpenAiCompatibleProviderConfig {
-    #[serde(alias = "baseUrl")]
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default, alias = "baseUrl")]
     pub base_url: String,
-    #[serde(alias = "apiKey")]
+    #[serde(default, alias = "apiKey")]
     pub api_key: String,
     #[serde(default = "default_provider_timeout_ms", alias = "timeoutMs")]
     pub timeout_ms: u64,
@@ -801,10 +823,82 @@ pub struct OpenAiCompatibleProviderConfig {
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
     #[serde(default)]
+    pub options: OpenAiCompatibleProviderOptions,
+    #[serde(default)]
     pub models: BTreeMap<String, ModelConfig>,
 }
 
+impl OpenAiCompatibleProviderConfig {
+    fn normalize_public_config_aliases(&mut self) -> Result<(), ConfigError> {
+        merge_string_alias(
+            &mut self.base_url,
+            self.options.base_url.take(),
+            "provider openai_compatible.base_url",
+            "provider openai_compatible.options.baseURL",
+        )?;
+        merge_string_alias(
+            &mut self.api_key,
+            self.options.api_key.take(),
+            "provider openai_compatible.api_key",
+            "provider openai_compatible.options.apiKey",
+        )?;
+        merge_string_alias(
+            &mut self.name,
+            self.options.name.take(),
+            "provider openai_compatible.name",
+            "provider openai_compatible.options.name",
+        )?;
+        merge_map_alias(
+            &mut self.headers,
+            std::mem::take(&mut self.options.headers),
+            "provider openai_compatible.headers",
+            "provider openai_compatible.options.headers",
+        )?;
+
+        if let Some(api_mode) = self.options.api_mode.take() {
+            if matches!(self.api_mode, OpenAiApiMode::Auto) {
+                self.api_mode = api_mode;
+            } else if self.api_mode != api_mode {
+                return Err(ConfigError::InvalidReference(
+                    "provider openai_compatible.api_mode conflicts with provider openai_compatible.options.apiMode; use one value"
+                        .to_string(),
+                ));
+            }
+        }
+
+        if let Some(timeout_ms) = self.options.timeout_ms.take() {
+            if self.timeout_ms == default_provider_timeout_ms() {
+                self.timeout_ms = timeout_ms;
+            } else if self.timeout_ms != timeout_ms {
+                return Err(ConfigError::InvalidReference(
+                    "provider openai_compatible.timeout_ms conflicts with provider openai_compatible.options.timeoutMs; use one value"
+                        .to_string(),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
+pub struct OpenAiCompatibleProviderOptions {
+    #[serde(default, alias = "baseURL", alias = "baseUrl")]
+    pub base_url: Option<String>,
+    #[serde(default, alias = "apiKey")]
+    pub api_key: Option<String>,
+    #[serde(default, alias = "apiMode")]
+    pub api_mode: Option<OpenAiApiMode>,
+    #[serde(default, alias = "timeoutMs")]
+    pub timeout_ms: Option<u64>,
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum OpenAiApiMode {
     Responses,
@@ -816,7 +910,7 @@ pub enum OpenAiApiMode {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ModelConfig {
-    #[serde(alias = "displayName")]
+    #[serde(alias = "displayName", alias = "name")]
     pub display_name: String,
     #[serde(default)]
     pub metadata: ModelMetadataConfig,
@@ -831,7 +925,7 @@ pub struct ModelConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ModelVariantConfig {
-    #[serde(default, alias = "displayName")]
+    #[serde(default, alias = "displayName", alias = "name")]
     pub display_name: Option<String>,
     #[serde(default)]
     pub metadata: ModelVariantMetadataConfig,
@@ -846,9 +940,14 @@ pub struct ModelVariantConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedProfileModelMetadata {
     pub profile: String,
+    pub profile_description: Option<String>,
     pub provider: String,
+    pub provider_display_label: String,
+    pub provider_backend_label: Option<String>,
     pub model: String,
+    pub model_display_label: String,
     pub variant: Option<String>,
+    pub variant_display_label: Option<String>,
     pub display_label: String,
     pub token_window_label: Option<String>,
     pub context_window_tokens: Option<u32>,
@@ -863,8 +962,12 @@ pub struct ResolvedProfileModelMetadata {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedModelCatalogEntry {
     pub provider: String,
+    pub provider_display_label: String,
+    pub provider_backend_label: Option<String>,
     pub model: String,
+    pub model_display_label: String,
     pub variant: Option<String>,
+    pub variant_display_label: Option<String>,
     pub display_label: String,
     pub token_window_label: Option<String>,
     pub context_window_tokens: Option<u32>,
@@ -948,8 +1051,6 @@ pub struct ProfileConfig {
     pub temperature: Option<f32>,
     #[serde(default)]
     pub permissions: Option<ProfilePermissions>,
-    #[serde(default, alias = "toolSurface")]
-    pub tool_surface: ToolSurface,
     /// Per-profile multi-turn budget enforced directly by the runtime.
     /// There is no separate hardcoded runtime iteration cap beyond this setting.
     #[serde(default = "default_max_iters", alias = "maxIters")]
@@ -1515,10 +1616,11 @@ fn resolve_env_reference(value: &str) -> Result<String, ConfigError> {
 
 const REQUIRED_CONFIG_SECTIONS: [&str; 4] = ["integrations", "permissions", "providers", "runtime"];
 
-const ALLOWED_TOP_LEVEL_CONFIG_KEYS: [&str; 13] = [
+const ALLOWED_TOP_LEVEL_CONFIG_KEYS: [&str; 14] = [
     "$schema",
     "agent",
     "agents",
+    "defaultAgent",
     "default_agent",
     "hooks",
     "integrations",
@@ -1930,6 +2032,12 @@ pub fn resolve_profile_model_metadata(
     let variant = variant.transpose()?;
 
     let display_label = build_model_display_label(model, variant);
+    let variant_display_label = variant.map(|(variant_name, variant_cfg)| {
+        variant_cfg
+            .display_name
+            .clone()
+            .unwrap_or_else(|| variant_name.to_string())
+    });
     let max_input_tokens = variant
         .and_then(|(_, variant_cfg)| variant_cfg.max_input_tokens)
         .or(model.max_input_tokens);
@@ -1939,9 +2047,14 @@ pub fn resolve_profile_model_metadata(
 
     Ok(ResolvedProfileModelMetadata {
         profile: profile_name.to_string(),
+        profile_description: Some(profile.description.clone()),
         provider: provider_name.to_string(),
+        provider_display_label: provider.display_label(provider_name),
+        provider_backend_label: provider_backend_label(provider).map(str::to_string),
         model: model_name.to_string(),
+        model_display_label: model.display_name.clone(),
         variant: variant.map(|(variant_name, _)| variant_name.to_string()),
+        variant_display_label,
         display_label,
         token_window_label: build_token_window_label(
             model.metadata.context_window_tokens,
@@ -2013,6 +2126,7 @@ pub fn resolve_configured_model_metadata(
         provider_name,
         model_name,
         model,
+        provider,
         variant,
     ))
 }
@@ -2026,6 +2140,7 @@ pub fn configured_model_catalog(cfg: &HarnessConfig) -> Vec<ResolvedModelCatalog
                 provider_name,
                 model_name,
                 model,
+                provider,
                 None,
             ));
 
@@ -2038,6 +2153,7 @@ pub fn configured_model_catalog(cfg: &HarnessConfig) -> Vec<ResolvedModelCatalog
                     provider_name,
                     model_name,
                     model,
+                    provider,
                     Some((variant_name.as_str(), variant_cfg)),
                 ));
             }
@@ -2051,6 +2167,7 @@ fn build_resolved_model_catalog_entry(
     provider_name: &str,
     model_name: &str,
     model: &ModelConfig,
+    provider: &ProviderConfig,
     variant: Option<(&str, &ModelVariantConfig)>,
 ) -> ResolvedModelCatalogEntry {
     let max_input_tokens = variant
@@ -2062,8 +2179,17 @@ fn build_resolved_model_catalog_entry(
 
     ResolvedModelCatalogEntry {
         provider: provider_name.to_string(),
+        provider_display_label: provider.display_label(provider_name),
+        provider_backend_label: provider_backend_label(provider).map(str::to_string),
         model: model_name.to_string(),
+        model_display_label: model.display_name.clone(),
         variant: variant.map(|(variant_name, _)| variant_name.to_string()),
+        variant_display_label: variant.map(|(variant_name, variant_cfg)| {
+            variant_cfg
+                .display_name
+                .clone()
+                .unwrap_or_else(|| variant_name.to_string())
+        }),
         display_label: build_model_display_label(model, variant),
         token_window_label: build_token_window_label(
             model.metadata.context_window_tokens,
@@ -2091,6 +2217,87 @@ fn build_resolved_model_catalog_entry(
         recommended_for: variant
             .and_then(|(_, variant_cfg)| variant_cfg.metadata.recommended_for.clone()),
         supports_reasoning_summaries: model.metadata.supports_reasoning_summaries.unwrap_or(false),
+    }
+}
+
+fn provider_backend_label(provider: &ProviderConfig) -> Option<&'static str> {
+    match provider {
+        ProviderConfig::OpenAiCompatible(_) => Some("OpenAI"),
+    }
+}
+
+fn merge_string_alias(
+    target: &mut impl StringAliasTarget,
+    alias: Option<String>,
+    target_path: &str,
+    alias_path: &str,
+) -> Result<(), ConfigError> {
+    let Some(alias) = alias.map(|value| value.trim().to_string()) else {
+        return Ok(());
+    };
+    if alias.is_empty() {
+        return Ok(());
+    }
+
+    match target.current_value() {
+        Some(current) if current == alias => Ok(()),
+        Some(_) => Err(ConfigError::InvalidReference(format!(
+            "{target_path} conflicts with {alias_path}; use one value"
+        ))),
+        None => {
+            target.set_value(alias);
+            Ok(())
+        }
+    }
+}
+
+fn merge_map_alias(
+    target: &mut BTreeMap<String, String>,
+    alias: BTreeMap<String, String>,
+    target_path: &str,
+    alias_path: &str,
+) -> Result<(), ConfigError> {
+    if alias.is_empty() {
+        return Ok(());
+    }
+    if target.is_empty() {
+        *target = alias;
+        return Ok(());
+    }
+    if *target == alias {
+        return Ok(());
+    }
+
+    Err(ConfigError::InvalidReference(format!(
+        "{target_path} conflicts with {alias_path}; use one value"
+    )))
+}
+
+trait StringAliasTarget {
+    fn current_value(&self) -> Option<&str>;
+    fn set_value(&mut self, value: String);
+}
+
+impl StringAliasTarget for String {
+    fn current_value(&self) -> Option<&str> {
+        let trimmed = self.trim();
+        (!trimmed.is_empty()).then_some(trimmed)
+    }
+
+    fn set_value(&mut self, value: String) {
+        *self = value;
+    }
+}
+
+impl StringAliasTarget for Option<String> {
+    fn current_value(&self) -> Option<&str> {
+        self.as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    }
+
+    fn set_value(&mut self, value: String) {
+        *self = Some(value);
     }
 }
 
@@ -2382,21 +2589,14 @@ mod tests {
             deep: {
               description: "Default deep execution profile",
               model_ref: "default:gpt-4o-mini",
-              tool_surface: "native",
-              tools: ["fs.read"],
+              tools: ["read"],
             },
             tool_audit: {
               description: "Audit profile",
               model_ref: "default:gpt-4o-mini",
               max_iters: 20,
               tool_failure_mode: "continue_as_tool_message",
-              tools: ["fs.read", "tool.invalid"],
-            },
-            deep_compat: {
-              description: "Compat profile",
-              model_ref: "default:gpt-4o-mini",
-              tool_surface: "compat",
-              tools: ["read"],
+              tools: ["read", "invalid"],
             },
         "#;
 
@@ -2417,16 +2617,11 @@ mod tests {
         assert_eq!(parsed.schema.as_deref(), Some("./harness.schema.json"));
         assert!(parsed.providers.contains_key("default"));
         assert!(parsed.agents.contains_key("deep"));
-        assert_eq!(parsed.agents["deep"].tool_surface, ToolSurface::Native);
         assert_eq!(
             parsed.agents["tool_audit"].tool_failure_mode,
             ToolFailureMode::ContinueAsToolMessage
         );
         assert_eq!(parsed.agents["tool_audit"].max_iters, 20);
-        assert_eq!(
-            parsed.agents["deep_compat"].tool_surface,
-            ToolSurface::Compat
-        );
         assert_eq!(
             parsed.permissions.defaults.question,
             Some(PermissionMode::Ask)
@@ -2630,8 +2825,62 @@ mod tests {
         let err = load_config_from_str(cfg).expect_err("unknown top-level key must fail");
         assert_eq!(
             err.to_string(),
-            "unknown top-level config keys: `extraTopLevel`; expected only `$schema`, `agent`, `agents`, `default_agent`, `hooks`, `integrations`, `lsp`, `logging`, `permissions`, `providers`, `runtime`, `skills`, `ui`"
+            "unknown top-level config keys: `extraTopLevel`; expected only `$schema`, `agent`, `agents`, `defaultAgent`, `default_agent`, `hooks`, `integrations`, `lsp`, `logging`, `permissions`, `providers`, `runtime`, `skills`, `ui`"
         );
+    }
+
+    #[test]
+    fn top_level_default_agent_camel_case_alias_is_accepted() {
+        let cfg = r#"
+        {
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              models: {
+                "gpt-4o-mini": {
+                  display_name: "GPT-4o mini"
+                }
+              }
+            }
+          },
+          agents: {
+            build: {
+              description: "Build work",
+              model_ref: "default:gpt-4o-mini",
+              tools: ["fs.read"]
+            }
+          },
+          defaultAgent: "build",
+          permissions: {
+            defaults: {
+              edit: "allow",
+              shell: "allow",
+              network: "allow"
+            }
+          },
+          runtime: {
+            background_tasks: {
+              default_concurrency: 2,
+              provider_concurrency: 2,
+              model_concurrency: 2,
+              stale_timeout_ms: 15000,
+              message_staleness_timeout_ms: 5000
+            },
+            session_dir: ".agent-harness/sessions"
+          },
+          integrations: {
+            remote_search: {
+              endpoint: "https://mcp.exa.ai/mcp"
+            }
+          }
+        }
+        "#;
+
+        let parsed = load_config_from_str(cfg).expect("defaultAgent alias should parse");
+        assert_eq!(parsed.default_agent.as_deref(), Some("build"));
+        assert_eq!(parsed.ui.default_profile.as_deref(), Some("build"));
     }
 
     #[test]
@@ -2789,6 +3038,69 @@ mod tests {
             parsed.agents["plan"].exit_target_profile.as_deref(),
             Some("build")
         );
+    }
+
+    #[test]
+    fn opencode_like_provider_name_and_options_normalize_to_runtime_shape() {
+        let cfg = r#"
+        {
+          providers: {
+            default: {
+              type: "openai_compatible",
+              name: "CLIProxyAPI",
+              options: {
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKey: "test-key",
+              },
+              models: {
+                "gpt-4o-mini": {
+                  name: "GPT-4o mini"
+                }
+              }
+            }
+          },
+          agents: {
+            build: {
+              description: "Build work",
+              model_ref: "default:gpt-4o-mini",
+              tools: ["fs.read"]
+            }
+          },
+          permissions: {
+            defaults: {
+              edit: "allow",
+              shell: "allow",
+              network: "allow"
+            }
+          },
+          runtime: {
+            background_tasks: {
+              default_concurrency: 2,
+              provider_concurrency: 2,
+              model_concurrency: 2,
+              stale_timeout_ms: 15000,
+              message_staleness_timeout_ms: 5000
+            },
+            session_dir: ".agent-harness/sessions"
+          },
+          integrations: {
+            remote_search: {
+              endpoint: "https://mcp.exa.ai/mcp"
+            }
+          }
+        }
+        "#;
+
+        let parsed = load_config_from_str(cfg).expect("opencode-like provider config should parse");
+        let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
+        assert_eq!(provider.name.as_deref(), Some("CLIProxyAPI"));
+        assert_eq!(provider.base_url, "http://127.0.0.1:8317/v1");
+        assert_eq!(provider.api_key, "test-key");
+        assert_eq!(provider.models["gpt-4o-mini"].display_name, "GPT-4o mini");
+
+        let metadata = resolve_profile_model_metadata(&parsed, "build")
+            .expect("profile metadata should resolve");
+        assert_eq!(metadata.provider_display_label, "CLIProxyAPI");
     }
 
     #[test]
@@ -3187,46 +3499,8 @@ mod tests {
     }
 
     #[test]
-    fn profile_tool_surface_defaults_to_native_when_omitted() {
-        let cfg = config_fixture(
-            &deep_profile(r#"tools: ["fs.read"],"#),
-            "test-key",
-            None,
-            None,
-        );
-
-        let parsed =
-            load_config_from_str(&cfg).expect("config with default tool surface must parse");
-        assert_eq!(parsed.agents["deep"].tool_surface, ToolSurface::Native);
-    }
-
-    #[test]
-    fn profile_tool_surface_parses_compat_explicitly() {
-        let cfg = config_fixture(
-            &deep_profile(
-                r#"
-                tool_surface: "compat",
-                tools: ["read"],
-                "#,
-            ),
-            "test-key",
-            None,
-            None,
-        );
-
-        let parsed =
-            load_config_from_str(&cfg).expect("config with compat tool surface must parse");
-        assert_eq!(parsed.agents["deep"].tool_surface, ToolSurface::Compat);
-    }
-
-    #[test]
     fn profile_tool_failure_mode_defaults_to_fail_turn() {
-        let cfg = config_fixture(
-            &deep_profile(r#"tools: ["fs.read"],"#),
-            "test-key",
-            None,
-            None,
-        );
+        let cfg = config_fixture(&deep_profile(r#"tools: ["read"],"#), "test-key", None, None);
 
         let parsed =
             load_config_from_str(&cfg).expect("config with default tool failure mode must parse");

@@ -9,7 +9,7 @@ use harness_core::config::{
 };
 use harness_core::coord::{CoordinatorConfig, PlanProfileConfig};
 use harness_core::perm::PermissionPolicy;
-use harness_core::tool::{resolve_tool_ids_for_surface, ToolRegistry};
+use harness_core::tool::ToolRegistry;
 use harness_providers::openai::{
     OpenAiApiMode as ProviderOpenAiApiMode, OpenAiCompatibleProvider,
     OpenAiCompatibleProviderConfig,
@@ -143,15 +143,13 @@ fn interactive_agent_profiles_with_extra_tools(
                 max_iters: profile_cfg.max_iters,
                 temperature: profile_cfg.temperature,
                 tool_failure_mode: profile_cfg.tool_failure_mode,
-                tool_surface: profile_cfg.tool_surface,
-                toolset: resolve_tool_ids_for_surface(
-                    profile_cfg
-                        .tools
-                        .iter()
-                        .map(String::as_str)
-                        .chain(extra_tool_ids.iter().map(String::as_str)),
-                    profile_cfg.tool_surface,
-                ),
+                toolset: profile_cfg
+                    .tools
+                    .iter()
+                    .map(String::as_str)
+                    .chain(extra_tool_ids.iter().map(String::as_str))
+                    .map(ToOwned::to_owned)
+                    .collect(),
             },
         );
     }
@@ -311,8 +309,7 @@ mod tests {
               description: "Audit profile",
               system_prompt: "{configured_prompt_json}",
               model_ref: "default:gpt-5.4-mini",
-              tool_surface: "native",
-              tools: ["fs.read"],
+              tools: ["read"],
             }},
             "#
         ));
@@ -335,8 +332,7 @@ mod tests {
             deep: {
               description: "Default deep execution profile",
               model_ref: "default:gpt-5.4-mini",
-              tool_surface: "native",
-              tools: ["fs.read"],
+              tools: ["read"],
             },
             "#,
         );
@@ -355,8 +351,7 @@ mod tests {
             build: {
               description: "Build lane",
               model_ref: "default:gpt-5.4-mini",
-              tool_surface: "native",
-              tools: ["fs.read"],
+              tools: ["read"],
             },
             "#,
         );
@@ -370,7 +365,7 @@ mod tests {
         )
         .expect("interactive profiles");
 
-        assert!(profiles["build"].toolset.contains(&"fs.read".to_string()));
+        assert!(profiles["build"].toolset.contains(&"read".to_string()));
         assert!(profiles["build"]
             .toolset
             .contains(&"mcp.docs-rs.search_in_crate".to_string()));

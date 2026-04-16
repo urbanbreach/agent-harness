@@ -1,11 +1,9 @@
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use thiserror::Error;
@@ -14,16 +12,6 @@ use crate::coord::CoordinatorHandle;
 use crate::event::{ActorKind, EventActor};
 
 pub type ToolId = String;
-
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema, Default,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum ToolSurface {
-    #[default]
-    Native,
-    Compat,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -257,262 +245,12 @@ pub trait Tool: Send + Sync {
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError>;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum NativeToolPermissionClass {
-    ReadOnly,
-    WorkspaceWrite,
-    Shell,
-    Network,
-    AgentSpawn,
-    ControlPlane,
-    UserInput,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum NativeToolProviderExposure {
-    AliasOnly,
-    ExplicitOptIn,
-    Reserved,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum NativeToolMigrationStatus {
-    CompatOnly,
-    NativeStable,
-    NativeUpgradeInProgress,
-    Unimplemented,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NativeToolParityEntry {
-    pub canonical_id: &'static str,
-    pub aliases: &'static [&'static str],
-    pub permission_class: NativeToolPermissionClass,
-    pub provider_exposure: NativeToolProviderExposure,
-    pub migration_status: NativeToolMigrationStatus,
-}
-
-impl NativeToolParityEntry {
-    pub fn all_ids(&self) -> impl Iterator<Item = &'static str> + '_ {
-        std::iter::once(self.canonical_id).chain(self.aliases.iter().copied())
+pub fn canonical_tool_id_for(tool_id: &str) -> Option<&str> {
+    if tool_id.trim().is_empty() {
+        None
+    } else {
+        Some(tool_id)
     }
-
-    pub const fn registers_canonical_id(&self) -> bool {
-        matches!(
-            self.migration_status,
-            NativeToolMigrationStatus::NativeStable
-                | NativeToolMigrationStatus::NativeUpgradeInProgress
-        )
-    }
-
-    pub const fn exposes_aliases(&self) -> bool {
-        matches!(
-            self.provider_exposure,
-            NativeToolProviderExposure::AliasOnly | NativeToolProviderExposure::ExplicitOptIn
-        )
-    }
-
-    pub fn primary_alias(&self) -> Option<&'static str> {
-        self.aliases.first().copied()
-    }
-
-    pub fn tool_id_for_surface(&self, surface: ToolSurface) -> &'static str {
-        match surface {
-            ToolSurface::Native => self.canonical_id,
-            ToolSurface::Compat => {
-                if self.exposes_aliases() {
-                    self.primary_alias().unwrap_or(self.canonical_id)
-                } else {
-                    self.canonical_id
-                }
-            }
-        }
-    }
-}
-
-pub const NATIVE_TOOL_PARITY_MATRIX: &[NativeToolParityEntry] = &[
-    NativeToolParityEntry {
-        canonical_id: "user.question",
-        aliases: &["question"],
-        permission_class: NativeToolPermissionClass::UserInput,
-        provider_exposure: NativeToolProviderExposure::AliasOnly,
-        migration_status: NativeToolMigrationStatus::NativeUpgradeInProgress,
-    },
-    NativeToolParityEntry {
-        canonical_id: "tool.invalid",
-        aliases: &["invalid"],
-        permission_class: NativeToolPermissionClass::ControlPlane,
-        provider_exposure: NativeToolProviderExposure::AliasOnly,
-        migration_status: NativeToolMigrationStatus::NativeUpgradeInProgress,
-    },
-    NativeToolParityEntry {
-        canonical_id: "fs.write",
-        aliases: &["write"],
-        permission_class: NativeToolPermissionClass::WorkspaceWrite,
-        provider_exposure: NativeToolProviderExposure::AliasOnly,
-        migration_status: NativeToolMigrationStatus::NativeUpgradeInProgress,
-    },
-    NativeToolParityEntry {
-        canonical_id: "web.fetch",
-        aliases: &["webfetch"],
-        permission_class: NativeToolPermissionClass::Network,
-        provider_exposure: NativeToolProviderExposure::AliasOnly,
-        migration_status: NativeToolMigrationStatus::NativeUpgradeInProgress,
-    },
-    NativeToolParityEntry {
-        canonical_id: "todo.write",
-        aliases: &["todowrite"],
-        permission_class: NativeToolPermissionClass::ControlPlane,
-        provider_exposure: NativeToolProviderExposure::AliasOnly,
-        migration_status: NativeToolMigrationStatus::NativeUpgradeInProgress,
-    },
-    NativeToolParityEntry {
-        canonical_id: "todo.read",
-        aliases: &["todoread"],
-        permission_class: NativeToolPermissionClass::ControlPlane,
-        provider_exposure: NativeToolProviderExposure::AliasOnly,
-        migration_status: NativeToolMigrationStatus::NativeUpgradeInProgress,
-    },
-    NativeToolParityEntry {
-        canonical_id: "skill.load",
-        aliases: &["skill"],
-        permission_class: NativeToolPermissionClass::ControlPlane,
-        provider_exposure: NativeToolProviderExposure::AliasOnly,
-        migration_status: NativeToolMigrationStatus::NativeUpgradeInProgress,
-    },
-    NativeToolParityEntry {
-        canonical_id: "search.web",
-        aliases: &["websearch"],
-        permission_class: NativeToolPermissionClass::Network,
-        provider_exposure: NativeToolProviderExposure::AliasOnly,
-        migration_status: NativeToolMigrationStatus::NativeUpgradeInProgress,
-    },
-    NativeToolParityEntry {
-        canonical_id: "search.code",
-        aliases: &["codesearch"],
-        permission_class: NativeToolPermissionClass::Network,
-        provider_exposure: NativeToolProviderExposure::AliasOnly,
-        migration_status: NativeToolMigrationStatus::NativeUpgradeInProgress,
-    },
-    NativeToolParityEntry {
-        canonical_id: "github.issue",
-        aliases: &[],
-        permission_class: NativeToolPermissionClass::Network,
-        provider_exposure: NativeToolProviderExposure::ExplicitOptIn,
-        migration_status: NativeToolMigrationStatus::NativeStable,
-    },
-    NativeToolParityEntry {
-        canonical_id: "github.pull_request",
-        aliases: &[],
-        permission_class: NativeToolPermissionClass::Network,
-        provider_exposure: NativeToolProviderExposure::ExplicitOptIn,
-        migration_status: NativeToolMigrationStatus::NativeStable,
-    },
-    NativeToolParityEntry {
-        canonical_id: "code.lsp",
-        aliases: &["lsp"],
-        permission_class: NativeToolPermissionClass::ReadOnly,
-        provider_exposure: NativeToolProviderExposure::AliasOnly,
-        migration_status: NativeToolMigrationStatus::NativeUpgradeInProgress,
-    },
-    NativeToolParityEntry {
-        canonical_id: "code.lsp.rename",
-        aliases: &[],
-        permission_class: NativeToolPermissionClass::WorkspaceWrite,
-        provider_exposure: NativeToolProviderExposure::ExplicitOptIn,
-        migration_status: NativeToolMigrationStatus::NativeStable,
-    },
-    NativeToolParityEntry {
-        canonical_id: "tool.batch",
-        aliases: &["batch"],
-        permission_class: NativeToolPermissionClass::ControlPlane,
-        provider_exposure: NativeToolProviderExposure::AliasOnly,
-        migration_status: NativeToolMigrationStatus::NativeUpgradeInProgress,
-    },
-    NativeToolParityEntry {
-        canonical_id: "plan.exit",
-        aliases: &["plan_exit"],
-        permission_class: NativeToolPermissionClass::ControlPlane,
-        provider_exposure: NativeToolProviderExposure::AliasOnly,
-        migration_status: NativeToolMigrationStatus::NativeUpgradeInProgress,
-    },
-    NativeToolParityEntry {
-        canonical_id: "agent.spawn",
-        aliases: &["task"],
-        permission_class: NativeToolPermissionClass::AgentSpawn,
-        provider_exposure: NativeToolProviderExposure::ExplicitOptIn,
-        migration_status: NativeToolMigrationStatus::NativeUpgradeInProgress,
-    },
-    NativeToolParityEntry {
-        canonical_id: "shell.run",
-        aliases: &["bash"],
-        permission_class: NativeToolPermissionClass::Shell,
-        provider_exposure: NativeToolProviderExposure::ExplicitOptIn,
-        migration_status: NativeToolMigrationStatus::NativeStable,
-    },
-    NativeToolParityEntry {
-        canonical_id: "fs.read",
-        aliases: &["read"],
-        permission_class: NativeToolPermissionClass::ReadOnly,
-        provider_exposure: NativeToolProviderExposure::ExplicitOptIn,
-        migration_status: NativeToolMigrationStatus::NativeStable,
-    },
-    NativeToolParityEntry {
-        canonical_id: "fs.glob",
-        aliases: &["glob"],
-        permission_class: NativeToolPermissionClass::ReadOnly,
-        provider_exposure: NativeToolProviderExposure::ExplicitOptIn,
-        migration_status: NativeToolMigrationStatus::NativeStable,
-    },
-    NativeToolParityEntry {
-        canonical_id: "fs.grep",
-        aliases: &["grep"],
-        permission_class: NativeToolPermissionClass::ReadOnly,
-        provider_exposure: NativeToolProviderExposure::ExplicitOptIn,
-        migration_status: NativeToolMigrationStatus::NativeStable,
-    },
-];
-
-pub const fn native_tool_parity_matrix() -> &'static [NativeToolParityEntry] {
-    NATIVE_TOOL_PARITY_MATRIX
-}
-
-pub fn native_tool_parity_entry_for(tool_id: &str) -> Option<&'static NativeToolParityEntry> {
-    native_tool_parity_matrix()
-        .iter()
-        .find(|entry| entry.all_ids().any(|candidate| candidate == tool_id))
-}
-
-pub fn canonical_tool_id_for(tool_id: &str) -> Option<&'static str> {
-    native_tool_parity_entry_for(tool_id).map(|entry| entry.canonical_id)
-}
-
-pub fn native_and_alias_tool_ids() -> Vec<&'static str> {
-    let mut tool_ids = Vec::new();
-    for entry in native_tool_parity_matrix() {
-        tool_ids.extend(entry.all_ids());
-    }
-    tool_ids
-}
-
-pub fn tool_id_for_surface<'a>(tool_id: &'a str, surface: ToolSurface) -> Cow<'a, str> {
-    native_tool_parity_entry_for(tool_id)
-        .map(|entry| Cow::Borrowed(entry.tool_id_for_surface(surface)))
-        .unwrap_or_else(|| Cow::Borrowed(tool_id))
-}
-
-pub fn resolve_tool_ids_for_surface<I, S>(tool_ids: I, surface: ToolSurface) -> Vec<String>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
-{
-    let mut resolved = tool_ids
-        .into_iter()
-        .map(|tool_id| tool_id_for_surface(tool_id.as_ref(), surface).into_owned())
-        .collect::<Vec<_>>();
-    resolved.sort();
-    resolved.dedup();
-    resolved
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -682,9 +420,8 @@ pub fn actor_capabilities(actor_kind: ActorKind) -> BTreeSet<ToolCapability> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_tool_function_name_mapping, canonical_tool_id_for, native_and_alias_tool_ids,
-        native_tool_parity_matrix, sanitize_tool_function_name, ArtifactStore, ArtifactStoreError,
-        ToolCapability, ToolRegistry,
+        build_tool_function_name_mapping, canonical_tool_id_for, sanitize_tool_function_name,
+        ArtifactStore, ArtifactStoreError, ToolCapability, ToolRegistry,
     };
     use crate::event::ActorKind;
     use std::collections::BTreeSet;
@@ -771,11 +508,36 @@ mod tests {
     }
 
     #[test]
-    fn function_name_mapping_is_stable_for_native_and_alias_tool_ids() {
-        let tool_ids = native_and_alias_tool_ids();
+    fn canonical_tool_identity_helper_returns_input_for_public_ids() {
+        let tool_ids = [
+            "read",
+            "list",
+            "glob",
+            "grep",
+            "bash",
+            "write",
+            "edit",
+            "apply_patch",
+            "webfetch",
+            "todowrite",
+            "todoread",
+            "skill",
+            "question",
+            "batch",
+            "task",
+            "plan_exit",
+            "lsp",
+            "invalid",
+            "websearch",
+            "codesearch",
+            "lsp.rename",
+            "github.issue",
+            "github.pull_request",
+            "edit.hashline_scan",
+        ];
         let mapping_a = build_tool_function_name_mapping(tool_ids.iter().copied());
 
-        let mut reversed_tool_ids = tool_ids.clone();
+        let mut reversed_tool_ids = tool_ids;
         reversed_tool_ids.reverse();
         let mapping_b = build_tool_function_name_mapping(reversed_tool_ids.iter().copied());
 
@@ -793,14 +555,8 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert_eq!(unique_function_names.len(), tool_ids.len());
 
-        for entry in native_tool_parity_matrix() {
-            assert_eq!(
-                canonical_tool_id_for(entry.canonical_id),
-                Some(entry.canonical_id)
-            );
-            for alias in entry.aliases {
-                assert_eq!(canonical_tool_id_for(alias), Some(entry.canonical_id));
-            }
+        for tool_id in tool_ids {
+            assert_eq!(canonical_tool_id_for(tool_id), Some(tool_id));
         }
 
         for (function_name, tool_id) in mapping_a.function_to_tool_id() {

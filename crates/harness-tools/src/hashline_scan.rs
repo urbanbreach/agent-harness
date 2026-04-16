@@ -8,6 +8,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use crate::workspace_edit::record_file_read;
+
 const DEFAULT_START_LINE: u32 = 1;
 const DEFAULT_LIMIT: u32 = 2000;
 
@@ -37,7 +39,7 @@ impl Tool for HashlineScanTool {
     }
 
     fn description(&self) -> &str {
-        "Scans workspace file lines and returns hashline anchors for patch authoring."
+        "Scans workspace file lines and returns hashline anchors for patch authoring. Prefer this or read(hashlineAnchors=true) before edit.hashline_apply when precise edits might be stale."
     }
 
     fn parameters_json_schema(&self) -> serde_json::Value {
@@ -85,6 +87,8 @@ impl Tool for HashlineScanTool {
                 ToolError::Execution(format!("failed to serialize hashline scan artifact: {err}"))
             })?;
 
+        record_file_read(&ctx, &resolved_path)?;
+
         let artifact_name = format!("hashline_scan/{}.json", sanitize_artifact_name(&args.path));
         let artifact = ctx
             .artifact_store()
@@ -128,7 +132,7 @@ fn scan_line_anchors(content: &str, start_line: u32, limit: u32) -> Vec<Hashline
 fn render_display_text(anchors: &[HashlineAnchor]) -> String {
     anchors
         .iter()
-        .map(|anchor| format!("{} {} | {}", anchor.line, anchor.hash, anchor.text))
+        .map(|anchor| format!("{}#{}|{}", anchor.line, anchor.hash, anchor.text))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -210,6 +214,16 @@ mod tests {
             .as_array()
             .expect("anchors should be an array");
         assert_eq!(anchors.len(), 3);
+
+        assert_eq!(
+            result.display_text,
+            format!(
+                "1#{}|alpha\n2#{}|beta\n3#{}|gamma",
+                compute_line_hash("alpha"),
+                compute_line_hash("beta"),
+                compute_line_hash("gamma")
+            )
+        );
 
         assert_eq!(anchors[0]["line"], json!(1));
         assert_eq!(anchors[0]["hash"], json!(compute_line_hash("alpha")));

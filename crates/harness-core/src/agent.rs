@@ -12,10 +12,7 @@ use serde_json::Value;
 use tokio_stream::StreamExt;
 
 use crate::config::{registered_profile_model_metadata, ToolFailureMode};
-use crate::tool::{
-    build_tool_function_name_mapping, resolve_tool_ids_for_surface, ToolRegistry, ToolResult,
-    ToolSurface,
-};
+use crate::tool::{build_tool_function_name_mapping, ToolRegistry, ToolResult};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AgentProfile {
@@ -28,8 +25,6 @@ pub struct AgentProfile {
     #[serde(default = "default_agent_profile_max_iters")]
     pub max_iters: usize,
     pub tool_failure_mode: ToolFailureMode,
-    #[serde(default)]
-    pub tool_surface: ToolSurface,
     pub toolset: Vec<String>,
 }
 
@@ -43,7 +38,6 @@ impl AgentProfile {
             temperature: None,
             max_iters: default_agent_profile_max_iters(),
             tool_failure_mode: ToolFailureMode::FailTurn,
-            tool_surface: ToolSurface::Native,
             toolset: Vec::new(),
             name,
         }
@@ -555,11 +549,7 @@ pub fn build_provider_tool_defs(
     profile: &AgentProfile,
     tool_registry: &ToolRegistry,
 ) -> Result<Vec<ToolDef>, String> {
-    let resolved_tool_ids = resolve_tool_ids_for_surface(
-        profile.toolset.iter().map(String::as_str),
-        profile.tool_surface,
-    );
-    let mapping = build_tool_function_name_mapping(resolved_tool_ids.iter().map(String::as_str));
+    let mapping = build_tool_function_name_mapping(profile.toolset.iter().map(String::as_str));
     let mut tools = Vec::new();
 
     for (tool_id, function_name) in mapping.tool_id_to_function_name() {
@@ -604,7 +594,24 @@ fn validate_provider_parameters_schema(parameters: &serde_json::Value) -> Result
 }
 
 fn tool_result_to_message_content(result: &ToolResult) -> String {
-    serde_json::to_string(result).unwrap_or_else(|_| result.display_text.clone())
+    if !result.display_text.trim().is_empty() {
+        return result.display_text.clone();
+    }
+
+    let mut payload = serde_json::Map::new();
+    if let Some(structured_output) = result.structured_json.clone() {
+        payload.insert("structured_output".to_string(), structured_output);
+    }
+    if !result.artifacts.is_empty() {
+        let artifacts = serde_json::to_value(&result.artifacts).unwrap_or(Value::Array(Vec::new()));
+        payload.insert("artifacts".to_string(), artifacts);
+    }
+
+    if payload.is_empty() {
+        String::new()
+    } else {
+        Value::Object(payload).to_string()
+    }
 }
 
 fn build_completion_request(
@@ -701,9 +708,7 @@ mod tests {
         MultiTurnStreamingRequest,
     };
     use crate::config::ToolFailureMode;
-    use crate::tool::{
-        Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult, ToolSurface,
-    };
+    use crate::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 
     #[tokio::test]
     async fn multi_turn_runner_executes_tool_then_completes() {
@@ -815,8 +820,158 @@ mod tests {
 
         let calls = seen_calls.lock().expect("lock seen calls");
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].0, "fs.read");
+        assert_eq!(calls[0].0, "read");
         assert_eq!(calls[0].1, json!({"filePath": "/tmp/demo.txt"}));
+    }
+
+    #[test]
+    fn tool_result_message_content_prefers_display_text() {
+        let result = ToolResult {
+            display_text: "crate summary".to_string(),
+            structured_json: Some(json!({ "raw": "should stay out of provider replay" })),
+            artifacts: Vec::new(),
+        };
+
+        assert_eq!(tool_result_to_message_content(&result), "crate summary");
+    }
+
+    #[test]
+    fn tool_result_message_content_falls_back_to_structured_output_when_display_text_missing() {
+        let structured = ToolResult {
+            display_text: String::new(),
+            structured_json: Some(json!({ "status": "ok" })),
+            artifacts: Vec::new(),
+        };
+        assert_eq!(
+            tool_result_to_message_content(&structured),
+            json!({ "structured_output": { "status": "ok" } }).to_string()
+        );
+
+        let artifacts = ToolResult {
+            display_text: String::new(),
+            structured_json: None,
+            artifacts: vec![crate::tool::ArtifactRef {
+                path: "artifacts/tool-output.txt".to_string(),
+                digest: None,
+            }],
+        };
+        assert_eq!(
+            tool_result_to_message_content(&artifacts),
+            json!({
+                "artifacts": [{
+                    "path": "artifacts/tool-output.txt"
+                }]
+            })
+            .to_string()
+        );
+    }
+
+    #[tokio::test]
+    async fn multi_turn_runner_can_continue_with_structured_only_tool_result() {
+        let profile = test_profile();
+        let request = test_request();
+        let tool_registry = test_tool_registry();
+        let tool_defs =
+            build_provider_tool_defs(&profile, tool_registry.as_ref()).expect("build tool defs");
+        let function_name = tool_defs.first().expect("tool def").function_name.clone();
+
+        let structured_only_result = ToolResult {
+            display_text: String::new(),
+            structured_json: Some(json!({
+                "path": "docs/guide.md",
+                "lines": ["1: Intro", "2: Body"],
+                "truncated": false
+            })),
+            artifacts: Vec::new(),
+        };
+        let tool_result_message = tool_result_to_message_content(&structured_only_result);
+
+        let first_request = completion_request(
+            "model-1",
+            vec![
+                completion_system_message("sys"),
+                completion_user_message("Use a tool"),
+            ],
+            &tool_defs,
+        );
+        let second_request = completion_request(
+            "model-1",
+            vec![
+                completion_system_message("sys"),
+                completion_user_message("Use a tool"),
+                completion_assistant_message_with_tool_call(
+                    "calling tool",
+                    &function_name,
+                    "call_1",
+                    r#"{"filePath":"/tmp/demo.txt"}"#,
+                ),
+                completion_tool_message(&tool_result_message, &function_name, "call_1"),
+            ],
+            &tool_defs,
+        );
+
+        let mut scripted = BTreeMap::new();
+        scripted.insert(
+            request_digest(&first_request),
+            vec![
+                harness_providers::ProviderStreamEvent::Start,
+                harness_providers::ProviderStreamEvent::TextDelta("calling tool".to_string()),
+                harness_providers::ProviderStreamEvent::ToolCallComplete {
+                    tool_call_id: "call_1".to_string(),
+                    function_name: function_name.clone(),
+                    arguments_json: r#"{"filePath":"/tmp/demo.txt"}"#.to_string(),
+                },
+                harness_providers::ProviderStreamEvent::Done {
+                    usage: CompletionUsage {
+                        prompt_tokens: 10,
+                        completion_tokens: 8,
+                        total_tokens: 18,
+                    },
+                },
+            ],
+        );
+        scripted.insert(
+            request_digest(&second_request),
+            vec![
+                harness_providers::ProviderStreamEvent::Start,
+                harness_providers::ProviderStreamEvent::TextDelta("final response".to_string()),
+                harness_providers::ProviderStreamEvent::Done {
+                    usage: CompletionUsage {
+                        prompt_tokens: 14,
+                        completion_tokens: 5,
+                        total_tokens: 19,
+                    },
+                },
+            ],
+        );
+
+        let provider = Arc::new(MockProvider::new(scripted));
+        let outcome = run_multi_turn_streaming(
+            MultiTurnStreamingRequest {
+                provider,
+                tool_registry,
+                profile: &profile,
+                request_id: "req_structured_tool_result".to_string(),
+                request,
+                prior_turns: &[],
+            },
+            {
+                let structured_only_result = structured_only_result.clone();
+                move |_tool_id, _args_json| {
+                    let structured_only_result = structured_only_result.clone();
+                    async move { Ok(structured_only_result) }
+                }
+            },
+            |_event| async {},
+        )
+        .await;
+
+        assert_eq!(
+            outcome,
+            AgentTurnOutcome::Succeeded {
+                output: "final response".to_string(),
+            }
+        );
     }
 
     #[tokio::test]
@@ -1070,8 +1225,7 @@ mod tests {
             max_iters,
             temperature: Some(0.1),
             tool_failure_mode: ToolFailureMode::FailTurn,
-            tool_surface: ToolSurface::Native,
-            toolset: vec!["fs.read".to_string()],
+            toolset: vec!["read".to_string()],
         }
     }
 
@@ -1421,7 +1575,7 @@ mod tests {
 
     fn test_tool_registry() -> Arc<ToolRegistry> {
         let mut registry = ToolRegistry::new();
-        registry.register(Arc::new(TestFsReadTool));
+        registry.register(Arc::new(TestReadTool));
         Arc::new(registry)
     }
 
@@ -1438,14 +1592,14 @@ mod tests {
         Arc::new(registry)
     }
 
-    struct TestFsReadTool;
+    struct TestReadTool;
 
     struct BrokenSchemaTool;
 
     #[async_trait]
-    impl Tool for TestFsReadTool {
+    impl Tool for TestReadTool {
         fn id(&self) -> &str {
-            "fs.read"
+            "read"
         }
 
         fn description(&self) -> &str {

@@ -38,37 +38,33 @@ fn setup_workspace() -> tempfile::TempDir {
 }
 
 #[tokio::test]
-async fn native_execution_surface_routes_compat_aliases_through_one_handler() {
+async fn native_execution_surface_tools_execute_through_native_ids() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let registry = coordinator_registry(ShellAllowlist::default());
 
-    let fs_write = registry.get("fs.write").expect("fs.write in registry");
+    let read = registry.get("read").expect("read in registry");
     let write = registry.get("write").expect("write in registry");
-    let todo_write = registry.get("todo.write").expect("todo.write in registry");
-    let todo_write_alias = registry.get("todowrite").expect("todowrite in registry");
-    let todo_read = registry.get("todo.read").expect("todo.read in registry");
-    let todo_read_alias = registry.get("todoread").expect("todoread in registry");
-    let invalid = registry
-        .get("tool.invalid")
-        .expect("tool.invalid in registry");
-    let invalid_alias = registry.get("invalid").expect("invalid in registry");
+    let todo_write = registry.get("todowrite").expect("todowrite in registry");
+    let todo_read = registry.get("todoread").expect("todoread in registry");
+    let invalid = registry.get("invalid").expect("invalid in registry");
 
     fs::write(workspace.join("surface.txt"), "before\n").expect("seed existing file");
 
-    let native_write = fs_write
+    read.call(
+        test_context(&workspace, "read"),
+        json!({
+            "filePath": "surface.txt",
+            "offset": 1,
+            "limit": 2000,
+        }),
+    )
+    .await
+    .expect("read");
+
+    let write_result = write
         .call(
-            test_context(&workspace, "native-fs-write"),
-            json!({
-                "path": "surface.txt",
-                "content": "shared path\n",
-            }),
-        )
-        .await
-        .expect("fs.write");
-    let compat_write = write
-        .call(
-            test_context(&workspace, "compat-write"),
+            test_context(&workspace, "write"),
             json!({
                 "filePath": "surface.txt",
                 "content": "shared path\n",
@@ -76,82 +72,53 @@ async fn native_execution_surface_routes_compat_aliases_through_one_handler() {
         )
         .await
         .expect("write");
-    assert!(native_write
+    assert!(write_result
         .display_text
         .contains("Wrote file successfully:"));
-    assert!(compat_write
-        .display_text
-        .contains("Wrote file successfully:"));
-    let native_write_json = native_write
+    let write_json = write_result
         .structured_json
         .clone()
-        .expect("native fs.write structured json");
-    let compat_write_json = compat_write
-        .structured_json
-        .clone()
-        .expect("compat write structured json");
-    assert_eq!(native_write_json.get("path"), compat_write_json.get("path"));
+        .expect("write structured json");
+    assert_eq!(write_json.get("path"), Some(&json!("surface.txt")));
     assert_eq!(
-        native_write_json.get("resolved_path"),
-        compat_write_json.get("resolved_path")
+        write_json
+            .get("resolved_path")
+            .and_then(serde_json::Value::as_str),
+        Some(workspace.join("surface.txt").to_string_lossy().as_ref())
     );
-    assert_eq!(
-        native_write_json.get("changed_ranges"),
-        compat_write_json.get("changed_ranges")
-    );
+    assert!(write_json.get("changed_ranges").is_some());
 
     let todos_payload = json!({
         "todos": [
             {"content": "task", "status": "pending", "priority": "high"}
         ]
     });
-    let native_todo_write = todo_write
+    let todo_write_result = todo_write
         .call(
-            test_context(&workspace, "native-todo-write"),
+            test_context(&workspace, "todo-write"),
             todos_payload.clone(),
         )
         .await
-        .expect("todo.write");
-    let compat_todo_write = todo_write_alias
-        .call(test_context(&workspace, "compat-todo-write"), todos_payload)
-        .await
         .expect("todowrite");
+    assert!(!todo_write_result.display_text.trim().is_empty());
     assert_eq!(
-        native_todo_write.display_text,
-        compat_todo_write.display_text
-    );
-    assert_eq!(
-        native_todo_write.structured_json,
-        compat_todo_write.structured_json
+        todo_write_result.structured_json,
+        Some(json!({
+            "todos": [
+                {"content": "task", "status": "pending", "priority": "high"}
+            ]
+        }))
     );
 
-    let native_todo_read = todo_read
-        .call(test_context(&workspace, "native-todo-read"), json!({}))
-        .await
-        .expect("todo.read");
-    let compat_todo_read = todo_read_alias
-        .call(test_context(&workspace, "compat-todo-read"), json!({}))
+    let todo_read_result = todo_read
+        .call(test_context(&workspace, "todo-read"), json!({}))
         .await
         .expect("todoread");
-    assert_eq!(native_todo_read.display_text, compat_todo_read.display_text);
-    assert_eq!(
-        native_todo_read.structured_json,
-        compat_todo_read.structured_json
-    );
+    assert!(todo_read_result.display_text.contains("task"));
 
-    let native_invalid = invalid
+    let invalid_result = invalid
         .call(
-            test_context(&workspace, "native-invalid"),
-            json!({
-                "tool": "write",
-                "error": "bad args",
-            }),
-        )
-        .await
-        .expect("tool.invalid");
-    let compat_invalid = invalid_alias
-        .call(
-            test_context(&workspace, "compat-invalid"),
+            test_context(&workspace, "invalid"),
             json!({
                 "tool": "write",
                 "error": "bad args",
@@ -159,67 +126,38 @@ async fn native_execution_surface_routes_compat_aliases_through_one_handler() {
         )
         .await
         .expect("invalid");
-    assert_eq!(native_invalid.display_text, compat_invalid.display_text);
-    assert_eq!(
-        native_invalid.structured_json,
-        compat_invalid.structured_json
-    );
+    assert!(invalid_result.display_text.contains("bad args"));
 }
 
 #[tokio::test]
-async fn native_registry_exposes_canonical_and_alias_ids_without_behavior_fork() {
+async fn native_registry_exposes_only_single_surface_ids() {
     let registry = coordinator_registry(ShellAllowlist::default());
-    for (canonical, alias) in [
-        ("user.question", "question"),
-        ("tool.invalid", "invalid"),
-        ("fs.write", "write"),
-        ("web.fetch", "webfetch"),
-        ("todo.write", "todowrite"),
-        ("todo.read", "todoread"),
-        ("skill.load", "skill"),
-        ("search.web", "websearch"),
-        ("search.code", "codesearch"),
-        ("code.lsp", "lsp"),
-        ("code.lsp.rename", "code.lsp.rename"),
-        ("tool.batch", "batch"),
-        ("plan.exit", "plan_exit"),
-        ("agent.spawn", "task"),
+    for tool_id in [
+        "question",
+        "invalid",
+        "write",
+        "apply_patch",
+        "webfetch",
+        "todowrite",
+        "todoread",
+        "skill",
+        "websearch",
+        "codesearch",
+        "lsp",
+        "lsp.rename",
+        "batch",
+        "plan_exit",
+        "task",
+        "list",
     ] {
         assert!(
-            registry.get(canonical).is_some(),
-            "missing canonical tool {canonical}"
+            registry.get(tool_id).is_some(),
+            "missing native tool {tool_id}"
         );
-        assert!(registry.get(alias).is_some(), "missing alias tool {alias}");
     }
 
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
-
-    let todo_write = registry.get("todo.write").expect("todo.write in registry");
-    let todo_write_alias = registry.get("todowrite").expect("todowrite in registry");
-
-    let native = todo_write
-        .call(
-            test_context(&workspace, "registry-native"),
-            json!({
-                "todos": [
-                    {"content": "registry", "status": "pending", "priority": "medium"}
-                ]
-            }),
-        )
-        .await
-        .expect("todo.write");
-    let alias = todo_write_alias
-        .call(
-            test_context(&workspace, "registry-alias"),
-            json!({
-                "todos": [
-                    {"content": "registry", "status": "pending", "priority": "medium"}
-                ]
-            }),
-        )
-        .await
-        .expect("todowrite");
-    assert_eq!(native.display_text, alias.display_text);
-    assert_eq!(native.structured_json, alias.structured_json);
+    assert!(
+        registry.get("edit").is_some(),
+        "missing canonical tool edit"
+    );
 }

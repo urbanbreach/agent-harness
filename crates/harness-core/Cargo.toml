@@ -17,6 +17,7 @@ blake3 = "1"
 tokio.workspace = true
 tokio-stream.workspace = true
 tokio-util.workspace = true
+tracing = "0.1"
 harness-providers = { path = "../harness-providers" }
 
 [dev-dependencies]

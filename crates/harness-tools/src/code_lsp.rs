@@ -1,8 +1,6 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
-use async_trait::async_trait;
-use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult};
+use harness_core::tool::{ToolContext, ToolError, ToolResult};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -117,16 +115,6 @@ impl CodeLspExecutor {
     }
 }
 
-pub(crate) struct CodeLspTool {
-    executor: Arc<CodeLspExecutor>,
-}
-
-impl CodeLspTool {
-    pub(crate) fn new(executor: Arc<CodeLspExecutor>) -> Self {
-        Self { executor }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CodeLspRequest {
     Position {
@@ -179,31 +167,6 @@ struct CodeLspQueryArgs {
     #[serde(rename = "filePath")]
     file_path: String,
     query: String,
-}
-
-#[async_trait]
-impl Tool for CodeLspTool {
-    fn id(&self) -> &str {
-        "code.lsp"
-    }
-
-    fn description(&self) -> &str {
-        "Performs language-server operations through local LSP servers."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
-        code_lsp_parameters_json_schema()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
-
-    async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        self.executor
-            .execute(&ctx, parse_code_lsp_request(args_json)?)
-            .await
-    }
 }
 
 pub(crate) fn code_lsp_parameters_json_schema() -> Value {
