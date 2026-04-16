@@ -1,8 +1,8 @@
 # agent-harness
 
-## `agent.spawn` / `task`
+## `task`
 
-- `agent.spawn` is the native child-delegation tool; `task` is its compat alias.
+- `task` is the canonical child-delegation tool.
 - `prompt` is the task body delivered to the child.
 - `skills` and `load_skills` are equivalent aliases for the same list.
 - `command`, when provided, is prepended to the child prompt as delegation context.
@@ -22,7 +22,7 @@ flows.
 - a CLI entrypoint
 - coordinator/runtime core
 - provider adapters
-- built-in native + compat tools
+- built-in Opencode-style tools
 - a Ratatui TUI
 - native screenshot signoff plus deterministic PTY/live verification lanes
 
@@ -38,12 +38,11 @@ The current blessed default path is:
 Primary shipped agents:
 
 - `build` — default implementation lane
-- `plan` — restricted planning lane with `plan.exit` handoff to `build`
+- `plan` — restricted planning lane with `plan_exit` handoff to `build`
 
 Secondary shipped agents:
 
 - `tool_audit` — evidence/signoff lane
-- `deep_compat` — compat-surface regression lane
 
 Validate the shipped example config:
 
@@ -57,7 +56,7 @@ Launch the interactive harness with the canonical plan -> build split:
 cargo run -p harness -- --config configs/harness.example.jsonc
 ```
 
-The shipped config starts in the `build` agent by default. When you want a planning-first pass, launch `plan` explicitly and use `plan.exit` to hand off to `build` after approval.
+The shipped config starts in the `build` agent by default. When you want a planning-first pass, launch `plan` explicitly and use `plan_exit` to hand off to `build` after approval.
 The shipped `default` provider points at the local CLIProxy-compatible bridge (`http://127.0.0.1:8317/v1`) so the default flow stays aligned between docs, config, and live signoff lanes.
 
 Inside the running harness, use `/model` or the command palette `switch_model` action to switch the active next-turn agent/profile between options such as `build` and `plan`.
@@ -66,7 +65,7 @@ Inside the running harness, use `/model` or the command palette `switch_model` a
 
 - `configs/harness.example.jsonc` — canonical example config
 - `docs/plan-build-workflow.md` — first-run and handoff docs
-- `crates/harness-tools/tests/native_control_plane_tools.rs` — `plan.exit` behavior coverage
+- `crates/harness-tools/tests/native_control_plane_tools.rs` — `plan_exit` behavior coverage
 - `crates/harness-testkit/tests/live_proxy_e2e.rs` — shipped config/signoff coverage
 
 ## Common commands
@@ -77,6 +76,6 @@ cargo check --workspace
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test -p harness --test config_schema_cli
 cargo test -p harness-tools --test native_control_plane_tools
-cargo test -p harness-tools --test opencode_compat_live
+cargo test -p harness-tools --test single_surface_live
 cargo test -p harness-testkit live_proxy_e2e
 ```

@@ -2,21 +2,24 @@
   // Shipped primary-agent workflow:
   //   1. start in `build` by default
   //   2. switch to `plan` when you want a read-only planning pass
-  //   3. let `plan.exit` hand off back into `build`
+  //   3. let `plan_exit` hand off back into `build`
   providers: {
     default: {
       type: "openai_compatible",
+      name: "CLIProxyAPI",
       // Blessed default path: local CLIProxy-compatible bridge.
       // This shipped config intentionally pairs the explicit `sk-zerolimit`
       // fallback with the loopback proxy endpoint so first-run docs and live
       // signoff lanes stay aligned without pointing at a real remote API.
-      base_url: "http://127.0.0.1:8317/v1",
-      api_key: "${OPENAI_API_KEY:-sk-zerolimit}",
+      options: {
+        baseURL: "http://127.0.0.1:8317/v1",
+        apiKey: "${OPENAI_API_KEY:-sk-zerolimit}",
+      },
       api_mode: "auto",
       timeout_ms: 60000,
       models: {
         "gpt-5.4": {
-          display_name: "GPT-5.4",
+          name: "GPT-5.4",
           metadata: {
             family: "gpt-5",
             release_stage: "stable",
@@ -28,7 +31,7 @@
           max_output_tokens: 32768,
         },
         "gpt-5.4-mini": {
-          display_name: "GPT-5.4 Mini",
+          name: "GPT-5.4 Mini",
           metadata: {
             family: "gpt-5",
             release_stage: "stable",
@@ -40,7 +43,7 @@
           max_output_tokens: 16384,
           variants: {
             deterministic: {
-              display_name: "Deterministic",
+              name: "Deterministic",
               max_output_tokens: 4096,
               metadata: {
                 description: "Low-variance evidence collection profile.",
@@ -50,7 +53,7 @@
               },
             },
             low: {
-              display_name: "Low",
+              name: "Low",
               max_output_tokens: 4096,
               metadata: {
                 description: "Low-reasoning live-provider parity signoff profile.",
@@ -60,7 +63,7 @@
               },
             },
             high: {
-              display_name: "High",
+              name: "High",
               max_output_tokens: 4096,
               metadata: {
                 description: "High-reasoning interactive profile for visible thinking traces.",
@@ -78,10 +81,9 @@
     // Primary shipped agents: `build` by default, `plan` for approval-gated planning.
     plan: {
       description: "Planning lane: produce an approved plan and hand off to build.",
-      system_prompt: "Stay in planning mode until the user approves the plan. Use read-only investigation tools, capture the plan in todos or questions when helpful, and call plan.exit only after the user explicitly approves implementation so the harness can hand off to build.",
+      system_prompt: "Stay in planning mode until the user approves the plan. Use read-only investigation tools, capture the plan in todos or questions when helpful, and call plan_exit only after the user explicitly approves implementation so the harness can hand off to build.",
       model_ref: "default:gpt-5.4-mini",
       variant: "low",
-      tool_surface: "native",
       plan_mode: true,
       exit_target_profile: "build",
       max_iters: 16,
@@ -97,28 +99,27 @@
         lsp: "allow",
       },
       tools: [
-        "todo.write",
-        "todo.read",
-        "user.question",
-        "skill.load",
-        "search.web",
-        "web.fetch",
-        "search.code",
-        "code.lsp",
-        "fs.read",
-        "fs.glob",
-        "fs.grep",
-        "fs.ls",
-        "tool.batch",
-        "plan.exit",
+        "todowrite",
+        "todoread",
+        "question",
+        "skill",
+        "websearch",
+        "webfetch",
+        "codesearch",
+        "lsp",
+        "read",
+        "glob",
+        "grep",
+        "list",
+        "batch",
+        "plan_exit",
       ],
     },
     build: {
       description: "Implementation lane: execute an approved plan and verify the result.",
-      system_prompt: "Implement the approved plan after the plan.exit handoff. Edit files, run verification, use subagents when they materially help, and finish with concrete evidence, changed files, and remaining risks.",
+      system_prompt: "Implement the approved plan after the plan_exit handoff. Edit files, run verification, use subagents when they materially help, and finish with concrete evidence, changed files, and remaining risks.",
       model_ref: "default:gpt-5.4-mini",
       variant: "high",
-      tool_surface: "native",
       max_iters: 24,
       permissions: {
         edit: "allow",
@@ -132,24 +133,24 @@
         lsp: "allow",
       },
       tools: [
-        "todo.write",
-        "todo.read",
-        "user.question",
-        "skill.load",
-        "search.web",
-        "web.fetch",
-        "search.code",
-        "code.lsp",
-        "fs.read",
-        "fs.glob",
-        "fs.grep",
-        "fs.ls",
-        "fs.write",
-        "shell.run",
-        "edit.hashline_apply",
-        "edit.hashline_scan",
-        "tool.batch",
-        "agent.spawn",
+        "todowrite",
+        "todoread",
+        "question",
+        "skill",
+        "websearch",
+        "webfetch",
+        "codesearch",
+        "lsp",
+        "read",
+        "glob",
+        "grep",
+        "list",
+        "write",
+        "edit",
+        "apply_patch",
+        "bash",
+        "batch",
+        "task",
       ],
     },
     // Secondary shipped signoff lane: evidence-first verification of the surface.
@@ -158,45 +159,17 @@
       system_prompt: "Collect signoff evidence across skills, question flow, hooks evidence, LSP evidence, subagent execution, variants, model metadata, and HARNESS_QUESTION_ANSWERS handling before declaring the config healthy.",
       model_ref: "default:gpt-5.4-mini",
       variant: "deterministic",
-      tool_surface: "native",
       max_iters: 20,
       tool_failure_mode: "continue_as_tool_message",
       tools: [
-        "skill.load",
-        "user.question",
-        "code.lsp",
-        "agent.spawn",
-        "tool.batch",
-        "tool.invalid",
-        "todo.write",
-        "todo.read",
-      ],
-    },
-    // Secondary shipped compat lane: parity/regression coverage for compat ids.
-    deep_compat: {
-      description: "Compat-surface regression profile for parity coverage.",
-      model_ref: "default:gpt-5.4-mini",
-      tool_surface: "compat",
-      max_iters: 20,
-      tools: [
-        "read",
-        "list",
-        "glob",
-        "grep",
-        "bash",
-        "write",
-        "apply_patch",
-        "webfetch",
-        "todowrite",
-        "todoread",
-        "task",
-        "batch",
         "skill",
         "question",
-        "websearch",
-        "codesearch",
         "lsp",
+        "task",
+        "batch",
         "invalid",
+        "todowrite",
+        "todoread",
       ],
     },
   },

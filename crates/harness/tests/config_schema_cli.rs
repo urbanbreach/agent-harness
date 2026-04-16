@@ -377,6 +377,7 @@ fn shipped_example_config_resolves_loopback_placeholder_key_without_openai_api_k
             .get("default")
             .expect("default provider present in shipped example config");
 
+        assert_eq!(provider.name.as_deref(), Some("CLIProxyAPI"));
         assert_eq!(provider.base_url, "http://127.0.0.1:8317/v1");
         assert_eq!(provider.api_key, "sk-zerolimit");
         assert!(matches!(provider.api_mode, OpenAiApiMode::Auto));
@@ -396,6 +397,7 @@ fn shipped_example_config_uses_placeholder_key_when_openai_api_key_is_empty() {
             .get("default")
             .expect("default provider present in shipped example config");
 
+        assert_eq!(provider.name.as_deref(), Some("CLIProxyAPI"));
         assert_eq!(provider.base_url, "http://127.0.0.1:8317/v1");
         assert_eq!(provider.api_key, "sk-zerolimit");
         assert!(matches!(provider.api_mode, OpenAiApiMode::Auto));

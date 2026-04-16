@@ -44,18 +44,16 @@ Provider abstraction for LLM completions:
 
 Built-in tool implementations:
 
-- `fs.read` - Read file contents
-- `fs.ls` / `fs.glob` / `fs.grep` / `fs.tree` - Safe workspace discovery and search
-- `edit.hashline_scan` - Generate hashline anchors for editing
-- `edit.apply_patch` - Apply stripped-down workspace patch envelopes
-- `shell.run` - Execute shell commands with allowlist
-- `edit.hashline_apply` - Apply atomic hashline patches
+- `read` / `list` / `glob` / `grep` - Safe workspace discovery and search
+- `write` / `edit` / `apply_patch` - File editing and patch workflows
+- `bash` - Execute shell commands with allowlist
+- `task` / `batch` / `question` / `skill` / `plan_exit` - Control-plane and delegation workflows
+- `webfetch` / `websearch` / `codesearch` / `lsp` - Network and language-intelligence workflows
 
-The active registry is native-only. Canonical ids such as `fs.write`, `web.fetch`,
-`search.web`, `search.code`, `user.question`, `tool.batch`, `agent.spawn`, `plan.exit`, and
-`code.lsp` are the documented provider surface, and higher-level tools such as `fs.tree` and
-`edit.apply_patch` route into the same coordinator-owned execution paths as the lower-level
-filesystem and hashline machinery.
+The active registry exposes a single Opencode-style provider surface. Canonical ids such as
+`read`, `write`, `bash`, `webfetch`, `websearch`, `codesearch`, `question`, `batch`, `task`,
+`plan_exit`, and `lsp` are the documented tool surface, while lower-level executors remain
+internal implementation details behind those tool ids.
 
 ### harness-tui (library)
 
@@ -188,10 +186,10 @@ The native permission taxonomy is capability- and family-aware. The core policy 
 | `network` | legacy migration umbrella for network-capable tools | allow / deny / ask |
 | `question` | interactive user question / confirmation flow | allow / deny / ask |
 | `task` | task / agent orchestration flow | allow / deny / ask |
-| `webfetch` | `web.fetch` family | allow / deny / ask |
-| `websearch` | `search.web` family | allow / deny / ask |
-| `codesearch` | `search.code` family | allow / deny / ask |
-| `lsp` | `code.lsp` family | allow / deny / ask |
+| `webfetch` | `webfetch` | allow / deny / ask |
+| `websearch` | `websearch` | allow / deny / ask |
+| `codesearch` | `codesearch` | allow / deny / ask |
+| `lsp` | `lsp` / `lsp.rename` | allow / deny / ask |
 
 `network` remains as a broad fallback bucket for network-capable operations when the more specific
 web and search permissions are omitted, but user-facing configs should prefer the native permission
@@ -227,18 +225,19 @@ Guardrails bound the loop by iteration count and total tool calls per turn.
 
 ## Tool Surface Policy
 
-Provider and tool exposure is selected per agent via `tool_surface`, and the supported value is
-`native`.
+Provider and tool exposure is selected per agent by its configured `tools` list. The harness now
+ships a single Opencode-style tool surface, so profiles opt in by naming canonical tool ids such as
+`read`, `write`, `bash`, `task`, and `plan_exit` directly.
 
-Planner handoff is controlled separately from `tool_surface` by agent config:
+Planner handoff is controlled separately by agent config:
 
 - `plan_mode: true` marks an agent as plan-capable.
-- `exit_target_profile: <agent>` declares which agent `plan.exit` should hand off to.
-- `plan.exit` is not an ambient tool. Expose it only on planner agents that intentionally set
+- `exit_target_profile: <agent>` declares which agent `plan_exit` should hand off to.
+- `plan_exit` is not an ambient tool. Expose it only on planner agents that intentionally set
   `plan_mode: true`.
 
-In practice this means the common worker agent stays native without `plan.exit`, while an
-explicit planner agent can expose `plan.exit` when it owns handoff into another native agent.
+In practice this means the common worker agent stays lean without `plan_exit`, while an explicit
+planner agent can expose `plan_exit` when it owns handoff into another agent.
 
 ## Hashline Spec
 
