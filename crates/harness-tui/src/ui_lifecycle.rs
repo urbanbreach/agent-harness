@@ -94,6 +94,7 @@ pub(super) fn live_empty_state_visible(app: &AppState) -> bool {
     !app.replay_mode
         && !app.startup_shell_visible()
         && app.activities.is_empty()
+        && app.active_permission_view().is_none()
         && app.transcript_pending_permissions().is_empty()
         && app.prompt_buffer.is_empty()
 }
@@ -240,25 +241,13 @@ pub(super) fn render_live_empty_state(
         return;
     }
 
-    let newline = match app
-        .keymap
-        .get_binding_strs(Action::InsertNewline)
-        .as_slice()
-    {
-        [] => "-".to_string(),
-        [binding] => binding.clone(),
-        [first, second, ..] => format!("{first}/{second}"),
-    };
-    let help_row = [
-        app.keymap.get_binding_label(Action::SubmitPrompt, "send"),
-        format!("{newline} newline"),
-        format!(
-            "{}/{} history",
-            app.keymap.get_binding_str(Action::HistoryUp),
-            app.keymap.get_binding_str(Action::HistoryDown)
-        ),
-    ]
-    .join(" · ");
+    let help_row = format!(
+        "{}  {}",
+        app.current_context_window_tokens()
+            .map(|_| "0 (0%)")
+            .unwrap_or("0"),
+        app.keymap.get_binding_label(Action::Palette, "commands")
+    );
 
     let shell_area = live_empty_state_area(area, theme);
     let surface = theme.surface.panel_elevated;

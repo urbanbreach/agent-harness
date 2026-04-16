@@ -11,7 +11,7 @@ use crate::app::{
     session_history_provider_model_label, session_history_resumability_label,
     session_history_run_name, session_history_status_label, ActivityEntry, ActivityStatus,
     AppState, Focus, OrchestrationTaskRow, OrchestrationTaskState, ReviewSurface, RuntimeStateKind,
-    StartupLauncherAction, Tab, ToolCallDisplayStatus,
+    StartupLauncherAction, Tab, ToastVariant, ToolCallDisplayStatus,
 };
 use crate::keybindings::Action;
 use crate::layout::{
@@ -33,22 +33,38 @@ mod ui_secondary;
 mod ui_transcript;
 
 use ui_chrome::{
-    chromeless_shell_section, compact_inline_payload, elevated_card_surface,
+    chromeless_shell_section, compact_inline_payload, display_width, elevated_card_surface,
     interruptive_modal_block, muted_meta_style, panel_block, panel_style, render_footer,
     render_header, render_unified_bottom_dock, runtime_state_color, status_badge,
-    subdued_payload_style, transcript_prefix_style, truncate_plain_text, ChromeFrame,
+    subdued_payload_style, take_width_prefix, transcript_prefix_style, truncate_plain_text,
+    ChromeFrame,
 };
 pub(super) use ui_lifecycle::render_startup_lifecycle_surface;
 use ui_lifecycle::{live_empty_state_visible, render_live_empty_state, startup_shell_visible};
 use ui_overlays::render_overlays;
+pub(crate) use ui_secondary::operator_sidebar_section_hit_target;
 use ui_secondary::{
     render_events_tab, render_help_tab, render_live_details_overlay, render_operator_sidebar,
 };
 pub use ui_transcript::hovered_wheel_target;
 use ui_transcript::render_transcript_pane;
+pub(crate) use ui_transcript::transcript_scrollbar_hit;
+#[cfg(test)]
+pub(crate) use ui_transcript::transcript_selection_debug_snapshot;
+pub(crate) use ui_transcript::TranscriptScrollbarHit;
+#[cfg(test)]
+pub(crate) use ui_transcript::{
+    reset_transcript_selection_cache_metrics_for_test,
+    transcript_selection_cache_build_count_for_test,
+};
+pub(crate) use ui_transcript::{
+    transcript_selection_cell, transcript_selection_text, TranscriptSelection,
+    TranscriptSelectionCell,
+};
 
 #[cfg(test)]
 pub(crate) use ui_chrome::{
+    exact_test_live_composer_reserves_right_gap,
     exact_test_live_control_dock_collapses_disclosure_before_status,
     exact_test_live_control_dock_renders_shared_surface,
     exact_test_tool_status_summary_uses_effective_tool_identity,
@@ -63,14 +79,19 @@ pub(crate) fn exact_test_startup_shell_keeps_no_default_tab_chrome_after_runtime
         &crate::app::ModelOption {
             profile: "deep".to_string(),
             provider: "default".to_string(),
+            provider_display_label: Some("default".to_string()),
+            provider_backend_label: Some("OpenAI".to_string()),
             model: "gpt-5.4-mini".to_string(),
+            model_display_label: Some("GPT-5.4 Mini".to_string()),
             variant: Some("deterministic".to_string()),
+            variant_display_label: Some("Deterministic".to_string()),
             display_label: Some("GPT-5.4 Mini · Deterministic".to_string()),
             token_window_label: None,
             context_window_tokens: None,
             max_input_tokens: None,
             max_output_tokens: None,
             description: None,
+            profile_description: Some("Deep work".to_string()),
             reasoning_effort: None,
             text_verbosity: None,
             recommended_for: None,
@@ -86,7 +107,7 @@ pub(crate) fn exact_test_startup_shell_keeps_no_default_tab_chrome_after_runtime
 
     assert!(debug.contains("Launch: deep · GPT-5.4 Mini · Deterministic"));
     assert!(debug.contains("Provider default"));
-    assert!(debug.contains("Ask Harness anything…"));
+    assert!(debug.contains("Ask anything... \"inspect src/ui.rs\""));
     assert!(!debug.contains("Tabs"));
     assert!(!debug.contains("Actions:"));
     assert!(!debug.contains("Enter select"));
@@ -100,14 +121,19 @@ pub(crate) fn exact_test_replay_prompt_pane_is_visibly_read_only() {
         &crate::app::ModelOption {
             profile: "archive".to_string(),
             provider: "default".to_string(),
+            provider_display_label: Some("default".to_string()),
+            provider_backend_label: Some("OpenAI".to_string()),
             model: "gpt-5.4-mini".to_string(),
+            model_display_label: Some("GPT-5.4 Mini".to_string()),
             variant: Some("deterministic".to_string()),
+            variant_display_label: Some("Deterministic".to_string()),
             display_label: Some("GPT-5.4 Mini · Deterministic".to_string()),
             token_window_label: None,
             context_window_tokens: None,
             max_input_tokens: None,
             max_output_tokens: None,
             description: None,
+            profile_description: Some("Archive".to_string()),
             reasoning_effort: None,
             text_verbosity: None,
             recommended_for: None,
@@ -124,7 +150,7 @@ pub(crate) fn exact_test_replay_prompt_pane_is_visibly_read_only() {
     assert!(debug.contains("Context"));
     assert!(debug.contains("▼ MCP"));
     assert!(debug.contains("▼ LSP"));
-    assert!(debug.contains("▼ Modified Files"));
+    assert!(debug.contains("▶ Modified Files"));
     assert!(debug.contains("Replay is read-only"));
     assert!(!debug.contains("Type a prompt for the next turn"));
     assert!(!debug.contains("Recent context for the next turn"));
@@ -178,7 +204,9 @@ pub(crate) use ui_secondary::operator_sidebar_text_for_test;
 pub(crate) use ui_secondary::orchestration_card_text_for_test;
 #[cfg(test)]
 pub(crate) use ui_secondary::{
+    exact_test_operator_rail_collapses_modified_files_section_body,
     exact_test_operator_rail_low_activity_presentation_prefers_primary_stack,
+    exact_test_operator_rail_matches_opencode_sidebar_text_styles,
     exact_test_operator_rail_sanitizes_control_chars_in_sidebar_strings,
     exact_test_operator_rail_section_model_builds_pinned_summary,
     exact_test_operator_rail_section_model_counts_generic_mcp_activity,
@@ -186,6 +214,8 @@ pub(crate) use ui_secondary::{
     exact_test_operator_rail_section_model_keeps_native_prefix_tools_out_of_mcp,
     exact_test_operator_rail_section_model_separates_mcp_from_native_tool_activity,
     exact_test_operator_rail_section_model_surfaces_pending_permissions_first,
+    exact_test_operator_rail_section_model_uses_runtime_mcp_activity_without_config,
+    exact_test_operator_sidebar_hit_target_maps_section_headers,
 };
 #[cfg(test)]
 use ui_transcript::build_transcript_lines;
@@ -194,18 +224,27 @@ pub(crate) use ui_transcript::{
     exact_test_block_tool_cards_skip_empty_subtitle_rows,
     exact_test_generic_tool_successful_output_prefers_inline_background_rows,
     exact_test_inline_tool_rows_wrap_long_subtitles_cleanly,
+    exact_test_lsp_tool_successful_output_stays_hidden_until_generic_output_enabled,
     exact_test_mcp_tool_transcript_rows_use_effective_identity_without_generic_fallback,
     exact_test_native_tool_transcript_rows_show_disclosure_timestamps_and_task_metadata,
+    exact_test_todo_tool_rows_stay_hidden_like_opencode,
+    exact_test_transcript_applied_edit_missing_diff_surfaces_fallback,
+    exact_test_transcript_apply_patch_multifile_uses_output_edit_paths,
+    exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs,
     exact_test_transcript_edit_tool_matches_opencode_inline_diff_shape,
     exact_test_transcript_follow_mode_uses_measured_surface_heights,
+    exact_test_transcript_inline_diff_stays_compact_between_tool_rows,
+    exact_test_transcript_native_edit_renders_inline_diff_from_artifact,
     exact_test_transcript_pending_permission_stays_after_last_activity,
     exact_test_transcript_proposed_edit_renders_opencode_header,
     exact_test_transcript_reasoning_precedes_answer_and_tool_rows,
     exact_test_transcript_rejected_edit_surfaces_reason_inline,
+    exact_test_transcript_scroll_offset_preserves_large_overflow,
     exact_test_transcript_section_model_keeps_nested_tool_and_error_blocks,
     exact_test_transcript_section_model_preserves_activity_order,
     exact_test_transcript_task_rows_show_child_status_duration_and_counts,
     exact_test_transcript_tool_rows_follow_chronological_turn_order,
+    exact_test_visible_surface_lines_support_large_offsets,
 };
 
 #[cfg(test)]
@@ -332,11 +371,10 @@ pub(crate) fn exact_test_persistent_operator_sidebar_uses_panel_gutter() {
         .expect("draw frame");
 
     let buffer = terminal.backend().buffer();
-    let gutter_x = transcript.x.saturating_add(transcript.width);
+    let boundary_x = transcript.x.saturating_add(transcript.width);
     let sample_y = sidebar.y.saturating_add(1);
 
-    assert_eq!(buffer[(gutter_x, sample_y)].bg, theme.surface.shell);
-    assert_eq!(buffer[(gutter_x, sample_y)].symbol(), " ");
+    assert_eq!(boundary_x, sidebar.x);
     assert_eq!(buffer[(sidebar.x, sample_y)].bg, theme.surface.panel);
     assert_eq!(buffer[(sidebar.x, sample_y)].symbol(), " ");
     assert_eq!(
@@ -375,6 +413,7 @@ pub fn render_app(frame: &mut Frame, app: &AppState) {
     render_content(frame, app, plan.content, theme, &plan);
     render_footer(frame, app, &plan, theme);
     render_overlays(frame, app, theme, &plan);
+    render_toast(frame, app, area, theme);
 }
 
 fn render_content(
@@ -602,6 +641,54 @@ fn render_runtime_state_surface(frame: &mut Frame, app: &AppState, area: Rect, t
     );
 }
 
+fn render_toast(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
+    let Some(toast) = app.toast() else {
+        return;
+    };
+    if area.width <= 6 || area.height <= 4 {
+        return;
+    }
+
+    let max_width = area.width.saturating_sub(6).min(60);
+    if max_width < 8 {
+        return;
+    }
+
+    let text_width = u16::try_from(display_width(&toast.message)).unwrap_or(u16::MAX);
+    let width = text_width.saturating_add(4).min(max_width).max(8);
+    let x = area.right().saturating_sub(width + 2);
+    let popup = Rect::new(x, area.y.saturating_add(2), width, 3);
+    let accent = match toast.variant {
+        ToastVariant::Info => theme.status.info,
+        ToastVariant::Error => theme.status.error,
+    };
+    let surface = theme.surface.panel;
+    let block = Block::default()
+        .style(Style::default().bg(surface))
+        .borders(Borders::LEFT | Borders::RIGHT)
+        .border_style(Style::default().fg(accent).bg(surface));
+    frame.render_widget(Clear, popup);
+    frame.render_widget(block, popup);
+
+    let inner = Rect::new(
+        popup.x.saturating_add(2),
+        popup.y.saturating_add(1),
+        popup.width.saturating_sub(4),
+        1,
+    );
+    if inner.width == 0 {
+        return;
+    }
+
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            truncate_plain_text(&toast.message, usize::from(inner.width)),
+            Style::default().fg(theme.text.primary).bg(surface),
+        ))),
+        inner,
+    );
+}
+
 struct RuntimeStateSurfaceText {
     summary: String,
     detail: Option<String>,
@@ -736,6 +823,18 @@ mod tests {
             .draw(|frame| render_app(frame, app))
             .expect("draw frame");
         format!("{:?}", terminal.backend().buffer())
+    }
+
+    #[test]
+    fn copied_to_clipboard_toast_renders_in_live_shell() {
+        let mut app = AppState::new_live(None, false, None);
+        app.set_toast_for_test("Copied to clipboard", crate::app::ToastVariant::Info);
+
+        let debug = render_debug(&app, 100, 30);
+        assert!(
+            debug.contains("Copied to clipboard"),
+            "toast should render in frame\n{debug}"
+        );
     }
 
     fn envelope(seq: u64, request_id: &str, payload: EventV1) -> EventEnvelopeV1 {
@@ -926,7 +1025,7 @@ mod tests {
 
         let transcript = transcript_debug(&app);
         let thinking_index = transcript
-            .find("Thinking: Drafting a document-like plan")
+            .find("Drafting a document-like plan")
             .expect("thinking summary");
         let answer_index = transcript
             .find("Found the transcript renderer and the composer chrome.")
@@ -1074,14 +1173,19 @@ mod tests {
         let primary = ModelOption {
             profile: "deep".to_string(),
             provider: "default".to_string(),
+            provider_display_label: Some("default".to_string()),
+            provider_backend_label: Some("OpenAI".to_string()),
             model: "gpt-5.4-mini".to_string(),
+            model_display_label: Some("GPT-5.4 Mini".to_string()),
             variant: Some("deterministic".to_string()),
+            variant_display_label: Some("Deterministic".to_string()),
             display_label: Some("GPT-5.4 Mini · Deterministic".to_string()),
             token_window_label: None,
             context_window_tokens: None,
             max_input_tokens: None,
             max_output_tokens: None,
             description: None,
+            profile_description: Some("Deep work".to_string()),
             reasoning_effort: None,
             text_verbosity: None,
             recommended_for: None,
@@ -1089,14 +1193,19 @@ mod tests {
         let alternate = ModelOption {
             profile: "deep".to_string(),
             provider: "default".to_string(),
+            provider_display_label: Some("default".to_string()),
+            provider_backend_label: Some("OpenAI".to_string()),
             model: "gpt-5.4-mini".to_string(),
+            model_display_label: Some("GPT-5.4 Mini".to_string()),
             variant: Some("creative".to_string()),
+            variant_display_label: Some("Creative".to_string()),
             display_label: Some("GPT-5.4 Mini · Creative".to_string()),
             token_window_label: None,
             context_window_tokens: None,
             max_input_tokens: None,
             max_output_tokens: None,
             description: None,
+            profile_description: Some("Deep work".to_string()),
             reasoning_effort: None,
             text_verbosity: None,
             recommended_for: None,
@@ -1117,7 +1226,7 @@ mod tests {
         );
 
         let debug = render_debug(&app, 160, 24);
-        assert!(debug.contains("Current runtime: deep · GPT-5.4 Mini · Deterministic"));
+        assert!(!debug.contains("Current runtime: deep · GPT-5.4 Mini · Deterministic"));
         assert!(!debug.contains("Current runtime: writer · GPT-5.4 Mini · Creative"));
     }
 
@@ -1129,14 +1238,19 @@ mod tests {
         let primary = ModelOption {
             profile: "deep".to_string(),
             provider: "default".to_string(),
+            provider_display_label: Some("default".to_string()),
+            provider_backend_label: Some("OpenAI".to_string()),
             model: "gpt-5.4-mini".to_string(),
+            model_display_label: Some("GPT-5.4 Mini".to_string()),
             variant: Some("deterministic".to_string()),
+            variant_display_label: Some("Deterministic".to_string()),
             display_label: Some("GPT-5.4 Mini · Deterministic".to_string()),
             token_window_label: None,
             context_window_tokens: None,
             max_input_tokens: None,
             max_output_tokens: None,
             description: None,
+            profile_description: Some("Deep work".to_string()),
             reasoning_effort: None,
             text_verbosity: None,
             recommended_for: None,
@@ -1144,14 +1258,19 @@ mod tests {
         let alternate = ModelOption {
             profile: "deep".to_string(),
             provider: "default".to_string(),
+            provider_display_label: Some("default".to_string()),
+            provider_backend_label: Some("OpenAI".to_string()),
             model: "gpt-5.4-mini".to_string(),
+            model_display_label: Some("GPT-5.4 Mini".to_string()),
             variant: Some("creative".to_string()),
+            variant_display_label: Some("Creative".to_string()),
             display_label: Some("GPT-5.4 Mini · Creative".to_string()),
             token_window_label: None,
             context_window_tokens: None,
             max_input_tokens: None,
             max_output_tokens: None,
             description: None,
+            profile_description: Some("Deep work".to_string()),
             reasoning_effort: None,
             text_verbosity: None,
             recommended_for: None,
@@ -1173,7 +1292,7 @@ mod tests {
         );
 
         let debug = render_debug(&app, 160, 24);
-        assert!(debug.contains("Continued runtime: deep · GPT-5.4 Mini · Deterministic"));
+        assert!(!debug.contains("Continued runtime: deep · GPT-5.4 Mini · Deterministic"));
         assert!(!debug.contains("Continued runtime: writer · GPT-5.4 Mini · Creative"));
     }
 
@@ -1192,7 +1311,8 @@ mod tests {
         );
 
         let debug = render_debug(&app, 100, 24);
-        assert!(debug.contains("Ctrl+s send"));
+        assert!(debug.contains("Ctrl+p commands"));
+        assert!(!debug.contains("Ctrl+s send"));
         assert!(!debug.contains("Ctrl+j nl"));
         assert!(!debug.contains("g shortcuts"));
         assert!(!debug.contains("q quit"));
@@ -1234,11 +1354,11 @@ mod tests {
         let debug = render_debug(&app, 100, 24);
         assert!(debug.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻") || debug.contains("Harness"));
         assert!(debug.contains("Launch: deep · gpt-5.4"));
-        assert!(debug.contains("Provider proxy · Demo"));
-        assert!(debug.contains("Launch: deep · gpt-5.4 · provider proxy · Demo"));
+        assert!(debug.contains("Provider proxy"));
+        assert!(debug.contains("Deep gpt-5.4 proxy · Demo"));
         assert!(debug.contains("Ctrl+p open"));
         assert!(!debug.contains("Enter select"));
-        assert!(debug.contains("Ask Harness anything…"));
+        assert!(debug.contains("Ask anything... \"inspect src/ui.rs\""));
         assert!(!debug.contains("Dispatch a new run, reopen live work, or inspect saved history."));
         assert!(!debug.contains("Actions:"));
     }
@@ -1368,7 +1488,7 @@ mod tests {
         assert!(sidebar_text.contains("0 tokens"));
         assert!(sidebar_text.contains("▼ MCP"));
         assert!(sidebar_text.contains("▼ LSP"));
-        assert!(sidebar_text.contains("▼ Modified Files"));
+        assert!(sidebar_text.contains("▶ Modified Files"));
     }
 
     #[test]
@@ -1432,8 +1552,8 @@ mod tests {
         assert!(sidebar_text.contains("0 tokens"));
         assert!(sidebar_text.contains("▼ MCP"));
         assert!(sidebar_text.contains("▼ LSP"));
-        assert!(sidebar_text.contains("▼ Modified Files"));
-        assert!(sidebar_text.contains("No modified files"));
+        assert!(sidebar_text.contains("▶ Modified Files"));
+        assert!(!sidebar_text.contains("No modified files"));
         assert!(!sidebar_text.contains("Permission context:"));
         assert!(!sidebar_text.contains("perm_permission_detail"));
         assert!(!sidebar_text.contains("Resolved: deny"));
@@ -1592,7 +1712,12 @@ mod tests {
         ));
 
         let debug = render_debug(&app, 160, 30);
-        assert!(debug.contains("shell.run") || debug.contains("running"));
         assert!(!debug.contains("orch 0a 0q 0r 0s"));
+        assert!(
+            debug.contains("tool")
+                || debug.contains("false")
+                || debug.contains("Check tool status"),
+            "status strip should surface active tool context\n{debug}"
+        );
     }
 }

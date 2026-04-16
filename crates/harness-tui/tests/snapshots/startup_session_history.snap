@@ -8,11 +8,18 @@
 
 
 
+                                  ╻ ╻  ┏━┓  ┏━┓  ┏┓╻  ┏━╸  ┏━┓  ┏━┓
+                                  ┣━┫  ┣━┫  ┣┳┛  ┃┗┫  ┣╸   ┗━┓  ┗━┓
 
-
-     Continue session · 2 matches · 1 blocked
-
-        > █
+        Continue session · 2 matches · 1 blocked                                         esc
+        █ Filter saved runs
         Interactive histories · 1 ready · 1 blocked · filter by run/profile/model/lineage
         ▶ continue alpha-run · continue ready · 2 artifacts · 1 child
         ! blocked beta-blocked · blocked · run is still active · 1 artifact · parent run_pa…
+
+            ┃  Ask anything... "inspect src/ui.rs"
+            ┃
+            ┃  Worker model-1 mock · Demo
+            ┃
+            ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+              ● Tip  Ctrl+p opens saved sessions · Shift+Enter/Ctrl+j adds a newline

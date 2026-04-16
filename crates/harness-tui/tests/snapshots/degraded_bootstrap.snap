@@ -10,7 +10,7 @@
        live stream lagged by 2; replaying from seq 1
        Draft locally until recovery completes.
                                   latest edit”
-              Enter send · Shift+Enter/Ctrl+j newline · ↑/↓ history
+                               0  Ctrl+p commands
 
 
 
@@ -19,6 +19,6 @@
   ┃
   ┃
   ┃
-  ┃  Ctrl+p commands  ·  q quit
+  ┃  degraded
   ┃
   ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀

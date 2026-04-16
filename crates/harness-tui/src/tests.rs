@@ -4,10 +4,11 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-use super::app::AppState;
+use super::app::{ActivityEntry, ActivityStatus, AppState, ToolCallDisplayStatus};
 use super::lib_tests::{
     key_with_modifiers, render_live_buffer, render_live_cells, render_live_lines,
-    row_text_and_colors, transcript_code_block_app, transcript_diff_block_app,
+    row_text_and_colors, row_text_and_palette, transcript_code_block_app,
+    transcript_diff_block_app,
 };
 
 use super::*;
@@ -73,6 +74,26 @@ fn live_mode_snapshot_renders_grouped_streams() {
 
     assert_buffer_snapshot(
         "live_mode_snapshot_renders_grouped_streams",
+        terminal.backend().buffer(),
+    );
+}
+
+#[test]
+fn tool_spacing_parity_snapshot_renders_grouped_context_and_output_transition() {
+    let mut app = AppState::new_live(None, false, None);
+    for event in sample_tool_spacing_events() {
+        app.ingest_event(event);
+    }
+    app.active_tab = app::Tab::Run;
+
+    let backend = TestBackend::new(120, 30);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| ui::render_app(frame, &app))
+        .expect("draw tool spacing parity frame");
+
+    assert_buffer_snapshot(
+        "tool_spacing_parity_snapshot_renders_grouped_context_and_output_transition",
         terminal.backend().buffer(),
     );
 }
@@ -150,7 +171,7 @@ fn question_permission_modal_renders_questions_and_answer_input() {
     let debug = render_live_buffer(&app, 100, 28);
     assert!(debug.contains("Question Requested"));
     assert!(debug.contains("Pick one"));
-    assert!(debug.contains("FAIL CLOSED"));
+    assert!(debug.contains("default deny"));
 }
 
 #[test]
@@ -215,6 +236,37 @@ pub(super) fn module_transcript_edit_snapshot_renders_inline_diff() {
     );
 }
 
+#[test]
+pub(super) fn module_inline_diff_does_not_leave_large_gap_before_waiting_response() {
+    harness_core::config::clear_registered_integrations_config();
+    harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
+
+    let run_dir = write_diff_fixture(true);
+    let events = load_events_from_run_dir(run_dir.path()).expect("load diff fixture");
+    let app = AppState::new_replay(run_dir.path().to_path_buf(), events);
+
+    let buffer = render_live_cells(&app, 80, 24);
+    let lines = buffer
+        .content
+        .chunks(80)
+        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+        .collect::<Vec<_>>();
+    let diff_last_row = lines
+        .iter()
+        .rposition(|line| line.contains("gamma") || line.contains("BETA") || line.contains("beta"))
+        .expect("inline diff row");
+    let waiting_row = lines
+        .iter()
+        .position(|line| line.contains("Waiting for response…"))
+        .expect("waiting response row");
+
+    assert_eq!(
+        waiting_row,
+        diff_last_row + 2,
+        "inline diff should hand off to the waiting-response row with only one blank separator\n{lines:#?}"
+    );
+}
+
 pub(super) fn module_fenced_code_highlighting_uses_syntect_styles_for_known_languages() {
     let app = transcript_code_block_app("rust");
     let buffer = render_live_cells(&app, 120, 30);
@@ -268,12 +320,16 @@ pub(super) fn module_diff_renderer_uses_stacked_layout_in_narrow_geometries() {
 
     let rendered = render_live_lines(&app, 80, 24);
     assert!(
-        rendered.contains("- beta"),
-        "narrow diff should stack removals\n{rendered}"
+        rendered.contains("1    1   alpha"),
+        "narrow diff should show paired context line numbers\n{rendered}"
     );
     assert!(
-        rendered.contains("+ BETA"),
-        "narrow diff should stack additions\n{rendered}"
+        rendered.contains("2      - beta"),
+        "narrow diff should stack removals with a deletion gutter\n{rendered}"
+    );
+    assert!(
+        rendered.contains("2 + BETA"),
+        "narrow diff should stack additions with an insertion gutter\n{rendered}"
     );
     assert!(
         !rendered
@@ -286,12 +342,150 @@ pub(super) fn module_diff_renderer_uses_stacked_layout_in_narrow_geometries() {
 pub(super) fn module_wide_diff_renderer_pairs_before_and_after_columns() {
     let app = transcript_diff_block_app();
 
-    let rendered = render_live_lines(&app, 160, 30);
+    let rendered = render_live_lines(&app, 220, 30);
     assert!(
         rendered
             .lines()
-            .any(|line| line.contains("- beta") && line.contains("+ BETA") && line.contains('│')),
-        "wide diff should pair before/after columns on one row\n{rendered}"
+            .any(|line| line.contains("2 - beta") && line.contains("2 + BETA")),
+        "wide diff should pair before/after columns on one row with preserved gutters\n{rendered}"
+    );
+}
+
+#[test]
+pub(super) fn module_diff_renderer_switches_to_side_by_side_at_primary_widths() {
+    let app = transcript_diff_block_app();
+
+    let rendered = render_live_lines(&app, 120, 30);
+    assert!(
+        rendered
+            .lines()
+            .any(|line| line.contains("- beta") && line.contains("+ BETA")),
+        "primary-width layouts should pair before/after columns on one row\n{rendered}"
+    );
+}
+
+pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and_split_palettes() {
+    let run_dir = tempfile::tempdir().expect("create run dir");
+    let artifacts_dir = run_dir.path().join("artifacts");
+    std::fs::create_dir_all(&artifacts_dir).expect("create artifacts dir");
+    std::fs::write(
+        artifacts_dir.join("opencode-inline.diff"),
+        "--- crates/harness-tui/src/ui.rs\n+++ crates/harness-tui/src/ui.rs\n@@ -44,8 +44,7 @@\n use ui_secondary::{\n-    render_diff_tab, render_events_tab, render_help_tab,\n+    render_events_tab, render_help_tab, render_live_details_overlay,\n     render_operator_sidebar,\n };\n",
+    )
+    .expect("write inline diff fixture");
+
+    let mut app = AppState::new_live(Some(run_dir.path().to_path_buf()), false, None);
+    let mut entry = ActivityEntry {
+        request_id: "request-edit-inline-wide".to_string(),
+        model_id: "model-1".to_string(),
+        provider_id: "default".to_string(),
+        status: ActivityStatus::Done,
+        user_message: None,
+        user_timestamp: None,
+        request_data: None,
+        thinking_text: String::new(),
+        transcript_text: String::new(),
+        usage: None,
+        error_message: None,
+        permissions: Vec::new(),
+        tool_calls: Vec::new(),
+        first_seq: 10,
+        last_seq: 11,
+        first_mono_ms: 10,
+        last_mono_ms: 11,
+    };
+    entry.tool_calls.push(crate::app::ToolCallEntry {
+        tool_call_id: "call-edit-wide-1".to_string(),
+        tool_id: "edit.hashline_apply".to_string(),
+        canonical_tool_id: None,
+        alias_source_tool_id: None,
+        resolved_tool_identity: None,
+        args_summary: r#"{"path":"crates/harness-tui/src/ui.rs"}"#.to_string(),
+        args_digest: "digest-edit-wide".to_string(),
+        lifecycle_state: None,
+        status: ToolCallDisplayStatus::Succeeded,
+        output_summary: Some("Edit applied".to_string()),
+        output_digest: Some("digest-edit-wide-output".to_string()),
+        output_json: None,
+        truncated_output: Some("Edit applied".to_string()),
+        edit: Some(crate::app::EditEntry {
+            edit_id: "edit-inline-wide-1".to_string(),
+            path: "crates/harness-tui/src/ui.rs".to_string(),
+            status: crate::app::EditDisplayStatus::Applied,
+            summary: Some("Remove diff review surface".to_string()),
+            patch_digest: Some("digest-patch-wide".to_string()),
+            new_file_digest: Some("digest-new-file-wide".to_string()),
+            diff_rel_path: Some("artifacts/opencode-inline.diff".to_string()),
+            diff_digest: Some("digest-diff-wide".to_string()),
+            rejection_reason: None,
+        }),
+        lineage: None,
+        artifact_refs: Vec::new(),
+        timing_elapsed_ms: None,
+        permissions: Vec::new(),
+        first_seq: 10,
+        last_seq: 11,
+        first_mono_ms: 10,
+        last_mono_ms: 11,
+        first_timestamp: None,
+        last_timestamp: None,
+    });
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+
+    let rendered = render_live_lines(&app, 220, 30);
+    assert!(
+        !rendered.contains("@@ -44,8 +44,7 @@"),
+        "wide transcript inline diff should suppress raw hunk headers\n{rendered}"
+    );
+    assert!(
+        rendered
+            .lines()
+            .any(|line| line.matches("use ui_secondary::{").count() == 2),
+        "wide transcript inline diff should keep the context row side-by-side\n{rendered}"
+    );
+
+    let buffer = render_live_cells(&app, 220, 30);
+    let theme = Theme::default();
+
+    let (context_row, context_fgs, _) = row_text_and_palette(&buffer, 220, "use ui_secondary::{")
+        .expect("wide context row with syntax-highlighted code");
+    let context_matches = context_row
+        .match_indices("use ui_secondary::{")
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    assert!(
+        context_matches.len() >= 2,
+        "expected both diff columns in row: {context_row}"
+    );
+    let context_start = context_matches[0];
+    let context_end = context_start + "use ui_secondary::{".chars().count();
+    let syntax_colors = context_fgs[context_start..context_end]
+        .iter()
+        .copied()
+        .filter(|color| !matches!(color, ratatui::style::Color::Reset))
+        .map(|color| format!("{color:?}"))
+        .collect::<std::collections::HashSet<_>>();
+    assert!(
+        syntax_colors.len() >= 2,
+        "wide transcript code rows should retain syntax highlighting, not collapse to a single color: {context_row}"
+    );
+    assert!(
+        syntax_colors
+            .iter()
+            .any(|color| *color != format!("{:?}", theme.text.primary)),
+        "wide transcript code rows should not fall back to plain transcript coloring: {context_row}"
+    );
+
+    let (changed_row, _, changed_bgs) =
+        row_text_and_palette(&buffer, 220, "render_live_details_overlay")
+            .expect("wide changed row with side-by-side edit columns");
+    let removed_start = changed_row.find("render_diff_tab").expect("removed symbol");
+    let added_start = changed_row
+        .find("render_live_details_overlay")
+        .expect("added symbol");
+    assert_ne!(
+        changed_bgs[removed_start], changed_bgs[added_start],
+        "wide transcript inline diff should tint before/after columns independently: {changed_row}"
     );
 }
 
@@ -994,8 +1188,9 @@ fn generic_tool_output_toggle_reveals_block_payload() {
         .draw(|frame| ui::render_app(frame, &app))
         .expect("draw generic tool frame");
     let collapsed = format!("{:?}", terminal.backend().buffer());
-    assert!(collapsed.contains("background.cancel · taskId=bg_123"));
-    assert!(collapsed.contains("cancelled background task"));
+    assert!(collapsed.contains("background.cancel"));
+    assert!(collapsed.contains("[taskId=bg_123]"));
+    assert!(!collapsed.contains("cancelled background task"));
     assert!(!collapsed.contains("result: ok"));
 
     app.handle_key(key_with_modifiers(
@@ -1013,9 +1208,27 @@ fn generic_tool_output_toggle_reveals_block_payload() {
         .draw(|frame| ui::render_app(frame, &app))
         .expect("draw expanded generic tool frame");
     let expanded = format!("{:?}", terminal.backend().buffer());
-    assert!(expanded.contains("background.cancel · taskId=bg_123"));
+    assert!(expanded.contains("background.cancel"));
+    assert!(expanded.contains("[taskId=bg_123]"));
     assert!(expanded.contains("cancelled background task"));
-    assert!(expanded.contains("result: ok"));
+    assert!(!expanded.contains("result: ok"));
+
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('p'),
+        KeyModifiers::CONTROL,
+    ));
+    for c in "expand turn results".chars() {
+        app.handle_key(key(KeyCode::Char(c)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+
+    let backend = TestBackend::new(120, 30);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| ui::render_app(frame, &app))
+        .expect("draw fully expanded generic tool frame");
+    let fully_expanded = format!("{:?}", terminal.backend().buffer());
+    assert!(fully_expanded.contains("result: ok"));
 }
 
 #[test]
@@ -1156,6 +1369,199 @@ fn sample_live_events() -> Vec<EventEnvelopeV1> {
         ),
         envelope(
             9,
+            None,
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: "done".to_string(),
+            }),
+        ),
+    ]
+}
+
+fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
+    vec![
+        envelope(
+            1,
+            None,
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "tool-spacing".to_string(),
+                workspace_root: "/tmp/workspace".to_string(),
+            }),
+        ),
+        envelope(
+            2,
+            Some("req_spacing"),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_spacing".to_string(),
+                text: "Match Opencode tool spacing".to_string(),
+            }),
+        ),
+        envelope(
+            3,
+            Some("req_spacing"),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_spacing".to_string(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "Match Opencode tool spacing".to_string(),
+                request_digest: "digest-spacing".to_string(),
+            }),
+        ),
+        envelope(
+            4,
+            Some("req_spacing"),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_read_spacing".to_string(),
+                tool_id: "fs.read".to_string(),
+                args_summary: r#"{"path":"src/ui_transcript.rs"}"#.to_string(),
+                args_digest: "digest-read-spacing".to_string(),
+                metadata: None,
+            }),
+        ),
+        envelope(
+            5,
+            Some("req_spacing"),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_read_spacing".to_string(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("24 lines read".to_string()),
+                output_digest: Some("digest-read-output".to_string()),
+                output_json: None,
+                metadata: None,
+            }),
+        ),
+        envelope(
+            6,
+            Some("req_spacing"),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_glob_spacing".to_string(),
+                tool_id: "fs.glob".to_string(),
+                args_summary: r#"{"pattern":"src/**/*.rs","path":"."}"#.to_string(),
+                args_digest: "digest-glob-spacing".to_string(),
+                metadata: None,
+            }),
+        ),
+        envelope(
+            7,
+            Some("req_spacing"),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_glob_spacing".to_string(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("4 files".to_string()),
+                output_digest: Some("digest-glob-output".to_string()),
+                output_json: None,
+                metadata: None,
+            }),
+        ),
+        envelope(
+            8,
+            Some("req_spacing"),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_grep_spacing".to_string(),
+                tool_id: "fs.grep".to_string(),
+                args_summary: r#"{"pattern":"tool spacing","include":"*.rs","path":"src"}"#
+                    .to_string(),
+                args_digest: "digest-grep-spacing".to_string(),
+                metadata: None,
+            }),
+        ),
+        envelope(
+            9,
+            Some("req_spacing"),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_grep_spacing".to_string(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("3 matches".to_string()),
+                output_digest: Some("digest-grep-output".to_string()),
+                output_json: None,
+                metadata: None,
+            }),
+        ),
+        envelope(
+            10,
+            Some("req_spacing"),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_list_spacing".to_string(),
+                tool_id: "fs.ls".to_string(),
+                args_summary: r#"{"path":"src"}"#.to_string(),
+                args_digest: "digest-list-spacing".to_string(),
+                metadata: None,
+            }),
+        ),
+        envelope(
+            11,
+            Some("req_spacing"),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_list_spacing".to_string(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("ui_transcript.rs\nlayout.rs".to_string()),
+                output_digest: Some("digest-list-output".to_string()),
+                output_json: None,
+                metadata: None,
+            }),
+        ),
+        envelope(
+            12,
+            Some("req_spacing"),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_shell_spacing".to_string(),
+                tool_id: "shell.run".to_string(),
+                args_summary:
+                    r#"{"cmd":"cargo test -p harness-tui ui::ui_transcript::","cwd":"/tmp/demo"}"#
+                        .to_string(),
+                args_digest: "digest-shell-spacing".to_string(),
+                metadata: None,
+            }),
+        ),
+        envelope(
+            13,
+            Some("req_spacing"),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tc_shell_spacing".to_string(),
+            }),
+        ),
+        envelope(
+            14,
+            Some("req_spacing"),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_shell_spacing".to_string(),
+                status: ToolCallStatus::Failed,
+                output_summary: Some("exit code: 1\nstderr: snapshot mismatch".to_string()),
+                output_digest: Some("digest-shell-output".to_string()),
+                output_json: None,
+                metadata: None,
+            }),
+        ),
+        envelope(
+            15,
+            Some("req_spacing"),
+            EventV1::ProviderReasoningDelta(harness_core::event::ProviderReasoningDeltaEvent {
+                request_id: "req_spacing".to_string(),
+                delta:
+                    "The grouped context rows need to stay compact before the visible shell block."
+                        .to_string(),
+            }),
+        ),
+        envelope(
+            16,
+            Some("req_spacing"),
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: "req_spacing".to_string(),
+                delta: "I matched the body-to-tool and tool-to-body spacing to Opencode."
+                    .to_string(),
+            }),
+        ),
+        envelope(
+            17,
+            Some("req_spacing"),
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: "req_spacing".to_string(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some("digest-spacing-output".to_string()),
+                usage: None,
+            }),
+        ),
+        envelope(
+            18,
             None,
             EventV1::RunFinished(RunFinishedEvent {
                 summary: "done".to_string(),

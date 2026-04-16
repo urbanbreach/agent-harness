@@ -97,7 +97,7 @@ impl RuntimeContextLabel {
     fn text(self) -> &'static str {
         match self {
             Self::Launch => "Launch",
-            Self::CurrentRuntime => "Current runtime",
+            Self::CurrentRuntime => "Context",
             Self::ContinuedRuntime => "Continued runtime",
             Self::RecordedRuntimeReadOnly => "Recorded runtime · read-only",
         }
@@ -493,7 +493,7 @@ fn startup_runtime_state(continue_disabled_banner: Option<&str>) -> RuntimeState
         summary,
         detail,
         composer_disabled: false,
-        composer_hint: "Ask Harness anything… “inspect src/ui.rs”".to_string(),
+        composer_hint: "Ask anything... \"inspect src/ui.rs\"".to_string(),
     }
 }
 

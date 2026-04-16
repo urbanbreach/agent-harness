@@ -14,10 +14,7 @@ fn semantic_theme_families_preserve_default_contracts() {
         theme.surface.shell
     );
     assert_eq!(tokens.semantic.chrome.divided.surface, theme.surface.panel);
-    assert_eq!(
-        tokens.semantic.chrome.card.surface,
-        theme.surface.panel_elevated
-    );
+    assert_eq!(tokens.semantic.chrome.card.surface, theme.surface.overlay);
     assert_ne!(theme.surface.shell, theme.surface.panel);
     assert_ne!(theme.surface.panel, theme.surface.panel_elevated);
     assert_ne!(theme.surface.shell, theme.surface.panel_elevated);
@@ -114,10 +111,7 @@ fn semantic_chrome_tokens_map_to_opencode_dark_defaults() {
         tokens.semantic.dividers.subtle
     );
     assert_eq!(tokens.semantic.chrome.card.mode, ChromeMode::Card);
-    assert_eq!(
-        tokens.semantic.chrome.card.surface,
-        theme.surface.panel_elevated
-    );
+    assert_eq!(tokens.semantic.chrome.card.surface, theme.surface.overlay);
     assert_eq!(
         tokens.semantic.chrome.card.border,
         tokens.semantic.dividers.subtle
@@ -151,10 +145,7 @@ fn semantic_live_shell_surfaces_separate_transcript_rail_and_dock() {
         theme.surface.shell
     );
     assert_eq!(tokens.semantic.chrome.divided.surface, theme.surface.panel);
-    assert_eq!(
-        tokens.semantic.chrome.card.surface,
-        theme.surface.panel_elevated
-    );
+    assert_eq!(tokens.semantic.chrome.card.surface, theme.surface.overlay);
     assert_ne!(theme.surface.shell, theme.surface.panel);
     assert_ne!(theme.surface.panel, theme.surface.panel_elevated);
     assert_ne!(theme.surface.shell, theme.surface.panel_elevated);

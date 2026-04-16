@@ -5,6 +5,7 @@
 //! ad hoc render helpers.
 
 pub mod app;
+mod clipboard;
 pub mod event;
 pub mod keybindings;
 pub mod layout;

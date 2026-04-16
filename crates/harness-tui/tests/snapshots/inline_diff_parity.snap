@@ -1,0 +1,30 @@
+
+  ┃
+  ┃  Make inline diffs match Opencode
+  ┃
+
+  ┃  Thinking: I verified the current transcript behavior before patching it.
+
+     ┃ ← Apply patch · 2 files
+     ┃ ← Patched docs/transcript.md
+     ┃    1      - session turn diff view keeps the tool row spacing perfectly aligned in every tr
+     ┃             anscript lane for operators reviewing compact windows
+     ┃         1 + session turn diff view keeps the tool row spacing perfectly aligned across the
+     ┃             transcript surface for operators reviewing compact windows and narrow shells
+     ┃ ← Patched src/session_turn.rs → src/session_diff.rs
+     ┃    1      - pub fn render_session_turn_diff() {}
+     ┃         1 + pub fn render_session_diff_view() {}
+     → Read docs/transcript.md [offset=1, limit=40]
+      ↳ Loaded docs/transcript.md
+      Compat alias · read → fs.read
+
+     The inline diff edge cases now match Opencode.
+
+     ▪ Assistant · model-1 · 11ms
+
+┃
+┃
+┃
+┃  model-1 mock · success
+╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                                                  0  Ctrl+p commands

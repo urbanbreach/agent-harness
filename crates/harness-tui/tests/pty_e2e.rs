@@ -87,7 +87,7 @@ struct PromptFixture {
 
 impl PromptFixture {
     const LIVE_COMPOSER: Self = Self {
-        ready_marker: "Current runtime:",
+        ready_marker: "Ctrl+p commands",
     };
 }
 
@@ -152,6 +152,7 @@ enum HelperScenario {
     TypeFirstStartup,
     StreamedResponse,
     ToolLifecycle,
+    InlineDiffParity,
     PermissionWithDraft,
     DetailsDrawer,
     OpencodeSidebarSessionParity,
@@ -171,6 +172,7 @@ impl HelperScenario {
             Self::TypeFirstStartup => "type_first_startup",
             Self::StreamedResponse => "streamed_response",
             Self::ToolLifecycle => "tool_lifecycle",
+            Self::InlineDiffParity => "inline_diff_parity",
             Self::PermissionWithDraft => "permission_with_draft",
             Self::DetailsDrawer => "details_drawer",
             Self::OpencodeSidebarSessionParity => "opencode_sidebar_session_parity",
@@ -190,6 +192,7 @@ impl HelperScenario {
             Self::TypeFirstStartup => "pty_helper_type_first_startup",
             Self::StreamedResponse => "pty_helper_streamed_response",
             Self::ToolLifecycle => "pty_helper_tool_lifecycle",
+            Self::InlineDiffParity => "pty_helper_inline_diff_parity",
             Self::PermissionWithDraft => "pty_helper_permission_with_draft",
             Self::DetailsDrawer => "pty_helper_details_drawer",
             Self::OpencodeSidebarSessionParity => "pty_helper_opencode_sidebar_session_parity",
@@ -223,16 +226,18 @@ fn startup_shell_renders_bottom_composer_snapshot() {
     } {
         composer_last_row += 1;
     }
-    let status_row = find_line_containing_from(&lines, composer_input, "Current runtime:")
-        .expect("status metadata row");
-    let footer_row =
-        find_line_containing_from(&lines, composer_input + 1, "Enter send").expect("footer legend");
+    let footer_row = find_line_containing_from(&lines, composer_input + 1, "Ctrl+p commands")
+        .expect("footer legend");
 
-    assert!(composer_input <= status_row);
     assert_eq!(
         footer_row,
         composer_last_row + 1,
         "composer should keep footer hints immediately after the compact shell\n{startup}"
+    );
+    assert!(
+        find_line_containing_in_range(&lines, composer_input, footer_row, "Current runtime:")
+            .is_none(),
+        "type-first startup should no longer render the live metadata row\n{startup}"
     );
     assert!(
         find_line_containing_in_range(&lines, composer_input, footer_row, "Composer ·").is_none(),
@@ -274,6 +279,14 @@ fn pty_e2e_snapshots_are_stable() {
     let tool_lifecycle = capture_tool_lifecycle_snapshot(PtyGeometry::OPENCODE_EDIT_SIGNOFF);
     assert_or_update_snapshot("tool_lifecycle", &tool_lifecycle);
     assert_visual_artifact_exists("tool_lifecycle", PtyGeometry::OPENCODE_EDIT_SIGNOFF);
+
+    let inline_diff_parity = capture_helper_screen_snapshot(
+        HelperScenario::InlineDiffParity,
+        PtyGeometry::PRIMARY_SIGNOFF,
+        "The inline diff edge cases now match Opencode.",
+    );
+    assert_or_update_snapshot("inline_diff_parity", &inline_diff_parity);
+    assert_visual_artifact_exists("inline_diff_parity", PtyGeometry::PRIMARY_SIGNOFF);
 
     let permission_with_draft =
         capture_permission_with_draft_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
@@ -334,6 +347,7 @@ fn snapshot_files_exist_and_are_secret_clean() {
         snapshot_dir.join("streamed_response.snap"),
         snapshot_dir.join("wide_streamed_response.snap"),
         snapshot_dir.join("tool_lifecycle.snap"),
+        snapshot_dir.join("inline_diff_parity.snap"),
         snapshot_dir.join("permission_with_draft.snap"),
         snapshot_dir.join("narrow_80x24.snap"),
         snapshot_dir.join("split_tall_startup_shell.snap"),
@@ -425,6 +439,11 @@ fn pty_helper_tool_lifecycle() {
 }
 
 #[test]
+fn pty_helper_inline_diff_parity() {
+    run_helper_if_requested(HelperScenario::InlineDiffParity);
+}
+
+#[test]
 fn pty_helper_permission_with_draft() {
     run_helper_if_requested(HelperScenario::PermissionWithDraft);
 }
@@ -493,13 +512,13 @@ fn pty_live_details_drawer_remains_reachable() {
             let screen = wait_for_screen_contains(
                 &mut helper.parser,
                 &helper.output_rx,
-                "Current runtime:",
+                "Ctrl+p commands",
                 MARKER_TIMEOUT,
             )
             .expect("wait for dense session shell after sidebar toggle");
 
             assert!(!screen.contains("Context"));
-            assert!(screen.contains("Current runtime:"));
+            assert!(screen.contains("Ctrl+p commands"));
         } else {
             let screen = wait_for_screen_contains(
                 &mut helper.parser,
@@ -552,13 +571,12 @@ fn operator_sidebar_matches_opencode_information_architecture() {
             "▼ Modified Files",
         ],
     );
-    assert!(screen.contains("Current runtime: default · gpt-5.4-mini"));
-    assert!(screen.contains("provider openai"));
+    assert!(!screen.contains("Current runtime:"));
     assert_screen_contains_all(
         &screen,
         &[
-            "No MCP integrations configured",
-            "● rust",
+            "• websearch Connected",
+            "• rust",
             "src/ui_secondary.rs",
             "src/layout.rs",
             "src/theme.rs",
@@ -592,7 +610,8 @@ fn pty_live_orchestration_drawer_and_status() {
         MARKER_TIMEOUT,
     )
     .expect("wait for operator sidebar context");
-    assert_screen_contains_all(&queued_screen, &["Context", "No modified files"]);
+    assert_screen_contains_all(&queued_screen, &["Context", "▶ Modified Files"]);
+    assert!(!queued_screen.contains("No modified files"));
 
     thread::sleep(ORCHESTRATION_EVENT_DELAY + STABLE_WINDOW);
     drain_output(&mut helper.parser, &helper.output_rx);
@@ -604,12 +623,9 @@ fn pty_live_orchestration_drawer_and_status() {
     );
     assert_screen_contains_all(
         &completed_screen,
-        &[
-            "Context",
-            "No modified files",
-            "Current runtime: default · m1 · provider mock",
-        ],
+        &["Context", "▶ Modified Files", "Ctrl+p commands"],
     );
+    assert!(!completed_screen.contains("No modified files"));
     assert!(!completed_screen.contains("Todo ·"));
     assert!(!completed_screen.contains("MCP · idle"));
     assert!(!completed_screen.contains("Network · 1"));
@@ -641,7 +657,8 @@ fn pty_live_orchestration_stale_late_result_flow() {
         MARKER_TIMEOUT,
     )
     .expect("wait for late result sidebar state");
-    assert_screen_contains_all(&late_result_screen, &["Context", "No modified files"]);
+    assert_screen_contains_all(&late_result_screen, &["Context", "▶ Modified Files"]);
+    assert!(!late_result_screen.contains("No modified files"));
 
     terminate_child(helper.child);
 }
@@ -723,7 +740,7 @@ fn startup_shell_displays_meaningful_mock_launch_metadata() {
     ] {
         let startup_shell = capture_startup_shell_snapshot(geometry);
         assert!(startup_shell.contains("Launch: worker · model-1"));
-        assert!(startup_shell.contains("Ask Harness anything…"));
+        assert!(startup_shell.contains("Ask anything... \"inspect src/ui.rs\""));
         assert!(!startup_shell.contains("Dispatch a new run"));
         assert!(!startup_shell.contains("Actions:"));
         assert!(!startup_shell.contains("provider unknown"));
@@ -773,6 +790,18 @@ fn run_helper_if_requested(scenario: HelperScenario) {
                     tool_tx
                         .send(LiveUpdate::Event(Box::new(event)))
                         .expect("send tool lifecycle events");
+                }
+                thread::park();
+            });
+        }
+        HelperScenario::InlineDiffParity => {
+            write_inline_diff_parity_fixtures(run_dir.path());
+            let parity_tx = tx.clone();
+            thread::spawn(move || {
+                for event in inline_diff_parity_events() {
+                    parity_tx
+                        .send(LiveUpdate::Event(Box::new(event)))
+                        .expect("send inline diff parity events");
                 }
                 thread::park();
             });
@@ -1241,6 +1270,167 @@ fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
     ]
 }
 
+fn inline_diff_parity_events() -> Vec<EventEnvelopeV1> {
+    let request_id = "req_inline_diff_parity";
+    vec![
+        envelope(
+            1,
+            Some(request_id),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: request_id.to_string(),
+                text: "Make inline diffs match Opencode".to_string(),
+            }),
+        ),
+        envelope(
+            2,
+            Some(request_id),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: request_id.to_string(),
+                provider_id: "mock".to_string(),
+                model_id: "model-1".to_string(),
+                prompt_summary: "Make inline diffs match Opencode".to_string(),
+                request_digest: "digest-inline-diff-parity-request".to_string(),
+            }),
+        ),
+        envelope(
+            3,
+            Some(request_id),
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: request_id.to_string(),
+                delta: "I verified the current transcript behavior before patching it.".to_string(),
+            }),
+        ),
+        envelope(
+            4,
+            Some(request_id),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_inline_apply".to_string(),
+                tool_id: "apply_patch".to_string(),
+                args_summary: r#"{"patchText":"*** Begin Patch"}"#.to_string(),
+                args_digest: "digest-inline-diff-parity-apply-args".to_string(),
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("apply_patch".to_string()),
+                    ..harness_core::event::ToolCallMetadata::default()
+                }),
+            }),
+        ),
+        envelope(
+            5,
+            Some(request_id),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tc_inline_apply".to_string(),
+            }),
+        ),
+        envelope(
+            6,
+            Some("tc_inline_apply"),
+            EventV1::EditApplied(EditAppliedEvent {
+                edit_id: "edit_inline_diff_rename".to_string(),
+                path: "src/session_diff.rs".to_string(),
+                new_file_digest: "digest-inline-diff-rename-file".to_string(),
+                diff_rel_path: Some("artifacts/inline-diff-rename.diff".to_string()),
+                diff_digest: Some("digest-inline-diff-rename".to_string()),
+            }),
+        ),
+        envelope(
+            7,
+            Some("tc_inline_apply"),
+            EventV1::EditApplied(EditAppliedEvent {
+                edit_id: "edit_inline_diff_wrap".to_string(),
+                path: "docs/transcript.md".to_string(),
+                new_file_digest: "digest-inline-diff-wrap-file".to_string(),
+                diff_rel_path: Some("artifacts/inline-diff-wrap.diff".to_string()),
+                diff_digest: Some("digest-inline-diff-wrap".to_string()),
+            }),
+        ),
+        envelope(
+            8,
+            Some(request_id),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_inline_apply".to_string(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("Success. Updated the following files".to_string()),
+                output_digest: Some("digest-inline-diff-parity-apply-output".to_string()),
+                output_json: Some(serde_json::json!({
+                    "files": ["M src/session_diff.rs", "M docs/transcript.md"],
+                    "edits": [
+                        {
+                            "edit_id": "edit_inline_diff_rename",
+                            "path": "src/session_diff.rs",
+                            "summary": "apply patch move src/session_turn.rs -> src/session_diff.rs",
+                            "deleted": false,
+                            "diff_rel_path": "artifacts/inline-diff-rename.diff",
+                            "diff_digest": "digest-inline-diff-rename"
+                        },
+                        {
+                            "edit_id": "edit_inline_diff_wrap",
+                            "path": "docs/transcript.md",
+                            "summary": "apply patch update docs/transcript.md",
+                            "deleted": false,
+                            "diff_rel_path": "artifacts/inline-diff-wrap.diff",
+                            "diff_digest": "digest-inline-diff-wrap"
+                        }
+                    ]
+                })),
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("apply_patch".to_string()),
+                    ..harness_core::event::ToolCallMetadata::default()
+                }),
+            }),
+        ),
+        envelope(
+            9,
+            Some(request_id),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_read_after_inline_apply".to_string(),
+                tool_id: "read".to_string(),
+                args_summary: r#"{"filePath":"docs/transcript.md","offset":1,"limit":40}"#
+                    .to_string(),
+                args_digest: "digest-inline-diff-parity-read-args".to_string(),
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("fs.read".to_string()),
+                    alias_source_tool_id: Some("read".to_string()),
+                    ..harness_core::event::ToolCallMetadata::default()
+                }),
+            }),
+        ),
+        envelope(
+            10,
+            Some(request_id),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_read_after_inline_apply".to_string(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("40 lines read from docs/transcript.md".to_string()),
+                output_digest: Some("digest-inline-diff-parity-read-output".to_string()),
+                output_json: None,
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("fs.read".to_string()),
+                    alias_source_tool_id: Some("read".to_string()),
+                    ..harness_core::event::ToolCallMetadata::default()
+                }),
+            }),
+        ),
+        envelope(
+            11,
+            Some(request_id),
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: request_id.to_string(),
+                delta: "The inline diff edge cases now match Opencode.".to_string(),
+            }),
+        ),
+        envelope(
+            12,
+            Some(request_id),
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: request_id.to_string(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some("digest-inline-diff-parity-response".to_string()),
+                usage: None,
+            }),
+        ),
+    ]
+}
+
 fn write_tool_lifecycle_diff_fixture(run_dir: &Path) {
     let artifacts_dir = run_dir.join("artifacts");
     fs::create_dir_all(&artifacts_dir).expect("create tool lifecycle artifacts dir");
@@ -1249,6 +1439,21 @@ fn write_tool_lifecycle_diff_fixture(run_dir: &Path) {
         "--- crates/harness-tui/src/ui.rs\n+++ crates/harness-tui/src/ui.rs\n@@ -44,8 +44,7 @@\n use ui_secondary::{\n-    render_diff_tab, render_events_tab, render_help_tab,\n+    render_events_tab, render_help_tab, render_live_details_overlay,\n     render_operator_sidebar,\n };\n",
     )
     .expect("write tool lifecycle diff fixture");
+}
+
+fn write_inline_diff_parity_fixtures(run_dir: &Path) {
+    let artifacts_dir = run_dir.join("artifacts");
+    fs::create_dir_all(&artifacts_dir).expect("create inline diff parity artifacts dir");
+    fs::write(
+        artifacts_dir.join("inline-diff-rename.diff"),
+        "--- src/session_turn.rs\n+++ src/session_diff.rs\n@@ -1,1 +1,1 @@\n-pub fn render_session_turn_diff() {}\n+pub fn render_session_diff_view() {}\n",
+    )
+    .expect("write inline diff parity rename fixture");
+    fs::write(
+        artifacts_dir.join("inline-diff-wrap.diff"),
+        "--- docs/transcript.md\n+++ docs/transcript.md\n@@ -1,1 +1,1 @@\n-session turn diff view keeps the tool row spacing perfectly aligned in every transcript lane for operators reviewing compact windows\n+session turn diff view keeps the tool row spacing perfectly aligned across the transcript surface for operators reviewing compact windows and narrow shells\n",
+    )
+    .expect("write inline diff parity wrap fixture");
 }
 
 fn details_drawer_events() -> Vec<EventEnvelopeV1> {
@@ -1727,7 +1932,7 @@ fn capture_startup_palette_snapshot(geometry: PtyGeometry) -> String {
     let screen = wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
-        "Command palette",
+        "Commands",
         MARKER_TIMEOUT,
     )
     .expect("wait for startup command palette");
@@ -1751,7 +1956,7 @@ fn capture_startup_session_history_snapshot(geometry: PtyGeometry) -> String {
     wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
-        "Command palette",
+        "Commands",
         MARKER_TIMEOUT,
     )
     .expect("wait for startup palette before opening history");
@@ -1864,7 +2069,7 @@ fn capture_events_tab_snapshot(geometry: PtyGeometry) -> String {
     wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
-        "Command palette",
+        "Commands",
         MARKER_TIMEOUT,
     )
     .expect("wait for command palette before filtering event log review");
@@ -2034,6 +2239,7 @@ fn helper_scenario_from_env() -> Option<HelperScenario> {
         Some("type_first_startup") => Some(HelperScenario::TypeFirstStartup),
         Some("streamed_response") => Some(HelperScenario::StreamedResponse),
         Some("tool_lifecycle") => Some(HelperScenario::ToolLifecycle),
+        Some("inline_diff_parity") => Some(HelperScenario::InlineDiffParity),
         Some("permission_with_draft") => Some(HelperScenario::PermissionWithDraft),
         Some("details_drawer") => Some(HelperScenario::DetailsDrawer),
         Some("opencode_sidebar_session_parity") => {

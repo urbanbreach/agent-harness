@@ -14,6 +14,8 @@ const LIVE_PROMPT_STANDARD_CHROME_ROWS: u16 = 4;
 const LIVE_PROMPT_DENSE_CHROME_ROWS: u16 = 3;
 const LIVE_PROMPT_MIN_HEIGHT: u16 = 5;
 const DENSE_LIVE_PROMPT_MIN_HEIGHT: u16 = 4;
+const LIVE_PERMISSION_PROMPT_MIN_HEIGHT: u16 = 6;
+const LIVE_QUESTION_PROMPT_MIN_HEIGHT: u16 = 9;
 const LIVE_EMPTY_STATE_MIN_HEIGHT: u16 = 9;
 const LIVE_DETAILS_MIN_TRANSCRIPT_WIDTH: u16 = 48;
 #[allow(dead_code)]
@@ -27,6 +29,7 @@ const COMPACT_SESSION_MAX_WIDTH: u16 = 80;
 const COMPACT_SESSION_MAX_HEIGHT: u16 = 24;
 const DENSE_SESSION_PALETTE_MAX_WIDTH: u16 = 46;
 const DENSE_SESSION_SLASH_MAX_WIDTH: u16 = 32;
+const OPENCODE_COMMAND_PALETTE_WIDTH: u16 = 60;
 const PERSISTENT_SIDEBAR_MIN_WIDTH: u16 = 121;
 const STARTUP_COMPOSER_MAX_WIDTH: u16 = 75;
 const RUNTIME_STATE_SURFACE_HORIZONTAL_INSET: u16 = 6;
@@ -349,7 +352,7 @@ pub(crate) fn session_shell_layout(
     contract: SessionGeometryContract,
 ) -> SessionShellLayout {
     let shell_tokens = theme.token_families().live_shell;
-    let gap = shell_tokens.spacing.rhythm.surface_gap.max(1);
+    let gap = shell_tokens.spacing.rhythm.surface_gap / 2;
     let min_transcript_width = shell
         .transcript_min_width
         .max(LIVE_DETAILS_MIN_TRANSCRIPT_WIDTH);
@@ -427,6 +430,11 @@ pub(crate) fn session_shell_layout(
             control_dock_layout(shell_area, None, rows[0], disclosure)
         }
     };
+    let dock = if operator_sidebar.is_some() {
+        dock_with_sidebar_gap(dock, shell_tokens.spacing.rhythm.transcript_gutter_x)
+    } else {
+        dock
+    };
     if app.startup_shell_visible() {
         return SessionShellLayout {
             live_anchor: None,
@@ -486,6 +494,58 @@ pub(crate) fn composer_input_height(text: &str, width: u16) -> u16 {
     let clamped_lines =
         wrapped_lines.clamp(usize::from(MIN_COMPOSER_LINES), usize::from(max_lines));
     u16::try_from(clamped_lines).unwrap_or(max_lines)
+}
+
+fn permission_prompt_block_height(
+    app: &AppState,
+    width: u16,
+    permission: &crate::app::ActivePermissionView,
+) -> u16 {
+    let inner_width = usize::from(width.saturating_sub(6).max(1));
+
+    if let Some(prompts) = permission.question_prompts.as_ref() {
+        let mut rows = 4u16;
+        for prompt in prompts {
+            rows = rows
+                .saturating_add(wrapped_text_rows(
+                    &format!("[{}] {}", prompt.header, prompt.question),
+                    inner_width,
+                ))
+                .saturating_add(u16::try_from(prompt.options.len()).unwrap_or(u16::MAX))
+                .saturating_add(1);
+        }
+
+        rows = rows
+            .saturating_add(wrapped_text_rows(
+                &app.question_answer_preview(&permission.permission_id),
+                inner_width,
+            ))
+            .saturating_add(u16::from(
+                app.question_answer_error(&permission.permission_id)
+                    .is_some(),
+            ))
+            .saturating_add(2);
+
+        return rows.clamp(LIVE_QUESTION_PROMPT_MIN_HEIGHT, 16);
+    }
+
+    let draft_rows = wrapped_text_rows(app.prompt_buffer.as_str(), inner_width).min(2);
+    LIVE_PERMISSION_PROMPT_MIN_HEIGHT
+        .saturating_add(draft_rows.saturating_sub(1))
+        .clamp(LIVE_PERMISSION_PROMPT_MIN_HEIGHT, 8)
+}
+
+fn wrapped_text_rows(text: &str, width: usize) -> u16 {
+    if width == 0 {
+        return 1;
+    }
+
+    let rows = text
+        .split('\n')
+        .map(|line| line.chars().count().max(1).div_ceil(width))
+        .sum::<usize>()
+        .max(1);
+    u16::try_from(rows).unwrap_or(u16::MAX)
 }
 
 pub(crate) fn inset_rect(area: Rect, horizontal: u16, vertical: u16) -> Rect {
@@ -663,22 +723,38 @@ fn live_prompt_block_height(
 ) -> u16 {
     let max_block_height = area.height;
     let dense_footer = matches!(contract.footer_mode, SessionFooterMode::Minimal);
-    let min_height = if dense_footer {
-        DENSE_LIVE_PROMPT_MIN_HEIGHT
-    } else {
+    let startup_shell = app.startup_shell_visible();
+    let min_height = if startup_shell {
         LIVE_PROMPT_MIN_HEIGHT
-    };
-    let min_height = if app.startup_shell_visible() {
-        min_height.max(LIVE_PROMPT_MIN_HEIGHT)
+    } else if dense_footer {
+        DENSE_LIVE_PROMPT_MIN_HEIGHT.saturating_sub(1)
     } else {
-        min_height
+        LIVE_PROMPT_MIN_HEIGHT.saturating_sub(1)
     };
-    let chrome_rows = if dense_footer {
+    if !startup_shell {
+        if let Some(permission) = app.active_permission_view() {
+            return permission_prompt_block_height(app, area.width, &permission)
+                .max(if permission.question_prompts.is_some() {
+                    LIVE_QUESTION_PROMPT_MIN_HEIGHT
+                } else {
+                    LIVE_PERMISSION_PROMPT_MIN_HEIGHT
+                })
+                .min(max_block_height);
+        }
+    }
+
+    let chrome_rows = if startup_shell {
+        if dense_footer {
+            LIVE_PROMPT_DENSE_CHROME_ROWS
+        } else {
+            LIVE_PROMPT_STANDARD_CHROME_ROWS
+        }
+    } else if dense_footer {
         LIVE_PROMPT_DENSE_CHROME_ROWS
     } else {
         LIVE_PROMPT_STANDARD_CHROME_ROWS
     };
-    let disclosure_rows = u16::from(app.startup_shell_visible());
+    let disclosure_rows = u16::from(startup_shell);
     let natural_height = composer_input_height(&app.prompt_buffer, area.width)
         .saturating_add(chrome_rows)
         .saturating_add(disclosure_rows)
@@ -689,6 +765,7 @@ fn live_prompt_block_height(
 
 fn control_dock_disclosure_rows(app: &AppState, contract: SessionGeometryContract) -> u16 {
     if app.replay_mode
+        || app.active_permission_view().is_some()
         || (!app.startup_shell_visible() && app.events.is_empty() && app.prompt_buffer.is_empty())
         || app.review_surface().is_some()
     {
@@ -715,6 +792,17 @@ fn control_dock_layout(
         status,
         composer,
         disclosure,
+    }
+}
+
+fn dock_with_sidebar_gap(dock: ControlDockLayout, gap_width: u16) -> ControlDockLayout {
+    let gap = gap_width.min(dock.composer.width);
+    ControlDockLayout {
+        composer: Rect {
+            width: dock.composer.width.saturating_sub(gap),
+            ..dock.composer
+        },
+        ..dock
     }
 }
 
@@ -827,13 +915,7 @@ fn live_details_drawer_layout(
         return (area, None);
     }
 
-    let gap = theme
-        .token_families()
-        .live_shell
-        .spacing
-        .rhythm
-        .surface_gap
-        .max(1);
+    let gap = theme.token_families().live_shell.spacing.rhythm.surface_gap / 2;
     let sidebar_width = shell
         .details_sidebar_width
         .min(area.width.saturating_sub(1));
@@ -934,14 +1016,29 @@ fn command_palette_overlay_area(
     contract: SessionGeometryContract,
     app: &AppState,
 ) -> Option<Rect> {
+    if !app.session_history_visible {
+        let popup_width = OPENCODE_COMMAND_PALETTE_WIDTH.min(area.width.saturating_sub(2));
+        let popup_height = command_palette_overlay_height(app, area.height)
+            .min(area.height.saturating_sub(area.height / 4));
+        if popup_width == 0 || popup_height == 0 {
+            return None;
+        }
+
+        let popup_x = area
+            .x
+            .saturating_add((area.width.saturating_sub(popup_width)) / 2);
+        let popup_y = area.y.saturating_add(area.height / 4);
+        return Some(Rect::new(popup_x, popup_y, popup_width, popup_height));
+    }
+
     let shell_tokens = theme.token_families().live_shell;
     let horizontal_margin = shell_tokens.spacing.rhythm.modal_margin.saturating_mul(2);
     let vertical_margin = shell_tokens.spacing.rhythm.modal_margin.saturating_mul(2);
     let popup_width = command_palette_overlay_width(shell, app)
         .min(contract.palette_overlay_max_width.unwrap_or(u16::MAX))
         .min(area.width.saturating_sub(horizontal_margin));
-    let popup_height =
-        command_palette_overlay_height(app).min(area.height.saturating_sub(vertical_margin));
+    let popup_height = command_palette_overlay_height(app, area.height)
+        .min(area.height.saturating_sub(vertical_margin));
 
     if popup_width == 0 || popup_height == 0 {
         return None;
@@ -960,37 +1057,48 @@ fn command_palette_overlay_width(shell: LiveShellLayout, app: &AppState) -> u16 
     if app.session_history_visible {
         shell.centered_content_width
     } else {
-        shell.permission_modal_width
+        OPENCODE_COMMAND_PALETTE_WIDTH
     }
 }
 
-fn command_palette_overlay_height(app: &AppState) -> u16 {
-    const OVERLAY_FRAME_ROWS: u16 = 2;
-    const MAX_LIST_ROWS: usize = 6;
+fn command_palette_overlay_height(app: &AppState, terminal_height: u16) -> u16 {
+    const COMMAND_OVERLAY_ROWS: u16 = 6;
+    const SESSION_HISTORY_OVERLAY_ROWS: u16 = 5;
+    const MAX_LIST_ROWS: usize = 7;
 
-    let body_rows = if app.session_history_visible {
+    if app.session_history_visible {
         let history_rows = app.session_history_filtered.len().clamp(1, MAX_LIST_ROWS);
         let history_rows = u16::try_from(history_rows).unwrap_or(u16::MAX);
-        u16::from(app.continue_disabled_banner.is_some())
-            .saturating_add(1)
-            .saturating_add(1)
+        SESSION_HISTORY_OVERLAY_ROWS
+            .saturating_add(u16::from(app.continue_disabled_banner.is_some()))
             .saturating_add(history_rows)
     } else {
-        let command_rows = app
-            .palette_filtered
-            .iter()
-            .fold((0usize, None), |(rows, last_section), command| {
-                let section = crate::Action::palette_command_section(command.as_str());
-                let header_rows = usize::from(section != last_section);
-                (rows.saturating_add(header_rows).saturating_add(1), section)
-            })
-            .0
-            .clamp(1, MAX_LIST_ROWS);
+        let max_height_rows = usize::from(terminal_height.saturating_div(2).saturating_sub(6));
+        let command_rows = command_palette_visible_rows(app)
+            .max(1)
+            .min(max_height_rows.max(1));
         let command_rows = u16::try_from(command_rows).unwrap_or(u16::MAX);
-        1u16.saturating_add(command_rows)
-    };
+        COMMAND_OVERLAY_ROWS.saturating_add(command_rows)
+    }
+}
 
-    body_rows.saturating_add(OVERLAY_FRAME_ROWS)
+fn command_palette_visible_rows(app: &AppState) -> usize {
+    app.palette_filtered
+        .iter()
+        .fold((0usize, None), |(rows, last_section), command| {
+            let section = crate::Action::palette_command_section(command.as_str());
+            let section_rows = if section.is_some() && section != last_section {
+                if last_section.is_some() {
+                    2
+                } else {
+                    1
+                }
+            } else {
+                0
+            };
+            (rows.saturating_add(section_rows).saturating_add(1), section)
+        })
+        .0
 }
 
 #[cfg(test)]
@@ -1089,8 +1197,6 @@ mod tests {
 
     #[test]
     fn startup_palette_overlay_prefers_compact_modal_dimensions() {
-        let theme = Theme::default();
-
         let mut palette = AppState::new_startup(Vec::new(), None);
         palette.handle_key(crossterm::event::KeyEvent::new(
             crossterm::event::KeyCode::Char('p'),
@@ -1099,9 +1205,7 @@ mod tests {
 
         let plan = FrameLayoutPlan::for_app(&palette, Rect::new(0, 0, 100, 30));
         let overlay = plan.palette_overlay.expect("startup palette overlay");
-        let shell = theme.live_shell_layout(100, 30);
 
-        assert_eq!(overlay.width, shell.permission_modal_width);
-        assert_eq!(overlay.height, 9);
+        assert_eq!(overlay, Rect::new(20, 8, 60, 14));
     }
 }

@@ -454,6 +454,13 @@ pub struct StatusColors {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScrollbarColors {
+    pub track: Color,
+    pub thumb: Color,
+    pub thumb_active: Color,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThemePalette {
     pub surfaces: SurfaceColors,
     pub borders: BorderColors,
@@ -474,6 +481,7 @@ pub struct Theme {
     pub border: BorderColors,
     pub text: TextColors,
     pub status: StatusColors,
+    pub scrollbar: ScrollbarColors,
     pub live_shell: LiveShellTokens,
 }
 
@@ -753,30 +761,35 @@ impl Theme {
     pub fn opencode_dark() -> Self {
         Self {
             surface: SurfaceColors {
-                canvas: rgb(0x00, 0x00, 0x00),
-                shell: rgb(0x00, 0x00, 0x00),
-                panel: rgb(0x11, 0x11, 0x11),
-                panel_elevated: rgb(0x19, 0x19, 0x19),
-                overlay: rgb(0x19, 0x19, 0x19),
+                canvas: rgb(0x0A, 0x0A, 0x0A),
+                shell: rgb(0x0A, 0x0A, 0x0A),
+                panel: rgb(0x14, 0x14, 0x14),
+                panel_elevated: rgb(0x1E, 0x1E, 0x1E),
+                overlay: rgb(0x14, 0x14, 0x14),
             },
             border: BorderColors {
-                subtle: rgb(0x8C, 0x88, 0x83),
-                strong: rgb(0xD4, 0x8B, 0x17),
-                focus: rgb(0xD4, 0x8B, 0x17),
+                subtle: rgb(0x3C, 0x3C, 0x3C),
+                strong: rgb(0x48, 0x48, 0x48),
+                focus: rgb(0x60, 0x60, 0x60),
             },
             text: TextColors {
-                primary: rgb(0xE7, 0xE3, 0xDE),
-                secondary: rgb(0x8C, 0x88, 0x83),
-                tertiary: rgb(0x8C, 0x88, 0x83),
-                accent: rgb(0xD4, 0x8B, 0x17),
-                inverse: rgb(0x00, 0x00, 0x00),
+                primary: rgb(0xEE, 0xEE, 0xEE),
+                secondary: rgb(0x80, 0x80, 0x80),
+                tertiary: rgb(0x80, 0x80, 0x80),
+                accent: rgb(0xFA, 0xB2, 0x83),
+                inverse: rgb(0x0A, 0x0A, 0x0A),
             },
             status: StatusColors {
-                success: rgb(0x73, 0xC0, 0x6B),
-                warning: rgb(0xC9, 0xA2, 0x27),
-                error: rgb(0xD9, 0x6A, 0x6A),
-                info: rgb(0xD4, 0x8B, 0x17),
-                disabled: rgb(0x8C, 0x88, 0x83),
+                success: rgb(0x7F, 0xD8, 0x8F),
+                warning: rgb(0xF5, 0xA7, 0x42),
+                error: rgb(0xE0, 0x6C, 0x75),
+                info: rgb(0x56, 0xB6, 0xC2),
+                disabled: rgb(0x80, 0x80, 0x80),
+            },
+            scrollbar: ScrollbarColors {
+                track: rgb(0x14, 0x14, 0x14),
+                thumb: rgb(0x32, 0x32, 0x32),
+                thumb_active: rgb(0x60, 0x60, 0x60),
             },
             live_shell: Self::OPENCODE_SHELL,
         }
@@ -804,24 +817,27 @@ mod tests {
     #[test]
     fn opencode_dark_theme_matches_palette_contract() {
         let theme = Theme::opencode_dark();
-        assert_eq!(theme.surface.canvas, rgb(0x00, 0x00, 0x00));
-        assert_eq!(theme.surface.shell, rgb(0x00, 0x00, 0x00));
-        assert_eq!(theme.surface.panel, rgb(0x11, 0x11, 0x11));
-        assert_eq!(theme.surface.panel_elevated, rgb(0x19, 0x19, 0x19));
-        assert_eq!(theme.surface.overlay, rgb(0x19, 0x19, 0x19));
-        assert_eq!(theme.border.subtle, rgb(0x8C, 0x88, 0x83));
-        assert_eq!(theme.border.strong, rgb(0xD4, 0x8B, 0x17));
-        assert_eq!(theme.border.focus, rgb(0xD4, 0x8B, 0x17));
-        assert_eq!(theme.text.primary, rgb(0xE7, 0xE3, 0xDE));
-        assert_eq!(theme.text.secondary, rgb(0x8C, 0x88, 0x83));
-        assert_eq!(theme.text.tertiary, rgb(0x8C, 0x88, 0x83));
-        assert_eq!(theme.text.accent, rgb(0xD4, 0x8B, 0x17));
-        assert_eq!(theme.text.inverse, rgb(0x00, 0x00, 0x00));
-        assert_eq!(theme.status.success, rgb(0x73, 0xC0, 0x6B));
-        assert_eq!(theme.status.warning, rgb(0xC9, 0xA2, 0x27));
-        assert_eq!(theme.status.error, rgb(0xD9, 0x6A, 0x6A));
-        assert_eq!(theme.status.info, rgb(0xD4, 0x8B, 0x17));
-        assert_eq!(theme.status.disabled, rgb(0x8C, 0x88, 0x83));
+        assert_eq!(theme.surface.canvas, rgb(0x0A, 0x0A, 0x0A));
+        assert_eq!(theme.surface.shell, rgb(0x0A, 0x0A, 0x0A));
+        assert_eq!(theme.surface.panel, rgb(0x14, 0x14, 0x14));
+        assert_eq!(theme.surface.panel_elevated, rgb(0x1E, 0x1E, 0x1E));
+        assert_eq!(theme.surface.overlay, rgb(0x14, 0x14, 0x14));
+        assert_eq!(theme.border.subtle, rgb(0x3C, 0x3C, 0x3C));
+        assert_eq!(theme.border.strong, rgb(0x48, 0x48, 0x48));
+        assert_eq!(theme.border.focus, rgb(0x60, 0x60, 0x60));
+        assert_eq!(theme.text.primary, rgb(0xEE, 0xEE, 0xEE));
+        assert_eq!(theme.text.secondary, rgb(0x80, 0x80, 0x80));
+        assert_eq!(theme.text.tertiary, rgb(0x80, 0x80, 0x80));
+        assert_eq!(theme.text.accent, rgb(0xFA, 0xB2, 0x83));
+        assert_eq!(theme.text.inverse, rgb(0x0A, 0x0A, 0x0A));
+        assert_eq!(theme.status.success, rgb(0x7F, 0xD8, 0x8F));
+        assert_eq!(theme.status.warning, rgb(0xF5, 0xA7, 0x42));
+        assert_eq!(theme.status.error, rgb(0xE0, 0x6C, 0x75));
+        assert_eq!(theme.status.info, rgb(0x56, 0xB6, 0xC2));
+        assert_eq!(theme.status.disabled, rgb(0x80, 0x80, 0x80));
+        assert_eq!(theme.scrollbar.track, rgb(0x14, 0x14, 0x14));
+        assert_eq!(theme.scrollbar.thumb, rgb(0x32, 0x32, 0x32));
+        assert_eq!(theme.scrollbar.thumb_active, rgb(0x60, 0x60, 0x60));
     }
 
     #[test]

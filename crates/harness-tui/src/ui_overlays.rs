@@ -12,13 +12,7 @@ pub(super) fn render_overlays(
             OverlayKind::CommandPalette => {
                 render_command_palette_overlay(frame, app, theme, plan.root, plan.palette_overlay)
             }
-            OverlayKind::PermissionModal => {
-                if let Some(permission) = app.active_permission_view() {
-                    if let Some(modal) = plan.permission_modal {
-                        render_permission_modal(frame, app, &permission, theme, plan.root, modal);
-                    }
-                }
-            }
+            OverlayKind::PermissionModal => {}
         }
     }
 }
@@ -34,30 +28,109 @@ fn render_command_palette_overlay(
         return;
     };
 
-    render_overlay_backdrop(frame, root, ui_chrome::quiet_modal_backdrop_surface(theme));
+    render_overlay_dim_backdrop(frame, root);
 
     let title = if app.session_history_visible {
         session_history_overlay_title(app)
     } else {
-        "Command palette".to_string()
+        "Commands".to_string()
     };
-    let Some(inner) = render_overlay_surface(frame, theme, overlay, &title) else {
-        return;
-    };
-
-    let card_surface = ui_chrome::elevated_card_surface(theme);
 
     if app.session_history_visible {
-        render_session_history_overlay(frame, app, theme, inner, card_surface);
+        let Some(inner) = render_command_palette_surface(frame, theme, overlay) else {
+            return;
+        };
+        render_session_history_overlay(frame, app, theme, inner, &title);
     } else {
-        let sections = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Min(0)])
-            .split(inner);
-
-        render_command_palette_input(frame, app, theme, sections[0]);
-        render_command_palette_list(frame, app, theme, sections[1]);
+        if !paint_command_palette_panel(frame, theme, overlay) {
+            return;
+        }
+        let Some((header, input, list)) = command_palette_dialog_layout(overlay) else {
+            return;
+        };
+        render_command_palette_header(frame, theme, header, &title);
+        render_command_palette_input(frame, app, theme, input);
+        render_command_palette_list(frame, app, theme, list);
     }
+}
+
+fn render_command_palette_surface(frame: &mut Frame, theme: &Theme, overlay: Rect) -> Option<Rect> {
+    if !paint_command_palette_panel(frame, theme, overlay) {
+        return None;
+    }
+
+    let content = inset_rect(overlay, 3.min(overlay.width.saturating_sub(1)), 1);
+    if content.width == 0 || content.height == 0 {
+        return None;
+    }
+
+    Some(content)
+}
+
+fn paint_command_palette_panel(frame: &mut Frame, theme: &Theme, overlay: Rect) -> bool {
+    if overlay.width == 0 || overlay.height == 0 {
+        return false;
+    }
+
+    let surface = ui_chrome::command_palette_surface(theme);
+    frame.render_widget(Clear, overlay);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(surface)),
+        overlay,
+    );
+    true
+}
+
+fn command_palette_dialog_layout(overlay: Rect) -> Option<(Rect, Rect, Rect)> {
+    if overlay.width <= 8 || overlay.height <= 6 {
+        return None;
+    }
+
+    let content_x = overlay.x.saturating_add(4);
+    let content_width = overlay.width.saturating_sub(8);
+    let header = Rect::new(content_x, overlay.y.saturating_add(1), content_width, 1);
+    let input = Rect::new(content_x, overlay.y.saturating_add(3), content_width, 1);
+    let list = Rect::new(
+        overlay.x,
+        overlay.y.saturating_add(5),
+        overlay.width,
+        overlay.height.saturating_sub(6),
+    );
+    Some((header, input, list))
+}
+
+fn render_command_palette_header(frame: &mut Frame, theme: &Theme, area: Rect, title: &str) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let surface = ui_chrome::command_palette_surface(theme);
+    let esc = "esc";
+    let columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(esc.chars().count() as u16),
+        ])
+        .split(area);
+
+    frame.render_widget(
+        Paragraph::new(title.to_string()).style(
+            Style::default()
+                .fg(ui_chrome::command_palette_title(theme))
+                .bg(surface)
+                .add_modifier(Modifier::BOLD),
+        ),
+        columns[0],
+    );
+    frame.render_widget(
+        Paragraph::new(esc).alignment(Alignment::Right).style(
+            Style::default()
+                .fg(ui_chrome::command_palette_muted(theme))
+                .bg(surface),
+        ),
+        columns[1],
+    );
 }
 
 fn render_session_history_overlay(
@@ -65,19 +138,20 @@ fn render_session_history_overlay(
     app: &AppState,
     theme: &Theme,
     area: Rect,
-    card_surface: Color,
+    title: &str,
 ) {
     let show_banner = app.continue_disabled_banner.is_some();
-    let area = inset_rect(area, 1, 0);
     let sections = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(if show_banner { 1 } else { 0 }),
             Constraint::Length(1),
             Constraint::Length(1),
+            Constraint::Length(1),
             Constraint::Min(0),
         ])
         .split(area);
+    let surface = ui_chrome::command_palette_surface(theme);
 
     if let Some(banner) = app.continue_disabled_banner.as_deref() {
         frame.render_widget(
@@ -88,20 +162,21 @@ fn render_session_history_overlay(
                 ),
                 Style::default()
                     .fg(theme.status.warning)
-                    .bg(card_surface)
+                    .bg(surface)
                     .add_modifier(Modifier::BOLD),
             ))),
             sections[0],
         );
     }
 
-    render_command_palette_input(frame, app, theme, sections[1]);
+    render_command_palette_header(frame, theme, sections[1], title);
+    render_command_palette_input(frame, app, theme, sections[2]);
     frame.render_widget(
         Paragraph::new(session_history_scope_line(app))
-            .style(Style::default().fg(theme.text.secondary).bg(card_surface)),
-        sections[2],
+            .style(Style::default().fg(theme.text.secondary).bg(surface)),
+        sections[3],
     );
-    render_session_history_list(frame, app, theme, sections[3]);
+    render_session_history_list(frame, app, theme, sections[4]);
 }
 
 fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
@@ -109,28 +184,59 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
         return;
     }
 
-    let surface = theme.surface.overlay;
-
+    let surface = ui_chrome::command_palette_surface(theme);
     frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
 
-    let mut input = app.palette_input.clone();
-    let cursor_byte = input
-        .char_indices()
-        .nth(app.palette_cursor)
-        .map(|(index, _)| index)
-        .unwrap_or(input.len());
-    input.insert(cursor_byte, '█');
-
-    let line = Line::from(vec![
-        Span::styled(
-            "> ",
-            Style::default()
-                .fg(theme.text.accent)
-                .bg(surface)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(input, Style::default().fg(theme.text.primary).bg(surface)),
-    ]);
+    let line = if app.palette_input.is_empty() {
+        let placeholder = if app.session_history_visible {
+            "Filter saved runs"
+        } else {
+            "Search"
+        };
+        Line::from(vec![
+            Span::styled(
+                "█",
+                Style::default()
+                    .fg(ui_chrome::command_palette_cursor(theme))
+                    .bg(surface),
+            ),
+            Span::styled(
+                format!(" {placeholder}"),
+                Style::default()
+                    .fg(ui_chrome::command_palette_muted(theme))
+                    .bg(surface),
+            ),
+        ])
+    } else {
+        let cursor_byte = app
+            .palette_input
+            .char_indices()
+            .nth(app.palette_cursor)
+            .map(|(index, _)| index)
+            .unwrap_or(app.palette_input.len());
+        let before = &app.palette_input[..cursor_byte];
+        let after = &app.palette_input[cursor_byte..];
+        Line::from(vec![
+            Span::styled(
+                before.to_string(),
+                Style::default()
+                    .fg(ui_chrome::command_palette_muted(theme))
+                    .bg(surface),
+            ),
+            Span::styled(
+                "█",
+                Style::default()
+                    .fg(ui_chrome::command_palette_cursor(theme))
+                    .bg(surface),
+            ),
+            Span::styled(
+                after.to_string(),
+                Style::default()
+                    .fg(ui_chrome::command_palette_muted(theme))
+                    .bg(surface),
+            ),
+        ])
+    };
     frame.render_widget(Paragraph::new(line), area);
 }
 
@@ -139,18 +245,36 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
         return;
     }
 
+    let list_area = inset_rect(area, 1.min(area.width.saturating_sub(1)), 0);
+    if list_area.width == 0 || list_area.height == 0 {
+        return;
+    }
+
+    frame.render_widget(
+        Block::default().style(Style::default().bg(ui_chrome::command_palette_surface(theme))),
+        list_area,
+    );
+
     if app.palette_filtered.is_empty() {
+        let empty_area = Rect::new(
+            list_area.x.saturating_add(3),
+            list_area.y,
+            list_area.width.saturating_sub(3),
+            1,
+        );
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
-                "No commands",
-                Style::default().fg(theme.text.secondary),
+                "No results found",
+                Style::default()
+                    .fg(ui_chrome::command_palette_muted(theme))
+                    .bg(ui_chrome::command_palette_surface(theme)),
             ))),
-            area,
+            empty_area,
         );
         return;
     }
 
-    let visible_rows = usize::from(area.height);
+    let visible_rows = usize::from(list_area.height);
     let selected = app
         .palette_selected
         .min(app.palette_filtered.len().saturating_sub(1));
@@ -162,20 +286,25 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
     let scroll = selected_row.saturating_sub(visible_rows.saturating_sub(1));
 
     for (row, palette_row) in rows.iter().enumerate().skip(scroll).take(visible_rows) {
-        let row_y = area
+        let row_y = list_area
             .y
             .saturating_add(u16::try_from(row - scroll).unwrap_or(u16::MAX));
-        let row_area = Rect::new(area.x, row_y, area.width, 1);
+        let row_area = Rect::new(list_area.x, row_y, list_area.width, 1);
         match palette_row {
+            PaletteOverlayRow::Spacer => {
+                frame.render_widget(
+                    Block::default()
+                        .style(Style::default().bg(ui_chrome::command_palette_surface(theme))),
+                    row_area,
+                );
+            }
             PaletteOverlayRow::Section(section) => {
                 frame.render_widget(
-                    Paragraph::new(Line::from(Span::styled(
+                    Paragraph::new(command_palette_section_row(
                         section.label(),
-                        Style::default()
-                            .fg(theme.text.accent)
-                            .bg(theme.surface.overlay)
-                            .add_modifier(Modifier::BOLD),
-                    ))),
+                        theme,
+                        row_area.width,
+                    )),
                     row_area,
                 );
             }
@@ -208,6 +337,7 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
 }
 
 enum PaletteOverlayRow<'a> {
+    Spacer,
     Section(crate::keybindings::PaletteCommandSection),
     Command {
         command: &'a str,
@@ -223,6 +353,9 @@ fn palette_overlay_rows(app: &AppState) -> Vec<PaletteOverlayRow<'_>> {
         let section = Action::palette_command_section(command.as_str());
         if section != last_section {
             if let Some(section) = section {
+                if last_section.is_some() {
+                    rows.push(PaletteOverlayRow::Spacer);
+                }
                 rows.push(PaletteOverlayRow::Section(section));
             }
             last_section = section;
@@ -245,51 +378,48 @@ fn command_palette_row(
     width: u16,
 ) -> Line<'static> {
     let row_width = usize::from(width);
+    let surface = ui_chrome::command_palette_surface(theme);
     let row_style = if is_selected {
         ui_chrome::overlay_focus_row_style(theme)
     } else {
-        Style::default()
-    };
-    let prefix_style = if is_selected {
-        row_style.add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(theme.text.secondary)
+        Style::default().bg(surface)
     };
     let label_style = if is_selected {
         row_style.add_modifier(Modifier::BOLD)
     } else {
-        row_style.fg(theme.text.primary)
+        row_style.fg(ui_chrome::command_palette_title(theme))
     };
     let description_style = if is_selected {
         row_style
     } else {
-        row_style.fg(theme.text.secondary)
+        row_style.fg(ui_chrome::command_palette_muted(theme))
     };
     let shortcut_style = if is_selected {
         row_style.add_modifier(Modifier::BOLD)
     } else {
-        row_style.fg(theme.text.secondary)
+        row_style.fg(ui_chrome::command_palette_muted(theme))
     };
 
-    let prefix = if is_selected { "› " } else { "  " };
-    let mut spans = vec![Span::styled(prefix.to_string(), prefix_style)];
-    let mut used_width = prefix.chars().count();
+    let content_width = row_width.saturating_sub(3);
     let reserved_shortcut = if shortcut.is_empty() {
         0
     } else {
         shortcut.chars().count().saturating_add(2)
     };
-    let body_width = row_width.saturating_sub(reserved_shortcut);
+    let body_width = content_width.saturating_sub(reserved_shortcut);
+    let prefix = "      ";
+    let mut spans = vec![Span::styled(prefix.to_string(), row_style)];
+    let mut used_width = prefix.chars().count();
 
-    let label = truncate_plain_text(label, body_width.saturating_sub(used_width));
+    let label = truncate_plain_text(label, 61usize.min(body_width.saturating_sub(used_width)));
     used_width = used_width.saturating_add(label.chars().count());
     spans.push(Span::styled(label, label_style));
 
-    let gap_width = 2;
+    let gap_width = 1;
     let available_description = body_width.saturating_sub(used_width.saturating_add(gap_width));
     let description = truncate_plain_text(description, available_description);
     if !description.is_empty() {
-        spans.push(Span::styled("  ", row_style));
+        spans.push(Span::styled(" ", row_style));
         used_width = used_width.saturating_add(gap_width);
         used_width = used_width.saturating_add(description.chars().count());
         spans.push(Span::styled(description, description_style));
@@ -302,10 +432,39 @@ fn command_palette_row(
     if !shortcut.is_empty() {
         spans.push(Span::styled("  ", row_style));
         spans.push(Span::styled(shortcut.to_string(), shortcut_style));
-    } else if is_selected && body_width < row_width {
-        spans.push(Span::styled(" ".repeat(row_width - body_width), row_style));
     }
 
+    if content_width < row_width {
+        spans.push(Span::styled(
+            " ".repeat(row_width - content_width),
+            row_style,
+        ));
+    }
+
+    Line::from(spans)
+}
+
+fn command_palette_section_row(label: &str, theme: &Theme, width: u16) -> Line<'static> {
+    let row_width = usize::from(width);
+    let surface = ui_chrome::command_palette_surface(theme);
+    let prefix = "   ";
+    let mut spans = vec![Span::styled(prefix, Style::default().bg(surface))];
+    let label = truncate_plain_text(label, row_width.saturating_sub(prefix.chars().count()));
+    let label_width = label.chars().count();
+    spans.push(Span::styled(
+        label,
+        Style::default()
+            .fg(ui_chrome::command_palette_section())
+            .bg(surface)
+            .add_modifier(Modifier::BOLD),
+    ));
+    let used_width = prefix.chars().count().saturating_add(label_width);
+    if used_width < row_width {
+        spans.push(Span::styled(
+            " ".repeat(row_width - used_width),
+            Style::default().bg(surface),
+        ));
+    }
     Line::from(spans)
 }
 
@@ -744,6 +903,7 @@ fn palette_command_description(command: &str) -> &'static str {
         .unwrap_or("")
 }
 
+#[allow(dead_code)]
 fn render_permission_modal(
     frame: &mut Frame,
     app: &AppState,
@@ -898,7 +1058,9 @@ fn render_permission_modal(
     );
 }
 
-fn permission_modal_metadata_line(permission: &crate::app::ActivePermissionView) -> String {
+pub(super) fn permission_modal_metadata_line(
+    permission: &crate::app::ActivePermissionView,
+) -> String {
     let subject = permission
         .tool_label
         .as_deref()
@@ -927,40 +1089,9 @@ fn abbreviated_digest(digest: &str) -> String {
     short
 }
 
-fn render_overlay_surface(
-    frame: &mut Frame,
-    theme: &Theme,
-    overlay: Rect,
-    title: &str,
-) -> Option<Rect> {
-    if overlay.width == 0 || overlay.height == 0 {
-        return None;
-    }
-
-    let block = ui_chrome::elevated_card_block(
-        Line::from(Span::styled(
-            title.to_string(),
-            Style::default()
-                .fg(theme.text.accent)
-                .add_modifier(Modifier::BOLD),
-        )),
-        ui_chrome::elevated_card_surface(theme),
-        theme.border.focus,
-        theme.text.accent,
-    );
-    let content = inset_rect(block.inner(overlay), 1, 0);
-
-    frame.render_widget(Clear, overlay);
-    frame.render_widget(block, overlay);
-
-    if content.width == 0 || content.height == 0 {
-        return None;
-    }
-
-    Some(content)
-}
-
-fn permission_modal_title(permission: &crate::app::ActivePermissionView) -> &'static str {
+pub(super) fn permission_modal_title(
+    permission: &crate::app::ActivePermissionView,
+) -> &'static str {
     if permission.kind.eq_ignore_ascii_case("question")
         || permission.kind.eq_ignore_ascii_case("ask")
         || permission.kind.eq_ignore_ascii_case("ask_user")
@@ -971,7 +1102,7 @@ fn permission_modal_title(permission: &crate::app::ActivePermissionView) -> &'st
     }
 }
 
-fn permission_modal_guidance(
+pub(super) fn permission_modal_guidance(
     permission: &crate::app::ActivePermissionView,
     submission_pending: bool,
 ) -> &'static str {
@@ -987,7 +1118,7 @@ fn permission_modal_guidance(
     }
 }
 
-fn permission_modal_summary_line(
+pub(super) fn permission_modal_summary_line(
     permission: &crate::app::ActivePermissionView,
     submission_pending: bool,
 ) -> String {
@@ -1011,7 +1142,7 @@ fn permission_modal_summary_line(
         })
 }
 
-fn permission_modal_draft_line(prompt_buffer: &str) -> String {
+pub(super) fn permission_modal_draft_line(prompt_buffer: &str) -> String {
     let draft = prompt_buffer.trim();
     if draft.is_empty() {
         "Draft preserved beneath this checkpoint.".to_string()
@@ -1020,6 +1151,7 @@ fn permission_modal_draft_line(prompt_buffer: &str) -> String {
     }
 }
 
+#[allow(dead_code)]
 fn render_overlay_backdrop(frame: &mut Frame, area: Rect, background: Color) {
     if area.width == 0 || area.height == 0 {
         return;
@@ -1032,7 +1164,64 @@ fn render_overlay_backdrop(frame: &mut Frame, area: Rect, background: Color) {
     );
 }
 
-fn permission_modal_actions_text(
+fn render_overlay_dim_backdrop(frame: &mut Frame, area: Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let buffer = frame.buffer_mut();
+    let max_x = area.x.saturating_add(area.width);
+    let max_y = area.y.saturating_add(area.height);
+    for y in area.y..max_y {
+        for x in area.x..max_x {
+            let cell = &mut buffer[(x, y)];
+            cell.set_fg(dim_overlay_color(cell.fg));
+            cell.set_bg(dim_overlay_color(cell.bg));
+        }
+    }
+}
+
+fn dim_overlay_color(color: Color) -> Color {
+    let Some((red, green, blue)) = color_rgb(color) else {
+        return color;
+    };
+    Color::Rgb(
+        scrim_channel(red),
+        scrim_channel(green),
+        scrim_channel(blue),
+    )
+}
+
+fn scrim_channel(channel: u8) -> u8 {
+    let channel = u16::from(channel);
+    u8::try_from(channel.saturating_mul(105) / 255).unwrap_or_default()
+}
+
+fn color_rgb(color: Color) -> Option<(u8, u8, u8)> {
+    match color {
+        Color::Black => Some((0, 0, 0)),
+        Color::Red => Some((128, 0, 0)),
+        Color::Green => Some((0, 128, 0)),
+        Color::Yellow => Some((128, 128, 0)),
+        Color::Blue => Some((0, 0, 128)),
+        Color::Magenta => Some((128, 0, 128)),
+        Color::Cyan => Some((0, 128, 128)),
+        Color::Gray => Some((192, 192, 192)),
+        Color::DarkGray => Some((128, 128, 128)),
+        Color::LightRed => Some((255, 0, 0)),
+        Color::LightGreen => Some((0, 255, 0)),
+        Color::LightYellow => Some((255, 255, 0)),
+        Color::LightBlue => Some((0, 0, 255)),
+        Color::LightMagenta => Some((255, 0, 255)),
+        Color::LightCyan => Some((0, 255, 255)),
+        Color::White => Some((255, 255, 255)),
+        Color::Rgb(red, green, blue) => Some((red, green, blue)),
+        Color::Indexed(index) => Some((index, index, index)),
+        Color::Reset => None,
+    }
+}
+
+pub(super) fn permission_modal_actions_text(
     app: &AppState,
     theme: &Theme,
     surface: Color,
@@ -1088,7 +1277,7 @@ fn permission_modal_actions_text(
     ])
 }
 
-fn question_permission_body_text(
+pub(super) fn question_permission_body_text(
     permission: &crate::app::ActivePermissionView,
     prompts: &[crate::app::QuestionPromptView],
     submission_pending: bool,
@@ -1145,7 +1334,7 @@ fn question_permission_body_text(
     Text::from(lines)
 }
 
-fn question_permission_answer_text(
+pub(super) fn question_permission_answer_text(
     app: &AppState,
     permission: &crate::app::ActivePermissionView,
     theme: &Theme,

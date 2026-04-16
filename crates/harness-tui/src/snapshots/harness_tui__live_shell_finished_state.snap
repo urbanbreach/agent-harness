@@ -1,12 +1,11 @@
 ---
 source: crates/harness-tui/src/lib_tests.rs
-assertion_line: 4931
 expression: "render_live_lines(&app, 80, 24)"
 ---
                                                                                 
        transcript remains visible                                               
-       ● Assistant · gpt-5-codex · 2ms                                          
                                                                                 
+       ▪ Assistant · gpt-5-codex · 2ms                                          
                                                                                 
                                                                                 
                                                                                 
@@ -24,6 +23,6 @@ expression: "render_live_lines(&app, 80, 24)"
   ┃                                                                             
   ┃                                                                             
   ┃                                                                             
-  ┃   Success   default · openai/gpt-5-codex                                    
+  ┃  gpt-5-codex openai · success                                               
   ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  
   turn 1 · ready for next turn        Tab focus  ·  Ctrl+p commands  ·  q quit

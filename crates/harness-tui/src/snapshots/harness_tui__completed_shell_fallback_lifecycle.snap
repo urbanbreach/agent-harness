@@ -1,6 +1,5 @@
 ---
 source: crates/harness-tui/src/lib_tests.rs
-assertion_line: 6867
 expression: "fallback_render.lines().map(str::trim_end).collect::<Vec<_>>().join(\"\\n\")"
 ---
 
@@ -15,7 +14,7 @@ expression: "fallback_render.lines().map(str::trim_end).collect::<Vec<_>>().join
                                     Start a conversation to begin
                     “inspect src/ui.rs” · “trace the failing test” · “review the
                                             latest edit”
-                        Enter send · Shift+Enter/Ctrl+j newline · ↑/↓ history
+                                         0  Ctrl+p commands
 
 
 
@@ -24,6 +23,6 @@ expression: "fallback_render.lines().map(str::trim_end).collect::<Vec<_>>().join
             ┃
             ┃
             ┃
-            ┃   Ready   default · local/-
+            ┃
             ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
             ready for first turn                Tab focus  ·  Ctrl+p commands  ·  q quit

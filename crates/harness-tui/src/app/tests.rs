@@ -1,19 +1,43 @@
 use super::*;
 use crate::overlay::OverlayKind;
-use crate::ui::WheelTarget;
-use crate::view_model;
-use crossterm::event::MouseEvent;
-use harness_core::event::{
-    ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
-    PermissionResolvedEvent, ProviderReasoningDeltaEvent, ProviderRequestStartedEvent,
-    ProviderStreamDeltaEvent, RunFailedEvent, RunFinishedEvent, RunStartedEvent,
-    TaskCompletedEvent, TaskLineageMetadata, ToolCallFinishedEvent, ToolCallLifecycleState,
-    ToolCallMetadata, ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus,
-    UserMessageSubmittedEvent, SCHEMA_VERSION,
+use crate::ui::{
+    render_app, reset_transcript_selection_cache_metrics_for_test,
+    transcript_selection_cache_build_count_for_test, transcript_selection_cell,
+    transcript_selection_debug_snapshot, TranscriptScrollbarHit, WheelTarget,
 };
+use crate::view_model;
+use crossterm::event::{MouseButton, MouseEvent};
+use harness_core::event::{
+    ActorKind, AgentSpawnedEvent, EditAppliedEvent, EventActor, EventEnvelopeV1, EventV1,
+    PermissionRequestedEvent, PermissionResolvedEvent, ProviderReasoningDeltaEvent,
+    ProviderRequestStartedEvent, ProviderStreamDeltaEvent, RunFailedEvent, RunFinishedEvent,
+    RunStartedEvent, TaskCompletedEvent, TaskCompletionMetadata, TaskLineageMetadata,
+    ToolCallFinishedEvent, ToolCallLifecycleState, ToolCallMetadata, ToolCallRequestedEvent,
+    ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
+};
+use ratatui::layout::Rect;
+use ratatui::{backend::TestBackend, Terminal};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
+
+const TEST_FRAME_AREA: Rect = Rect::new(0, 0, 140, 40);
+
+struct ClipboardModeGuard;
+
+impl ClipboardModeGuard {
+    fn disabled_copy_on_select() -> Self {
+        crate::clipboard::set_copy_on_select_disabled_override(Some(true));
+        Self
+    }
+}
+
+impl Drop for ClipboardModeGuard {
+    fn drop(&mut self) {
+        crate::clipboard::set_copy_override(None);
+        crate::clipboard::set_copy_on_select_disabled_override(None);
+    }
+}
 
 fn envelope(seq: u64, request_id: &str, payload: EventV1) -> EventEnvelopeV1 {
     EventEnvelopeV1 {
@@ -59,15 +83,50 @@ fn runtime_context_model_option(
     ModelOption {
         profile: profile.to_string(),
         provider: provider.to_string(),
+        provider_display_label: None,
+        provider_backend_label: None,
         model: model.to_string(),
+        model_display_label: None,
         variant: variant.map(str::to_string),
+        variant_display_label: None,
         display_label: Some(display_label.to_string()),
         token_window_label: None,
         context_window_tokens: None,
         max_input_tokens: None,
         max_output_tokens: None,
         description: None,
+        profile_description: None,
         reasoning_effort: None,
+        text_verbosity: None,
+        recommended_for: None,
+    }
+}
+
+fn metadata_model_option(
+    profile: &str,
+    profile_description: Option<&str>,
+    provider: &str,
+    provider_display_label: Option<&str>,
+    model: &str,
+    display_label: &str,
+) -> ModelOption {
+    ModelOption {
+        profile: profile.to_string(),
+        provider: provider.to_string(),
+        provider_display_label: provider_display_label.map(str::to_string),
+        provider_backend_label: Some("OpenAI".to_string()),
+        model: model.to_string(),
+        model_display_label: Some("GPT-5.4 Mini".to_string()),
+        variant: Some("high".to_string()),
+        variant_display_label: Some("High".to_string()),
+        display_label: Some(display_label.to_string()),
+        token_window_label: None,
+        context_window_tokens: None,
+        max_input_tokens: None,
+        max_output_tokens: None,
+        description: None,
+        profile_description: profile_description.map(str::to_string),
+        reasoning_effort: Some("high".to_string()),
         text_verbosity: None,
         recommended_for: None,
     }
@@ -81,6 +140,119 @@ fn write_events_jsonl(run_dir: &Path, events: &[EventEnvelopeV1]) {
         .collect::<Vec<_>>()
         .join("\n");
     fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).expect("write events");
+}
+
+fn transcript_selection_test_app_with_text(transcript_text: &str) -> AppState {
+    let mut app = AppState::new_live(None, false, None);
+    app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
+        request_id: "req_copy_select".to_string(),
+        model_id: "model-1".to_string(),
+        provider_id: "default".to_string(),
+        status: ActivityStatus::Done,
+        user_message: Some(UserMessageSubmittedEvent {
+            request_id: "req_copy_select".to_string(),
+            text: "Select this".to_string(),
+        }),
+        user_timestamp: None,
+        request_data: None,
+        thinking_text: String::new(),
+        transcript_text: transcript_text.to_string(),
+        usage: None,
+        error_message: None,
+        permissions: Vec::new(),
+        tool_calls: Vec::new(),
+        first_seq: 1,
+        last_seq: 2,
+        first_mono_ms: 1,
+        last_mono_ms: 2,
+    }]);
+    app.selected_activity_index = 0;
+    app
+}
+
+fn transcript_selection_test_app_with_reasoning(
+    thinking_text: &str,
+    transcript_text: &str,
+) -> AppState {
+    let mut app = transcript_selection_test_app_with_text(transcript_text);
+    app.activities[0].thinking_text = thinking_text.to_string();
+    app
+}
+
+fn transcript_selection_test_app() -> AppState {
+    transcript_selection_test_app_with_text("Copy this exact reply")
+}
+
+fn transcript_selection_text_position(app: &AppState, needle: &str) -> (u16, u16) {
+    let snapshot = transcript_selection_debug_snapshot(app, TEST_FRAME_AREA)
+        .expect("transcript selection snapshot");
+    for (row_idx, row) in snapshot.rows.iter().enumerate() {
+        if let Some(column_idx) = row.find(needle) {
+            return (
+                snapshot.viewport.x + u16::try_from(column_idx).expect("column fits"),
+                snapshot.viewport.y + u16::try_from(row_idx).expect("row fits"),
+            );
+        }
+    }
+
+    panic!("missing transcript text: {needle}");
+}
+
+fn transcript_selection_text_bounds(app: &AppState, needle: &str) -> (u16, u16, u16) {
+    let (column, row) = transcript_selection_text_position(app, needle);
+    (
+        column,
+        row,
+        u16::try_from(needle.chars().count()).expect("needle width fits"),
+    )
+}
+
+fn drag_transcript_selection_range(app: &mut AppState, start: (u16, u16), end: (u16, u16)) {
+    let (start_column, start_row) = start;
+    let (end_column, end_row) = end;
+
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: start_column,
+            row: start_row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Drag(MouseButton::Left),
+            column: end_column,
+            row: end_row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column: end_column,
+            row: end_row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+}
+
+fn drag_transcript_selection(app: &mut AppState, needle: &str) -> (u16, u16, u16) {
+    let (column, row, width) = transcript_selection_text_bounds(app, needle);
+    drag_transcript_selection_range(app, (column, row), (column + width.saturating_sub(1), row));
+    (column, row, width)
 }
 
 fn run_started(seq: u64) -> EventEnvelopeV1 {
@@ -450,7 +622,7 @@ fn runtime_context_labels_distinguish_live_continue_and_replay() {
     let live_dock = live.control_dock_view_model();
     assert_eq!(
         live_dock.primary_summary,
-        "Current runtime: deep · GPT-5.4 Mini · Deterministic"
+        "Context: deep · GPT-5.4 Mini · Deterministic"
     );
     assert_eq!(live_dock.summary_segment, None);
     assert_eq!(live_dock.runtime_context.as_deref(), Some("default"));
@@ -477,6 +649,27 @@ fn runtime_context_labels_distinguish_live_continue_and_replay() {
     assert_eq!(replay_dock.summary_segment, None);
     assert_eq!(replay_dock.runtime_context.as_deref(), Some("default"));
     assert!(replay_dock.composer_disabled);
+}
+
+#[test]
+fn composer_metadata_prefers_short_agent_name_and_configured_source_label() {
+    let option = metadata_model_option(
+        "build",
+        Some("Deep Agent"),
+        "default",
+        Some("CLIProxyAPI"),
+        "gpt-5.4-mini",
+        "GPT-5.4 Mini · High",
+    );
+
+    let mut app = AppState::new_live(None, false, None);
+    app.set_launch_metadata(LaunchMetadata::from_model_option(&option));
+
+    assert_eq!(app.current_agent_label().as_deref(), Some("Build"));
+    assert_eq!(
+        app.current_source_label().as_deref(),
+        Some("CLIProxyAPI (OpenAI)")
+    );
 }
 
 #[test]
@@ -508,7 +701,7 @@ fn live_switch_model_labels_next_turn_only() {
     let dock = live.control_dock_view_model();
     assert_eq!(
         dock.primary_summary,
-        "Current runtime: deep · GPT-5.4 Mini · Deterministic"
+        "Context: deep · GPT-5.4 Mini · Deterministic"
     );
     assert_eq!(
         dock.summary_segment,
@@ -648,7 +841,10 @@ fn mouse_wheel_scrolls_transcript_without_stealing_focus() {
             row: 5,
             modifiers: KeyModifiers::NONE,
         },
+        TEST_FRAME_AREA,
         Some(WheelTarget::Transcript),
+        None,
+        None,
     );
     assert!(!app.follow_mode);
     assert_eq!(app.transcript_scroll, 3);
@@ -661,11 +857,41 @@ fn mouse_wheel_scrolls_transcript_without_stealing_focus() {
             row: 5,
             modifiers: KeyModifiers::NONE,
         },
+        TEST_FRAME_AREA,
         Some(WheelTarget::Transcript),
+        None,
+        None,
     );
     assert_eq!(app.transcript_scroll, 0);
     assert!(app.follow_mode);
     assert_eq!(app.focus, Focus::Prompt);
+}
+
+#[test]
+fn transcript_navigation_keys_match_scroll_expectations() {
+    let mut app = AppState::new_live(None, false, None);
+    app.focus = Focus::Details;
+    app.last_transcript_max_scroll.set(42);
+
+    app.handle_key(key(KeyCode::PageUp));
+    assert_eq!(app.transcript_scroll, 10);
+    assert!(!app.follow_mode);
+
+    app.handle_key(key(KeyCode::PageDown));
+    assert_eq!(app.transcript_scroll, 0);
+    assert!(app.follow_mode);
+
+    app.handle_key(key(KeyCode::Home));
+    assert_eq!(app.transcript_scroll, 42);
+    assert!(!app.follow_mode);
+
+    app.handle_key(key(KeyCode::PageDown));
+    assert_eq!(app.transcript_scroll, 32);
+    assert!(!app.follow_mode);
+
+    app.handle_key(key(KeyCode::End));
+    assert_eq!(app.transcript_scroll, 0);
+    assert!(app.follow_mode);
 }
 
 #[test]
@@ -682,7 +908,10 @@ fn mouse_wheel_scrolls_inspector_when_hovered() {
             row: 12,
             modifiers: KeyModifiers::NONE,
         },
+        TEST_FRAME_AREA,
         Some(WheelTarget::Inspector),
+        None,
+        None,
     );
     assert_eq!(app.details_scroll, 5);
     assert_eq!(app.transcript_scroll, 4);
@@ -695,7 +924,10 @@ fn mouse_wheel_scrolls_inspector_when_hovered() {
             row: 12,
             modifiers: KeyModifiers::NONE,
         },
+        TEST_FRAME_AREA,
         Some(WheelTarget::Inspector),
+        None,
+        None,
     );
     assert_eq!(app.details_scroll, 2);
     assert_eq!(app.transcript_scroll, 4);
@@ -717,6 +949,9 @@ fn mouse_wheel_ignores_non_scrollable_areas() {
             row: 2,
             modifiers: KeyModifiers::NONE,
         },
+        TEST_FRAME_AREA,
+        None,
+        None,
         None,
     );
 
@@ -724,6 +959,508 @@ fn mouse_wheel_ignores_non_scrollable_areas() {
     assert_eq!(app.transcript_scroll, 2);
     assert!(!app.follow_mode);
     assert_eq!(app.focus, Focus::Prompt);
+}
+
+#[test]
+fn mouse_click_toggles_operator_sidebar_section_without_stealing_focus() {
+    let mut app = AppState::new_live(None, false, None);
+    app.focus = Focus::Prompt;
+    app.details_scroll = 6;
+
+    assert!(app.operator_sidebar_section_collapsed(OperatorSidebarSection::ModifiedFiles));
+
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 90,
+            row: 12,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        Some(OperatorSidebarSection::ModifiedFiles),
+        None,
+    );
+
+    assert!(!app.operator_sidebar_section_collapsed(OperatorSidebarSection::ModifiedFiles));
+    assert_eq!(app.details_scroll, 0);
+    assert_eq!(app.focus, Focus::Prompt);
+}
+
+#[test]
+fn edit_applied_auto_opens_modified_files_section() {
+    let mut app = AppState::new_live(None, false, None);
+    assert!(app.operator_sidebar_section_collapsed(OperatorSidebarSection::ModifiedFiles));
+
+    app.ingest_event(envelope(
+        1,
+        "req_edit_open",
+        EventV1::EditApplied(EditAppliedEvent {
+            edit_id: "edit-1".to_string(),
+            path: "src/ui.rs".to_string(),
+            new_file_digest: "digest-1".to_string(),
+            diff_rel_path: None,
+            diff_digest: None,
+        }),
+    ));
+
+    assert!(!app.operator_sidebar_section_collapsed(OperatorSidebarSection::ModifiedFiles));
+}
+
+#[test]
+fn dragging_transcript_scrollbar_updates_scroll_position() {
+    let mut app = AppState::new_live(None, false, None);
+    app.last_transcript_max_scroll.set(100);
+    app.follow_mode = false;
+    app.transcript_scroll = 50;
+
+    let scrollbar = TranscriptScrollbarHit {
+        lane: Rect::new(72, 1, 2, 20),
+        track: Rect::new(72, 2, 2, 18),
+        thumb: Rect::new(72, 6, 2, 4),
+        max_scroll: 100,
+    };
+
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 72,
+            row: 7,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        Some(WheelTarget::Transcript),
+        None,
+        Some(scrollbar),
+    );
+    assert!(app.transcript_scrollbar_dragging());
+
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Drag(MouseButton::Left),
+            column: 72,
+            row: 14,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        Some(WheelTarget::Transcript),
+        None,
+        None,
+    );
+
+    assert!(!app.follow_mode);
+    assert_eq!(app.transcript_scroll, 21);
+
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column: 72,
+            row: 17,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        Some(WheelTarget::Transcript),
+        None,
+        None,
+    );
+    assert!(!app.transcript_scrollbar_dragging());
+}
+
+#[test]
+fn clicking_transcript_scrollbar_track_without_thumb_does_not_start_drag() {
+    let mut app = AppState::new_live(None, false, None);
+    app.last_transcript_max_scroll.set(80);
+
+    let scrollbar = TranscriptScrollbarHit {
+        lane: Rect::new(72, 1, 2, 20),
+        track: Rect::new(72, 2, 2, 18),
+        thumb: Rect::new(72, 6, 2, 4),
+        max_scroll: 80,
+    };
+
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 72,
+            row: 3,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        Some(WheelTarget::Transcript),
+        None,
+        Some(scrollbar),
+    );
+
+    assert!(!app.transcript_scrollbar_dragging());
+    assert!(app.follow_mode);
+    assert_eq!(app.transcript_scroll, 0);
+}
+
+#[cfg(not(windows))]
+#[test]
+fn mouse_drag_copy_on_select_copies_transcript_text_and_clears_selection() {
+    let copied = Arc::new(Mutex::new(None::<String>));
+    let sink = Arc::clone(&copied);
+    crate::clipboard::set_copy_override(Some(Box::new(move |text| {
+        *sink.lock().expect("lock copied text") = Some(text.to_string());
+        Ok(())
+    })));
+
+    let mut app = transcript_selection_test_app();
+    drag_transcript_selection(&mut app, "Copy this exact reply");
+
+    assert_eq!(
+        copied.lock().expect("lock copied text").clone(),
+        Some("Copy this exact reply".to_string())
+    );
+    assert!(app.transcript_selection().is_none());
+    assert_eq!(
+        app.toast()
+            .map(|toast| (toast.message.as_str(), toast.variant)),
+        Some(("Copied to clipboard", ToastVariant::Info))
+    );
+
+    crate::clipboard::set_copy_override(None);
+}
+
+#[test]
+fn mouse_drag_copy_on_select_surfaces_error_toast_when_copy_fails() {
+    crate::clipboard::set_copy_override(Some(Box::new(|_| {
+        Err(std::io::Error::other("simulated clipboard failure"))
+    })));
+
+    let mut app = transcript_selection_test_app();
+    drag_transcript_selection(&mut app, "Copy this exact reply");
+
+    assert!(app.transcript_selection().is_none());
+    assert_eq!(
+        app.toast()
+            .map(|toast| (toast.message.as_str(), toast.variant)),
+        Some((
+            "clipboard copy failed: simulated clipboard failure",
+            ToastVariant::Error,
+        ))
+    );
+
+    crate::clipboard::set_copy_override(None);
+}
+
+#[test]
+fn mouse_drag_copy_on_select_preserves_multiline_text_without_render_padding() {
+    let copied = Arc::new(Mutex::new(None::<String>));
+    let sink = Arc::clone(&copied);
+    crate::clipboard::set_copy_override(Some(Box::new(move |text| {
+        *sink.lock().expect("lock copied text") = Some(text.to_string());
+        Ok(())
+    })));
+
+    let expected = [
+        "Done.",
+        "",
+        "Changed:",
+        "• docs/rust-language.md",
+        "",
+        "What I changed:",
+        "• Tightened the opening description to mention reliable software and compile-time guarantees.",
+    ]
+    .join("\n");
+    let mut app = transcript_selection_test_app_with_text(&expected);
+    let start = transcript_selection_text_position(&app, "Done.");
+    let (end_column, end_row, end_width) = transcript_selection_text_bounds(&app, "guarantees.");
+    drag_transcript_selection_range(
+        &mut app,
+        start,
+        (end_column + end_width.saturating_sub(1), end_row),
+    );
+
+    assert_eq!(
+        copied.lock().expect("lock copied text").clone(),
+        Some(expected)
+    );
+    assert!(app.transcript_selection().is_none());
+
+    crate::clipboard::set_copy_override(None);
+}
+
+#[test]
+fn disabled_copy_on_select_keeps_selection_until_right_click_copy() {
+    let _guard = ClipboardModeGuard::disabled_copy_on_select();
+    let copied = Arc::new(Mutex::new(None::<String>));
+    let sink = Arc::clone(&copied);
+    crate::clipboard::set_copy_override(Some(Box::new(move |text| {
+        *sink.lock().expect("lock copied text") = Some(text.to_string());
+        Ok(())
+    })));
+
+    let mut app = transcript_selection_test_app();
+    let (column, row, _) = drag_transcript_selection(&mut app, "Copy this exact reply");
+
+    assert!(app.transcript_selection().is_some());
+    assert!(copied.lock().expect("lock copied text").is_none());
+
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Right),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+
+    assert_eq!(
+        copied.lock().expect("lock copied text").clone(),
+        Some("Copy this exact reply".to_string())
+    );
+    assert!(app.transcript_selection().is_none());
+    assert_eq!(
+        app.toast()
+            .map(|toast| (toast.message.as_str(), toast.variant)),
+        Some(("Copied to clipboard", ToastVariant::Info))
+    );
+}
+
+#[test]
+fn disabled_copy_on_select_supports_ctrl_c_and_escape() {
+    let _guard = ClipboardModeGuard::disabled_copy_on_select();
+    let copied = Arc::new(Mutex::new(Vec::<String>::new()));
+    let sink = Arc::clone(&copied);
+    crate::clipboard::set_copy_override(Some(Box::new(move |text| {
+        sink.lock()
+            .expect("lock copied text")
+            .push(text.to_string());
+        Ok(())
+    })));
+
+    let mut copy_app = transcript_selection_test_app();
+    drag_transcript_selection(&mut copy_app, "Copy this exact reply");
+    assert!(copy_app.transcript_selection().is_some());
+
+    copy_app.set_frame_area(TEST_FRAME_AREA);
+    copy_app.handle_key(key_with_modifiers(
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL,
+    ));
+
+    assert_eq!(
+        copied.lock().expect("lock copied text").as_slice(),
+        ["Copy this exact reply"]
+    );
+    assert!(copy_app.transcript_selection().is_none());
+
+    let mut escape_app = transcript_selection_test_app();
+    drag_transcript_selection(&mut escape_app, "Copy this exact reply");
+    assert!(escape_app.transcript_selection().is_some());
+
+    escape_app.handle_key(key(KeyCode::Esc));
+
+    assert!(escape_app.transcript_selection().is_none());
+    assert_eq!(
+        copied.lock().expect("lock copied text").as_slice(),
+        ["Copy this exact reply"]
+    );
+}
+
+#[cfg(not(windows))]
+#[test]
+fn mouse_drag_copy_on_select_keeps_body_rows_aligned_after_reasoning_gap() {
+    let copied = Arc::new(Mutex::new(None::<String>));
+    let sink = Arc::clone(&copied);
+    crate::clipboard::set_copy_override(Some(Box::new(move |text| {
+        *sink.lock().expect("lock copied text") = Some(text.to_string());
+        Ok(())
+    })));
+
+    let mut app = transcript_selection_test_app_with_reasoning(
+        "Trace the exact rows first",
+        "Copy this exact reply",
+    );
+    drag_transcript_selection(&mut app, "Copy this exact reply");
+
+    assert_eq!(
+        copied.lock().expect("lock copied text").clone(),
+        Some("Copy this exact reply".to_string())
+    );
+    assert!(app.transcript_selection().is_none());
+
+    crate::clipboard::set_copy_override(None);
+}
+
+#[test]
+fn transcript_selection_hit_testing_reuses_cached_snapshot_during_drag() {
+    let app = transcript_selection_test_app();
+    let (column, row, width) = transcript_selection_text_bounds(&app, "Copy this exact reply");
+
+    reset_transcript_selection_cache_metrics_for_test();
+
+    for offset in 0..width {
+        assert!(transcript_selection_cell(&app, TEST_FRAME_AREA, column + offset, row,).is_some());
+    }
+
+    assert_eq!(transcript_selection_cache_build_count_for_test(), 1);
+}
+
+#[test]
+fn mouse_wheel_does_not_build_transcript_selection_snapshot() {
+    let mut app = transcript_selection_test_app();
+
+    reset_transcript_selection_cache_metrics_for_test();
+
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 5,
+            row: 5,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        Some(WheelTarget::Transcript),
+        None,
+        None,
+    );
+
+    assert_eq!(transcript_selection_cache_build_count_for_test(), 0);
+}
+
+#[test]
+fn transcript_selection_render_reuses_cached_snapshot() {
+    let mut app = transcript_selection_test_app();
+    let (column, row, width) = transcript_selection_text_bounds(&app, "Copy this exact reply");
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Drag(MouseButton::Left),
+            column: column + width.saturating_sub(1),
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+
+    reset_transcript_selection_cache_metrics_for_test();
+
+    let backend = TestBackend::new(TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| render_app(frame, &app))
+        .expect("draw selection frame");
+    terminal
+        .draw(|frame| render_app(frame, &app))
+        .expect("draw selection frame again");
+
+    assert_eq!(transcript_selection_cache_build_count_for_test(), 1);
+}
+
+#[test]
+fn transcript_selection_render_stays_aligned_after_large_reasoning_block() {
+    let thinking = (0..30)
+        .map(|idx| format!("Reasoning line {idx}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut app = transcript_selection_test_app_with_reasoning(&thinking, "Target answer line");
+    let (column, row, width) = transcript_selection_text_bounds(&app, "Target answer line");
+
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Drag(MouseButton::Left),
+            column: column + width.saturating_sub(1),
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+
+    let backend = TestBackend::new(TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| render_app(frame, &app))
+        .expect("draw selection frame");
+
+    let buffer = terminal.backend().buffer();
+    let highlight = crate::theme::Theme::default().status.info;
+    assert_eq!(buffer[(column, row)].bg, highlight);
+
+    let far_above_row = row.saturating_sub(20);
+    if far_above_row != row {
+        assert_ne!(buffer[(column, far_above_row)].bg, highlight);
+    }
+}
+
+#[test]
+fn transcript_render_key_is_cached_across_selection_drag_path() {
+    let mut app = transcript_selection_test_app();
+
+    AppState::reset_transcript_render_key_metrics_for_test();
+
+    let (column, row, width) = transcript_selection_text_bounds(&app, "Copy this exact reply");
+
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Drag(MouseButton::Left),
+            column: column + width.saturating_sub(1),
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+
+    let backend = TestBackend::new(TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| render_app(frame, &app))
+        .expect("draw selection frame");
+    terminal
+        .draw(|frame| render_app(frame, &app))
+        .expect("draw selection frame again");
+
+    assert_eq!(AppState::transcript_render_key_build_count_for_test(), 1);
 }
 
 #[test]
@@ -1466,6 +2203,66 @@ fn post_run_handoff_ignores_completed_turns_without_terminal_event() {
     assert!(!app.startup_shell_visible());
     assert!(!app.post_run_handoff_visible());
     assert!(!app.lifecycle_shell_actions_visible());
+}
+
+#[test]
+fn tool_task_completion_does_not_copy_tool_output_into_activity_transcript() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        "req_tool_completion_transcript",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_tool_completion_transcript".to_string(),
+            text: "Inspect tokio docs".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_tool_completion_transcript",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_tool_completion_transcript".to_string(),
+            provider_id: "mock".to_string(),
+            model_id: "model-1".to_string(),
+            prompt_summary: "Inspect tokio docs".to_string(),
+            request_digest: "digest-tool-completion-transcript".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "req_tool_completion_transcript",
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: "tc_docs_tokio".to_string(),
+            tool_id: "mcp.docs-rs.search_in_crate".to_string(),
+            args_summary: r#"{"crate_name":"tokio","query":"spawn"}"#.to_string(),
+            args_digest: "digest-docs-tokio-args".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        4,
+        "req_tool_completion_transcript",
+        EventV1::TaskCompleted(TaskCompletedEvent {
+            task_id: "task_docs_tokio".to_string(),
+            result_summary: "fn spawn\nstruct JoinHandle".to_string(),
+            result_digest: "digest-task-docs-tokio".to_string(),
+            metadata: Some(TaskCompletionMetadata {
+                lineage: Some(TaskLineageMetadata {
+                    parent_tool_call_id: Some("tc_docs_tokio".to_string()),
+                    ..TaskLineageMetadata::default()
+                }),
+                timing: None,
+                hook_executions: Vec::new(),
+            }),
+        }),
+    ));
+
+    let activity = app.activities.front().expect("activity exists");
+    assert!(
+        activity.transcript_text.is_empty(),
+        "tool task completion should not become assistant transcript text"
+    );
+    assert_eq!(activity.tool_calls.len(), 1);
+    assert_eq!(activity.tool_calls[0].tool_call_id, "tc_docs_tokio");
 }
 
 #[test]

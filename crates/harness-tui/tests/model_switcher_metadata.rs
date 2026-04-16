@@ -106,14 +106,19 @@ fn build_plan_models() -> Vec<ModelOption> {
         ModelOption {
             profile: "plan".to_string(),
             provider: "default".to_string(),
+            provider_display_label: Some("default".to_string()),
+            provider_backend_label: Some("OpenAI".to_string()),
             model: "gpt-5.4-mini".to_string(),
+            model_display_label: Some("GPT-5.4 Mini".to_string()),
             variant: Some("deterministic".to_string()),
+            variant_display_label: Some("Deterministic".to_string()),
             display_label: Some("GPT-5.4 Mini · Deterministic".to_string()),
             token_window_label: Some("128k ctx · 128k in · 4k out".to_string()),
             context_window_tokens: Some(128000),
             max_input_tokens: Some(128000),
             max_output_tokens: Some(4096),
             description: Some("Stable low-variance coding".to_string()),
+            profile_description: Some("Writer".to_string()),
             reasoning_effort: Some("minimal".to_string()),
             text_verbosity: Some("low".to_string()),
             recommended_for: Some("planning".to_string()),
@@ -126,14 +131,19 @@ fn same_profile_variant_options() -> Vec<ModelOption> {
         ModelOption {
             profile: "deep".to_string(),
             provider: "default".to_string(),
+            provider_display_label: Some("default".to_string()),
+            provider_backend_label: Some("OpenAI".to_string()),
             model: "gpt-5.4-mini".to_string(),
+            model_display_label: Some("GPT-5.4 Mini".to_string()),
             variant: Some("deterministic".to_string()),
+            variant_display_label: Some("Deterministic".to_string()),
             display_label: Some("GPT-5.4 Mini · Deterministic".to_string()),
             token_window_label: Some("128k ctx · 128k in · 4k out".to_string()),
             context_window_tokens: Some(128000),
             max_input_tokens: Some(128000),
             max_output_tokens: Some(4096),
             description: Some("Stable low-variance coding".to_string()),
+            profile_description: Some("Deep work".to_string()),
             reasoning_effort: Some("minimal".to_string()),
             text_verbosity: Some("low".to_string()),
             recommended_for: Some("deep debugging".to_string()),
@@ -141,14 +151,19 @@ fn same_profile_variant_options() -> Vec<ModelOption> {
         ModelOption {
             profile: "deep".to_string(),
             provider: "default".to_string(),
+            provider_display_label: Some("default".to_string()),
+            provider_backend_label: Some("OpenAI".to_string()),
             model: "gpt-5.4-mini".to_string(),
+            model_display_label: Some("GPT-5.4 Mini".to_string()),
             variant: Some("creative".to_string()),
+            variant_display_label: Some("Creative".to_string()),
             display_label: Some("GPT-5.4 Mini · Creative".to_string()),
             token_window_label: Some("128k ctx · 128k in · 16k out".to_string()),
             context_window_tokens: Some(128000),
             max_input_tokens: Some(128000),
             max_output_tokens: Some(16384),
             description: Some("Higher-variance drafting".to_string()),
+            profile_description: Some("Deep work".to_string()),
             reasoning_effort: Some("high".to_string()),
             text_verbosity: Some("high".to_string()),
             recommended_for: Some("novel drafting".to_string()),
@@ -163,14 +178,19 @@ fn config_backed_profile_model_options(profile: &str) -> Vec<ModelOption> {
         .map(|entry| ModelOption {
             profile: profile.to_string(),
             provider: entry.provider,
+            provider_display_label: Some(entry.provider_display_label),
+            provider_backend_label: entry.provider_backend_label,
             model: entry.model,
+            model_display_label: Some(entry.model_display_label),
             variant: entry.variant,
+            variant_display_label: entry.variant_display_label,
             display_label: Some(entry.display_label),
             token_window_label: entry.token_window_label,
             context_window_tokens: entry.context_window_tokens,
             max_input_tokens: entry.max_input_tokens,
             max_output_tokens: entry.max_output_tokens,
             description: entry.description,
+            profile_description: None,
             reasoning_effort: entry.reasoning_effort,
             text_verbosity: entry.text_verbosity,
             recommended_for: entry.recommended_for,
@@ -526,7 +546,7 @@ fn runtime_context_labels_distinguish_live_continue_and_replay() {
     live.set_launch_metadata(launch_metadata.clone());
     assert_eq!(
         live.runtime_context_primary_summary(),
-        "Current runtime: deep · GPT-5.4 Mini · Deterministic"
+        "Context: deep · GPT-5.4 Mini · Deterministic"
     );
     assert_eq!(live.runtime_context_summary_segment_text(), None);
 
@@ -569,7 +589,7 @@ fn live_switch_model_labels_next_turn_only() {
 
     assert_eq!(
         live.runtime_context_primary_summary(),
-        "Current runtime: deep · GPT-5.4 Mini · Deterministic"
+        "Context: deep · GPT-5.4 Mini · Deterministic"
     );
     assert_eq!(
         live.runtime_context_summary_segment_text(),

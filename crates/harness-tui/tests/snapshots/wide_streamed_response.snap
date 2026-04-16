@@ -4,14 +4,14 @@
   ┃                                                                                                                     Context
                                                                                                                         0 tokens
      Hello world
-     ● Assistant · model-1 · 4ms                                                                                        ▼ MCP
-                                                                                                                        • No MCP integrations configured
+                                                                                                                        ▼ MCP
+     ▪ Assistant · model-1 · 4ms                                                                                        • No MCP integrations configured
 
                                                                                                                         ▼ LSP
                                                                                                                         • No active LSP servers
 
-                                                                                                                        ▼ Modified Files
-                                                                                                                        • No modified files
+                                                                                                                        ▶ Modified Files
+
 
 
 
@@ -25,6 +25,6 @@
 ┃
 ┃
 ┃
-┃   Success   Current runtime: default · model-1 · provider mock
-╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-turn 1 · ready for next turn
+┃  model-1 mock · success
+╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                                                                    0  Ctrl+p commands

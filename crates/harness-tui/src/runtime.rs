@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use crossterm::event::{
-    DisableMouseCapture, EnableMouseCapture, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
-    PushKeyboardEnhancementFlags,
+    DisableMouseCapture, EnableMouseCapture, KeyboardEnhancementFlags, MouseButton, MouseEventKind,
+    PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
 use harness_core::event::EventEnvelopeV1;
 use ratatui::{backend::CrosstermBackend, Terminal};
@@ -15,6 +15,15 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use crate::app::{AppState, LaunchMetadata, SessionHistoryEntry, UiIntent};
 use crate::event::{self, poll};
 use crate::ui;
+
+const ACTIVE_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const IDLE_POLL_INTERVAL: Duration = Duration::from_secs(1);
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct LiveUpdateDrainState {
+    changed: bool,
+    disconnected: bool,
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 struct PreservedTerminalSession {
@@ -94,7 +103,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         preserve_terminal_on_exit,
     } = options;
 
-    let (mut app, live_updates) = match mode {
+    let (mut app, mut live_updates) = match mode {
         TuiMode::Startup {
             session_history_entries,
         } => {
@@ -179,9 +188,15 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let run_result = (|| -> Result<()> {
+        let mut redraw_requested = true;
+
         loop {
             if let Some(update_rx) = live_updates.as_ref() {
-                drain_live_updates(&mut app, update_rx);
+                let drain_state = drain_live_updates(&mut app, update_rx);
+                redraw_requested |= drain_state.changed;
+                if drain_state.disconnected {
+                    live_updates = None;
+                }
             }
 
             if app.take_reload_requested() {
@@ -200,28 +215,81 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                         "reload requested but no session path is set".to_string(),
                     ));
                 }
+                redraw_requested = true;
             }
 
-            terminal.draw(|frame| ui::render_app(frame, &app))?;
+            if redraw_requested {
+                let size = terminal.size()?;
+                let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
+                app.set_frame_area(frame_area);
+                terminal.draw(|frame| ui::render_app(frame, &app))?;
+                redraw_requested = false;
+            }
 
             if app.should_quit {
                 break;
             }
 
-            app.advance_transcript_animation_phase();
+            let animation_active = app.has_active_animations();
+            let event = poll(poll_timeout(animation_active, live_updates.is_some()))?;
 
-            if let Some(event) = poll(Duration::from_millis(100))? {
+            if event.is_none() && animation_active {
+                app.advance_transcript_animation_phase();
+                redraw_requested = true;
+                continue;
+            }
+
+            if let Some(event) = event {
                 match event {
-                    event::TuiEvent::Key(key) => app.handle_key(key),
+                    event::TuiEvent::Key(key) => {
+                        let size = terminal.size()?;
+                        let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
+                        app.set_frame_area(frame_area);
+                        app.handle_key(key)
+                    }
                     event::TuiEvent::Mouse(mouse) => {
                         let size = terminal.size()?;
                         let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
-                        let hovered_wheel_target =
-                            ui::hovered_wheel_target(&app, frame_area, mouse.column, mouse.row);
-                        app.handle_mouse(mouse, hovered_wheel_target);
+                        app.set_frame_area(frame_area);
+                        let (
+                            hovered_wheel_target,
+                            clicked_operator_sidebar_section,
+                            transcript_scrollbar_hit,
+                        ) = match mouse.kind {
+                            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => (
+                                ui::hovered_wheel_target(&app, frame_area, mouse.column, mouse.row),
+                                None,
+                                None,
+                            ),
+                            MouseEventKind::Down(MouseButton::Left) => (
+                                None,
+                                ui::operator_sidebar_section_hit_target(
+                                    &app,
+                                    frame_area,
+                                    mouse.column,
+                                    mouse.row,
+                                ),
+                                ui::transcript_scrollbar_hit(
+                                    &app,
+                                    frame_area,
+                                    mouse.column,
+                                    mouse.row,
+                                ),
+                            ),
+                            _ => (None, None, None),
+                        };
+                        app.handle_mouse(
+                            mouse,
+                            frame_area,
+                            hovered_wheel_target,
+                            clicked_operator_sidebar_section,
+                            transcript_scrollbar_hit,
+                        );
                     }
                     event::TuiEvent::Resize(_, _) => {}
                 }
+
+                redraw_requested = true;
             }
         }
         Ok(())
@@ -327,7 +395,20 @@ fn load_events_from_path(path: &Path) -> Result<Vec<EventEnvelopeV1>> {
         .collect()
 }
 
-fn drain_live_updates(app: &mut AppState, update_rx: &Receiver<LiveUpdate>) {
+fn poll_timeout(animation_active: bool, live_updates_connected: bool) -> Duration {
+    if animation_active || live_updates_connected {
+        ACTIVE_POLL_INTERVAL
+    } else {
+        IDLE_POLL_INTERVAL
+    }
+}
+
+fn drain_live_updates(
+    app: &mut AppState,
+    update_rx: &Receiver<LiveUpdate>,
+) -> LiveUpdateDrainState {
+    let mut state = LiveUpdateDrainState::default();
+
     loop {
         match update_rx.try_recv() {
             Ok(LiveUpdate::Event(event)) => {
@@ -338,19 +419,84 @@ fn drain_live_updates(app: &mut AppState, update_rx: &Receiver<LiveUpdate>) {
                 {
                     app.set_status_banner(None);
                 }
-                app.ingest_event(*event)
+                app.ingest_event(*event);
+                state.changed = true;
             }
-            Ok(LiveUpdate::Status(status)) => app.set_status_banner(Some(status)),
+            Ok(LiveUpdate::Status(status)) => {
+                if app.status_banner.as_deref() != Some(status.as_str()) {
+                    app.set_status_banner(Some(status));
+                    state.changed = true;
+                }
+            }
             Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Disconnected) => {
-                app.set_status_banner(Some("live event stream disconnected".to_string()));
+                let disconnected_message = "live event stream disconnected";
+                if app.status_banner.as_deref() != Some(disconnected_message) {
+                    app.set_status_banner(Some(disconnected_message.to_string()));
+                    state.changed = true;
+                }
+                state.disconnected = true;
                 break;
             }
         }
     }
+
+    state
 }
 
 fn transient_live_status_banner(status: &str) -> bool {
     let lower = status.to_ascii_lowercase();
     lower.contains("lagged") || lower.contains("replaying")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::{AppState, ToastVariant};
+
+    #[test]
+    fn poll_timeout_blocks_when_idle_and_live_updates_are_gone() {
+        assert_eq!(poll_timeout(false, false), IDLE_POLL_INTERVAL);
+        assert_eq!(poll_timeout(true, false), ACTIVE_POLL_INTERVAL);
+        assert_eq!(poll_timeout(false, true), ACTIVE_POLL_INTERVAL);
+    }
+
+    #[test]
+    fn drain_live_updates_marks_disconnect_once() {
+        let (tx, rx) = mpsc::channel();
+        drop(tx);
+        let mut app = AppState::default();
+
+        let first = drain_live_updates(&mut app, &rx);
+        assert_eq!(
+            first,
+            LiveUpdateDrainState {
+                changed: true,
+                disconnected: true,
+            }
+        );
+        assert_eq!(
+            app.status_banner.as_deref(),
+            Some("live event stream disconnected")
+        );
+
+        let second = drain_live_updates(&mut app, &rx);
+        assert_eq!(
+            second,
+            LiveUpdateDrainState {
+                changed: false,
+                disconnected: true,
+            }
+        );
+    }
+
+    #[test]
+    fn app_toast_counts_as_active_animation() {
+        let mut app = AppState::default();
+        assert!(!app.has_active_animations());
+
+        app.set_toast_for_test("Copied", ToastVariant::Info);
+
+        assert!(app.has_active_animations());
+    }
 }

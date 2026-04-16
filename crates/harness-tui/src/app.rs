@@ -1,13 +1,18 @@
+use std::cell::Cell;
 use std::cmp::Reverse;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{hash_map::DefaultHasher, BTreeMap, BTreeSet, VecDeque};
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 #[cfg(test)]
 use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use harness_core::agent::AgentModelRef;
 use harness_core::config::{registered_profile_model_metadata, ResolvedProfileModelMetadata};
 use harness_core::event::{
@@ -20,13 +25,17 @@ use harness_core::perm::PermissionDecision;
 use harness_core::proj::{
     inspect_resume_plan, RunMetadata, SessionCatalogEntry, SessionModeSource,
 };
+use ratatui::layout::Rect;
 use serde::Deserialize;
 
 use crate::keybindings::{Action, KeyMap};
 use crate::overlay::{OverlayKind, OverlayStack, OverlayState};
 use crate::theme::Theme;
-use crate::ui::WheelTarget;
+use crate::ui::{
+    TranscriptScrollbarHit, TranscriptSelection, TranscriptSelectionCell, WheelTarget,
+};
 use crate::view_model;
+use crate::{clipboard, ui};
 
 mod pending_live;
 #[cfg(test)]
@@ -55,6 +64,13 @@ pub(crate) const SLASH_COMMANDS: [(&str, &str); 8] = [
     ("exit", "Quit Harness"),
 ];
 
+static NEXT_TRANSCRIPT_CACHE_INSTANCE_ID: AtomicU64 = AtomicU64::new(1);
+
+#[cfg(test)]
+thread_local! {
+    static TRANSCRIPT_RENDER_KEY_BUILD_COUNT: Cell<usize> = const { Cell::new(0) };
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolCallDisplayStatus {
     PendingPermission,
@@ -62,6 +78,13 @@ pub enum ToolCallDisplayStatus {
     Running,
     Succeeded,
     Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum OperatorSidebarSection {
+    Mcp,
+    Lsp,
+    ModifiedFiles,
 }
 
 impl std::fmt::Display for ToolCallDisplayStatus {
@@ -119,6 +142,14 @@ struct SessionNavigationSnapshot {
     events: Vec<EventEnvelopeV1>,
     launch_metadata: LaunchMetadata,
     child_session_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TranscriptScrollbarDragState {
+    track: Rect,
+    thumb_height: u16,
+    pointer_offset_y: u16,
+    max_scroll: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -382,6 +413,13 @@ fn truncate_for_transcript(text: &str) -> String {
     format!("{truncated}…")
 }
 
+fn rect_contains(area: Rect, column: u16, row: u16) -> bool {
+    column >= area.x
+        && column < area.x.saturating_add(area.width)
+        && row >= area.y
+        && row < area.y.saturating_add(area.height)
+}
+
 fn task_lineage_entry_from_metadata(metadata: &TaskLineageMetadata) -> TaskLineageEntry {
     TaskLineageEntry {
         parent_tool_call_id: metadata.parent_tool_call_id.clone(),
@@ -577,7 +615,7 @@ fn mark_activity_event(entry: &mut ActivityEntry, seq: u64, mono_ms: u64) {
     entry.last_mono_ms = mono_ms;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ActivityStatus {
     Streaming,
     Done,
@@ -737,6 +775,16 @@ fn merge_orchestration_task_completion_metadata(
     }
 }
 
+pub(crate) fn task_completed_updates_assistant_transcript(
+    data: &harness_core::event::TaskCompletedEvent,
+) -> bool {
+    data.metadata
+        .as_ref()
+        .and_then(|metadata| metadata.lineage.as_ref())
+        .and_then(|lineage| lineage.parent_tool_call_id.as_deref())
+        .is_none()
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OrchestrationSummary {
     pub active_agents: usize,
@@ -789,6 +837,19 @@ pub struct RuntimeState {
     pub detail: Option<String>,
     pub composer_disabled: bool,
     pub composer_hint: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ToastVariant {
+    Info,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ToastState {
+    pub message: String,
+    pub variant: ToastVariant,
+    remaining_frames: u16,
 }
 
 #[derive(Debug, Clone)]
@@ -1180,9 +1241,14 @@ pub struct QuestionOptionView {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LaunchMetadata {
     profile: Option<String>,
+    profile_description: Option<String>,
     provider: Option<String>,
+    provider_display_label: Option<String>,
+    provider_backend_label: Option<String>,
     model: Option<String>,
+    model_display_label: Option<String>,
     variant: Option<String>,
+    variant_display_label: Option<String>,
     display_label: Option<String>,
     token_window_label: Option<String>,
     context_window_tokens: Option<u32>,
@@ -1207,9 +1273,14 @@ impl LaunchMetadata {
         let model = model.filter(|value| !value.trim().is_empty());
         let mut metadata = Self {
             profile: Some(profile.clone()),
+            profile_description: None,
             provider: Some(provider.clone()),
+            provider_display_label: None,
+            provider_backend_label: None,
             model,
+            model_display_label: None,
             variant: None,
+            variant_display_label: None,
             display_label: None,
             token_window_label: None,
             context_window_tokens: None,
@@ -1235,9 +1306,14 @@ impl LaunchMetadata {
     pub fn from_model_option(option: &ModelOption) -> Self {
         Self {
             profile: Some(option.profile.clone()),
+            profile_description: option.profile_description.clone(),
             provider: Some(option.provider.clone()),
+            provider_display_label: option.provider_display_label.clone(),
+            provider_backend_label: option.provider_backend_label.clone(),
             model: Some(option.model.clone()),
+            model_display_label: option.model_display_label.clone(),
             variant: option.variant.clone(),
+            variant_display_label: option.variant_display_label.clone(),
             display_label: option.display_label.clone(),
             token_window_label: option.token_window_label.clone(),
             context_window_tokens: option.context_window_tokens,
@@ -1281,6 +1357,42 @@ impl LaunchMetadata {
             .unwrap_or("local")
     }
 
+    pub fn profile_description(&self) -> Option<&str> {
+        self.profile_description
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+    }
+
+    pub fn provider_display_label(&self) -> Option<&str> {
+        self.provider_display_label
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                self.matching_available_model()
+                    .and_then(|option| option.provider_display_label())
+            })
+    }
+
+    pub fn provider_backend_label(&self) -> Option<&str> {
+        self.provider_backend_label
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                self.matching_available_model()
+                    .and_then(|option| option.provider_backend_label())
+            })
+    }
+
+    pub fn model_display_label(&self) -> Option<&str> {
+        self.model_display_label
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                self.matching_available_model()
+                    .and_then(|option| option.model_display_label())
+            })
+    }
+
     pub fn model(&self) -> Option<&str> {
         self.model
             .as_deref()
@@ -1294,6 +1406,16 @@ impl LaunchMetadata {
             .or_else(|| {
                 self.matching_available_model()
                     .and_then(|option| option.variant())
+            })
+    }
+
+    pub fn variant_display_label(&self) -> Option<&str> {
+        self.variant_display_label
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                self.matching_available_model()
+                    .and_then(|option| option.variant_display_label())
             })
     }
 
@@ -1392,14 +1514,19 @@ impl LaunchMetadata {
         Some(ModelOption {
             profile: self.profile().to_string(),
             provider: self.provider().to_string(),
+            provider_display_label: self.provider_display_label().map(str::to_string),
+            provider_backend_label: self.provider_backend_label().map(str::to_string),
             model: self.model()?.to_string(),
+            model_display_label: self.model_display_label().map(str::to_string),
             variant: self.variant().map(str::to_string),
+            variant_display_label: self.variant_display_label().map(str::to_string),
             display_label: self.display_label().map(str::to_string),
             token_window_label: self.token_window_label().map(str::to_string),
             context_window_tokens: self.context_window_tokens(),
             max_input_tokens: self.max_input_tokens(),
             max_output_tokens: self.max_output_tokens(),
             description: self.description().map(str::to_string),
+            profile_description: self.profile_description().map(str::to_string),
             reasoning_effort: self.reasoning_effort().map(str::to_string),
             text_verbosity: self.text_verbosity().map(str::to_string),
             recommended_for: self.recommended_for().map(str::to_string),
@@ -1417,7 +1544,12 @@ impl LaunchMetadata {
     }
 
     fn apply_resolved_metadata(&mut self, metadata: &ResolvedProfileModelMetadata) {
+        self.profile_description = metadata.profile_description.clone();
         self.variant = metadata.variant.clone();
+        self.provider_display_label = Some(metadata.provider_display_label.clone());
+        self.provider_backend_label = metadata.provider_backend_label.clone();
+        self.model_display_label = Some(metadata.model_display_label.clone());
+        self.variant_display_label = metadata.variant_display_label.clone();
         self.display_label = Some(metadata.display_label.clone());
         self.token_window_label = metadata.token_window_label.clone();
         self.context_window_tokens = metadata.context_window_tokens;
@@ -1478,22 +1610,38 @@ impl LaunchMetadata {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct ModelOption {
     pub profile: String,
     pub provider: String,
+    pub provider_display_label: Option<String>,
+    pub provider_backend_label: Option<String>,
     pub model: String,
+    pub model_display_label: Option<String>,
     pub variant: Option<String>,
+    pub variant_display_label: Option<String>,
     pub display_label: Option<String>,
     pub token_window_label: Option<String>,
     pub context_window_tokens: Option<u32>,
     pub max_input_tokens: Option<u32>,
     pub max_output_tokens: Option<u32>,
     pub description: Option<String>,
+    pub profile_description: Option<String>,
     pub reasoning_effort: Option<String>,
     pub text_verbosity: Option<String>,
     pub recommended_for: Option<String>,
 }
+
+impl PartialEq for ModelOption {
+    fn eq(&self, other: &Self) -> bool {
+        self.profile == other.profile
+            && self.provider == other.provider
+            && self.model == other.model
+            && self.variant == other.variant
+    }
+}
+
+impl Eq for ModelOption {}
 
 impl ModelOption {
     pub fn from_model_ref(profile: impl Into<String>, model_ref: &str) -> Self {
@@ -1502,14 +1650,19 @@ impl ModelOption {
         let mut option = Self {
             profile,
             provider: model_ref.provider_id,
+            provider_display_label: None,
+            provider_backend_label: None,
             model: model_ref.model_id,
+            model_display_label: None,
             variant: None,
+            variant_display_label: None,
             display_label: None,
             token_window_label: None,
             context_window_tokens: None,
             max_input_tokens: None,
             max_output_tokens: None,
             description: None,
+            profile_description: None,
             reasoning_effort: None,
             text_verbosity: None,
             recommended_for: None,
@@ -1531,7 +1684,13 @@ impl ModelOption {
         let input = input.to_lowercase();
         self.profile.to_lowercase().contains(&input)
             || self.provider.to_lowercase().contains(&input)
+            || self
+                .provider_display_label()
+                .is_some_and(|value| value.to_lowercase().contains(&input))
             || self.model.to_lowercase().contains(&input)
+            || self
+                .model_display_label()
+                .is_some_and(|value| value.to_lowercase().contains(&input))
             || self
                 .variant()
                 .is_some_and(|value| value.to_lowercase().contains(&input))
@@ -1561,6 +1720,30 @@ impl ModelOption {
             .filter(|value| !value.trim().is_empty())
     }
 
+    pub fn provider_display_label(&self) -> Option<&str> {
+        self.provider_display_label
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+    }
+
+    pub fn provider_backend_label(&self) -> Option<&str> {
+        self.provider_backend_label
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+    }
+
+    pub fn model_display_label(&self) -> Option<&str> {
+        self.model_display_label
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+    }
+
+    pub fn variant_display_label(&self) -> Option<&str> {
+        self.variant_display_label
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+    }
+
     pub fn display_label(&self) -> Option<&str> {
         self.display_label
             .as_deref()
@@ -1575,6 +1758,12 @@ impl ModelOption {
 
     pub fn description(&self) -> Option<&str> {
         self.description
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+    }
+
+    pub fn profile_description(&self) -> Option<&str> {
+        self.profile_description
             .as_deref()
             .filter(|value| !value.trim().is_empty())
     }
@@ -1606,12 +1795,17 @@ impl ModelOption {
             return;
         };
         self.variant = metadata.variant;
+        self.provider_display_label = Some(metadata.provider_display_label);
+        self.provider_backend_label = metadata.provider_backend_label;
+        self.model_display_label = Some(metadata.model_display_label);
+        self.variant_display_label = metadata.variant_display_label;
         self.display_label = Some(metadata.display_label);
         self.token_window_label = metadata.token_window_label;
         self.context_window_tokens = metadata.context_window_tokens;
         self.max_input_tokens = metadata.max_input_tokens;
         self.max_output_tokens = metadata.max_output_tokens;
         self.description = metadata.description;
+        self.profile_description = metadata.profile_description;
         self.reasoning_effort = metadata.reasoning_effort;
         self.text_verbosity = metadata.text_verbosity;
         self.recommended_for = metadata.recommended_for;
@@ -1677,8 +1871,17 @@ pub struct AppState {
     pub replay_mode: bool,
     pub session_path: Option<PathBuf>,
     pub status_banner: Option<String>,
+    toast: Option<ToastState>,
     pub details_scroll: u16,
-    pub transcript_scroll: u16,
+    pub transcript_scroll: usize,
+    pub(crate) last_transcript_max_scroll: Cell<usize>,
+    last_frame_area: Option<Rect>,
+    transcript_scrollbar_drag: Option<TranscriptScrollbarDragState>,
+    transcript_selection: Option<TranscriptSelection>,
+    transcript_selection_dragging: bool,
+    transcript_cache_instance_id: u64,
+    transcript_render_epoch: u64,
+    transcript_render_key_cache: Cell<Option<(u64, u64)>>,
     transcript_animation_phase: usize,
     pub auto_exit_on_finish: bool,
     pub prompt_buffer: String,
@@ -1698,6 +1901,7 @@ pub struct AppState {
     show_generic_tool_output: bool,
     stacked_transcript_diffs: bool,
     expanded_tool_outputs: BTreeSet<String>,
+    collapsed_operator_sidebar_sections: BTreeSet<OperatorSidebarSection>,
     pub startup_mode: bool,
     pub startup_launcher_action: StartupLauncherAction,
     post_run_handoff_action: PostRunHandoffAction,
@@ -1745,8 +1949,18 @@ impl Default for AppState {
             replay_mode: false,
             session_path: None,
             status_banner: None,
+            toast: None,
             details_scroll: 0,
             transcript_scroll: 0,
+            last_transcript_max_scroll: Cell::new(0),
+            last_frame_area: None,
+            transcript_scrollbar_drag: None,
+            transcript_selection: None,
+            transcript_selection_dragging: false,
+            transcript_cache_instance_id: NEXT_TRANSCRIPT_CACHE_INSTANCE_ID
+                .fetch_add(1, Ordering::Relaxed),
+            transcript_render_epoch: 0,
+            transcript_render_key_cache: Cell::new(None),
             transcript_animation_phase: 0,
             auto_exit_on_finish: false,
             prompt_buffer: String::new(),
@@ -1766,6 +1980,9 @@ impl Default for AppState {
             show_generic_tool_output: false,
             stacked_transcript_diffs: false,
             expanded_tool_outputs: BTreeSet::new(),
+            collapsed_operator_sidebar_sections: BTreeSet::from([
+                OperatorSidebarSection::ModifiedFiles,
+            ]),
             startup_mode: false,
             startup_launcher_action: StartupLauncherAction::default(),
             post_run_handoff_action: PostRunHandoffAction::default(),
@@ -2357,7 +2574,8 @@ impl SessionProjection {
                     if let Some(index) = self.activity_index_or_local_echo(request_id, event.seq) {
                         if let Some(entry) = self.activities.get_mut(index) {
                             entry.status = ActivityStatus::Done;
-                            if entry.transcript_text.is_empty()
+                            if task_completed_updates_assistant_transcript(data)
+                                && entry.transcript_text.is_empty()
                                 && !data.result_summary.trim().is_empty()
                             {
                                 entry.transcript_text = data.result_summary.clone();
@@ -2710,6 +2928,12 @@ impl AppState {
     #[cfg(test)]
     pub(crate) fn set_theme_for_test(&mut self, theme: Theme) {
         self.theme = theme;
+        self.bump_transcript_render_epoch();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn mark_transcript_dirty_for_test(&mut self) {
+        self.bump_transcript_render_epoch();
     }
 
     pub fn set_launch_metadata(&mut self, launch_metadata: LaunchMetadata) {
@@ -3014,6 +3238,7 @@ impl AppState {
     }
 
     pub fn replace_events(&mut self, events: Vec<EventEnvelopeV1>) {
+        self.bump_transcript_render_epoch();
         self.projection.reset();
         self.dismissed_permissions.clear();
         self.submitted_permission_id = None;
@@ -3048,11 +3273,18 @@ impl AppState {
             return;
         }
 
+        self.bump_transcript_render_epoch();
+
         if matches!(&event.payload, EventV1::PermissionRequested(_)) {
             self.close_palette();
             self.session_history_visible = false;
             self.model_switcher_visible = false;
             self.clear_slash_menu();
+        }
+
+        if matches!(&event.payload, EventV1::EditApplied(_)) {
+            self.collapsed_operator_sidebar_sections
+                .remove(&OperatorSidebarSection::ModifiedFiles);
         }
 
         let terminal_event = matches!(
@@ -3356,7 +3588,7 @@ impl AppState {
             .unwrap_or("-")
     }
 
-    fn current_model_variant(&self) -> Option<&str> {
+    pub(crate) fn current_model_variant(&self) -> Option<&str> {
         self.launch_metadata.variant()
     }
 
@@ -3364,6 +3596,78 @@ impl AppState {
         self.launch_metadata
             .display_label()
             .unwrap_or_else(|| self.current_model_id())
+    }
+
+    pub fn current_model_base_label(&self) -> &str {
+        self.launch_metadata
+            .model_display_label()
+            .or_else(|| self.launch_metadata.model())
+            .filter(|value| !Self::launch_value_is_unknown(value))
+            .unwrap_or_else(|| self.current_model_id())
+    }
+
+    pub fn current_model_reasoning_label(&self) -> Option<&str> {
+        self.launch_metadata
+            .reasoning_effort()
+            .or_else(|| self.launch_metadata.variant_display_label())
+            .or_else(|| self.launch_metadata.variant())
+            .or_else(|| self.launch_metadata.mode_label())
+            .filter(|value| !Self::launch_value_is_unknown(value))
+    }
+
+    pub(crate) fn current_context_window_tokens(&self) -> Option<u32> {
+        self.launch_metadata.context_window_tokens().or_else(|| {
+            self.activities
+                .back()
+                .and_then(|activity| {
+                    (!activity.model_id.trim().is_empty()).then(|| {
+                        LaunchMetadata::new(
+                            self.active_profile(),
+                            self.active_provider(),
+                            Some(activity.model_id.clone()),
+                        )
+                        .context_window_tokens()
+                    })
+                })
+                .flatten()
+        })
+    }
+
+    pub fn current_source_label(&self) -> Option<String> {
+        let provider = self
+            .launch_metadata
+            .provider_display_label()
+            .or_else(|| {
+                let provider = self.launch_metadata.provider();
+                (!Self::launch_value_is_unknown(provider) && provider != "local")
+                    .then_some(provider)
+            })
+            .or_else(|| {
+                let provider = self.active_provider();
+                (!Self::launch_value_is_unknown(provider) && provider != "local")
+                    .then_some(provider)
+            })?;
+        let backend = self
+            .launch_metadata
+            .provider_backend_label()
+            .filter(|value| !Self::launch_value_is_unknown(value));
+        Some(match backend {
+            Some(backend) => format!("{provider} ({backend})"),
+            None => provider.to_string(),
+        })
+    }
+
+    pub fn current_agent_label(&self) -> Option<String> {
+        let profile = self
+            .launch_metadata
+            .profile
+            .as_deref()
+            .or_else(|| {
+                let profile = self.active_profile();
+                (!Self::launch_value_is_unknown(profile) && profile != "default").then_some(profile)
+            })
+            .filter(|value| !Self::launch_value_is_unknown(value))?;
+        Some(humanize_profile_label(profile))
     }
 
     pub fn runtime_context_primary_summary(&self) -> String {
@@ -3380,6 +3684,7 @@ impl AppState {
         self.control_dock_view_model().runtime_context
     }
 
+    #[allow(dead_code)]
     pub(crate) fn runtime_context_identity_line(&self) -> String {
         format!(
             "{} · {}/{}",
@@ -3413,6 +3718,7 @@ impl AppState {
         }
     }
 
+    #[allow(dead_code)]
     fn runtime_context_model_id(&self) -> &str {
         self.runtime_context_metadata()
             .model()
@@ -3837,14 +4143,19 @@ impl AppState {
                     options.insert(ModelOption {
                         profile: self.launch_metadata.profile().to_string(),
                         provider: activity.provider_id.clone(),
+                        provider_display_label: None,
+                        provider_backend_label: None,
                         model: activity.model_id.clone(),
+                        model_display_label: None,
                         variant: None,
+                        variant_display_label: None,
                         display_label: None,
                         token_window_label: None,
                         context_window_tokens: None,
                         max_input_tokens: None,
                         max_output_tokens: None,
                         description: None,
+                        profile_description: None,
                         reasoning_effort: None,
                         text_verbosity: None,
                         recommended_for: None,
@@ -3862,14 +4173,19 @@ impl AppState {
                 options.insert(ModelOption {
                     profile: session_history_profile_label(entry).to_string(),
                     provider: provider.to_string(),
+                    provider_display_label: None,
+                    provider_backend_label: None,
                     model: model.to_string(),
+                    model_display_label: None,
                     variant: None,
+                    variant_display_label: None,
                     display_label: None,
                     token_window_label: None,
                     context_window_tokens: None,
                     max_input_tokens: None,
                     max_output_tokens: None,
                     description: None,
+                    profile_description: None,
                     reasoning_effort: None,
                     text_verbosity: None,
                     recommended_for: None,
@@ -3979,12 +4295,28 @@ impl AppState {
                     available_models.push(ModelOption {
                         profile: handoff.target_profile.clone(),
                         provider: self.launch_metadata.provider().to_string(),
+                        provider_display_label: self
+                            .launch_metadata
+                            .provider_display_label()
+                            .map(str::to_string),
+                        provider_backend_label: self
+                            .launch_metadata
+                            .provider_backend_label()
+                            .map(str::to_string),
                         model: self
                             .launch_metadata
                             .model()
                             .map(str::to_string)
                             .unwrap_or_default(),
+                        model_display_label: self
+                            .launch_metadata
+                            .model_display_label()
+                            .map(str::to_string),
                         variant: self.launch_metadata.variant().map(str::to_string),
+                        variant_display_label: self
+                            .launch_metadata
+                            .variant_display_label()
+                            .map(str::to_string),
                         display_label: self.launch_metadata.display_label().map(str::to_string),
                         token_window_label: self
                             .launch_metadata
@@ -3994,6 +4326,10 @@ impl AppState {
                         max_input_tokens: self.launch_metadata.max_input_tokens(),
                         max_output_tokens: self.launch_metadata.max_output_tokens(),
                         description: self.launch_metadata.description().map(str::to_string),
+                        profile_description: self
+                            .launch_metadata
+                            .profile_description()
+                            .map(str::to_string),
                         reasoning_effort: self
                             .launch_metadata
                             .reasoning_effort()
@@ -4041,8 +4377,162 @@ impl AppState {
         self.transcript_animation_phase
     }
 
+    pub(crate) fn transcript_cache_instance_id(&self) -> u64 {
+        self.transcript_cache_instance_id
+    }
+
+    pub(crate) fn transcript_render_cache_key(&self) -> u64 {
+        let stamp = self.transcript_render_cache_stamp();
+        if let Some((cached_stamp, cached_key)) = self.transcript_render_key_cache.get() {
+            if cached_stamp == stamp {
+                return cached_key;
+            }
+        }
+
+        let key = self.compute_transcript_render_cache_key();
+        self.transcript_render_key_cache.set(Some((stamp, key)));
+
+        #[cfg(test)]
+        TRANSCRIPT_RENDER_KEY_BUILD_COUNT.with(|count| count.set(count.get().saturating_add(1)));
+
+        key
+    }
+
+    fn transcript_render_cache_stamp(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+
+        self.replay_mode.hash(&mut hasher);
+        self.selected_activity_index.hash(&mut hasher);
+        self.show_transcript_thinking.hash(&mut hasher);
+        self.show_transcript_timestamps.hash(&mut hasher);
+        self.show_tool_details.hash(&mut hasher);
+        self.show_generic_tool_output.hash(&mut hasher);
+        self.stacked_transcript_diffs.hash(&mut hasher);
+        self.transcript_animation_phase.hash(&mut hasher);
+        self.transcript_render_epoch.hash(&mut hasher);
+        self.active_profile().hash(&mut hasher);
+        self.session_path.hash(&mut hasher);
+        for tool_call_id in &self.expanded_tool_outputs {
+            tool_call_id.hash(&mut hasher);
+        }
+
+        hasher.finish()
+    }
+
+    fn compute_transcript_render_cache_key(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+
+        self.replay_mode.hash(&mut hasher);
+        self.selected_activity_index.hash(&mut hasher);
+        self.show_transcript_thinking.hash(&mut hasher);
+        self.show_transcript_timestamps.hash(&mut hasher);
+        self.show_tool_details.hash(&mut hasher);
+        self.show_generic_tool_output.hash(&mut hasher);
+        self.stacked_transcript_diffs.hash(&mut hasher);
+        self.transcript_animation_phase.hash(&mut hasher);
+        self.transcript_render_epoch.hash(&mut hasher);
+        self.active_profile().hash(&mut hasher);
+        self.session_path.hash(&mut hasher);
+
+        for activity in &self.activities {
+            activity.request_id.hash(&mut hasher);
+            activity.model_id.hash(&mut hasher);
+            activity.provider_id.hash(&mut hasher);
+            activity.status.hash(&mut hasher);
+            activity.user_timestamp.hash(&mut hasher);
+            activity.thinking_text.hash(&mut hasher);
+            activity.transcript_text.hash(&mut hasher);
+            activity.error_message.hash(&mut hasher);
+            activity.first_seq.hash(&mut hasher);
+            activity.last_seq.hash(&mut hasher);
+
+            if let Some(user_message) = activity.user_message.as_ref() {
+                user_message.request_id.hash(&mut hasher);
+                user_message.text.hash(&mut hasher);
+            }
+
+            for permission in &activity.permissions {
+                permission.permission_id.hash(&mut hasher);
+                permission.kind.hash(&mut hasher);
+                permission.tool_call_id.hash(&mut hasher);
+                permission.summary.hash(&mut hasher);
+                permission.request_digest.hash(&mut hasher);
+                permission.timeout_ms.hash(&mut hasher);
+                std::mem::discriminant(&permission.default_decision).hash(&mut hasher);
+                permission.resolution_reason.hash(&mut hasher);
+                permission.first_seq.hash(&mut hasher);
+                permission.last_seq.hash(&mut hasher);
+            }
+
+            for tool_call in &activity.tool_calls {
+                tool_call.tool_call_id.hash(&mut hasher);
+                tool_call.tool_id.hash(&mut hasher);
+                tool_call.canonical_tool_id.hash(&mut hasher);
+                tool_call.alias_source_tool_id.hash(&mut hasher);
+                tool_call.args_digest.hash(&mut hasher);
+                tool_call.output_digest.hash(&mut hasher);
+                tool_call.output_summary.hash(&mut hasher);
+                tool_call.first_seq.hash(&mut hasher);
+                tool_call.last_seq.hash(&mut hasher);
+                std::mem::discriminant(&tool_call.status).hash(&mut hasher);
+
+                if let Some(edit) = tool_call.edit.as_ref() {
+                    edit.edit_id.hash(&mut hasher);
+                    edit.path.hash(&mut hasher);
+                    std::mem::discriminant(&edit.status).hash(&mut hasher);
+                    edit.summary.hash(&mut hasher);
+                    edit.patch_digest.hash(&mut hasher);
+                    edit.new_file_digest.hash(&mut hasher);
+                    edit.diff_rel_path.hash(&mut hasher);
+                    edit.diff_digest.hash(&mut hasher);
+                    edit.rejection_reason.hash(&mut hasher);
+                }
+
+                for artifact in &tool_call.artifact_refs {
+                    artifact.path.hash(&mut hasher);
+                    artifact.digest.hash(&mut hasher);
+                }
+            }
+        }
+
+        for tool_call_id in &self.expanded_tool_outputs {
+            tool_call_id.hash(&mut hasher);
+        }
+
+        for (permission_id, summary) in self.transcript_pending_permissions() {
+            permission_id.hash(&mut hasher);
+            summary.hash(&mut hasher);
+        }
+
+        hasher.finish()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn reset_transcript_render_key_metrics_for_test() {
+        TRANSCRIPT_RENDER_KEY_BUILD_COUNT.with(|count| count.set(0));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn transcript_render_key_build_count_for_test() -> usize {
+        TRANSCRIPT_RENDER_KEY_BUILD_COUNT.with(Cell::get)
+    }
+
     pub(crate) fn advance_transcript_animation_phase(&mut self) {
         self.transcript_animation_phase = self.transcript_animation_phase.wrapping_add(1);
+        if let Some(toast) = self.toast.as_mut() {
+            toast.remaining_frames = toast.remaining_frames.saturating_sub(1);
+            if toast.remaining_frames == 0 {
+                self.toast = None;
+            }
+        }
+    }
+
+    pub(crate) fn has_active_animations(&self) -> bool {
+        self.active_turn_in_progress() || self.toast.is_some()
+    }
+
+    fn bump_transcript_render_epoch(&mut self) {
+        self.transcript_render_epoch = self.transcript_render_epoch.wrapping_add(1);
     }
 
     pub(crate) fn tool_details_visible(&self) -> bool {
@@ -4058,8 +4548,7 @@ impl AppState {
     }
 
     pub(crate) fn tool_output_expanded(&self, tool_call: &ToolCallEntry) -> bool {
-        self.show_generic_tool_output
-            || self.expanded_tool_outputs.contains(&tool_call.tool_call_id)
+        self.expanded_tool_outputs.contains(&tool_call.tool_call_id)
     }
 
     fn selected_activity_expandable_tool_ids(&self) -> Vec<String> {
@@ -4524,12 +5013,147 @@ impl AppState {
         });
     }
 
-    pub fn handle_mouse(&mut self, mouse: MouseEvent, hovered_wheel_target: Option<WheelTarget>) {
+    fn set_transcript_selection(
+        &mut self,
+        anchor: TranscriptSelectionCell,
+        focus: TranscriptSelectionCell,
+    ) {
+        self.transcript_selection = Some(TranscriptSelection { anchor, focus });
+    }
+
+    fn clear_transcript_selection(&mut self) {
+        self.transcript_selection = None;
+        self.transcript_selection_dragging = false;
+    }
+
+    fn show_toast(&mut self, message: impl Into<String>, variant: ToastVariant) {
+        self.toast = Some(ToastState {
+            message: message.into(),
+            variant,
+            remaining_frames: 30,
+        });
+    }
+
+    fn copy_transcript_selection(&mut self, frame_area: Rect) -> bool {
+        let Some(selection) = self.transcript_selection else {
+            return false;
+        };
+        let Some(text) = ui::transcript_selection_text(self, frame_area, selection) else {
+            return false;
+        };
+
+        match clipboard::copy(&text) {
+            Ok(()) => self.show_toast("Copied to clipboard", ToastVariant::Info),
+            Err(err) => {
+                self.show_toast(format!("clipboard copy failed: {err}"), ToastVariant::Error)
+            }
+        }
+        true
+    }
+
+    fn maybe_clear_empty_transcript_selection(&mut self, frame_area: Rect) {
+        if self
+            .transcript_selection
+            .and_then(|selection| ui::transcript_selection_text(self, frame_area, selection))
+            .is_none()
+        {
+            self.clear_transcript_selection();
+        }
+    }
+
+    pub(crate) fn set_frame_area(&mut self, area: Rect) {
+        self.last_frame_area = Some(area);
+    }
+
+    pub(crate) fn last_frame_area(&self) -> Option<Rect> {
+        self.last_frame_area
+    }
+
+    pub(crate) fn handle_mouse(
+        &mut self,
+        mouse: MouseEvent,
+        frame_area: Rect,
+        hovered_wheel_target: Option<WheelTarget>,
+        clicked_operator_sidebar_section: Option<OperatorSidebarSection>,
+        transcript_scrollbar_hit: Option<TranscriptScrollbarHit>,
+    ) {
         if self.overlay_stack().blocks_pointer_interaction() {
+            self.transcript_scrollbar_drag = None;
+            self.clear_transcript_selection();
             return;
         }
 
+        self.set_frame_area(frame_area);
+
         match mouse.kind {
+            MouseEventKind::Down(MouseButton::Right) => {
+                let copy_on_select_disabled = clipboard::copy_on_select_disabled();
+                if copy_on_select_disabled && self.copy_transcript_selection(frame_area) {
+                    self.clear_transcript_selection();
+                }
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                if let Some(scrollbar) = transcript_scrollbar_hit
+                    .filter(|scrollbar| rect_contains(scrollbar.thumb, mouse.column, mouse.row))
+                {
+                    self.begin_transcript_scrollbar_drag(scrollbar, mouse.row);
+                    self.clear_transcript_selection();
+                    return;
+                }
+
+                self.transcript_scrollbar_drag = None;
+                let transcript_hit =
+                    ui::transcript_selection_cell(self, frame_area, mouse.column, mouse.row);
+                if let Some(cell) = transcript_hit {
+                    self.set_transcript_selection(cell, cell);
+                    self.transcript_selection_dragging = true;
+                    return;
+                }
+
+                self.clear_transcript_selection();
+                if let Some(section) = clicked_operator_sidebar_section {
+                    self.toggle_operator_sidebar_section(section);
+                }
+            }
+            MouseEventKind::Drag(MouseButton::Left) => {
+                if self.transcript_scrollbar_drag.is_some() {
+                    self.update_transcript_scrollbar_drag(mouse.row);
+                    return;
+                }
+
+                if self.transcript_selection_dragging {
+                    let transcript_hit =
+                        ui::transcript_selection_cell(self, frame_area, mouse.column, mouse.row);
+                    if let Some(cell) = transcript_hit {
+                        if let Some(selection) = self.transcript_selection {
+                            self.set_transcript_selection(selection.anchor, cell);
+                        }
+                    }
+                }
+            }
+            MouseEventKind::Up(MouseButton::Left) => {
+                if self.transcript_selection_dragging {
+                    let transcript_hit =
+                        ui::transcript_selection_cell(self, frame_area, mouse.column, mouse.row);
+                    if let Some(cell) = transcript_hit {
+                        if let Some(selection) = self.transcript_selection {
+                            self.set_transcript_selection(selection.anchor, cell);
+                        }
+                    }
+                    self.transcript_selection_dragging = false;
+                    let copy_on_select_disabled = clipboard::copy_on_select_disabled();
+                    if copy_on_select_disabled {
+                        self.maybe_clear_empty_transcript_selection(frame_area);
+                    } else {
+                        let copied = self.copy_transcript_selection(frame_area);
+                        self.clear_transcript_selection();
+                        if !copied {
+                            self.clear_transcript_selection();
+                        }
+                    }
+                }
+                self.transcript_scrollbar_drag = None;
+            }
             MouseEventKind::ScrollUp => match hovered_wheel_target {
                 Some(WheelTarget::Transcript) => self.scroll_transcript_up(3),
                 Some(WheelTarget::Inspector) => {
@@ -4548,10 +5172,115 @@ impl AppState {
         }
     }
 
+    pub(crate) fn operator_sidebar_section_collapsed(
+        &self,
+        section: OperatorSidebarSection,
+    ) -> bool {
+        self.collapsed_operator_sidebar_sections.contains(&section)
+    }
+
+    pub(crate) fn transcript_scrollbar_dragging(&self) -> bool {
+        self.transcript_scrollbar_drag.is_some()
+    }
+
+    pub(crate) fn transcript_selection(&self) -> Option<TranscriptSelection> {
+        self.transcript_selection
+    }
+
+    pub(crate) fn toast(&self) -> Option<&ToastState> {
+        self.toast.as_ref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_toast_for_test(&mut self, message: impl Into<String>, variant: ToastVariant) {
+        self.show_toast(message, variant);
+    }
+
+    fn toggle_operator_sidebar_section(&mut self, section: OperatorSidebarSection) {
+        if !self.collapsed_operator_sidebar_sections.insert(section) {
+            self.collapsed_operator_sidebar_sections.remove(&section);
+        }
+        self.details_scroll = 0;
+    }
+
+    fn begin_transcript_scrollbar_drag(
+        &mut self,
+        scrollbar: TranscriptScrollbarHit,
+        pointer_row: u16,
+    ) {
+        let pointer_offset_y = pointer_row
+            .saturating_sub(scrollbar.thumb.y)
+            .min(scrollbar.thumb.height.saturating_sub(1));
+        self.transcript_scrollbar_drag = Some(TranscriptScrollbarDragState {
+            track: scrollbar.track,
+            thumb_height: scrollbar.thumb.height,
+            pointer_offset_y,
+            max_scroll: scrollbar.max_scroll,
+        });
+    }
+
+    fn update_transcript_scrollbar_drag(&mut self, pointer_row: u16) {
+        let Some(drag) = self.transcript_scrollbar_drag else {
+            return;
+        };
+
+        let max_thumb_top = drag.track.height.saturating_sub(drag.thumb_height);
+        let desired_thumb_top = pointer_row
+            .saturating_sub(drag.pointer_offset_y)
+            .clamp(drag.track.y, drag.track.y.saturating_add(max_thumb_top));
+        let thumb_top = desired_thumb_top.saturating_sub(drag.track.y);
+        let scroll_top = if drag.max_scroll == 0 || max_thumb_top == 0 {
+            drag.max_scroll
+        } else {
+            ((usize::from(thumb_top) * drag.max_scroll) + usize::from(max_thumb_top) / 2)
+                / usize::from(max_thumb_top)
+        };
+        self.set_transcript_scroll_from_top_with_max(
+            scroll_top.min(drag.max_scroll),
+            drag.max_scroll,
+        );
+    }
+
+    fn set_transcript_scroll_from_top_with_max(&mut self, scroll_top: usize, max_scroll: usize) {
+        let clamped = scroll_top.min(max_scroll);
+        if max_scroll == 0 || clamped >= max_scroll {
+            self.follow_mode = true;
+            self.transcript_scroll = 0;
+            return;
+        }
+
+        self.follow_mode = false;
+        self.transcript_scroll = max_scroll.saturating_sub(clamped);
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) {
         if self.overlay_stack().top() == Some(OverlayKind::PermissionModal) {
             self.handle_permission_modal_key(key);
             return;
+        }
+
+        if clipboard::copy_on_select_disabled() && self.transcript_selection.is_some() {
+            if key.modifiers.contains(KeyModifiers::CONTROL)
+                && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C'))
+            {
+                if let Some(frame_area) = self.last_frame_area() {
+                    if !self.copy_transcript_selection(frame_area) {
+                        self.clear_transcript_selection();
+                        return;
+                    }
+                }
+                self.clear_transcript_selection();
+                self.maybe_auto_exit();
+                return;
+            }
+
+            if key.code == KeyCode::Esc {
+                self.clear_transcript_selection();
+                self.maybe_auto_exit();
+                return;
+            }
+
+            self.clear_transcript_selection();
         }
 
         if self.session_history_visible && self.handle_session_history_key(&key) {
@@ -4576,6 +5305,11 @@ impl AppState {
 
         if self.active_review_surface.is_some() && key.code == KeyCode::Esc {
             self.close_review_surface();
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.focus != Focus::Prompt && self.handle_transcript_navigation_key(key) {
             self.maybe_auto_exit();
             return;
         }
@@ -4741,6 +5475,7 @@ impl AppState {
     }
 
     fn handle_palette_key(&mut self, key: &KeyEvent) -> bool {
+        let ctrl_only = key.modifiers == KeyModifiers::CONTROL;
         match key.code {
             KeyCode::Esc => {
                 self.close_palette();
@@ -4750,25 +5485,52 @@ impl AppState {
                 self.execute_palette_command();
                 true
             }
+            KeyCode::PageUp => {
+                self.move_palette_selection(-10);
+                true
+            }
+            KeyCode::PageDown => {
+                self.move_palette_selection(10);
+                true
+            }
+            KeyCode::Home => {
+                self.palette_selected = 0;
+                true
+            }
+            KeyCode::End => {
+                self.palette_selected = self.palette_filtered.len().saturating_sub(1);
+                true
+            }
             KeyCode::Up => {
-                if self.palette_selected > 0 {
-                    self.palette_selected -= 1;
-                }
+                self.move_palette_selection(-1);
                 true
             }
             KeyCode::Down => {
-                if !self.palette_filtered.is_empty()
-                    && self.palette_selected < self.palette_filtered.len() - 1
-                {
-                    self.palette_selected += 1;
-                }
+                self.move_palette_selection(1);
                 true
             }
             KeyCode::Backspace => {
                 self.overlay_backspace(Self::update_palette_filter);
                 true
             }
+            KeyCode::Delete => {
+                self.overlay_delete(Self::update_palette_filter);
+                true
+            }
+            KeyCode::Char('p') if ctrl_only => {
+                self.move_palette_selection(-1);
+                true
+            }
+            KeyCode::Char('n') if ctrl_only => {
+                self.move_palette_selection(1);
+                true
+            }
             KeyCode::Char(c) => {
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    || key.modifiers.contains(KeyModifiers::ALT)
+                {
+                    return false;
+                }
                 self.overlay_insert_char(c, Self::update_palette_filter);
                 true
             }
@@ -4837,6 +5599,7 @@ impl AppState {
     }
 
     fn handle_session_history_key(&mut self, key: &KeyEvent) -> bool {
+        let ctrl_only = key.modifiers == KeyModifiers::CONTROL;
         match key.code {
             KeyCode::Esc => {
                 self.close_session_history();
@@ -4846,23 +5609,53 @@ impl AppState {
                 self.execute_selected_session_launcher_action();
                 true
             }
+            KeyCode::PageUp => {
+                self.move_session_history_selection(-10);
+                true
+            }
+            KeyCode::PageDown => {
+                self.move_session_history_selection(10);
+                true
+            }
+            KeyCode::Home => {
+                self.session_history_selected = 0;
+                true
+            }
+            KeyCode::End => {
+                self.session_history_selected =
+                    self.session_history_filtered.len().saturating_sub(1);
+                true
+            }
             KeyCode::Up => {
-                if self.session_history_selected > 0 {
-                    self.session_history_selected -= 1;
-                }
+                self.move_session_history_selection(-1);
                 true
             }
             KeyCode::Down => {
-                if self.session_history_selected + 1 < self.session_history_filtered.len() {
-                    self.session_history_selected += 1;
-                }
+                self.move_session_history_selection(1);
                 true
             }
             KeyCode::Backspace => {
                 self.overlay_backspace(Self::update_session_history_filter);
                 true
             }
+            KeyCode::Delete => {
+                self.overlay_delete(Self::update_session_history_filter);
+                true
+            }
+            KeyCode::Char('p') if ctrl_only => {
+                self.move_session_history_selection(-1);
+                true
+            }
+            KeyCode::Char('n') if ctrl_only => {
+                self.move_session_history_selection(1);
+                true
+            }
             KeyCode::Char(c) => {
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    || key.modifiers.contains(KeyModifiers::ALT)
+                {
+                    return false;
+                }
                 self.overlay_insert_char(c, Self::update_session_history_filter);
                 true
             }
@@ -4876,6 +5669,21 @@ impl AppState {
         }
 
         self.palette_cursor -= 1;
+        let byte_idx = self
+            .palette_input
+            .char_indices()
+            .nth(self.palette_cursor)
+            .map(|(index, _)| index)
+            .unwrap_or(self.palette_input.len());
+        self.palette_input.remove(byte_idx);
+        on_change(self);
+    }
+
+    fn overlay_delete(&mut self, on_change: fn(&mut Self)) {
+        if self.palette_cursor >= self.palette_input.chars().count() {
+            return;
+        }
+
         let byte_idx = self
             .palette_input
             .char_indices()
@@ -4933,20 +5741,68 @@ impl AppState {
             .filter(|(prefix_match, _, _, _)| !has_prefix_matches || *prefix_match)
             .collect::<Vec<_>>();
         filtered.sort_by(|left, right| {
-            if input.is_empty() {
-                left.1
-                    .cmp(&right.1)
-                    .then_with(|| left.2.cmp(&right.2))
-                    .then_with(|| left.3.cmp(&right.3))
-            } else {
-                left.3.cmp(&right.3)
-            }
+            left.1
+                .cmp(&right.1)
+                .then_with(|| left.2.cmp(&right.2))
+                .then_with(|| left.3.cmp(&right.3))
         });
         self.palette_filtered = filtered
             .into_iter()
             .map(|(_, _, _, command)| command)
             .collect();
         self.palette_selected = 0;
+    }
+
+    fn move_palette_selection(&mut self, delta: isize) {
+        let len = self.palette_filtered.len();
+        if len == 0 {
+            self.palette_selected = 0;
+            return;
+        }
+
+        if delta == -1 {
+            self.palette_selected = if self.palette_selected == 0 {
+                len - 1
+            } else {
+                self.palette_selected - 1
+            };
+            return;
+        }
+
+        if delta == 1 {
+            self.palette_selected = (self.palette_selected + 1) % len;
+            return;
+        }
+
+        let current = self.palette_selected.min(len.saturating_sub(1)) as isize;
+        let next = (current + delta).clamp(0, len.saturating_sub(1) as isize);
+        self.palette_selected = usize::try_from(next).unwrap_or(0);
+    }
+
+    fn move_session_history_selection(&mut self, delta: isize) {
+        let len = self.session_history_filtered.len();
+        if len == 0 {
+            self.session_history_selected = 0;
+            return;
+        }
+
+        if delta == -1 {
+            self.session_history_selected = if self.session_history_selected == 0 {
+                len - 1
+            } else {
+                self.session_history_selected - 1
+            };
+            return;
+        }
+
+        if delta == 1 {
+            self.session_history_selected = (self.session_history_selected + 1) % len;
+            return;
+        }
+
+        let current = self.session_history_selected.min(len.saturating_sub(1)) as isize;
+        let next = (current + delta).clamp(0, len.saturating_sub(1) as isize);
+        self.session_history_selected = usize::try_from(next).unwrap_or(0);
     }
 
     fn update_session_history_filter(&mut self) {
@@ -5947,13 +6803,45 @@ impl AppState {
             && !self.details_drawer_open()
     }
 
+    fn handle_transcript_navigation_key(&mut self, key: KeyEvent) -> bool {
+        if !self.transcript_surface_active() || key.modifiers != KeyModifiers::NONE {
+            return false;
+        }
+
+        match key.code {
+            KeyCode::PageUp => {
+                self.scroll_transcript_up(10);
+                true
+            }
+            KeyCode::PageDown => {
+                self.scroll_transcript_down(10);
+                true
+            }
+            KeyCode::Home => {
+                self.follow_mode = false;
+                self.transcript_scroll = self.last_transcript_max_scroll.get();
+                true
+            }
+            KeyCode::End => {
+                self.follow_mode = true;
+                self.transcript_scroll = 0;
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn scroll_transcript_up(&mut self, amount: u16) {
         self.follow_mode = false;
-        self.transcript_scroll = self.transcript_scroll.saturating_add(amount.max(1));
+        self.transcript_scroll = self
+            .transcript_scroll
+            .saturating_add(usize::from(amount.max(1)));
     }
 
     fn scroll_transcript_down(&mut self, amount: u16) {
-        self.transcript_scroll = self.transcript_scroll.saturating_sub(amount.max(1));
+        self.transcript_scroll = self
+            .transcript_scroll
+            .saturating_sub(usize::from(amount.max(1)));
         if self.transcript_scroll == 0 {
             self.follow_mode = true;
         }
@@ -6150,6 +7038,24 @@ impl AppState {
     }
 }
 
+fn humanize_profile_label(profile: &str) -> String {
+    let words = profile
+        .split(['_', '-', ' '])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            let Some(first) = chars.next() else {
+                return String::new();
+            };
+            format!("{}{}", first.to_uppercase(), chars.as_str())
+        })
+        .collect::<Vec<_>>();
+    if words.is_empty() {
+        return profile.to_string();
+    }
+    words.join(" ")
+}
+
 fn action_preempts_text_input(action: Action) -> bool {
     matches!(
         action,
@@ -6303,8 +7209,12 @@ fn launch_metadata_from_recorded_runtime_context(
     let mut launch_metadata = LaunchMetadata::from_model_option(&ModelOption {
         profile: recorded_runtime_context.profile.clone(),
         provider: recorded_runtime_context.provider.clone(),
+        provider_display_label: recorded_runtime_context.provider_display_label.clone(),
+        provider_backend_label: recorded_runtime_context.provider_backend_label.clone(),
         model: recorded_runtime_context.model.clone(),
+        model_display_label: recorded_runtime_context.model_display_label.clone(),
         variant: recorded_runtime_context.variant.clone(),
+        variant_display_label: recorded_runtime_context.variant_display_label.clone(),
         display_label: Some(recorded_runtime_context.display_label.clone())
             .filter(|value| !value.trim().is_empty()),
         token_window_label: recorded_runtime_context.token_window_label.clone(),
@@ -6312,6 +7222,7 @@ fn launch_metadata_from_recorded_runtime_context(
         max_input_tokens: recorded_runtime_context.max_input_tokens,
         max_output_tokens: recorded_runtime_context.max_output_tokens,
         description: recorded_runtime_context.description.clone(),
+        profile_description: recorded_runtime_context.profile_description.clone(),
         reasoning_effort: recorded_runtime_context.reasoning_effort.clone(),
         text_verbosity: recorded_runtime_context.text_verbosity.clone(),
         recommended_for: recorded_runtime_context.recommended_for.clone(),
@@ -6458,14 +7369,19 @@ fn tool_call_has_expandable_output(tool_call: &ToolCallEntry) -> bool {
 
     let output = tool_call.output_summary.as_deref().unwrap_or_default();
     let line_count = output.lines().count();
+    let has_diff_preview = tool_call
+        .edit
+        .as_ref()
+        .and_then(|edit| edit.diff_rel_path.as_ref())
+        .is_some()
+        || tool_call
+            .artifact_refs
+            .iter()
+            .any(|artifact| artifact.path.ends_with(".diff"));
     !tool_call.artifact_refs.is_empty()
         || match tool_call.effective_tool_id() {
             "shell.run" => line_count > 10,
-            "edit.hashline_apply" => tool_call
-                .edit
-                .as_ref()
-                .and_then(|edit| edit.diff_rel_path.as_ref())
-                .is_some(),
+            "edit.hashline_apply" | "fs.write" | "edit" | "apply_patch" => has_diff_preview,
             "agent.spawn" => true,
             _ => !output.trim().is_empty() && line_count > 3,
         }

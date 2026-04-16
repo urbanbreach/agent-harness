@@ -34,15 +34,12 @@ fn chrome_helper_inventory_is_exhaustive() {
     assert!(
         UI_SECONDARY.contains("Block::default().style(Style::default().bg(theme.surface.shell))")
     );
-    assert!(count_occurrences(UI_OVERLAYS, "render_overlay_surface(") >= 2);
+    assert!(count_occurrences(UI_OVERLAYS, "render_command_palette_surface(") >= 2);
     assert_eq!(
         count_occurrences(UI_OVERLAYS, "ui_chrome::interruptive_modal_block("),
         1
     );
-    assert_eq!(
-        count_occurrences(UI_OVERLAYS, "ui_chrome::elevated_card_block("),
-        1
-    );
+    assert!(count_occurrences(UI_OVERLAYS, "ui_chrome::command_palette_surface(") >= 4);
     assert!(count_occurrences(UI_RS, "chromeless_shell_section(theme)") >= 3);
     assert!(count_occurrences(UI_RS, "interruptive_modal_block(") >= 1);
 
@@ -78,25 +75,22 @@ fn interruptive_overlays_keep_elevated_card_contract() {
         0
     );
     assert!(
-        count_occurrences(UI_OVERLAYS, "render_overlay_surface(") >= 2,
-        "command palette/session history and the shared helper should route through the compatibility overlay surface helper"
+        count_occurrences(UI_OVERLAYS, "render_command_palette_surface(") >= 2,
+        "command palette/session history should route through the dedicated Opencode-style surface helper"
     );
     assert_eq!(
         count_occurrences(UI_OVERLAYS, "ui_chrome::interruptive_modal_block("),
         1,
         "permission modal should stay on the elevated interruptive contract"
     );
-    assert_eq!(
-        count_occurrences(UI_OVERLAYS, "ui_chrome::elevated_card_block("),
-        1
-    );
+    assert!(count_occurrences(UI_OVERLAYS, "ui_chrome::command_palette_surface(") >= 4);
     assert_eq!(
         count_occurrences(UI_RS, "interruptive_modal_block("),
         1,
         "runtime overlay should stay on the elevated interruptive contract"
     );
     assert!(!UI_OVERLAYS.contains("ui_chrome::quiet_overlay_title("));
-    assert!(UI_OVERLAYS.contains("theme.surface.overlay"));
+    assert!(UI_OVERLAYS.contains("ui_chrome::command_palette_surface(theme)"));
     assert!(!UI_OVERLAYS.contains("ui_chrome::quiet_overlay_block("));
     assert!(!UI_OVERLAYS.contains("ui_chrome::secondary_pane_block("));
     assert!(!UI_OVERLAYS.contains("ui_chrome::divided_shell_section("));

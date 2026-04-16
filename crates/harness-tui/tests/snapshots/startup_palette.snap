@@ -7,14 +7,19 @@
 
 
 
+                        Commands                                         esc
 
+                        █ Search
 
-                 Command palette
+                        Suggested
+                           New session Start a fresh live session        new
 
-                   > █
-                   Suggested
-                   › New session  Start a fresh live session                  new
-                   Session
-                     Continue session  Continue a prior session when res…  resume
-                     Replay session  Replay a previous session as read-o…  replay
-                   Agent
+                        Session
+                           Continue session Continue a prior sessio…  resume
+            ┃              Replay session Replay a previous session…  replay
+            ┃  Ask a
+            ┃           Agent
+            ┃  Worke
+            ┃
+            ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+              ● Tip  Ctrl+p opens saved sessions · Shift+Enter/Ctrl+j adds a newline
