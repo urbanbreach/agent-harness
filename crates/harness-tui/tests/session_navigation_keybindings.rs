@@ -35,7 +35,7 @@ fn key_with_modifiers(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
     KeyEvent::new(code, modifiers)
 }
 
-fn opencode_navigation_keybindings() -> BTreeMap<String, String> {
+fn default_navigation_keybindings() -> BTreeMap<String, String> {
     BTreeMap::from([
         ("session_child_first".to_string(), "ctrl+]".to_string()),
         ("session_child_cycle".to_string(), "]".to_string()),
@@ -196,7 +196,7 @@ fn continued_runtime_model_options() -> Vec<ModelOption> {
 }
 
 #[test]
-fn child_session_navigation_keybinds_follow_opencode_contract() {
+fn child_session_navigation_keybinds_follow_default_contract() {
     let run_dir = tempfile::tempdir().expect("create temp run dir");
     let (parent_dir, child_a_dir, child_b_dir, parent_events) = session_fixture(run_dir.path());
 
@@ -210,7 +210,7 @@ fn child_session_navigation_keybinds_follow_opencode_contract() {
 
     let mut parent_app =
         AppState::new_live(Some(parent_dir.clone()), false, Some(Arc::clone(&sink)));
-    parent_app.apply_keybindings(opencode_navigation_keybindings());
+    parent_app.apply_keybindings(default_navigation_keybindings());
     for event in parent_events.clone() {
         parent_app.ingest_event(event);
     }
@@ -221,7 +221,7 @@ fn child_session_navigation_keybinds_follow_opencode_contract() {
 
     let mut child_a_app =
         AppState::new_live(Some(child_a_dir.clone()), false, Some(Arc::clone(&sink)));
-    child_a_app.apply_keybindings(opencode_navigation_keybindings());
+    child_a_app.apply_keybindings(default_navigation_keybindings());
     child_a_app.ingest_event(run_started(1));
     child_a_app.ingest_event(agent_spawned(2, "child_a", "worker-a"));
     child_a_app.ingest_event(provider_started(3, "req_child_a", "mock", "model-child-a"));
@@ -239,7 +239,7 @@ fn child_session_navigation_keybinds_follow_opencode_contract() {
     ));
 
     let mut child_b_app = AppState::new_live(Some(child_b_dir.clone()), false, Some(sink));
-    child_b_app.apply_keybindings(opencode_navigation_keybindings());
+    child_b_app.apply_keybindings(default_navigation_keybindings());
     child_b_app.ingest_event(run_started(1));
     child_b_app.ingest_event(agent_spawned(2, "child_b", "worker-b"));
     child_b_app.ingest_event(provider_started(3, "req_child_b", "mock", "model-child-b"));
@@ -281,7 +281,7 @@ fn replay_child_navigation_does_not_emit_live_intents() {
     let (parent_dir, _child_a_dir, _child_b_dir, parent_events) = session_fixture(run_dir.path());
 
     let mut app = AppState::new_replay(parent_dir, parent_events);
-    app.apply_keybindings(opencode_navigation_keybindings());
+    app.apply_keybindings(default_navigation_keybindings());
     app.set_launch_metadata(LaunchMetadata::new(
         "planner",
         "mock",

@@ -16,15 +16,15 @@ run run_fixture · default/local · -
 
 
 
-
-
-
-
-
-  ◷ Permission Requested
-  Apply hashline edit to demo.txt
-  Safest next step: deny. Allow once only after review.
-  call tool_call_pty · dig digest… · timeout 30s
-  Draft preserved · keep this draft
- Ctrl+n deny   default deny · stays fail-closed
- Esc later keeps draft  ·  Ctrl+y allow once
+┃
+┃ △ Permission required
+┃   → Apply hashline edit to demo.txt
+┃
+┃  Apply hashline edit to demo.txt
+┃  call tool_call_pty · dig digest… · timeout 30s
+┃  Draft preserved · keep t
+┃
+┃
+┃
+┃   Allow once   Allow always   Reject                                    ⇆ select  enter confirm
+┃

@@ -29,6 +29,8 @@ fn chrome_helper_inventory_is_exhaustive() {
     assert!(UI_CHROME.contains("pub(super) fn secondary_pane_block"));
     assert!(UI_CHROME.contains("pub(super) fn elevated_card_block"));
     assert!(UI_CHROME.contains("pub(super) fn interruptive_modal_block"));
+    assert!(UI_CHROME.contains("fn render_inline_permission_dock("));
+    assert!(UI_CHROME.contains("if let Some(permission) = app.active_permission_view()"));
 
     assert!(count_occurrences(UI_SECONDARY, "ui_chrome::secondary_pane_block(") >= 1);
     assert!(
@@ -37,7 +39,7 @@ fn chrome_helper_inventory_is_exhaustive() {
     assert!(count_occurrences(UI_OVERLAYS, "render_command_palette_surface(") >= 2);
     assert_eq!(
         count_occurrences(UI_OVERLAYS, "ui_chrome::interruptive_modal_block("),
-        1
+        0
     );
     assert!(count_occurrences(UI_OVERLAYS, "ui_chrome::command_palette_surface(") >= 4);
     assert!(count_occurrences(UI_RS, "chromeless_shell_section(theme)") >= 3);
@@ -76,12 +78,12 @@ fn interruptive_overlays_keep_elevated_card_contract() {
     );
     assert!(
         count_occurrences(UI_OVERLAYS, "render_command_palette_surface(") >= 2,
-        "command palette/session history should route through the dedicated Opencode-style surface helper"
+        "command palette/session history should route through the dedicated shell surface helper"
     );
     assert_eq!(
         count_occurrences(UI_OVERLAYS, "ui_chrome::interruptive_modal_block("),
-        1,
-        "permission modal should stay on the elevated interruptive contract"
+        0,
+        "permission prompt should no longer render as a legacy overlay modal"
     );
     assert!(count_occurrences(UI_OVERLAYS, "ui_chrome::command_palette_surface(") >= 4);
     assert_eq!(
@@ -89,6 +91,11 @@ fn interruptive_overlays_keep_elevated_card_contract() {
         1,
         "runtime overlay should stay on the elevated interruptive contract"
     );
+    assert!(UI_CHROME.contains(
+        "render_inline_permission_dock(frame, app, dock_layout.composer, theme, &permission);"
+    ));
+    assert!(UI_CHROME.contains("let shell_surface = theme.surface.panel;"));
+    assert!(UI_CHROME.contains("let tray_surface = theme.surface.panel_elevated;"));
     assert!(!UI_OVERLAYS.contains("ui_chrome::quiet_overlay_title("));
     assert!(UI_OVERLAYS.contains("ui_chrome::command_palette_surface(theme)"));
     assert!(!UI_OVERLAYS.contains("ui_chrome::quiet_overlay_block("));

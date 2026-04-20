@@ -1012,7 +1012,7 @@ fn native_visual_permission_lifecycle_parity_inner() {
         json!({
             "family": "permission",
             "state": "happy_path",
-            "scenario": "permission_overlay_parity",
+            "scenario": "permission_dock_parity",
             "session_resolution": {
                 "width": NATIVE_VISUAL_SESSION_WIDTH,
                 "height": NATIVE_VISUAL_SESSION_HEIGHT,
@@ -1031,11 +1031,8 @@ fn native_visual_permission_lifecycle_parity_inner() {
         .send_text("keep this draft")
         .unwrap_or_else(|err| panic!("failed to write preserved native permission draft: {err}"));
     let permission_screen = harness
-        .wait_for_all_text(
-            &["Permission Requested", "keep this draft"],
-            STARTUP_TIMEOUT,
-        )
-        .unwrap_or_else(|err| panic!("native permission overlay did not preserve draft: {err}"));
+        .wait_for_all_text(&["Permission required", "keep this draft"], STARTUP_TIMEOUT)
+        .unwrap_or_else(|err| panic!("native permission dock did not preserve draft: {err}"));
     assert!(permission_screen.contains("keep this draft"));
     harness.send_key("C-p").unwrap_or_else(|err| {
         panic!("failed to attempt palette under native permission overlay: {err}")
@@ -1044,33 +1041,28 @@ fn native_visual_permission_lifecycle_parity_inner() {
         panic!("failed to attempt slash under native permission overlay: {err}")
     });
     let stable_permission_screen = harness
-        .wait_for_all_text(
-            &["Permission Requested", "keep this draft"],
-            STARTUP_TIMEOUT,
-        )
-        .unwrap_or_else(|err| panic!("native permission overlay did not remain stable: {err}"));
-    assert!(stable_permission_screen.contains("FAIL CLOSED"));
-    assert!(stable_permission_screen.contains("SESSION PAUSED"));
+        .wait_for_all_text(&["Permission required", "keep this draft"], STARTUP_TIMEOUT)
+        .unwrap_or_else(|err| panic!("native permission dock did not remain stable: {err}"));
+    assert!(stable_permission_screen.contains("Allow once"));
+    assert!(stable_permission_screen.contains("Reject"));
     let permission_checkpoint = harness
         .capture_checkpoint(
             &mut permission_run,
             CHECKPOINT_STARTUP,
             &[
-                "Permission Requested",
-                "FAIL CLOSED",
-                "SESSION PAUSED",
+                "Permission required",
+                "Allow once",
+                "Reject",
                 "keep this draft",
             ],
-            &FocusCapture::anchored_exact("Permission Requested", 24, 1),
+            &FocusCapture::anchored_exact("Permission required", 24, 1),
             Some(json!({
-                "purpose": "permission-overlay-parity",
+                "purpose": "permission-dock-parity",
                 "family": "permission",
                 "state": "happy_path",
             })),
         )
-        .unwrap_or_else(|err| {
-            panic!("failed to capture native permission overlay screenshot: {err}")
-        });
+        .unwrap_or_else(|err| panic!("failed to capture native permission dock screenshot: {err}"));
     assert!(permission_checkpoint.png_path().exists());
 
     harness
@@ -1443,7 +1435,7 @@ fn capture_operator_sidebar_parity_scenario(repo_root: &Path, harness_bin: &Path
         json!({
             "family": "operator_sidebar",
             "state": "parity",
-            "scenario": "opencode_sidebar_session_parity",
+            "scenario": "sidebar_session_parity",
             "session_resolution": {
                 "width": NATIVE_VISUAL_SESSION_WIDTH,
                 "height": NATIVE_VISUAL_SESSION_HEIGHT,
@@ -1490,7 +1482,7 @@ fn capture_operator_sidebar_parity_scenario(repo_root: &Path, harness_bin: &Path
                 "Enter send",
             ],
             &FocusCapture::anchored_exact("Current runtime:", 18, 8),
-            Some(json!({"purpose": "opencode-sidebar-session-parity"})),
+            Some(json!({"purpose": "sidebar-session-parity"})),
         )
         .unwrap_or_else(|err| {
             panic!("failed to capture native operator sidebar parity screenshot: {err}")

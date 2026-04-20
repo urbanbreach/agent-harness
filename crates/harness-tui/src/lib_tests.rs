@@ -26,12 +26,12 @@ delegate_test!(transcript_section_model_keeps_nested_tool_and_error_blocks => ui
 delegate_test!(transcript_reasoning_precedes_answer_and_tool_rows => ui::exact_test_transcript_reasoning_precedes_answer_and_tool_rows);
 delegate_test!(transcript_tool_rows_follow_chronological_turn_order => ui::exact_test_transcript_tool_rows_follow_chronological_turn_order);
 delegate_test!(transcript_applied_edit_missing_diff_surfaces_fallback => ui::exact_test_transcript_applied_edit_missing_diff_surfaces_fallback);
-delegate_test!(transcript_edit_tool_matches_opencode_inline_diff_shape => ui::exact_test_transcript_edit_tool_matches_opencode_inline_diff_shape);
+delegate_test!(transcript_edit_tool_matches_inline_diff_shape => ui::exact_test_transcript_edit_tool_matches_inline_diff_shape);
 delegate_test!(transcript_native_edit_renders_inline_diff_from_artifact => ui::exact_test_transcript_native_edit_renders_inline_diff_from_artifact);
 delegate_test!(transcript_apply_patch_multifile_uses_output_edit_paths => ui::exact_test_transcript_apply_patch_multifile_uses_output_edit_paths);
 delegate_test!(transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs => ui::exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs);
 delegate_test!(transcript_inline_diff_stays_compact_between_tool_rows => ui::exact_test_transcript_inline_diff_stays_compact_between_tool_rows);
-delegate_test!(transcript_proposed_edit_renders_opencode_header => ui::exact_test_transcript_proposed_edit_renders_opencode_header);
+delegate_test!(transcript_proposed_edit_renders_header => ui::exact_test_transcript_proposed_edit_renders_header);
 delegate_test!(transcript_rejected_edit_surfaces_reason_inline => ui::exact_test_transcript_rejected_edit_surfaces_reason_inline);
 delegate_test!(transcript_follow_mode_uses_measured_surface_heights => ui::exact_test_transcript_follow_mode_uses_measured_surface_heights);
 delegate_test!(transcript_scroll_offset_preserves_large_overflow => ui::exact_test_transcript_scroll_offset_preserves_large_overflow);
@@ -40,7 +40,7 @@ delegate_test!(native_tool_transcript_rows_show_disclosure_timestamps_and_task_m
 delegate_test!(mcp_tool_transcript_rows_use_effective_identity_without_generic_fallback => ui::exact_test_mcp_tool_transcript_rows_use_effective_identity_without_generic_fallback);
 delegate_test!(generic_tool_successful_output_prefers_inline_background_rows => ui::exact_test_generic_tool_successful_output_prefers_inline_background_rows);
 delegate_test!(lsp_tool_successful_output_stays_hidden_until_generic_output_enabled => ui::exact_test_lsp_tool_successful_output_stays_hidden_until_generic_output_enabled);
-delegate_test!(todo_tool_rows_stay_hidden_like_opencode => ui::exact_test_todo_tool_rows_stay_hidden_like_opencode);
+delegate_test!(todo_tool_rows_stay_hidden_by_default => ui::exact_test_todo_tool_rows_stay_hidden_by_default);
 delegate_test!(transcript_task_rows_show_child_status_duration_and_counts => ui::exact_test_transcript_task_rows_show_child_status_duration_and_counts);
 delegate_test!(block_tool_cards_skip_empty_subtitle_rows => ui::exact_test_block_tool_cards_skip_empty_subtitle_rows);
 delegate_test!(inline_tool_rows_wrap_long_subtitles_cleanly => ui::exact_test_inline_tool_rows_wrap_long_subtitles_cleanly);
@@ -97,13 +97,13 @@ fn transcript_turn_sections_render_open_rail_surfaces() {
     assert_eq!(
         user_body_column.saturating_sub(user_body_rail),
         3,
-        "user message text should keep Opencode's single rail plus two-column left padding\n{rendered}"
+        "user message text should keep the shell's single rail plus two-column left padding\n{rendered}"
     );
     assert!(
         user_body > 0
             && lines[user_body - 1].contains('┃')
             && !lines[user_body - 1].contains("You"),
-        "user message should use Opencode-style top padding without a synthetic header label\n{rendered}"
+        "user message should use the shell top padding without a synthetic header label\n{rendered}"
     );
     let (user_body_row, user_body_fgs, user_body_bgs) =
         row_at(&buffer, 80, user_body).expect("user body palette row");
@@ -268,7 +268,7 @@ fn transcript_turn_sections_keep_nested_tool_details() {
             [thinking_body_start..thinking_body_start + "tool planning".chars().count()]
             .iter()
             .all(|color| *color == theme.text.secondary),
-        "thinking body should stay muted like Opencode\n{rendered}"
+        "thinking body should stay muted like the shell\n{rendered}"
     );
     let nested_detail_columns = [tool_row, error_row]
         .into_iter()
@@ -291,7 +291,7 @@ delegate_test!(operator_rail_section_model_counts_generic_mcp_activity => ui::ex
 delegate_test!(operator_rail_section_model_separates_mcp_from_native_tool_activity => ui::exact_test_operator_rail_section_model_separates_mcp_from_native_tool_activity);
 delegate_test!(operator_rail_section_model_uses_runtime_mcp_activity_without_config => ui::exact_test_operator_rail_section_model_uses_runtime_mcp_activity_without_config);
 delegate_test!(operator_rail_section_model_keeps_native_prefix_tools_out_of_mcp => ui::exact_test_operator_rail_section_model_keeps_native_prefix_tools_out_of_mcp);
-delegate_test!(operator_rail_matches_opencode_sidebar_text_styles => ui::exact_test_operator_rail_matches_opencode_sidebar_text_styles);
+delegate_test!(operator_rail_matches_sidebar_text_styles => ui::exact_test_operator_rail_matches_sidebar_text_styles);
 delegate_test!(operator_rail_collapses_modified_files_section_body => ui::exact_test_operator_rail_collapses_modified_files_section_body);
 delegate_test!(operator_sidebar_hit_target_maps_section_headers => ui::exact_test_operator_sidebar_hit_target_maps_section_headers);
 
@@ -493,7 +493,7 @@ fn permission_modal_preempts_palette_and_slash() {
     ));
 
     let palette_render = render_live_lines(&palette_app, 100, 24);
-    assert!(palette_render.contains("Permission Requested"));
+    assert!(palette_render.contains("Permission required"));
     assert!(!palette_render.contains("Commands"));
     assert!(!palette_app.palette_visible);
     assert_eq!(
@@ -513,7 +513,7 @@ fn permission_modal_preempts_palette_and_slash() {
     slash_app.handle_key(key(crossterm::event::KeyCode::Char('/')));
 
     let slash_render = render_live_lines(&slash_app, 100, 24);
-    assert!(slash_render.contains("Permission Requested"));
+    assert!(slash_render.contains("Permission required"));
     assert!(!slash_render.contains("Slash commands"));
     assert_eq!(slash_app.prompt_buffer, "/");
     assert!(!slash_app.slash_visible);
@@ -877,7 +877,7 @@ fn replay_shell_is_read_only_without_tab_bar() {
 
 #[cfg(test)]
 #[test]
-fn command_palette_groups_commands_like_opencode() {
+fn command_palette_groups_commands_for_shell() {
     let mut app = app::AppState::new_startup(
         vec![startup_session_entry(
             "run_resume",
@@ -1088,7 +1088,7 @@ fn startup_composer_keeps_inset_input_then_metadata_row_order() {
         assert_eq!(
             metadata_row,
             composer_input_row + 2,
-            "startup metadata should keep Opencode's blank spacer between the input and metadata rows at {width}x{height}\n{rendered}"
+            "startup metadata should keep the shell's blank spacer between the input and metadata rows at {width}x{height}\n{rendered}"
         );
         assert_eq!(
             composer_last_row,
@@ -1108,7 +1108,7 @@ fn startup_composer_keeps_inset_input_then_metadata_row_order() {
 
 #[cfg(test)]
 #[test]
-fn startup_composer_width_stays_capped_like_opencode() {
+fn startup_composer_width_stays_capped_for_shell() {
     let app = app::AppState::new_startup(Vec::new(), None);
 
     for (width, height) in [(80, 24), (100, 30), (160, 48)] {
@@ -1117,7 +1117,7 @@ fn startup_composer_width_stays_capped_like_opencode() {
 
         assert_eq!(
             dock.shell.width, 75,
-            "startup composer should keep the Opencode width cap at {width}x{height}"
+            "startup composer should keep the shell width cap at {width}x{height}"
         );
         assert_eq!(dock.composer.width, 75);
     }
@@ -1744,14 +1744,14 @@ delegate_test!(live_shell_redesign_preserves_replay_overlay_and_permission_parit
 
 #[cfg(test)]
 #[test]
-fn opencode_dark_theme_is_default() {
+fn harness_dark_theme_is_default() {
     let default = Theme::default();
-    let opencode_dark = Theme::opencode_dark();
+    let harness_dark = Theme::harness_dark();
 
-    assert_eq!(default.surface, opencode_dark.surface);
-    assert_eq!(default.border, opencode_dark.border);
-    assert_eq!(default.text, opencode_dark.text);
-    assert_eq!(default.status, opencode_dark.status);
+    assert_eq!(default.surface, harness_dark.surface);
+    assert_eq!(default.border, harness_dark.border);
+    assert_eq!(default.text, harness_dark.text);
+    assert_eq!(default.status, harness_dark.status);
 }
 
 #[cfg(test)]
@@ -1820,8 +1820,8 @@ fn theme_tokens_cover_live_shell_states() {
 
 #[cfg(test)]
 #[test]
-fn opencode_dark_theme_has_exact_palette() {
-    let theme = Theme::opencode_dark();
+fn harness_dark_theme_has_exact_palette() {
+    let theme = Theme::harness_dark();
 
     assert_eq!(
         theme.surface.canvas,
@@ -2152,7 +2152,7 @@ fn live_layout_breakpoints_choose_shell_variant() {
 
 #[cfg(test)]
 #[test]
-fn layout_breakpoints_match_opencode_parity_contract() {
+fn layout_breakpoints_match_shell_parity_contract() {
     let mut wide = app::AppState::new_live(None, false, None);
     wide.active_tab = app::Tab::Run;
     for event in session_view_events() {
@@ -2599,7 +2599,7 @@ fn legacy_three_row_composer_contract_removed() {
 
 #[cfg(test)]
 #[test]
-fn live_shell_composer_contract_matches_opencode_parity() {
+fn live_shell_composer_contract_matches_shell_parity() {
     let ready = app::AppState::new_live(None, false, None);
     assert_live_shell_document_composer_contract(&ready, 100, 30, None, None, "Ctrl+p commands");
 
@@ -2804,12 +2804,12 @@ fn session_view_ignores_duplicate_seq_without_losing_ui_state() {
 
     app.ingest_event(permission_requested_event(1, "perm_1", "tool_call_1"));
     app.handle_key(key(crossterm::event::KeyCode::Esc));
-    assert!(app.active_permission().is_none());
+    assert!(app.active_permission().is_some());
+    assert!(app.permission_submission_pending("perm_1"));
 
     app.focus = app::Focus::Prompt;
-    for c in "draft".chars() {
-        app.handle_key(key(crossterm::event::KeyCode::Char(c)));
-    }
+    app.prompt_buffer = "draft".to_string();
+    app.prompt_cursor = "draft".chars().count();
 
     app.ingest_event(envelope(
         1,
@@ -2821,7 +2821,8 @@ fn session_view_ignores_duplicate_seq_without_losing_ui_state() {
     ));
 
     assert_eq!(app.events.len(), 1);
-    assert!(app.active_permission().is_none());
+    assert!(app.active_permission().is_some());
+    assert!(app.permission_submission_pending("perm_1"));
     assert_eq!(app.prompt_buffer, "draft");
     assert_eq!(app.prompt_cursor, "draft".chars().count());
 }
@@ -3453,6 +3454,7 @@ fn orchestration_projection_retains_only_recent_terminal_rows() {
         harness_core::event::EventV1::TaskCancelled(harness_core::event::TaskCancelledEvent {
             task_id: "task_terminal_2".to_string(),
             reason: "cancelled 2".to_string(),
+            task_scope: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -3514,6 +3516,7 @@ fn orchestration_projection_retains_only_recent_terminal_rows() {
         harness_core::event::EventV1::TaskCancelled(harness_core::event::TaskCancelledEvent {
             task_id: "task_terminal_5".to_string(),
             reason: "cancelled 5".to_string(),
+            task_scope: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -4393,7 +4396,13 @@ fn permission_modal_snapshot_renders_request() {
         &app,
         80,
         24,
-        &["Permission Requested", "default deny", "Ctrl+n deny"],
+        &[
+            "Permission required",
+            "Allow once",
+            "Allow always",
+            "enter",
+            "⇆",
+        ],
     );
 }
 
@@ -4608,25 +4617,27 @@ fn module_permission_modal_remains_visually_dominant_and_fail_closed() {
     let rendered = render_live_lines(&app, 100, 24);
     let buffer = render_live_cells(&app, 100, 24);
     let theme = Theme::default();
-    let (row, _, bgs) = row_text_and_palette(&buffer, 100, "Ctrl+n deny").expect("deny badge row");
-    let start_byte = row.find("Ctrl+n deny").expect("badge substring");
+    let (row, _, bgs) = row_text_and_palette(&buffer, 100, "Allow once").expect("allow chip row");
+    let start_byte = row.find("Allow once").expect("chip substring");
     let start = row[..start_byte].chars().count();
-    let end = start + "Ctrl+n deny".chars().count();
+    let end = start + "Allow once".chars().count();
 
     assert_eq!(
         app.overlay_stack().ordered(),
         &[overlay::OverlayKind::PermissionModal]
     );
     assert!(!app.palette_visible);
-    assert!(rendered.contains("Permission Requested"));
-    assert!(rendered.contains("default deny"));
-    assert!(rendered.contains("Safest next step: deny. Allow once only after review."));
+    assert!(rendered.contains("Permission required"));
+    assert!(rendered.contains("Allow once"));
+    assert!(rendered.contains("Allow always"));
+    assert!(rendered.contains("enter"));
+    assert!(rendered.contains("⇆"));
     assert!(!rendered.contains("Commands"));
     assert!(
         bgs[start..end]
             .iter()
-            .all(|color| *color == theme.status.error),
-        "deny badge should stay stronger than quiet command overlays\n{row}"
+            .all(|color| *color == theme.status.warning),
+        "selected allow chip should stay stronger than quiet command overlays\n{row}"
     );
 }
 
@@ -4817,6 +4828,7 @@ fn live_status_strip_distinguishes_terminal_states() {
         harness_core::event::EventV1::TaskCancelled(harness_core::event::TaskCancelledEvent {
             task_id: "req_cancel".to_string(),
             reason: "operator cancelled".to_string(),
+            task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
         }),
     ));
     let cancelled_debug = render_live_buffer(&cancelled, 80, 24);
@@ -4853,9 +4865,11 @@ fn live_status_strip_distinguishes_terminal_states() {
     let mut permission_blocked = app::AppState::new_live(None, false, None);
     permission_blocked.ingest_event(permission_requested_event(1, "perm_blocked", "tool_call_1"));
     let permission_blocked_debug = render_live_buffer(&permission_blocked, 80, 24);
-    assert!(permission_blocked_debug.contains("Permission Requested"));
-    assert!(permission_blocked_debug.contains("Draft preserved beneath this checkpoint."));
-    assert!(permission_blocked_debug.contains("default deny"));
+    assert!(permission_blocked_debug.contains("Permission required"));
+    assert!(permission_blocked_debug.contains("Allow once"));
+    assert!(permission_blocked_debug.contains("Allow always"));
+    assert!(permission_blocked_debug.contains("enter"));
+    assert!(permission_blocked_debug.contains("⇆"));
 
     permission_blocked.handle_key(key_with_modifiers(
         crossterm::event::KeyCode::Char('y'),
@@ -5004,7 +5018,7 @@ fn streaming_transcript_auto_scrolls_to_latest_wrapped_content() {
 
 #[cfg(test)]
 #[test]
-fn transcript_scrollbar_matches_opencode_session_shape() {
+fn transcript_scrollbar_matches_session_shape() {
     let mut app = app::AppState::new_live(None, false, None);
     app.activities = std::collections::VecDeque::from(
         (0..14)
@@ -5113,7 +5127,7 @@ fn transcript_without_overflow_hides_scrollbar() {
     let rendered = render_live_lines(&app, 80, 24);
     assert!(
         !rendered.contains('│'),
-        "non-overflow transcripts should not reserve the Opencode scrollbar track\n{rendered}"
+        "non-overflow transcripts should not reserve the shell scrollbar track\n{rendered}"
     );
 }
 
@@ -5545,7 +5559,7 @@ fn permission_overlay_preserves_draft_and_transcript_context() {
 
     let debug = render_live_buffer(&app, 80, 24);
     assert!(!debug.contains("Composer · disabled · Permission blocked"));
-    assert!(debug.contains("Permission Requested"));
+    assert!(debug.contains("Permission required"));
     assert!(debug.contains("Draft preserved · keep this draft"));
     assert!(!debug.contains("Select an activity to view transcript"));
     assert!(
@@ -5556,7 +5570,7 @@ fn permission_overlay_preserves_draft_and_transcript_context() {
 
 #[cfg(test)]
 #[test]
-fn permission_overlay_continues_buffering_plain_draft_input() {
+fn permission_overlay_ignores_plain_draft_input_once_prompt_is_active() {
     let mut app = app::AppState::new_live(None, false, None);
 
     for c in "keep this dr".chars() {
@@ -5574,12 +5588,41 @@ fn permission_overlay_continues_buffering_plain_draft_input() {
     }
     app.handle_key(key(crossterm::event::KeyCode::Char('/')));
 
-    assert_eq!(app.prompt_buffer, "keep this draft");
+    assert_eq!(app.prompt_buffer, "keep this dr");
     assert!(app.active_permission().is_some());
 
     let debug = render_live_buffer(&app, 80, 24);
-    assert!(debug.contains("Draft preserved · keep this draft"));
+    assert!(debug.contains("Draft preserved · keep this dr"));
     assert!(!debug.contains("Slash commands"));
+}
+
+#[cfg(test)]
+#[test]
+fn permission_overlay_preserves_existing_draft_without_buffering_new_letters() {
+    let mut app = app::AppState::new_live(None, false, None);
+
+    for c in "keep t".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(c)));
+    }
+
+    app.ingest_event(permission_requested_event(
+        1,
+        "perm_overlay_home_row_input",
+        "tool_call_overlay_home_row_input",
+    ));
+
+    for c in "zz".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(c)));
+    }
+
+    assert_eq!(app.prompt_buffer, "keep t");
+    assert_eq!(
+        app.permission_modal_selection("perm_overlay_home_row_input"),
+        app::PermissionModalSelection::AllowOnce
+    );
+
+    let debug = render_live_buffer(&app, 80, 24);
+    assert!(debug.contains("Draft preserved · keep t"));
 }
 
 #[cfg(test)]
@@ -6603,7 +6646,14 @@ fn permission_modal_preempts_prompt_submission() {
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
     let intents = intents.lock().expect("lock intents");
-    assert!(intents.is_empty());
+    assert_eq!(
+        intents.as_slice(),
+        &[UiIntent::ResolvePermission {
+            permission_id: "perm_block_submit".to_string(),
+            decision: harness_core::perm::PermissionDecision::Allow,
+            reason: None,
+        }]
+    );
     drop(intents);
 
     assert_eq!(app.prompt_buffer, "blocked by permission");
@@ -8083,10 +8133,10 @@ fn live_shell_inline_tool_state_snapshot() {
         80,
         24,
         &[
-            "Permission Requested",
-            "Tool fs.read is paused for review.",
+            "Permission required",
+            "Apply hashline edit to demo.txt",
             "tool fs.read · dig digest…",
-            "Ctrl+n deny",
+            "Allow once",
         ],
     );
 }
@@ -8190,9 +8240,9 @@ fn live_shell_permission_preserves_draft_snapshot() {
         80,
         24,
         &[
-            "Permission Requested",
+            "Permission required",
             "Draft preserved · keep this draft",
-            "Ctrl+n deny",
+            "Allow once",
         ],
     );
 }
@@ -8267,6 +8317,7 @@ fn live_status_strip_suppresses_request_digest_from_cancelled_summary() {
         harness_core::event::EventV1::TaskCancelled(harness_core::event::TaskCancelledEvent {
             task_id: "req_cancelled_visual".to_string(),
             reason: "mock fixture missing for request_digest=digest-cancelled-visual".to_string(),
+            task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
         }),
     ));
 
@@ -9192,8 +9243,8 @@ fn runtime_state_overlay_never_stacks_over_permission_modal() {
     let rendered = render_live_lines(&app, 80, 24);
 
     assert!(ui::runtime_overlay_text_for_test(&app, 72).is_none());
-    assert!(rendered.contains("Permission Requested"));
-    assert!(rendered.contains("default deny"));
+    assert!(rendered.contains("Permission required"));
+    assert!(rendered.contains("Allow once"));
     assert!(!rendered.contains("Recovery in progress"));
 }
 
@@ -9479,7 +9530,7 @@ fn review_surfaces_are_command_driven_without_tab_contract() {
     let replay_help_debug = render_live_buffer(&replay, 80, 24);
     assert!(replay_help_debug.contains("Replay shell:"));
     assert!(!replay_help_debug.contains("Commands"));
-    assert!(!replay_help_debug.contains("Permission Requested"));
+    assert!(!replay_help_debug.contains("Permission required"));
 
     replay.handle_key(key(crossterm::event::KeyCode::Esc));
     assert_eq!(replay.review_surface(), None);

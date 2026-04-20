@@ -2,12 +2,16 @@ use super::*;
 
 use ratatui::widgets::Padding;
 
-use crate::layout::{ControlDockLayout, FrameLayoutPlan, SessionFooterMode, SessionHeaderMode};
+use crate::layout::{
+    pad_rect, permission_dock_layout, ControlDockLayout, FrameLayoutPlan, SessionFooterMode,
+    SessionHeaderMode,
+};
 use crate::theme::{ChromeMode, DividerIntensity};
 
 use super::ui_overlays::{
     permission_modal_actions_text, permission_modal_draft_line, permission_modal_guidance,
-    permission_modal_metadata_line, permission_modal_summary_line, permission_modal_title,
+    permission_modal_icon, permission_modal_metadata_line, permission_modal_subject_line,
+    permission_modal_summary_line, permission_modal_title, question_permission_actions_text,
     question_permission_answer_text, question_permission_body_text,
 };
 
@@ -29,23 +33,23 @@ pub(super) const COMPOSER_RAIL_GLYPH: &str = "┃";
 pub(super) const COMPOSER_RAIL_CAP_GLYPH: &str = "╹";
 pub(super) const COMPOSER_SEPARATOR_GLYPH: &str = "▀";
 
-const fn opencode_dark_accent() -> Color {
+const fn command_palette_accent() -> Color {
     Color::Rgb(0x9D, 0x7C, 0xD8)
 }
 
-pub(super) const fn opencode_input_surface(theme: &Theme) -> Color {
+pub(super) const fn composer_input_surface(theme: &Theme) -> Color {
     theme.surface.panel_elevated
 }
 
-pub(super) const fn opencode_input_text(theme: &Theme) -> Color {
+pub(super) const fn composer_input_text(theme: &Theme) -> Color {
     theme.text.primary
 }
 
-pub(super) const fn opencode_input_muted(theme: &Theme) -> Color {
+pub(super) const fn composer_input_muted(theme: &Theme) -> Color {
     theme.text.secondary
 }
 
-pub(super) const fn opencode_input_accent(theme: &Theme) -> Color {
+pub(super) const fn composer_input_accent(theme: &Theme) -> Color {
     theme.text.accent
 }
 
@@ -54,15 +58,15 @@ pub(super) const fn command_palette_surface(theme: &Theme) -> Color {
 }
 
 pub(super) const fn command_palette_title(theme: &Theme) -> Color {
-    opencode_input_text(theme)
+    composer_input_text(theme)
 }
 
 pub(super) const fn command_palette_muted(theme: &Theme) -> Color {
-    opencode_input_muted(theme)
+    composer_input_muted(theme)
 }
 
 pub(super) const fn command_palette_section() -> Color {
-    opencode_dark_accent()
+    command_palette_accent()
 }
 
 pub(super) const fn command_palette_selection_bg(theme: &Theme) -> Color {
@@ -1027,9 +1031,14 @@ fn render_inline_permission_dock(
     }
 
     let submission_pending = app.permission_submission_pending(&permission.permission_id);
-    let shell_surface = elevated_card_surface(theme);
-    let tray_surface = opencode_input_surface(theme);
-    let tray_height = area.height.min(2);
+    let is_question = permission.question_prompts.is_some();
+    let dock_layout = permission_dock_layout(area, is_question);
+    let always_confirm = !is_question
+        && app.permission_modal_stage(&permission.permission_id)
+            == crate::app::PermissionModalStage::AlwaysConfirm;
+    let shell_surface = theme.surface.panel;
+    let tray_surface = theme.surface.panel_elevated;
+    let tray_height = dock_layout.tray_height;
     let sections = if area.height > tray_height {
         Layout::default()
             .direction(Direction::Vertical)
@@ -1044,57 +1053,141 @@ fn render_inline_permission_dock(
     let shell_area = sections[0];
     let tray_area = sections[1];
 
-    frame.render_widget(
-        Block::default().style(Style::default().bg(shell_surface)),
-        shell_area,
-    );
-    if tray_area.height > 0 {
-        frame.render_widget(
-            Block::default().style(Style::default().bg(tray_surface)),
-            tray_area,
-        );
-    }
-
-    let shell_inner = inset_rect(shell_area, 2.min(shell_area.width.saturating_sub(1)), 0);
-    if shell_inner.width == 0 || shell_inner.height == 0 {
-        return;
-    }
-
-    let shell_rows = if shell_inner.height > 1 {
+    let columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(dock_layout.rail_width),
+            Constraint::Min(0),
+        ])
+        .split(area);
+    let rail_area = columns[0];
+    let body_area = columns[1];
+    let body_sections = if body_area.height > tray_height {
         Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Min(0)])
-            .split(shell_inner)
+            .constraints([Constraint::Min(1), Constraint::Length(tray_height)])
+            .split(body_area)
     } else {
         Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(1), Constraint::Length(0)])
-            .split(shell_inner)
+            .split(body_area)
     };
+    let shell_body_area = body_sections[0];
+    let tray_body_area = body_sections[1];
 
     frame.render_widget(
-        Paragraph::new(Line::from(vec![
+        Block::default().style(Style::default().bg(shell_surface)),
+        shell_body_area,
+    );
+    if tray_body_area.height > 0 {
+        frame.render_widget(
+            Block::default().style(Style::default().bg(tray_surface)),
+            tray_body_area,
+        );
+    }
+
+    if rail_area.width > 0 && rail_area.height > 0 {
+        let rail_color = theme.status.warning;
+        let shell_rows = usize::from(shell_area.height);
+        let tray_rows = usize::from(tray_area.height);
+        let mut lines = Vec::with_capacity(shell_rows.saturating_add(tray_rows).max(1));
+        lines.extend(
+            std::iter::repeat_with(|| {
+                Line::from(Span::styled(
+                    COMPOSER_RAIL_GLYPH,
+                    Style::default().fg(rail_color).bg(shell_surface),
+                ))
+            })
+            .take(shell_rows),
+        );
+        lines.extend(
+            std::iter::repeat_with(|| {
+                Line::from(Span::styled(
+                    COMPOSER_RAIL_GLYPH,
+                    Style::default().fg(rail_color).bg(tray_surface),
+                ))
+            })
+            .take(tray_rows),
+        );
+        if lines.is_empty() {
+            lines.push(Line::from(Span::styled(
+                COMPOSER_RAIL_GLYPH,
+                Style::default().fg(rail_color).bg(shell_surface),
+            )));
+        }
+        frame.render_widget(Paragraph::new(lines), rail_area);
+    }
+
+    let shell_inner = pad_rect(shell_body_area, dock_layout.shell_padding);
+    if shell_inner.width == 0 || shell_inner.height == 0 {
+        return;
+    }
+
+    let header = if always_confirm {
+        Text::from(vec![Line::from(vec![
             Span::styled(
-                format!("{} ", theme.live_shell.glyphs.pending_permission),
+                "△",
                 Style::default().fg(theme.status.warning).bg(shell_surface),
             ),
+            Span::styled(" ", Style::default().bg(shell_surface)),
             Span::styled(
-                permission_modal_title(permission),
-                Style::default()
-                    .fg(opencode_input_text(theme))
-                    .bg(shell_surface)
-                    .add_modifier(Modifier::BOLD),
+                "Always allow",
+                Style::default().fg(theme.text.primary).bg(shell_surface),
             ),
-        ])),
-        shell_rows[0],
-    );
+        ])])
+    } else {
+        let icon = permission_modal_icon(permission);
+        let subject = permission_modal_subject_line(permission);
+        Text::from(vec![
+            Line::from(vec![
+                Span::styled(
+                    "△",
+                    Style::default().fg(theme.status.warning).bg(shell_surface),
+                ),
+                Span::styled(" ", Style::default().bg(shell_surface)),
+                Span::styled(
+                    permission_modal_title(permission),
+                    Style::default().fg(theme.text.primary).bg(shell_surface),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("  ", Style::default().bg(shell_surface)),
+                Span::styled(
+                    icon,
+                    Style::default().fg(theme.text.secondary).bg(shell_surface),
+                ),
+                Span::styled(" ", Style::default().bg(shell_surface)),
+                Span::styled(
+                    subject,
+                    Style::default().fg(theme.text.primary).bg(shell_surface),
+                ),
+            ]),
+        ])
+    };
+    let header_height = u16::try_from(header.lines.len())
+        .unwrap_or(u16::MAX)
+        .min(shell_inner.height);
+    let body_gap = dock_layout
+        .header_gap
+        .min(shell_inner.height.saturating_sub(header_height));
+    let shell_rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(header_height),
+            Constraint::Length(body_gap),
+            Constraint::Min(0),
+        ])
+        .split(shell_inner);
+    frame.render_widget(Paragraph::new(header), shell_rows[0]);
 
-    if shell_rows[1].width > 0 && shell_rows[1].height > 0 {
+    if shell_rows[2].width > 0 && shell_rows[2].height > 0 {
         let metadata_style = Style::default().fg(theme.text.secondary).bg(shell_surface);
         let summary_style = Style::default().fg(theme.text.primary).bg(shell_surface);
-        let guidance_style = Style::default().fg(theme.text.primary).bg(shell_surface);
+        let guidance_style = Style::default().fg(theme.text.secondary).bg(shell_surface);
         let body = if let Some(prompts) = permission.question_prompts.as_ref() {
             let mut lines = question_permission_body_text(
+                app,
                 permission,
                 prompts,
                 submission_pending,
@@ -1109,56 +1202,212 @@ fn render_inline_permission_dock(
                 question_permission_answer_text(app, permission, theme, shell_surface).lines,
             );
             Text::from(lines)
-        } else {
+        } else if submission_pending {
             Text::from(vec![
                 Line::from(vec![Span::styled(
                     permission_modal_summary_line(permission, submission_pending),
-                    summary_style.add_modifier(Modifier::BOLD),
+                    summary_style,
                 )]),
                 Line::from(vec![Span::styled(
                     permission_modal_guidance(permission, submission_pending),
-                    guidance_style,
-                )]),
-                Line::from(vec![Span::styled(
-                    permission_modal_metadata_line(permission),
-                    metadata_style,
-                )]),
-                Line::from(vec![Span::styled(
-                    permission_modal_draft_line(app.prompt_buffer.as_str()),
                     metadata_style,
                 )]),
             ])
+        } else if always_confirm {
+            Text::from(vec![
+                Line::from(vec![Span::styled(
+                    "This will allow this exact request until the harness is restarted.",
+                    metadata_style,
+                )]),
+                Line::from(vec![Span::styled(
+                    permission_modal_metadata_line(permission),
+                    summary_style,
+                )]),
+            ])
+        } else {
+            let mut lines = vec![Line::from(vec![Span::styled(
+                permission_modal_summary_line(permission, false),
+                summary_style,
+            )])];
+            lines.push(Line::from(vec![Span::styled(
+                permission_modal_metadata_line(permission),
+                metadata_style,
+            )]));
+            let draft = permission_modal_draft_line(app.prompt_buffer.as_str());
+            if !draft.is_empty() {
+                lines.push(Line::from(vec![Span::styled(draft, guidance_style)]));
+            }
+            Text::from(lines)
         };
 
         frame.render_widget(
             Paragraph::new(body)
                 .style(Style::default().bg(shell_surface))
                 .wrap(Wrap { trim: true }),
-            shell_rows[1],
+            pad_rect(shell_rows[2], dock_layout.body_padding),
         );
     }
 
-    if tray_area.width == 0 || tray_area.height == 0 {
+    if tray_body_area.width == 0 || tray_body_area.height == 0 {
         return;
     }
 
-    let tray_inner = inset_rect(tray_area, 1.min(tray_area.width.saturating_sub(1)), 0);
+    let tray_inner = pad_rect(tray_body_area, dock_layout.tray_padding);
     if tray_inner.width == 0 || tray_inner.height == 0 {
         return;
     }
 
-    frame.render_widget(
-        Paragraph::new(permission_modal_actions_text(
-            app,
+    if submission_pending {
+        frame.render_widget(
+            Paragraph::new(permission_modal_actions_text(
+                app,
+                theme,
+                tray_surface,
+                submission_pending,
+                permission.question_prompts.is_some(),
+            ))
+            .style(Style::default().bg(tray_surface))
+            .wrap(Wrap { trim: true }),
+            tray_inner,
+        );
+        return;
+    }
+
+    if is_question {
+        frame.render_widget(
+            Paragraph::new(question_permission_actions_text(
+                app,
+                permission,
+                permission.question_prompts.as_deref().unwrap_or(&[]),
+                theme,
+                tray_surface,
+            ))
+            .style(Style::default().bg(tray_surface))
+            .wrap(Wrap { trim: true }),
+            tray_inner,
+        );
+        return;
+    }
+
+    let action_line = if always_confirm {
+        permission_prompt_action_line(
             theme,
             tray_surface,
-            submission_pending,
-            permission.question_prompts.is_some(),
-        ))
-        .style(Style::default().bg(tray_surface))
-        .wrap(Wrap { trim: true }),
-        tray_inner,
+            &[
+                (
+                    "Confirm",
+                    app.permission_modal_confirm_selection(&permission.permission_id)
+                        == crate::app::PermissionConfirmSelection::Confirm,
+                ),
+                (
+                    "Cancel",
+                    app.permission_modal_confirm_selection(&permission.permission_id)
+                        == crate::app::PermissionConfirmSelection::Cancel,
+                ),
+            ],
+        )
+    } else {
+        let selection = app.permission_modal_selection(&permission.permission_id);
+        permission_prompt_action_line(
+            theme,
+            tray_surface,
+            &[
+                (
+                    "Allow once",
+                    selection == crate::app::PermissionModalSelection::AllowOnce,
+                ),
+                (
+                    "Allow always",
+                    selection == crate::app::PermissionModalSelection::AllowAlways,
+                ),
+                (
+                    "Reject",
+                    selection == crate::app::PermissionModalSelection::Reject,
+                ),
+            ],
+        )
+    };
+    let hint_line = permission_prompt_hint_line(theme, tray_surface);
+    let hint_width = u16::try_from(display_width("⇆ select  enter confirm")).unwrap_or(u16::MAX);
+    let narrow = area.width < dock_layout.stacked_hint_min_width
+        || tray_inner.width <= hint_width.saturating_add(dock_layout.stacked_hint_min_action_width);
+
+    if narrow && tray_inner.height > 1 {
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Length(1)])
+            .split(tray_inner);
+        frame.render_widget(
+            Paragraph::new(action_line).style(Style::default().bg(tray_surface)),
+            rows[0],
+        );
+        frame.render_widget(
+            Paragraph::new(hint_line).style(Style::default().bg(tray_surface)),
+            rows[1],
+        );
+        return;
+    }
+
+    let footer_columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(hint_width.min(tray_inner.width)),
+        ])
+        .split(tray_inner);
+    frame.render_widget(
+        Paragraph::new(action_line).style(Style::default().bg(tray_surface)),
+        footer_columns[0],
     );
+    if footer_columns[1].width > 0 {
+        frame.render_widget(
+            Paragraph::new(hint_line)
+                .style(Style::default().bg(tray_surface))
+                .alignment(Alignment::Right),
+            footer_columns[1],
+        );
+    }
+}
+
+fn permission_prompt_action_line(
+    theme: &Theme,
+    surface: Color,
+    options: &[(&str, bool)],
+) -> Line<'static> {
+    let selected_style = Style::default()
+        .fg(theme.text.inverse)
+        .bg(theme.status.warning);
+    let unselected_style = Style::default().fg(theme.text.secondary).bg(surface);
+    let mut spans = Vec::new();
+    for (index, (label, selected)) in options.iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::styled(" ", Style::default().bg(surface)));
+        }
+        spans.push(Span::styled(
+            format!(" {label} "),
+            if *selected {
+                selected_style
+            } else {
+                unselected_style
+            },
+        ));
+    }
+    Line::from(spans)
+}
+
+fn permission_prompt_hint_line(theme: &Theme, surface: Color) -> Line<'static> {
+    Line::from(vec![
+        Span::styled("⇆", Style::default().fg(theme.text.primary).bg(surface)),
+        Span::styled(
+            " select  ",
+            Style::default().fg(theme.text.secondary).bg(surface),
+        ),
+        Span::styled("enter", Style::default().fg(theme.text.primary).bg(surface)),
+        Span::styled(
+            " confirm",
+            Style::default().fg(theme.text.secondary).bg(surface),
+        ),
+    ])
 }
 
 fn render_document_composer_content(
@@ -1173,7 +1422,7 @@ fn render_document_composer_content(
         crate::view_model::ControlDockVariant::Startup
     );
     let surface = control_dock_surface(theme, context.dock.variant);
-    let composer_surface = opencode_input_surface(theme);
+    let composer_surface = composer_input_surface(theme);
     let prompt_area = area;
     frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
 
@@ -1276,14 +1525,14 @@ fn render_document_composer_content(
     let body_color = if context.dock.composer_disabled {
         theme.status.disabled
     } else if placeholder_visible {
-        opencode_input_muted(theme)
+        composer_input_muted(theme)
     } else {
-        opencode_input_text(theme)
+        composer_input_text(theme)
     };
     let rail_color = if context.dock.composer_disabled {
         theme.status.disabled
     } else {
-        opencode_input_accent(theme)
+        composer_input_accent(theme)
     };
 
     if rail_area.height > 0 {
@@ -1492,9 +1741,9 @@ fn control_dock_summary_tone_to_metadata_tone(
 
 fn composer_metadata_color(tone: ComposerMetadataTone, theme: &Theme) -> Color {
     match tone {
-        ComposerMetadataTone::Accent => opencode_input_accent(theme),
-        ComposerMetadataTone::Primary => opencode_input_text(theme),
-        ComposerMetadataTone::Secondary => opencode_input_muted(theme),
+        ComposerMetadataTone::Accent => composer_input_accent(theme),
+        ComposerMetadataTone::Primary => composer_input_text(theme),
+        ComposerMetadataTone::Secondary => composer_input_muted(theme),
         ComposerMetadataTone::Tertiary => theme.text.tertiary,
     }
 }
@@ -2361,7 +2610,7 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
 
     assert_eq!(
         buffer[(right_edge, composer.y)].bg,
-        opencode_input_surface(&Theme::default())
+        composer_input_surface(&Theme::default())
     );
     assert_eq!(
         buffer[(
@@ -2369,11 +2618,11 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
             composer.y.saturating_add(composer.height.saturating_sub(1))
         )]
             .fg,
-        opencode_input_surface(&Theme::default())
+        composer_input_surface(&Theme::default())
     );
     assert_eq!(
         buffer[(right_edge, dock.shell.y)].bg,
-        opencode_input_surface(&Theme::default())
+        composer_input_surface(&Theme::default())
     );
     assert_ne!(
         buffer[(right_edge, dock.shell.y)].symbol(),

@@ -1875,7 +1875,7 @@ fn build_tool_call_section(
 
     let task_row = app.transcript_task_row_for_tool_call(tool_call);
 
-    Some(build_opencode_tool_call_section(
+    Some(build_transcript_tool_call_section(
         tool_call,
         task_row.as_ref(),
         timestamps_visible,
@@ -1886,7 +1886,7 @@ fn build_tool_call_section(
     ))
 }
 
-fn build_opencode_tool_call_section(
+fn build_transcript_tool_call_section(
     tool_call: &crate::app::ToolCallEntry,
     task_row: Option<&crate::app::OrchestrationTaskRow>,
     _timestamps_visible: bool,
@@ -3382,14 +3382,14 @@ fn tool_error_prefix_candidates(tool_call: &crate::app::ToolCallEntry) -> Vec<St
         if !normalized.is_empty() {
             candidates.insert(normalized);
         }
-        for alias in opencode_tool_error_aliases(candidate) {
+        for alias in tool_error_aliases(candidate) {
             candidates.insert(alias.to_string());
         }
     }
     candidates.into_iter().collect()
 }
 
-fn opencode_tool_error_aliases(tool_id: &str) -> &'static [&'static str] {
+fn tool_error_aliases(tool_id: &str) -> &'static [&'static str] {
     match tool_id {
         "fs.read" | "read" => &["read"],
         "fs.ls" | "list" => &["list"],
@@ -4434,15 +4434,15 @@ fn append_tool_call_section_lines(
 ) {
     match tool_call.header.visual_style {
         TranscriptToolCallVisualStyle::Inline => {
-            append_opencode_inline_tool_section_lines(lines, tool_call, theme, width, base_surface)
+            append_inline_tool_section_lines(lines, tool_call, theme, width, base_surface)
         }
         TranscriptToolCallVisualStyle::Block => {
-            append_opencode_block_tool_section_lines(lines, tool_call, theme, width, base_surface)
+            append_block_tool_section_lines(lines, tool_call, theme, width, base_surface)
         }
     }
 }
 
-fn append_opencode_inline_tool_section_lines(
+fn append_inline_tool_section_lines(
     lines: &mut Vec<Line<'static>>,
     tool_call: &TranscriptToolCallSection,
     theme: &Theme,
@@ -4473,7 +4473,7 @@ fn append_opencode_inline_tool_section_lines(
     append_tool_call_detail_blocks(lines, tool_call, theme, width, base_surface, None);
 }
 
-fn append_opencode_block_tool_section_lines(
+fn append_block_tool_section_lines(
     lines: &mut Vec<Line<'static>>,
     tool_call: &TranscriptToolCallSection,
     theme: &Theme,
@@ -6754,6 +6754,7 @@ fn tool_task_completion_summary_does_not_render_as_assistant_body() {
                     parent_tool_call_id: Some("tc_docs_tokio".to_string()),
                     ..harness_core::event::TaskLineageMetadata::default()
                 }),
+                task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
                 timing: None,
                 hook_executions: Vec::new(),
             }),
@@ -6782,12 +6783,12 @@ fn tool_task_completion_summary_does_not_render_as_assistant_body() {
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_transcript_edit_tool_matches_opencode_inline_diff_shape() {
+pub(crate) fn exact_test_transcript_edit_tool_matches_inline_diff_shape() {
     let run_dir = tempfile::tempdir().expect("create run dir");
     let artifacts_dir = run_dir.path().join("artifacts");
     std::fs::create_dir_all(&artifacts_dir).expect("create artifacts dir");
     std::fs::write(
-        artifacts_dir.join("opencode-inline.diff"),
+        artifacts_dir.join("harness-inline.diff"),
         "--- crates/harness-tui/src/ui.rs\n+++ crates/harness-tui/src/ui.rs\n@@ -44,8 +44,7 @@\n use ui_secondary::{\n-    render_diff_tab, render_events_tab, render_help_tab,\n+    render_events_tab, render_help_tab, render_live_details_overlay,\n     render_operator_sidebar,\n };\n",
     )
     .expect("write inline diff fixture");
@@ -6816,7 +6817,7 @@ pub(crate) fn exact_test_transcript_edit_tool_matches_opencode_inline_diff_shape
             summary: Some("Remove diff review surface".to_string()),
             patch_digest: Some("digest-patch".to_string()),
             new_file_digest: Some("digest-new-file".to_string()),
-            diff_rel_path: Some("artifacts/opencode-inline.diff".to_string()),
+            diff_rel_path: Some("artifacts/harness-inline.diff".to_string()),
             diff_digest: Some("digest-diff".to_string()),
             rejection_reason: None,
         }),
@@ -6850,7 +6851,7 @@ pub(crate) fn exact_test_transcript_edit_tool_matches_opencode_inline_diff_shape
     assert!(rendered.contains("44"));
     assert!(
         !rendered.contains("@@ -44,8 +44,7 @@"),
-        "inline transcript diffs should suppress raw hunk headers to match Opencode chat diffs\n{rendered}"
+        "inline transcript diffs should suppress raw hunk headers to match harness chat diffs\n{rendered}"
     );
     assert!(
         rendered.lines().any(|line| {
@@ -7368,7 +7369,7 @@ pub(crate) fn exact_test_transcript_applied_edit_missing_diff_surfaces_fallback(
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_transcript_proposed_edit_renders_opencode_header() {
+pub(crate) fn exact_test_transcript_proposed_edit_renders_header() {
     let mut app = AppState::default();
     let mut entry =
         transcript_section_model_test_activity("request-edit-proposed", ActivityStatus::Done, "");
@@ -7490,7 +7491,7 @@ pub(crate) fn exact_test_transcript_follow_mode_uses_measured_surface_heights() 
         transcript_section_model_test_activity(
             "request-long",
             ActivityStatus::Done,
-            "this reply is intentionally long enough to wrap across several measured surface rows and keep wrapping even after the Opencode-style footer gap is accounted for in measured layout",
+        "this reply is intentionally long enough to wrap across several measured surface rows and keep wrapping even after the harness footer gap is accounted for in measured layout",
         ),
         transcript_section_model_test_activity(
             "request-short",
@@ -7671,9 +7672,9 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
     alias_read.last_timestamp = native_read.last_timestamp.clone();
 
     let native_read_section =
-        build_opencode_tool_call_section(&native_read, None, true, false, false, false, None);
+        build_transcript_tool_call_section(&native_read, None, true, false, false, false, None);
     let alias_read_section =
-        build_opencode_tool_call_section(&alias_read, None, true, false, false, false, None);
+        build_transcript_tool_call_section(&alias_read, None, true, false, false, false, None);
     assert_eq!(
         native_read_section.header.title,
         alias_read_section.header.title
@@ -7732,7 +7733,7 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
     task_call.last_timestamp = Some("2026-03-22T14:36:01Z".to_string());
 
     let task_section =
-        build_opencode_tool_call_section(&task_call, None, true, false, false, false, None);
+        build_transcript_tool_call_section(&task_call, None, true, false, false, false, None);
     assert_eq!(
         task_section.header.disclosure_state,
         Some(TranscriptToolCallDisclosureState::Collapsed)
@@ -7776,7 +7777,7 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
     fetch_call.last_timestamp = Some("2026-03-22T14:37:12Z".to_string());
 
     let fetch_section =
-        build_opencode_tool_call_section(&fetch_call, None, true, false, false, false, None);
+        build_transcript_tool_call_section(&fetch_call, None, true, false, false, false, None);
     assert_eq!(fetch_section.header.disclosure_state, None);
     let mut fetch_lines = Vec::new();
     append_tool_call_section_lines(
@@ -7809,7 +7810,7 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
     generic_call.status = ToolCallDisplayStatus::Succeeded;
     generic_call.timing_elapsed_ms = Some(800);
     let generic_section =
-        build_opencode_tool_call_section(&generic_call, None, true, false, false, false, None);
+        build_transcript_tool_call_section(&generic_call, None, true, false, false, false, None);
     assert_eq!(
         generic_section.header.title,
         "vendor.magic child parity [limit=3]"
@@ -7890,9 +7891,9 @@ pub(crate) fn exact_test_mcp_tool_transcript_rows_use_effective_identity_without
     wrapper_call.timing_elapsed_ms = Some(900);
 
     let direct_section =
-        build_opencode_tool_call_section(&direct_call, None, true, false, false, false, None);
+        build_transcript_tool_call_section(&direct_call, None, true, false, false, false, None);
     let wrapper_section =
-        build_opencode_tool_call_section(&wrapper_call, None, true, false, false, false, None);
+        build_transcript_tool_call_section(&wrapper_call, None, true, false, false, false, None);
 
     assert_eq!(
         direct_section.header.title,
@@ -7944,7 +7945,7 @@ pub(crate) fn exact_test_mcp_tool_transcript_rows_use_effective_identity_without
     assert!(!wrapper_text.contains("Compat alias"));
 
     let expanded_wrapper =
-        build_opencode_tool_call_section(&wrapper_call, None, true, false, true, false, None);
+        build_transcript_tool_call_section(&wrapper_call, None, true, false, true, false, None);
     let expanded_text = transcript_test_line_texts({
         let mut lines = Vec::new();
         append_tool_call_section_lines(
@@ -7971,7 +7972,7 @@ pub(crate) fn exact_test_generic_tool_successful_output_prefers_inline_backgroun
     tool_call.timing_elapsed_ms = Some(250);
 
     let section =
-        build_opencode_tool_call_section(&tool_call, None, true, false, false, false, None);
+        build_transcript_tool_call_section(&tool_call, None, true, false, false, false, None);
     assert_eq!(
         section.header.visual_style,
         TranscriptToolCallVisualStyle::Inline
@@ -7993,7 +7994,7 @@ pub(crate) fn exact_test_generic_tool_successful_output_prefers_inline_backgroun
         .all(|line| !line.trim_start().starts_with('┃')));
 
     let visible =
-        build_opencode_tool_call_section(&tool_call, None, true, true, false, false, None);
+        build_transcript_tool_call_section(&tool_call, None, true, true, false, false, None);
     assert_eq!(
         visible.header.visual_style,
         TranscriptToolCallVisualStyle::Block
@@ -8016,7 +8017,7 @@ pub(crate) fn exact_test_generic_tool_successful_output_prefers_inline_backgroun
     assert!(visible_text.contains('…'));
 
     let expanded =
-        build_opencode_tool_call_section(&tool_call, None, true, false, true, false, None);
+        build_transcript_tool_call_section(&tool_call, None, true, false, true, false, None);
     let expanded_text = transcript_test_line_texts({
         let mut lines = Vec::new();
         append_tool_call_section_lines(&mut lines, &expanded, &theme, 96, theme.surface.panel);
@@ -8038,7 +8039,7 @@ pub(crate) fn exact_test_lsp_tool_successful_output_stays_hidden_until_generic_o
     tool_call.output_summary = Some("result 1\nresult 2\nresult 3\nresult 4".to_string());
 
     let hidden =
-        build_opencode_tool_call_section(&tool_call, None, true, false, false, false, None);
+        build_transcript_tool_call_section(&tool_call, None, true, false, false, false, None);
     assert_eq!(
         hidden.header.visual_style,
         TranscriptToolCallVisualStyle::Inline
@@ -8057,7 +8058,7 @@ pub(crate) fn exact_test_lsp_tool_successful_output_stays_hidden_until_generic_o
     assert!(!hidden_text.contains("result 1"));
 
     let visible =
-        build_opencode_tool_call_section(&tool_call, None, true, true, false, false, None);
+        build_transcript_tool_call_section(&tool_call, None, true, true, false, false, None);
     assert_eq!(
         visible.header.visual_style,
         TranscriptToolCallVisualStyle::Block
@@ -8076,7 +8077,7 @@ pub(crate) fn exact_test_lsp_tool_successful_output_stays_hidden_until_generic_o
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_todo_tool_rows_stay_hidden_like_opencode() {
+pub(crate) fn exact_test_todo_tool_rows_stay_hidden_by_default() {
     let app = AppState::new_live(None, false, None);
 
     let mut write_call = transcript_section_model_test_tool_call("tc-todo-write", "todo.write");
@@ -8250,7 +8251,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
 
     let running_tool = &app.activities[0].tool_calls[0];
     let running_row = app.transcript_task_row_for_tool_call(running_tool);
-    let running_section = build_opencode_tool_call_section(
+    let running_section = build_transcript_tool_call_section(
         running_tool,
         running_row.as_ref(),
         true,
@@ -8312,6 +8313,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
                     child_request_id: Some("req_child".to_string()),
                     ..harness_core::event::TaskLineageMetadata::default()
                 }),
+                task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
                 timing: Some(harness_core::event::ExecutionTimingMetadata {
                     started_mono_ms: Some(400),
                     finished_mono_ms: Some(2_000),
@@ -8343,7 +8345,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
 
     let completed_tool = &app.activities[0].tool_calls[0];
     let completed_row = app.transcript_task_row_for_tool_call(completed_tool);
-    let completed_section = build_opencode_tool_call_section(
+    let completed_section = build_transcript_tool_call_section(
         completed_tool,
         completed_row.as_ref(),
         true,
@@ -8384,7 +8386,7 @@ pub(crate) fn exact_test_block_tool_cards_skip_empty_subtitle_rows() {
     shell_call.last_mono_ms = 0;
 
     let section =
-        build_opencode_tool_call_section(&shell_call, None, false, false, false, false, None);
+        build_transcript_tool_call_section(&shell_call, None, false, false, false, false, None);
     assert_eq!(section.header.subtitle, Some("Failed".to_string()));
 
     let mut lines = Vec::new();
@@ -8416,7 +8418,7 @@ pub(crate) fn exact_test_block_tool_cards_skip_empty_subtitle_rows() {
 }
 
 #[cfg(test)]
-fn failed_tool_cards_parse_opencode_error_copy() {
+fn failed_tool_cards_parse_legacy_error_copy() {
     let mut tool_call = transcript_section_model_test_tool_call("tc-webfetch-failure", "web.fetch");
     tool_call.status = ToolCallDisplayStatus::Failed;
     tool_call.output_summary = Some(
@@ -8425,7 +8427,7 @@ fn failed_tool_cards_parse_opencode_error_copy() {
     );
 
     let section =
-        build_opencode_tool_call_section(&tool_call, None, false, false, false, false, None);
+        build_transcript_tool_call_section(&tool_call, None, false, false, false, false, None);
 
     assert_eq!(section.header.subtitle, Some("Request failed".to_string()));
     assert!(section.detail_blocks.iter().any(|block| {
@@ -8446,7 +8448,7 @@ fn failed_tool_cards_normalize_lowercase_error_prefixes_and_tool_separators() {
     tool_call.output_summary = Some("error: webfetch: Request failed: 404 Not Found".to_string());
 
     let section =
-        build_opencode_tool_call_section(&tool_call, None, false, false, false, false, None);
+        build_transcript_tool_call_section(&tool_call, None, false, false, false, false, None);
 
     assert_eq!(section.header.subtitle, Some("Request failed".to_string()));
     assert!(section.detail_blocks.iter().any(|block| {
@@ -8477,7 +8479,7 @@ fn denied_tool_cards_use_denied_subtitle() {
     }];
 
     let section =
-        build_opencode_tool_call_section(&tool_call, None, false, false, false, false, None);
+        build_transcript_tool_call_section(&tool_call, None, false, false, false, false, None);
 
     assert_eq!(section.header.subtitle, Some("Denied".to_string()));
     assert!(section.detail_blocks.iter().any(|block| {
@@ -8509,7 +8511,7 @@ fn denied_tool_cards_keep_denied_subtitle_when_reason_contains_colon() {
     }];
 
     let section =
-        build_opencode_tool_call_section(&tool_call, None, false, false, false, false, None);
+        build_transcript_tool_call_section(&tool_call, None, false, false, false, false, None);
 
     assert_eq!(section.header.subtitle, Some("Denied".to_string()));
     assert!(section.detail_blocks.iter().any(|block| {
@@ -8531,7 +8533,7 @@ fn generic_failed_tool_messages_do_not_split_arbitrary_prefixes() {
         Some("Error: GET https://example.com: connection refused".to_string());
 
     let section =
-        build_opencode_tool_call_section(&tool_call, None, false, false, false, false, None);
+        build_transcript_tool_call_section(&tool_call, None, false, false, false, false, None);
 
     assert_eq!(section.header.subtitle, Some("Failed".to_string()));
     assert!(section.detail_blocks.iter().any(|block| {
@@ -8550,7 +8552,7 @@ fn failed_tool_cards_fallback_when_error_details_are_missing() {
     tool_call.status = ToolCallDisplayStatus::Failed;
 
     let section =
-        build_opencode_tool_call_section(&tool_call, None, false, false, false, false, None);
+        build_transcript_tool_call_section(&tool_call, None, false, false, false, false, None);
 
     assert_eq!(section.header.subtitle, Some("Failed".to_string()));
     assert!(section.detail_blocks.iter().any(|block| {
@@ -8805,8 +8807,8 @@ mod tests {
     }
 
     #[test]
-    fn failed_tool_cards_parse_opencode_error_copy() {
-        super::failed_tool_cards_parse_opencode_error_copy();
+    fn failed_tool_cards_parse_legacy_error_copy() {
+        super::failed_tool_cards_parse_legacy_error_copy();
     }
 
     #[test]
@@ -9336,7 +9338,7 @@ mod tests {
             ActivityStatus::Done,
             "answer",
         );
-        entry.thinking_text = "Matching Opencode response spacing".to_string();
+        entry.thinking_text = "Matching harness response spacing".to_string();
         app.activities = std::collections::VecDeque::from(vec![entry]);
         app.selected_activity_index = 0;
 
@@ -9348,7 +9350,7 @@ mod tests {
 
         assert!(lines
             .iter()
-            .any(|line| line.contains("Matching Opencode response spacing")));
+            .any(|line| line.contains("Matching harness response spacing")));
         assert!(lines.iter().any(|line| line.is_empty()));
         assert!(lines.iter().any(|line| line.contains("answer")));
     }
@@ -9397,7 +9399,7 @@ mod tests {
     }
 
     #[test]
-    fn transcript_scrollbar_layout_matches_opencode_lane_width() {
+    fn transcript_scrollbar_layout_matches_shell_lane_width() {
         let viewport = transcript_viewport_layout(Rect::new(4, 2, 20, 12), true);
 
         assert_eq!(viewport.content, Rect::new(4, 2, 19, 12));
@@ -9413,7 +9415,7 @@ mod tests {
     }
 
     #[test]
-    fn assistant_tool_surface_spacing_matches_opencode_rhythm() {
+    fn assistant_tool_surface_spacing_matches_shell_rhythm() {
         assert_eq!(
             transcript_surface_leading_gap(
                 Some(TranscriptRenderSurfaceKind::AssistantBody),

@@ -1,14 +1,13 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-assertion_line: 109
 expression: "checkpoint_visual_snapshot(&stable_screen,\n&[LIVE_STATE_FIXTURES.permission.marker,\nLIVE_STATE_FIXTURES.permission.draft_text,], &permission_visual,)"
 ---
-Permission Requested: true
+Permission required: true
 keep this draft: true
-focus_marker: Permission Requested
-focus_render_state_blake3: 221d95eecad1e232b39f9f8f1ce5258e133e1540d5d1dedc826c5a347631b85f
+focus_marker: Permission required
+focus_render_state_blake3: 7114a0ae97ff9afc4b5281417c01c5ed317af5e9dc4c62d9ba015fb119cb1528
 focus_region_cells: row=17, col=6, height=1, width=24
-image: pty_permission_overlay_parity.png
+image: pty_permission_dock_parity.png
 manifest_json: pty-manifests/permission/manifest.json
 manifest_jsonl: pty-manifests/permission/manifest.jsonl
 size_px: 1280x720

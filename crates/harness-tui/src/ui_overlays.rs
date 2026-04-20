@@ -903,161 +903,6 @@ fn palette_command_description(command: &str) -> &'static str {
         .unwrap_or("")
 }
 
-#[allow(dead_code)]
-fn render_permission_modal(
-    frame: &mut Frame,
-    app: &AppState,
-    permission: &crate::app::ActivePermissionView,
-    theme: &Theme,
-    root: Rect,
-    popup_rect: Rect,
-) {
-    render_overlay_backdrop(frame, root, theme.surface.canvas);
-    frame.render_widget(Clear, popup_rect);
-    let surface = ui_chrome::elevated_card_surface(theme);
-    let title = permission_modal_title(permission);
-    let submission_pending = app.permission_submission_pending(&permission.permission_id);
-    let metadata_style = Style::default().fg(theme.text.secondary).bg(surface);
-    let summary_style = Style::default().fg(theme.text.primary).bg(surface);
-    let guidance_style = Style::default().fg(theme.text.primary).bg(surface);
-    let block = ui_chrome::interruptive_modal_block(
-        theme,
-        Line::from(vec![
-            Span::styled(
-                format!("{} ", theme.live_shell.glyphs.pending_permission),
-                Style::default().fg(theme.status.warning),
-            ),
-            Span::styled(
-                title,
-                Style::default()
-                    .fg(theme.text.accent)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]),
-        theme.status.warning,
-        theme.text.accent,
-        ui_chrome::ChromeFrame::Frame,
-    );
-    let inner = block.inner(popup_rect);
-    frame.render_widget(block, popup_rect);
-
-    if inner.width == 0 || inner.height == 0 {
-        return;
-    }
-
-    let is_question = permission.question_prompts.is_some();
-    let sections = if is_question {
-        Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1),
-                Constraint::Min(6),
-                Constraint::Length(5),
-                Constraint::Length(2),
-            ])
-            .split(inner)
-    } else {
-        Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1),
-                Constraint::Length(4),
-                Constraint::Length(2),
-            ])
-            .split(inner)
-    };
-
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            status_badge("FAIL CLOSED", theme.status.error, theme),
-            Span::styled("  ", metadata_style),
-            Span::styled(
-                "SESSION PAUSED",
-                Style::default()
-                    .fg(theme.status.warning)
-                    .bg(surface)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]))
-        .style(metadata_style),
-        sections[0],
-    );
-
-    if let Some(prompts) = permission.question_prompts.as_ref() {
-        frame.render_widget(
-            Paragraph::new(question_permission_body_text(
-                permission,
-                prompts,
-                submission_pending,
-                app.prompt_buffer.as_str(),
-                metadata_style,
-                summary_style,
-                guidance_style,
-            ))
-            .style(summary_style)
-            .wrap(Wrap { trim: true }),
-            sections[1],
-        );
-        frame.render_widget(
-            Paragraph::new(question_permission_answer_text(
-                app, permission, theme, surface,
-            ))
-            .style(Style::default().fg(theme.text.primary).bg(surface))
-            .wrap(Wrap { trim: false }),
-            sections[2],
-        );
-    } else {
-        frame.render_widget(
-            Paragraph::new(Text::from(vec![
-                Line::from(vec![Span::styled(
-                    truncate_plain_text(
-                        &permission_modal_summary_line(permission, submission_pending),
-                        usize::from(sections[1].width),
-                    ),
-                    summary_style.add_modifier(Modifier::BOLD),
-                )]),
-                Line::from(vec![Span::styled(
-                    truncate_plain_text(
-                        permission_modal_guidance(permission, submission_pending),
-                        usize::from(sections[1].width),
-                    ),
-                    guidance_style,
-                )]),
-                Line::from(vec![Span::styled(
-                    truncate_plain_text(
-                        &permission_modal_draft_line(app.prompt_buffer.as_str()),
-                        usize::from(sections[1].width),
-                    ),
-                    metadata_style,
-                )]),
-                Line::from(vec![Span::styled(
-                    truncate_plain_text(
-                        &permission_modal_metadata_line(permission),
-                        usize::from(sections[1].width),
-                    ),
-                    metadata_style,
-                )]),
-            ]))
-            .style(summary_style)
-            .wrap(Wrap { trim: true }),
-            sections[1],
-        );
-    }
-
-    frame.render_widget(
-        Paragraph::new(permission_modal_actions_text(
-            app,
-            theme,
-            surface,
-            submission_pending,
-            is_question,
-        ))
-        .style(Style::default().fg(theme.text.secondary).bg(surface))
-        .wrap(Wrap { trim: true }),
-        sections[if is_question { 3 } else { 2 }],
-    );
-}
-
 pub(super) fn permission_modal_metadata_line(
     permission: &crate::app::ActivePermissionView,
 ) -> String {
@@ -1089,6 +934,60 @@ fn abbreviated_digest(digest: &str) -> String {
     short
 }
 
+pub(super) fn permission_modal_icon(permission: &crate::app::ActivePermissionView) -> &'static str {
+    let kind = permission.kind.as_str();
+    if kind.eq_ignore_ascii_case("question")
+        || kind.eq_ignore_ascii_case("ask")
+        || kind.eq_ignore_ascii_case("ask_user")
+    {
+        return "?";
+    }
+    if kind.eq_ignore_ascii_case("edit")
+        || kind.eq_ignore_ascii_case("edit_fs")
+        || kind.eq_ignore_ascii_case("lsp")
+    {
+        return "→";
+    }
+    if kind.eq_ignore_ascii_case("shell") || kind.eq_ignore_ascii_case("bash") {
+        return "#";
+    }
+    if kind.eq_ignore_ascii_case("task") {
+        return "#";
+    }
+    if kind.eq_ignore_ascii_case("webfetch") {
+        return "%";
+    }
+    if kind.eq_ignore_ascii_case("websearch") {
+        return "◈";
+    }
+    if kind.eq_ignore_ascii_case("codesearch") {
+        return "◇";
+    }
+    "⚙"
+}
+
+pub(super) fn permission_modal_subject_line(
+    permission: &crate::app::ActivePermissionView,
+) -> String {
+    if permission.kind.eq_ignore_ascii_case("question")
+        || permission.kind.eq_ignore_ascii_case("ask")
+        || permission.kind.eq_ignore_ascii_case("ask_user")
+    {
+        return "Answer operator question".to_string();
+    }
+
+    let summary = permission.summary.trim();
+    if !summary.is_empty() && !summary.starts_with('{') && !summary.starts_with('[') {
+        return summary.to_string();
+    }
+
+    permission
+        .tool_label
+        .as_deref()
+        .map(|tool| format!("Review {tool}"))
+        .unwrap_or_else(|| format!("Review {}", permission.kind.replace('_', " ")))
+}
+
 pub(super) fn permission_modal_title(
     permission: &crate::app::ActivePermissionView,
 ) -> &'static str {
@@ -1096,9 +995,9 @@ pub(super) fn permission_modal_title(
         || permission.kind.eq_ignore_ascii_case("ask")
         || permission.kind.eq_ignore_ascii_case("ask_user")
     {
-        "Question Requested"
+        "Question required"
     } else {
-        "Permission Requested"
+        "Permission required"
     }
 }
 
@@ -1145,23 +1044,10 @@ pub(super) fn permission_modal_summary_line(
 pub(super) fn permission_modal_draft_line(prompt_buffer: &str) -> String {
     let draft = prompt_buffer.trim();
     if draft.is_empty() {
-        "Draft preserved beneath this checkpoint.".to_string()
+        String::new()
     } else {
         format!("Draft preserved · {draft}")
     }
-}
-
-#[allow(dead_code)]
-fn render_overlay_backdrop(frame: &mut Frame, area: Rect, background: Color) {
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-
-    frame.render_widget(Clear, area);
-    frame.render_widget(
-        Block::default().style(Style::default().bg(background)),
-        area,
-    );
 }
 
 fn render_overlay_dim_backdrop(frame: &mut Frame, area: Rect) {
@@ -1245,7 +1131,7 @@ pub(super) fn permission_modal_actions_text(
     }
 
     let deny_label = app.keymap.get_binding_label(Action::DenyPermission, "deny");
-    let later_label = app.keymap.get_binding_label(Action::DismissModal, "later");
+    let reject_label = app.keymap.get_binding_label(Action::DismissModal, "reject");
     let allow_label = app
         .keymap
         .get_binding_label(Action::AllowPermission, "allow once");
@@ -1258,9 +1144,9 @@ pub(super) fn permission_modal_actions_text(
         Line::from(vec![
             Span::styled(
                 if is_question {
-                    format!("{later_label} defers the question")
+                    format!("{reject_label} rejects the question")
                 } else {
-                    format!("{later_label} keeps draft")
+                    format!("{reject_label} rejects")
                 },
                 metadata_style,
             ),
@@ -1277,7 +1163,68 @@ pub(super) fn permission_modal_actions_text(
     ])
 }
 
+pub(super) fn question_permission_actions_text(
+    app: &AppState,
+    permission: &crate::app::ActivePermissionView,
+    prompts: &[crate::app::QuestionPromptView],
+    theme: &Theme,
+    surface: Color,
+) -> Text<'static> {
+    let primary_style = Style::default().fg(theme.text.primary).bg(surface);
+    let metadata_style = Style::default().fg(theme.text.secondary).bg(surface);
+    let single = prompts.len() == 1 && !prompts[0].multiple;
+    let confirm = !single && app.question_prompt_tab(&permission.permission_id) >= prompts.len();
+    let editing = app.question_prompt_editing(&permission.permission_id);
+    let submit_label = if confirm {
+        "submit"
+    } else if prompts
+        .get(app.question_prompt_tab(&permission.permission_id))
+        .is_some_and(|prompt| prompt.multiple)
+    {
+        "toggle"
+    } else if single {
+        "submit"
+    } else {
+        "confirm"
+    };
+
+    let mut spans = Vec::new();
+    if !single {
+        spans.push(Span::styled("⇆", primary_style));
+        spans.push(Span::styled(" tab  ", metadata_style));
+    }
+    if editing {
+        spans.push(Span::styled("enter", primary_style));
+        spans.push(Span::styled(" save  ", metadata_style));
+        spans.push(Span::styled("esc", primary_style));
+        spans.push(Span::styled(" cancel", metadata_style));
+        return Text::from(vec![
+            Line::from(spans),
+            Line::from(vec![Span::styled(
+                "default deny · stays fail-closed",
+                metadata_style,
+            )]),
+        ]);
+    }
+    if !confirm {
+        spans.push(Span::styled("↑↓", primary_style));
+        spans.push(Span::styled(" select  ", metadata_style));
+    }
+    spans.push(Span::styled("enter", primary_style));
+    spans.push(Span::styled(format!(" {submit_label}  "), metadata_style));
+    spans.push(Span::styled("esc", primary_style));
+    spans.push(Span::styled(" dismiss", metadata_style));
+    Text::from(vec![
+        Line::from(spans),
+        Line::from(vec![Span::styled(
+            "default deny · stays fail-closed",
+            metadata_style,
+        )]),
+    ])
+}
+
 pub(super) fn question_permission_body_text(
+    app: &AppState,
     permission: &crate::app::ActivePermissionView,
     prompts: &[crate::app::QuestionPromptView],
     submission_pending: bool,
@@ -1306,29 +1253,142 @@ pub(super) fn question_permission_body_text(
         Line::from(""),
     ];
 
-    for (index, prompt) in prompts.iter().enumerate() {
+    if prompts.is_empty() {
+        return Text::from(lines);
+    }
+
+    let single = prompts.len() == 1 && !prompts[0].multiple;
+    let tab = app
+        .question_prompt_tab(&permission.permission_id)
+        .min(prompts.len());
+    let confirm = !single && tab >= prompts.len();
+    let answers = app.question_prompt_answers(&permission.permission_id);
+
+    if !single {
+        let mut tabs = Vec::new();
+        for (index, prompt) in prompts.iter().enumerate() {
+            if index > 0 {
+                tabs.push(Span::styled(" ", metadata_style));
+            }
+            let answered = answers.get(index).is_some_and(|value| !value.is_empty());
+            tabs.push(Span::styled(
+                format!(" {} ", prompt.header),
+                if index == tab {
+                    summary_style.add_modifier(Modifier::BOLD)
+                } else if answered {
+                    summary_style
+                } else {
+                    metadata_style
+                },
+            ));
+        }
+        tabs.push(Span::styled(" ", metadata_style));
+        tabs.push(Span::styled(
+            " Confirm ",
+            if confirm {
+                summary_style.add_modifier(Modifier::BOLD)
+            } else {
+                metadata_style
+            },
+        ));
+        lines.push(Line::from(tabs));
+        lines.push(Line::from(""));
+    }
+
+    if confirm {
         lines.push(Line::from(vec![Span::styled(
-            format!("[{}] {}", prompt.header, prompt.question),
+            "Review",
             summary_style.add_modifier(Modifier::BOLD),
         )]));
-        for option in &prompt.options {
-            lines.push(Line::from(vec![Span::styled(
-                format!("  - {} — {}", option.label, option.description),
-                guidance_style,
-            )]));
+        for (index, prompt) in prompts.iter().enumerate() {
+            let value = answers
+                .get(index)
+                .map(|value| value.join(", "))
+                .unwrap_or_default();
+            lines.push(Line::from(vec![
+                Span::styled(format!("{}: ", prompt.header), metadata_style),
+                Span::styled(
+                    if value.is_empty() {
+                        "(not answered)".to_string()
+                    } else {
+                        value
+                    },
+                    if answers.get(index).is_some_and(|value| !value.is_empty()) {
+                        summary_style
+                    } else {
+                        metadata_style
+                    },
+                ),
+            ]));
         }
+        return Text::from(lines);
+    }
+
+    let prompt = &prompts[tab.min(prompts.len().saturating_sub(1))];
+    let selected = app.question_prompt_selection(&permission.permission_id);
+    let current_answers = answers.get(tab).cloned().unwrap_or_default();
+
+    lines.push(Line::from(vec![Span::styled(
+        if prompt.multiple {
+            format!("{} (select all that apply)", prompt.question)
+        } else {
+            prompt.question.clone()
+        },
+        summary_style.add_modifier(Modifier::BOLD),
+    )]));
+
+    for (index, option) in prompt.options.iter().enumerate() {
+        let picked = current_answers.iter().any(|value| value == &option.label);
+        let marker = if index == selected { "›" } else { " " };
+        let label = if prompt.multiple {
+            format!("[{}] {}", if picked { '✓' } else { ' ' }, option.label)
+        } else if picked {
+            format!("{} ✓", option.label)
+        } else {
+            option.label.clone()
+        };
         lines.push(Line::from(vec![Span::styled(
-            if prompt.multiple {
-                format!(
-                    "  answer line {} with comma-separated labels or custom text",
-                    index + 1
-                )
+            format!("{marker} {}. {label}", index + 1),
+            if index == selected {
+                summary_style
             } else {
-                format!("  answer line {} with one label or custom text", index + 1)
+                guidance_style
             },
+        )]));
+        lines.push(Line::from(vec![Span::styled(
+            format!("    {}", option.description),
             metadata_style,
         )]));
-        lines.push(Line::from(""));
+    }
+
+    if prompt.custom {
+        let picked = app
+            .question_prompt_custom(&permission.permission_id, tab)
+            .is_some_and(|value| !value.is_empty())
+            && current_answers.iter().any(|value| {
+                app.question_prompt_custom(&permission.permission_id, tab)
+                    .is_some_and(|custom| custom == value)
+            });
+        let active = selected == prompt.options.len();
+        lines.push(Line::from(vec![Span::styled(
+            format!(
+                "{} {}. {}",
+                if active { "›" } else { " " },
+                prompt.options.len() + 1,
+                if prompt.multiple {
+                    format!("[{}] Type your own answer", if picked { '✓' } else { ' ' })
+                } else if picked {
+                    "Type your own answer ✓".to_string()
+                } else {
+                    "Type your own answer".to_string()
+                }
+            ),
+            if active {
+                summary_style
+            } else {
+                guidance_style
+            },
+        )]));
     }
 
     Text::from(lines)
@@ -1342,16 +1402,40 @@ pub(super) fn question_permission_answer_text(
 ) -> Text<'static> {
     let metadata_style = Style::default().fg(theme.text.secondary).bg(surface);
     let primary_style = Style::default().fg(theme.text.primary).bg(surface);
-    let mut lines = vec![
-        Line::from(vec![Span::styled(
-            "Answers (one line per question)",
-            primary_style.add_modifier(Modifier::BOLD),
-        )]),
-        Line::from(vec![Span::styled(
-            app.question_answer_preview(&permission.permission_id),
-            primary_style,
-        )]),
-    ];
+    let Some(prompts) = permission.question_prompts.as_ref() else {
+        return Text::default();
+    };
+    let single = prompts.len() == 1 && !prompts[0].multiple;
+    let confirm = !single && app.question_prompt_tab(&permission.permission_id) >= prompts.len();
+    let editing = app.question_prompt_editing(&permission.permission_id);
+    let mut lines = if confirm {
+        vec![Line::from(vec![Span::styled(
+            "Allow once submits the selected answers.",
+            metadata_style,
+        )])]
+    } else if editing {
+        vec![
+            Line::from(vec![Span::styled(
+                "Custom answer",
+                primary_style.add_modifier(Modifier::BOLD),
+            )]),
+            Line::from(vec![Span::styled(
+                app.question_answer_preview(&permission.permission_id),
+                primary_style,
+            )]),
+        ]
+    } else {
+        let value = app.question_answer_preview(&permission.permission_id);
+        let mut lines = Vec::new();
+        if !value.is_empty() {
+            lines.push(Line::from(vec![Span::styled(
+                "Custom answer",
+                primary_style.add_modifier(Modifier::BOLD),
+            )]));
+            lines.push(Line::from(vec![Span::styled(value, metadata_style)]));
+        }
+        lines
+    };
     if let Some(error) = app.question_answer_error(&permission.permission_id) {
         lines.push(Line::from(vec![Span::styled(
             error.to_string(),
@@ -1359,7 +1443,11 @@ pub(super) fn question_permission_answer_text(
         )]));
     } else {
         lines.push(Line::from(vec![Span::styled(
-            "Press Enter for a new line, then send with allow once.",
+            if editing {
+                "Press Enter to save the custom answer."
+            } else {
+                "Select an option, then allow once sends the answers."
+            },
             metadata_style,
         )]));
     }

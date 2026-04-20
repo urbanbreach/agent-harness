@@ -56,7 +56,7 @@ const CELL_HEIGHT: u32 = 30;
 const PTY_RENDER_CONFIG: TerminalRenderConfig = TerminalRenderConfig::new(CELL_WIDTH, CELL_HEIGHT);
 
 #[test]
-fn pty_e2e_permission_overlay_parity() {
+fn pty_e2e_permission_dock_parity() {
     if !cfg!(target_os = "linux") {
         return;
     }
@@ -90,7 +90,7 @@ fn pty_e2e_permission_overlay_parity() {
     let stable_screen = stabilize_screen(&mut harness.parser, &harness.output_rx, current_screen);
     let permission_visual = capture_manifest_backed_visual_checkpoint(
         "permission",
-        "permission_overlay_parity",
+        "permission_dock_parity",
         &harness.parser,
         &visual_dir,
         LIVE_STATE_FIXTURES.permission.focus_capture,
@@ -107,7 +107,7 @@ fn pty_e2e_permission_overlay_parity() {
     assert!(!stable_screen.contains(STARTUP_COMMAND_PALETTE_MARKER));
     assert!(visual_dir.join(&permission_visual.file_name).exists());
     insta::assert_snapshot!(
-        "pty_permission_overlay_parity",
+        "pty_permission_dock_parity",
         checkpoint_visual_snapshot(
             &stable_screen,
             &[
@@ -269,14 +269,14 @@ struct PermissionFixture {
 
 impl PermissionFixture {
     const TOOL_CALL: Self = Self {
-        marker: "Permission Requested",
+        marker: "Permission required",
         draft_text: "keep this draft",
         approve_key: 0x19,
         follow_toggle_key: b' ',
         rewind_key: b'k',
         rewind_steps: 64,
-        focus_capture: FocusCapture::anchored_exact("Permission Requested", 24, 1),
-        snapshot_markers: &["Permission Requested", "keep this draft", "Draft preserved"],
+        focus_capture: FocusCapture::anchored_exact("Permission required", 24, 1),
+        snapshot_markers: &["Permission required", "keep this draft", "Allow once"],
     };
 
     fn write_preserved_draft(self, writer: &mut dyn Write) -> std::io::Result<()> {
@@ -1611,7 +1611,7 @@ async fn pty_helper_operator_sidebar_session_contract() {
 }
 
 #[test]
-fn pty_e2e_opencode_sidebar_session_parity() {
+fn pty_e2e_sidebar_session_parity() {
     if !cfg!(target_os = "linux") {
         return;
     }
@@ -1650,7 +1650,7 @@ fn pty_e2e_opencode_sidebar_session_parity() {
     );
     let sidebar_visual = capture_manifest_backed_visual_checkpoint(
         "operator_sidebar",
-        "opencode_sidebar_session_parity",
+        "sidebar_session_parity",
         &harness.parser,
         &visual_dir,
         FocusCapture::anchored_exact(LIVE_OPERATOR_EMPTY_MARKER, 18, 8),
@@ -1662,7 +1662,7 @@ fn pty_e2e_opencode_sidebar_session_parity() {
             LIVE_READY_NEXT_TURN_MARKER,
         ],
     )
-    .expect("capture opencode sidebar parity image");
+    .expect("capture sidebar parity image");
 
     assert!(sidebar_screen.contains("shell parity task"));
     assert!(sidebar_screen.contains("Shell parity looks good."));
@@ -1677,7 +1677,7 @@ fn pty_e2e_opencode_sidebar_session_parity() {
     harness
         .child
         .kill()
-        .expect("terminate opencode sidebar parity harness");
+        .expect("terminate sidebar parity harness");
     std::mem::forget(harness.child);
 }
 

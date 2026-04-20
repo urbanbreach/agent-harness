@@ -935,7 +935,7 @@ mod tests {
     }
 
     #[test]
-    fn keymap_binds_child_session_navigation_to_opencode_defaults() {
+    fn keymap_binds_child_session_navigation_to_default_bindings() {
         let keymap = KeyMap::with_defaults();
 
         assert_eq!(

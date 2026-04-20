@@ -68,7 +68,6 @@ pub struct ShellHeights {
     pub status: u16,
     pub footer: u16,
     pub prompt_input: u16,
-    pub permission_modal: u16,
 }
 
 impl ShellHeights {
@@ -186,7 +185,6 @@ pub struct LiveShellLayout {
     pub inspector_drawer_width: u16,
     pub details_sidebar_width: u16,
     pub transcript_min_width: u16,
-    pub permission_modal_width: u16,
     pub centered_content_width: u16,
     pub content_margin_x: u16,
 }
@@ -486,7 +484,7 @@ pub struct Theme {
 }
 
 impl Theme {
-    const OPENCODE_SHELL: LiveShellTokens = LiveShellTokens {
+    const HARNESS_DARK_SHELL: LiveShellTokens = LiveShellTokens {
         breakpoints: ShellBreakpoints::DEFAULT,
         minimum: LiveShellLayout {
             target: ShellGeometryTarget::Minimum,
@@ -494,7 +492,6 @@ impl Theme {
             inspector_drawer_width: 20,
             details_sidebar_width: 42,
             transcript_min_width: 28,
-            permission_modal_width: 58,
             centered_content_width: 76,
             content_margin_x: 1,
         },
@@ -504,7 +501,6 @@ impl Theme {
             inspector_drawer_width: 24,
             details_sidebar_width: 42,
             transcript_min_width: 32,
-            permission_modal_width: 62,
             centered_content_width: 86,
             content_margin_x: 0,
         },
@@ -514,7 +510,6 @@ impl Theme {
             inspector_drawer_width: 28,
             details_sidebar_width: 42,
             transcript_min_width: 40,
-            permission_modal_width: 66,
             centered_content_width: 90,
             content_margin_x: 0,
         },
@@ -571,7 +566,6 @@ impl Theme {
             status: 1,
             footer: 1,
             prompt_input: 3,
-            permission_modal: 9,
         },
         rhythm: ShellRhythm {
             composer_padding_x: 2,
@@ -758,7 +752,7 @@ impl Theme {
         }
     }
 
-    pub fn opencode_dark() -> Self {
+    pub fn harness_dark() -> Self {
         Self {
             surface: SurfaceColors {
                 canvas: rgb(0x0A, 0x0A, 0x0A),
@@ -791,7 +785,7 @@ impl Theme {
                 thumb: rgb(0x32, 0x32, 0x32),
                 thumb_active: rgb(0x60, 0x60, 0x60),
             },
-            live_shell: Self::OPENCODE_SHELL,
+            live_shell: Self::HARNESS_DARK_SHELL,
         }
     }
 
@@ -806,7 +800,7 @@ impl Theme {
 
 impl Default for Theme {
     fn default() -> Self {
-        Self::opencode_dark()
+        Self::harness_dark()
     }
 }
 
@@ -815,8 +809,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn opencode_dark_theme_matches_palette_contract() {
-        let theme = Theme::opencode_dark();
+    fn harness_dark_theme_matches_palette_contract() {
+        let theme = Theme::harness_dark();
         assert_eq!(theme.surface.canvas, rgb(0x0A, 0x0A, 0x0A));
         assert_eq!(theme.surface.shell, rgb(0x0A, 0x0A, 0x0A));
         assert_eq!(theme.surface.panel, rgb(0x14, 0x14, 0x14));
@@ -915,16 +909,16 @@ mod tests {
     }
 
     #[test]
-    fn default_theme_matches_opencode_dark_contract() {
+    fn default_theme_matches_harness_dark_contract() {
         let default = Theme::default();
-        let opencode_dark = Theme::opencode_dark();
+        let harness_dark = Theme::harness_dark();
 
-        assert_eq!(default, opencode_dark);
-        assert_eq!(default.token_families(), opencode_dark.token_families());
+        assert_eq!(default, harness_dark);
+        assert_eq!(default.token_families(), harness_dark.token_families());
     }
 
     #[test]
-    fn semantic_chrome_tokens_map_to_opencode_dark_defaults() {
+    fn semantic_chrome_tokens_map_to_harness_dark_defaults() {
         let theme = Theme::default();
         let tokens = theme.token_families();
 
@@ -1100,7 +1094,6 @@ mod tests {
         assert_eq!(theme.live_shell.rhythm.sidebar_padding_x, 2);
         assert_eq!(theme.live_shell.rhythm.sidebar_padding_y, 1);
         assert_eq!(theme.live_shell.rhythm.footer_prefix_gap, 2);
-        assert_eq!(minimum.permission_modal_width, 58);
         assert_eq!(split.centered_content_width, 86);
         assert_eq!(split.content_margin_x, 0);
         assert_eq!(split.details_sidebar_width, 42);
@@ -1109,7 +1102,6 @@ mod tests {
         assert_eq!(split_lifecycle.post_run_card.width, 76);
         assert_eq!(split_lifecycle.post_run_card.height, 12);
         assert_eq!(split_lifecycle.overlay.width, 86);
-        assert_eq!(split.permission_modal_width, 62);
         assert_eq!(primary.centered_content_width, 90);
         assert_eq!(primary.content_margin_x, 0);
         assert_eq!(primary.details_sidebar_width, 42);
@@ -1118,10 +1110,8 @@ mod tests {
         assert_eq!(primary_lifecycle.post_run_card.width, 78);
         assert_eq!(primary_lifecycle.post_run_card.height, 12);
         assert_eq!(primary_lifecycle.overlay.width, 90);
-        assert_eq!(primary.permission_modal_width, 66);
         assert_eq!(theme.live_shell.rhythm.status_separator, 2);
         assert_eq!(theme.live_shell.heights.status, 1);
-        assert_eq!(theme.live_shell.heights.permission_modal, 9);
         assert_eq!(theme.live_shell.transcript_glyphs.user_marker, "›");
         assert_eq!(theme.live_shell.transcript_glyphs.card_top, "╭─");
         assert_eq!(

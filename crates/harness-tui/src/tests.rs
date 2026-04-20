@@ -169,8 +169,11 @@ fn question_permission_modal_renders_questions_and_answer_input() {
     ));
 
     let debug = render_live_buffer(&app, 100, 28);
-    assert!(debug.contains("Question Requested"));
+    assert!(debug.contains("Question required"));
     assert!(debug.contains("Pick one"));
+    assert!(debug.contains("1. A"));
+    assert!(debug.contains("Type your own answer"));
+    assert!(debug.contains("↑↓"));
     assert!(debug.contains("default deny"));
 }
 
@@ -369,7 +372,7 @@ pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and
     let artifacts_dir = run_dir.path().join("artifacts");
     std::fs::create_dir_all(&artifacts_dir).expect("create artifacts dir");
     std::fs::write(
-        artifacts_dir.join("opencode-inline.diff"),
+        artifacts_dir.join("harness-inline.diff"),
         "--- crates/harness-tui/src/ui.rs\n+++ crates/harness-tui/src/ui.rs\n@@ -44,8 +44,7 @@\n use ui_secondary::{\n-    render_diff_tab, render_events_tab, render_help_tab,\n+    render_events_tab, render_help_tab, render_live_details_overlay,\n     render_operator_sidebar,\n };\n",
     )
     .expect("write inline diff fixture");
@@ -415,7 +418,7 @@ pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and
             summary: Some("Remove diff review surface".to_string()),
             patch_digest: Some("digest-patch-wide".to_string()),
             new_file_digest: Some("digest-new-file-wide".to_string()),
-            diff_rel_path: Some("artifacts/opencode-inline.diff".to_string()),
+            diff_rel_path: Some("artifacts/harness-inline.diff".to_string()),
             diff_digest: Some("digest-diff-wide".to_string()),
             rejection_reason: None,
         }),
@@ -1129,7 +1132,7 @@ fn block_style_tool_rows_render_titles_and_argument_blocks() {
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(
         debug.contains("# cargo test -p harness-tui in /tmp/demo"),
-        "shell blocks should surface an Opencode-style title row"
+        "shell blocks should surface the dedicated title row"
     );
     assert!(
         debug.contains("$ cargo test -p harness-tui"),
@@ -1392,7 +1395,7 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
             Some("req_spacing"),
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
                 request_id: "req_spacing".to_string(),
-                text: "Match Opencode tool spacing".to_string(),
+                text: "Match harness tool spacing".to_string(),
             }),
         ),
         envelope(
@@ -1402,7 +1405,7 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
                 request_id: "req_spacing".to_string(),
                 provider_id: "openai".to_string(),
                 model_id: "gpt-5-codex".to_string(),
-                prompt_summary: "Match Opencode tool spacing".to_string(),
+                prompt_summary: "Match harness tool spacing".to_string(),
                 request_digest: "digest-spacing".to_string(),
             }),
         ),
@@ -1546,7 +1549,7 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
             Some("req_spacing"),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
                 request_id: "req_spacing".to_string(),
-                delta: "I matched the body-to-tool and tool-to-body spacing to Opencode."
+                delta: "I matched the body-to-tool and tool-to-body spacing to the harness shell."
                     .to_string(),
             }),
         ),

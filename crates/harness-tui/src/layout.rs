@@ -14,7 +14,7 @@ const LIVE_PROMPT_STANDARD_CHROME_ROWS: u16 = 4;
 const LIVE_PROMPT_DENSE_CHROME_ROWS: u16 = 3;
 const LIVE_PROMPT_MIN_HEIGHT: u16 = 5;
 const DENSE_LIVE_PROMPT_MIN_HEIGHT: u16 = 4;
-const LIVE_PERMISSION_PROMPT_MIN_HEIGHT: u16 = 6;
+const LIVE_PERMISSION_PROMPT_MIN_HEIGHT: u16 = 11;
 const LIVE_QUESTION_PROMPT_MIN_HEIGHT: u16 = 9;
 const LIVE_EMPTY_STATE_MIN_HEIGHT: u16 = 9;
 const LIVE_DETAILS_MIN_TRANSCRIPT_WIDTH: u16 = 48;
@@ -29,7 +29,7 @@ const COMPACT_SESSION_MAX_WIDTH: u16 = 80;
 const COMPACT_SESSION_MAX_HEIGHT: u16 = 24;
 const DENSE_SESSION_PALETTE_MAX_WIDTH: u16 = 46;
 const DENSE_SESSION_SLASH_MAX_WIDTH: u16 = 32;
-const OPENCODE_COMMAND_PALETTE_WIDTH: u16 = 60;
+const COMMAND_PALETTE_WIDTH: u16 = 60;
 const PERSISTENT_SIDEBAR_MIN_WIDTH: u16 = 121;
 const STARTUP_COMPOSER_MAX_WIDTH: u16 = 75;
 const RUNTIME_STATE_SURFACE_HORIZONTAL_INSET: u16 = 6;
@@ -100,6 +100,44 @@ pub struct ControlDockLayout {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct EdgeInsets {
+    pub left: u16,
+    pub right: u16,
+    pub top: u16,
+    pub bottom: u16,
+}
+
+impl EdgeInsets {
+    pub(crate) const ZERO: Self = Self {
+        left: 0,
+        right: 0,
+        top: 0,
+        bottom: 0,
+    };
+
+    pub(crate) const fn new(left: u16, right: u16, top: u16, bottom: u16) -> Self {
+        Self {
+            left,
+            right,
+            top,
+            bottom,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PermissionDockLayout {
+    pub rail_width: u16,
+    pub tray_height: u16,
+    pub shell_padding: EdgeInsets,
+    pub body_padding: EdgeInsets,
+    pub tray_padding: EdgeInsets,
+    pub header_gap: u16,
+    pub stacked_hint_min_width: u16,
+    pub stacked_hint_min_action_width: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SessionShellLayout {
     pub live_anchor: Option<Rect>,
     pub transcript: Rect,
@@ -129,7 +167,6 @@ pub struct FrameLayoutPlan {
     pub footer_text: Rect,
     pub details_overlay: Option<Rect>,
     pub palette_overlay: Option<Rect>,
-    pub permission_modal: Option<Rect>,
     pub wheel_hit_areas: WheelHitAreas,
     pub(crate) session_contract: SessionGeometryContract,
 }
@@ -184,9 +221,6 @@ impl FrameLayoutPlan {
             Rect::new(shell.x, footer_text_y, shell.width, footer_text_height)
         };
 
-        let permission_modal = app
-            .active_permission()
-            .and_then(|_| permission_modal_area(area, theme, shell_layout));
         let palette_overlay =
             matches!(app.overlay_stack().top(), Some(OverlayKind::CommandPalette))
                 .then(|| {
@@ -217,7 +251,6 @@ impl FrameLayoutPlan {
             footer_text,
             details_overlay: None,
             palette_overlay,
-            permission_modal,
             wheel_hit_areas: WheelHitAreas::default(),
             session_contract,
         };
@@ -504,7 +537,7 @@ fn permission_prompt_block_height(
     let inner_width = usize::from(width.saturating_sub(6).max(1));
 
     if let Some(prompts) = permission.question_prompts.as_ref() {
-        let mut rows = 4u16;
+        let mut rows = 5u16;
         for prompt in prompts {
             rows = rows
                 .saturating_add(wrapped_text_rows(
@@ -512,7 +545,7 @@ fn permission_prompt_block_height(
                     inner_width,
                 ))
                 .saturating_add(u16::try_from(prompt.options.len()).unwrap_or(u16::MAX))
-                .saturating_add(1);
+                .saturating_add(2);
         }
 
         rows = rows
@@ -524,7 +557,7 @@ fn permission_prompt_block_height(
                 app.question_answer_error(&permission.permission_id)
                     .is_some(),
             ))
-            .saturating_add(2);
+            .saturating_add(3);
 
         return rows.clamp(LIVE_QUESTION_PROMPT_MIN_HEIGHT, 16);
     }
@@ -532,7 +565,47 @@ fn permission_prompt_block_height(
     let draft_rows = wrapped_text_rows(app.prompt_buffer.as_str(), inner_width).min(2);
     LIVE_PERMISSION_PROMPT_MIN_HEIGHT
         .saturating_add(draft_rows.saturating_sub(1))
-        .clamp(LIVE_PERMISSION_PROMPT_MIN_HEIGHT, 8)
+        .clamp(LIVE_PERMISSION_PROMPT_MIN_HEIGHT, 12)
+}
+
+const PERMISSION_DOCK_RAIL_WIDTH: u16 = 1;
+const PERMISSION_DOCK_TRAY_HEIGHT: u16 = 3;
+const QUESTION_PERMISSION_DOCK_TRAY_HEIGHT: u16 = 2;
+const PERMISSION_DOCK_STACKED_HINT_MIN_WIDTH: u16 = 80;
+const PERMISSION_DOCK_STACKED_HINT_MIN_ACTION_WIDTH: u16 = 20;
+
+pub(crate) fn permission_dock_layout(area: Rect, is_question: bool) -> PermissionDockLayout {
+    let tray_height = if is_question {
+        QUESTION_PERMISSION_DOCK_TRAY_HEIGHT.min(area.height)
+    } else if area.height >= PERMISSION_DOCK_TRAY_HEIGHT {
+        PERMISSION_DOCK_TRAY_HEIGHT
+    } else {
+        1
+    };
+
+    if is_question {
+        PermissionDockLayout {
+            rail_width: PERMISSION_DOCK_RAIL_WIDTH,
+            tray_height,
+            shell_padding: EdgeInsets::new(1, 1, 0, 0),
+            body_padding: EdgeInsets::ZERO,
+            tray_padding: EdgeInsets::new(1, 1, 0, 0),
+            header_gap: 0,
+            stacked_hint_min_width: PERMISSION_DOCK_STACKED_HINT_MIN_WIDTH,
+            stacked_hint_min_action_width: PERMISSION_DOCK_STACKED_HINT_MIN_ACTION_WIDTH,
+        }
+    } else {
+        PermissionDockLayout {
+            rail_width: PERMISSION_DOCK_RAIL_WIDTH,
+            tray_height,
+            shell_padding: EdgeInsets::new(1, 3, 1, 1),
+            body_padding: EdgeInsets::new(1, 0, 0, 0),
+            tray_padding: EdgeInsets::new(2, 3, 1, 1),
+            header_gap: 1,
+            stacked_hint_min_width: PERMISSION_DOCK_STACKED_HINT_MIN_WIDTH,
+            stacked_hint_min_action_width: PERMISSION_DOCK_STACKED_HINT_MIN_ACTION_WIDTH,
+        }
+    }
 }
 
 fn wrapped_text_rows(text: &str, width: usize) -> u16 {
@@ -557,6 +630,17 @@ pub(crate) fn inset_rect(area: Rect, horizontal: u16, vertical: u16) -> Rect {
         width: area.width.saturating_sub(double_horizontal),
         height: area.height.saturating_sub(double_vertical),
     }
+}
+
+pub(crate) fn pad_rect(area: Rect, insets: EdgeInsets) -> Rect {
+    let horizontal = insets.left.saturating_add(insets.right);
+    let vertical = insets.top.saturating_add(insets.bottom);
+    Rect::new(
+        area.x.saturating_add(insets.left.min(area.width)),
+        area.y.saturating_add(insets.top.min(area.height)),
+        area.width.saturating_sub(horizontal),
+        area.height.saturating_sub(vertical),
+    )
 }
 
 pub(crate) fn secondary_surface_layout(area: Rect, theme: &Theme) -> SecondarySurfaceLayout {
@@ -983,32 +1067,6 @@ fn session_operator_overlay(body: Rect, contract: SessionGeometryContract) -> Op
     Some(Rect::new(x, body.y, width, height))
 }
 
-fn permission_modal_area(area: Rect, theme: &Theme, shell: LiveShellLayout) -> Option<Rect> {
-    let shell_tokens = theme.token_families().live_shell;
-    let horizontal_margin = shell_tokens.spacing.rhythm.modal_margin.saturating_mul(2);
-    let vertical_margin = shell_tokens.spacing.rhythm.modal_margin.saturating_mul(2);
-    let popup_width = shell
-        .permission_modal_width
-        .min(area.width.saturating_sub(horizontal_margin));
-    let popup_height = shell_tokens
-        .spacing
-        .heights
-        .permission_modal
-        .min(area.height.saturating_sub(vertical_margin));
-
-    if popup_width == 0 || popup_height == 0 {
-        return None;
-    }
-
-    let popup_x = area
-        .x
-        .saturating_add((area.width.saturating_sub(popup_width)) / 2);
-    let popup_y = area
-        .y
-        .saturating_add((area.height.saturating_sub(popup_height)) / 2);
-    Some(Rect::new(popup_x, popup_y, popup_width, popup_height))
-}
-
 fn command_palette_overlay_area(
     area: Rect,
     theme: &Theme,
@@ -1017,7 +1075,7 @@ fn command_palette_overlay_area(
     app: &AppState,
 ) -> Option<Rect> {
     if !app.session_history_visible {
-        let popup_width = OPENCODE_COMMAND_PALETTE_WIDTH.min(area.width.saturating_sub(2));
+        let popup_width = COMMAND_PALETTE_WIDTH.min(area.width.saturating_sub(2));
         let popup_height = command_palette_overlay_height(app, area.height)
             .min(area.height.saturating_sub(area.height / 4));
         if popup_width == 0 || popup_height == 0 {
@@ -1057,7 +1115,7 @@ fn command_palette_overlay_width(shell: LiveShellLayout, app: &AppState) -> u16 
     if app.session_history_visible {
         shell.centered_content_width
     } else {
-        OPENCODE_COMMAND_PALETTE_WIDTH
+        COMMAND_PALETTE_WIDTH
     }
 }
 

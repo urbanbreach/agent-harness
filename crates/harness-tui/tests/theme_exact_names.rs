@@ -79,16 +79,16 @@ fn semantic_theme_families_preserve_default_contracts() {
 }
 
 #[test]
-fn default_theme_matches_opencode_dark_contract() {
+fn default_theme_matches_harness_dark_contract() {
     let default = Theme::default();
-    let opencode_dark = Theme::opencode_dark();
+    let harness_dark = Theme::harness_dark();
 
-    assert_eq!(default, opencode_dark);
-    assert_eq!(default.token_families(), opencode_dark.token_families());
+    assert_eq!(default, harness_dark);
+    assert_eq!(default.token_families(), harness_dark.token_families());
 }
 
 #[test]
-fn semantic_chrome_tokens_map_to_opencode_dark_defaults() {
+fn semantic_chrome_tokens_map_to_harness_dark_defaults() {
     let theme = Theme::default();
     let tokens = theme.token_families();
 

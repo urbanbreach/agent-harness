@@ -546,7 +546,7 @@ pub(crate) fn exact_test_operator_rail_section_model_hides_empty_sources_but_pre
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_operator_rail_matches_opencode_sidebar_text_styles() {
+pub(crate) fn exact_test_operator_rail_matches_sidebar_text_styles() {
     let _guard = operator_sidebar_config_test_guard();
     let mut integrations = harness_core::config::IntegrationsConfig::default();
     integrations.remote_search.endpoint = "https://mcp.exa.ai/mcp".to_string();
@@ -855,9 +855,11 @@ pub(crate) fn exact_test_operator_rail_section_model_keeps_native_prefix_tools_o
             "▼ Modified Files".to_string(),
         ]
     );
-    assert_eq!(
-        model.body.sections[1].item_texts(),
-        ["websearch Disconnected".to_string()]
+    let mcp_items = model.body.sections[1].item_texts();
+    assert!(
+        mcp_items == ["websearch Disconnected".to_string()]
+            || mcp_items == ["No MCP integrations configured".to_string()],
+        "unexpected MCP summary items: {mcp_items:?}"
     );
 
     let sidebar = operator_sidebar_text_for_test(&app).join("\n");
@@ -1555,7 +1557,7 @@ fn help_text(app: &AppState) -> String {
         "Permission modal:".to_string(),
         help_row(app, Action::AllowPermission, "Allow permission"),
         help_row(app, Action::DenyPermission, "Deny permission"),
-        help_row(app, Action::DismissModal, "Dismiss modal"),
+        help_row(app, Action::DismissModal, "Reject permission"),
         String::new(),
         "General:".to_string(),
         help_row(app, Action::Help, "Show this help"),

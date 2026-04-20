@@ -127,7 +127,7 @@ struct PermissionFixture {
 
 impl PermissionFixture {
     const TOOL_CALL: Self = Self {
-        marker: "Permission Requested",
+        marker: "Permission required",
     };
 }
 
@@ -154,8 +154,9 @@ enum HelperScenario {
     ToolLifecycle,
     InlineDiffParity,
     PermissionWithDraft,
+    QuestionPermission,
     DetailsDrawer,
-    OpencodeSidebarSessionParity,
+    SidebarSessionParity,
     LiveOrchestrationLifecycle,
     LiveOrchestrationStaleLateResult,
     DegradedBootstrap,
@@ -174,8 +175,9 @@ impl HelperScenario {
             Self::ToolLifecycle => "tool_lifecycle",
             Self::InlineDiffParity => "inline_diff_parity",
             Self::PermissionWithDraft => "permission_with_draft",
+            Self::QuestionPermission => "question_permission",
             Self::DetailsDrawer => "details_drawer",
-            Self::OpencodeSidebarSessionParity => "opencode_sidebar_session_parity",
+            Self::SidebarSessionParity => "sidebar_session_parity",
             Self::LiveOrchestrationLifecycle => "live_orchestration_lifecycle",
             Self::LiveOrchestrationStaleLateResult => "live_orchestration_stale_late_result",
             Self::DegradedBootstrap => "degraded_bootstrap",
@@ -194,8 +196,9 @@ impl HelperScenario {
             Self::ToolLifecycle => "pty_helper_tool_lifecycle",
             Self::InlineDiffParity => "pty_helper_inline_diff_parity",
             Self::PermissionWithDraft => "pty_helper_permission_with_draft",
+            Self::QuestionPermission => "pty_helper_question_permission",
             Self::DetailsDrawer => "pty_helper_details_drawer",
-            Self::OpencodeSidebarSessionParity => "pty_helper_opencode_sidebar_session_parity",
+            Self::SidebarSessionParity => "pty_helper_sidebar_session_parity",
             Self::LiveOrchestrationLifecycle => "pty_helper_live_orchestration_lifecycle",
             Self::LiveOrchestrationStaleLateResult => {
                 "pty_helper_live_orchestration_stale_late_result"
@@ -283,7 +286,7 @@ fn pty_e2e_snapshots_are_stable() {
     let inline_diff_parity = capture_helper_screen_snapshot(
         HelperScenario::InlineDiffParity,
         PtyGeometry::PRIMARY_SIGNOFF,
-        "The inline diff edge cases now match Opencode.",
+        "The inline diff edge cases now match the harness shell.",
     );
     assert_or_update_snapshot("inline_diff_parity", &inline_diff_parity);
     assert_visual_artifact_exists("inline_diff_parity", PtyGeometry::PRIMARY_SIGNOFF);
@@ -449,13 +452,18 @@ fn pty_helper_permission_with_draft() {
 }
 
 #[test]
+fn pty_helper_question_permission() {
+    run_helper_if_requested(HelperScenario::QuestionPermission);
+}
+
+#[test]
 fn pty_helper_details_drawer() {
     run_helper_if_requested(HelperScenario::DetailsDrawer);
 }
 
 #[test]
-fn pty_helper_opencode_sidebar_session_parity() {
-    run_helper_if_requested(HelperScenario::OpencodeSidebarSessionParity);
+fn pty_helper_sidebar_session_parity() {
+    run_helper_if_requested(HelperScenario::SidebarSessionParity);
 }
 
 #[test]
@@ -536,13 +544,13 @@ fn pty_live_details_drawer_remains_reachable() {
 }
 
 #[test]
-fn operator_sidebar_matches_opencode_information_architecture() {
+fn operator_sidebar_matches_information_architecture() {
     if !cfg!(target_os = "linux") {
         return;
     }
 
     let mut helper = spawn_helper_pty(
-        HelperScenario::OpencodeSidebarSessionParity,
+        HelperScenario::SidebarSessionParity,
         PtyGeometry::SIDEBAR_SIGNOFF,
     );
     wait_for_screen_contains(
@@ -559,7 +567,7 @@ fn operator_sidebar_matches_opencode_information_architecture() {
         "src/ui_secondary.rs",
         MARKER_TIMEOUT,
     )
-    .expect("wait for opencode sidebar parity markers");
+    .expect("wait for sidebar parity markers");
 
     assert_markers_in_order(
         &screen,
@@ -587,6 +595,44 @@ fn operator_sidebar_matches_opencode_information_architecture() {
     assert!(!screen.contains("Network ·"));
     assert!(!screen.contains("Batch ·"));
 
+    terminate_child(helper.child);
+}
+
+#[test]
+fn question_permission_renders_inline_prompt_in_pty() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+
+    let mut helper = spawn_helper_pty(
+        HelperScenario::QuestionPermission,
+        PtyGeometry::PRIMARY_SIGNOFF,
+    );
+    wait_for_live_startup(&mut helper);
+
+    let screen = wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "Question required",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for question permission marker");
+
+    assert_screen_contains_all(
+        &screen,
+        &[
+            "Question required",
+            "Pick one",
+            "Type your own answer",
+            "↑↓ select",
+            "default deny",
+        ],
+    );
+    write_visual_artifact(
+        "question_permission",
+        PtyGeometry::PRIMARY_SIGNOFF,
+        &helper.parser,
+    );
     terminate_child(helper.child);
 }
 
@@ -820,6 +866,22 @@ fn run_helper_if_requested(scenario: HelperScenario) {
                 thread::park();
             });
         }
+        HelperScenario::QuestionPermission => {
+            let question_tx = tx.clone();
+            thread::spawn(move || {
+                thread::sleep(Duration::from_millis(250));
+                question_tx
+                    .send(LiveUpdate::Event(Box::new(
+                        question_permission_requested_event(
+                            1,
+                            "perm_question_pty",
+                            "tool_call_question_pty",
+                        ),
+                    )))
+                    .expect("send question permission request event");
+                thread::park();
+            });
+        }
         HelperScenario::DetailsDrawer => {
             let details_tx = tx.clone();
             thread::spawn(move || {
@@ -831,13 +893,13 @@ fn run_helper_if_requested(scenario: HelperScenario) {
                 thread::park();
             });
         }
-        HelperScenario::OpencodeSidebarSessionParity => {
+        HelperScenario::SidebarSessionParity => {
             let sidebar_tx = tx.clone();
             thread::spawn(move || {
-                for event in opencode_sidebar_session_parity_events() {
+                for event in sidebar_session_parity_events() {
                     sidebar_tx
                         .send(LiveUpdate::Event(Box::new(event)))
-                        .expect("send opencode sidebar parity events");
+                        .expect("send sidebar parity events");
                 }
                 thread::park();
             });
@@ -1278,7 +1340,7 @@ fn inline_diff_parity_events() -> Vec<EventEnvelopeV1> {
             Some(request_id),
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
                 request_id: request_id.to_string(),
-                text: "Make inline diffs match Opencode".to_string(),
+                text: "Make inline diffs match the harness shell".to_string(),
             }),
         ),
         envelope(
@@ -1288,7 +1350,7 @@ fn inline_diff_parity_events() -> Vec<EventEnvelopeV1> {
                 request_id: request_id.to_string(),
                 provider_id: "mock".to_string(),
                 model_id: "model-1".to_string(),
-                prompt_summary: "Make inline diffs match Opencode".to_string(),
+                prompt_summary: "Make inline diffs match the harness shell".to_string(),
                 request_digest: "digest-inline-diff-parity-request".to_string(),
             }),
         ),
@@ -1415,7 +1477,7 @@ fn inline_diff_parity_events() -> Vec<EventEnvelopeV1> {
             Some(request_id),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
                 request_id: request_id.to_string(),
-                delta: "The inline diff edge cases now match Opencode.".to_string(),
+                delta: "The inline diff edge cases now match the harness shell.".to_string(),
             }),
         ),
         envelope(
@@ -1481,7 +1543,7 @@ fn details_drawer_events() -> Vec<EventEnvelopeV1> {
     ]
 }
 
-fn opencode_sidebar_session_parity_events() -> Vec<EventEnvelopeV1> {
+fn sidebar_session_parity_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_sidebar_parity";
     vec![
         envelope(
@@ -1548,7 +1610,7 @@ fn opencode_sidebar_session_parity_events() -> Vec<EventEnvelopeV1> {
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
                 tool_call_id: "tool_call_search".to_string(),
                 tool_id: "search.web".to_string(),
-                args_summary: serde_json::json!({"query": "opencode sidebar"}).to_string(),
+                args_summary: serde_json::json!({"query": "harness sidebar"}).to_string(),
                 args_digest: "digest-search-web".to_string(),
                 metadata: Some(harness_core::event::ToolCallMetadata {
                     canonical_tool_id: Some("search.web".to_string()),
@@ -1569,7 +1631,7 @@ fn opencode_sidebar_session_parity_events() -> Vec<EventEnvelopeV1> {
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
                 tool_call_id: "tool_call_search".to_string(),
                 status: ToolCallStatus::Succeeded,
-                output_summary: Some("Fetched opencode sidebar examples".to_string()),
+                output_summary: Some("Fetched harness sidebar examples".to_string()),
                 output_digest: Some("digest-search-web-output".to_string()),
                 output_json: None,
                 metadata: Some(harness_core::event::ToolCallMetadata {
@@ -1837,6 +1899,34 @@ fn permission_requested_event(
     )
 }
 
+fn question_permission_requested_event(
+    seq: u64,
+    permission_id: &str,
+    tool_call_id: &str,
+) -> EventEnvelopeV1 {
+    envelope(
+        seq,
+        Some(tool_call_id),
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: permission_id.to_string(),
+            kind: "question".to_string(),
+            tool_call_id: Some(tool_call_id.to_string()),
+            summary: serde_json::json!({
+                "questions": [{
+                    "question": "Pick one",
+                    "header": "Choice",
+                    "options": [{"label": "A", "description": "Option A"}],
+                    "multiple": false,
+                }]
+            })
+            .to_string(),
+            request_digest: "digest-question-perm-pty".to_string(),
+            timeout_ms: 30_000,
+            default_decision: PermissionDecision::Deny,
+        }),
+    )
+}
+
 fn envelope(seq: u64, correlation_id: Option<&str>, payload: EventV1) -> EventEnvelopeV1 {
     EventEnvelopeV1 {
         schema_version: SCHEMA_VERSION,
@@ -2052,8 +2142,8 @@ fn capture_permission_with_draft_snapshot(geometry: PtyGeometry) -> String {
     .expect("wait for permission overlay marker");
 
     assert!(
-        screen.contains(PRESERVED_DRAFT_TEXT),
-        "permission snapshot lost draft"
+        screen.contains("Allow always"),
+        "permission snapshot lost Opencode-style controls"
     );
     write_visual_artifact("permission_with_draft", geometry, &helper.parser);
     terminate_child(helper.child);
@@ -2241,10 +2331,9 @@ fn helper_scenario_from_env() -> Option<HelperScenario> {
         Some("tool_lifecycle") => Some(HelperScenario::ToolLifecycle),
         Some("inline_diff_parity") => Some(HelperScenario::InlineDiffParity),
         Some("permission_with_draft") => Some(HelperScenario::PermissionWithDraft),
+        Some("question_permission") => Some(HelperScenario::QuestionPermission),
         Some("details_drawer") => Some(HelperScenario::DetailsDrawer),
-        Some("opencode_sidebar_session_parity") => {
-            Some(HelperScenario::OpencodeSidebarSessionParity)
-        }
+        Some("sidebar_session_parity") => Some(HelperScenario::SidebarSessionParity),
         Some("live_orchestration_lifecycle") => Some(HelperScenario::LiveOrchestrationLifecycle),
         Some("live_orchestration_stale_late_result") => {
             Some(HelperScenario::LiveOrchestrationStaleLateResult)
@@ -2312,6 +2401,11 @@ fn normalize_snapshot(input: &str) -> String {
 }
 
 fn normalize_volatile_line(line: &str) -> String {
+    if let Some(idx) = line.find("Draft preserved · keep") {
+        let end = idx + "Draft preserved · keep".len();
+        return line[..end].to_string();
+    }
+
     if !line.contains("warn ") {
         if let Some(idx) = line.find("ready for next turn") {
             let end = idx + "ready for next turn".len();

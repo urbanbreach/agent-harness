@@ -1,6 +1,6 @@
 
   ┃
-  ┃  Make inline diffs match Opencode
+  ┃  Make inline diffs match the harness shell
   ┃
 
   ┃  Thinking: I verified the current transcript behavior before patching it.
@@ -18,7 +18,7 @@
       ↳ Loaded docs/transcript.md
       Compat alias · read → fs.read
 
-     The inline diff edge cases now match Opencode.
+     The inline diff edge cases now match the harness shell.
 
      ▪ Assistant · model-1 · 11ms
 

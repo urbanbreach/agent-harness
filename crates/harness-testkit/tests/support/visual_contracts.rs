@@ -58,8 +58,8 @@ pub(crate) const OFFLINE_VISUAL_EVIDENCE_CONTRACTS: &[OfflineVisualEvidenceContr
     OfflineVisualEvidenceContract {
         family: "permission",
         state: "happy_path",
-        png: "pty_permission_overlay_parity.png",
-        snapshot: Some("pty_permission_overlay_parity"),
+        png: "pty_permission_dock_parity.png",
+        snapshot: Some("pty_permission_dock_parity"),
     },
     OfflineVisualEvidenceContract {
         family: "live_shell",
@@ -130,7 +130,7 @@ pub(crate) const OFFLINE_VISUAL_EVIDENCE_CONTRACTS: &[OfflineVisualEvidenceContr
     OfflineVisualEvidenceContract {
         family: "operator_sidebar",
         state: "parity",
-        png: "pty_opencode_sidebar_session_parity.png",
+        png: "pty_sidebar_session_parity.png",
         snapshot: None,
     },
     OfflineVisualEvidenceContract {

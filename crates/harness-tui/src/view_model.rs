@@ -267,24 +267,29 @@ pub(crate) fn runtime_state(input: RuntimeStateInput<'_>) -> RuntimeState {
             }
 
             if let Some(EventV1::TaskCancelled(cancelled)) = input.last_event {
-                let detail =
-                    (!cancelled.reason.trim().is_empty()).then(|| cancelled.reason.clone());
-                let summary = detail
-                    .as_deref()
-                    .map(|reason| {
-                        format!(
-                            "last turn cancelled · {}",
-                            sanitize_runtime_summary_fragment(reason)
-                        )
-                    })
-                    .unwrap_or_else(|| "last turn cancelled · ready to try again".to_string());
-                return RuntimeState {
-                    kind: RuntimeStateKind::Cancelled,
-                    summary,
-                    detail,
-                    composer_disabled: false,
-                    composer_hint: "Type a prompt to retry the cancelled turn…".to_string(),
-                };
+                if !matches!(
+                    cancelled.task_scope,
+                    Some(harness_core::event::TaskTerminalScope::ToolCall)
+                ) {
+                    let detail =
+                        (!cancelled.reason.trim().is_empty()).then(|| cancelled.reason.clone());
+                    let summary = detail
+                        .as_deref()
+                        .map(|reason| {
+                            format!(
+                                "last turn cancelled · {}",
+                                sanitize_runtime_summary_fragment(reason)
+                            )
+                        })
+                        .unwrap_or_else(|| "last turn cancelled · ready to try again".to_string());
+                    return RuntimeState {
+                        kind: RuntimeStateKind::Cancelled,
+                        summary,
+                        detail,
+                        composer_disabled: false,
+                        composer_hint: "Type a prompt to retry the cancelled turn…".to_string(),
+                    };
+                }
             }
 
             if let Some(activity) = input.latest_activity {

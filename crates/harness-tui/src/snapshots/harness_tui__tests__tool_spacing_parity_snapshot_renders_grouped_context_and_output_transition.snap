@@ -7,7 +7,7 @@ Buffer {
     content: [
         "                                                                                                                        ",
         "  â                                                                                                                     ",
-        "  â  Match Opencode tool spacing                                                                                        ",
+        "  â  Match harness tool spacing                                                                                         ",
         "  â                                                                                                                     ",
         "                                                                                                                        ",
         "     â¾ Gathered context Â· 1 read Â· 2 searches Â· 1 list                                                                  ",
@@ -22,7 +22,7 @@ Buffer {
         "  â                                                                                                                     ",
         "  â  Thinking: The grouped context rows need to stay compact before the visible shell block.                            ",
         "                                                                                                                        ",
-        "     I matched the body-to-tool and tool-to-body spacing to Opencode.                                                   ",
+        "     I matched the body-to-tool and tool-to-body spacing to the harness shell.                                          ",
         "                                                                                                                        ",
         "     âª Assistant Â· gpt-5-codex Â· 15ms                                                                                   ",
         "                                                                                                                        ",

@@ -11,9 +11,10 @@ use harness_core::event::{
     ActorKind, AgentSpawnedEvent, EditAppliedEvent, EventActor, EventEnvelopeV1, EventV1,
     PermissionRequestedEvent, PermissionResolvedEvent, ProviderReasoningDeltaEvent,
     ProviderRequestStartedEvent, ProviderStreamDeltaEvent, RunFailedEvent, RunFinishedEvent,
-    RunStartedEvent, TaskCompletedEvent, TaskCompletionMetadata, TaskLineageMetadata,
-    ToolCallFinishedEvent, ToolCallLifecycleState, ToolCallMetadata, ToolCallRequestedEvent,
-    ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
+    RunStartedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata,
+    TaskLineageMetadata, TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent,
+    ToolCallLifecycleState, ToolCallMetadata, ToolCallRequestedEvent, ToolCallStartedEvent,
+    ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use ratatui::layout::Rect;
 use ratatui::{backend::TestBackend, Terminal};
@@ -63,7 +64,7 @@ fn key_with_modifiers(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
     KeyEvent::new(code, modifiers)
 }
 
-fn opencode_navigation_keybindings() -> BTreeMap<String, String> {
+fn default_navigation_keybindings() -> BTreeMap<String, String> {
     BTreeMap::from([
         ("session_child_first".to_string(), "ctrl+]".to_string()),
         ("session_child_cycle".to_string(), "]".to_string()),
@@ -515,7 +516,7 @@ fn permission_modal_preempts_palette() {
 }
 
 #[test]
-fn permission_modal_routes_q_to_quit_without_buffering() {
+fn permission_modal_ignores_unmapped_chars_without_buffering() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let intent_sink = {
         let intents = Arc::clone(&intents);
@@ -543,10 +544,53 @@ fn permission_modal_routes_q_to_quit_without_buffering() {
 
     app.handle_key(key(KeyCode::Char('q')));
 
-    assert!(app.should_quit);
+    assert!(!app.should_quit);
     assert_eq!(app.prompt_buffer, "keep this draft");
     let intents = intents.lock().expect("lock intents");
-    assert_eq!(intents.as_slice(), &[UiIntent::QuitRequested]);
+    assert!(intents.is_empty());
+    assert!(app.active_permission().is_some());
+}
+
+#[test]
+fn permission_modal_escape_rejects_without_hiding_pending_permission() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let intent_sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(intent_sink));
+    app.ingest_event(envelope(
+        1,
+        "req_modal_escape",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_modal_escape".to_string(),
+            kind: "edit_fs".to_string(),
+            tool_call_id: Some("tc_modal_escape".to_string()),
+            summary: "permission summary".to_string(),
+            request_digest: "digest-modal-escape".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    app.handle_key(key(KeyCode::Esc));
+
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::ResolvePermission {
+            permission_id: "perm_modal_escape".to_string(),
+            decision: PermissionDecision::Deny,
+            reason: None,
+        }]
+    );
+    assert!(app.active_permission().is_some());
+    assert_eq!(
+        app.overlay_stack().top(),
+        Some(OverlayKind::PermissionModal)
+    );
 }
 
 #[test]
@@ -581,11 +625,7 @@ fn question_permission_modal_collects_answers_and_emits_reason_payload() {
         }),
     ));
 
-    app.handle_key(key(KeyCode::Char('A')));
-    app.handle_key(key_with_modifiers(
-        KeyCode::Char('y'),
-        KeyModifiers::CONTROL,
-    ));
+    app.handle_key(key(KeyCode::Enter));
 
     assert_eq!(
         intents.lock().expect("lock intents").as_slice(),
@@ -595,6 +635,150 @@ fn question_permission_modal_collects_answers_and_emits_reason_payload() {
             reason: Some("[[\"A\"]]".to_string()),
         }]
     );
+}
+
+#[test]
+fn question_permission_modal_multi_question_uses_tabs_before_submit() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let intent_sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(intent_sink));
+    app.ingest_event(envelope(
+        1,
+        "req_question_tabs",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_question_tabs".to_string(),
+            kind: "question".to_string(),
+            tool_call_id: Some("tc_question_tabs".to_string()),
+            summary: serde_json::json!({
+                "questions": [
+                    {
+                        "question": "Pick one",
+                        "header": "Choice",
+                        "options": [{"label": "A", "description": "Option A"}]
+                    },
+                    {
+                        "question": "Pick another",
+                        "header": "Second",
+                        "options": [{"label": "B", "description": "Option B"}]
+                    }
+                ]
+            })
+            .to_string(),
+            request_digest: "digest-question-tabs".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    app.handle_key(key(KeyCode::Enter));
+    assert_eq!(app.question_prompt_tab("perm_question_tabs"), 1);
+    app.handle_key(key(KeyCode::Enter));
+    assert_eq!(app.question_prompt_tab("perm_question_tabs"), 2);
+    app.handle_key(key(KeyCode::Enter));
+
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::ResolvePermission {
+            permission_id: "perm_question_tabs".to_string(),
+            decision: PermissionDecision::Allow,
+            reason: Some("[[\"A\"],[\"B\"]]".to_string()),
+        }]
+    );
+}
+
+#[test]
+fn permission_modal_allow_always_auto_approves_matching_future_requests() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let intent_sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(intent_sink));
+    app.ingest_event(envelope(
+        1,
+        "req_modal_allow_always_1",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_modal_allow_always_1".to_string(),
+            kind: "edit_fs".to_string(),
+            tool_call_id: Some("tc_modal_allow_always_1".to_string()),
+            summary: "permission summary".to_string(),
+            request_digest: "digest-modal-allow-always".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    app.handle_key(key(KeyCode::Right));
+    assert_eq!(
+        app.permission_modal_selection("perm_modal_allow_always_1"),
+        PermissionModalSelection::AllowAlways
+    );
+
+    app.handle_key(key(KeyCode::Enter));
+    assert_eq!(
+        app.permission_modal_stage("perm_modal_allow_always_1"),
+        PermissionModalStage::AlwaysConfirm
+    );
+
+    app.handle_key(key(KeyCode::Enter));
+
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::ResolvePermission {
+            permission_id: "perm_modal_allow_always_1".to_string(),
+            decision: PermissionDecision::Allow,
+            reason: None,
+        }]
+    );
+
+    app.ingest_event(envelope(
+        2,
+        "req_modal_allow_always_resolved",
+        EventV1::PermissionResolved(PermissionResolvedEvent {
+            permission_id: "perm_modal_allow_always_1".to_string(),
+            decision: harness_core::event::PermissionDecision::Allow,
+            reason: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "req_modal_allow_always_2",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_modal_allow_always_2".to_string(),
+            kind: "edit_fs".to_string(),
+            tool_call_id: Some("tc_modal_allow_always_2".to_string()),
+            summary: "permission summary".to_string(),
+            request_digest: "digest-modal-allow-always".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[
+            UiIntent::ResolvePermission {
+                permission_id: "perm_modal_allow_always_1".to_string(),
+                decision: PermissionDecision::Allow,
+                reason: None,
+            },
+            UiIntent::ResolvePermission {
+                permission_id: "perm_modal_allow_always_2".to_string(),
+                decision: PermissionDecision::Allow,
+                reason: None,
+            },
+        ]
+    );
+    assert!(app.active_permission().is_none());
 }
 
 #[test]
@@ -690,7 +874,7 @@ fn live_switch_model_labels_next_turn_only() {
     );
 
     let mut live = AppState::new_live(None, false, None);
-    live.apply_keybindings(opencode_navigation_keybindings());
+    live.apply_keybindings(default_navigation_keybindings());
     live.set_launch_metadata(
         LaunchMetadata::from_model_option(&launch_option)
             .with_available_models(vec![launch_option.clone(), next_turn_option.clone()]),
@@ -716,7 +900,7 @@ fn live_switch_model_labels_next_turn_only() {
         PathBuf::from("/tmp/runtime-context-replay-switch"),
         Vec::new(),
     );
-    replay.apply_keybindings(opencode_navigation_keybindings());
+    replay.apply_keybindings(default_navigation_keybindings());
     replay.set_launch_metadata(
         LaunchMetadata::from_model_option(&launch_option)
             .with_available_models(vec![launch_option, next_turn_option]),
@@ -1652,6 +1836,446 @@ fn provider_reasoning_delta_populates_thinking_stream_without_overwriting_answer
 }
 
 #[test]
+fn provider_request_finished_keeps_activity_streaming_until_turn_task_completes() {
+    let mut app = AppState::new_live(None, false, None);
+
+    app.ingest_event(envelope(
+        1,
+        "req_turn_task",
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_turn_task".to_string(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_turn_task",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_turn_task".to_string(),
+            provider_id: "default".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
+            prompt_summary: "Investigate the harness".to_string(),
+            request_digest: "digest-turn-task".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "req_turn_task",
+        EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            request_id: "req_turn_task".to_string(),
+            delta: "Looking into the turn loop".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        4,
+        "req_turn_task",
+        EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
+            request_id: "req_turn_task".to_string(),
+            finish_reason: "done".to_string(),
+            output_digest: Some("digest-turn-task-finished".to_string()),
+            usage: None,
+        }),
+    ));
+
+    let activity = app.activities.back().expect("activity exists");
+    assert_eq!(activity.status, ActivityStatus::Streaming);
+    assert!(app.active_turn_in_progress());
+
+    app.ingest_event(envelope(
+        5,
+        "req_turn_task",
+        EventV1::TaskCompleted(TaskCompletedEvent {
+            task_id: "task_turn_task".to_string(),
+            result_summary: "Final answer".to_string(),
+            result_digest: "digest-turn-task-result".to_string(),
+            metadata: Some(TaskCompletionMetadata {
+                lineage: None,
+                task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
+                timing: None,
+                hook_executions: Vec::new(),
+            }),
+        }),
+    ));
+
+    let activity = app.activities.back().expect("completed activity exists");
+    assert_eq!(activity.status, ActivityStatus::Done);
+    assert!(!app.active_turn_in_progress());
+}
+
+#[test]
+fn task_cancelled_marks_matching_activity_as_error() {
+    let mut app = AppState::new_live(None, false, None);
+
+    app.ingest_event(envelope(
+        1,
+        "req_cancelled_turn",
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_cancelled_turn".to_string(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_cancelled_turn",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_cancelled_turn".to_string(),
+            provider_id: "default".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
+            prompt_summary: "Edit the docs".to_string(),
+            request_digest: "digest-cancelled-turn".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "req_cancelled_turn",
+        EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
+            request_id: "req_cancelled_turn".to_string(),
+            delta: "Still thinking".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        4,
+        "req_cancelled_turn",
+        EventV1::TaskCancelled(TaskCancelledEvent {
+            task_id: "task_cancelled_turn".to_string(),
+            reason: "agent turn exceeded profile max_iters=24".to_string(),
+            task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
+        }),
+    ));
+
+    let activity = app.activities.back().expect("cancelled activity exists");
+    assert_eq!(activity.status, ActivityStatus::Error);
+    assert_eq!(
+        activity.error_message.as_deref(),
+        Some("agent turn exceeded profile max_iters=24")
+    );
+    assert!(!app.active_turn_in_progress());
+}
+
+#[test]
+fn child_tool_task_completed_does_not_finish_parent_turn_activity() {
+    let mut app = AppState::new_live(None, false, None);
+
+    app.ingest_event(envelope(
+        1,
+        "req_child_task_completed",
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_parent_turn".to_string(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_child_task_completed",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_child_task_completed".to_string(),
+            provider_id: "default".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
+            prompt_summary: "Inspect a file".to_string(),
+            request_digest: "digest-child-task-completed".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "req_child_task_completed",
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_child_tool".to_string(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("tool:read".to_string()),
+        }),
+    ));
+    app.ingest_event(envelope(
+        4,
+        "req_child_task_completed",
+        EventV1::TaskCompleted(TaskCompletedEvent {
+            task_id: "task_child_tool".to_string(),
+            result_summary: "24 lines read".to_string(),
+            result_digest: "digest-child-tool-result".to_string(),
+            metadata: Some(TaskCompletionMetadata {
+                lineage: Some(TaskLineageMetadata {
+                    parent_tool_call_id: Some("tc_child_read".to_string()),
+                    ..TaskLineageMetadata::default()
+                }),
+                task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
+                timing: None,
+                hook_executions: Vec::new(),
+            }),
+        }),
+    ));
+
+    let activity = app.activities.back().expect("activity exists");
+    assert_eq!(activity.status, ActivityStatus::Streaming);
+    assert!(activity.transcript_text.is_empty());
+    assert!(app.active_turn_in_progress());
+}
+
+#[test]
+fn child_tool_task_cancelled_does_not_mark_parent_turn_activity_error() {
+    let mut app = AppState::new_live(None, false, None);
+
+    app.ingest_event(envelope(
+        1,
+        "req_child_task_cancelled",
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_parent_turn".to_string(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_child_task_cancelled",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_child_task_cancelled".to_string(),
+            provider_id: "default".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
+            prompt_summary: "Inspect a file".to_string(),
+            request_digest: "digest-child-task-cancelled".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "req_child_task_cancelled",
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_child_tool".to_string(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("tool:read".to_string()),
+        }),
+    ));
+    app.ingest_event(envelope(
+        4,
+        "req_child_task_cancelled",
+        EventV1::TaskCancelled(TaskCancelledEvent {
+            task_id: "task_child_tool".to_string(),
+            reason: "tool request timed out".to_string(),
+            task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
+        }),
+    ));
+
+    let activity = app.activities.back().expect("activity exists");
+    assert_eq!(activity.status, ActivityStatus::Streaming);
+    assert!(activity.error_message.is_none());
+    assert!(app.active_turn_in_progress());
+}
+
+#[test]
+fn terminal_only_turn_completion_scope_marks_activity_done_without_task_row() {
+    let mut app = AppState::new_live(None, false, None);
+
+    app.ingest_event(envelope(
+        1,
+        "req_terminal_only_done",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_terminal_only_done".to_string(),
+            provider_id: "default".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
+            prompt_summary: "Explain the fix".to_string(),
+            request_digest: "digest-terminal-only-done".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_terminal_only_done",
+        EventV1::TaskCompleted(TaskCompletedEvent {
+            task_id: "task_terminal_only_done".to_string(),
+            result_summary: "Final answer".to_string(),
+            result_digest: "digest-terminal-only-result".to_string(),
+            metadata: Some(TaskCompletionMetadata {
+                lineage: None,
+                task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
+                timing: None,
+                hook_executions: Vec::new(),
+            }),
+        }),
+    ));
+
+    let activity = app.activities.back().expect("activity exists");
+    assert_eq!(activity.status, ActivityStatus::Done);
+    assert_eq!(activity.transcript_text, "Final answer");
+    assert!(!app.active_turn_in_progress());
+}
+
+#[test]
+fn terminal_only_turn_cancellation_scope_marks_activity_error_without_task_row() {
+    let mut app = AppState::new_live(None, false, None);
+
+    app.ingest_event(envelope(
+        1,
+        "req_terminal_only_cancel",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_terminal_only_cancel".to_string(),
+            provider_id: "default".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
+            prompt_summary: "Explain the fix".to_string(),
+            request_digest: "digest-terminal-only-cancel".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_terminal_only_cancel",
+        EventV1::TaskCancelled(TaskCancelledEvent {
+            task_id: "task_terminal_only_cancel".to_string(),
+            reason: "agent turn exceeded profile max_iters=24".to_string(),
+            task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
+        }),
+    ));
+
+    let activity = app.activities.back().expect("activity exists");
+    assert_eq!(activity.status, ActivityStatus::Error);
+    assert_eq!(
+        activity.error_message.as_deref(),
+        Some("agent turn exceeded profile max_iters=24")
+    );
+    assert_eq!(app.runtime_state().kind, RuntimeStateKind::Cancelled);
+    assert!(!app.active_turn_in_progress());
+}
+
+#[test]
+fn terminal_only_tool_cancellation_scope_does_not_fail_activity_or_runtime_state() {
+    let mut app = AppState::new_live(None, false, None);
+
+    app.ingest_event(envelope(
+        1,
+        "req_terminal_only_tool_cancel",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_terminal_only_tool_cancel".to_string(),
+            provider_id: "default".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
+            prompt_summary: "Read the file".to_string(),
+            request_digest: "digest-terminal-only-tool-cancel".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_terminal_only_tool_cancel",
+        EventV1::TaskCancelled(TaskCancelledEvent {
+            task_id: "task_terminal_only_tool_cancel".to_string(),
+            reason: "tool request timed out".to_string(),
+            task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
+        }),
+    ));
+
+    let activity = app.activities.back().expect("activity exists");
+    assert_eq!(activity.status, ActivityStatus::Streaming);
+    assert!(activity.error_message.is_none());
+    assert_eq!(app.runtime_state().kind, RuntimeStateKind::Sending);
+}
+
+#[test]
+fn replay_terminal_only_turn_completion_scope_marks_activity_done_without_task_row() {
+    let app = AppState::new_replay(
+        std::path::PathBuf::from("/tmp/replay-terminal-only-done"),
+        vec![
+            envelope(
+                1,
+                "req_replay_terminal_only_done",
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_replay_terminal_only_done".to_string(),
+                    provider_id: "default".to_string(),
+                    model_id: "gpt-5.4-mini".to_string(),
+                    prompt_summary: "Explain the fix".to_string(),
+                    request_digest: "digest-replay-terminal-only-done".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                "req_replay_terminal_only_done",
+                EventV1::TaskCompleted(TaskCompletedEvent {
+                    task_id: "task_replay_terminal_only_done".to_string(),
+                    result_summary: "Final answer".to_string(),
+                    result_digest: "digest-replay-terminal-only-result".to_string(),
+                    metadata: Some(TaskCompletionMetadata {
+                        lineage: None,
+                        task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
+                        timing: None,
+                        hook_executions: Vec::new(),
+                    }),
+                }),
+            ),
+        ],
+    );
+
+    let activity = app.activities.back().expect("activity exists");
+    assert_eq!(activity.status, ActivityStatus::Done);
+    assert_eq!(activity.transcript_text, "Final answer");
+    assert_eq!(app.runtime_state().kind, RuntimeStateKind::Success);
+}
+
+#[test]
+fn replay_terminal_only_turn_cancellation_scope_marks_activity_error_without_task_row() {
+    let app = AppState::new_replay(
+        std::path::PathBuf::from("/tmp/replay-terminal-only-cancel"),
+        vec![
+            envelope(
+                1,
+                "req_replay_terminal_only_cancel",
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_replay_terminal_only_cancel".to_string(),
+                    provider_id: "default".to_string(),
+                    model_id: "gpt-5.4-mini".to_string(),
+                    prompt_summary: "Explain the fix".to_string(),
+                    request_digest: "digest-replay-terminal-only-cancel".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                "req_replay_terminal_only_cancel",
+                EventV1::TaskCancelled(TaskCancelledEvent {
+                    task_id: "task_replay_terminal_only_cancel".to_string(),
+                    reason: "agent turn exceeded profile max_iters=24".to_string(),
+                    task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
+                }),
+            ),
+        ],
+    );
+
+    let activity = app.activities.back().expect("activity exists");
+    assert_eq!(activity.status, ActivityStatus::Error);
+    assert_eq!(
+        activity.error_message.as_deref(),
+        Some("agent turn exceeded profile max_iters=24")
+    );
+    assert_eq!(app.runtime_state().kind, RuntimeStateKind::Cancelled);
+}
+
+#[test]
+fn replay_terminal_only_tool_cancellation_scope_does_not_fail_activity_or_runtime_state() {
+    let app = AppState::new_replay(
+        std::path::PathBuf::from("/tmp/replay-terminal-only-tool-cancel"),
+        vec![
+            envelope(
+                1,
+                "req_replay_terminal_only_tool_cancel",
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_replay_terminal_only_tool_cancel".to_string(),
+                    provider_id: "default".to_string(),
+                    model_id: "gpt-5.4-mini".to_string(),
+                    prompt_summary: "Read the file".to_string(),
+                    request_digest: "digest-replay-terminal-only-tool-cancel".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                "req_replay_terminal_only_tool_cancel",
+                EventV1::TaskCancelled(TaskCancelledEvent {
+                    task_id: "task_replay_terminal_only_tool_cancel".to_string(),
+                    reason: "tool request timed out".to_string(),
+                    task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
+                }),
+            ),
+        ],
+    );
+
+    let activity = app.activities.back().expect("activity exists");
+    assert_eq!(activity.status, ActivityStatus::Streaming);
+    assert!(activity.error_message.is_none());
+    assert_eq!(app.runtime_state().kind, RuntimeStateKind::Sending);
+}
+
+#[test]
 fn ctrl_j_inserts_newline_without_submitting() {
     let mut app = AppState::new_live(None, false, None);
 
@@ -1818,7 +2442,7 @@ fn replay_mode_focus_cycle_skips_prompt_and_blocks_draft_edits() {
 }
 
 #[test]
-fn child_session_navigation_keybinds_follow_opencode_contract() {
+fn child_session_navigation_keybinds_follow_default_contract() {
     let run_dir = tempfile::tempdir().expect("create temp run dir");
     let parent_dir = run_dir.path().join("parent");
     let child_a_dir = run_dir.path().join("child_a");
@@ -1858,7 +2482,7 @@ fn child_session_navigation_keybinds_follow_opencode_contract() {
 
     let mut parent_app =
         AppState::new_live(Some(parent_dir.clone()), false, Some(Arc::clone(&sink)));
-    parent_app.apply_keybindings(opencode_navigation_keybindings());
+    parent_app.apply_keybindings(default_navigation_keybindings());
     for event in parent_events.clone() {
         parent_app.ingest_event(event);
     }
@@ -1871,7 +2495,7 @@ fn child_session_navigation_keybinds_follow_opencode_contract() {
 
     let mut child_app =
         AppState::new_live(Some(child_a_dir.clone()), false, Some(Arc::clone(&sink)));
-    child_app.apply_keybindings(opencode_navigation_keybindings());
+    child_app.apply_keybindings(default_navigation_keybindings());
     for event in child_a_events {
         child_app.ingest_event(event);
     }
@@ -1884,7 +2508,7 @@ fn child_session_navigation_keybinds_follow_opencode_contract() {
     assert!(child_app.prompt_buffer.is_empty());
 
     let mut reverse_app = AppState::new_live(Some(child_b_dir.clone()), false, Some(sink));
-    reverse_app.apply_keybindings(opencode_navigation_keybindings());
+    reverse_app.apply_keybindings(default_navigation_keybindings());
     for event in child_b_events {
         reverse_app.ingest_event(event);
     }
@@ -1956,7 +2580,7 @@ fn replay_child_navigation_does_not_emit_live_intents() {
 
     let mut app = AppState::new_replay(parent_dir.clone(), parent_events);
     app.on_ui_intent = Some(sink);
-    app.apply_keybindings(opencode_navigation_keybindings());
+    app.apply_keybindings(default_navigation_keybindings());
     app.set_launch_metadata(LaunchMetadata::new(
         "planner",
         "mock",
@@ -2250,6 +2874,7 @@ fn tool_task_completion_does_not_copy_tool_output_into_activity_transcript() {
                     parent_tool_call_id: Some("tc_docs_tokio".to_string()),
                     ..TaskLineageMetadata::default()
                 }),
+                task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
                 timing: None,
                 hook_executions: Vec::new(),
             }),
