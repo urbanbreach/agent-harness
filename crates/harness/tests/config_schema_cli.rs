@@ -4,8 +4,16 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 
-use harness_core::config::{load_config_from_file, OpenAiApiMode, ProviderConfig};
+use harness_core::config::{
+    harness_schema_pretty_json, harness_tui_schema_pretty_json, load_config_from_file,
+    OpenAiApiMode, ProviderConfig, PublicRuntimeConfig, PublicTuiConfig,
+};
+use serde_json::Value;
 use tempfile::tempdir;
+
+fn repo_root() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
+}
 
 fn openai_api_key_env_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -42,7 +50,57 @@ fn write_config(path: &Path, config: &serde_json::Value) {
     .expect("write config");
 }
 
-fn valid_config_value(label: &str, session_dir: &Path) -> serde_json::Value {
+fn harness_command() -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_harness"));
+    command
+        .env_remove("HARNESS_CONFIG")
+        .env_remove("HARNESS_CONFIG_CONTENT")
+        .env_remove("HARNESS_TUI_CONFIG")
+        .env("HOME", "/nonexistent")
+        .env("XDG_CONFIG_HOME", "/nonexistent");
+    command
+}
+
+fn canonical_runtime_config() -> serde_json::Value {
+    serde_json::json!({
+        "provider": {
+            "default": {
+                "type": "openai_compatible",
+                "baseURL": "http://127.0.0.1:1/v1",
+                "apiKey": "DUMMY",
+                "apiMode": "responses",
+                "models": {
+                    "gpt-4o": {
+                        "name": "GPT-4o"
+                    },
+                    "gpt-4o-mini": {
+                        "name": "GPT-4o mini"
+                    }
+                }
+            }
+        },
+        "model": "default/gpt-4o",
+        "small_model": "default/gpt-4o-mini",
+        "default_agent": "build",
+        "permission": {
+            "edit": "allow",
+            "bash": "allow",
+            "shell_allowlist": {
+                "executables": ["git"],
+                "cwd_roots": ["."]
+            }
+        },
+        "mcp": {
+            "gh_grep": {
+                "transport": "http",
+                "endpoint": "https://mcp.grep.app",
+                "enabled": true
+            }
+        }
+    })
+}
+
+fn legacy_runtime_config(session_dir: &Path) -> serde_json::Value {
     serde_json::json!({
         "providers": {
             "default": {
@@ -50,7 +108,6 @@ fn valid_config_value(label: &str, session_dir: &Path) -> serde_json::Value {
                 "base_url": "http://127.0.0.1:1/v1",
                 "api_key": "DUMMY",
                 "api_mode": "responses",
-                "timeout_ms": 60000,
                 "models": {
                     "gpt-4o-mini": {
                         "display_name": "GPT-4o mini"
@@ -60,20 +117,17 @@ fn valid_config_value(label: &str, session_dir: &Path) -> serde_json::Value {
         },
         "agents": {
             "deep": {
-                "description": format!("{label} profile"),
+                "description": "Deep profile",
                 "model_ref": "default:gpt-4o-mini",
                 "tools": []
             }
         },
+        "default_agent": "deep",
         "permissions": {
             "defaults": {
                 "edit": "allow",
                 "shell": "allow",
                 "network": "allow"
-            },
-            "shell_allowlist": {
-                "executables": ["git"],
-                "cwd_roots": ["."]
             }
         },
         "runtime": {
@@ -101,172 +155,9 @@ fn valid_config_value(label: &str, session_dir: &Path) -> serde_json::Value {
     })
 }
 
-fn write_valid_config(path: &Path, label: &str, session_dir: &Path) {
-    let config = valid_config_value(label, session_dir);
-    write_config(path, &config);
-}
-
-fn rich_parity_config_value(session_dir: &Path) -> serde_json::Value {
-    serde_json::json!({
-        "providers": {
-            "default": {
-                "type": "openai_compatible",
-                "base_url": "http://127.0.0.1:1/v1",
-                "api_key": "DUMMY",
-                "api_mode": "responses",
-                "timeout_ms": 60000,
-                "models": {
-                    "gpt-5.4-mini": {
-                        "display_name": "GPT-5.4 Mini",
-                        "metadata": {
-                            "family": "gpt-5",
-                            "release_stage": "stable",
-                            "context_window_tokens": 128000,
-                            "supports_tool_calls": true,
-                            "supports_reasoning_summaries": true
-                        },
-                        "max_input_tokens": 128000,
-                        "max_output_tokens": 16384,
-                        "variants": {
-                            "deterministic": {
-                                "display_name": "Deterministic",
-                                "max_output_tokens": 4096,
-                                "metadata": {
-                                    "description": "Deterministic mode",
-                                    "reasoning_effort": "minimal",
-                                    "text_verbosity": "low",
-                                    "recommended_for": "deep"
-                                }
-                            },
-                            "creative": {
-                                "display_name": "Creative",
-                                "metadata": {
-                                    "description": "Creative mode",
-                                    "reasoning_effort": "high",
-                                    "text_verbosity": "high",
-                                    "recommended_for": "writer"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "agents": {
-            "deep": {
-                "description": "Rich parity profile",
-                "model_ref": "default:gpt-5.4-mini",
-                "variant": "deterministic",
-                "tools": []
-            }
-        },
-        "hooks": {
-            "lifecycle": [
-                {
-                    "event": "run_started",
-                    "command": ["bash", "-lc", "printf 'run started\\n'"],
-                    "timeout_ms": 4000,
-                    "critical": false,
-                    "env": {
-                        "HARNESS_HOOK_SOURCE": "test"
-                    }
-                },
-                {
-                    "event": "tool_call_finished",
-                    "command": ["bash", "-lc", "printf 'tool done\\n'"],
-                    "timeout_ms": 4000,
-                    "critical": false
-                }
-            ]
-        },
-        "skills": {
-            "project_roots": [".opencode/skills", ".claude/skills", ".agents/skills"],
-            "global_roots": ["~/.config/opencode/skills", "~/.claude/skills", "~/.agents/skills"],
-            "walk_to_git_root": true,
-            "permissions": {
-                "*": "allow",
-                "internal-*": "deny",
-                "experimental-*": "ask"
-            }
-        },
-        "lsp": {
-            "disabled": false,
-            "servers": {
-                "rust": {
-                    "disabled": false,
-                    "command": ["rust-analyzer"],
-                    "extensions": [".rs"],
-                    "env": {
-                        "RUST_LOG": "warn"
-                    },
-                    "initialization": {
-                        "cargo": {
-                            "allFeatures": true
-                        }
-                    }
-                },
-                "typescript": {
-                    "disabled": false,
-                    "command": ["typescript-language-server", "--stdio"],
-                    "extensions": [".ts", ".tsx", ".js", ".jsx"],
-                    "initialization": {
-                        "preferences": {
-                            "importModuleSpecifierPreference": "relative"
-                        }
-                    }
-                }
-            }
-        },
-        "permissions": {
-            "defaults": {
-                "edit": "allow",
-                "shell": "allow",
-                "network": "allow"
-            },
-            "shell_allowlist": {
-                "executables": ["git"],
-                "cwd_roots": ["."]
-            }
-        },
-        "runtime": {
-            "background_tasks": {
-                "default_concurrency": 2,
-                "provider_concurrency": 2,
-                "model_concurrency": 2,
-                "stale_timeout_ms": 30000,
-                "message_staleness_timeout_ms": 10000
-            },
-            "session_dir": session_dir,
-            "deterministic": {
-                "enabled": false,
-                "seed": 42
-            }
-        },
-        "integrations": {
-            "remote_search": {
-                "endpoint": "https://mcp.exa.ai/mcp"
-            }
-        },
-        "ui": {
-            "default_profile": "deep",
-            "parity": {
-                "variant_cycle_enabled": true,
-                "child_session_navigation_enabled": true,
-                "keybindings": {
-                    "variant_cycle": "tab",
-                    "session_child_first": "ctrl+]",
-                    "session_child_cycle": "]",
-                    "session_child_cycle_reverse": "[",
-                    "session_parent": "ctrl+["
-                }
-            }
-        }
-    })
-}
-
 #[test]
-fn schema_cli_prints_json_schema() {
-    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+fn schema_cli_prints_runtime_json_schema() {
+    let output = harness_command()
         .arg("schema")
         .output()
         .expect("run harness schema");
@@ -276,22 +167,73 @@ fn schema_cli_prints_json_schema() {
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
+
     let body = String::from_utf8_lossy(&output.stdout);
-    assert!(body.contains("\"type\": \"object\""));
-    assert!(body.contains("\"agents\"") || body.contains("\"runtime\""));
-    assert!(body.contains("\"integrations\""));
-    assert!(body.contains("\"hooks\""));
-    assert!(body.contains("\"skills\""));
-    assert!(body.contains("\"lsp\""));
-    assert!(body.contains("\"variant_cycle_enabled\""));
+    assert!(body.contains("\"provider\""));
+    assert!(body.contains("\"model\""));
+    assert!(body.contains("\"small_model\""));
+    assert!(body.contains("\"permission\""));
+    assert!(body.contains("\"mcp\""));
+    assert!(!body.contains("\"integrations\""));
+    assert!(!body.contains("\"runtime\""));
+
+    let schema: Value = serde_json::from_slice(&output.stdout).expect("schema json");
+    let definitions = schema
+        .get("definitions")
+        .and_then(Value::as_object)
+        .expect("schema definitions");
+
+    let model_properties = definitions["ModelConfig"]
+        .get("properties")
+        .and_then(Value::as_object)
+        .expect("ModelConfig properties");
+    assert!(model_properties.contains_key("name"));
+    assert!(!model_properties.contains_key("display_name"));
+
+    let variant_properties = definitions["ModelVariantConfig"]
+        .get("properties")
+        .and_then(Value::as_object)
+        .expect("ModelVariantConfig properties");
+    assert!(variant_properties.contains_key("name"));
+    assert!(!variant_properties.contains_key("display_name"));
+
+    let provider_properties = definitions["ProviderConfig"]["oneOf"][0]
+        .get("properties")
+        .and_then(Value::as_object)
+        .expect("ProviderConfig properties");
+    assert!(provider_properties.contains_key("baseURL"));
+    assert!(provider_properties.contains_key("apiKey"));
+    assert!(provider_properties.contains_key("apiMode"));
+    assert!(provider_properties.contains_key("timeoutMs"));
+    assert!(!provider_properties.contains_key("base_url"));
+    assert!(!provider_properties.contains_key("api_key"));
+
+    let options_properties = definitions["OpenAiCompatibleProviderOptions"]
+        .get("properties")
+        .and_then(Value::as_object)
+        .expect("OpenAiCompatibleProviderOptions properties");
+    assert!(options_properties.contains_key("baseURL"));
+    assert!(options_properties.contains_key("apiKey"));
+    assert!(options_properties.contains_key("apiMode"));
+    assert!(options_properties.contains_key("timeoutMs"));
+    assert!(!options_properties.contains_key("base_url"));
+    assert!(!options_properties.contains_key("api_key"));
+
+    let permission_properties = definitions["PublicPermissionConfig"]
+        .get("properties")
+        .and_then(Value::as_object)
+        .expect("PublicPermissionConfig properties");
+    assert!(permission_properties.contains_key("bash"));
+    assert!(!permission_properties.contains_key("shell"));
+    assert!(!permission_properties.contains_key("network"));
 }
 
 #[test]
-fn schema_cli_documents_current_integrations_boundary() {
-    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
-        .arg("schema")
+fn schema_cli_prints_tui_json_schema() {
+    let output = harness_command()
+        .args(["schema", "--tui"])
         .output()
-        .expect("run harness schema");
+        .expect("run harness schema --tui");
 
     assert!(
         output.status.success(),
@@ -299,33 +241,16 @@ fn schema_cli_documents_current_integrations_boundary() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let schema: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("schema output should be json");
-    let integrations = &schema["definitions"]["IntegrationsConfig"];
-    let integration_properties = integrations["properties"]
-        .as_object()
-        .expect("integrations properties object");
-    assert_eq!(integration_properties.len(), 2);
-    assert!(integration_properties.contains_key("mcp"));
-    assert!(integration_properties.contains_key("remote_search"));
-
-    let integrations_description = integrations["description"]
-        .as_str()
-        .expect("integrations description");
-    assert!(integrations_description.contains("remote search transport"));
-    assert!(integrations_description.contains("configured MCP servers"));
-
-    let remote_search_description = schema["definitions"]["RemoteSearchConfig"]["description"]
-        .as_str()
-        .expect("remote search description");
-    assert!(remote_search_description.contains("Exa-compatible MCP endpoint"));
-    assert!(remote_search_description.contains("`web_search` and `code_search`"));
+    let body = String::from_utf8_lossy(&output.stdout);
+    assert!(body.contains("\"keybinds\""));
+    assert!(!body.contains("\"parity\""));
+    assert!(!body.contains("\"default_profile\""));
 }
 
 #[test]
 fn config_validate_cli_reports_missing_config() {
     let temp = tempdir().expect("tempdir");
-    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+    let output = harness_command()
         .current_dir(temp.path())
         .args(["config", "validate"])
         .output()
@@ -334,15 +259,18 @@ fn config_validate_cli_reports_missing_config() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("no config file found"));
+    assert!(stderr.contains("./harness.jsonc"));
+    assert!(stderr.contains("./harness.json"));
+    assert!(stderr.contains("$XDG_CONFIG_HOME/harness/harness.jsonc"));
     assert!(stderr.contains("configs/harness.example.jsonc"));
 }
 
 #[test]
 fn config_validate_cli_accepts_shipped_example_config() {
-    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+    let repo_root = repo_root();
     let config_path = repo_root.join("configs").join("harness.example.jsonc");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+    let output = harness_command()
         .current_dir(&repo_root)
         .args([
             "--config",
@@ -365,629 +293,28 @@ fn config_validate_cli_accepts_shipped_example_config() {
 }
 
 #[test]
-fn shipped_example_config_resolves_loopback_placeholder_key_without_openai_api_key() {
-    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
-    let config_path = repo_root.join("configs").join("harness.example.jsonc");
-
-    with_env_var_state("OPENAI_API_KEY", None, || {
-        let parsed = load_config_from_file(&config_path)
-            .expect("shipped example config should resolve without OPENAI_API_KEY on loopback");
-        let ProviderConfig::OpenAiCompatible(provider) = parsed
-            .providers
-            .get("default")
-            .expect("default provider present in shipped example config");
-
-        assert_eq!(provider.name.as_deref(), Some("CLIProxyAPI"));
-        assert_eq!(provider.base_url, "http://127.0.0.1:8317/v1");
-        assert_eq!(provider.api_key, "sk-zerolimit");
-        assert!(matches!(provider.api_mode, OpenAiApiMode::Auto));
-    });
-}
-
-#[test]
-fn shipped_example_config_uses_placeholder_key_when_openai_api_key_is_empty() {
-    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
-    let config_path = repo_root.join("configs").join("harness.example.jsonc");
-
-    with_env_var_state("OPENAI_API_KEY", Some(""), || {
-        let parsed = load_config_from_file(&config_path)
-            .expect("shipped example config should use fallback key when OPENAI_API_KEY is empty");
-        let ProviderConfig::OpenAiCompatible(provider) = parsed
-            .providers
-            .get("default")
-            .expect("default provider present in shipped example config");
-
-        assert_eq!(provider.name.as_deref(), Some("CLIProxyAPI"));
-        assert_eq!(provider.base_url, "http://127.0.0.1:8317/v1");
-        assert_eq!(provider.api_key, "sk-zerolimit");
-        assert!(matches!(provider.api_mode, OpenAiApiMode::Auto));
-    });
-}
-
-#[test]
-fn config_validate_cli_accepts_valid_config_and_session_override() {
+fn config_validate_cli_merges_xdg_defaults_with_local_project_override() {
     let temp = tempdir().expect("tempdir");
     let xdg_root = temp.path().join("xdg");
-    let config_path = temp.path().join("harness.test.jsonc");
-    let local_config_path = temp.path().join("harness.jsonc");
-    let xdg_config_path = xdg_root.join("harness/config.jsonc");
-    let session_dir = temp.path().join("override-sessions");
-    write_valid_config(&config_path, "explicit", &temp.path().join("sessions"));
-    write_valid_config(
-        &local_config_path,
-        "local",
-        &temp.path().join("local-sessions"),
-    );
+    let xdg_config_path = xdg_root.join("harness/harness.jsonc");
+    let local_config_path = temp.path().join("harness.json");
+
     fs::create_dir_all(xdg_config_path.parent().expect("xdg config parent"))
         .expect("create xdg config dir");
-    write_valid_config(&xdg_config_path, "xdg", &temp.path().join("xdg-sessions"));
-
-    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
-        .current_dir(temp.path())
-        .env("XDG_CONFIG_HOME", &xdg_root)
-        .args([
-            "--config",
-            config_path.to_str().expect("config path utf-8"),
-            "--session-dir",
-            session_dir.to_str().expect("session dir utf-8"),
-            "config",
-            "validate",
-        ])
-        .output()
-        .expect("run harness config validate with valid config");
-
-    assert!(
-        output.status.success(),
-        "stderr:\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("config valid:"));
-    assert!(stdout.contains(config_path.to_str().expect("config path utf-8")));
-    assert!(!stdout.contains(local_config_path.to_str().expect("local config path utf-8")));
-    assert!(!stdout.contains(xdg_config_path.to_str().expect("xdg config path utf-8")));
-}
-
-#[test]
-fn config_validate_cli_accepts_rich_parity_config() {
-    let temp = tempdir().expect("tempdir");
-    let config_path = temp.path().join("harness.rich.jsonc");
-    let session_dir = temp.path().join("rich-sessions");
-    let config = rich_parity_config_value(&temp.path().join("sessions"));
-    write_config(&config_path, &config);
-
-    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
-        .current_dir(temp.path())
-        .args([
-            "--config",
-            config_path.to_str().expect("config path utf-8"),
-            "--session-dir",
-            session_dir.to_str().expect("session dir utf-8"),
-            "config",
-            "validate",
-        ])
-        .output()
-        .expect("run harness config validate with rich parity config");
-
-    assert!(
-        output.status.success(),
-        "stderr:\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("config valid:"));
-    assert!(stdout.contains(config_path.to_str().expect("config path utf-8")));
-}
-
-#[test]
-fn config_validate_cli_accepts_gpt_5_4_mini_defaults() {
-    let temp = tempdir().expect("tempdir");
-    let config_path = temp.path().join("harness.gpt-5.4-mini.jsonc");
-    let session_dir = temp.path().join("gpt-5.4-mini-sessions");
-    let config = rich_parity_config_value(&temp.path().join("sessions"));
-    assert_eq!(
-        config["agents"]["deep"]["model_ref"],
-        serde_json::json!("default:gpt-5.4-mini")
-    );
-    assert!(config["providers"]["default"]["models"]
-        .get("gpt-5.4-mini")
-        .is_some());
-    write_config(&config_path, &config);
-
-    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
-        .current_dir(temp.path())
-        .args([
-            "--config",
-            config_path.to_str().expect("config path utf-8"),
-            "--session-dir",
-            session_dir.to_str().expect("session dir utf-8"),
-            "config",
-            "validate",
-        ])
-        .output()
-        .expect("run harness config validate with gpt-5.4-mini defaults");
-
-    assert!(
-        output.status.success(),
-        "stderr:\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("config valid:"));
-    assert!(stdout.contains(config_path.to_str().expect("config path utf-8")));
-}
-
-#[test]
-fn config_validate_cli_accepts_custom_local_lsp_and_disabled_unreferenced_variant() {
-    let temp = tempdir().expect("tempdir");
-    let config_path = temp.path().join("harness.custom-lsp.jsonc");
-    let mut config = rich_parity_config_value(&temp.path().join("sessions"));
-    config["providers"]["default"]["models"]["gpt-5.4-mini"]["variants"]["legacy"] = serde_json::json!({
-        "display_name": "Legacy",
-        "disabled": true,
-        "metadata": {
-            "description": "Retired fallback"
-        }
-    });
-    config["skills"]["permissions"]["team-*"] = serde_json::json!("allow");
-    config["skills"]["permissions"]["team-secret"] = serde_json::json!("ask");
-    config["lsp"]["servers"]["custom-local"] = serde_json::json!({
-        "disabled": false,
-        "command": ["custom-local-lsp", "--stdio"],
-        "extensions": [".foo", ".bar"],
-        "env": {
-            "CUSTOM_LSP_MODE": "enabled"
-        },
-        "initialization": {
-            "feature": {
-                "mode": "custom"
-            }
-        }
-    });
-    write_config(&config_path, &config);
-
-    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
-        .current_dir(temp.path())
-        .args([
-            "--config",
-            config_path.to_str().expect("config path utf-8"),
-            "config",
-            "validate",
-        ])
-        .output()
-        .expect("run harness config validate with custom local lsp");
-
-    assert!(
-        output.status.success(),
-        "stderr:\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("config valid:"));
-    assert!(stdout.contains(config_path.to_str().expect("config path utf-8")));
-}
-
-#[test]
-fn config_validate_cli_does_not_merge_lower_precedence_files_into_explicit_config() {
-    let temp = tempdir().expect("tempdir");
-    let xdg_root = temp.path().join("xdg");
-    let config_path = temp.path().join("harness.test.jsonc");
-    let local_config_path = temp.path().join("harness.jsonc");
-    let xdg_config_path = xdg_root.join("harness/config.jsonc");
-
-    write_valid_config(
+    write_config(&xdg_config_path, &canonical_runtime_config());
+    write_config(
         &local_config_path,
-        "local",
-        &temp.path().join("local-sessions"),
+        &serde_json::json!({
+            "default_agent": "plan"
+        }),
     );
-    fs::create_dir_all(xdg_config_path.parent().expect("xdg config parent"))
-        .expect("create xdg config dir");
-    write_valid_config(&xdg_config_path, "xdg", &temp.path().join("xdg-sessions"));
 
-    let incomplete_config = serde_json::json!({
-        "providers": {
-            "default": {
-                "type": "openai_compatible",
-                "base_url": "http://127.0.0.1:1/v1",
-                "api_key": "DUMMY",
-                "api_mode": "responses"
-            }
-        }
-    });
-    write_config(&config_path, &incomplete_config);
-
-    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+    let output = harness_command()
         .current_dir(temp.path())
         .env("XDG_CONFIG_HOME", &xdg_root)
-        .args([
-            "--config",
-            config_path.to_str().expect("config path utf-8"),
-            "config",
-            "validate",
-        ])
-        .output()
-        .expect("run harness config validate with incomplete explicit config");
-
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("config validation failed:"));
-    assert!(stderr.contains(
-        "missing required config sections: agent/agents, integrations, permissions, runtime"
-    ));
-}
-
-#[test]
-fn config_validate_cli_rejects_retired_public_keys_with_migration_guidance() {
-    let temp = tempdir().expect("tempdir");
-    let config_path = temp.path().join("harness.jsonc");
-    let config = serde_json::json!({
-        "providers": {
-            "default": {
-                "type": "openai_compatible",
-                "base_url": "http://127.0.0.1:1/v1",
-                "api_key": "DUMMY",
-                "models": {
-                    "gpt-4o-mini": {
-                        "display_name": "GPT-4o mini"
-                    }
-                }
-            }
-        },
-        "permissions": {
-            "defaults": {
-                "edit": "allow",
-                "shell": "allow",
-                "network": "allow"
-            }
-        },
-        "integrations": {
-            "remote_search": {
-                "endpoint": "https://mcp.exa.ai/mcp"
-            }
-        },
-        "runtime": {
-            "background_tasks": {
-                "default_concurrency": 2,
-                "provider_concurrency": 2,
-                "model_concurrency": 2,
-                "stale_timeout_ms": 30000,
-                "message_staleness_timeout_ms": 10000
-            },
-            "session_dir": ".agent-harness/sessions",
-            "deterministic": {
-                "enabled": false,
-                "seed": 42
-            }
-        },
-        "agents": {},
-        "categories": {},
-        "backgroundTask": {
-            "defaultConcurrency": 2
-        },
-        "paths": {
-            "session_dir": ".agent-harness/sessions"
-        },
-        "deterministic": {
-            "enabled": false,
-            "seed": 42
-        }
-    });
-    write_config(&config_path, &config);
-
-    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
-        .current_dir(temp.path())
         .args(["config", "validate"])
         .output()
-        .expect("run harness config validate with retired keys");
-
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("config validation failed:"));
-    assert!(stderr.contains("retired config keys detected:"));
-    assert!(stderr.contains("top-level `categories` was retired; rename it to `agents`"));
-    assert!(stderr.contains(
-        "top-level `backgroundTask` was retired; move its fields under `runtime.background_tasks`"
-    ));
-}
-
-#[test]
-fn config_validate_cli_rejects_retired_categories_with_migration_guidance() {
-    let temp = tempdir().expect("tempdir");
-    let config_path = temp.path().join("harness.jsonc");
-    let mut config = valid_config_value("legacy-categories", &temp.path().join("sessions"));
-    config["categories"] = serde_json::json!({
-        "deep": {
-            "description": "Legacy deep profile",
-            "model_ref": "default:gpt-4o-mini",
-            "tools": []
-        }
-    });
-    write_config(&config_path, &config);
-
-    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
-        .current_dir(temp.path())
-        .args(["config", "validate"])
-        .output()
-        .expect("run harness config validate with retired categories");
-
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("config validation failed:"));
-    assert!(stderr.contains("retired config keys detected:"));
-    assert!(stderr.contains("top-level `categories` was retired; rename it to `agents`"));
-}
-
-#[test]
-fn config_validate_cli_rejects_retired_profiles_with_migration_guidance() {
-    let temp = tempdir().expect("tempdir");
-    let config_path = temp.path().join("harness.jsonc");
-    let mut config = valid_config_value("legacy-profiles", &temp.path().join("sessions"));
-    config["profiles"] = serde_json::json!({
-        "deep": {
-            "description": "Legacy deep agent",
-            "model_ref": "default:gpt-4o-mini",
-            "tools": []
-        }
-    });
-    write_config(&config_path, &config);
-
-    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
-        .current_dir(temp.path())
-        .args(["config", "validate"])
-        .output()
-        .expect("run harness config validate with retired profiles");
-
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("config validation failed:"));
-    assert!(stderr.contains("retired config keys detected:"));
-    assert!(stderr.contains("top-level `profiles` was retired; rename it to `agents`"));
-}
-
-#[test]
-fn config_validate_cli_rejects_unknown_top_level_keys() {
-    let temp = tempdir().expect("tempdir");
-    let config_path = temp.path().join("harness.jsonc");
-    let mut config = valid_config_value("unknown-key", &temp.path().join("sessions"));
-    config["mystery"] = serde_json::json!({"enabled": true});
-    write_config(&config_path, &config);
-
-    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
-        .current_dir(temp.path())
-        .args(["config", "validate"])
-        .output()
-        .expect("run harness config validate with unknown key");
-
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("config validation failed: unknown top-level config keys:"));
-    assert!(stderr.contains("`mystery`"));
-    assert!(stderr.contains("expected only"));
-}
-
-#[test]
-fn config_validate_cli_rejects_unknown_provider_reference() {
-    let temp = tempdir().expect("tempdir");
-    let config_path = temp.path().join("harness.jsonc");
-    let mut config = valid_config_value("invalid-provider", &temp.path().join("sessions"));
-    config["agents"]["deep"]["model_ref"] =
-        serde_json::Value::String("missing:gpt-4o-mini".to_string());
-    write_config(&config_path, &config);
-
-    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
-        .current_dir(temp.path())
-        .args(["config", "validate"])
-        .output()
-        .expect("run harness config validate with invalid provider ref");
-
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("config validation failed:"));
-    assert!(stderr.contains(
-        "agent `deep` references unknown provider `missing` in `model_ref` `missing:gpt-4o-mini`"
-    ));
-}
-
-#[test]
-fn config_validate_cli_rejects_invalid_hook_or_variant_refs() {
-    let temp = tempdir().expect("tempdir");
-
-    let invalid_hook_path = temp.path().join("invalid-hook.jsonc");
-    let mut invalid_hook = rich_parity_config_value(&temp.path().join("sessions"));
-    invalid_hook["hooks"]["lifecycle"][0]["command"] = serde_json::json!([]);
-    write_config(&invalid_hook_path, &invalid_hook);
-
-    let hook_output = Command::new(env!("CARGO_BIN_EXE_harness"))
-        .current_dir(temp.path())
-        .args([
-            "--config",
-            invalid_hook_path.to_str().expect("hook config path utf-8"),
-            "config",
-            "validate",
-        ])
-        .output()
-        .expect("run harness config validate with invalid hook");
-
-    assert!(!hook_output.status.success());
-    let hook_stderr = String::from_utf8_lossy(&hook_output.stderr);
-    assert!(hook_stderr.contains("config validation failed:"));
-    assert!(hook_stderr.contains("hooks.lifecycle[0]"));
-    assert!(hook_stderr.contains("must include at least one command token"));
-
-    let invalid_variant_path = temp.path().join("invalid-variant.jsonc");
-    let mut invalid_variant = rich_parity_config_value(&temp.path().join("sessions"));
-    invalid_variant["agents"]["deep"]["variant"] = serde_json::Value::String("ghost".to_string());
-    write_config(&invalid_variant_path, &invalid_variant);
-
-    let variant_output = Command::new(env!("CARGO_BIN_EXE_harness"))
-        .current_dir(temp.path())
-        .args([
-            "--config",
-            invalid_variant_path
-                .to_str()
-                .expect("variant config path utf-8"),
-            "config",
-            "validate",
-        ])
-        .output()
-        .expect("run harness config validate with invalid variant ref");
-
-    assert!(!variant_output.status.success());
-    let variant_stderr = String::from_utf8_lossy(&variant_output.stderr);
-    assert!(variant_stderr.contains("config validation failed:"));
-    assert!(variant_stderr.contains(
-        "agent `deep` references unknown variant `ghost` for model `default:gpt-5.4-mini`"
-    ));
-
-    let invalid_skill_root_path = temp.path().join("invalid-skill-root.jsonc");
-    let mut invalid_skill_root = rich_parity_config_value(&temp.path().join("sessions"));
-    invalid_skill_root["skills"]["project_roots"] = serde_json::json!(["../skills"]);
-    write_config(&invalid_skill_root_path, &invalid_skill_root);
-
-    let skill_root_output = Command::new(env!("CARGO_BIN_EXE_harness"))
-        .current_dir(temp.path())
-        .args([
-            "--config",
-            invalid_skill_root_path
-                .to_str()
-                .expect("skill config path utf-8"),
-            "config",
-            "validate",
-        ])
-        .output()
-        .expect("run harness config validate with invalid skill root");
-
-    assert!(!skill_root_output.status.success());
-    let skill_root_stderr = String::from_utf8_lossy(&skill_root_output.stderr);
-    assert!(skill_root_stderr.contains("config validation failed:"));
-    assert!(skill_root_stderr.contains("skills.project_roots[0]"));
-    assert!(skill_root_stderr.contains("must not contain `..`"));
-}
-
-#[test]
-fn config_validate_cli_rejects_unknown_exit_target_profile() {
-    let temp = tempdir().expect("tempdir");
-    let config_path = temp.path().join("harness.jsonc");
-    let mut config = valid_config_value("invalid-exit-target", &temp.path().join("sessions"));
-    config["agents"]["deep"]["exit_target_profile"] = serde_json::Value::String("ops".to_string());
-    write_config(&config_path, &config);
-
-    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
-        .current_dir(temp.path())
-        .args(["config", "validate"])
-        .output()
-        .expect("run harness config validate with invalid exit target profile");
-
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("config validation failed:"));
-    assert!(stderr.contains(
-        "agent `deep` references unknown `exit_target_profile` `ops`; available agents: deep"
-    ));
-}
-
-#[test]
-fn config_validate_cli_rejects_unknown_ui_default_profile() {
-    let temp = tempdir().expect("tempdir");
-    let config_path = temp.path().join("harness.jsonc");
-    let mut config = valid_config_value("invalid-default-profile", &temp.path().join("sessions"));
-    config["ui"]["default_profile"] = serde_json::Value::String("ops".to_string());
-    write_config(&config_path, &config);
-
-    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
-        .current_dir(temp.path())
-        .args(["config", "validate"])
-        .output()
-        .expect("run harness config validate with invalid ui default profile");
-
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("config validation failed:"));
-    assert!(stderr
-        .contains("ui.default_profile references unknown agent `ops`; available agents: deep"));
-}
-
-#[test]
-fn config_validate_cli_accepts_opencode_style_agent_shape() {
-    let temp = tempdir().expect("tempdir");
-    let config_path = temp.path().join("harness.jsonc");
-    let config = serde_json::json!({
-        "providers": {
-            "default": {
-                "type": "openai_compatible",
-                "base_url": "http://127.0.0.1:1/v1",
-                "api_key": "DUMMY",
-                "api_mode": "responses",
-                "timeout_ms": 60000,
-                "models": {
-                    "gpt-4o-mini": {
-                        "display_name": "GPT-4o mini"
-                    }
-                }
-            }
-        },
-        "agent": {
-            "build": {
-                "description": "Build profile",
-                "model_ref": "default:gpt-4o-mini",
-                "permissions": {
-                    "edit": "allow",
-                    "shell": "allow"
-                },
-                "tools": []
-            },
-            "plan": {
-                "description": "Plan profile",
-                "model_ref": "default:gpt-4o-mini",
-                "plan_mode": true,
-                "exit_target_profile": "build",
-                "permissions": {
-                    "edit": "deny",
-                    "shell": "deny",
-                    "task": "deny"
-                },
-                "tools": []
-            }
-        },
-        "default_agent": "build",
-        "permissions": {
-            "defaults": {
-                "edit": "allow",
-                "shell": "allow",
-                "network": "allow"
-            },
-            "shell_allowlist": {
-                "executables": ["git"],
-                "cwd_roots": ["."]
-            }
-        },
-        "runtime": {
-            "background_tasks": {
-                "default_concurrency": 2,
-                "provider_concurrency": 2,
-                "model_concurrency": 2,
-                "stale_timeout_ms": 30000,
-                "message_staleness_timeout_ms": 10000
-            },
-            "session_dir": temp.path().join("sessions"),
-            "deterministic": {
-                "enabled": false,
-                "seed": 42
-            }
-        },
-        "integrations": {
-            "remote_search": {
-                "endpoint": "https://mcp.exa.ai/mcp"
-            }
-        }
-    });
-    write_config(&config_path, &config);
-
-    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
-        .current_dir(temp.path())
-        .args(["config", "validate"])
-        .output()
-        .expect("run harness config validate with opencode-style agent shape");
+        .expect("run harness config validate with merged discovery");
 
     assert!(
         output.status.success(),
@@ -995,9 +322,364 @@ fn config_validate_cli_accepts_opencode_style_agent_shape() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("config valid:"));
+    assert!(stdout.contains(xdg_config_path.to_str().expect("xdg path utf-8")));
+    assert!(stdout.contains("harness.json"));
+}
 
-    let parsed = load_config_from_file(&config_path).expect("load validated opencode-style config");
-    assert_eq!(parsed.ui.default_profile.as_deref(), Some("build"));
-    assert!(parsed.agents.contains_key("build"));
-    assert!(parsed.agents.contains_key("plan"));
+#[test]
+fn config_validate_cli_accepts_legacy_harness_native_shape() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    write_config(
+        &config_path,
+        &legacy_runtime_config(&temp.path().join("sessions")),
+    );
+
+    let output = harness_command()
+        .current_dir(temp.path())
+        .args(["config", "validate"])
+        .output()
+        .expect("run harness config validate with legacy config");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn config_validate_cli_accepts_legacy_xdg_config_path_for_migration() {
+    let temp = tempdir().expect("tempdir");
+    let xdg_root = temp.path().join("xdg");
+    let legacy_xdg_config = xdg_root.join("harness/config.jsonc");
+    fs::create_dir_all(legacy_xdg_config.parent().expect("legacy xdg parent"))
+        .expect("create legacy xdg dir");
+    write_config(&legacy_xdg_config, &canonical_runtime_config());
+
+    let output = harness_command()
+        .current_dir(temp.path())
+        .env("XDG_CONFIG_HOME", &xdg_root)
+        .args(["config", "validate"])
+        .output()
+        .expect("run harness config validate with legacy xdg path");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("config.jsonc"));
+}
+
+#[test]
+fn config_validate_cli_loads_separate_tui_config() {
+    let temp = tempdir().expect("tempdir");
+    write_config(
+        &temp.path().join("harness.jsonc"),
+        &canonical_runtime_config(),
+    );
+    write_config(
+        &temp.path().join("tui.jsonc"),
+        &serde_json::json!({
+            "keybinds": {
+                "variant_cycle": "tab"
+            }
+        }),
+    );
+
+    let output = harness_command()
+        .current_dir(temp.path())
+        .args(["config", "validate"])
+        .output()
+        .expect("run harness config validate with separate tui config");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("tui.jsonc"));
+}
+
+#[test]
+fn config_validate_cli_accepts_harness_config_env_path() {
+    let temp = tempdir().expect("tempdir");
+    let env_config_path = temp.path().join("env/custom-harness.jsonc");
+    fs::create_dir_all(env_config_path.parent().expect("env config parent"))
+        .expect("create env config dir");
+    write_config(&env_config_path, &canonical_runtime_config());
+
+    let output = harness_command()
+        .current_dir(temp.path())
+        .env("HARNESS_CONFIG", &env_config_path)
+        .args(["config", "validate"])
+        .output()
+        .expect("run harness config validate with HARNESS_CONFIG");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout)
+        .contains(env_config_path.to_str().expect("env config path utf-8")));
+}
+
+#[test]
+fn config_validate_cli_applies_harness_config_content_last() {
+    let temp = tempdir().expect("tempdir");
+    write_config(
+        &temp.path().join("harness.jsonc"),
+        &canonical_runtime_config(),
+    );
+
+    let output = harness_command()
+        .current_dir(temp.path())
+        .env(
+            "HARNESS_CONFIG_CONTENT",
+            r#"{ default_agent: "plan", permission: { bash: "deny" } }"#,
+        )
+        .args(["config", "validate"])
+        .output()
+        .expect("run harness config validate with HARNESS_CONFIG_CONTENT");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn config_validate_cli_explicit_path_bypasses_discovery_layers() {
+    let temp = tempdir().expect("tempdir");
+    let xdg_root = temp.path().join("xdg");
+    let explicit_path = temp.path().join("explicit.jsonc");
+    let xdg_config_path = xdg_root.join("harness/harness.jsonc");
+
+    fs::create_dir_all(xdg_config_path.parent().expect("xdg config parent"))
+        .expect("create xdg config dir");
+    write_config(&xdg_config_path, &canonical_runtime_config());
+    write_config(
+        &explicit_path,
+        &serde_json::json!({
+            "provider": {
+                "default": {
+                    "type": "openai_compatible",
+                    "baseURL": "http://127.0.0.1:1/v1",
+                    "apiKey": "DUMMY",
+                    "models": {
+                        "gpt-4o": {
+                            "name": "GPT-4o"
+                        }
+                    }
+                }
+            },
+            "mystery": true
+        }),
+    );
+
+    let output = harness_command()
+        .current_dir(temp.path())
+        .env("XDG_CONFIG_HOME", &xdg_root)
+        .args([
+            "--config",
+            explicit_path.to_str().expect("explicit config utf-8"),
+            "config",
+            "validate",
+        ])
+        .output()
+        .expect("run harness config validate with explicit path");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("unknown top-level config keys"));
+    assert!(stderr.contains("`mystery`"));
+}
+
+#[test]
+fn config_validate_cli_rejects_unknown_top_level_keys() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    let mut config = canonical_runtime_config();
+    config["mystery"] = serde_json::json!({"enabled": true});
+    write_config(&config_path, &config);
+
+    let output = harness_command()
+        .current_dir(temp.path())
+        .args(["config", "validate"])
+        .output()
+        .expect("run harness config validate with unknown key");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("unknown top-level config keys:"));
+    assert!(stderr.contains("`mystery`"));
+}
+
+#[test]
+fn config_validate_cli_rejects_unknown_provider_reference() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    let mut config = canonical_runtime_config();
+    config["agent"] = serde_json::json!({
+        "deep": {
+            "description": "Deep profile",
+            "model": "missing/gpt-4o-mini",
+            "tools": []
+        }
+    });
+    write_config(&config_path, &config);
+
+    let output = harness_command()
+        .current_dir(temp.path())
+        .args(["config", "validate"])
+        .output()
+        .expect("run harness config validate with invalid provider ref");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("agent `deep` references unknown provider `missing`"));
+}
+
+#[test]
+fn config_validate_cli_rejects_unsupported_upstream_top_level_key() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    let mut config = canonical_runtime_config();
+    config["plugin"] = serde_json::json!({ "enabled": true });
+    write_config(&config_path, &config);
+
+    let output = harness_command()
+        .current_dir(temp.path())
+        .args(["config", "validate"])
+        .output()
+        .expect("run harness config validate with unsupported upstream key");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("unknown top-level config keys:"));
+    assert!(stderr.contains("`plugin`"));
+}
+
+#[test]
+fn shipped_example_config_uses_explicit_local_key_without_openai_api_key() {
+    let repo_root = repo_root();
+    let config_path = repo_root.join("configs").join("harness.example.jsonc");
+
+    with_env_var_state("OPENAI_API_KEY", None, || {
+        let parsed = load_config_from_file(&config_path)
+            .expect("shipped example config should use its explicit local loopback key");
+        let ProviderConfig::OpenAiCompatible(provider) = parsed
+            .providers
+            .get("default")
+            .expect("default provider present in shipped example config");
+
+        assert_eq!(provider.name.as_deref(), Some("CLIProxyAPI (OpenAI)"));
+        assert_eq!(provider.base_url, "http://127.0.0.1:8317/v1");
+        assert_eq!(provider.api_key, "sk-zerolimit");
+        assert_eq!(provider.timeout_ms, 1_800_000);
+        assert!(matches!(provider.api_mode, OpenAiApiMode::Auto));
+    });
+}
+
+#[test]
+fn shipped_example_config_keeps_explicit_local_key_even_when_openai_api_key_is_set() {
+    let repo_root = repo_root();
+    let config_path = repo_root.join("configs").join("harness.example.jsonc");
+
+    with_env_var_state("OPENAI_API_KEY", Some("test-openai-api-key"), || {
+        let parsed = load_config_from_file(&config_path)
+            .expect("shipped example config should keep its explicit local loopback key");
+        let ProviderConfig::OpenAiCompatible(provider) = parsed
+            .providers
+            .get("default")
+            .expect("default provider present in shipped example config");
+
+        assert_eq!(provider.name.as_deref(), Some("CLIProxyAPI (OpenAI)"));
+        assert_eq!(provider.base_url, "http://127.0.0.1:8317/v1");
+        assert_eq!(provider.api_key, "sk-zerolimit");
+        assert_eq!(provider.timeout_ms, 1_800_000);
+        assert!(matches!(provider.api_mode, OpenAiApiMode::Auto));
+    });
+}
+
+#[test]
+fn checked_in_tui_schema_matches_generated_schema() {
+    let generated = harness_tui_schema_pretty_json().expect("generate tui schema");
+    let checked_in = fs::read_to_string(repo_root().join("configs").join("tui.json"))
+        .expect("read checked-in tui schema");
+
+    assert_eq!(checked_in.trim(), generated.trim());
+}
+
+#[test]
+fn checked_in_runtime_schema_matches_generated_schema() {
+    let generated = harness_schema_pretty_json().expect("generate runtime schema");
+    let checked_in = fs::read_to_string(repo_root().join("configs").join("config.json"))
+        .expect("read checked-in runtime schema");
+
+    assert_eq!(checked_in.trim(), generated.trim());
+}
+
+#[test]
+fn shipped_tui_example_parses_as_public_tui_config() {
+    let shipped = fs::read_to_string(repo_root().join("configs").join("tui.example.jsonc"))
+        .expect("read shipped tui example");
+
+    let parsed: PublicTuiConfig = json5::from_str(&shipped).expect("parse shipped tui example");
+
+    assert_eq!(
+        parsed.keybindings.get("variant_cycle"),
+        Some(&"tab".to_string())
+    );
+    assert_eq!(
+        parsed.keybindings.get("session_child_first"),
+        Some(&"ctrl+]".to_string())
+    );
+}
+
+#[test]
+fn shipped_runtime_example_parses_as_public_runtime_config() {
+    let shipped = fs::read_to_string(repo_root().join("configs").join("harness.example.jsonc"))
+        .expect("read shipped runtime example");
+
+    let parsed: PublicRuntimeConfig =
+        json5::from_str(&shipped).expect("parse shipped runtime example");
+
+    assert_eq!(parsed.default_agent.as_deref(), Some("build"));
+    assert_eq!(parsed.model.as_deref(), Some("default/gpt-5.4"));
+    assert_eq!(parsed.small_model.as_deref(), Some("default/gpt-5.4-mini"));
+    assert!(parsed.provider.contains_key("default"));
+    assert!(parsed.agent.contains_key("build"));
+    assert!(!parsed.provider.contains_key("providers"));
+    assert!(!shipped.contains("\"base_url\""));
+    assert!(!shipped.contains("\"api_key\""));
+    assert!(!shipped.contains("\"api_mode\""));
+    assert!(!shipped.contains("\"timeout_ms\""));
+}
+
+#[test]
+fn root_runtime_example_uses_canonical_public_keys() {
+    let root_example =
+        fs::read_to_string(repo_root().join("harness.jsonc")).expect("read root runtime example");
+
+    let parsed: PublicRuntimeConfig =
+        json5::from_str(&root_example).expect("parse root runtime example");
+
+    assert_eq!(parsed.default_agent.as_deref(), Some("build"));
+    assert_eq!(parsed.model.as_deref(), Some("default/gpt-5.4"));
+    assert!(!root_example.contains("\"base_url\""));
+    assert!(!root_example.contains("\"api_key\""));
+    assert!(!root_example.contains("\"api_mode\""));
+    assert!(!root_example.contains("\"timeout_ms\""));
 }

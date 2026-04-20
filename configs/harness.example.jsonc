@@ -1,315 +1,145 @@
 {
-  // Shipped primary-agent workflow:
-  //   1. start in `build` by default
-  //   2. switch to `plan` when you want a read-only planning pass
-  //   3. let `plan_exit` hand off back into `build`
-  providers: {
-    default: {
-      type: "openai_compatible",
-      name: "CLIProxyAPI",
-      // Blessed default path: local CLIProxy-compatible bridge.
-      // This shipped config intentionally pairs the explicit `sk-zerolimit`
-      // fallback with the loopback proxy endpoint so first-run docs and live
-      // signoff lanes stay aligned without pointing at a real remote API.
-      options: {
-        baseURL: "http://127.0.0.1:8317/v1",
-        apiKey: "${OPENAI_API_KEY:-sk-zerolimit}",
+  "$schema": "./config.json",
+
+  // Shipped interactive workflow:
+  //   - `build` is the default agent
+  //   - `plan` stays read-only and hands back to `build`
+  //   - prompts live in `.agent-harness/agents/*.md`
+  "provider": {
+    "default": {
+      "type": "openai_compatible",
+      "name": "CLIProxyAPI (OpenAI)",
+      "options": {
+        "baseURL": "http://127.0.0.1:8317/v1",
+        "apiKey": "sk-zerolimit",
+        "timeoutMs": 1800000
       },
-      api_mode: "auto",
-      timeout_ms: 60000,
-      models: {
+      "models": {
         "gpt-5.4": {
-          name: "GPT-5.4",
-          metadata: {
-            family: "gpt-5",
-            release_stage: "stable",
-            context_window_tokens: 400000,
-            supports_tool_calls: true,
-            supports_reasoning_summaries: true,
+          "name": "GPT-5.4",
+          "metadata": {
+            "family": "gpt-5",
+            "release_stage": "stable",
+            "context_window_tokens": 272000,
+            "supports_tool_calls": true,
+            "supports_reasoning_summaries": true
           },
-          max_input_tokens: 400000,
-          max_output_tokens: 32768,
+          "max_input_tokens": 272000,
+          "max_output_tokens": 128000
         },
         "gpt-5.4-mini": {
-          name: "GPT-5.4 Mini",
-          metadata: {
-            family: "gpt-5",
-            release_stage: "stable",
-            context_window_tokens: 128000,
-            supports_tool_calls: true,
-            supports_reasoning_summaries: true,
+          "name": "GPT-5.4 Mini",
+          "metadata": {
+            "family": "gpt-5",
+            "release_stage": "stable",
+            "context_window_tokens": 272000,
+            "supports_tool_calls": true,
+            "supports_reasoning_summaries": true
           },
-          max_input_tokens: 128000,
-          max_output_tokens: 16384,
-          variants: {
-            deterministic: {
-              name: "Deterministic",
-              max_output_tokens: 4096,
-              metadata: {
-                description: "Low-variance evidence collection profile.",
-                reasoning_effort: "minimal",
-                text_verbosity: "low",
-                recommended_for: "tool_audit",
-              },
+          "max_input_tokens": 272000,
+          "max_output_tokens": 128000,
+          "variants": {
+            "deterministic": {
+              "name": "Deterministic",
+              "max_output_tokens": 4096,
+              "metadata": {
+                "description": "Low-variance evidence collection profile.",
+                "reasoning_effort": "minimal",
+                "text_verbosity": "low",
+                "recommended_for": "tool_audit"
+              }
             },
-            low: {
-              name: "Low",
-              max_output_tokens: 4096,
-              metadata: {
-                description: "Low-reasoning live-provider parity signoff profile.",
-                reasoning_effort: "low",
-                text_verbosity: "low",
-                recommended_for: "live_proxy",
-              },
+            "low": {
+              "name": "Low",
+              "max_output_tokens": 4096,
+              "metadata": {
+                "description": "Low-reasoning signoff profile.",
+                "reasoning_effort": "low",
+                "text_verbosity": "low",
+                "recommended_for": "plan"
+              }
             },
-            high: {
-              name: "High",
-              max_output_tokens: 4096,
-              metadata: {
-                description: "High-reasoning interactive profile for visible thinking traces.",
-                reasoning_effort: "high",
-                text_verbosity: "low",
-                recommended_for: "interactive_live",
-              },
-            },
-          },
-        },
-      },
-    },
+            "high": {
+              "name": "High",
+              "max_output_tokens": 4096,
+              "metadata": {
+                "description": "High-reasoning interactive profile.",
+                "reasoning_effort": "high",
+                "text_verbosity": "low",
+                "recommended_for": "build"
+              }
+            }
+          }
+        }
+      }
+    }
   },
-  agent: {
-    // Primary shipped agents: `build` by default, `plan` for approval-gated planning.
-    plan: {
-      description: "Planning lane: produce an approved plan and hand off to build.",
-      system_prompt: "Stay in planning mode until the user approves the plan. Use read-only investigation tools, capture the plan in todos or questions when helpful, and call plan_exit only after the user explicitly approves implementation so the harness can hand off to build.",
-      model_ref: "default:gpt-5.4-mini",
-      variant: "low",
-      plan_mode: true,
-      exit_target_profile: "build",
-      max_iters: 16,
-      permissions: {
-        edit: "deny",
-        shell: "deny",
-        network: "allow",
-        question: "allow",
-        task: "deny",
-        webfetch: "allow",
-        websearch: "allow",
-        codesearch: "allow",
-        lsp: "allow",
-      },
-      tools: [
-        "todowrite",
-        "todoread",
-        "question",
-        "skill",
-        "websearch",
-        "webfetch",
-        "codesearch",
-        "lsp",
-        "read",
-        "glob",
-        "grep",
-        "list",
-        "batch",
-        "plan_exit",
-      ],
+  "model": "default/gpt-5.4",
+  "small_model": "default/gpt-5.4-mini",
+  "agent": {
+    "build": {
+      "model": "default/gpt-5.4-mini",
+      "variant": "high"
     },
-    build: {
-      description: "Implementation lane: execute an approved plan and verify the result.",
-      system_prompt: "Implement the approved plan after the plan_exit handoff. Edit files, run verification, use subagents when they materially help, and finish with concrete evidence, changed files, and remaining risks.",
-      model_ref: "default:gpt-5.4-mini",
-      variant: "high",
-      max_iters: 24,
-      permissions: {
-        edit: "allow",
-        shell: "allow",
-        network: "allow",
-        question: "allow",
-        task: "allow",
-        webfetch: "allow",
-        websearch: "allow",
-        codesearch: "allow",
-        lsp: "allow",
-      },
-      tools: [
-        "todowrite",
-        "todoread",
-        "question",
-        "skill",
-        "websearch",
-        "webfetch",
-        "codesearch",
-        "lsp",
-        "read",
-        "glob",
-        "grep",
-        "list",
-        "write",
-        "edit",
-        "apply_patch",
-        "bash",
-        "batch",
-        "task",
-      ],
+    "plan": {
+      "use_small_model": true,
+      "variant": "low"
     },
-    // Secondary shipped signoff lane: evidence-first verification of the surface.
-    tool_audit: {
-      description: "Evidence-first signoff profile for validating the shipped tool surface.",
-      system_prompt: "Collect signoff evidence across skills, question flow, hooks evidence, LSP evidence, subagent execution, variants, model metadata, and HARNESS_QUESTION_ANSWERS handling before declaring the config healthy.",
-      model_ref: "default:gpt-5.4-mini",
-      variant: "deterministic",
-      max_iters: 20,
-      tool_failure_mode: "continue_as_tool_message",
-      tools: [
-        "skill",
-        "question",
-        "lsp",
-        "task",
-        "batch",
-        "invalid",
-        "todowrite",
-        "todoread",
-      ],
-    },
+    "tool_audit": {
+      "use_small_model": true,
+      "variant": "deterministic"
+    }
   },
-  default_agent: "build",
-  permissions: {
-    defaults: {
-      edit: "ask",
-      shell: "ask",
-      network: "ask",
-      question: "ask",
-      task: "ask",
-      webfetch: "ask",
-      websearch: "ask",
-      codesearch: "ask",
-      lsp: "ask",
-    },
-    shell_allowlist: {
-      executables: ["bash", "git", "cargo", "ls", "rg"],
-      cwd_roots: ["."],
-    },
+  "default_agent": "build",
+  "permission": {
+    "edit": "ask",
+    "bash": "ask",
+    "question": "ask",
+    "task": "ask",
+    "webfetch": "ask",
+    "websearch": "ask",
+    "codesearch": "ask",
+    "lsp": "ask",
+    "shell_allowlist": {
+      "executables": ["bash", "git", "cargo", "ls", "rg"],
+      "cwd_roots": ["."]
+    }
   },
-  runtime: {
-    background_tasks: {
-      default_concurrency: 2,
-      provider_concurrency: 2,
-      model_concurrency: 2,
-      stale_timeout_ms: 30000,
-      message_staleness_timeout_ms: 10000,
+  "mcp": {
+    "gh_grep": {
+      "transport": "http",
+      "endpoint": "https://mcp.grep.app",
+      "enabled": true
     },
-    session_dir: "./.harness/sessions",
-    deterministic: {
-      enabled: false,
-      seed: 42,
+    "docs-rs": {
+      "transport": "stdio",
+      "command": ["bunx", "-y", "@nuskey8/docs-rs-mcp@latest"],
+      "enabled": true
     },
-  },
-  integrations: {
-    remote_search: {
-      endpoint: "https://mcp.exa.ai/mcp",
+    "cargo-mcp": {
+      "transport": "stdio",
+      "command": ["/home/ubere/.cargo/bin/cargo-mcp", "serve"],
+      "enabled": false
     },
-    mcp: {
-      servers: {
-        gh_grep: {
-          type: "remote",
-          url: "https://mcp.grep.app",
-          enabled: true,
-        },
-        "docs-rs": {
-          type: "local",
-          command: ["bunx", "-y", "@nuskey8/docs-rs-mcp@latest"],
-          enabled: true,
-        },
-        "cargo-mcp": {
-          type: "local",
-          command: ["/home/ubere/.cargo/bin/cargo-mcp", "serve"],
-          enabled: false,
-        },
-        "pty-mcp": {
-          type: "local",
-          command: ["bunx", "-y", "pty-mcp"],
-          enabled: true,
-        },
-        playwright: {
-          type: "local",
-          command: ["bunx", "-y", "@playwright/mcp@latest"],
-          enabled: false,
-        },
-        svelte: {
-          type: "local",
-          command: ["bunx", "-y", "@sveltejs/mcp"],
-          enabled: false,
-        },
-        tauri: {
-          type: "local",
-          command: ["bunx", "-y", "@hypothesi/tauri-mcp-server"],
-          enabled: false,
-        },
-      },
+    "pty-mcp": {
+      "transport": "stdio",
+      "command": ["bunx", "-y", "pty-mcp"],
+      "enabled": true
     },
-  },
-  hooks: {
-    lifecycle: [
-      {
-        event: "run_started",
-        command: ["bash", "-lc", "printf 'run started\n'"],
-        timeout_ms: 4000,
-        critical: false,
-        env: {
-          HARNESS_HOOK_SOURCE: "example-config",
-        },
-      },
-      {
-        event: "tool_call_finished",
-        command: ["bash", "-lc", "printf 'tool finished\n'"],
-        timeout_ms: 4000,
-        critical: false,
-      },
-    ],
-  },
-  skills: {
-    project_roots: [".opencode/skills", ".claude/skills", ".agents/skills"],
-    global_roots: ["~/.config/opencode/skills", "~/.claude/skills", "~/.agents/skills"],
-    walk_to_git_root: true,
-    permissions: {
-      "*": "allow",
-      "internal-*": "deny",
-      "experimental-*": "ask",
+    "playwright": {
+      "transport": "stdio",
+      "command": ["bunx", "-y", "@playwright/mcp@latest"],
+      "enabled": false
     },
-  },
-  lsp: {
-    disabled: false,
-    servers: {
-      rust: {
-        disabled: false,
-        command: ["rust-analyzer"],
-        extensions: [".rs"],
-        env: {
-          RUST_LOG: "warn",
-        },
-        initialization: {
-          cargo: {
-            allFeatures: true,
-          },
-        },
-      },
+    "svelte": {
+      "transport": "stdio",
+      "command": ["bunx", "-y", "@sveltejs/mcp"],
+      "enabled": false
     },
-  },
-  ui: {
-    parity: {
-      variant_cycle_enabled: true,
-      child_session_navigation_enabled: true,
-      keybindings: {
-        variant_cycle: "tab",
-        session_child_first: "ctrl+]",
-        session_child_cycle: "]",
-        session_child_cycle_reverse: "[",
-        session_parent: "ctrl+[",
-      },
-    },
-  },
-  logging: {
-    level: "info",
-  },
+    "tauri": {
+      "transport": "stdio",
+      "command": ["bunx", "-y", "@hypothesi/tauri-mcp-server"],
+      "enabled": false
+    }
+  }
 }

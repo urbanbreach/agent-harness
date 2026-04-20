@@ -1,0 +1,10 @@
+{
+  "$schema": "./tui.json",
+  "keybinds": {
+    "variant_cycle": "tab",
+    "session_child_first": "ctrl+]",
+    "session_child_cycle": "]",
+    "session_child_cycle_reverse": "[",
+    "session_parent": "ctrl+["
+  }
+}

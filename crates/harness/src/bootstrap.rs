@@ -1,11 +1,10 @@
 use std::collections::BTreeMap;
-use std::path::Path;
 use std::sync::Arc;
 
 use harness_core::agent::AgentProfile;
 use harness_core::config::{
-    load_config_from_file, refresh_profile_model_metadata_registry, HarnessConfig,
-    OpenAiApiMode as CoreOpenAiApiMode, ProviderConfig,
+    refresh_profile_model_metadata_registry, HarnessConfig, OpenAiApiMode as CoreOpenAiApiMode,
+    ProviderConfig,
 };
 use harness_core::coord::{CoordinatorConfig, PlanProfileConfig};
 use harness_core::perm::PermissionPolicy;
@@ -15,25 +14,22 @@ use harness_providers::openai::{
     OpenAiCompatibleProviderConfig,
 };
 use harness_providers::{Provider, ProviderRouter};
-use harness_tools::coordinator_registry_with_mcp;
+use harness_tools::{coordinator_registry_with_mcp_and_editing, EditingToolSurfaceConfig};
 
 const DEFAULT_INTERACTIVE_PROFILE: &str = "build";
-const LEGACY_INTERACTIVE_PROFILE: &str = "deep";
 
-const CONFIG_SEARCH_LOCATIONS: [&str; 2] = [
+const CONFIG_SEARCH_LOCATIONS: [&str; 4] = [
     "./harness.jsonc",
-    "$XDG_CONFIG_HOME/harness/config.jsonc (fallback: ~/.config/harness/config.jsonc)",
+    "./harness.json",
+    "$XDG_CONFIG_HOME/harness/harness.jsonc (fallback: ~/.config/harness/harness.jsonc)",
+    "$XDG_CONFIG_HOME/harness/harness.json (fallback: ~/.config/harness/harness.json)",
 ];
-
-pub fn load_harness_config(path: &Path) -> Result<HarnessConfig, String> {
-    load_config_from_file(path).map_err(|err| format!("{} ({})", err, path.display()))
-}
 
 pub fn interactive_config_guidance() -> String {
     format!(
-        "interactive mode requires a config file; pass --config <path> or create {}. A starting point lives at configs/harness.example.jsonc and defaults to the build agent while keeping the plan -> build handoff available. If you want the demo/mock UI instead, re-run with --mock",
-        CONFIG_SEARCH_LOCATIONS.join(" or ")
-    )
+            "interactive mode requires a config file; pass --config <path> or create {}. A starting point lives at configs/harness.example.jsonc and defaults to the build agent while keeping the plan -> build handoff available. If you want the demo/mock UI instead, re-run with --mock",
+            CONFIG_SEARCH_LOCATIONS.join(" or ")
+        )
 }
 
 pub fn build_interactive_coordinator_config(
@@ -41,9 +37,12 @@ pub fn build_interactive_coordinator_config(
 ) -> Result<CoordinatorConfig, String> {
     let mut coordinator_config = CoordinatorConfig::new(cfg.paths.session_dir.clone());
     coordinator_config.permission_policy = PermissionPolicy::from_config(cfg);
-    let tool_registry = coordinator_registry_with_mcp(
+    let tool_registry = coordinator_registry_with_mcp_and_editing(
         cfg.permissions.shell_allowlist.clone(),
         cfg.integrations.mcp.clone(),
+        EditingToolSurfaceConfig {
+            hashline_edit: cfg.hashline_edit,
+        },
     );
     let auto_tool_ids = auto_mcp_tool_ids(&tool_registry);
     coordinator_config.tool_registry = Arc::new(tool_registry);
@@ -58,18 +57,12 @@ pub fn build_interactive_coordinator_config(
 }
 
 pub fn interactive_profile_name(cfg: &HarnessConfig) -> String {
-    cfg.ui
-        .default_profile
+    cfg.default_agent
         .clone()
         .or_else(|| {
             cfg.agents
                 .contains_key(DEFAULT_INTERACTIVE_PROFILE)
                 .then(|| DEFAULT_INTERACTIVE_PROFILE.to_string())
-        })
-        .or_else(|| {
-            cfg.agents
-                .contains_key(LEGACY_INTERACTIVE_PROFILE)
-                .then(|| LEGACY_INTERACTIVE_PROFILE.to_string())
         })
         .or_else(|| cfg.agents.keys().next().cloned())
         .unwrap_or_else(|| DEFAULT_INTERACTIVE_PROFILE.to_string())
@@ -112,8 +105,21 @@ fn map_openai_api_mode(mode: CoreOpenAiApiMode) -> ProviderOpenAiApiMode {
     }
 }
 
-fn default_interactive_system_prompt(profile_name: &str, description: &str) -> String {
-    format!("You are the {profile_name} agent. {description}")
+fn compose_interactive_system_prompt(
+    cfg: &HarnessConfig,
+    profile_name: &str,
+    profile_cfg: &harness_core::config::ProfileConfig,
+) -> Result<String, String> {
+    let agent_prompt = profile_cfg.system_prompt.clone().ok_or_else(|| {
+        format!(
+            "agent `{profile_name}` is missing a system prompt; define `agents.{profile_name}.system_prompt` or ship `.agent-harness/agents/{profile_name}.md`"
+        )
+    })?;
+
+    Ok(cfg
+        .instruction_prompt_prefix()
+        .map(|instructions| format!("{instructions}\n\n{agent_prompt}"))
+        .unwrap_or(agent_prompt))
 }
 
 pub fn interactive_agent_profiles(
@@ -130,6 +136,10 @@ fn interactive_agent_profiles_with_extra_tools(
 
     let mut profiles = BTreeMap::new();
 
+    let editing_surface = EditingToolSurfaceConfig {
+        hashline_edit: cfg.hashline_edit,
+    };
+
     for (profile_name, profile_cfg) in &cfg.agents {
         profiles.insert(
             profile_name.clone(),
@@ -137,14 +147,11 @@ fn interactive_agent_profiles_with_extra_tools(
                 name: profile_name.clone(),
                 category: profile_name.clone(),
                 model_ref: profile_cfg.model_ref.clone(),
-                system_prompt: profile_cfg.system_prompt.clone().unwrap_or_else(|| {
-                    default_interactive_system_prompt(profile_name, &profile_cfg.description)
-                }),
+                system_prompt: compose_interactive_system_prompt(cfg, profile_name, profile_cfg)?,
                 max_iters: profile_cfg.max_iters,
                 temperature: profile_cfg.temperature,
                 tool_failure_mode: profile_cfg.tool_failure_mode,
-                toolset: profile_cfg
-                    .tools
+                toolset: normalize_profile_toolset(&profile_cfg.tools, editing_surface)
                     .iter()
                     .map(String::as_str)
                     .chain(extra_tool_ids.iter().map(String::as_str))
@@ -155,6 +162,40 @@ fn interactive_agent_profiles_with_extra_tools(
     }
 
     Ok(profiles)
+}
+
+fn normalize_profile_toolset(
+    configured: &[String],
+    editing_surface: EditingToolSurfaceConfig,
+) -> Vec<String> {
+    let mut ordered = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+
+    for tool_id in configured {
+        push_tool(&mut ordered, &mut seen, tool_id);
+    }
+
+    let has_edit = seen.contains("edit");
+    let has_read = seen.contains("read");
+
+    if editing_surface.hashline_edit && has_edit {
+        if !has_read {
+            push_tool(&mut ordered, &mut seen, "read");
+        }
+        push_tool(&mut ordered, &mut seen, "edit.hashline_scan");
+    }
+
+    ordered
+}
+
+fn push_tool(
+    ordered: &mut Vec<String>,
+    seen: &mut std::collections::BTreeSet<String>,
+    tool_id: &str,
+) {
+    if seen.insert(tool_id.to_string()) {
+        ordered.push(tool_id.to_string());
+    }
 }
 
 fn auto_mcp_tool_ids(tool_registry: &ToolRegistry) -> Vec<String> {
@@ -209,7 +250,7 @@ mod tests {
                 default: {{
                   type: "openai_compatible",
                   base_url: "http://127.0.0.1:8317/v1",
-                  api_key: "sk-zerolimit",
+                  api_key: "test-openai-api-key",
                   api_mode: "responses",
                   timeout_ms: 60000,
                   models: {{
@@ -278,12 +319,14 @@ mod tests {
             r#"
             deep: {
               description: "Default iteration budget",
+              system_prompt: "Deep prompt",
               model_ref: "default:gpt-5.4-mini",
               temperature: 0.7,
               tools: ["fs.read"],
             },
             tool_audit: {
               description: "Longer tool audit budget",
+              system_prompt: "Tool audit prompt",
               model_ref: "default:gpt-5.4-mini",
               max_iters: 20,
               tools: ["fs.read"],
@@ -326,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn interactive_agents_fall_back_to_generated_system_prompt_when_missing() {
+    fn interactive_agents_require_explicit_or_discovered_system_prompt() {
         let cfg = config_fixture(
             r#"
             deep: {
@@ -337,11 +380,9 @@ mod tests {
             "#,
         );
 
-        let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles");
-        assert_eq!(
-            profiles["deep"].system_prompt,
-            default_interactive_system_prompt("deep", "Default deep execution profile")
-        );
+        let err = interactive_agent_profiles(&cfg)
+            .expect_err("interactive profiles should fail without a prompt");
+        assert!(err.contains("agent `deep` is missing a system prompt"));
     }
 
     #[test]
@@ -350,6 +391,7 @@ mod tests {
             r#"
             build: {
               description: "Build lane",
+              system_prompt: "Build prompt",
               model_ref: "default:gpt-5.4-mini",
               tools: ["read"],
             },
@@ -398,7 +440,7 @@ mod tests {
     }
 
     #[test]
-    fn interactive_profile_name_preserves_legacy_deep_fallback_without_build() {
+    fn interactive_profile_name_uses_first_available_profile_without_build() {
         let cfg = config_fixture(
             r#"
             deep: {

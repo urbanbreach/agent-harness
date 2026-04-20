@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use harness_core::config::harness_schema_pretty_json;
+use harness_core::config::{harness_schema_pretty_json, harness_tui_schema_pretty_json};
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -36,12 +36,24 @@ fn documented_table_keys(doc: &str, heading: &str) -> BTreeSet<String> {
 }
 
 #[test]
-fn config_docs_top_level_keys_match_generated_schema() {
-    let schema = harness_schema_pretty_json().expect("schema generation should succeed");
-    let schema: serde_json::Value = serde_json::from_str(&schema).expect("schema json");
-    let schema_keys: BTreeSet<String> = schema["properties"]
+fn config_docs_runtime_and_tui_keys_match_generated_schemas() {
+    let runtime_schema =
+        harness_schema_pretty_json().expect("runtime schema generation should succeed");
+    let runtime_schema: serde_json::Value =
+        serde_json::from_str(&runtime_schema).expect("runtime schema json");
+    let runtime_keys: BTreeSet<String> = runtime_schema["properties"]
         .as_object()
-        .expect("schema root properties")
+        .expect("runtime schema root properties")
+        .keys()
+        .cloned()
+        .collect();
+
+    let tui_schema =
+        harness_tui_schema_pretty_json().expect("tui schema generation should succeed");
+    let tui_schema: serde_json::Value = serde_json::from_str(&tui_schema).expect("tui schema json");
+    let tui_keys: BTreeSet<String> = tui_schema["properties"]
+        .as_object()
+        .expect("tui schema root properties")
         .keys()
         .cloned()
         .collect();
@@ -49,19 +61,29 @@ fn config_docs_top_level_keys_match_generated_schema() {
     let doc_path = repo_root().join("docs/config.md");
     let doc = std::fs::read_to_string(&doc_path).expect("read docs/config.md");
 
-    let top_level_keys = documented_table_keys(&doc, "Top-level keys");
-    let schema_reference_keys = documented_table_keys(&doc, "`HarnessConfig` schema reference");
+    let documented_runtime_keys = documented_table_keys(&doc, "Runtime top-level keys");
+    let documented_tui_keys = documented_table_keys(&doc, "TUI top-level keys");
 
-    assert_eq!(top_level_keys, schema_keys, "top-level key table drifted");
     assert_eq!(
-        schema_reference_keys, schema_keys,
-        "schema reference drifted"
+        documented_runtime_keys, runtime_keys,
+        "runtime key table drifted"
     );
+    assert_eq!(documented_tui_keys, tui_keys, "tui key table drifted");
+}
 
-    for key in ["hooks", "skills", "lsp"] {
-        assert!(
-            doc.contains(&format!("\"{key}\":")),
-            "expected `{key}` example"
-        );
-    }
+#[test]
+fn config_docs_capture_harness_contract_and_migration_boundary() {
+    let doc_path = repo_root().join("docs/config.md");
+    let doc = std::fs::read_to_string(&doc_path).expect("read docs/config.md");
+
+    assert!(doc.contains("## Public contract summary"));
+    assert!(doc.contains("$XDG_CONFIG_HOME/harness/harness.jsonc"));
+    assert!(doc.contains("HARNESS_CONFIG"));
+    assert!(doc.contains("HARNESS_CONFIG_CONTENT"));
+    assert!(doc.contains("HARNESS_TUI_CONFIG"));
+    assert!(doc.contains(".agent-harness/agents"));
+    assert!(doc.contains("harness.json"));
+    assert!(doc.contains("harness.jsonc"));
+    assert!(doc.contains("compatibility inputs"));
+    assert!(doc.contains("Unsupported top-level areas"));
 }

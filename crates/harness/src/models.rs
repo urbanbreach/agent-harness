@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Args;
-use harness_core::config::{configured_model_catalog, load_config_from_file, resolve_config_path};
+use harness_core::config::{configured_model_catalog, load_resolved_config};
 
 #[derive(Debug, Args, Clone, Default)]
 pub struct ModelsCommand {}
@@ -10,20 +10,20 @@ pub struct ModelsCommand {}
 pub fn execute(cmd: ModelsCommand, config_path: Option<PathBuf>) -> ExitCode {
     let _ = cmd;
 
-    let Some(config_path) = resolve_config_path(config_path.as_deref()) else {
+    let Some(loaded) = (match load_resolved_config(config_path.as_deref()) {
+        Ok(loaded) => loaded,
+        Err(err) => {
+            eprintln!("failed to load config: {err}");
+            return ExitCode::from(1);
+        }
+    }) else {
         eprintln!(
-            "models requires a config file; pass --config <path> or create ./harness.jsonc. A starting point lives at configs/harness.example.jsonc"
+        "models requires a config file; pass --config <path>, create ./harness.jsonc or ./harness.json, or create $XDG_CONFIG_HOME/harness/harness.jsonc or $XDG_CONFIG_HOME/harness/harness.json for shared defaults. A starting point lives at configs/harness.example.jsonc"
         );
         return ExitCode::from(2);
     };
 
-    let config = match load_config_from_file(&config_path) {
-        Ok(config) => config,
-        Err(err) => {
-            eprintln!("failed to load config {}: {err}", config_path.display());
-            return ExitCode::from(1);
-        }
-    };
+    let config = loaded.config;
 
     for entry in configured_model_catalog(&config) {
         let mut segments = vec![format!("{}:{}", entry.provider, entry.model)];

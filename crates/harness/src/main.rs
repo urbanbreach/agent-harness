@@ -8,7 +8,7 @@ use std::{path::PathBuf, process::ExitCode};
 
 use clap::{Args, Parser, Subcommand};
 use harness_core::config::{
-    harness_schema_pretty_json, load_config_from_file, resolve_config_path,
+    harness_schema_pretty_json, harness_tui_schema_pretty_json, load_resolved_config,
 };
 
 mod bootstrap;
@@ -85,11 +85,17 @@ enum Commands {
         #[command(subcommand)]
         command: SessionsCommand,
     },
-    Schema,
+    Schema(SchemaCommand),
     Config {
         #[command(subcommand)]
         command: ConfigCommands,
     },
+}
+
+#[derive(Debug, Args, Clone, Default)]
+struct SchemaCommand {
+    #[arg(long, default_value_t = false)]
+    tui: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -125,7 +131,11 @@ fn main() -> ExitCode {
         Commands::Prompt(command) => prompt::execute(command, config, session_dir),
         Commands::Replay(command) => replay::execute(command),
         Commands::Sessions { command } => sessions::execute(command, config, session_dir),
-        Commands::Schema => match harness_schema_pretty_json() {
+        Commands::Schema(command) => match if command.tui {
+            harness_tui_schema_pretty_json()
+        } else {
+            harness_schema_pretty_json()
+        } {
             Ok(schema) => {
                 println!("{schema}");
                 ExitCode::SUCCESS
@@ -137,24 +147,24 @@ fn main() -> ExitCode {
         },
         Commands::Config { command } => match command {
             ConfigCommands::Validate => {
-                let Some(config_path) = resolve_config_path(config.as_deref()) else {
+                let Some(loaded) = (match load_resolved_config(config.as_deref()) {
+                    Ok(loaded) => loaded,
+                    Err(err) => {
+                        eprintln!("config validation failed: {err}");
+                        return ExitCode::from(1);
+                    }
+                }) else {
                     eprintln!(
-                        "no config file found; pass --config <path> or create ./harness.jsonc or $XDG_CONFIG_HOME/harness/config.jsonc. A starting point lives at configs/harness.example.jsonc"
+        "no config file found; pass --config <path>, create ./harness.jsonc or ./harness.json, or create $XDG_CONFIG_HOME/harness/harness.jsonc or $XDG_CONFIG_HOME/harness/harness.json for shared defaults. A starting point lives at configs/harness.example.jsonc"
                     );
                     return ExitCode::from(2);
                 };
 
-                match load_config_from_file(&config_path) {
-                    Ok(mut config) => {
-                        config.apply_session_dir_override(session_dir);
-                        println!("config valid: {}", config_path.display());
-                        ExitCode::SUCCESS
-                    }
-                    Err(err) => {
-                        eprintln!("config validation failed: {err}");
-                        ExitCode::from(1)
-                    }
-                }
+                let path_display = loaded.path_display();
+                let mut config = loaded.config;
+                config.apply_session_dir_override(session_dir);
+                println!("config valid: {path_display}");
+                ExitCode::SUCCESS
             }
         },
     }

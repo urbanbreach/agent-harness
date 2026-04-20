@@ -1,10 +1,22 @@
 target/
 sessions/
 artifacts/
-.agent-harness/
+.agent-harness/*
+!.agent-harness/agents/
+!.agent-harness/agents/**
+!.agent-harness/skills/
+!.agent-harness/skills/**
 *.snap.new
 *.pending-snap
 
 # Local scratch / research material
 #inspiration/
 .omx/
+.codex/*
+!.codex/agents/
+!.codex/agents/**
+!.codex/skills/
+!.codex/skills/**
+.codex/skills/.system/**
+!.codex/prompts/
+!.codex/prompts/**
