@@ -1,14 +1,14 @@
 use std::path::Path;
 
 use async_trait::async_trait;
-use harness_core::edit::hashline::compute_line_hash;
+use harness_core::edit::hashline::{compute_line_hash, LineAnchor};
 use harness_core::redact::{redact_value, DefaultRedactor};
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::workspace_edit::record_file_read;
+use crate::workspace_edit::record_file_hashline_read;
 
 const DEFAULT_START_LINE: u32 = 1;
 const DEFAULT_LIMIT: u32 = 2000;
@@ -87,7 +87,17 @@ impl Tool for HashlineScanTool {
                 ToolError::Execution(format!("failed to serialize hashline scan artifact: {err}"))
             })?;
 
-        record_file_read(&ctx, &resolved_path)?;
+        record_file_hashline_read(
+            &ctx,
+            &resolved_path,
+            anchors
+                .iter()
+                .map(|anchor| LineAnchor {
+                    line: anchor.line,
+                    hash: anchor.hash.clone(),
+                })
+                .collect(),
+        )?;
 
         let artifact_name = format!("hashline_scan/{}.json", sanitize_artifact_name(&args.path));
         let artifact = ctx

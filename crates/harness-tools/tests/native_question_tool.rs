@@ -203,6 +203,185 @@ async fn native_question_tool_uses_permission_answers() {
 }
 
 #[tokio::test]
+async fn native_question_tool_accepts_string_option_shorthand() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let session_dir = temp_dir.path().join("sessions");
+    let workspace_root = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace_root).expect("workspace");
+
+    let coordinator = spawn_question_coordinator(session_dir, 1_000);
+    let run = coordinator
+        .start_run("native_question_shorthand", &workspace_root)
+        .await
+        .expect("start run");
+
+    let question_tool = coordinator_registry(Default::default())
+        .get("question")
+        .expect("question tool");
+    let tool_call_id = "native-question-shorthand";
+    let tool_task = tokio::spawn({
+        let question_tool = question_tool.clone();
+        let context = question_tool_context(
+            coordinator.clone(),
+            &run.run_id,
+            &workspace_root,
+            &run.artifacts_dir,
+            tool_call_id,
+        );
+        async move {
+            question_tool
+                .call(
+                    context,
+                    json!({
+                        "questions": [
+                            {
+                                "question": "Which tool surface should be exercised next?",
+                                "required": true,
+                                "options": ["bash", "pty", "task"]
+                            }
+                        ]
+                    }),
+                )
+                .await
+        }
+    });
+
+    let permission_id = wait_for_question_permission(&run.events_path).await;
+    coordinator
+        .resolve_permission(
+            permission_id,
+            PermissionDecision::Allow,
+            Some(r#"[["bash"]]"#.to_string()),
+        )
+        .await
+        .expect("resolve question permission");
+
+    let result = tool_task
+        .await
+        .expect("join question tool task")
+        .expect("question tool result");
+    assert!(result
+        .display_text
+        .contains("\"Which tool surface should be exercised next?\"=\"bash\""));
+
+    let structured = result.structured_json.expect("structured json");
+    assert_eq!(structured.get("answers"), Some(&json!([["bash"]])));
+
+    let state_path = structured
+        .get("state_path")
+        .and_then(Value::as_str)
+        .expect("state_path in structured output");
+    let question_state: Value =
+        serde_json::from_slice(&fs::read(state_path).expect("read persisted question state"))
+            .expect("parse persisted question state");
+    assert_eq!(
+        question_state,
+        json!([
+            {
+                "question": "Which tool surface should be exercised next?",
+                "header": "Which tool surface should be exercised next?",
+                "options": [
+                    {"label": "bash", "description": "bash"},
+                    {"label": "pty", "description": "pty"},
+                    {"label": "task", "description": "task"}
+                ],
+                "multiple": Value::Null
+            }
+        ])
+    );
+
+    coordinator.stop_run().await.expect("stop run");
+}
+
+#[tokio::test]
+async fn native_question_tool_accepts_single_question_shape_and_legacy_fields() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let session_dir = temp_dir.path().join("sessions");
+    let workspace_root = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace_root).expect("workspace");
+
+    let coordinator = spawn_question_coordinator(session_dir, 1_000);
+    let run = coordinator
+        .start_run("native_question_single_legacy", &workspace_root)
+        .await
+        .expect("start run");
+
+    let question_tool = coordinator_registry(Default::default())
+        .get("question")
+        .expect("question tool");
+    let tool_task = tokio::spawn({
+        let question_tool = question_tool.clone();
+        let context = question_tool_context(
+            coordinator.clone(),
+            &run.run_id,
+            &workspace_root,
+            &run.artifacts_dir,
+            "native-question-single-legacy",
+        );
+        async move {
+            question_tool
+                .call(
+                    context,
+                    json!({
+                        "id": "q1",
+                        "question": "Choose the final stress-test summary level",
+                        "header": "Harness stress test",
+                        "required": true,
+                        "choices": ["short", "medium", "detailed"]
+                    }),
+                )
+                .await
+        }
+    });
+
+    let permission_id = wait_for_question_permission(&run.events_path).await;
+    coordinator
+        .resolve_permission(
+            permission_id,
+            PermissionDecision::Allow,
+            Some(r#"[["detailed"]]"#.to_string()),
+        )
+        .await
+        .expect("resolve question permission");
+
+    let result = tool_task
+        .await
+        .expect("join question tool task")
+        .expect("legacy question tool result");
+    assert!(result
+        .display_text
+        .contains("\"Choose the final stress-test summary level\"=\"detailed\""));
+
+    let structured = result.structured_json.expect("structured json");
+    assert_eq!(structured.get("answers"), Some(&json!([["detailed"]])));
+
+    let state_path = structured
+        .get("state_path")
+        .and_then(Value::as_str)
+        .expect("state_path in structured output");
+    let question_state: Value =
+        serde_json::from_slice(&fs::read(state_path).expect("read persisted question state"))
+            .expect("parse persisted question state");
+    assert_eq!(
+        question_state,
+        json!([
+            {
+                "question": "Choose the final stress-test summary level",
+                "header": "Harness stress test",
+                "options": [
+                    {"label": "short", "description": "short"},
+                    {"label": "medium", "description": "medium"},
+                    {"label": "detailed", "description": "detailed"}
+                ],
+                "multiple": Value::Null
+            }
+        ])
+    );
+
+    coordinator.stop_run().await.expect("stop run");
+}
+
+#[tokio::test]
 async fn native_question_tool_rejects_or_times_out_cleanly() {
     let reject_temp_dir = tempfile::tempdir().expect("tempdir");
     let reject_workspace_root = reject_temp_dir.path().join("workspace");

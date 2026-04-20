@@ -182,6 +182,118 @@ fn install_fake_mcp_server(script_path: &Path) {
     );
 }
 
+fn install_stateful_terminal_mcp_server(script_path: &Path) {
+    install_fake_mcp_server_with_tools(
+        script_path,
+        r#"[{
+    "name": "terminal_spawn",
+    "description": "Spawns a terminal session",
+    "inputSchema": {"type": "object", "properties": {"shell": {"type": "string"}}}
+}, {
+    "name": "terminal_wait",
+    "description": "Waits for terminal output",
+    "inputSchema": {"type": "object", "properties": {"sessionId": {"type": "string"}, "ms": {"type": "number"}}}
+}]"#,
+    );
+    let script = r#"#!/usr/bin/env python3
+import json
+import sys
+
+TOOLS = [{
+    "name": "terminal_spawn",
+    "description": "Spawns a terminal session",
+    "inputSchema": {"type": "object", "properties": {"shell": {"type": "string"}}}
+}, {
+    "name": "terminal_wait",
+    "description": "Waits for terminal output",
+    "inputSchema": {"type": "object", "properties": {"sessionId": {"type": "string"}, "ms": {"type": "number"}}}
+}]
+SESSIONS = {}
+NEXT_ID = 1
+
+
+def send(payload):
+    sys.stdout.write(json.dumps(payload, separators=(",", ":")) + "\n")
+    sys.stdout.flush()
+
+
+for raw in sys.stdin:
+    raw = raw.strip()
+    if not raw:
+        continue
+    message = json.loads(raw)
+    method = message.get("method")
+    message_id = message.get("id")
+    params = message.get("params", {})
+
+    if method == "initialize" and message_id is not None:
+        send({
+            "jsonrpc": "2.0",
+            "id": message_id,
+            "result": {
+                "protocolVersion": "2025-06-18",
+                "serverInfo": {"name": "fixture", "version": "1.0.0"},
+                "capabilities": {"tools": {"listChanged": False}}
+            }
+        })
+        continue
+
+    if method == "notifications/initialized":
+        continue
+
+    if message_id is None:
+        continue
+
+    if method == "tools/list":
+        send({"jsonrpc": "2.0", "id": message_id, "result": {"tools": TOOLS}})
+        continue
+
+    if method != "tools/call":
+        send({
+            "jsonrpc": "2.0",
+            "id": message_id,
+            "error": {"code": -32601, "message": f"unsupported method: {method}"}
+        })
+        continue
+
+    tool_name = params.get("name")
+    arguments = params.get("arguments", {})
+    if tool_name == "terminal_spawn":
+        session_id = f"term-{NEXT_ID}"
+        NEXT_ID += 1
+        SESSIONS[session_id] = True
+        send({
+            "jsonrpc": "2.0",
+            "id": message_id,
+            "result": {"content": [{"type": "text", "text": json.dumps({"sessionId": session_id})}], "isError": False}
+        })
+    elif tool_name == "terminal_wait":
+        session_id = arguments.get("sessionId")
+        if session_id not in SESSIONS:
+            send({
+                "jsonrpc": "2.0",
+                "id": message_id,
+                "result": {"content": [{"type": "text", "text": f"No terminal session with id: {session_id}"}], "isError": True}
+            })
+        else:
+            send({
+                "jsonrpc": "2.0",
+                "id": message_id,
+                "result": {"content": [{"type": "text", "text": "terminal session still active"}], "isError": False}
+            })
+    else:
+        send({
+            "jsonrpc": "2.0",
+            "id": message_id,
+            "result": {"content": [{"type": "text", "text": f"unknown tool: {tool_name}"}], "isError": True}
+        })
+"#;
+    fs::write(script_path, script).expect("write stateful mcp server");
+    let mut permissions = fs::metadata(script_path).expect("metadata").permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(script_path, permissions).expect("chmod stateful mcp server");
+}
+
 fn fake_mcp_config(script_path: &Path) -> McpConfig {
     McpConfig {
         servers: BTreeMap::from([(
@@ -268,6 +380,41 @@ async fn generic_mcp_registry_exposes_server_scoped_tools() {
             "missing MCP tool {tool_id}"
         );
     }
+}
+
+#[tokio::test]
+async fn stdio_mcp_tool_calls_preserve_stateful_sessions_across_calls() {
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let script_path = temp_dir.path().join("stateful_terminal_mcp_server.py");
+    install_stateful_terminal_mcp_server(&script_path);
+
+    let registry =
+        coordinator_registry_with_mcp(ShellAllowlist::default(), fake_mcp_config(&script_path));
+    let spawn = registry
+        .get("mcp.fixture.terminal_spawn")
+        .expect("terminal_spawn tool");
+    let wait = registry
+        .get("mcp.fixture.terminal_wait")
+        .expect("terminal_wait tool");
+
+    let spawn_result = spawn
+        .call(
+            test_context(&workspace, "pty-spawn"),
+            json!({"shell": "/bin/bash"}),
+        )
+        .await
+        .expect("spawn terminal session");
+    assert!(spawn_result.display_text.contains("sessionId"));
+
+    let wait_result = wait
+        .call(
+            test_context(&workspace, "pty-wait"),
+            json!({"sessionId": "term-1", "ms": 10}),
+        )
+        .await
+        .expect("reuse stateful terminal session");
+    assert_eq!(wait_result.display_text, "terminal session still active");
 }
 
 #[tokio::test]

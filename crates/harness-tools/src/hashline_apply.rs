@@ -254,7 +254,49 @@ pub(crate) fn resolve_workspace_target_path(
         }
     }
 
+    ensure_target_stays_within_workspace(&workspace, &resolved, input)?;
+
     Ok(resolved)
+}
+
+fn ensure_target_stays_within_workspace(
+    workspace: &Path,
+    resolved: &Path,
+    input: &Path,
+) -> Result<(), ToolError> {
+    let Some(existing_ancestor) = nearest_existing_ancestor(resolved) else {
+        return Err(ToolError::Execution(format!(
+            "failed to resolve an existing parent for {}",
+            input.display()
+        )));
+    };
+
+    let canonical_ancestor = existing_ancestor.canonicalize().map_err(|err| {
+        ToolError::Execution(format!(
+            "failed to canonicalize resolved path ancestor {}: {err}",
+            existing_ancestor.display()
+        ))
+    })?;
+
+    if !canonical_ancestor.starts_with(workspace) {
+        return Err(ToolError::PathEscapesWorkspace {
+            workspace_root: workspace.display().to_string(),
+            path: input.display().to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+fn nearest_existing_ancestor(path: &Path) -> Option<&Path> {
+    let mut candidate = Some(path);
+    while let Some(current) = candidate {
+        if current.exists() {
+            return Some(current);
+        }
+        candidate = current.parent();
+    }
+    None
 }
 
 pub(crate) fn write_file_via_hashline_engine(
