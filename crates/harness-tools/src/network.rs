@@ -17,13 +17,13 @@ const MAX_CODE_SEARCH_TOKENS: u32 = 50_000;
 const MAX_FETCH_BYTES: usize = 5 * 1024 * 1024;
 const EXA_API_URL: &str = "https://mcp.exa.ai/mcp";
 const EXA_WEB_SEARCH_TOOL_NAME: &str = "web_search_exa";
-const EXA_CODE_SEARCH_TOOL_NAME: &str = "get_code_context_exa";
+const EXA_CODE_SEARCH_TOOL_NAME: &str = "web_search_exa";
 const CODE_SEARCH_TIMEOUT_MESSAGE: &str = "Code search request timed out";
 const EMPTY_CODE_SEARCH_MESSAGE: &str = "No code snippets or documentation found. Please try a different query, be more specific about the library or programming concept, or check the spelling of framework names.";
-const OPENCODE_WEBFETCH_USER_AGENT: &str =
+const HARNESS_WEBFETCH_USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36";
-const OPENCODE_WEBFETCH_FALLBACK_USER_AGENT: &str = "opencode";
-const OPENCODE_WEBFETCH_ACCEPT_LANGUAGE: &str = "en-US,en;q=0.9";
+const HARNESS_WEBFETCH_FALLBACK_USER_AGENT: &str = "agent-harness";
+const HARNESS_WEBFETCH_ACCEPT_LANGUAGE: &str = "en-US,en;q=0.9";
 const DEFAULT_REMOTE_SEARCH_MAX_RETRIES: u32 = 1;
 const DEFAULT_REMOTE_SEARCH_RETRY_BACKOFF_MS: u64 = 250;
 const MAX_REMOTE_SEARCH_RETRY_BACKOFF_MS: u64 = 5_000;
@@ -143,7 +143,7 @@ impl NetworkExecutor {
         timeout_secs: u64,
     ) -> Result<reqwest::Response, ToolError> {
         let initial = self
-            .execute_web_fetch_request(url, format, timeout_secs, OPENCODE_WEBFETCH_USER_AGENT)
+            .execute_web_fetch_request(url, format, timeout_secs, HARNESS_WEBFETCH_USER_AGENT)
             .await?;
         if initial.status() == reqwest::StatusCode::FORBIDDEN
             && initial
@@ -157,7 +157,7 @@ impl NetworkExecutor {
                     url,
                     format,
                     timeout_secs,
-                    OPENCODE_WEBFETCH_FALLBACK_USER_AGENT,
+                    HARNESS_WEBFETCH_FALLBACK_USER_AGENT,
                 )
                 .await;
         }
@@ -177,7 +177,7 @@ impl NetworkExecutor {
             .header(reqwest::header::ACCEPT, accept_header(format))
             .header(
                 reqwest::header::ACCEPT_LANGUAGE,
-                OPENCODE_WEBFETCH_ACCEPT_LANGUAGE,
+                HARNESS_WEBFETCH_ACCEPT_LANGUAGE,
             )
             .timeout(Duration::from_secs(timeout_secs))
             .send()

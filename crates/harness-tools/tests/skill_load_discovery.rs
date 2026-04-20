@@ -318,31 +318,31 @@ async fn skill_load_discovers_project_and_global_roots_with_precedence() {
     let _env = EnvTestContext::new(&app, &home);
 
     write_skill(
-        &home.join(".config/opencode/skills"),
+        &home.join(".config/agent-harness/skills"),
         "shared-skill",
         "Global shared description",
         "Global body",
     );
     write_skill(
-        &repo.join(".opencode/skills"),
+        &repo.join(".agent-harness/skills"),
         "shared-skill",
         "Repo shared description",
         "Repo body",
     );
     write_skill(
-        &app.join(".opencode/skills"),
+        &app.join(".agent-harness/skills"),
         "shared-skill",
         "App shared description",
         "App body",
     );
     write_skill(
-        &repo.join(".agents/skills"),
+        &repo.join(".agent-harness/skills"),
         "repo-only",
         "Repo only description",
         "Repo only body",
     );
     write_skill(
-        &home.join(".agents/skills"),
+        &home.join(".config/agent-harness/skills"),
         "global-only",
         "Global only description",
         "Global only body",
@@ -370,7 +370,7 @@ async fn skill_load_discovers_project_and_global_roots_with_precedence() {
             .as_ref()
             .and_then(|value| value.get("location")),
         Some(&json!(app
-            .join(".opencode/skills/shared-skill/SKILL.md")
+            .join(".agent-harness/skills/shared-skill/SKILL.md")
             .display()
             .to_string()))
     );
@@ -415,35 +415,33 @@ async fn skill_load_hides_denied_or_invalid_skills() {
     let _env = EnvTestContext::new(&repo, &home);
 
     write_skill(
-        &repo.join(".opencode/skills"),
+        &repo.join(".agent-harness/skills"),
         "visible-skill",
         "Visible description",
         "Visible body",
     );
     write_skill(
-        &repo.join(".opencode/skills"),
+        &repo.join(".agent-harness/skills"),
         "internal-secret",
         "Denied description",
         "Denied body",
     );
     write_skill(
-        &repo.join(".opencode/skills"),
+        &repo.join(".agent-harness/skills"),
         "experimental-preview",
         "Ask description",
         "Ask body",
     );
-    write_invalid_skill(&repo.join(".opencode/skills"), "broken-skill");
+    write_invalid_skill(&repo.join(".agent-harness/skills"), "broken-skill");
     write_skill(
-        &home.join(".config/opencode/skills"),
+        &home.join(".config/agent-harness/skills"),
         "broken-skill",
-        "Global fallback description",
-        "Global fallback body",
+        "Global description",
+        "Global body",
     );
 
     let registry = coordinator_registry(ShellAllowlist::default());
     let skill_tool = registry.get("skill").expect("skill tool");
-    let compat = registry.get("skill").expect("skill tool");
-
     let visible = skill_tool
         .call(
             tool_context(&repo, "toolcall-visible-skill"),
@@ -464,15 +462,6 @@ async fn skill_load_hides_denied_or_invalid_skills() {
         .to_string()
         .contains("Skill \"internal-secret\" not found"));
 
-    let compat_denied = compat
-        .call(
-            tool_context(&repo, "toolcall-compat-denied-skill"),
-            json!({"name": "internal-secret"}),
-        )
-        .await
-        .expect_err("compat denied skill should be hidden");
-    assert_eq!(denied.to_string(), compat_denied.to_string());
-
     let _answers = ScopedEnvVar::set("HARNESS_QUESTION_ANSWERS", r#"[["Yes"]]"#);
     let approved = skill_tool
         .call(
@@ -490,7 +479,7 @@ async fn skill_load_hides_denied_or_invalid_skills() {
             json!({"name": "broken-skill"}),
         )
         .await
-        .expect_err("invalid higher-precedence skill should hide fallback");
+        .expect_err("invalid higher-precedence skill should hide lower-precedence skill");
     assert!(invalid
         .to_string()
         .contains("Skill \"broken-skill\" not found"));
@@ -520,19 +509,75 @@ async fn shipped_starter_skill_pack_is_discoverable_from_repo_checkout() {
         .await
         .expect("shipped rust-best-practices skill");
     assert!(skill.display_text.contains("# Skill: rust-best-practices"));
-    assert!(skill
-        .display_text
-        .contains("run cargo fmt, cargo check, cargo clippy, and relevant tests"));
+    assert!(skill.display_text.contains("cargo fmt --all -- --check"));
     assert_eq!(
         skill
             .structured_json
             .as_ref()
             .and_then(|value| value.get("location")),
         Some(&json!(repo
-            .join(".opencode/skills/rust-best-practices/SKILL.md")
+            .join(".agent-harness/skills/rust-best-practices/SKILL.md")
             .display()
             .to_string()))
     );
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
+)]
+async fn codex_skill_pack_is_discoverable_from_repo_checkout() {
+    let _guard = SKILL_DISCOVERY_ENV_LOCK.lock().expect("env test lock");
+    let repo = repo_root();
+    let _cwd = CurrentDirGuard::set(&repo);
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let skill_tool = registry.get("skill").expect("skill tool");
+    let skill = skill_tool
+        .call(
+            tool_context(&repo, "toolcall-shipped-analyze"),
+            json!({"name": "analyze"}),
+        )
+        .await
+        .expect("shipped analyze skill");
+    assert!(skill.display_text.contains("# Skill: analyze"));
+    assert!(skill.display_text.contains("Read-Only Deep Analysis"));
+    assert_eq!(
+        skill
+            .structured_json
+            .as_ref()
+            .and_then(|value| value.get("location")),
+        Some(&json!(repo
+            .join(".codex/skills/analyze/SKILL.md")
+            .display()
+            .to_string()))
+    );
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
+)]
+async fn skill_load_reports_agent_hint_for_explore() {
+    let _guard = SKILL_DISCOVERY_ENV_LOCK.lock().expect("env test lock");
+    let repo = repo_root();
+    let _cwd = CurrentDirGuard::set(&repo);
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let skill_tool = registry.get("skill").expect("skill tool");
+
+    let err = skill_tool
+        .call(
+            tool_context(&repo, "toolcall-explore-agent-hint"),
+            json!({"name": "explore"}),
+        )
+        .await
+        .expect_err("explore is an agent, not a skill");
+
+    let message = err.to_string();
+    assert!(message.contains("Skill \"explore\" not found"));
+    assert!(message.contains("`explore` is an agent, not a skill"));
+    assert!(message.contains("subagent_type=\"explore\""));
 }
 
 #[tokio::test]
@@ -664,7 +709,7 @@ async fn skill_load_ask_permissions_use_question_approval_flow() {
     });
 
     write_skill(
-        &repo.join(".opencode/skills"),
+        &repo.join(".agent-harness/skills"),
         "experimental-preview",
         "Ask description",
         "Ask body",

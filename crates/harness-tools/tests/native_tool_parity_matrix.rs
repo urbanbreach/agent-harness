@@ -2,11 +2,10 @@ use harness_core::config::ShellAllowlist;
 use harness_tools::{canonical_tool_id_for, coordinator_registry};
 
 #[test]
-fn coordinator_registry_exposes_single_opencode_style_surface() {
+fn coordinator_registry_exposes_single_native_tool_surface() {
     let registry = coordinator_registry(ShellAllowlist::default());
 
     for tool_id in [
-        "apply_patch",
         "bash",
         "batch",
         "lsp.rename",
@@ -21,7 +20,6 @@ fn coordinator_registry_exposes_single_opencode_style_surface() {
         "invalid",
         "list",
         "lsp",
-        "patch",
         "plan_exit",
         "question",
         "read",
@@ -39,6 +37,10 @@ fn coordinator_registry_exposes_single_opencode_style_surface() {
         );
         assert_eq!(canonical_tool_id_for(tool_id), Some(tool_id));
     }
+
+    assert!(registry.get("edit_compat").is_none());
+    assert!(registry.get("apply_patch").is_none());
+    assert!(registry.get("patch").is_none());
 
     for legacy_tool_id in [
         "agent.spawn",

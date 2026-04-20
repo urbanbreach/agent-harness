@@ -79,7 +79,7 @@ fn todo_state_file(run: &RunInfo) -> PathBuf {
     run.artifacts_dir
         .parent()
         .expect("run root")
-        .join("opencode-compat")
+        .join("control-plane")
         .join("todos.json")
 }
 
@@ -161,8 +161,8 @@ async fn native_control_plane_tools_cover_invalid_todo_skill_and_plan_exit() {
     );
     let state_path = todo_state_file(&run);
     assert!(
-        state_path.ends_with(Path::new("opencode-compat/todos.json")),
-        "todo state path should stay stable until the on-disk contract is migrated explicitly: {}",
+        state_path.ends_with(Path::new("control-plane/todos.json")),
+        "todo state path should use the harness control-plane contract: {}",
         state_path.display()
     );
     assert!(state_path.exists(), "todo state file should be written");
@@ -243,7 +243,7 @@ async fn native_control_plane_tools_cover_invalid_todo_skill_and_plan_exit() {
 }
 
 #[tokio::test]
-async fn plan_exit_rejects_non_plan_profile_or_missing_build_target() {
+async fn plan_exit_rejects_non_plan_profile_or_missing_exit_target() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let non_plan_workspace = temp_dir.path().join("workspace-non-plan");
     fs::create_dir_all(&non_plan_workspace).expect("non-plan workspace");
@@ -302,9 +302,9 @@ async fn plan_exit_rejects_non_plan_profile_or_missing_build_target() {
             json!({}),
         )
         .await
-        .expect_err("plan_exit should reject missing build target");
+        .expect_err("plan_exit should reject missing exit target");
     assert!(
-        err.contains("configured exit target agent") && err.contains("build"),
+        err.contains("configured exit target agent"),
         "unexpected error: {err}"
     );
 }

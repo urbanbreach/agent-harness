@@ -7,19 +7,19 @@ use std::sync::Arc;
 
 use harness_core::agent::AgentProfile;
 use harness_core::clock::RealClock;
-use harness_core::config::{load_config_from_file, PermissionMode};
+use harness_core::config::{load_config_from_file, McpConfig, PermissionMode};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
+use harness_core::edit::hashline::compute_line_hash;
 use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1};
 use harness_core::perm::{PermissionDecision, PermissionPolicy};
 use harness_core::redact::DefaultRedactor;
-use harness_tools::coordinator_registry;
+use harness_tools::{coordinator_registry_with_mcp_and_editing, EditingToolSurfaceConfig};
 use tokio::time::{sleep, Duration, Instant};
 
 const SURFACE_LIVE_PROFILE: &str = "surface_live";
 
 fn surface_live_toolset() -> Vec<String> {
     [
-        "apply_patch",
         "bash",
         "batch",
         "codesearch",
@@ -147,7 +147,13 @@ fn example_profiles(
 #[tokio::test]
 async fn example_config_exposes_single_surface_tools_through_live_registry() {
     let config = load_config_from_file(&example_config_path()).expect("load example config");
-    let registry = coordinator_registry(config.permissions.shell_allowlist.clone());
+    let registry = coordinator_registry_with_mcp_and_editing(
+        config.permissions.shell_allowlist.clone(),
+        McpConfig::default(),
+        EditingToolSurfaceConfig {
+            hashline_edit: config.hashline_edit,
+        },
+    );
     for tool_id in [
         "read",
         "list",
@@ -156,7 +162,6 @@ async fn example_config_exposes_single_surface_tools_through_live_registry() {
         "bash",
         "edit",
         "write",
-        "apply_patch",
         "webfetch",
         "todowrite",
         "todoread",
@@ -206,8 +211,12 @@ async fn single_surface_tools_execute_under_example_config() {
         PermissionMode::Allow,
         PermissionMode::Allow,
     );
-    coordinator_config.tool_registry = Arc::new(coordinator_registry(
+    coordinator_config.tool_registry = Arc::new(coordinator_registry_with_mcp_and_editing(
         config.permissions.shell_allowlist.clone(),
+        McpConfig::default(),
+        EditingToolSurfaceConfig {
+            hashline_edit: config.hashline_edit,
+        },
     ));
     coordinator_config.agent_profiles = example_profiles(&config);
 
@@ -266,7 +275,8 @@ async fn single_surface_tools_execute_under_example_config() {
         )
         .await
         .expect("read tool");
-    assert!(read.display_text.contains("1: hello from surface"));
+    assert!(read.display_text.contains("1#"));
+    assert!(read.display_text.contains("|hello from surface"));
 
     let listed = handle
         .execute_agent_tool_call(
@@ -359,28 +369,51 @@ async fn single_surface_tools_execute_under_example_config() {
             "edit",
             serde_json::json!({
                 "filePath": "written.txt",
-                "oldString": "hello from surface\n",
-                "newString": "hello from edit\n",
+                "edits": [
+                    {
+                        "op": "replace",
+                        "pos": format!("1#{}", compute_line_hash("hello from surface")),
+                        "lines": ["hello from edit"],
+                    }
+                ],
             }),
         )
         .await
         .expect("edit tool");
     assert!(edited.display_text.contains("Edit applied successfully"));
 
+    let reread_after_edit = handle
+        .execute_agent_tool_call(
+            actor(&worker_id),
+            Some(SURFACE_LIVE_PROFILE.to_string()),
+            "read",
+            serde_json::json!({
+                "filePath": "written.txt"
+            }),
+        )
+        .await
+        .expect("reread after edit");
+    assert!(reread_after_edit.display_text.contains("|hello from edit"));
+
     let patched = handle
         .execute_agent_tool_call(
             actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
-            "apply_patch",
+            "edit",
             serde_json::json!({
-                "patchText": "*** Begin Patch\n*** Update File: written.txt\n@@\n-hello from edit\n+hello from patch\n*** End Patch"
+                "filePath": "written.txt",
+                "edits": [
+                    {
+                        "op": "replace",
+                        "pos": format!("1#{}", compute_line_hash("hello from edit")),
+                        "lines": ["hello from patch"],
+                    }
+                ],
             }),
         )
         .await
-        .expect("apply_patch tool");
-    assert!(patched
-        .display_text
-        .contains("Success. Updated the following files"));
+        .expect("second edit tool");
+    assert!(patched.display_text.contains("Edit applied successfully"));
 
     let reread = handle
         .execute_agent_tool_call(

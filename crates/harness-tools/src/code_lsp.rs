@@ -134,39 +134,18 @@ pub(crate) enum CodeLspRequest {
     },
 }
 
-#[derive(Debug, Deserialize)]
-struct CodeLspOperationProbe {
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct CodeLspArgs {
     operation: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct CodeLspPositionArgs {
-    #[serde(rename = "operation")]
-    _operation: String,
     #[serde(rename = "filePath")]
     file_path: String,
-    line: i32,
-    character: i32,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct CodeLspFileArgs {
-    #[serde(rename = "operation")]
-    _operation: String,
-    #[serde(rename = "filePath")]
-    file_path: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct CodeLspQueryArgs {
-    #[serde(rename = "operation")]
-    _operation: String,
-    #[serde(rename = "filePath")]
-    file_path: String,
-    query: String,
+    #[serde(default)]
+    line: Option<i32>,
+    #[serde(default)]
+    character: Option<i32>,
+    #[serde(default)]
+    query: Option<String>,
 }
 
 pub(crate) fn code_lsp_parameters_json_schema() -> Value {
@@ -212,37 +191,37 @@ fn supported_operation_names() -> Vec<&'static str> {
 }
 
 pub(crate) fn parse_code_lsp_request(args_json: Value) -> Result<CodeLspRequest, ToolError> {
-    let operation_name = serde_json::from_value::<CodeLspOperationProbe>(args_json.clone())
-        .map_err(|err| ToolError::InvalidArguments(err.to_string()))?
-        .operation;
-    let operation = LspOperation::parse(&operation_name)?;
+    let args: CodeLspArgs = serde_json::from_value(args_json)
+        .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+    let operation = LspOperation::parse(&args.operation)?;
 
     match operation.input_kind() {
         LspOperationInputKind::Position => {
-            let args: CodeLspPositionArgs = serde_json::from_value(args_json)
-                .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+            let line = args
+                .line
+                .ok_or_else(|| ToolError::InvalidArguments("missing field `line`".to_string()))?;
+            let character = args.character.ok_or_else(|| {
+                ToolError::InvalidArguments("missing field `character`".to_string())
+            })?;
             Ok(CodeLspRequest::Position {
                 operation,
                 file_path: args.file_path,
-                line: args.line,
-                character: args.character,
+                line,
+                character,
             })
         }
-        LspOperationInputKind::File => {
-            let args: CodeLspFileArgs = serde_json::from_value(args_json)
-                .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
-            Ok(CodeLspRequest::File {
-                operation,
-                file_path: args.file_path,
-            })
-        }
+        LspOperationInputKind::File => Ok(CodeLspRequest::File {
+            operation,
+            file_path: args.file_path,
+        }),
         LspOperationInputKind::Query => {
-            let args: CodeLspQueryArgs = serde_json::from_value(args_json)
-                .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+            let query = args
+                .query
+                .ok_or_else(|| ToolError::InvalidArguments("missing field `query`".to_string()))?;
             Ok(CodeLspRequest::Query {
                 operation,
                 file_path: args.file_path,
-                query: args.query,
+                query,
             })
         }
     }
@@ -373,9 +352,13 @@ pub(crate) fn format_diagnostics(reports: &[LspDiagnosticReport]) -> String {
 pub(crate) fn resolve_existing_path(ctx: &ToolContext, input: &str) -> Result<PathBuf, ToolError> {
     let workspace = canonical_workspace_root(ctx)?;
     let candidate = normalize_workspace_target_path(&workspace, Path::new(input))?;
-    let canonical = candidate
-        .canonicalize()
-        .map_err(|err| ToolError::Execution(format!("failed to resolve path: {err}")))?;
+    let canonical = if candidate == workspace {
+        workspace.clone()
+    } else {
+        candidate
+            .canonicalize()
+            .map_err(|err| ToolError::Execution(format!("failed to resolve path: {err}")))?
+    };
     ensure_within_workspace_path(&workspace, &canonical)?;
     Ok(canonical)
 }
@@ -488,6 +471,18 @@ mod tests {
                 ..
             } if file_path == "src/lib.rs" && query == "helper"
         ));
+
+        let file_with_cursor_metadata = parse_code_lsp_request(json!({
+            "operation": "fileDiagnostics",
+            "filePath": "src/lib.rs",
+            "line": 1,
+            "character": 1,
+        }))
+        .expect("file diagnostics should ignore cursor metadata that the public schema allows");
+        assert!(matches!(
+            file_with_cursor_metadata,
+            CodeLspRequest::File { file_path, .. } if file_path == "src/lib.rs"
+        ));
     }
 
     #[test]
@@ -500,18 +495,6 @@ mod tests {
         assert!(matches!(
             missing_position,
             ToolError::InvalidArguments(message) if message.contains("missing field `line`")
-        ));
-
-        let extra_position = parse_code_lsp_request(json!({
-            "operation": "documentSymbol",
-            "filePath": "src/lib.rs",
-            "line": 1,
-            "character": 1,
-        }))
-        .expect_err("file-only request should reject cursor coordinates");
-        assert!(matches!(
-            extra_position,
-            ToolError::InvalidArguments(message) if message.contains("unknown field")
         ));
 
         let missing_query = parse_code_lsp_request(json!({

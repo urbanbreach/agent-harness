@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use harness_core::config::{McpConfig, ShellAllowlist};
-use harness_core::edit::hashline::compute_line_hash;
+use harness_core::edit::hashline::{compute_line_hash, LineAnchor};
 use harness_core::event::ActorKind;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 use schemars::JsonSchema;
@@ -19,6 +19,9 @@ use serde_json::json;
 
 mod hashline_apply;
 use hashline_apply::HashlineApplyTool;
+
+mod hashline_edit;
+use hashline_edit::HashlineEditTool;
 
 mod hashline_scan;
 use hashline_scan::HashlineScanTool;
@@ -34,7 +37,7 @@ use fs_grep::FsGrepTool;
 
 mod workspace_edit;
 use workspace_edit::{
-    record_file_read, ApplyPatchTool, EditTool, FsWriteTool, PatchTool, WorkspaceEditExecutor,
+    record_file_hashline_read, record_file_read, FsWriteTool, WorkspaceEditExecutor,
 };
 
 mod network;
@@ -59,22 +62,51 @@ use code_lsp_rename::{CodeLspRenameExecutor, CodeLspRenameTool};
 
 mod lsp_support;
 
-mod opencode_tools;
-use opencode_tools::{
-    BashTool, BatchTool, CodeSearchTool, GlobTool, GrepTool, InvalidTool, ListTool, LspTool,
-    PlanExitTool, QuestionTool, ReadTool, SkillTool, TaskTool, TodoReadTool, TodoWriteTool,
-    WebFetchTool, WebSearchTool, WriteTool,
+mod native_tools;
+use native_tools::{
+    blocked_shell_command_message, BashTool, BatchTool, CodeSearchTool, GlobTool, GrepTool,
+    InvalidTool, ListTool, LspTool, PlanExitTool, QuestionTool, ReadTool, SkillTool, TaskTool,
+    TodoReadTool, TodoWriteTool, WebFetchTool, WebSearchTool, WriteTool,
 };
 
 pub use harness_core::tool::canonical_tool_id_for;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditingToolSurfaceConfig {
+    pub hashline_edit: bool,
+}
+
+impl Default for EditingToolSurfaceConfig {
+    fn default() -> Self {
+        Self {
+            hashline_edit: true,
+        }
+    }
+}
+
 pub fn coordinator_registry(shell_allowlist: ShellAllowlist) -> ToolRegistry {
-    coordinator_registry_with_mcp(shell_allowlist, McpConfig::default())
+    coordinator_registry_with_mcp_and_editing(
+        shell_allowlist,
+        McpConfig::default(),
+        EditingToolSurfaceConfig::default(),
+    )
 }
 
 pub fn coordinator_registry_with_mcp(
     shell_allowlist: ShellAllowlist,
     mcp_config: McpConfig,
+) -> ToolRegistry {
+    coordinator_registry_with_mcp_and_editing(
+        shell_allowlist,
+        mcp_config,
+        EditingToolSurfaceConfig::default(),
+    )
+}
+
+pub fn coordinator_registry_with_mcp_and_editing(
+    shell_allowlist: ShellAllowlist,
+    mcp_config: McpConfig,
+    editing: EditingToolSurfaceConfig,
 ) -> ToolRegistry {
     let agent_ops_executor = Arc::new(AgentOpsExecutor::new());
     let control_plane_executor = Arc::new(ControlPlaneExecutor::new());
@@ -85,7 +117,7 @@ pub fn coordinator_registry_with_mcp(
     let workspace_edit_executor = Arc::new(WorkspaceEditExecutor::new());
 
     let mut registry = ToolRegistry::new();
-    registry.register(Arc::new(ReadTool));
+    registry.register(Arc::new(ReadTool::new(editing.hashline_edit)));
     registry.register(Arc::new(ListTool));
     registry.register(Arc::new(GlobTool));
     registry.register(Arc::new(GrepTool));
@@ -93,11 +125,7 @@ pub fn coordinator_registry_with_mcp(
     registry.register(Arc::new(HashlineScanTool));
     registry.register(Arc::new(HashlineApplyTool));
     registry.register(Arc::new(FsWriteTool::new(workspace_edit_executor.clone())));
-    registry.register(Arc::new(EditTool::new(workspace_edit_executor.clone())));
-    registry.register(Arc::new(ApplyPatchTool::new(
-        workspace_edit_executor.clone(),
-    )));
-    registry.register(Arc::new(PatchTool::new(workspace_edit_executor.clone())));
+    registry.register(Arc::new(HashlineEditTool));
     registry.register(Arc::new(WriteTool::new(workspace_edit_executor.clone())));
     registry.register(Arc::new(BashTool::new(shell_allowlist)));
     registry.register(Arc::new(WebFetchTool::new(network_executor.clone())));
@@ -119,14 +147,31 @@ pub fn coordinator_registry_with_mcp(
 }
 
 pub fn worker_registry(shell_allowlist: ShellAllowlist) -> ToolRegistry {
-    worker_registry_with_mcp(shell_allowlist, McpConfig::default())
+    worker_registry_with_mcp_and_editing(
+        shell_allowlist,
+        McpConfig::default(),
+        EditingToolSurfaceConfig::default(),
+    )
 }
 
 pub fn worker_registry_with_mcp(
     shell_allowlist: ShellAllowlist,
     mcp_config: McpConfig,
 ) -> ToolRegistry {
-    let coordinator = coordinator_registry_with_mcp(shell_allowlist, mcp_config);
+    worker_registry_with_mcp_and_editing(
+        shell_allowlist,
+        mcp_config,
+        EditingToolSurfaceConfig::default(),
+    )
+}
+
+pub fn worker_registry_with_mcp_and_editing(
+    shell_allowlist: ShellAllowlist,
+    mcp_config: McpConfig,
+    editing: EditingToolSurfaceConfig,
+) -> ToolRegistry {
+    let coordinator =
+        coordinator_registry_with_mcp_and_editing(shell_allowlist, mcp_config, editing);
     let mut worker = ToolRegistry::new();
     for tool in coordinator.filter_for_actor(ActorKind::Worker) {
         worker.register(tool);
@@ -134,7 +179,17 @@ pub fn worker_registry_with_mcp(
     worker
 }
 
-pub(crate) struct FsReadTool;
+pub(crate) struct FsReadTool {
+    default_hashline_anchors: bool,
+}
+
+impl FsReadTool {
+    pub(crate) fn new(default_hashline_anchors: bool) -> Self {
+        Self {
+            default_hashline_anchors,
+        }
+    }
+}
 
 const FS_READ_DEFAULT_OFFSET: u32 = 1;
 const FS_READ_DEFAULT_LIMIT: u32 = 2000;
@@ -152,7 +207,7 @@ struct FsReadArgs {
     #[serde(default = "default_fs_read_line_numbers")]
     line_numbers: bool,
     #[serde(default)]
-    hashline_anchors: bool,
+    hashline_anchors: Option<bool>,
 }
 
 fn default_fs_read_offset() -> u32 {
@@ -167,7 +222,7 @@ fn default_fs_read_line_numbers() -> bool {
     true
 }
 
-fn fs_read_parameters_json_schema() -> serde_json::Value {
+fn fs_read_parameters_json_schema(default_hashline_anchors: bool) -> serde_json::Value {
     json!({
         "type": "object",
         "properties": {
@@ -190,7 +245,7 @@ fn fs_read_parameters_json_schema() -> serde_json::Value {
             },
             "hashline_anchors": {
                 "type": "boolean",
-                "default": false,
+                "default": default_hashline_anchors,
                 "description": "When true, render lines as LINE#HASH|text for anchor-driven edit workflows"
             }
         },
@@ -240,6 +295,17 @@ fn format_fs_read_hashline_lines(lines: &[&str], start_line_index: usize) -> Str
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn build_fs_read_anchors(lines: &[&str], start_line_index: usize) -> Vec<LineAnchor> {
+    lines
+        .iter()
+        .enumerate()
+        .map(|(index, line)| LineAnchor {
+            line: (start_line_index + index + 1) as u32,
+            hash: compute_line_hash(line),
+        })
+        .collect()
 }
 
 fn build_fs_read_anchor_payload(lines: &[&str], start_line_index: usize) -> serde_json::Value {
@@ -456,7 +522,7 @@ impl Tool for FsReadTool {
     }
 
     fn parameters_json_schema(&self) -> serde_json::Value {
-        fs_read_parameters_json_schema()
+        fs_read_parameters_json_schema(self.default_hashline_anchors)
     }
 
     fn capability(&self) -> ToolCapability {
@@ -472,14 +538,11 @@ impl Tool for FsReadTool {
             .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
         let offset = normalize_fs_read_offset(args.offset);
         let limit = normalize_fs_read_limit(args.limit);
+        let hashline_anchors = args
+            .hashline_anchors
+            .unwrap_or(self.default_hashline_anchors);
 
         let path = Path::new(&args.path);
-        if path.is_absolute() {
-            return Err(ToolError::InvalidArguments(
-                "path must be relative to workspace root".to_string(),
-            ));
-        }
-
         let resolved = ctx.resolve_workspace_path(path)?;
         let bytes = std::fs::read(&resolved)
             .map_err(|err| ToolError::Execution(format!("failed to read file: {err}")))?;
@@ -500,8 +563,10 @@ impl Tool for FsReadTool {
         let shown_count = available_lines.len().min(line_limit);
         let truncated = available_lines.len() > line_limit;
         let shown_lines = &available_lines[..shown_count];
+        let read_anchors =
+            hashline_anchors.then(|| build_fs_read_anchors(shown_lines, start_line_index));
 
-        let mut display_text = if args.hashline_anchors {
+        let mut display_text = if hashline_anchors {
             format_fs_read_hashline_lines(shown_lines, start_line_index)
         } else {
             format_fs_read_lines(shown_lines, start_line_index, args.line_numbers)
@@ -509,7 +574,7 @@ impl Tool for FsReadTool {
         let mut artifacts = Vec::new();
 
         if truncated {
-            let full_output = if args.hashline_anchors {
+            let full_output = if hashline_anchors {
                 format_fs_read_hashline_lines(available_lines, start_line_index)
             } else {
                 format_fs_read_lines(available_lines, start_line_index, args.line_numbers)
@@ -545,7 +610,11 @@ impl Tool for FsReadTool {
             artifacts.push(artifact);
         }
 
-        record_file_read(&ctx, &resolved)?;
+        if let Some(anchors) = read_anchors {
+            record_file_hashline_read(&ctx, &resolved, anchors)?;
+        } else {
+            record_file_read(&ctx, &resolved)?;
+        }
 
         Ok(ToolResult {
             display_text,
@@ -556,8 +625,8 @@ impl Tool for FsReadTool {
                 "limit": limit,
                 "total_lines": total_lines,
                 "line_numbers": args.line_numbers,
-                "hashline_anchors": args.hashline_anchors,
-                "anchors": if args.hashline_anchors {
+                "hashline_anchors": hashline_anchors,
+                "anchors": if hashline_anchors {
                     build_fs_read_anchor_payload(shown_lines, start_line_index)
                 } else {
                     serde_json::Value::Null
@@ -641,7 +710,7 @@ impl Tool for ShellRunTool {
     }
 
     fn description(&self) -> &str {
-        "Runs an allowlisted shell command inside the workspace and returns stdout/stderr."
+        "Runs an allowlisted shell command inside the workspace and returns stdout/stderr. Use bash for real shell work like git, cargo, or npm—not for file discovery, file search, reading, or editing. Commands such as find, grep/rg, cat, head, tail, sed, and awk are blocked; use glob, grep, list, read, edit, or write instead."
     }
 
     fn parameters_json_schema(&self) -> serde_json::Value {
@@ -671,7 +740,9 @@ impl Tool for ShellRunTool {
         let timeout_ms = args.timeout.unwrap_or(120_000);
         if let Some(cmd) = args.cmd {
             if !self.is_executable_allowed(&cmd) {
-                return Err(ToolError::CommandBlocked(cmd));
+                return Err(ToolError::CommandBlocked(blocked_shell_command_message(
+                    &cmd,
+                )));
             }
 
             let cwd = self.resolve_cwd(&ctx, args.cwd.as_deref())?;
@@ -705,7 +776,7 @@ impl Tool for ShellRunTool {
             let command = args.command.expect("validated shell command presence");
             let workdir = args.workdir.or(args.cwd);
             let cwd = self.resolve_cwd(&ctx, workdir.as_deref())?;
-            crate::opencode_tools::validate_bash_command(
+            crate::native_tools::validate_bash_command(
                 &command,
                 &cwd,
                 &ctx.workspace_root,
@@ -826,7 +897,6 @@ mod tests {
         let registry = coordinator_registry(ShellAllowlist::default());
 
         for tool_id in [
-            "apply_patch",
             "bash",
             "batch",
             "codesearch",
@@ -839,7 +909,6 @@ mod tests {
             "invalid",
             "list",
             "lsp",
-            "patch",
             "plan_exit",
             "question",
             "read",
@@ -930,7 +999,7 @@ mod tests {
 
         assert_eq!(properties["offset"]["minimum"], json!(1));
         assert_eq!(properties["limit"]["minimum"], json!(1));
-        assert_eq!(properties["hashlineAnchors"]["default"], json!(false));
+        assert_eq!(properties["hashlineAnchors"]["default"], json!(true));
         assert_eq!(schema["required"], json!(["filePath"]));
     }
 
@@ -992,7 +1061,7 @@ mod tests {
         let source = temp.path().join("fixture.txt");
         std::fs::write(&source, "line one\nline two\nline three\n").expect("write fixture");
 
-        let tool = FsReadTool;
+        let tool = FsReadTool::new(false);
         let result = tool
             .call(
                 fs_read_context(temp.path(), "toolcall-offset-limit"),
@@ -1021,7 +1090,7 @@ mod tests {
         let source = temp.path().join("fixture.txt");
         std::fs::write(&source, "alpha\nbeta\n").expect("write fixture");
 
-        let tool = FsReadTool;
+        let tool = FsReadTool::new(false);
         let result = tool
             .call(
                 fs_read_context(temp.path(), "toolcall-hashline-read"),
@@ -1064,7 +1133,7 @@ mod tests {
         let source = temp.path().join("fixture.txt");
         std::fs::write(&source, "line one\nline two\nline three\n").expect("write fixture");
 
-        let tool = FsReadTool;
+        let tool = FsReadTool::new(false);
         let result = tool
             .call(
                 fs_read_context(temp.path(), "toolcall-zero-paging"),
@@ -1085,6 +1154,7 @@ mod tests {
         let metadata = result.structured_json.expect("structured json");
         assert_eq!(metadata["offset"], json!(1));
         assert_eq!(metadata["limit"], json!(super::FS_READ_DEFAULT_LIMIT));
+        assert_eq!(metadata["hashline_anchors"], json!(false));
     }
 
     #[tokio::test]
@@ -1109,12 +1179,18 @@ mod tests {
 
         assert_eq!(
             result.display_text,
-            "1: line one\n2: line two\n3: line three"
+            format!(
+                "1#{}|line one\n2#{}|line two\n3#{}|line three",
+                super::compute_line_hash("line one"),
+                super::compute_line_hash("line two"),
+                super::compute_line_hash("line three")
+            )
         );
 
         let metadata = result.structured_json.expect("structured json");
         assert_eq!(metadata["offset"], json!(1));
         assert_eq!(metadata["limit"], json!(super::FS_READ_DEFAULT_LIMIT));
+        assert_eq!(metadata["hashline_anchors"], json!(true));
     }
 
     #[tokio::test]
@@ -1148,13 +1224,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn read_tool_accepts_absolute_workspace_paths() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("fixture.txt");
+        std::fs::write(&source, "alpha\nbeta\n").expect("write fixture");
+
+        let registry = coordinator_registry(ShellAllowlist::default());
+        let read = registry.get("read").expect("read tool");
+        let result = read
+            .call(
+                fs_read_context(temp.path(), "toolcall-read-absolute"),
+                json!({
+                    "filePath": source,
+                }),
+            )
+            .await
+            .expect("absolute workspace path should read successfully");
+
+        assert!(result.display_text.contains("|alpha"));
+        assert!(result.display_text.contains("|beta"));
+        let metadata = result.structured_json.expect("structured json");
+        assert!(metadata["resolved_path"]
+            .as_str()
+            .expect("resolved path string")
+            .ends_with("fixture.txt"));
+    }
+
+    #[tokio::test]
+    async fn read_tool_rejects_absolute_paths_outside_workspace() {
+        let workspace = tempfile::tempdir().expect("workspace tempdir");
+        let outside = tempfile::tempdir().expect("outside tempdir");
+        let source = outside.path().join("escape.txt");
+        std::fs::write(&source, "blocked\n").expect("write outside fixture");
+
+        let registry = coordinator_registry(ShellAllowlist::default());
+        let read = registry.get("read").expect("read tool");
+        let error = read
+            .call(
+                fs_read_context(workspace.path(), "toolcall-read-absolute-escape"),
+                json!({
+                    "filePath": source,
+                }),
+            )
+            .await
+            .expect_err("absolute path outside workspace should be rejected");
+
+        assert!(matches!(error, ToolError::PathEscapesWorkspace { .. }));
+    }
+
+    #[tokio::test]
     async fn fs_read_adds_truncation_marker_and_spills_full_output_artifact() {
         let temp = tempfile::tempdir().expect("tempdir");
         let source = temp.path().join("fixture.txt");
         std::fs::write(&source, "alpha\nbeta\ngamma\ndelta\n").expect("write fixture");
 
         let context = fs_read_context(temp.path(), "toolcall-truncated");
-        let tool = FsReadTool;
+        let tool = FsReadTool::new(false);
         let result = tool
             .call(
                 context.clone(),
@@ -1190,7 +1315,7 @@ mod tests {
         let source = temp.path().join("fixture.bin");
         std::fs::write(&source, [0xff_u8, 0xfe, 0x00]).expect("write binary fixture");
 
-        let tool = FsReadTool;
+        let tool = FsReadTool::new(false);
         let error = tool
             .call(
                 fs_read_context(temp.path(), "toolcall-binary"),
@@ -1242,5 +1367,43 @@ mod tests {
             .expect("read spilled shell output artifact");
         assert_eq!(spilled.len(), 55_000);
         assert!(spilled.starts_with("alphaalphaalpha"));
+    }
+
+    #[test]
+    fn bash_description_warns_against_find_style_repo_exploration() {
+        let registry = coordinator_registry(ShellAllowlist::default());
+        let bash = registry.get("bash").expect("bash tool");
+        let description = bash.description();
+
+        assert!(description.contains("find"));
+        assert!(description.contains("glob"));
+        assert!(description.contains("grep"));
+        assert!(description.contains("read"));
+    }
+
+    #[tokio::test]
+    async fn bash_direct_exec_returns_recovery_hint_for_blocked_find() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let bash = super::ShellRunTool::new(ShellAllowlist::default());
+
+        let error = bash
+            .call(
+                fs_read_context(temp.path(), "toolcall-bash-find-blocked"),
+                json!({
+                    "cmd": "find",
+                    "args": ["docs", "-maxdepth", "1", "-type", "f"],
+                }),
+            )
+            .await
+            .expect_err("find should be blocked with recovery guidance");
+
+        match error {
+            ToolError::CommandBlocked(message) => {
+                assert!(message.contains("find is blocked"));
+                assert!(message.contains("glob"));
+                assert!(message.contains("git status"));
+            }
+            other => panic!("unexpected error variant: {other}"),
+        }
     }
 }

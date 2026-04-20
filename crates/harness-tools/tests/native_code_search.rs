@@ -327,7 +327,7 @@ async fn native_code_search_uses_shared_client_and_respects_tokens_contract() {
         );
         let payload: Value = serde_json::from_str(&request.body).expect("jsonrpc payload");
         assert_eq!(payload["method"], json!("tools/call"));
-        assert_eq!(payload["params"]["name"], json!("get_code_context_exa"));
+        assert_eq!(payload["params"]["name"], json!("web_search_exa"));
         assert_eq!(payload["params"]["arguments"]["query"], json!(query));
         assert_eq!(
             payload["params"]["arguments"]["tokensNum"],

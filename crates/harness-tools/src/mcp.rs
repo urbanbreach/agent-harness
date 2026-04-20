@@ -362,6 +362,7 @@ struct McpServerExecutor {
     server_config: McpServerConfig,
     http_client: reqwest::Client,
     descriptions: BTreeMap<&'static str, String>,
+    stdio_session: Option<std::sync::Arc<tokio::sync::Mutex<Option<StdioMcpSession>>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -386,6 +387,8 @@ impl McpServerExecutor {
         server_config: McpServerConfig,
         http_client: reqwest::Client,
     ) -> Self {
+        let stdio_session = matches!(&server_config, McpServerConfig::Stdio { .. })
+            .then(|| std::sync::Arc::new(tokio::sync::Mutex::new(None)));
         let descriptions = McpToolKind::all()
             .map(|kind| (kind.suffix(), kind.description(&server_id)))
             .collect();
@@ -394,6 +397,7 @@ impl McpServerExecutor {
             server_config,
             http_client,
             descriptions,
+            stdio_session,
         }
     }
 
@@ -457,20 +461,33 @@ impl McpServerExecutor {
     ) -> Result<ToolResult, ToolError> {
         let tool_name = tool_name.to_string();
         let arguments = normalize_object_value(arguments);
-        let mut session = self.start_session().await?;
-        let payload = session
-            .request(
+        let (result, metadata) = if let Some(cache) = &self.stdio_session {
+            self.request_via_stdio(
+                cache,
                 "tools/call",
                 json!({
                     "name": tool_name.clone(),
                     "arguments": arguments.clone(),
                 }),
             )
-            .await;
-        let metadata = session.metadata().clone();
-        let close_result = session.close().await;
-        let result = payload?;
-        close_result?;
+            .await?
+        } else {
+            let mut session = self.start_session().await?;
+            let payload = session
+                .request(
+                    "tools/call",
+                    json!({
+                        "name": tool_name.clone(),
+                        "arguments": arguments.clone(),
+                    }),
+                )
+                .await;
+            let metadata = session.metadata().clone();
+            let close_result = session.close().await;
+            let result = payload?;
+            close_result?;
+            (result, metadata)
+        };
 
         let rendered = render_content_entries(result.get("content").and_then(Value::as_array));
         let display_text = if rendered.is_empty() {
@@ -497,7 +514,7 @@ impl McpServerExecutor {
     }
 
     async fn discover_tools(&self) -> Result<Vec<DiscoveredMcpToolSpec>, ToolError> {
-        let list = self.list_items("tools/list", "tools").await?;
+        let list = self.list_items_ephemeral("tools/list", "tools").await?;
         let mut pending_specs = Vec::new();
 
         for item in list.items {
@@ -603,14 +620,20 @@ impl McpServerExecutor {
 
     async fn read_resource(&self, args: McpResourceReadArgs) -> Result<ToolResult, ToolError> {
         let uri = args.uri;
-        let mut session = self.start_session().await?;
-        let payload = session
-            .request("resources/read", json!({ "uri": uri.clone() }))
-            .await;
-        let metadata = session.metadata().clone();
-        let close_result = session.close().await;
-        let result = payload?;
-        close_result?;
+        let (result, metadata) = if let Some(cache) = &self.stdio_session {
+            self.request_via_stdio(cache, "resources/read", json!({ "uri": uri.clone() }))
+                .await?
+        } else {
+            let mut session = self.start_session().await?;
+            let payload = session
+                .request("resources/read", json!({ "uri": uri.clone() }))
+                .await;
+            let metadata = session.metadata().clone();
+            let close_result = session.close().await;
+            let result = payload?;
+            close_result?;
+            (result, metadata)
+        };
 
         let contents = result
             .get("contents")
@@ -659,20 +682,33 @@ impl McpServerExecutor {
     async fn get_prompt(&self, args: McpPromptGetArgs) -> Result<ToolResult, ToolError> {
         let prompt_name = args.name;
         let arguments = normalize_object_value(args.arguments);
-        let mut session = self.start_session().await?;
-        let payload = session
-            .request(
+        let (result, metadata) = if let Some(cache) = &self.stdio_session {
+            self.request_via_stdio(
+                cache,
                 "prompts/get",
                 json!({
                     "name": prompt_name.clone(),
                     "arguments": arguments.clone(),
                 }),
             )
-            .await;
-        let metadata = session.metadata().clone();
-        let close_result = session.close().await;
-        let result = payload?;
-        close_result?;
+            .await?
+        } else {
+            let mut session = self.start_session().await?;
+            let payload = session
+                .request(
+                    "prompts/get",
+                    json!({
+                        "name": prompt_name.clone(),
+                        "arguments": arguments.clone(),
+                    }),
+                )
+                .await;
+            let metadata = session.metadata().clone();
+            let close_result = session.close().await;
+            let result = payload?;
+            close_result?;
+            (result, metadata)
+        };
 
         let messages = result
             .get("messages")
@@ -695,6 +731,42 @@ impl McpServerExecutor {
     }
 
     async fn list_items(&self, method: &str, key: &str) -> Result<McpListResult, ToolError> {
+        if let Some(cache) = &self.stdio_session {
+            let mut cursor = None::<String>;
+            let mut items = Vec::new();
+
+            loop {
+                let mut params = serde_json::Map::new();
+                if let Some(value) = cursor.as_deref() {
+                    params.insert("cursor".to_string(), Value::String(value.to_string()));
+                }
+                let (page, page_metadata) = self
+                    .request_via_stdio(cache, method, Value::Object(params))
+                    .await?;
+                if let Some(page_items) = page.get(key).and_then(Value::as_array) {
+                    items.extend(page_items.iter().cloned());
+                }
+                cursor = page
+                    .get("nextCursor")
+                    .and_then(Value::as_str)
+                    .map(ToString::to_string);
+                if cursor.is_none() {
+                    return Ok(McpListResult {
+                        items,
+                        metadata: page_metadata,
+                    });
+                }
+            }
+        }
+
+        self.list_items_ephemeral(method, key).await
+    }
+
+    async fn list_items_ephemeral(
+        &self,
+        method: &str,
+        key: &str,
+    ) -> Result<McpListResult, ToolError> {
         let mut session = self.start_session().await?;
         let mut cursor = None::<String>;
         let mut items = Vec::new();
@@ -723,6 +795,53 @@ impl McpServerExecutor {
                 session.close().await?;
                 return Ok(McpListResult { items, metadata });
             }
+        }
+    }
+
+    async fn request_via_stdio(
+        &self,
+        cache: &std::sync::Arc<tokio::sync::Mutex<Option<StdioMcpSession>>>,
+        method: &str,
+        params: Value,
+    ) -> Result<(Value, McpSessionMetadata), ToolError> {
+        let mut guard = cache.lock().await;
+        if guard.is_none() {
+            *guard = Some(self.start_stdio_session().await?);
+        }
+        let session = guard
+            .as_mut()
+            .expect("stdio MCP session should be initialized");
+        let response = session.request(method, params).await;
+        let metadata = session.metadata.clone();
+        match response {
+            Ok(payload) => Ok((payload, metadata)),
+            Err(err) => {
+                let stale = guard.take();
+                drop(guard);
+                if let Some(session) = stale {
+                    let _ = session.close().await;
+                }
+                Err(err)
+            }
+        }
+    }
+
+    async fn start_stdio_session(&self) -> Result<StdioMcpSession, ToolError> {
+        match &self.server_config {
+            McpServerConfig::Stdio {
+                command,
+                env,
+                cwd,
+                timeout_secs,
+                enabled: _,
+            } => {
+                StdioMcpSession::start(&self.server_id, command, env, cwd.as_ref(), *timeout_secs)
+                    .await
+            }
+            McpServerConfig::Http { .. } => Err(ToolError::Execution(format!(
+                "MCP server `{}` is not configured for stdio sessions",
+                self.server_id
+            ))),
         }
     }
 

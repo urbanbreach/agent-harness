@@ -395,12 +395,12 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
         .get("summary")
         .and_then(Value::as_str)
         .expect("first compat summary")
-        .contains("2: beta"));
+        .contains("|beta"));
     assert!(compat_details[1]
         .get("summary")
         .and_then(Value::as_str)
         .expect("second compat summary")
-        .contains("1: alpha"));
+        .contains("|alpha"));
 }
 
 #[tokio::test]
@@ -547,7 +547,7 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
         .get("summary")
         .and_then(Value::as_str)
         .expect("first compat summary")
-        .contains("2: beta"));
+        .contains("|beta"));
     assert_eq!(compat_details[1].get("index"), Some(&json!(1)));
     assert_eq!(compat_details[1].get("tool_id"), Some(&json!("batch")));
     assert_eq!(
@@ -571,5 +571,5 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
         .get("summary")
         .and_then(Value::as_str)
         .expect("second compat summary")
-        .contains("1: alpha"));
+        .contains("|alpha"));
 }

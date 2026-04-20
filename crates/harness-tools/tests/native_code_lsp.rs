@@ -1043,10 +1043,12 @@ async fn native_code_lsp_supports_direct_file_and_workspace_diagnostics() {
             json!({
                 "operation": "fileDiagnostics",
                 "filePath": "src/lib.rs",
+                "line": 1,
+                "character": 1,
             }),
         )
         .await
-        .expect("file diagnostics request");
+        .expect("file diagnostics request with reusable cursor metadata");
     assert!(file_result.display_text.contains("Diagnostics for"));
     assert!(file_result
         .display_text
@@ -1279,20 +1281,6 @@ async fn native_code_lsp_validates_inputs_by_operation_shape() {
         .await
         .expect_err("hover should require cursor coordinates");
     expect_invalid_arguments(missing_position, "missing field `line`");
-
-    let file_only_rejects_cursor = lsp
-        .call(
-            test_context(&workspace, "file-only-rejects-cursor"),
-            json!({
-                "operation": "documentSymbol",
-                "filePath": "src/lib.rs",
-                "line": 1,
-                "character": 1,
-            }),
-        )
-        .await
-        .expect_err("documentSymbol should reject cursor coordinates");
-    expect_invalid_arguments(file_only_rejects_cursor, "unknown field");
 
     let missing_query = lsp
         .call(

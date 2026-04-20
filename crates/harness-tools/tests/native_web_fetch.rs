@@ -394,7 +394,7 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
         .starts_with("Mozilla/5.0"));
     assert_eq!(
         cf_requests[1].headers.get("user-agent").map(String::as_str),
-        Some("opencode")
+        Some("agent-harness")
     );
 }
 

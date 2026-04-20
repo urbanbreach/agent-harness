@@ -4,15 +4,13 @@ use std::path::{Path, PathBuf};
 use harness_core::config::{registered_skills_config, PermissionMode};
 use harness_core::tool::{ToolContext, ToolError, ToolResult};
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::{json, Value};
 
-// Control-plane state stays in the historical on-disk layout so replay and resume
-// remain stable across the single-surface migration.
-const TODO_STATE_FILE: &str = "opencode-compat/todos.json";
-const QUESTION_STATE_DIR: &str = "opencode-compat/questions";
+const TODO_STATE_FILE: &str = "control-plane/todos.json";
+const QUESTION_STATE_DIR: &str = "control-plane/questions";
 const QUESTION_ANSWERS_ENV_VAR: &str = "HARNESS_QUESTION_ANSWERS";
-const PLAN_EXIT_BUILD_FALLBACK_PROFILE: &str = "build";
 const PLAN_EXIT_CONFIRM_YES: &str = "Yes";
 const PLAN_EXIT_CONFIRM_NO: &str = "No";
 const PLAN_EXIT_SYNTHETIC_PROMPT: &str =
@@ -58,9 +56,11 @@ impl ControlPlaneExecutor {
         name: &str,
         user_message: Option<String>,
     ) -> Result<ToolResult, ToolError> {
-        let skill = match discover_skill_catalog()?
+        let mut catalog = discover_skill_catalog()?;
+        let skill_not_found = skill_not_found_message(name, &catalog);
+        let skill = match catalog
             .remove(name)
-            .ok_or_else(|| ToolError::Execution(format!("Skill \"{name}\" not found")))?
+            .ok_or_else(|| ToolError::Execution(skill_not_found.clone()))?
         {
             DiscoveredSkill::Visible(skill) => match skill.permission {
                 PermissionMode::Allow => skill,
@@ -69,11 +69,11 @@ impl ControlPlaneExecutor {
                     skill
                 }
                 PermissionMode::Deny => {
-                    return Err(ToolError::Execution(format!("Skill \"{name}\" not found")));
+                    return Err(ToolError::Execution(skill_not_found));
                 }
             },
             DiscoveredSkill::Denied | DiscoveredSkill::Invalid => {
-                return Err(ToolError::Execution(format!("Skill \"{name}\" not found")));
+                return Err(ToolError::Execution(skill_not_found));
             }
         };
         let mut output = format!(
@@ -217,7 +217,7 @@ impl ControlPlaneExecutor {
             .filter(|value| !value.trim().is_empty())
             .ok_or_else(|| {
                 ToolError::Execution(format!(
-                    "plan.exit for `{source_profile}` requires a configured exit target agent or an available `{PLAN_EXIT_BUILD_FALLBACK_PROFILE}` agent"
+                    "plan.exit for `{source_profile}` requires a configured exit target agent"
                 ))
             })?;
 
@@ -263,7 +263,7 @@ impl ControlPlaneExecutor {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct TodoItem {
     pub(crate) content: String,
@@ -271,7 +271,7 @@ pub(crate) struct TodoItem {
     pub(crate) priority: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct QuestionPrompt {
     pub(crate) question: String,
@@ -281,11 +281,146 @@ pub(crate) struct QuestionPrompt {
     pub(crate) multiple: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct QuestionOption {
     pub(crate) label: String,
     pub(crate) description: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct QuestionPromptCompat {
+    #[serde(default)]
+    question: Option<String>,
+    #[serde(default)]
+    prompt: Option<String>,
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    header: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    options: Option<Vec<QuestionOptionInput>>,
+    #[serde(default)]
+    choices: Option<Vec<QuestionOptionInput>>,
+    #[serde(default)]
+    answers: Option<Vec<QuestionOptionInput>>,
+    #[serde(default, alias = "allowMultiple", alias = "allow_multiple")]
+    multiple: Option<bool>,
+    #[serde(default)]
+    required: Option<bool>,
+    #[serde(default)]
+    id: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum QuestionOptionInput {
+    Label(String),
+    Detailed(QuestionOptionCompat),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct QuestionOptionCompat {
+    label: String,
+    #[serde(default)]
+    description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TodoItemCompat {
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
+    status: String,
+    #[serde(default)]
+    priority: Option<String>,
+    #[serde(default)]
+    id: Option<Value>,
+}
+
+impl<'de> Deserialize<'de> for TodoItem {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let compat = TodoItemCompat::deserialize(deserializer)?;
+        let _ = compat.id;
+        let content = compat
+            .content
+            .or(compat.text)
+            .or(compat.title)
+            .ok_or_else(|| D::Error::custom("missing field `content`"))?;
+        Ok(Self {
+            content,
+            status: compat.status,
+            priority: compat.priority.unwrap_or_else(|| "medium".to_string()),
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for QuestionPrompt {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let compat = QuestionPromptCompat::deserialize(deserializer)?;
+        let _ = compat.required;
+        let _ = compat.id;
+        let question = compat
+            .question
+            .or(compat.prompt)
+            .or(compat.text)
+            .ok_or_else(|| D::Error::custom("missing field `question`"))?;
+        let options = compat
+            .options
+            .or(compat.choices)
+            .or(compat.answers)
+            .ok_or_else(|| D::Error::custom("missing field `options`"))?;
+        let header = compat
+            .header
+            .or(compat.title)
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| question.clone());
+
+        Ok(Self {
+            question,
+            header,
+            options: options.into_iter().map(Into::into).collect(),
+            multiple: compat.multiple,
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for QuestionOption {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(QuestionOptionInput::deserialize(deserializer)?.into())
+    }
+}
+
+impl From<QuestionOptionInput> for QuestionOption {
+    fn from(value: QuestionOptionInput) -> Self {
+        match value {
+            QuestionOptionInput::Label(label) => Self {
+                description: label.clone(),
+                label,
+            },
+            QuestionOptionInput::Detailed(option) => Self {
+                description: option.description.unwrap_or_else(|| option.label.clone()),
+                label: option.label,
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -386,6 +521,44 @@ fn validate_question_prompts(questions: &[QuestionPrompt]) -> Result<(), String>
     }
 
     Ok(())
+}
+
+fn skill_not_found_message(name: &str, catalog: &BTreeMap<String, DiscoveredSkill>) -> String {
+    let trimmed = name.trim();
+    let mut message = format!("Skill \"{trimmed}\" not found");
+
+    if let Some(agent_name) = known_agent_name(trimmed) {
+        message.push_str(&format!(
+            ". `{trimmed}` is an agent, not a skill; use task(subagent_type=\"{agent_name}\", ...) or @{agent_name} instead"
+        ));
+    }
+
+    let visible = catalog
+        .iter()
+        .filter_map(|(name, skill)| {
+            matches!(skill, DiscoveredSkill::Visible(_)).then_some(name.as_str())
+        })
+        .take(5)
+        .collect::<Vec<_>>();
+    if visible.is_empty() {
+        message.push_str(". No skills are currently available.");
+    } else {
+        message.push_str(&format!(". Available skills: {}", visible.join(", ")));
+    }
+
+    message
+}
+
+fn known_agent_name(name: &str) -> Option<&'static str> {
+    match name.trim().to_ascii_lowercase().as_str() {
+        "explore" | "explorer" => Some("explore"),
+        "general" => Some("general"),
+        "librarian" => Some("librarian"),
+        "oracle" => Some("oracle"),
+        "build" => Some("build"),
+        "plan" => Some("plan"),
+        _ => None,
+    }
 }
 
 fn validate_question_answers(

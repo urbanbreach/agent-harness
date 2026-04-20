@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use harness_core::coord::CoordinatorError;
 use harness_core::event::{ActorKind, EventActor, EventV1, TaskScheduleState, ToolCallStatus};
 use harness_core::tool::{canonical_tool_id_for, ToolContext, ToolError, ToolResult};
 use schemars::JsonSchema;
@@ -45,7 +46,7 @@ impl AgentOpsExecutor {
             .coordinator
             .request_agent_turn(supervisor, agent_id.clone(), build_child_prompt(&request))
             .await
-            .map_err(|err| ToolError::Execution(format!("failed to request agent turn: {err}")))?;
+            .map_err(|err| map_request_agent_turn_error(err, &request))?;
 
         let lineage = json!({
             "parent_tool_call_id": ctx.tool_call_id.clone(),
@@ -335,15 +336,53 @@ pub(crate) fn select_profile_name(
     category: Option<&str>,
     subagent_type: Option<&str>,
 ) -> Result<String, ToolError> {
+    let category = normalize_profile_selector(category).map(str::to_string);
+    let subagent_type = normalize_subagent_selector(subagent_type);
     match (category, subagent_type) {
+        (Some(category), Some(subagent_type)) if category == subagent_type => Ok(category),
         (Some(_), Some(_)) => Err(ToolError::InvalidArguments(
             "provide either category or subagent_type, not both".to_string(),
         )),
-        (Some(category), None) => Ok(category.to_string()),
-        (None, Some(subagent_type)) => Ok(subagent_type.to_string()),
+        (Some(category), None) => Ok(category),
+        (None, Some(subagent_type)) => Ok(subagent_type),
         (None, None) => Err(ToolError::InvalidArguments(
             "category or subagent_type is required".to_string(),
         )),
+    }
+}
+
+fn normalize_profile_selector(selector: Option<&str>) -> Option<&str> {
+    selector.and_then(|value| {
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then_some(trimmed)
+    })
+}
+
+fn normalize_subagent_selector(selector: Option<&str>) -> Option<String> {
+    normalize_profile_selector(selector).map(|value| match value.to_ascii_lowercase().as_str() {
+        "explorer" => "explore".to_string(),
+        _ => value.to_string(),
+    })
+}
+
+fn map_request_agent_turn_error(err: CoordinatorError, request: &AgentSpawnRequest) -> ToolError {
+    match err {
+        CoordinatorError::UnknownAgent(agent_id)
+            if request.session_id.is_some() || request.task_id.is_some() =>
+        {
+            let mut message = format!(
+                "Unknown child session `{agent_id}`. Provide a `session_id`/`task_id` returned by a prior `task` call, or omit it to start a new child session."
+            );
+            if let Some(agent_hint) = normalize_subagent_selector(Some(&agent_id)) {
+                if agent_hint != agent_id {
+                    message.push_str(&format!(
+                        " If you meant the `{agent_hint}` agent, set `subagent_type: \"{agent_hint}\"` instead."
+                    ));
+                }
+            }
+            ToolError::InvalidArguments(message)
+        }
+        other => ToolError::Execution(format!("failed to request agent turn: {other}")),
     }
 }
 
@@ -614,5 +653,65 @@ fn batch_detail_json(outcome: BatchCallOutcome) -> Value {
                 "result": result,
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{map_request_agent_turn_error, select_profile_name, AgentSpawnRequest};
+    use harness_core::coord::CoordinatorError;
+    use harness_core::tool::ToolError;
+
+    #[test]
+    fn select_profile_name_accepts_matching_category_and_subagent_type() {
+        assert_eq!(
+            select_profile_name(Some("explore"), Some("explore")).expect("matching selectors"),
+            "explore"
+        );
+    }
+
+    #[test]
+    fn select_profile_name_rejects_conflicting_selectors() {
+        let err = select_profile_name(Some("quick"), Some("explore"))
+            .expect_err("conflicting selectors should fail");
+        assert!(
+            matches!(err, ToolError::InvalidArguments(message) if message == "provide either category or subagent_type, not both")
+        );
+    }
+
+    #[test]
+    fn select_profile_name_ignores_blank_selectors() {
+        assert_eq!(
+            select_profile_name(Some("  "), Some("explore")).expect("blank category is ignored"),
+            "explore"
+        );
+    }
+
+    #[test]
+    fn select_profile_name_normalizes_explorer_alias() {
+        assert_eq!(
+            select_profile_name(None, Some("explorer")).expect("explorer alias should normalize"),
+            "explore"
+        );
+    }
+
+    #[test]
+    fn unknown_existing_session_returns_guidance() {
+        let err = map_request_agent_turn_error(
+            CoordinatorError::UnknownAgent("explorer".to_string()),
+            &AgentSpawnRequest {
+                description: "resume child".to_string(),
+                profile_name: "deep".to_string(),
+                prompt: "resume".to_string(),
+                task_id: Some("explorer".to_string()),
+                session_id: None,
+                run_in_background: false,
+                load_skills: Vec::new(),
+                command: None,
+            },
+        );
+        assert!(
+            matches!(err, ToolError::InvalidArguments(message) if message.contains("Unknown child session `explorer`") && message.contains("subagent_type: \"explore\""))
+        );
     }
 }
