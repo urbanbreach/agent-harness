@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use harness_core::agent::AgentProfile;
 use harness_core::clock::FakeClock;
-use harness_core::config::ToolFailureMode;
+use harness_core::config::{load_config_from_file, ToolFailureMode};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::event::{
     ActorKind, EventActor, EventEnvelopeV1, EventV1, RunFinishedEvent, RunStartedEvent,
@@ -77,11 +77,13 @@ fn multi_provider_interactive_config(
         "agents": {
             "deep": {
                 "description": "Deep profile",
+                "system_prompt": "You are the deep profile.",
                 "model_ref": "default:gpt-4o-mini",
                 "tools": []
             },
             "ops": {
                 "description": "Ops profile",
+                "system_prompt": "You are the ops profile.",
                 "model_ref": "anthropic:claude-3.7",
                 "tools": []
             }
@@ -334,7 +336,7 @@ async fn interactive_runtime_routes_non_default_profile_to_matching_provider() {
     )
     .expect("write config");
 
-    let config = bootstrap::load_harness_config(&config_path).expect("load config");
+    let config = load_config_from_file(&config_path).expect("load config");
     let coordinator = spawn_coordinator(
         bootstrap::build_interactive_coordinator_config(&config)
             .expect("build multi-provider interactive config"),
@@ -877,7 +879,7 @@ fn tui_cli_without_config_prints_config_guidance() {
         "expected current-directory config location, got:\n{stderr}"
     );
     assert!(
-        stderr.contains("$XDG_CONFIG_HOME/harness/config.jsonc"),
+        stderr.contains("$XDG_CONFIG_HOME/harness/harness.jsonc"),
         "expected XDG config location, got:\n{stderr}"
     );
     assert!(

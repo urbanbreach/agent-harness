@@ -7,9 +7,7 @@ use std::time::{Duration, Instant};
 
 use clap::Args;
 use harness_core::clock::{Clock, FakeClock, RealClock};
-use harness_core::config::{
-    load_config_from_file, resolve_config_path, HarnessConfig, ShellAllowlist,
-};
+use harness_core::config::{load_resolved_config, HarnessConfig, ShellAllowlist};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::event::{EventEnvelopeV1, EventV1, ToolCallStatus};
 use harness_core::perm::PermissionDecision;
@@ -111,7 +109,6 @@ fn resolve_settings(
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
 ) -> Result<RunSettings, String> {
-    let explicit_config = resolve_config_path(config_path.as_deref());
     let mut shell_allowlist = ShellAllowlist::default();
     let mut config_session_dir = PathBuf::from(DEFAULT_SESSION_DIR);
     let mut config_deterministic = false;
@@ -119,12 +116,11 @@ fn resolve_settings(
     let mut config_digest = "none".to_string();
     let mut loaded_config = None;
 
-    if let Some(path) = explicit_config {
-        let config =
-            load_config_from_file(&path).map_err(|err| format!("{} ({})", err, path.display()))?;
-        let config_bytes = fs::read(&path)
-            .map_err(|err| format!("failed to read config file {}: {err}", path.display()))?;
-        config_digest = blake3::hash(&config_bytes).to_hex().to_string();
+    if let Some(loaded) =
+        load_resolved_config(config_path.as_deref()).map_err(|err| err.to_string())?
+    {
+        let config = loaded.config;
+        config_digest = config_digest_for_paths(&loaded.paths)?;
         shell_allowlist = config.permissions.shell_allowlist.clone();
         config_session_dir = config.paths.session_dir.clone();
         config_deterministic = config.deterministic.enabled;
@@ -149,6 +145,19 @@ fn resolve_settings(
         seed: config_seed,
         config_digest,
     })
+}
+
+fn config_digest_for_paths(paths: &[PathBuf]) -> Result<String, String> {
+    let mut hasher = blake3::Hasher::new();
+    for path in paths {
+        hasher.update(path.to_string_lossy().as_bytes());
+        hasher.update(&[0]);
+        let config_bytes = fs::read(path)
+            .map_err(|err| format!("failed to read config file {}: {err}", path.display()))?;
+        hasher.update(&config_bytes);
+        hasher.update(&[0xff]);
+    }
+    Ok(hasher.finalize().to_hex().to_string())
 }
 
 struct RunOutcome {

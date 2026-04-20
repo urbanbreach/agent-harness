@@ -1,0 +1,3 @@
+Use glob with the pattern docs/**/*.md.
+Then use grep for BETA_MARKER inside docs with include=*.md.
+Summarize the matching files and the marker line you found.

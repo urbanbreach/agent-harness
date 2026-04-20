@@ -5,15 +5,17 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use clap::ValueEnum;
 use harness_core::agent::AgentProfile;
+use harness_core::config::ShellAllowlist;
 use harness_core::edit::hashline::{compute_line_hash, HashlineOp, HashlinePatch, LineAnchor};
 use harness_core::event::{ActorKind, EventActor};
 use harness_core::perm::PermissionPolicy;
+use harness_core::tool::build_tool_function_name_mapping;
 use harness_providers::mock::{request_digest, MockProvider};
 use harness_providers::{
     CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, ProviderStreamEvent,
     ToolChoice, ToolDef,
 };
-use serde_json::json;
+use harness_tools::coordinator_registry;
 
 static WORKSPACE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -273,135 +275,21 @@ pub fn golden_path_provider() -> MockProvider {
 }
 
 fn demo_hashline_apply_tool_def() -> ToolDef {
+    let tool_id = "edit.hashline_apply";
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let tool = registry
+        .get(tool_id)
+        .expect("golden path scenario requires edit.hashline_apply");
+    let function_name = build_tool_function_name_mapping([tool_id])
+        .function_name_for_tool_id(tool_id)
+        .expect("golden path scenario requires a deterministic tool function name")
+        .to_string();
+
     ToolDef {
-        tool_id: "edit.hashline_apply".to_string(),
-        function_name: "edit_hashline_apply".to_string(),
-        description: Some(
-            "Applies a hashline patch to a workspace file and writes an artifact diff.".to_string(),
-        ),
-        parameters: json!({
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["edit_id", "path", "ops"],
-            "properties": {
-                "edit_id": { "type": "string" },
-                "path": { "type": "string" },
-                "ops": {
-                    "type": "array",
-                    "items": {
-                        "oneOf": [
-                            {
-                                "type": "object",
-                                "additionalProperties": false,
-                                "required": ["Rewrite"],
-                                "properties": {
-                                    "Rewrite": {
-                                        "type": "object",
-                                        "additionalProperties": false,
-                                        "required": ["lines"],
-                                        "properties": {
-                                            "lines": {
-                                                "type": "array",
-                                                "items": { "type": "string" }
-                                            }
-                                        }
-                                    }
-                                }
-                            },
-                            {
-                                "type": "object",
-                                "additionalProperties": false,
-                                "required": ["InsertBefore"],
-                                "properties": {
-                                    "InsertBefore": {
-                                        "type": "object",
-                                        "additionalProperties": false,
-                                        "required": ["anchor", "lines"],
-                                        "properties": {
-                                            "anchor": { "$ref": "#/definitions/LineAnchor" },
-                                            "lines": {
-                                                "type": "array",
-                                                "items": { "type": "string" }
-                                            }
-                                        }
-                                    }
-                                }
-                            },
-                            {
-                                "type": "object",
-                                "additionalProperties": false,
-                                "required": ["InsertAfter"],
-                                "properties": {
-                                    "InsertAfter": {
-                                        "type": "object",
-                                        "additionalProperties": false,
-                                        "required": ["anchor", "lines"],
-                                        "properties": {
-                                            "anchor": { "$ref": "#/definitions/LineAnchor" },
-                                            "lines": {
-                                                "type": "array",
-                                                "items": { "type": "string" }
-                                            }
-                                        }
-                                    }
-                                }
-                            },
-                            {
-                                "type": "object",
-                                "additionalProperties": false,
-                                "required": ["Replace"],
-                                "properties": {
-                                    "Replace": {
-                                        "type": "object",
-                                        "additionalProperties": false,
-                                        "required": ["expected", "lines"],
-                                        "properties": {
-                                            "expected": {
-                                                "type": "array",
-                                                "items": { "$ref": "#/definitions/LineAnchor" }
-                                            },
-                                            "lines": {
-                                                "type": "array",
-                                                "items": { "type": "string" }
-                                            }
-                                        }
-                                    }
-                                }
-                            },
-                            {
-                                "type": "object",
-                                "additionalProperties": false,
-                                "required": ["Delete"],
-                                "properties": {
-                                    "Delete": {
-                                        "type": "object",
-                                        "additionalProperties": false,
-                                        "required": ["expected"],
-                                        "properties": {
-                                            "expected": {
-                                                "type": "array",
-                                                "items": { "$ref": "#/definitions/LineAnchor" }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        ]
-                    }
-                }
-            },
-            "definitions": {
-                "LineAnchor": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": ["line", "hash"],
-                    "properties": {
-                        "line": { "type": "integer", "minimum": 0 },
-                        "hash": { "type": "string" }
-                    }
-                }
-            }
-        }),
+        tool_id: tool_id.to_string(),
+        function_name,
+        description: Some(tool.description().to_string()),
+        parameters: tool.parameters_json_schema(),
     }
 }
 
@@ -416,7 +304,7 @@ pub fn golden_path_profiles() -> BTreeMap<String, AgentProfile> {
             system_prompt: "planner-prompt".to_string(),
             max_iters: 12,
             temperature: Some(0.0),
-            tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+            tool_failure_mode: harness_core::config::ToolFailureMode::ContinueAsToolMessage,
             toolset: vec![],
         },
     );
@@ -429,7 +317,7 @@ pub fn golden_path_profiles() -> BTreeMap<String, AgentProfile> {
             system_prompt: "worker-prompt".to_string(),
             max_iters: 12,
             temperature: Some(0.0),
-            tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+            tool_failure_mode: harness_core::config::ToolFailureMode::ContinueAsToolMessage,
             toolset: vec!["edit.hashline_apply".to_string()],
         },
     );

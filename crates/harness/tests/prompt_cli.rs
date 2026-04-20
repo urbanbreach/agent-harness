@@ -1,5 +1,6 @@
 use std::fs;
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 use harness_core::event::{
     ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1,
@@ -41,7 +42,9 @@ fn prompt_cli_config(base_url: &str, session_dir: &std::path::Path, tools: &[&st
         "agents": {
             "deep": {
                 "description": "Deep profile",
+                "system_prompt": "You are the deep profile.",
                 "model_ref": "default:gpt-4o-mini",
+                "tool_failure_mode": "continue_as_tool_message",
                 "tools": tools
             }
         },
@@ -113,11 +116,13 @@ fn prompt_cli_multi_provider_config(
         "agents": {
             "deep": {
                 "description": "Deep profile",
+                "system_prompt": "You are the deep profile.",
                 "model_ref": "default:gpt-4o-mini",
                 "tools": []
             },
             "ops": {
                 "description": "Ops profile",
+                "system_prompt": "You are the ops profile.",
                 "model_ref": "anthropic:claude-3.7",
                 "tools": []
             }
@@ -155,6 +160,77 @@ fn prompt_cli_multi_provider_config(
     .to_string()
 }
 
+fn prompt_cli_public_runtime_config(base_url: &str) -> String {
+    serde_json::json!({
+        "provider": {
+            "default": {
+                "type": "openai_compatible",
+                "name": "CLIProxyAPI (OpenAI)",
+                "options": {
+                    "baseURL": base_url,
+                    "apiKey": "DUMMY",
+                    "apiMode": "responses",
+                    "timeoutMs": 1800000,
+                },
+                "models": {
+                    "gpt-5.4": {
+                        "name": "GPT 5.4 (272k)",
+                        "metadata": {
+                            "family": "gpt-5",
+                            "context_window_tokens": 272000,
+                            "supports_tool_calls": true,
+                            "supports_reasoning_summaries": true
+                        },
+                        "max_input_tokens": 272000,
+                        "max_output_tokens": 128000
+                    },
+                    "gpt-5.4-mini": {
+                        "name": "GPT 5.4 Mini",
+                        "metadata": {
+                            "family": "gpt-5",
+                            "context_window_tokens": 272000,
+                            "supports_tool_calls": true,
+                            "supports_reasoning_summaries": true
+                        },
+                        "max_input_tokens": 272000,
+                        "max_output_tokens": 128000,
+                        "variants": {
+                            "high": {
+                                "name": "High",
+                                "metadata": {
+                                    "reasoning_effort": "high",
+                                    "text_verbosity": "low"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "model": "default/gpt-5.4",
+        "small_model": "default/gpt-5.4-mini",
+        "agent": {
+            "build": {
+                "system_prompt": "You are the build profile.",
+                "model": "default/gpt-5.4-mini",
+                "variant": "high"
+            }
+        },
+        "default_agent": "build",
+        "permission": {
+            "edit": "allow",
+            "bash": "allow",
+            "question": "allow",
+            "task": "allow",
+            "webfetch": "allow",
+            "websearch": "allow",
+            "codesearch": "allow",
+            "lsp": "allow"
+        }
+    })
+    .to_string()
+}
+
 #[tokio::test]
 async fn prompt_cli_calls_responses_endpoint() {
     let server = MockServer::start().await;
@@ -178,6 +254,66 @@ async fn prompt_cli_calls_responses_endpoint() {
     let config = prompt_cli_config(&format!("{}/v1", server.uri()), &session_dir, &[]);
 
     fs::write(&config_path, config).expect("write config");
+
+    let config_arg = config_path.clone();
+    let temp_path = temp.path().to_path_buf();
+    let output = tokio::task::spawn_blocking(move || {
+        Command::new(env!("CARGO_BIN_EXE_harness"))
+            .current_dir(temp_path)
+            .args([
+                "--config",
+                config_arg.to_str().expect("config path utf-8"),
+                "prompt",
+                "--text",
+                "Hello",
+            ])
+            .output()
+            .expect("run harness prompt")
+    })
+    .await
+    .expect("join blocking command");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let requests = server
+        .received_requests()
+        .await
+        .expect("request recording must be enabled");
+    assert!(
+        requests.iter().any(|req| req.url.path() == "/v1/responses"),
+        "expected prompt CLI to call /v1/responses"
+    );
+}
+
+#[tokio::test]
+async fn prompt_cli_accepts_public_slash_style_model_refs() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    deterministic_responses_sse_transcript(),
+                    "text/event-stream",
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.public.jsonc");
+
+    fs::write(
+        &config_path,
+        prompt_cli_public_runtime_config(&format!("{}/v1", server.uri())),
+    )
+    .expect("write public config");
 
     let config_arg = config_path.clone();
     let temp_path = temp.path().to_path_buf();
@@ -407,6 +543,185 @@ fn prompt_cli_mock_mode_runs_without_config() {
     assert!(
         events_body.contains("Hello world"),
         "expected prompt mock transcript to include the scripted provider response: {events_body}"
+    );
+}
+
+#[test]
+fn prompt_cli_mock_mode_accepts_positional_text() {
+    let temp = tempdir().expect("tempdir");
+    let out_path = temp.path().join("events-positional.jsonl");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args([
+            "prompt",
+            "--mock",
+            "Hello from PTY",
+            "--out",
+            out_path.to_str().expect("out path utf-8"),
+        ])
+        .output()
+        .expect("run harness prompt with positional text");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let events_body = fs::read_to_string(&out_path).expect("read prompt events");
+    assert!(events_body.contains("Hello world"));
+}
+
+#[test]
+fn prompt_cli_mock_mode_accepts_stdin_text() {
+    let temp = tempdir().expect("tempdir");
+    let out_path = temp.path().join("events-stdin.jsonl");
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args([
+            "prompt",
+            "--mock",
+            "--stdin",
+            "--out",
+            out_path.to_str().expect("out path utf-8"),
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn prompt stdin command");
+
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin pipe")
+        .write_all(b"Hello from PTY\n")
+        .expect("write stdin prompt");
+
+    let output = child.wait_with_output().expect("wait for stdin prompt");
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let events_body = fs::read_to_string(&out_path).expect("read prompt events");
+    assert!(events_body.contains("Hello world"));
+}
+
+#[tokio::test]
+async fn prompt_cli_uses_merged_xdg_and_local_config_without_explicit_path() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    deterministic_responses_sse_transcript(),
+                    "text/event-stream",
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().expect("tempdir");
+    let xdg_root = temp.path().join("xdg");
+    let xdg_config_path = xdg_root.join("harness/harness.jsonc");
+    let local_config_path = temp.path().join("harness.jsonc");
+    let session_dir = temp.path().join("sessions");
+
+    fs::create_dir_all(xdg_config_path.parent().expect("xdg config parent"))
+        .expect("create xdg config dir");
+    fs::write(
+        &xdg_config_path,
+        serde_json::json!({
+            "providers": {
+                "default": {
+                    "type": "openai_compatible",
+                    "base_url": format!("{}/v1", server.uri()),
+                    "api_key": "DUMMY",
+                    "api_mode": "responses",
+                    "timeout_ms": 60000,
+                    "models": {
+                        "gpt-4o-mini": {
+                            "display_name": "GPT-4o mini"
+                        }
+                    }
+                }
+            },
+            "permissions": {
+                "defaults": {
+                    "edit": "allow",
+                    "shell": "allow",
+                    "network": "allow"
+                }
+            },
+            "runtime": {
+                "background_tasks": {
+                    "default_concurrency": 2,
+                    "provider_concurrency": 2,
+                    "model_concurrency": 2,
+                    "stale_timeout_ms": 30000,
+                    "message_staleness_timeout_ms": 10000
+                },
+                "session_dir": session_dir,
+                "deterministic": {
+                    "enabled": false,
+                    "seed": 42
+                }
+            },
+            "integrations": {
+                "remote_search": {
+                    "endpoint": "https://mcp.exa.ai/mcp"
+                }
+            }
+        })
+        .to_string(),
+    )
+    .expect("write xdg config");
+    fs::write(
+        &local_config_path,
+        serde_json::json!({
+            "agents": {
+                "deep": {
+                    "description": "Deep profile",
+                    "system_prompt": "You are the deep profile.",
+                    "model_ref": "default:gpt-4o-mini",
+                    "tools": []
+                }
+            },
+            "ui": {
+                "default_profile": "deep"
+            }
+        })
+        .to_string(),
+    )
+    .expect("write local config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .env("XDG_CONFIG_HOME", &xdg_root)
+        .args(["prompt", "Hello from merged config"])
+        .output()
+        .expect("run prompt with merged config discovery");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let requests = server
+        .received_requests()
+        .await
+        .expect("request recording must be enabled");
+    assert!(
+        requests.iter().any(|req| req.url.path() == "/v1/responses"),
+        "expected merged config prompt CLI to call /v1/responses"
     );
 }
 
@@ -871,6 +1186,59 @@ async fn prompt_cli_executes_fs_grep_and_completes_turn() {
     assert!(events_body.contains("fixtures/notes.md:2: BETA match"));
 }
 
+#[tokio::test]
+async fn prompt_cli_reads_absolute_workspace_path_and_completes_turn() {
+    let server = MockServer::start().await;
+    let temp = tempdir().expect("tempdir");
+    let absolute_target = temp.path().join("tool-target.txt");
+    fs::write(&absolute_target, "alpha\nbeta\ngamma\n").expect("write tool target");
+
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .and(body_string_contains("\"type\":\"function_call_output\""))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    tool_followup_text_sse_transcript("Absolute read complete: alpha beta gamma."),
+                    "text/event-stream",
+                ),
+        )
+        .with_priority(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .and(body_string_contains(
+            "Read the absolute tool-target.txt path and summarize it.",
+        ))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    tool_call_absolute_read_sse_transcript(&absolute_target),
+                    "text/event-stream",
+                ),
+        )
+        .with_priority(2)
+        .mount(&server)
+        .await;
+
+    let output = run_prompt_with_single_tool(
+        temp.path(),
+        &server,
+        &["read"],
+        "Read the absolute tool-target.txt path and summarize it.",
+    )
+    .await;
+
+    let events_body = fs::read_to_string(temp.path().join("events.jsonl")).expect("read events");
+    assert_successful_tool_roundtrip(&output, &events_body, "read");
+    assert!(events_body.contains("tool-target.txt"));
+    assert!(events_body.contains("alpha"));
+}
+
 async fn run_prompt_with_single_tool(
     workspace_root: &std::path::Path,
     server: &MockServer,
@@ -977,6 +1345,48 @@ fn tool_result_followup_responses_sse_transcript() -> String {
         "event: response.completed\n",
         "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":18,\"output_tokens\":6,\"total_tokens\":24}}}\n\n",
         "data: [DONE]\n\n",
+    ]
+    .concat()
+}
+
+fn tool_call_absolute_read_sse_transcript(path: &std::path::Path) -> String {
+    let arguments = serde_json::json!({
+        "path": path,
+        "offset": 1,
+        "limit": 20,
+    })
+    .to_string();
+    let added = serde_json::json!({
+        "type": "response.output_item.added",
+        "item": {
+            "type": "function_call",
+            "id": "item_1",
+            "call_id": "call_1",
+            "name": "read",
+            "arguments": arguments,
+        }
+    })
+    .to_string();
+    let done = serde_json::json!({
+        "type": "response.output_item.done",
+        "item": {
+            "type": "function_call",
+            "id": "item_1",
+            "call_id": "call_1",
+            "name": "read",
+            "arguments": arguments,
+        }
+    })
+    .to_string();
+
+    [
+        "event: response.output_item.added\n".to_string(),
+        format!("data: {added}\n\n"),
+        "event: response.output_item.done\n".to_string(),
+        format!("data: {done}\n\n"),
+        "event: response.completed\n".to_string(),
+        "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":12,\"output_tokens\":3,\"total_tokens\":15}}}\n\n".to_string(),
+        "data: [DONE]\n\n".to_string(),
     ]
     .concat()
 }

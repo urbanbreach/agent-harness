@@ -1488,6 +1488,7 @@ fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
                     child_provider_id: Some("default".to_string()),
                     child_model_id: Some("gpt-4o-mini".to_string()),
                 }),
+                task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
                 timing: Some(ExecutionTimingMetadata {
                     started_mono_ms: Some(8),
                     finished_mono_ms: Some(9),
@@ -2053,6 +2054,7 @@ fn delegated_recovery_events(run_id: &str) -> Vec<EventEnvelopeV1> {
                 result_digest: "result-digest-001".to_string(),
                 metadata: Some(TaskCompletionMetadata {
                     lineage: Some(lineage),
+                    task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
                     timing: Some(ExecutionTimingMetadata {
                         started_mono_ms: Some(10),
                         finished_mono_ms: Some(25),
@@ -2163,6 +2165,7 @@ fn delegated_recovery_events_with_control_chars(run_id: &str) -> Vec<EventEnvelo
                 result_digest: "result-digest-002".to_string(),
                 metadata: Some(TaskCompletionMetadata {
                     lineage: Some(lineage),
+                    task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
                     timing: Some(ExecutionTimingMetadata {
                         started_mono_ms: Some(10),
                         finished_mono_ms: Some(25),

@@ -1,0 +1,2 @@
+Use lsp fileDiagnostics on src/broken.rs.
+If lsp is unavailable or the tool errors, continue anyway and explain what happened.

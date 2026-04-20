@@ -14,8 +14,8 @@ use clap::Args;
 use harness_core::agent::{AgentModelSettings, AgentProfile};
 use harness_core::clock::{Clock, FakeClock, RealClock};
 use harness_core::config::{
-    configured_model_catalog, load_config_from_file, resolve_config_path,
-    resolve_profile_model_metadata, HarnessConfig, ShellAllowlist,
+    configured_model_catalog, load_resolved_config, resolve_profile_model_metadata, HarnessConfig,
+    ShellAllowlist,
 };
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle,
@@ -397,13 +397,6 @@ fn resolve_live_settings(
 ) -> Result<LiveSettings, String> {
     let workspace_root = std::env::current_dir()
         .map_err(|err| format!("failed to resolve current working directory: {err}"))?;
-    let explicit_config = config_path.or_else(|| {
-        if cmd.mock || cmd.scenario.is_some() {
-            None
-        } else {
-            resolve_config_path(None)
-        }
-    });
     let mut shell_allowlist = ShellAllowlist::default();
     let mut config_session_dir = PathBuf::from(DEFAULT_SESSION_DIR);
     let mut config_deterministic = false;
@@ -413,12 +406,15 @@ fn resolve_live_settings(
     let mut live_config: Option<HarnessConfig> = None;
     let mut agent_profiles = golden_path_profiles();
 
-    if let Some(path) = explicit_config {
-        let config =
-            load_config_from_file(&path).map_err(|err| format!("{} ({})", err, path.display()))?;
-        let config_bytes = fs::read(&path)
-            .map_err(|err| format!("failed to read config file {}: {err}", path.display()))?;
-        config_digest = blake3::hash(&config_bytes).to_hex().to_string();
+    let loaded = if cmd.mock || cmd.scenario.is_some() {
+        None
+    } else {
+        load_resolved_config(config_path.as_deref()).map_err(|err| err.to_string())?
+    };
+
+    if let Some(loaded) = loaded {
+        let config = loaded.config;
+        config_digest = config_digest_for_paths(&loaded.paths)?;
         config_default_profile = bootstrap::interactive_profile_name(&config);
         agent_profiles = bootstrap::interactive_agent_profiles(&config)?;
         shell_allowlist = config.permissions.shell_allowlist.clone();
@@ -461,6 +457,19 @@ fn resolve_live_settings(
     })
 }
 
+fn config_digest_for_paths(paths: &[PathBuf]) -> Result<String, String> {
+    let mut hasher = blake3::Hasher::new();
+    for path in paths {
+        hasher.update(path.to_string_lossy().as_bytes());
+        hasher.update(&[0]);
+        let config_bytes = fs::read(path)
+            .map_err(|err| format!("failed to read config file {}: {err}", path.display()))?;
+        hasher.update(&config_bytes);
+        hasher.update(&[0xff]);
+    }
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
 fn interactive_launch_metadata(
     config: Option<&HarnessConfig>,
     agent_profiles: &BTreeMap<String, AgentProfile>,
@@ -472,10 +481,39 @@ fn interactive_launch_metadata(
         ));
     };
 
-    Ok(
-        LaunchMetadata::from_model_ref(selected_profile.name.clone(), &selected_profile.model_ref)
-            .with_available_models(model_options_for_profiles(config, agent_profiles)),
-    )
+    let available_models = model_options_for_profiles(config, agent_profiles);
+    let launch_metadata = config
+        .and_then(|config| resolve_profile_model_metadata(config, profile).ok())
+        .map(|metadata| {
+            LaunchMetadata::from_model_option(&ModelOption {
+                profile: metadata.profile,
+                provider: metadata.provider,
+                provider_display_label: Some(metadata.provider_display_label),
+                provider_backend_label: metadata.provider_backend_label,
+                model: metadata.model,
+                model_display_label: Some(metadata.model_display_label),
+                variant: metadata.variant,
+                variant_display_label: metadata.variant_display_label,
+                display_label: Some(metadata.display_label),
+                token_window_label: metadata.token_window_label,
+                context_window_tokens: metadata.context_window_tokens,
+                max_input_tokens: metadata.max_input_tokens,
+                max_output_tokens: metadata.max_output_tokens,
+                description: metadata.description,
+                profile_description: metadata.profile_description,
+                reasoning_effort: metadata.reasoning_effort,
+                text_verbosity: metadata.text_verbosity,
+                recommended_for: metadata.recommended_for,
+            })
+        })
+        .unwrap_or_else(|| {
+            LaunchMetadata::from_model_ref(
+                selected_profile.name.clone(),
+                &selected_profile.model_ref,
+            )
+        });
+
+    Ok(launch_metadata.with_available_models(available_models))
 }
 
 fn model_options_for_profiles(
@@ -2143,9 +2181,10 @@ mod tests {
                   }
                 }
               },
-              agent: {
+              agents: {
                 build: {
                   description: "Implementation",
+                  system_prompt: "Implement carefully.",
                   model_ref: "default:gpt-5.4-mini",
                   tools: []
                 }
@@ -2229,9 +2268,10 @@ mod tests {
                   }
                 }
               },
-              agent: {
+              agents: {
                 build: {
                   description: "Implementation",
+                  system_prompt: "Implement carefully.",
                   model_ref: "default:gpt-5.4-mini",
                   tools: []
                 }
@@ -2497,14 +2537,16 @@ mod tests {
                   }
                 }
               },
-              agent: {
+              agents: {
                 build: {
                   description: "Implementation",
+                  system_prompt: "Implement carefully.",
                   model_ref: "default:gpt-5.4-mini",
                   tools: []
                 },
                 plan: {
                   description: "Planning",
+                  system_prompt: "Plan carefully.",
                   model_ref: "default:gpt-5.4-mini",
                   variant: "low",
                   tools: []
@@ -2561,10 +2603,8 @@ mod tests {
     fn shipped_example_config_defaults_interactive_build_to_high_variant() {
         let config_path =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs/harness.example.jsonc");
-        let config_text = std::fs::read_to_string(&config_path)
-            .expect("shipped example config should be readable");
-        let config =
-            load_config_from_str(&config_text).expect("shipped example config should parse");
+        let config = harness_core::config::load_config_from_file(&config_path)
+            .expect("shipped example config should parse with discovered prompts");
 
         let agent_profiles = bootstrap::interactive_agent_profiles(&config)
             .expect("interactive agent profiles should build");
@@ -2598,9 +2638,10 @@ mod tests {
                   }
                 }
               },
-              agent: {
+              agents: {
                 build: {
                   description: "Implementation",
+                  system_prompt: "Implement carefully.",
                   model_ref: "default:gpt-5.4-mini",
                   tools: ["read"]
                 }

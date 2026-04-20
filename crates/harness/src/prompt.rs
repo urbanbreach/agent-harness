@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -10,10 +10,12 @@ use clap::Args;
 use harness_core::agent::{default_model_settings_for_profile, AgentModelSettings};
 use harness_core::clock::{Clock, FakeClock, RealClock};
 use harness_core::config::{
-    resolve_config_path, resolve_configured_model_metadata, ShellAllowlist,
+    load_resolved_config, resolve_configured_model_metadata, ShellAllowlist,
 };
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
-use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1};
+use harness_core::event::{
+    ActorKind, EventActor, EventEnvelopeV1, EventV1, TaskCancelledEvent, TaskCompletedEvent,
+};
 use harness_core::perm::PermissionPolicy;
 use harness_core::proj::inspect_resume_plan;
 use harness_core::redact::DefaultRedactor;
@@ -38,8 +40,14 @@ const DEFAULT_MOCK_PROFILE: &str = "worker";
 
 #[derive(Debug, Args, Clone)]
 pub struct PromptCommand {
-    #[arg(long)]
-    pub text: String,
+    #[arg(long, conflicts_with_all = ["stdin", "message"])]
+    pub text: Option<String>,
+
+    #[arg(long, default_value_t = false, conflicts_with_all = ["text", "message"])]
+    pub stdin: bool,
+
+    #[arg(value_name = "TEXT", num_args = 1.., conflicts_with_all = ["text", "stdin"])]
+    pub message: Vec<String>,
 
     #[arg(long)]
     pub model: Option<String>,
@@ -71,6 +79,14 @@ pub fn execute(
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
 ) -> ExitCode {
+    let prompt_text = match resolve_prompt_text(&cmd) {
+        Ok(prompt_text) => prompt_text,
+        Err(err) => {
+            eprintln!("prompt setup failed: {err}");
+            return ExitCode::from(2);
+        }
+    };
+
     let settings = match resolve_settings(&cmd, config_path, global_session_dir) {
         Ok(settings) => settings,
         Err(err) => {
@@ -90,7 +106,7 @@ pub fn execute(
         }
     };
 
-    match runtime.block_on(run_prompt(&cmd, &settings)) {
+    match runtime.block_on(run_prompt(&cmd, &settings, &prompt_text)) {
         Ok(outcome) => {
             if let Some(out) = &cmd.out {
                 if let Err(err) = copy_events_file(&outcome.events_path, out) {
@@ -135,21 +151,16 @@ fn resolve_settings(
         return resolve_mock_settings(config_path, global_session_dir);
     }
 
-    let explicit_config = resolve_config_path(config_path.as_deref()).ok_or_else(|| {
-        "prompt mode requires a config file; pass --config <path> or create harness.jsonc. A starting point lives at configs/harness.example.jsonc, or re-run with --mock"
-            .to_string()
-    })?;
+    let loaded = load_resolved_config(config_path.as_deref())
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| {
+        "prompt mode requires a config file; pass --config <path>, create ./harness.jsonc or ./harness.json, or create $XDG_CONFIG_HOME/harness/harness.jsonc or $XDG_CONFIG_HOME/harness/harness.json for shared defaults. A starting point lives at configs/harness.example.jsonc, or re-run with --mock"
+                .to_string()
+        })?;
 
-    let mut config = bootstrap::load_harness_config(&explicit_config)?;
+    let mut config = loaded.config;
     config.apply_session_dir_override(global_session_dir);
-
-    let config_bytes = fs::read(&explicit_config).map_err(|err| {
-        format!(
-            "failed to read config file {}: {err}",
-            explicit_config.display()
-        )
-    })?;
-    let config_digest = blake3::hash(&config_bytes).to_hex().to_string();
+    let config_digest = config_digest_for_paths(&loaded.paths)?;
 
     let deterministic = config.deterministic.enabled
         || matches!(std::env::var("HARNESS_DETERMINISTIC").as_deref(), Ok("1"));
@@ -171,7 +182,6 @@ fn resolve_mock_settings(
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
 ) -> Result<PromptSettings, String> {
-    let explicit_config = resolve_config_path(config_path.as_deref());
     let mut shell_allowlist = ShellAllowlist::default();
     let mut session_dir = PathBuf::from(DEFAULT_SESSION_DIR);
     let mut deterministic = false;
@@ -179,13 +189,13 @@ fn resolve_mock_settings(
     let mut config_digest = "none".to_string();
     let mut logging_config = None;
 
-    if let Some(path) = explicit_config {
-        let mut config = bootstrap::load_harness_config(&path)?;
+    if let Some(loaded) =
+        load_resolved_config(config_path.as_deref()).map_err(|err| err.to_string())?
+    {
+        let mut config = loaded.config;
         config.apply_session_dir_override(global_session_dir.clone());
 
-        let config_bytes = fs::read(&path)
-            .map_err(|err| format!("failed to read config file {}: {err}", path.display()))?;
-        config_digest = blake3::hash(&config_bytes).to_hex().to_string();
+        config_digest = config_digest_for_paths(&loaded.paths)?;
         shell_allowlist = config.permissions.shell_allowlist.clone();
         session_dir = config.paths.session_dir.clone();
         deterministic = config.deterministic.enabled;
@@ -215,9 +225,10 @@ fn resolve_mock_settings(
 async fn run_prompt(
     cmd: &PromptCommand,
     settings: &PromptSettings,
+    prompt_text: &str,
 ) -> Result<PromptOutcome, String> {
     if let Some(selector) = &cmd.resume {
-        return run_resumed_prompt(cmd, settings, selector).await;
+        return run_resumed_prompt(cmd, settings, selector, prompt_text).await;
     }
 
     let mut coordinator_config = settings.coordinator_config.clone();
@@ -294,7 +305,7 @@ async fn run_prompt(
                 .request_agent_turn_with_model(
                     user_actor(),
                     agent_id,
-                    cmd.text.clone(),
+                    prompt_text.to_string(),
                     model_override.model_ref,
                     Some(model_override.model_settings),
                 )
@@ -302,7 +313,7 @@ async fn run_prompt(
         }
         None => {
             coordinator
-                .request_agent_turn(user_actor(), agent_id, cmd.text.clone())
+                .request_agent_turn(user_actor(), agent_id, prompt_text.to_string())
                 .await
         }
     }
@@ -335,6 +346,7 @@ async fn run_resumed_prompt(
     cmd: &PromptCommand,
     settings: &PromptSettings,
     selector: &str,
+    prompt_text: &str,
 ) -> Result<PromptOutcome, String> {
     let mut coordinator_config = settings.coordinator_config.clone();
     coordinator_config.deterministic_store = settings.deterministic;
@@ -409,7 +421,7 @@ async fn run_resumed_prompt(
                 .request_agent_turn_with_model(
                     user_actor(),
                     resume_agent_id,
-                    cmd.text.clone(),
+                    prompt_text.to_string(),
                     model_override.model_ref,
                     Some(model_override.model_settings),
                 )
@@ -417,7 +429,7 @@ async fn run_resumed_prompt(
         }
         None => {
             coordinator
-                .request_agent_turn(user_actor(), resume_agent_id, cmd.text.clone())
+                .request_agent_turn(user_actor(), resume_agent_id, prompt_text.to_string())
                 .await
         }
     }
@@ -452,6 +464,46 @@ fn supervisor_actor() -> EventActor {
 
 fn user_actor() -> EventActor {
     EventActor::new(ActorKind::User, Some("agent-supervisor".to_string()))
+}
+
+fn resolve_prompt_text(cmd: &PromptCommand) -> Result<String, String> {
+    if let Some(text) = cmd.text.clone() {
+        return Ok(text);
+    }
+
+    if !cmd.message.is_empty() {
+        return Ok(cmd.message.join(" "));
+    }
+
+    if cmd.stdin {
+        let mut stdin = String::new();
+        std::io::stdin()
+            .read_to_string(&mut stdin)
+            .map_err(|err| format!("failed to read stdin: {err}"))?;
+        let trimmed = stdin.trim_end_matches(['\r', '\n']);
+        if trimmed.is_empty() {
+            return Err(
+                "stdin was empty; pass --text, positional TEXT, or pipe a prompt into --stdin"
+                    .to_string(),
+            );
+        }
+        return Ok(trimmed.to_string());
+    }
+
+    Err("no prompt text provided; pass --text, positional TEXT, or --stdin".to_string())
+}
+
+fn config_digest_for_paths(paths: &[PathBuf]) -> Result<String, String> {
+    let mut hasher = blake3::Hasher::new();
+    for path in paths {
+        hasher.update(path.to_string_lossy().as_bytes());
+        hasher.update(&[0]);
+        let config_bytes = fs::read(path)
+            .map_err(|err| format!("failed to read config file {}: {err}", path.display()))?;
+        hasher.update(&config_bytes);
+        hasher.update(&[0xff]);
+    }
+    Ok(hasher.finalize().to_hex().to_string())
 }
 
 fn default_prompt_permission_policy() -> PermissionPolicy {
@@ -750,15 +802,13 @@ impl<'a> PromptCompletionTracker<'a> {
             {
                 self.provider_error_seen_at = Some(Instant::now());
             }
-            EventV1::TaskCancelled(data)
-                if self.matches_cancelled_prompt_task(event, &data.task_id) =>
-            {
+            EventV1::TaskCancelled(data) if self.matches_cancelled_prompt_task(event, data) => {
                 return PromptCompletionStatus::Failed(format!(
                     "prompt request {} was cancelled: {}",
                     self.request_id, data.reason
                 ));
             }
-            EventV1::TaskCompleted(data) if self.matches_prompt_task(&data.task_id) => {
+            EventV1::TaskCompleted(data) if self.matches_prompt_task(data) => {
                 return PromptCompletionStatus::Completed;
             }
             _ => {}
@@ -786,16 +836,34 @@ impl<'a> PromptCompletionTracker<'a> {
         })
     }
 
-    fn matches_prompt_task(&self, task_id: &str) -> bool {
-        self.prompt_task_id.as_deref() == Some(task_id) || task_id == self.request_id
+    fn matches_prompt_task(&self, data: &TaskCompletedEvent) -> bool {
+        self.prompt_task_id.as_deref() == Some(data.task_id.as_str())
+            || task_completed_marks_agent_turn(data)
+            || data.task_id == self.request_id
     }
 
-    fn matches_cancelled_prompt_task(&self, event: &EventEnvelopeV1, task_id: &str) -> bool {
+    fn matches_cancelled_prompt_task(
+        &self,
+        event: &EventEnvelopeV1,
+        data: &TaskCancelledEvent,
+    ) -> bool {
         event_matches_request(event, self.request_id)
-            && (self.prompt_task_id.is_none()
-                || self.prompt_task_id.as_deref() == Some(task_id)
-                || task_id == self.request_id)
+            && (self.prompt_task_id.as_deref() == Some(data.task_id.as_str())
+                || task_cancelled_marks_agent_turn(data)
+                || (self.prompt_task_id.is_none() && data.task_id == self.request_id))
     }
+}
+
+fn task_completed_marks_agent_turn(data: &TaskCompletedEvent) -> bool {
+    data.metadata
+        .as_ref()
+        .and_then(|metadata| metadata.task_scope)
+        .is_some_and(|scope| matches!(scope, harness_core::event::TaskTerminalScope::AgentTurn))
+}
+
+fn task_cancelled_marks_agent_turn(data: &TaskCancelledEvent) -> bool {
+    data.task_scope
+        .is_some_and(|scope| matches!(scope, harness_core::event::TaskTerminalScope::AgentTurn))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -824,9 +892,9 @@ fn evaluate_prompt_completion(
     if let Some(cancel_reason) = events.iter().find_map(|event| match &event.payload {
         EventV1::TaskCancelled(data)
             if event_matches_request(event, request_id)
-                && (prompt_task_id.is_none()
-                    || prompt_task_id.is_some_and(|task_id| data.task_id == task_id)
-                    || data.task_id == request_id) =>
+                && (prompt_task_id.is_some_and(|task_id| data.task_id == task_id)
+                    || task_cancelled_marks_agent_turn(data)
+                    || (prompt_task_id.is_none() && data.task_id == request_id)) =>
         {
             Some(data.reason.clone())
         }
@@ -840,6 +908,7 @@ fn evaluate_prompt_completion(
     if events.iter().any(|event| match &event.payload {
         EventV1::TaskCompleted(data) => {
             prompt_task_id.is_some_and(|task_id| data.task_id == task_id)
+                || task_completed_marks_agent_turn(data)
                 || data.task_id == request_id
         }
         _ => false,
@@ -930,8 +999,8 @@ mod tests {
 
     use harness_core::event::{
         ActorKind, EventActor, EventEnvelopeV1, EventV1, ProviderRequestFinishedEvent,
-        RunFailedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskScheduleState,
-        TaskScheduledEvent,
+        RunFailedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata,
+        TaskLineageMetadata, TaskScheduleState, TaskScheduledEvent,
     };
     use harness_core::store::{
         EventEnvelopeWithoutSeqV1, EventStore, EventStoreError, EventStream, InMemoryEventStore,
@@ -975,6 +1044,7 @@ mod tests {
             EventV1::TaskCancelled(TaskCancelledEvent {
                 task_id: "task_000001".to_string(),
                 reason: "provider denied request".to_string(),
+                task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
             }),
             Some("req_000001"),
         )];
@@ -1030,7 +1100,15 @@ mod tests {
                     task_id: "task_000002".to_string(),
                     result_summary: "tool ok".to_string(),
                     result_digest: "def456".to_string(),
-                    metadata: None,
+                    metadata: Some(TaskCompletionMetadata {
+                        lineage: Some(TaskLineageMetadata {
+                            parent_tool_call_id: Some("tool_call_000001".to_string()),
+                            ..TaskLineageMetadata::default()
+                        }),
+                        task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
+                        timing: None,
+                        hook_executions: Vec::new(),
+                    }),
                 }),
                 Some("req_000001"),
             ),
@@ -1048,6 +1126,7 @@ mod tests {
                 EventV1::TaskCancelled(TaskCancelledEvent {
                     task_id: "task_000002".to_string(),
                     reason: "tool execution failed: expected audit error".to_string(),
+                    task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
                 }),
                 Some("req_000001"),
             ),
@@ -1056,7 +1135,12 @@ mod tests {
                     task_id: "task_000001".to_string(),
                     result_summary: "ok".to_string(),
                     result_digest: "abc123".to_string(),
-                    metadata: None,
+                    metadata: Some(TaskCompletionMetadata {
+                        lineage: None,
+                        task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
+                        timing: None,
+                        hook_executions: Vec::new(),
+                    }),
                 }),
                 Some("req_000001"),
             ),
@@ -1080,6 +1164,27 @@ mod tests {
                 Some("req_000001"),
             ),
         ];
+
+        let status = evaluate_prompt_completion(&events, "req_000001");
+        assert_eq!(status, PromptCompletionStatus::Completed);
+    }
+
+    #[test]
+    fn evaluate_prompt_completion_reports_success_for_terminal_only_agent_turn_completion() {
+        let events = vec![event_with_correlation(
+            EventV1::TaskCompleted(TaskCompletedEvent {
+                task_id: "task_000001".to_string(),
+                result_summary: "ok".to_string(),
+                result_digest: "abc123".to_string(),
+                metadata: Some(TaskCompletionMetadata {
+                    lineage: None,
+                    task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
+                    timing: None,
+                    hook_executions: Vec::new(),
+                }),
+            }),
+            Some("req_000001"),
+        )];
 
         let status = evaluate_prompt_completion(&events, "req_000001");
         assert_eq!(status, PromptCompletionStatus::Completed);

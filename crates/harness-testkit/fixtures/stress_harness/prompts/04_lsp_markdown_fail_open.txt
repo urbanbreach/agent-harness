@@ -1,0 +1,2 @@
+Use lsp fileDiagnostics on notes/unsupported.md.
+If it fails, continue anyway and explain the failure instead of stopping.

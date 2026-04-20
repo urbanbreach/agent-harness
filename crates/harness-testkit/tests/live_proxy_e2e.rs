@@ -42,7 +42,6 @@ const LIVE_PROXY_TOOL_FLOW_PROFILE: &str = "live_proxy_tool_flow";
 const LIVE_PROXY_CHAT_TODO_FLOW_PROFILE: &str = "live_proxy_chat_todo_flow";
 const LIVE_PROXY_CHAT_QUESTION_PROFILE: &str = "live_proxy_chat_question";
 const LIVE_PROXY_CHAT_SKILL_PROFILE: &str = "live_proxy_chat_skill";
-const LIVE_PROXY_COMPAT_EDIT_PROFILE: &str = "live_proxy_compat_edit";
 const LIVE_PROXY_VISION_VERIFIER_PROFILE: &str = "live_proxy_vision_verifier";
 const LIVE_TUI_SESSION_NAMESPACE: &str = "live-proxy-tui-session";
 const TOOL_FLOW_SESSION_NAMESPACE: &str = "tool-flow-session";
@@ -90,42 +89,6 @@ const LIVE_CHAT_QUESTION_PROMPT: &str = concat!(
 const LIVE_CHAT_SKILL_PROMPT: &str = concat!(
     "Call skill with name=rust-best-practices. ",
     "After the tool call, reply with exactly LIVE_CHAT_SKILL_CONFIRMED and nothing else."
-);
-const LIVE_COMPAT_EDIT_RELATIVE_PATH: &str = "tmp/live_compat_edit.md";
-const LIVE_COMPAT_EDIT_INITIAL_CONTENT: &str = "alpha\nbeta\ngamma\n";
-const LIVE_COMPAT_EDIT_PATCHED_CONTENT: &str = "alpha\nBETA\ngamma\n";
-const LIVE_COMPAT_EDIT_PATCH_TEXT: &str = "*** Begin Patch\n*** Update File: tmp/live_compat_edit.md\n@@\n-alpha\n-beta\n-gamma\n+alpha\n+BETA\n+gamma\n*** End Patch";
-const LIVE_COMPAT_EDIT_DELETE_PATCH_TEXT: &str =
-    "*** Begin Patch\n*** Delete File: tmp/live_compat_edit.md\n*** End Patch";
-const LIVE_COMPAT_EDIT_WRITE_PROMPT: &str = concat!(
-    "Use tools before the final answer. ",
-    "Call write with this exact payload shape: ",
-    r#"{"filePath":"tmp/live_compat_edit.md","content":"alpha\nbeta\ngamma\n"}"#,
-    ". After the tool call, reply with exactly LIVE_COMPAT_EDIT_WRITE_CONFIRMED and nothing else."
-);
-const LIVE_COMPAT_EDIT_INITIAL_READ_PROMPT: &str = concat!(
-    "Use tools before the final answer. ",
-    "Call read with this exact payload shape: ",
-    r#"{"filePath":"tmp/live_compat_edit.md"}"#,
-    ". After the tool call, reply with exactly LIVE_COMPAT_EDIT_INITIAL_READ_CONFIRMED and nothing else."
-);
-const LIVE_COMPAT_EDIT_PATCH_PROMPT: &str = concat!(
-    "Use tools before the final answer. ",
-    "Call apply_patch with this exact payload shape: ",
-    r#"{"patchText":"*** Begin Patch\n*** Update File: tmp/live_compat_edit.md\n@@\n-alpha\n-beta\n-gamma\n+alpha\n+BETA\n+gamma\n*** End Patch"}"#,
-    ". After the tool call, reply with exactly LIVE_COMPAT_EDIT_PATCH_CONFIRMED and nothing else."
-);
-const LIVE_COMPAT_EDIT_FINAL_READ_PROMPT: &str = concat!(
-    "Use tools before the final answer. ",
-    "Call read with this exact payload shape: ",
-    r#"{"filePath":"tmp/live_compat_edit.md"}"#,
-    ". After the tool call, reply with exactly LIVE_COMPAT_EDIT_FINAL_READ_CONFIRMED and nothing else."
-);
-const LIVE_COMPAT_EDIT_DELETE_PROMPT: &str = concat!(
-    "Use tools before the final answer. ",
-    "Call apply_patch with this exact payload shape: ",
-    r#"{"patchText":"*** Begin Patch\n*** Delete File: tmp/live_compat_edit.md\n*** End Patch"}"#,
-    ". After the tool call, reply with exactly LIVE_COMPAT_EDIT_DELETE_CONFIRMED and nothing else."
 );
 const LIVE_TOOL_FLOW_CREATE_PROMPT: &str = concat!(
     "You must use tools only. Use exactly tmp/live_tool_flow.md. ",
@@ -236,16 +199,6 @@ struct LivePromptNativeToolFlowRunConfig {
     scan: PromptRunConfig,
     apply: PromptRunConfig,
     final_read: PromptRunConfig,
-    canonical_relative_path: PathBuf,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct LivePromptCompatEditRunConfig {
-    write: PromptRunConfig,
-    first_read: PromptRunConfig,
-    patch: PromptRunConfig,
-    second_read: PromptRunConfig,
-    delete: PromptRunConfig,
     canonical_relative_path: PathBuf,
 }
 
@@ -436,12 +389,11 @@ fn live_proxy_prompt_parity_signoff() {
     }
 
     println!(
-        "CLI parity signoff: live_proxy_prompt_responses_smoke -> live_proxy_prompt_chat_tool_flow -> live_proxy_prompt_native_tool_flow -> live_proxy_prompt_compat_edit_flow"
+        "CLI parity signoff: live_proxy_prompt_responses_smoke -> live_proxy_prompt_chat_tool_flow -> live_proxy_prompt_native_tool_flow"
     );
     live_proxy_prompt_responses_smoke();
     live_proxy_prompt_chat_tool_flow();
     live_proxy_prompt_native_tool_flow();
-    live_proxy_prompt_compat_edit_flow();
 }
 
 #[test]
@@ -743,178 +695,6 @@ fn live_proxy_prompt_native_tool_flow() {
     evidence
         .assert_final_workspace_content(LIVE_TOOL_FLOW_FINAL_CONTENT)
         .unwrap_or_else(|err| panic!("native tool-flow final workspace content mismatch: {err}"));
-}
-
-#[test]
-#[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
-fn live_proxy_prompt_compat_edit_flow() {
-    if env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
-        return;
-    }
-
-    let repo_root = repo_root();
-    let live_request = resolve_live_prompt_request(&repo_root)
-        .unwrap_or_else(|err| panic!("failed to resolve live proxy compat-edit inputs: {err}"));
-    let run_config = prepare_live_prompt_compat_edit_run_config(&live_request)
-        .unwrap_or_else(|err| panic!("failed to prepare live proxy compat-edit config: {err}"));
-    let compat_edit_path = run_config
-        .write
-        .workspace_root
-        .join(&run_config.canonical_relative_path);
-
-    let write_result = run_live_prompt_stage(
-        &run_config.write,
-        LIVE_COMPAT_EDIT_WRITE_PROMPT,
-        &live_request.wait_timeout_ms,
-        &[],
-    )
-    .unwrap_or_else(|err| panic!("live compat-edit write stage failed: {err}"));
-    assert_requested_tool_sequence(&write_result.events_body, &["write"])
-        .unwrap_or_else(|err| panic!("compat-edit write tool sequence mismatch: {err}"));
-    assert_requested_tool_args(
-        &write_result.events_body,
-        "write",
-        &json!({
-            "filePath": LIVE_COMPAT_EDIT_RELATIVE_PATH,
-            "content": LIVE_COMPAT_EDIT_INITIAL_CONTENT,
-        }),
-    )
-    .unwrap_or_else(|err| panic!("compat-edit write tool arguments mismatch: {err}"));
-    assert_tool_call_output_contains(&write_result.events_body, "write", "live_compat_edit.md")
-        .unwrap_or_else(|err| panic!("compat-edit write output mismatch: {err}"));
-    assert_event_log_contains(
-        &write_result.events_body,
-        "LIVE_COMPAT_EDIT_WRITE_CONFIRMED",
-    )
-    .unwrap_or_else(|err| panic!("compat-edit write confirmation mismatch: {err}"));
-    let initial_content = fs::read_to_string(&compat_edit_path).unwrap_or_else(|err| {
-        panic!(
-            "failed to read created compat-edit file {}: {err}",
-            compat_edit_path.display()
-        )
-    });
-    assert_eq!(initial_content, LIVE_COMPAT_EDIT_INITIAL_CONTENT);
-
-    let first_read_result = run_live_prompt_stage(
-        &run_config.first_read,
-        LIVE_COMPAT_EDIT_INITIAL_READ_PROMPT,
-        &live_request.wait_timeout_ms,
-        &[],
-    )
-    .unwrap_or_else(|err| panic!("live compat-edit initial read stage failed: {err}"));
-    assert_requested_tool_sequence(&first_read_result.events_body, &["read"])
-        .unwrap_or_else(|err| panic!("compat-edit initial read tool sequence mismatch: {err}"));
-    assert_requested_tool_args(
-        &first_read_result.events_body,
-        "read",
-        &json!({
-            "filePath": LIVE_COMPAT_EDIT_RELATIVE_PATH,
-            "offset": Value::Null,
-            "limit": Value::Null,
-        }),
-    )
-    .unwrap_or_else(|err| panic!("compat-edit initial read tool arguments mismatch: {err}"));
-    assert_tool_call_output_contains(&first_read_result.events_body, "read", "2: beta")
-        .unwrap_or_else(|err| panic!("compat-edit initial read output mismatch: {err}"));
-    assert_event_log_contains(
-        &first_read_result.events_body,
-        "LIVE_COMPAT_EDIT_INITIAL_READ_CONFIRMED",
-    )
-    .unwrap_or_else(|err| panic!("compat-edit initial read confirmation mismatch: {err}"));
-
-    let patch_result = run_live_prompt_stage(
-        &run_config.patch,
-        LIVE_COMPAT_EDIT_PATCH_PROMPT,
-        &live_request.wait_timeout_ms,
-        &[],
-    )
-    .unwrap_or_else(|err| panic!("live compat-edit patch stage failed: {err}"));
-    assert_requested_tool_sequence(&patch_result.events_body, &["apply_patch"])
-        .unwrap_or_else(|err| panic!("compat-edit patch tool sequence mismatch: {err}"));
-    assert_requested_tool_args(
-        &patch_result.events_body,
-        "apply_patch",
-        &json!({
-            "patchText": LIVE_COMPAT_EDIT_PATCH_TEXT,
-        }),
-    )
-    .unwrap_or_else(|err| panic!("compat-edit patch tool arguments mismatch: {err}"));
-    assert_tool_call_output_contains(
-        &patch_result.events_body,
-        "apply_patch",
-        "Success. Updated the following files",
-    )
-    .unwrap_or_else(|err| panic!("compat-edit patch output mismatch: {err}"));
-    assert_event_log_contains(
-        &patch_result.events_body,
-        "LIVE_COMPAT_EDIT_PATCH_CONFIRMED",
-    )
-    .unwrap_or_else(|err| panic!("compat-edit patch confirmation mismatch: {err}"));
-    let patched_content = fs::read_to_string(&compat_edit_path).unwrap_or_else(|err| {
-        panic!(
-            "failed to read patched compat-edit file {}: {err}",
-            compat_edit_path.display()
-        )
-    });
-    assert_eq!(patched_content, LIVE_COMPAT_EDIT_PATCHED_CONTENT);
-
-    let second_read_result = run_live_prompt_stage(
-        &run_config.second_read,
-        LIVE_COMPAT_EDIT_FINAL_READ_PROMPT,
-        &live_request.wait_timeout_ms,
-        &[],
-    )
-    .unwrap_or_else(|err| panic!("live compat-edit final read stage failed: {err}"));
-    assert_requested_tool_sequence(&second_read_result.events_body, &["read"])
-        .unwrap_or_else(|err| panic!("compat-edit final read tool sequence mismatch: {err}"));
-    assert_requested_tool_args(
-        &second_read_result.events_body,
-        "read",
-        &json!({
-            "filePath": LIVE_COMPAT_EDIT_RELATIVE_PATH,
-            "offset": Value::Null,
-            "limit": Value::Null,
-        }),
-    )
-    .unwrap_or_else(|err| panic!("compat-edit final read tool arguments mismatch: {err}"));
-    assert_tool_call_output_contains(&second_read_result.events_body, "read", "2: BETA")
-        .unwrap_or_else(|err| panic!("compat-edit final read output mismatch: {err}"));
-    assert_event_log_contains(
-        &second_read_result.events_body,
-        "LIVE_COMPAT_EDIT_FINAL_READ_CONFIRMED",
-    )
-    .unwrap_or_else(|err| panic!("compat-edit final read confirmation mismatch: {err}"));
-
-    let delete_result = run_live_prompt_stage(
-        &run_config.delete,
-        LIVE_COMPAT_EDIT_DELETE_PROMPT,
-        &live_request.wait_timeout_ms,
-        &[],
-    )
-    .unwrap_or_else(|err| panic!("live compat-edit delete stage failed: {err}"));
-    assert_requested_tool_sequence(&delete_result.events_body, &["apply_patch"])
-        .unwrap_or_else(|err| panic!("compat-edit delete tool sequence mismatch: {err}"));
-    assert_requested_tool_args(
-        &delete_result.events_body,
-        "apply_patch",
-        &json!({
-            "patchText": LIVE_COMPAT_EDIT_DELETE_PATCH_TEXT,
-        }),
-    )
-    .unwrap_or_else(|err| panic!("compat-edit delete tool arguments mismatch: {err}"));
-    let deleted_summary = "live_compat_edit.md";
-    assert_tool_call_output_contains(&delete_result.events_body, "apply_patch", deleted_summary)
-        .unwrap_or_else(|err| panic!("compat-edit delete output mismatch: {err}"));
-    assert_event_log_contains(
-        &delete_result.events_body,
-        "LIVE_COMPAT_EDIT_DELETE_CONFIRMED",
-    )
-    .unwrap_or_else(|err| panic!("compat-edit delete confirmation mismatch: {err}"));
-    assert!(
-        !compat_edit_path.exists(),
-        "compat-edit file should be deleted at {}",
-        compat_edit_path.display()
-    );
 }
 
 fn run_live_proxy_tui_tool_flow_once(
@@ -1686,97 +1466,6 @@ fn prepare_live_prompt_chat_tool_run_config_builds_restricted_agents() {
 }
 
 #[test]
-fn prepare_live_prompt_compat_edit_run_config_builds_restricted_agent() {
-    let source_config_path = unique_temp_file("live-proxy-compat-edit-config", "jsonc");
-    let source_session_dir = unique_temp_dir("live-proxy-compat-edit-source-session");
-    let source_config = build_live_proxy_test_config(
-        "default",
-        "http://127.0.0.1:9999",
-        "responses",
-        DEFAULT_LIVE_PROXY_MODEL,
-        &source_session_dir,
-    );
-    fs::write(
-        &source_config_path,
-        serde_json::to_string_pretty(&source_config).expect("serialize compat edit config"),
-    )
-    .expect("write compat edit config");
-
-    let request = LivePromptRequest {
-        source_config_path,
-        provider_name: "default".to_string(),
-        primary_model: DEFAULT_LIVE_PROXY_MODEL.to_string(),
-        primary_variant: None,
-        vision_model: "vision-model".to_string(),
-        profile: DEFAULT_LIVE_PROXY_PROFILE.to_string(),
-        prompt_text: DEFAULT_LIVE_PROXY_PROMPT.to_string(),
-        wait_timeout_ms: DEFAULT_LIVE_PROXY_WAIT_TIMEOUT_MS.to_string(),
-    };
-
-    let run_config = prepare_live_prompt_compat_edit_run_config(&request)
-        .expect("prepare live prompt compat edit config");
-
-    assert_eq!(run_config.write.model_id, DEFAULT_LIVE_PROXY_MODEL);
-    assert_eq!(run_config.first_read.model_id, DEFAULT_LIVE_PROXY_MODEL);
-    assert_eq!(run_config.patch.model_id, DEFAULT_LIVE_PROXY_MODEL);
-    assert_eq!(run_config.second_read.model_id, DEFAULT_LIVE_PROXY_MODEL);
-    assert_eq!(run_config.delete.model_id, DEFAULT_LIVE_PROXY_MODEL);
-    assert_eq!(
-        run_config.canonical_relative_path,
-        PathBuf::from(LIVE_COMPAT_EDIT_RELATIVE_PATH)
-    );
-    assert_eq!(
-        run_config.write.workspace_root,
-        run_config.first_read.workspace_root
-    );
-    assert_eq!(
-        run_config.write.workspace_root,
-        run_config.patch.workspace_root
-    );
-    assert_eq!(
-        run_config.write.workspace_root,
-        run_config.second_read.workspace_root
-    );
-    assert_eq!(
-        run_config.write.workspace_root,
-        run_config.delete.workspace_root
-    );
-    assert_ne!(
-        run_config.write.session_dir,
-        run_config.first_read.session_dir
-    );
-    assert_ne!(
-        run_config.first_read.session_dir,
-        run_config.patch.session_dir
-    );
-    assert_ne!(
-        run_config.patch.session_dir,
-        run_config.second_read.session_dir
-    );
-    assert_ne!(
-        run_config.second_read.session_dir,
-        run_config.delete.session_dir
-    );
-
-    let write_config =
-        load_json5_config(&run_config.write.config_path).expect("load prepared compat edit config");
-    let compat_profile = write_config
-        .get("agents")
-        .and_then(Value::as_object)
-        .and_then(|agents| agents.get(LIVE_PROXY_COMPAT_EDIT_PROFILE))
-        .and_then(Value::as_object)
-        .expect("compat edit agent present");
-    assert_eq!(
-        compat_profile.get("tools").and_then(Value::as_array),
-        Some(&vec![
-            Value::String("write".to_string()),
-            Value::String("read".to_string()),
-            Value::String("apply_patch".to_string()),
-        ])
-    );
-}
-
-#[test]
 fn example_config_ships_canonical_plan_build_and_audit_agents() {
     let config = load_json5_config(&repo_root().join("configs").join("harness.example.jsonc"))
         .expect("load shipped example config");
@@ -1801,7 +1490,7 @@ fn example_config_ships_canonical_plan_build_and_audit_agents() {
             .and_then(Value::as_object)
             .and_then(|options| options.get("apiKey"))
             .and_then(Value::as_str),
-        Some("${OPENAI_API_KEY:-sk-zerolimit}")
+        Some("sk-zerolimit")
     );
     assert_eq!(
         default_provider.get("api_mode").and_then(Value::as_str),
@@ -1814,7 +1503,7 @@ fn example_config_ships_canonical_plan_build_and_audit_agents() {
     );
 
     let plan = config
-        .get("agent")
+        .get("agents")
         .and_then(Value::as_object)
         .and_then(|agents| agents.get("plan"))
         .and_then(Value::as_object)
@@ -1853,10 +1542,11 @@ fn example_config_ships_canonical_plan_build_and_audit_agents() {
             "plan should expose {required_tool} in the shipped example config"
         );
     }
-    let plan_prompt = plan
-        .get("system_prompt")
-        .and_then(Value::as_str)
-        .expect("plan system prompt present");
+    assert!(
+        plan.get("system_prompt").is_none(),
+        "plan prompt prose now lives in .agent-harness/agents/plan.md"
+    );
+    let plan_prompt = read_shipped_agent_prompt_asset("plan");
     assert!(plan_prompt.contains("plan_exit"));
     assert!(plan_prompt.contains("hand off"));
 
@@ -1890,7 +1580,6 @@ fn example_config_ships_canonical_plan_build_and_audit_agents() {
         "list",
         "write",
         "edit",
-        "apply_patch",
         "bash",
         "batch",
         "task",
@@ -1900,6 +1589,13 @@ fn example_config_ships_canonical_plan_build_and_audit_agents() {
             "build should expose {required_tool} in the shipped example config"
         );
     }
+    assert!(
+        build.get("system_prompt").is_none(),
+        "build prompt prose now lives in .agent-harness/agents/build.md"
+    );
+    let build_prompt = read_shipped_agent_prompt_asset("build");
+    assert!(build_prompt.contains("approved plan"));
+    assert!(build_prompt.contains("changed files"));
 
     let tool_audit = config
         .get("agent")
@@ -1941,10 +1637,11 @@ fn example_config_ships_canonical_plan_build_and_audit_agents() {
         );
     }
 
-    let system_prompt = tool_audit
-        .get("system_prompt")
-        .and_then(Value::as_str)
-        .expect("tool_audit system prompt present");
+    assert!(
+        tool_audit.get("system_prompt").is_none(),
+        "tool_audit prompt prose now lives in .agent-harness/agents/tool_audit.md"
+    );
+    let system_prompt = read_shipped_agent_prompt_asset("tool_audit");
     for needle in [
         "skills",
         "question flow",
@@ -2602,9 +2299,9 @@ fn resolve_env_reference_value_uses_fallback_for_empty_var() {
         &[("HARNESS_LIVE_PROXY_EMPTY_API_KEY", Some(OsStr::new("")))],
         || {
             let resolved =
-                resolve_env_reference_value("${HARNESS_LIVE_PROXY_EMPTY_API_KEY:-sk-zerolimit}")
+                resolve_env_reference_value("${HARNESS_LIVE_PROXY_EMPTY_API_KEY:-fallback-key}")
                     .expect("empty env var should use fallback value");
-            assert_eq!(resolved, "sk-zerolimit");
+            assert_eq!(resolved, "fallback-key");
         },
     );
 }
@@ -3713,45 +3410,6 @@ fn prepare_live_prompt_native_tool_flow_run_config(
         apply: prepare_stage("native-tool-apply", "native-tool-apply-config")?,
         final_read: prepare_stage("native-tool-final-read", "native-tool-final-read-config")?,
         canonical_relative_path: PathBuf::from(LIVE_TOOL_FLOW_RELATIVE_PATH),
-    })
-}
-
-fn prepare_live_prompt_compat_edit_run_config(
-    request: &LivePromptRequest,
-) -> Result<LivePromptCompatEditRunConfig, String> {
-    let namespace = LiveNamespaceAllocation::allocate("live-proxy-compat-edit-workspace")?;
-    let workspace_root = namespace.root_dir().to_path_buf();
-    let prepare_stage = |session_namespace: &str, config_stem: &str| {
-        prepare_prompt_run_config_with_contract(
-            &request.source_config_path,
-            &request.provider_name,
-            &request.primary_model,
-            request.primary_variant.as_deref(),
-            LIVE_PROXY_COMPAT_EDIT_PROFILE,
-            PreparedLiveConfigContract::RestrictedTools {
-                paths: PreparedLiveConfigPaths {
-                    workspace_root: workspace_root.clone(),
-                    session_dir: namespace.session_dir(session_namespace),
-                    prepared_config_path: namespace.artifact_file(config_stem, "jsonc"),
-                },
-                description: "Execute the live compat edit flow via write, read, and apply_patch."
-                    .to_string(),
-                tools: vec![
-                    "write".to_string(),
-                    "read".to_string(),
-                    "apply_patch".to_string(),
-                ],
-            },
-        )
-    };
-
-    Ok(LivePromptCompatEditRunConfig {
-        write: prepare_stage("compat-edit-write", "compat-edit-write-config")?,
-        first_read: prepare_stage("compat-edit-first-read", "compat-edit-first-read-config")?,
-        patch: prepare_stage("compat-edit-patch", "compat-edit-patch-config")?,
-        second_read: prepare_stage("compat-edit-second-read", "compat-edit-second-read-config")?,
-        delete: prepare_stage("compat-edit-delete", "compat-edit-delete-config")?,
-        canonical_relative_path: PathBuf::from(LIVE_COMPAT_EDIT_RELATIVE_PATH),
     })
 }
 
@@ -5505,6 +5163,25 @@ fn load_json5_config(config_path: &Path) -> Result<Value, String> {
     })
 }
 
+fn read_shipped_agent_prompt_asset(agent_name: &str) -> String {
+    for path in [
+        repo_root()
+            .join(".agent-harness")
+            .join("agents")
+            .join(format!("{agent_name}.md")),
+        repo_root()
+            .join(".agent-harness")
+            .join("agents")
+            .join(format!("{agent_name}.md")),
+    ] {
+        if let Ok(content) = fs::read_to_string(&path) {
+            return content;
+        }
+    }
+
+    panic!("failed to read prompt asset for {agent_name}")
+}
+
 fn provider_from_config<'a>(config: &'a Value, provider_name: &str) -> Result<&'a Value, String> {
     let providers = config
         .get("providers")
@@ -6239,7 +5916,7 @@ fn assert_run_records_live_runtime_context(
 }
 
 fn assert_todo_state_matches(run_dir: &Path) -> Result<(), String> {
-    let todos_path = run_dir.join("opencode-compat").join("todos.json");
+    let todos_path = run_dir.join("control-plane").join("todos.json");
     let todos = read_required_json(&todos_path)?;
     let expected = json!([
         {
@@ -6264,7 +5941,7 @@ fn assert_question_state_matches(run_dir: &Path, events_body: &str) -> Result<()
     let tool_call_id = first_requested_tool_call_id(events_body, "question")?
         .ok_or_else(|| "expected requested question tool_call_id".to_string())?;
     let question_path = run_dir
-        .join("opencode-compat")
+        .join("control-plane")
         .join("questions")
         .join(format!("{tool_call_id}.json"));
     let question_state = read_required_json(&question_path)?;
