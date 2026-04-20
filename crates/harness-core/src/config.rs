@@ -1,15 +1,13 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     env, fs,
     path::{Component, Path, PathBuf},
     sync::{Mutex, OnceLock},
 };
 
 use schemars::{schema_for, JsonSchema};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use thiserror::Error;
-
-const CLIPROXY_LOOPBACK_DEFAULT_API_KEY: &str = "sk-zerolimit";
 
 static PROFILE_MODEL_METADATA_REGISTRY: OnceLock<
     Mutex<BTreeMap<String, ResolvedProfileModelMetadata>>,
@@ -48,6 +46,181 @@ pub enum ConfigError {
     InvalidReference(String),
     #[error("failed to serialize config schema: {0}")]
     SerializeSchema(String),
+    #[error("failed to read markdown asset {path}: {source}")]
+    ReadMarkdownAsset {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("invalid markdown frontmatter in {path}: {reason}")]
+    InvalidMarkdownFrontmatter { path: String, reason: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct InstructionFile {
+    pub path: PathBuf,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PublicRuntimeConfig {
+    #[serde(rename = "$schema", default)]
+    pub schema: Option<String>,
+    #[serde(default)]
+    pub provider: BTreeMap<String, ProviderConfig>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default, alias = "smallModel")]
+    pub small_model: Option<String>,
+    #[serde(default)]
+    pub agent: BTreeMap<String, PublicAgentConfig>,
+    #[serde(default, alias = "defaultAgent")]
+    pub default_agent: Option<String>,
+    #[serde(default)]
+    pub permission: PublicPermissionConfig,
+    #[serde(default)]
+    pub mcp: BTreeMap<String, McpServerConfig>,
+    #[serde(default)]
+    pub instructions: Option<InstructionList>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PublicAgentConfig {
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default, alias = "systemPrompt")]
+    pub system_prompt: Option<String>,
+    #[serde(default, alias = "model_ref", alias = "modelRef")]
+    pub model: Option<String>,
+    #[serde(default, alias = "smallModel")]
+    pub use_small_model: bool,
+    #[serde(default)]
+    pub variant: Option<String>,
+    #[serde(default)]
+    pub temperature: Option<f32>,
+    #[serde(default, alias = "permissions")]
+    pub permission: Option<PublicProfilePermissions>,
+    #[serde(default = "default_max_iters", alias = "maxIters")]
+    pub max_iters: usize,
+    #[serde(default, alias = "toolFailureMode")]
+    pub tool_failure_mode: ToolFailureMode,
+    #[serde(default, alias = "planMode")]
+    pub plan_mode: bool,
+    #[serde(default, alias = "exitTargetProfile")]
+    pub exit_target_profile: Option<String>,
+    #[serde(default)]
+    pub tools: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PublicPermissionConfig {
+    #[serde(default)]
+    pub edit: Option<PermissionMode>,
+    #[serde(default, alias = "shell")]
+    pub bash: Option<PermissionMode>,
+    #[serde(default)]
+    pub question: Option<PermissionMode>,
+    #[serde(default)]
+    pub task: Option<PermissionMode>,
+    #[serde(default, alias = "webFetch")]
+    pub webfetch: Option<PermissionMode>,
+    #[serde(default, alias = "webSearch")]
+    pub websearch: Option<PermissionMode>,
+    #[serde(default, alias = "codeSearch")]
+    pub codesearch: Option<PermissionMode>,
+    #[serde(default, alias = "codeLsp")]
+    pub lsp: Option<PermissionMode>,
+    #[serde(default, skip_serializing)]
+    #[schemars(skip)]
+    pub network: Option<PermissionMode>,
+    #[serde(rename = "shell_allowlist", alias = "shellAllowlist", default)]
+    pub shell_allowlist: Option<ShellAllowlist>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PublicProfilePermissions {
+    #[serde(default)]
+    pub edit: Option<PermissionMode>,
+    #[serde(default, alias = "shell")]
+    pub bash: Option<PermissionMode>,
+    #[serde(default)]
+    pub question: Option<PermissionMode>,
+    #[serde(default)]
+    pub task: Option<PermissionMode>,
+    #[serde(default, alias = "webFetch")]
+    pub webfetch: Option<PermissionMode>,
+    #[serde(default, alias = "webSearch")]
+    pub websearch: Option<PermissionMode>,
+    #[serde(default, alias = "codeSearch")]
+    pub codesearch: Option<PermissionMode>,
+    #[serde(default, alias = "codeLsp")]
+    pub lsp: Option<PermissionMode>,
+    #[serde(default, skip_serializing)]
+    #[schemars(skip)]
+    pub network: Option<PermissionMode>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum InstructionList {
+    Single(String),
+    Many(Vec<String>),
+}
+
+impl Default for InstructionList {
+    fn default() -> Self {
+        Self::Many(Vec::new())
+    }
+}
+
+impl InstructionList {
+    fn entries(&self) -> Vec<String> {
+        match self {
+            Self::Single(value) => vec![value.clone()],
+            Self::Many(values) => values.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PublicTuiConfig {
+    #[serde(rename = "$schema", default)]
+    pub schema: Option<String>,
+    #[serde(rename = "keybinds", alias = "keybindings", default)]
+    pub keybindings: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+struct MarkdownAgentFrontmatter {
+    pub description: Option<String>,
+    #[serde(alias = "systemPrompt")]
+    pub system_prompt: Option<String>,
+    #[serde(rename = "model_ref", alias = "modelRef")]
+    pub model_ref: Option<String>,
+    pub variant: Option<String>,
+    pub temperature: Option<f32>,
+    pub permissions: Option<ProfilePermissions>,
+    #[serde(alias = "maxIters")]
+    pub max_iters: Option<usize>,
+    #[serde(alias = "toolFailureMode")]
+    pub tool_failure_mode: Option<ToolFailureMode>,
+    #[serde(alias = "planMode")]
+    pub plan_mode: Option<bool>,
+    #[serde(alias = "exitTargetProfile")]
+    pub exit_target_profile: Option<String>,
+    pub tools: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone)]
+struct MarkdownAgentFile {
+    frontmatter: MarkdownAgentFrontmatter,
+    prompt_body: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -58,8 +231,6 @@ pub struct HarnessConfig {
     pub providers: BTreeMap<String, ProviderConfig>,
     #[serde(default)]
     pub agents: BTreeMap<String, ProfileConfig>,
-    #[serde(default)]
-    pub agent: BTreeMap<String, ProfileConfig>,
     pub permissions: PermissionsConfig,
     pub runtime: RuntimeConfig,
     pub integrations: IntegrationsConfig,
@@ -85,8 +256,18 @@ pub struct HarnessConfig {
     pub ui: UiConfig,
     #[serde(default)]
     pub logging: LoggingConfig,
+    #[serde(default = "default_hashline_edit", alias = "hashlineEdit")]
+    pub hashline_edit: bool,
     #[serde(default, alias = "defaultAgent")]
     pub default_agent: Option<String>,
+    #[serde(default)]
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub instruction_files: Vec<InstructionFile>,
+}
+
+fn default_hashline_edit() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -175,6 +356,30 @@ pub struct LoggingConfig {
     pub file: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone)]
+pub struct LoadedConfig {
+    pub config: HarnessConfig,
+    pub paths: Vec<PathBuf>,
+}
+
+impl LoadedConfig {
+    pub fn primary_path(&self) -> Option<&Path> {
+        self.paths.last().map(PathBuf::as_path)
+    }
+
+    pub fn path_display(&self) -> String {
+        match self.paths.as_slice() {
+            [] => "<none>".to_string(),
+            [path] => path.display().to_string(),
+            paths => paths
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(" + "),
+        }
+    }
+}
+
 impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
@@ -219,17 +424,6 @@ impl HarnessConfig {
     }
 
     fn normalize_public_config_aliases(&mut self) -> Result<(), ConfigError> {
-        if !self.agent.is_empty() {
-            if self.agents.is_empty() {
-                self.agents = self.agent.clone();
-            } else if self.agents != self.agent {
-                return Err(ConfigError::InvalidReference(
-                    "top-level `agent` and `agents` both exist but differ; use one shape or make them identical"
-                        .to_string(),
-                ));
-            }
-        }
-
         for provider in self.providers.values_mut() {
             provider.normalize_public_config_aliases()?;
         }
@@ -244,24 +438,18 @@ impl HarnessConfig {
                     )));
                 }
             }
+        } else if let Some(default_profile) = self.ui.default_profile.clone() {
+            self.default_agent = Some(default_profile);
         }
 
-        Ok(())
-    }
-
-    fn apply_env_substitutions(&mut self) -> Result<(), ConfigError> {
-        for provider in self.providers.values_mut() {
-            match provider {
-                ProviderConfig::OpenAiCompatible(config) => {
-                    config.api_key =
-                        resolve_openai_compatible_api_key(&config.api_key, &config.base_url)?;
-                }
-            }
-        }
         Ok(())
     }
 
     fn validate_references(&mut self) -> Result<(), ConfigError> {
+        if self.agents.is_empty() {
+            return Err(ConfigError::MissingRequiredSections("agents".to_string()));
+        }
+
         for (agent_name, agent) in &self.agents {
             let Some((provider_name, model_name)) = parse_model_ref(&agent.model_ref) else {
                 return Err(ConfigError::InvalidReference(format!(
@@ -576,6 +764,336 @@ impl HarnessConfig {
 
         Ok(())
     }
+
+    pub fn instruction_prompt_prefix(&self) -> Option<String> {
+        if self.instruction_files.is_empty() {
+            return None;
+        }
+
+        Some(
+            self.instruction_files
+                .iter()
+                .map(|instruction| {
+                    format!(
+                        "Instructions from: {}\n{}",
+                        instruction.path.display(),
+                        instruction.content
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n\n"),
+        )
+    }
+}
+
+fn resolve_discovered_prompt_assets(
+    parsed: &mut HarnessConfig,
+    config_path: &Path,
+) -> Result<(), ConfigError> {
+    parsed.agents = merge_configured_and_markdown_agents(&parsed.agents, config_path)?;
+    parsed.instruction_files = discover_instruction_files(config_path)?;
+    Ok(())
+}
+
+fn merge_configured_and_markdown_agents(
+    configured: &BTreeMap<String, ProfileConfig>,
+    config_path: &Path,
+) -> Result<BTreeMap<String, ProfileConfig>, ConfigError> {
+    let discovered = discover_markdown_agents(config_path)?;
+    let agent_names = discovered
+        .keys()
+        .chain(configured.keys())
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let mut merged = BTreeMap::new();
+
+    for name in agent_names {
+        let profile = match (discovered.get(&name), configured.get(&name)) {
+            (Some(markdown), Some(config)) => {
+                Some(merge_markdown_agent_with_config(config, markdown))
+            }
+            (None, Some(config)) => Some(config.clone()),
+            (Some(markdown), None) => profile_from_markdown_agent(markdown)?,
+            (None, None) => None,
+        };
+
+        if let Some(profile) = profile {
+            merged.insert(name, profile);
+        }
+    }
+
+    Ok(merged)
+}
+
+fn merge_markdown_agent_with_config(
+    config: &ProfileConfig,
+    markdown: &MarkdownAgentFile,
+) -> ProfileConfig {
+    let prompt = config
+        .system_prompt
+        .clone()
+        .or_else(|| markdown.prompt_body.clone())
+        .or_else(|| markdown.frontmatter.system_prompt.clone());
+
+    ProfileConfig {
+        description: config.description.clone(),
+        system_prompt: prompt,
+        model_ref: config.model_ref.clone(),
+        variant: config.variant.clone(),
+        temperature: config.temperature,
+        permissions: config.permissions.clone(),
+        max_iters: config.max_iters,
+        tool_failure_mode: config.tool_failure_mode,
+        plan_mode: config.plan_mode,
+        exit_target_profile: config.exit_target_profile.clone(),
+        tools: config.tools.clone(),
+    }
+}
+
+fn profile_from_markdown_agent(
+    markdown: &MarkdownAgentFile,
+) -> Result<Option<ProfileConfig>, ConfigError> {
+    let Some(description) = markdown.frontmatter.description.clone() else {
+        return Ok(None);
+    };
+    let Some(model_ref) = markdown.frontmatter.model_ref.clone() else {
+        return Ok(None);
+    };
+
+    Ok(Some(ProfileConfig {
+        description,
+        system_prompt: markdown
+            .prompt_body
+            .clone()
+            .or_else(|| markdown.frontmatter.system_prompt.clone()),
+        model_ref,
+        variant: markdown.frontmatter.variant.clone(),
+        temperature: markdown.frontmatter.temperature,
+        permissions: markdown.frontmatter.permissions.clone(),
+        max_iters: markdown
+            .frontmatter
+            .max_iters
+            .unwrap_or_else(default_max_iters),
+        tool_failure_mode: markdown.frontmatter.tool_failure_mode.unwrap_or_default(),
+        plan_mode: markdown.frontmatter.plan_mode.unwrap_or(false),
+        exit_target_profile: markdown.frontmatter.exit_target_profile.clone(),
+        tools: markdown.frontmatter.tools.clone().unwrap_or_default(),
+    }))
+}
+
+fn discover_markdown_agents(
+    config_path: &Path,
+) -> Result<BTreeMap<String, MarkdownAgentFile>, ConfigError> {
+    let mut agents = BTreeMap::new();
+
+    for dir in agent_prompt_search_dirs(config_path) {
+        if !dir.exists() {
+            continue;
+        }
+
+        for file in markdown_files_in_dir(&dir)? {
+            let name = file
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .map(str::trim)
+                .filter(|stem| !stem.is_empty())
+                .ok_or_else(|| {
+                    ConfigError::InvalidReference(format!(
+                        "agent markdown `{}` must have a valid UTF-8 file stem",
+                        file.display()
+                    ))
+                })?
+                .to_string();
+            if agents.contains_key(&name) {
+                continue;
+            }
+
+            let content =
+                fs::read_to_string(&file).map_err(|source| ConfigError::ReadMarkdownAsset {
+                    path: file.display().to_string(),
+                    source,
+                })?;
+            let (frontmatter, prompt_body) =
+                parse_markdown_frontmatter::<MarkdownAgentFrontmatter>(&file, &content)?;
+            agents.insert(
+                name,
+                MarkdownAgentFile {
+                    frontmatter,
+                    prompt_body: (!prompt_body.is_empty()).then_some(prompt_body),
+                },
+            );
+        }
+    }
+
+    Ok(agents)
+}
+
+fn discover_instruction_files(config_path: &Path) -> Result<Vec<InstructionFile>, ConfigError> {
+    let mut instructions = Vec::new();
+    let mut seen = BTreeSet::new();
+
+    for path in instruction_search_paths(config_path) {
+        if !path.exists() || !seen.insert(path.clone()) {
+            continue;
+        }
+
+        let content =
+            fs::read_to_string(&path).map_err(|source| ConfigError::ReadMarkdownAsset {
+                path: path.display().to_string(),
+                source,
+            })?;
+        let content = content.trim().to_string();
+        if content.is_empty() {
+            continue;
+        }
+
+        instructions.push(InstructionFile { path, content });
+    }
+
+    Ok(instructions)
+}
+
+fn parse_markdown_frontmatter<T>(path: &Path, content: &str) -> Result<(T, String), ConfigError>
+where
+    T: DeserializeOwned + Default,
+{
+    let mut lines = content.lines();
+    if lines.next() != Some("---") {
+        return Ok((T::default(), content.trim().to_string()));
+    }
+
+    let mut frontmatter_lines = Vec::new();
+    let mut found_closing = false;
+    for line in &mut lines {
+        if line == "---" {
+            found_closing = true;
+            break;
+        }
+        frontmatter_lines.push(line);
+    }
+
+    if !found_closing {
+        return Err(ConfigError::InvalidMarkdownFrontmatter {
+            path: path.display().to_string(),
+            reason: "frontmatter must end with `---`".to_string(),
+        });
+    }
+
+    let frontmatter_text = frontmatter_lines.join("\n");
+    let frontmatter = if frontmatter_text.trim().is_empty() {
+        T::default()
+    } else {
+        json5::from_str(&frontmatter_text).map_err(|err| {
+            ConfigError::InvalidMarkdownFrontmatter {
+                path: path.display().to_string(),
+                reason: err.to_string(),
+            }
+        })?
+    };
+
+    Ok((
+        frontmatter,
+        lines.collect::<Vec<_>>().join("\n").trim().to_string(),
+    ))
+}
+
+fn markdown_files_in_dir(dir: &Path) -> Result<Vec<PathBuf>, ConfigError> {
+    let mut files = Vec::new();
+    collect_markdown_files(dir, &mut files)?;
+    files.sort();
+    Ok(files)
+}
+
+fn collect_markdown_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), ConfigError> {
+    let mut entries = fs::read_dir(dir)
+        .map_err(|source| ConfigError::ReadMarkdownAsset {
+            path: dir.display().to_string(),
+            source,
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|source| ConfigError::ReadMarkdownAsset {
+            path: dir.display().to_string(),
+            source,
+        })?;
+    entries.sort_by_key(|entry| entry.file_name());
+
+    for entry in entries {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_markdown_files(&path, files)?;
+            continue;
+        }
+
+        if path.extension().and_then(|ext| ext.to_str()) == Some("md") {
+            files.push(path);
+        }
+    }
+
+    Ok(())
+}
+
+fn agent_prompt_search_dirs(config_path: &Path) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    for base in discovery_search_bases(config_path) {
+        push_unique_path(&mut dirs, base.join(".agent-harness").join("agents"));
+    }
+
+    if let Some(config_dir) = config_path.parent() {
+        push_unique_path(&mut dirs, config_dir.join(".agent-harness").join("agents"));
+    }
+
+    dirs
+}
+
+fn instruction_search_paths(config_path: &Path) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+
+    for base in discovery_search_bases(config_path) {
+        push_unique_path(&mut paths, base.join("AGENTS.md"));
+    }
+
+    if let Some(config_dir) = config_path.parent() {
+        push_unique_path(&mut paths, config_dir.join("AGENTS.md"));
+    }
+
+    paths
+}
+
+fn discovery_search_bases(config_path: &Path) -> Vec<PathBuf> {
+    let mut bases = Vec::new();
+
+    if let Ok(cwd) = env::current_dir() {
+        for base in project_search_bases(&cwd) {
+            push_unique_path(&mut bases, base);
+        }
+    }
+
+    if let Some(config_dir) = config_path.parent() {
+        for base in project_search_bases(config_dir) {
+            push_unique_path(&mut bases, base);
+        }
+    }
+
+    if bases.is_empty() {
+        bases.push(PathBuf::from("."));
+    }
+
+    bases
+}
+
+fn project_search_bases(start: &Path) -> Vec<PathBuf> {
+    let ancestors = start.ancestors().map(Path::to_path_buf).collect::<Vec<_>>();
+    if let Some(index) = ancestors.iter().position(|path| path.join(".git").exists()) {
+        return ancestors.into_iter().take(index + 1).collect();
+    }
+    vec![start.to_path_buf()]
+}
+
+fn push_unique_path(paths: &mut Vec<PathBuf>, candidate: PathBuf) {
+    if !paths.iter().any(|existing| existing == &candidate) {
+        paths.push(candidate);
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -812,13 +1330,17 @@ impl ProviderConfig {
 pub struct OpenAiCompatibleProviderConfig {
     #[serde(default)]
     pub name: Option<String>,
-    #[serde(default, alias = "baseUrl")]
+    #[serde(rename = "baseURL", default, alias = "base_url", alias = "baseUrl")]
     pub base_url: String,
-    #[serde(default, alias = "apiKey")]
+    #[serde(rename = "apiKey", default, alias = "api_key")]
     pub api_key: String,
-    #[serde(default = "default_provider_timeout_ms", alias = "timeoutMs")]
+    #[serde(
+        rename = "timeoutMs",
+        default = "default_provider_timeout_ms",
+        alias = "timeout_ms"
+    )]
     pub timeout_ms: u64,
-    #[serde(default, alias = "apiMode")]
+    #[serde(rename = "apiMode", default, alias = "api_mode")]
     pub api_mode: OpenAiApiMode,
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
@@ -884,13 +1406,13 @@ impl OpenAiCompatibleProviderConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
 pub struct OpenAiCompatibleProviderOptions {
-    #[serde(default, alias = "baseURL", alias = "baseUrl")]
+    #[serde(rename = "baseURL", default, alias = "base_url", alias = "baseUrl")]
     pub base_url: Option<String>,
-    #[serde(default, alias = "apiKey")]
+    #[serde(rename = "apiKey", default, alias = "api_key")]
     pub api_key: Option<String>,
-    #[serde(default, alias = "apiMode")]
+    #[serde(rename = "apiMode", default, alias = "api_mode")]
     pub api_mode: Option<OpenAiApiMode>,
-    #[serde(default, alias = "timeoutMs")]
+    #[serde(rename = "timeoutMs", default, alias = "timeout_ms")]
     pub timeout_ms: Option<u64>,
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
@@ -910,7 +1432,7 @@ pub enum OpenAiApiMode {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ModelConfig {
-    #[serde(alias = "displayName", alias = "name")]
+    #[serde(rename = "name", alias = "display_name", alias = "displayName")]
     pub display_name: String,
     #[serde(default)]
     pub metadata: ModelMetadataConfig,
@@ -925,7 +1447,12 @@ pub struct ModelConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ModelVariantConfig {
-    #[serde(default, alias = "displayName", alias = "name")]
+    #[serde(
+        rename = "name",
+        default,
+        alias = "display_name",
+        alias = "displayName"
+    )]
     pub display_name: Option<String>,
     #[serde(default)]
     pub metadata: ModelVariantMetadataConfig,
@@ -1055,7 +1582,10 @@ pub struct ProfileConfig {
     /// There is no separate hardcoded runtime iteration cap beyond this setting.
     #[serde(default = "default_max_iters", alias = "maxIters")]
     pub max_iters: usize,
-    #[serde(default, alias = "toolFailureMode")]
+    #[serde(
+        default = "default_runtime_tool_failure_mode",
+        alias = "toolFailureMode"
+    )]
     pub tool_failure_mode: ToolFailureMode,
     #[serde(default, alias = "planMode")]
     pub plan_mode: bool,
@@ -1104,6 +1634,10 @@ pub enum ToolFailureMode {
 
 fn default_max_iters() -> usize {
     12
+}
+
+fn default_runtime_tool_failure_mode() -> ToolFailureMode {
+    ToolFailureMode::ContinueAsToolMessage
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1320,19 +1854,9 @@ impl<'de> Deserialize<'de> for McpServerConfig {
     where
         D: Deserializer<'de>,
     {
-        let raw = RawMcpServerConfig::deserialize(deserializer)?;
-        Ok(match raw {
-            RawMcpServerConfig::Harness(config) => config.into_runtime(),
-            RawMcpServerConfig::Opencode(config) => config.into_runtime(),
-        })
+        let raw = HarnessTaggedMcpServerConfig::deserialize(deserializer)?;
+        Ok(raw.into_runtime())
     }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum RawMcpServerConfig {
-    Harness(HarnessTaggedMcpServerConfig),
-    Opencode(OpencodeTaggedMcpServerConfig),
 }
 
 #[derive(Debug, Deserialize)]
@@ -1401,73 +1925,6 @@ impl HarnessTaggedMcpServerConfig {
     }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
-enum OpencodeTaggedMcpServerConfig {
-    Local {
-        command: Vec<String>,
-        #[serde(default, alias = "env")]
-        environment: BTreeMap<String, String>,
-        #[serde(default)]
-        cwd: Option<PathBuf>,
-        #[serde(
-            default = "default_mcp_timeout_secs",
-            alias = "timeoutSecs",
-            alias = "timeout"
-        )]
-        timeout_secs: u64,
-        #[serde(default = "default_mcp_enabled")]
-        enabled: bool,
-    },
-    Remote {
-        url: String,
-        #[serde(default)]
-        headers: BTreeMap<String, String>,
-        #[serde(default, rename = "oauth")]
-        _oauth: Option<serde_json::Value>,
-        #[serde(
-            default = "default_mcp_timeout_secs",
-            alias = "timeoutSecs",
-            alias = "timeout"
-        )]
-        timeout_secs: u64,
-        #[serde(default = "default_mcp_enabled")]
-        enabled: bool,
-    },
-}
-
-impl OpencodeTaggedMcpServerConfig {
-    fn into_runtime(self) -> McpServerConfig {
-        match self {
-            Self::Local {
-                command,
-                environment,
-                cwd,
-                timeout_secs,
-                enabled,
-            } => McpServerConfig::Stdio {
-                command,
-                env: environment,
-                cwd,
-                timeout_secs,
-                enabled,
-            },
-            Self::Remote {
-                url,
-                headers,
-                _oauth: _,
-                timeout_secs,
-                enabled,
-            } => McpServerConfig::Http {
-                endpoint: url,
-                headers,
-                timeout_secs,
-                enabled,
-            },
-        }
-    }
-}
-
 fn default_session_dir() -> PathBuf {
     PathBuf::from(".agent-harness/sessions")
 }
@@ -1490,18 +1947,13 @@ fn default_skills_walk_to_git_root() -> bool {
 
 fn default_skills_project_roots() -> Vec<PathBuf> {
     vec![
-        PathBuf::from(".opencode/skills"),
-        PathBuf::from(".claude/skills"),
-        PathBuf::from(".agents/skills"),
+        PathBuf::from(".agent-harness/skills"),
+        PathBuf::from(".codex/skills"),
     ]
 }
 
 fn default_skills_global_roots() -> Vec<PathBuf> {
-    vec![
-        PathBuf::from("~/.config/opencode/skills"),
-        PathBuf::from("~/.claude/skills"),
-        PathBuf::from("~/.agents/skills"),
-    ]
+    vec![PathBuf::from("~/.config/agent-harness/skills")]
 }
 
 fn default_skills_permissions() -> BTreeMap<String, PermissionMode> {
@@ -1560,33 +2012,38 @@ fn default_provider_timeout_ms() -> u64 {
     60_000
 }
 
-fn is_loopback_cliproxy_base_url(base_url: &str) -> bool {
-    let lowered = base_url.trim().to_ascii_lowercase();
-    lowered.contains("127.0.0.1:8317")
-        || lowered.contains("localhost:8317")
-        || lowered.contains("[::1]:8317")
-}
-
-fn resolve_openai_compatible_api_key(api_key: &str, base_url: &str) -> Result<String, ConfigError> {
-    apply_cliproxy_loopback_openai_fallback(resolve_env_reference(api_key), base_url)
-}
-
-fn apply_cliproxy_loopback_openai_fallback(
-    resolved_api_key: Result<String, ConfigError>,
-    base_url: &str,
-) -> Result<String, ConfigError> {
-    match resolved_api_key {
-        Ok(api_key) => Ok(api_key),
-        Err(ConfigError::MissingEnvironmentVariable(missing_env))
-            if missing_env == "OPENAI_API_KEY" && is_loopback_cliproxy_base_url(base_url) =>
-        {
-            Ok(CLIPROXY_LOOPBACK_DEFAULT_API_KEY.to_string())
-        }
-        Err(err) => Err(err),
+fn resolve_string_reference(value: &str, base_dir: Option<&Path>) -> Result<String, ConfigError> {
+    if let Some(reference) = value
+        .strip_prefix("{env:")
+        .and_then(|reference| reference.strip_suffix('}'))
+    {
+        return Ok(env::var(reference).unwrap_or_default());
     }
-}
 
-fn resolve_env_reference(value: &str) -> Result<String, ConfigError> {
+    if let Some(reference) = value
+        .strip_prefix("{file:")
+        .and_then(|reference| reference.strip_suffix('}'))
+    {
+        let trimmed = reference.trim();
+        if trimmed.is_empty() {
+            return Ok(value.to_string());
+        }
+
+        let path = PathBuf::from(trimmed);
+        let resolved_path = if path.is_absolute() {
+            path
+        } else if let Some(base_dir) = base_dir {
+            base_dir.join(path)
+        } else {
+            path
+        };
+
+        return fs::read_to_string(&resolved_path).map_err(|source| ConfigError::ReadFile {
+            path: resolved_path.display().to_string(),
+            source,
+        });
+    }
+
     if !(value.starts_with("${") && value.ends_with('}')) {
         return Ok(value.to_string());
     }
@@ -1614,15 +2071,41 @@ fn resolve_env_reference(value: &str) -> Result<String, ConfigError> {
     }
 }
 
-const REQUIRED_CONFIG_SECTIONS: [&str; 4] = ["integrations", "permissions", "providers", "runtime"];
+fn resolve_config_value_references(
+    value: &mut serde_json::Value,
+    base_dir: Option<&Path>,
+) -> Result<(), ConfigError> {
+    match value {
+        serde_json::Value::String(string) => {
+            *string = resolve_string_reference(string, base_dir)?;
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                resolve_config_value_references(value, base_dir)?;
+            }
+        }
+        serde_json::Value::Object(object) => {
+            for value in object.values_mut() {
+                resolve_config_value_references(value, base_dir)?;
+            }
+        }
+        serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => {}
+    }
 
-const ALLOWED_TOP_LEVEL_CONFIG_KEYS: [&str; 14] = [
+    Ok(())
+}
+
+const REQUIRED_INTERNAL_CONFIG_SECTIONS: [&str; 4] =
+    ["integrations", "permissions", "providers", "runtime"];
+
+const ALLOWED_INTERNAL_TOP_LEVEL_CONFIG_KEYS: [&str; 15] = [
     "$schema",
-    "agent",
     "agents",
     "defaultAgent",
     "default_agent",
     "hooks",
+    "hashlineEdit",
+    "hashline_edit",
     "integrations",
     "lsp",
     "logging",
@@ -1633,51 +2116,43 @@ const ALLOWED_TOP_LEVEL_CONFIG_KEYS: [&str; 14] = [
     "ui",
 ];
 
-const RETIRED_TOP_LEVEL_CONFIG_KEYS: [(&str, &str); 5] = [
-    (
-        "backgroundTask",
-        "move its fields under `runtime.background_tasks`",
-    ),
-    ("categories", "rename it to `agents`"),
-    (
-        "deterministic",
-        "move its fields under `runtime.deterministic`",
-    ),
-    ("paths", "move `paths.session_dir` to `runtime.session_dir`"),
-    ("profiles", "rename it to `agents`"),
+const ALLOWED_PUBLIC_TOP_LEVEL_CONFIG_KEYS: [&str; 28] = [
+    "$schema",
+    "agent",
+    "agents",
+    "backgroundTask",
+    "categories",
+    "defaultAgent",
+    "default_agent",
+    "deterministic",
+    "hashlineEdit",
+    "hashline_edit",
+    "hooks",
+    "instructions",
+    "integrations",
+    "logging",
+    "lsp",
+    "mcp",
+    "model",
+    "paths",
+    "permission",
+    "permissions",
+    "profiles",
+    "provider",
+    "providers",
+    "runtime",
+    "skills",
+    "smallModel",
+    "small_model",
+    "ui",
 ];
 
-fn validate_root_config_object(
+fn validate_public_root_config_object(
     object: &serde_json::Map<String, serde_json::Value>,
 ) -> Result<(), ConfigError> {
-    let retired = RETIRED_TOP_LEVEL_CONFIG_KEYS
-        .iter()
-        .filter(|(key, _)| object.contains_key(*key))
-        .map(|(key, guidance)| format!("top-level `{key}` was retired; {guidance}"))
-        .collect::<Vec<_>>();
-    if !retired.is_empty() {
-        return Err(ConfigError::RetiredConfigKeys(format!(
-            "retired config keys detected: {}",
-            retired.join("; ")
-        )));
-    }
-
-    let mut missing = REQUIRED_CONFIG_SECTIONS
-        .iter()
-        .copied()
-        .filter(|key| !object.contains_key(*key))
-        .collect::<Vec<_>>();
-    if !object.contains_key("agent") && !object.contains_key("agents") {
-        missing.push("agent/agents");
-    }
-    if !missing.is_empty() {
-        missing.sort_unstable();
-        return Err(ConfigError::MissingRequiredSections(missing.join(", ")));
-    }
-
     let mut unknown = object
         .keys()
-        .filter(|key| !ALLOWED_TOP_LEVEL_CONFIG_KEYS.contains(&key.as_str()))
+        .filter(|key| !ALLOWED_PUBLIC_TOP_LEVEL_CONFIG_KEYS.contains(&key.as_str()))
         .map(String::as_str)
         .collect::<Vec<_>>();
     if !unknown.is_empty() {
@@ -1685,15 +2160,538 @@ fn validate_root_config_object(
         return Err(ConfigError::UnknownTopLevelKeys(format!(
             "unknown top-level config keys: {}; expected only {}",
             format_backticked_list(unknown.iter().copied()),
-            format_backticked_list(ALLOWED_TOP_LEVEL_CONFIG_KEYS)
+            format_backticked_list(ALLOWED_PUBLIC_TOP_LEVEL_CONFIG_KEYS)
         )));
     }
 
     Ok(())
 }
 
+fn validate_internal_root_config_object(
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> Result<(), ConfigError> {
+    validate_internal_root_config_object_internal(object, true)
+}
+
+fn validate_internal_root_config_object_internal(
+    object: &serde_json::Map<String, serde_json::Value>,
+    require_required_sections: bool,
+) -> Result<(), ConfigError> {
+    if require_required_sections {
+        let mut missing = REQUIRED_INTERNAL_CONFIG_SECTIONS
+            .iter()
+            .copied()
+            .filter(|key| !object.contains_key(*key))
+            .collect::<Vec<_>>();
+        if !object.contains_key("agents") {
+            missing.push("agents");
+        }
+        if !missing.is_empty() {
+            missing.sort_unstable();
+            return Err(ConfigError::MissingRequiredSections(missing.join(", ")));
+        }
+    }
+
+    let mut unknown = object
+        .keys()
+        .filter(|key| !ALLOWED_INTERNAL_TOP_LEVEL_CONFIG_KEYS.contains(&key.as_str()))
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    if !unknown.is_empty() {
+        unknown.sort_unstable();
+        return Err(ConfigError::UnknownTopLevelKeys(format!(
+            "unknown top-level config keys: {}; expected only {}",
+            format_backticked_list(unknown.iter().copied()),
+            format_backticked_list(ALLOWED_INTERNAL_TOP_LEVEL_CONFIG_KEYS)
+        )));
+    }
+
+    Ok(())
+}
+
+fn default_internal_permissions_config() -> PermissionsConfig {
+    PermissionsConfig {
+        defaults: PermissionDefaultsConfig {
+            edit: PermissionMode::Ask,
+            shell: PermissionMode::Ask,
+            network: PermissionMode::Ask,
+            question: Some(PermissionMode::Ask),
+            task: Some(PermissionMode::Ask),
+            webfetch: Some(PermissionMode::Ask),
+            websearch: Some(PermissionMode::Ask),
+            codesearch: Some(PermissionMode::Ask),
+            lsp: Some(PermissionMode::Ask),
+        },
+        shell_allowlist: ShellAllowlist::default(),
+    }
+}
+
+fn default_internal_integrations_config() -> IntegrationsConfig {
+    IntegrationsConfig {
+        remote_search: RemoteSearchConfig::default(),
+        mcp: McpConfig::default(),
+    }
+}
+
+fn default_shipped_agents(
+    model_ref: &str,
+    small_model_ref: Option<&str>,
+) -> BTreeMap<String, ProfileConfig> {
+    let small_model_ref = small_model_ref.unwrap_or(model_ref).to_string();
+    BTreeMap::from([
+        (
+            "build".to_string(),
+            ProfileConfig {
+                description: "Implementation lane: execute an approved plan and verify the result."
+                    .to_string(),
+                system_prompt: None,
+                model_ref: model_ref.to_string(),
+                variant: None,
+                temperature: None,
+                permissions: Some(ProfilePermissions {
+                    edit: Some(PermissionMode::Allow),
+                    shell: Some(PermissionMode::Allow),
+                    network: Some(PermissionMode::Allow),
+                    question: Some(PermissionMode::Allow),
+                    task: Some(PermissionMode::Allow),
+                    webfetch: Some(PermissionMode::Allow),
+                    websearch: Some(PermissionMode::Allow),
+                    codesearch: Some(PermissionMode::Allow),
+                    lsp: Some(PermissionMode::Allow),
+                }),
+                max_iters: 24,
+                tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
+                plan_mode: false,
+                exit_target_profile: None,
+                tools: vec![
+                    "todowrite",
+                    "todoread",
+                    "question",
+                    "skill",
+                    "websearch",
+                    "webfetch",
+                    "codesearch",
+                    "lsp",
+                    "read",
+                    "glob",
+                    "grep",
+                    "list",
+                    "write",
+                    "edit",
+                    "bash",
+                    "batch",
+                    "task",
+                ]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            },
+        ),
+        (
+            "plan".to_string(),
+            ProfileConfig {
+                description: "Planning lane: produce an approved plan and hand off to build."
+                    .to_string(),
+                system_prompt: None,
+                model_ref: small_model_ref.clone(),
+                variant: None,
+                temperature: None,
+                permissions: Some(ProfilePermissions {
+                    edit: Some(PermissionMode::Deny),
+                    shell: Some(PermissionMode::Deny),
+                    network: Some(PermissionMode::Allow),
+                    question: Some(PermissionMode::Allow),
+                    task: Some(PermissionMode::Deny),
+                    webfetch: Some(PermissionMode::Allow),
+                    websearch: Some(PermissionMode::Allow),
+                    codesearch: Some(PermissionMode::Allow),
+                    lsp: Some(PermissionMode::Allow),
+                }),
+                max_iters: 16,
+                tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
+                plan_mode: true,
+                exit_target_profile: Some("build".to_string()),
+                tools: vec![
+                    "todowrite",
+                    "todoread",
+                    "question",
+                    "skill",
+                    "websearch",
+                    "webfetch",
+                    "codesearch",
+                    "lsp",
+                    "read",
+                    "glob",
+                    "grep",
+                    "list",
+                    "batch",
+                    "plan_exit",
+                ]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            },
+        ),
+        (
+            "tool_audit".to_string(),
+            ProfileConfig {
+                description:
+                    "Evidence-first signoff profile for validating the shipped tool surface."
+                        .to_string(),
+                system_prompt: None,
+                model_ref: small_model_ref,
+                variant: None,
+                temperature: None,
+                permissions: None,
+                max_iters: 20,
+                tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
+                plan_mode: false,
+                exit_target_profile: None,
+                tools: vec![
+                    "skill",
+                    "question",
+                    "lsp",
+                    "task",
+                    "batch",
+                    "invalid",
+                    "todowrite",
+                    "todoread",
+                ]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            },
+        ),
+    ])
+}
+
+fn public_agent_to_profile(
+    name: &str,
+    agent: PublicAgentConfig,
+    default_model_ref: Option<&str>,
+    small_model_ref: Option<&str>,
+    base: Option<ProfileConfig>,
+) -> Result<ProfileConfig, ConfigError> {
+    let selected_model = agent.model.clone().or_else(|| {
+        if agent.use_small_model {
+            small_model_ref.map(str::to_string)
+        } else {
+            default_model_ref.map(str::to_string)
+        }
+    });
+    let description = agent
+        .description
+        .or_else(|| base.as_ref().map(|profile| profile.description.clone()))
+        .ok_or_else(|| {
+            ConfigError::InvalidReference(format!(
+                "agent `{name}` is missing `description`; provide `agent.{name}.description`"
+            ))
+        })?;
+    let model_ref = selected_model
+        .or_else(|| base.as_ref().map(|profile| profile.model_ref.clone()))
+        .ok_or_else(|| {
+            ConfigError::InvalidReference(format!(
+                "agent `{name}` is missing `model`; provide `agent.{name}.model`, set `small_model`, or add a top-level `model`"
+            ))
+        })?;
+
+    Ok(ProfileConfig {
+        description,
+        system_prompt: agent.system_prompt.or_else(|| {
+            base.as_ref()
+                .and_then(|profile| profile.system_prompt.clone())
+        }),
+        model_ref,
+        variant: agent
+            .variant
+            .or_else(|| base.as_ref().and_then(|profile| profile.variant.clone())),
+        temperature: agent
+            .temperature
+            .or_else(|| base.as_ref().and_then(|profile| profile.temperature)),
+        permissions: agent
+            .permission
+            .map(translate_public_profile_permissions)
+            .transpose()?
+            .or_else(|| {
+                base.as_ref()
+                    .and_then(|profile| profile.permissions.clone())
+            }),
+        max_iters: if agent.max_iters == default_max_iters() {
+            base.as_ref()
+                .map(|profile| profile.max_iters)
+                .unwrap_or(agent.max_iters)
+        } else {
+            agent.max_iters
+        },
+        tool_failure_mode: if matches!(agent.tool_failure_mode, ToolFailureMode::FailTurn) {
+            base.as_ref()
+                .map(|profile| profile.tool_failure_mode)
+                .unwrap_or(agent.tool_failure_mode)
+        } else {
+            agent.tool_failure_mode
+        },
+        plan_mode: agent.plan_mode
+            || base
+                .as_ref()
+                .map(|profile| profile.plan_mode)
+                .unwrap_or(false),
+        exit_target_profile: agent.exit_target_profile.or_else(|| {
+            base.as_ref()
+                .and_then(|profile| profile.exit_target_profile.clone())
+        }),
+        tools: if agent.tools.is_empty() {
+            base.as_ref()
+                .map(|profile| profile.tools.clone())
+                .unwrap_or_default()
+        } else {
+            agent.tools
+        },
+    })
+}
+
+fn translate_public_profile_permissions(
+    permissions: PublicProfilePermissions,
+) -> Result<ProfilePermissions, ConfigError> {
+    serde_json::from_value(serde_json::json!({
+        "edit": permissions.edit,
+        "shell": permissions.bash,
+        "network": permissions.network,
+        "question": permissions.question,
+        "task": permissions.task,
+        "webfetch": permissions.webfetch,
+        "websearch": permissions.websearch,
+        "codesearch": permissions.codesearch,
+        "lsp": permissions.lsp,
+    }))
+    .map_err(|err| ConfigError::ParseJson5(err.to_string()))
+}
+
+fn translate_public_permission_value(
+    value: serde_json::Value,
+) -> Result<serde_json::Value, ConfigError> {
+    if value
+        .as_object()
+        .map(|object| object.contains_key("defaults"))
+        .unwrap_or(false)
+    {
+        return Ok(value);
+    }
+
+    let parsed: PublicPermissionConfig =
+        serde_json::from_value(value).map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
+    let fallback = default_internal_permissions_config();
+
+    serde_json::to_value(PermissionsConfig {
+        defaults: PermissionDefaultsConfig {
+            edit: parsed.edit.unwrap_or(fallback.defaults.edit),
+            shell: parsed.bash.unwrap_or(fallback.defaults.shell),
+            network: parsed.network.unwrap_or(fallback.defaults.network),
+            question: parsed.question.or(fallback.defaults.question),
+            task: parsed.task.or(fallback.defaults.task),
+            webfetch: parsed.webfetch.or(fallback.defaults.webfetch),
+            websearch: parsed.websearch.or(fallback.defaults.websearch),
+            codesearch: parsed.codesearch.or(fallback.defaults.codesearch),
+            lsp: parsed.lsp.or(fallback.defaults.lsp),
+        },
+        shell_allowlist: parsed.shell_allowlist.unwrap_or(fallback.shell_allowlist),
+    })
+    .map_err(|err| ConfigError::ParseJson5(err.to_string()))
+}
+
+fn translate_public_runtime_root(
+    root: serde_json::Value,
+) -> Result<(serde_json::Value, Vec<String>), ConfigError> {
+    let object = root.as_object().ok_or(ConfigError::InvalidRootObject)?;
+    validate_public_root_config_object(object)?;
+
+    let mut translated = serde_json::Map::new();
+
+    if let Some(schema) = object.get("$schema").cloned() {
+        translated.insert("$schema".to_string(), schema);
+    }
+
+    let mut providers = serde_json::json!({});
+    if let Some(value) = object.get("providers") {
+        merge_config_value(&mut providers, value.clone());
+    }
+    if let Some(value) = object.get("provider") {
+        merge_config_value(&mut providers, value.clone());
+    }
+    translated.insert("providers".to_string(), providers);
+
+    let model = object
+        .get("model")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let small_model = object
+        .get("small_model")
+        .or_else(|| object.get("smallModel"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+
+    let mut agents = BTreeMap::new();
+    if let Some(value) = object.get("agents") {
+        let legacy: BTreeMap<String, ProfileConfig> = serde_json::from_value(value.clone())
+            .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
+        agents.extend(legacy);
+    }
+    for alias in ["categories", "profiles"] {
+        if let Some(value) = object.get(alias) {
+            let legacy: BTreeMap<String, ProfileConfig> = serde_json::from_value(value.clone())
+                .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
+            agents.extend(legacy);
+        }
+    }
+
+    let shipped = model
+        .as_deref()
+        .map(|default_model| default_shipped_agents(default_model, small_model.as_deref()))
+        .unwrap_or_default();
+
+    if let Some(value) = object.get("agent") {
+        let public_agents: BTreeMap<String, PublicAgentConfig> =
+            serde_json::from_value(value.clone())
+                .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
+        for (name, public_agent) in public_agents {
+            let base = agents.remove(&name).or_else(|| shipped.get(&name).cloned());
+            let profile = public_agent_to_profile(
+                &name,
+                public_agent,
+                model.as_deref(),
+                small_model.as_deref(),
+                base,
+            )?;
+            agents.insert(name, profile);
+        }
+    }
+    if agents.is_empty() && !shipped.is_empty() {
+        agents = shipped;
+    }
+
+    translated.insert(
+        "agents".to_string(),
+        serde_json::to_value(agents).map_err(|err| ConfigError::ParseJson5(err.to_string()))?,
+    );
+
+    if let Some(default_agent) = object
+        .get("default_agent")
+        .or_else(|| object.get("defaultAgent"))
+        .cloned()
+    {
+        translated.insert("default_agent".to_string(), default_agent);
+    }
+
+    let mut permissions = serde_json::to_value(default_internal_permissions_config())
+        .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
+    if let Some(value) = object.get("permissions") {
+        merge_config_value(&mut permissions, value.clone());
+    }
+    if let Some(value) = object.get("permission") {
+        merge_config_value(
+            &mut permissions,
+            translate_public_permission_value(value.clone())?,
+        );
+    }
+    translated.insert("permissions".to_string(), permissions);
+
+    let mut runtime = serde_json::json!({
+        "background_tasks": {
+            "default_concurrency": default_background_task_default_concurrency(),
+            "provider_concurrency": default_background_task_provider_concurrency(),
+            "model_concurrency": default_background_task_model_concurrency(),
+            "stale_timeout_ms": default_background_task_stale_timeout_ms(),
+            "message_staleness_timeout_ms": default_background_task_message_staleness_timeout_ms(),
+        },
+        "session_dir": default_session_dir(),
+        "permissions": {
+            "ask_timeout_ms": default_runtime_ask_timeout_ms(),
+        },
+        "prompt": {
+            "wait_timeout_ms": default_prompt_wait_timeout_ms(),
+        },
+        "deterministic": {
+            "enabled": false,
+            "seed": 42,
+        },
+    });
+    if let Some(value) = object.get("runtime") {
+        merge_config_value(&mut runtime, value.clone());
+    }
+    if let Some(value) = object.get("backgroundTask") {
+        if let Some(runtime_object) = runtime.as_object_mut() {
+            runtime_object.insert("background_tasks".to_string(), value.clone());
+        }
+    }
+    if let Some(value) = object.get("deterministic") {
+        if let Some(runtime_object) = runtime.as_object_mut() {
+            runtime_object.insert("deterministic".to_string(), value.clone());
+        }
+    }
+    if let Some(value) = object.get("paths") {
+        if let Some(session_dir) = value
+            .as_object()
+            .and_then(|paths| paths.get("session_dir").or_else(|| paths.get("sessionDir")))
+        {
+            if let Some(runtime_object) = runtime.as_object_mut() {
+                runtime_object.insert("session_dir".to_string(), session_dir.clone());
+            }
+        }
+    }
+    translated.insert("runtime".to_string(), runtime);
+
+    let mut integrations = serde_json::to_value(default_internal_integrations_config())
+        .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
+    if let Some(value) = object.get("integrations") {
+        merge_config_value(&mut integrations, value.clone());
+    }
+    if let Some(value) = object.get("mcp") {
+        let mcp_value = serde_json::json!({ "servers": value.clone() });
+        if let Some(integrations_object) = integrations.as_object_mut() {
+            match integrations_object.get_mut("mcp") {
+                Some(existing) => merge_config_value(existing, mcp_value),
+                None => {
+                    integrations_object.insert("mcp".to_string(), mcp_value);
+                }
+            }
+        }
+    }
+    translated.insert("integrations".to_string(), integrations);
+
+    for (key, value) in [
+        ("hooks", object.get("hooks")),
+        ("skills", object.get("skills")),
+        ("lsp", object.get("lsp")),
+        ("logging", object.get("logging")),
+        ("ui", object.get("ui")),
+        (
+            "hashline_edit",
+            object
+                .get("hashline_edit")
+                .or_else(|| object.get("hashlineEdit")),
+        ),
+    ] {
+        if let Some(value) = value {
+            translated.insert(key.to_string(), value.clone());
+        }
+    }
+
+    let instructions = object
+        .get("instructions")
+        .map(|value| {
+            serde_json::from_value::<InstructionList>(value.clone())
+                .map(|parsed| parsed.entries())
+                .map_err(|err| ConfigError::ParseJson5(err.to_string()))
+        })
+        .transpose()?
+        .unwrap_or_default();
+
+    Ok((serde_json::Value::Object(translated), instructions))
+}
+
 fn parse_model_ref(model_ref: &str) -> Option<(&str, &str)> {
-    let (provider_name, model_name) = model_ref.split_once(':')?;
+    let (provider_name, model_name) = model_ref
+        .split_once(':')
+        .or_else(|| model_ref.split_once('/'))?;
     if provider_name.is_empty() || model_name.is_empty() {
         return None;
     }
@@ -2368,21 +3366,102 @@ pub fn load_config_from_file(path: &Path) -> Result<HarnessConfig, ConfigError> 
         source,
     })?;
 
-    load_config_from_str(&raw)
+    let (parsed, configured_instructions) =
+        parse_config_from_str(&raw, path.parent().or(Some(Path::new("."))))?;
+    finalize_loaded_config(parsed, Some(path), configured_instructions)
 }
 
 pub fn load_config_from_str(raw: &str) -> Result<HarnessConfig, ConfigError> {
-    let root: serde_json::Value =
-        json5::from_str(raw).map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
+    let (parsed, configured_instructions) = parse_config_from_str(raw, None)?;
+    finalize_loaded_config(parsed, None, configured_instructions)
+}
 
+fn parse_config_from_str(
+    raw: &str,
+    base_dir: Option<&Path>,
+) -> Result<(HarnessConfig, Vec<String>), ConfigError> {
+    let root = parse_public_config_value_from_str(raw, base_dir)?;
+    let (translated, configured_instructions) = translate_public_runtime_root(root)?;
+    Ok((
+        parse_internal_config_from_value(translated)?,
+        configured_instructions,
+    ))
+}
+
+pub fn load_resolved_config(
+    explicit_path: Option<&Path>,
+) -> Result<Option<LoadedConfig>, ConfigError> {
+    let runtime_paths = resolve_config_layer_paths(explicit_path);
+    let runtime_content = env::var("HARNESS_CONFIG_CONTENT").ok();
+    if runtime_paths.is_empty() && runtime_content.is_none() {
+        return Ok(None);
+    }
+
+    let tui_paths = resolve_tui_config_layer_paths(explicit_path);
+    let config =
+        load_resolved_config_from_paths(&runtime_paths, runtime_content.as_deref(), &tui_paths)?;
+    let mut paths = runtime_paths.clone();
+    for path in tui_paths {
+        if !paths.iter().any(|existing| existing == &path) {
+            paths.push(path);
+        }
+    }
+
+    Ok(Some(LoadedConfig { config, paths }))
+}
+
+pub fn resolve_config_layer_paths(explicit_path: Option<&Path>) -> Vec<PathBuf> {
+    if let Some(path) = explicit_path {
+        return vec![path.to_path_buf()];
+    }
+
+    let mut paths = Vec::new();
+
+    if let Some(global_path) = discover_xdg_runtime_config_path() {
+        push_unique_path(&mut paths, global_path);
+    }
+
+    if let Some(env_path) = discover_runtime_config_env_path() {
+        push_unique_path(&mut paths, env_path);
+    }
+
+    for local_path in discover_project_runtime_config_paths(
+        env::current_dir()
+            .ok()
+            .as_deref()
+            .unwrap_or_else(|| Path::new(".")),
+    ) {
+        push_unique_path(&mut paths, local_path);
+    }
+
+    paths
+}
+
+fn parse_internal_config_from_value(root: serde_json::Value) -> Result<HarnessConfig, ConfigError> {
     let object = root.as_object().ok_or(ConfigError::InvalidRootObject)?;
-    validate_root_config_object(object)?;
+    validate_internal_root_config_object(object)?;
 
     let mut parsed: HarnessConfig =
-        json5::from_str(raw).map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
+        serde_json::from_value(root).map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
     parsed.normalize_public_config_aliases()?;
     parsed.sync_derived_runtime_sections();
-    parsed.apply_env_substitutions()?;
+    Ok(parsed)
+}
+
+fn finalize_loaded_config(
+    mut parsed: HarnessConfig,
+    config_path: Option<&Path>,
+    configured_instructions: Vec<String>,
+) -> Result<HarnessConfig, ConfigError> {
+    if let Some(path) = config_path {
+        resolve_discovered_prompt_assets(&mut parsed, path)?;
+    }
+    if !configured_instructions.is_empty() {
+        let mut resolved =
+            resolve_configured_instruction_entries(&configured_instructions, config_path)?;
+        resolved.extend(parsed.instruction_files.clone());
+        parsed.instruction_files = resolved;
+    }
     parsed.validate_references()?;
     refresh_hook_runtime_config_registry(&parsed);
     refresh_skills_config_registry(&parsed);
@@ -2390,6 +3469,147 @@ pub fn load_config_from_str(raw: &str) -> Result<HarnessConfig, ConfigError> {
     refresh_integrations_config_registry(&parsed);
     refresh_profile_model_metadata_registry(&parsed)?;
     Ok(parsed)
+}
+
+fn load_resolved_config_from_paths(
+    runtime_paths: &[PathBuf],
+    runtime_content: Option<&str>,
+    tui_paths: &[PathBuf],
+) -> Result<HarnessConfig, ConfigError> {
+    let mut merged: Option<serde_json::Value> = None;
+    let mut configured_instructions = Vec::new();
+
+    for path in runtime_paths {
+        let raw = fs::read_to_string(path).map_err(|source| ConfigError::ReadFile {
+            path: path.display().to_string(),
+            source,
+        })?;
+        let root = parse_public_config_value_from_str(&raw, path.parent())?;
+        let (fragment, instructions) = translate_public_runtime_root(root)?;
+        configured_instructions.extend(instructions);
+        match &mut merged {
+            Some(existing) => merge_config_value(existing, fragment),
+            None => merged = Some(fragment),
+        }
+    }
+
+    if let Some(runtime_content) = runtime_content {
+        let root = parse_public_config_value_from_str(runtime_content, None)?;
+        let (fragment, instructions) = translate_public_runtime_root(root)?;
+        configured_instructions.extend(instructions);
+        match &mut merged {
+            Some(existing) => merge_config_value(existing, fragment),
+            None => merged = Some(fragment),
+        }
+    }
+
+    let merged = merged.ok_or_else(|| ConfigError::ReadFile {
+        path: "<merged-config>".to_string(),
+        source: std::io::Error::new(std::io::ErrorKind::NotFound, "no config files resolved"),
+    })?;
+    let primary_path = runtime_paths.last().map(PathBuf::as_path);
+    let mut parsed = parse_internal_config_from_value(merged)?;
+    if !tui_paths.is_empty() {
+        let tui = load_merged_tui_config_from_files(tui_paths)?;
+        apply_public_tui_config(&mut parsed, tui);
+    }
+    finalize_loaded_config(parsed, primary_path, configured_instructions)
+}
+
+fn parse_public_config_value_from_str(
+    raw: &str,
+    base_dir: Option<&Path>,
+) -> Result<serde_json::Value, ConfigError> {
+    let mut root: serde_json::Value =
+        json5::from_str(raw).map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
+
+    let object = root.as_object().ok_or(ConfigError::InvalidRootObject)?;
+    validate_public_root_config_object(object)?;
+    resolve_config_value_references(&mut root, base_dir)?;
+    Ok(root)
+}
+
+fn load_merged_tui_config_from_files(paths: &[PathBuf]) -> Result<PublicTuiConfig, ConfigError> {
+    let mut merged: Option<serde_json::Value> = None;
+
+    for path in paths {
+        let raw = fs::read_to_string(path).map_err(|source| ConfigError::ReadFile {
+            path: path.display().to_string(),
+            source,
+        })?;
+        let fragment: serde_json::Value =
+            json5::from_str(&raw).map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
+        match &mut merged {
+            Some(existing) => merge_config_value(existing, fragment),
+            None => merged = Some(fragment),
+        }
+    }
+
+    serde_json::from_value(merged.unwrap_or_else(|| serde_json::json!({})))
+        .map_err(|err| ConfigError::ParseJson5(err.to_string()))
+}
+
+fn apply_public_tui_config(parsed: &mut HarnessConfig, tui: PublicTuiConfig) {
+    parsed.ui.keybindings = tui.keybindings;
+}
+
+fn resolve_configured_instruction_entries(
+    entries: &[String],
+    config_path: Option<&Path>,
+) -> Result<Vec<InstructionFile>, ConfigError> {
+    let mut resolved = Vec::new();
+    let base_dir = config_path.and_then(Path::parent);
+
+    for (index, entry) in entries.iter().enumerate() {
+        let trimmed = entry.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let candidate = base_dir
+            .map(|base| base.join(trimmed))
+            .filter(|path| path.exists())
+            .or_else(|| {
+                let path = PathBuf::from(trimmed);
+                path.exists().then_some(path)
+            });
+
+        if let Some(path) = candidate {
+            let content =
+                fs::read_to_string(&path).map_err(|source| ConfigError::ReadMarkdownAsset {
+                    path: path.display().to_string(),
+                    source,
+                })?;
+            let content = content.trim().to_string();
+            if !content.is_empty() {
+                resolved.push(InstructionFile { path, content });
+            }
+            continue;
+        }
+
+        resolved.push(InstructionFile {
+            path: PathBuf::from(format!("<config instructions {}>", index + 1)),
+            content: trimmed.to_string(),
+        });
+    }
+
+    Ok(resolved)
+}
+
+fn merge_config_value(base: &mut serde_json::Value, overlay: serde_json::Value) {
+    match (base, overlay) {
+        (serde_json::Value::Object(base_map), serde_json::Value::Object(overlay_map)) => {
+            for (key, value) in overlay_map {
+                match base_map.get_mut(&key) {
+                    Some(existing) => merge_config_value(existing, value),
+                    None => {
+                        base_map.insert(key, value);
+                    }
+                }
+            }
+        }
+        (base_slot, overlay_value) => *base_slot = overlay_value,
+    }
 }
 
 fn is_builtin_lsp_server(name: &str) -> bool {
@@ -2400,7 +3620,13 @@ fn is_builtin_lsp_server(name: &str) -> bool {
 }
 
 pub fn harness_schema_pretty_json() -> Result<String, ConfigError> {
-    let schema = schema_for!(HarnessConfig);
+    let schema = schema_for!(PublicRuntimeConfig);
+    serde_json::to_string_pretty(&schema)
+        .map_err(|err| ConfigError::SerializeSchema(err.to_string()))
+}
+
+pub fn harness_tui_schema_pretty_json() -> Result<String, ConfigError> {
+    let schema = schema_for!(PublicTuiConfig);
     serde_json::to_string_pretty(&schema)
         .map_err(|err| ConfigError::SerializeSchema(err.to_string()))
 }
@@ -2410,17 +3636,118 @@ pub fn resolve_config_path(explicit_path: Option<&Path>) -> Option<PathBuf> {
         return Some(path.to_path_buf());
     }
 
-    let cwd_candidate = PathBuf::from("harness.jsonc");
-    if cwd_candidate.exists() {
-        return Some(cwd_candidate);
+    resolve_config_layer_paths(None).into_iter().last()
+}
+
+fn resolve_tui_config_layer_paths(explicit_path: Option<&Path>) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+
+    if let Some(global_path) = discover_xdg_tui_config_path() {
+        push_unique_path(&mut paths, global_path);
     }
 
-    let base = env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")));
+    if let Some(env_path) = discover_tui_config_env_path() {
+        push_unique_path(&mut paths, env_path);
+    }
 
-    let candidate = base.map(|base| base.join("harness").join("config.jsonc"));
-    candidate.filter(|path| path.exists())
+    let local_base = env::current_dir().unwrap_or_else(|_| {
+        explicit_path
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."))
+    });
+    for local_path in discover_project_tui_config_paths(&local_base) {
+        push_unique_path(&mut paths, local_path);
+    }
+
+    paths
+}
+
+fn discover_xdg_runtime_config_path() -> Option<PathBuf> {
+    config_home_dir().and_then(|base| {
+        [
+            base.join("harness").join("harness.jsonc"),
+            base.join("harness").join("harness.json"),
+            base.join("harness").join("config.jsonc"),
+        ]
+        .into_iter()
+        .find(|path| path.exists())
+    })
+}
+
+fn discover_xdg_tui_config_path() -> Option<PathBuf> {
+    config_home_dir().and_then(|base| {
+        [
+            base.join("harness").join("tui.jsonc"),
+            base.join("harness").join("tui.json"),
+        ]
+        .into_iter()
+        .find(|path| path.exists())
+    })
+}
+
+fn config_home_dir() -> Option<PathBuf> {
+    env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
+}
+
+fn discover_runtime_config_env_path() -> Option<PathBuf> {
+    env::var_os("HARNESS_CONFIG")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
+fn discover_tui_config_env_path() -> Option<PathBuf> {
+    env::var_os("HARNESS_TUI_CONFIG")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
+fn discover_project_runtime_config_paths(start: &Path) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+
+    for base in project_config_search_bases(start) {
+        for relative in [
+            Path::new("harness.jsonc"),
+            Path::new("harness.json"),
+            Path::new(".agent-harness/harness.jsonc"),
+            Path::new(".agent-harness/harness.json"),
+        ] {
+            let candidate = base.join(relative);
+            if candidate.exists() {
+                paths.push(candidate);
+            }
+        }
+    }
+
+    paths
+}
+
+fn discover_project_tui_config_paths(start: &Path) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+
+    for base in project_config_search_bases(start) {
+        for relative in [
+            Path::new("tui.jsonc"),
+            Path::new("tui.json"),
+            Path::new(".agent-harness/tui.jsonc"),
+            Path::new(".agent-harness/tui.json"),
+        ] {
+            let candidate = base.join(relative);
+            if candidate.exists() {
+                paths.push(candidate);
+            }
+        }
+    }
+
+    paths
+}
+
+fn project_config_search_bases(start: &Path) -> Vec<PathBuf> {
+    let mut bases = project_search_bases(start);
+    bases.reverse();
+    bases
 }
 
 #[cfg(test)]
@@ -2456,32 +3783,64 @@ mod tests {
     struct DiscoveryTestContext {
         previous_cwd: PathBuf,
         previous_xdg_config_home: Option<OsString>,
+        previous_home: Option<OsString>,
+        previous_harness_config: Option<OsString>,
+        previous_harness_config_content: Option<OsString>,
+        previous_harness_tui_config: Option<OsString>,
     }
 
     impl DiscoveryTestContext {
         fn new(cwd: &Path, xdg_config_home: Option<&Path>) -> Self {
             let previous_cwd = env::current_dir().expect("capture current dir");
             let previous_xdg_config_home = env::var_os("XDG_CONFIG_HOME");
+            let previous_home = env::var_os("HOME");
+            let previous_harness_config = env::var_os("HARNESS_CONFIG");
+            let previous_harness_config_content = env::var_os("HARNESS_CONFIG_CONTENT");
+            let previous_harness_tui_config = env::var_os("HARNESS_TUI_CONFIG");
 
             env::set_current_dir(cwd).expect("set test current dir");
             match xdg_config_home {
                 Some(path) => env::set_var("XDG_CONFIG_HOME", path),
                 None => env::remove_var("XDG_CONFIG_HOME"),
             }
+            env::set_var("HOME", cwd);
+            env::remove_var("HARNESS_CONFIG");
+            env::remove_var("HARNESS_CONFIG_CONTENT");
+            env::remove_var("HARNESS_TUI_CONFIG");
 
             Self {
                 previous_cwd,
                 previous_xdg_config_home,
+                previous_home,
+                previous_harness_config,
+                previous_harness_config_content,
+                previous_harness_tui_config,
             }
         }
     }
 
     impl Drop for DiscoveryTestContext {
         fn drop(&mut self) {
-            env::set_current_dir(&self.previous_cwd).expect("restore current dir");
+            let _ = env::set_current_dir(&self.previous_cwd);
             match &self.previous_xdg_config_home {
                 Some(value) => env::set_var("XDG_CONFIG_HOME", value),
                 None => env::remove_var("XDG_CONFIG_HOME"),
+            }
+            match &self.previous_home {
+                Some(value) => env::set_var("HOME", value),
+                None => env::remove_var("HOME"),
+            }
+            match &self.previous_harness_config {
+                Some(value) => env::set_var("HARNESS_CONFIG", value),
+                None => env::remove_var("HARNESS_CONFIG"),
+            }
+            match &self.previous_harness_config_content {
+                Some(value) => env::set_var("HARNESS_CONFIG_CONTENT", value),
+                None => env::remove_var("HARNESS_CONFIG_CONTENT"),
+            }
+            match &self.previous_harness_tui_config {
+                Some(value) => env::set_var("HARNESS_TUI_CONFIG", value),
+                None => env::remove_var("HARNESS_TUI_CONFIG"),
             }
         }
     }
@@ -2583,6 +3942,24 @@ mod tests {
         )
     }
 
+    fn write_agent_markdown_in(repo_root: &Path, prompt_root: &str, name: &str, content: &str) {
+        let path = repo_root
+            .join(prompt_root)
+            .join("agents")
+            .join(format!("{name}.md"));
+        fs::create_dir_all(path.parent().expect("agent markdown parent"))
+            .expect("create agent markdown parent");
+        fs::write(path, content).expect("write agent markdown");
+    }
+
+    fn write_agent_markdown(repo_root: &Path, name: &str, content: &str) {
+        write_agent_markdown_in(repo_root, ".agent-harness", name, content);
+    }
+
+    fn write_legacy_agent_markdown(repo_root: &Path, name: &str, content: &str) {
+        write_agent_markdown_in(repo_root, ".agent-harness", name, content);
+    }
+
     #[test]
     fn example_config_parses() {
         let agents = r#"
@@ -2602,7 +3979,7 @@ mod tests {
 
         let text = config_fixture(
             agents,
-            "${OPENAI_API_KEY:-sk-zerolimit}",
+            "test-openai-api-key",
             Some(
                 r#"
                 ui: {
@@ -2610,11 +3987,11 @@ mod tests {
                 },
                 "#,
             ),
-            Some("./harness.schema.json"),
+            Some("./config.json"),
         );
         let parsed = load_config_from_str(&text).expect("fixture config must parse");
 
-        assert_eq!(parsed.schema.as_deref(), Some("./harness.schema.json"));
+        assert_eq!(parsed.schema.as_deref(), Some("./config.json"));
         assert!(parsed.providers.contains_key("default"));
         assert!(parsed.agents.contains_key("deep"));
         assert_eq!(
@@ -2737,35 +4114,59 @@ mod tests {
 
     #[test]
     fn missing_required_sections_are_deterministic() {
-        let err = load_config_from_str(r#"{"version":1}"#).expect_err("must fail");
-        assert_eq!(
-            err.to_string(),
-            "missing required config sections: agent/agents, integrations, permissions, providers, runtime"
-        );
+        let err = load_config_from_str("{}").expect_err("config without agents must fail");
+        assert_eq!(err.to_string(), "missing required config sections: agents");
     }
 
     #[test]
     fn retired_top_level_keys_fail_with_migration_guidance() {
-        let err = load_config_from_str(
+        let parsed = load_config_from_str(
             r#"
             {
-              categories: {},
-              backgroundTask: {},
-              paths: {},
-              deterministic: {},
-              providers: {},
-              permissions: {},
-              runtime: {},
-              integrations: {},
-              agents: {}
+              provider: {
+                default: {
+                  type: "openai_compatible",
+                  base_url: "http://127.0.0.1:8317/v1",
+                  api_key: "test-key",
+                  models: {
+                    "gpt-4o-mini": {
+                      display_name: "GPT-4o mini"
+                    }
+                  }
+                }
+              },
+              model: "default/gpt-4o-mini",
+              categories: {
+                deep: {
+                  description: "Deep work",
+                  model_ref: "default:gpt-4o-mini",
+                  tools: ["read"]
+                }
+              },
+              backgroundTask: {
+                defaultConcurrency: 2,
+                providerConcurrency: 2,
+                modelConcurrency: 2,
+                staleTimeoutMs: 30000,
+                messageStalenessTimeoutMs: 10000
+              },
+              paths: {
+                session_dir: ".agent-harness/sessions"
+              },
+              deterministic: {
+                enabled: false,
+                seed: 42
+              }
             }
             "#,
         )
-        .expect_err("retired keys must fail");
+        .expect("legacy compatibility keys should translate");
 
+        assert!(parsed.agents.contains_key("deep"));
+        assert_eq!(parsed.runtime.background_tasks.default_concurrency, 2);
         assert_eq!(
-            err.to_string(),
-            "retired config keys detected: top-level `backgroundTask` was retired; move its fields under `runtime.background_tasks`; top-level `categories` was retired; rename it to `agents`; top-level `deterministic` was retired; move its fields under `runtime.deterministic`; top-level `paths` was retired; move `paths.session_dir` to `runtime.session_dir`"
+            parsed.paths.session_dir,
+            PathBuf::from(".agent-harness/sessions")
         );
     }
 
@@ -2823,10 +4224,121 @@ mod tests {
             "#;
 
         let err = load_config_from_str(cfg).expect_err("unknown top-level key must fail");
-        assert_eq!(
-            err.to_string(),
-            "unknown top-level config keys: `extraTopLevel`; expected only `$schema`, `agent`, `agents`, `defaultAgent`, `default_agent`, `hooks`, `integrations`, `lsp`, `logging`, `permissions`, `providers`, `runtime`, `skills`, `ui`"
-        );
+        assert!(err
+            .to_string()
+            .contains("unknown top-level config keys: `extraTopLevel`"));
+        assert!(err.to_string().contains("`provider`"));
+    }
+
+    #[test]
+    fn top_level_hashline_edit_alias_and_default_are_accepted() {
+        let cfg = r#"
+        {
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              models: {
+                "gpt-4o-mini": {
+                  display_name: "GPT-4o mini"
+                }
+              }
+            }
+          },
+          agents: {
+            build: {
+              description: "Build work",
+              model_ref: "default:gpt-4o-mini",
+              tools: ["read"]
+            }
+          },
+          permissions: {
+            defaults: {
+              edit: "ask",
+              shell: "ask",
+              network: "deny"
+            }
+          },
+          runtime: {
+            background_tasks: {
+              default_concurrency: 2,
+              provider_concurrency: 2,
+              model_concurrency: 2,
+              stale_timeout_ms: 15000,
+              message_staleness_timeout_ms: 5000
+            },
+            session_dir: ".agent-harness/sessions",
+            deterministic: {
+              enabled: false,
+              seed: 42
+            }
+          },
+          integrations: {
+            remote_search: {
+              endpoint: "https://mcp.exa.ai/mcp"
+            }
+          },
+          hashlineEdit: false
+        }
+        "#;
+
+        let parsed = load_config_from_str(cfg).expect("hashline-edit alias should parse");
+        assert!(!parsed.hashline_edit);
+
+        let defaults_cfg = r#"
+        {
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              models: {
+                "gpt-4o-mini": {
+                  display_name: "GPT-4o mini"
+                }
+              }
+            }
+          },
+          agents: {
+            build: {
+              description: "Build work",
+              model_ref: "default:gpt-4o-mini",
+              tools: ["read"]
+            }
+          },
+          permissions: {
+            defaults: {
+              edit: "ask",
+              shell: "ask",
+              network: "deny"
+            }
+          },
+          runtime: {
+            background_tasks: {
+              default_concurrency: 2,
+              provider_concurrency: 2,
+              model_concurrency: 2,
+              stale_timeout_ms: 15000,
+              message_staleness_timeout_ms: 5000
+            },
+            session_dir: ".agent-harness/sessions",
+            deterministic: {
+              enabled: false,
+              seed: 42
+            }
+          },
+          integrations: {
+            remote_search: {
+              endpoint: "https://mcp.exa.ai/mcp"
+            }
+          }
+        }
+        "#;
+
+        let parsed_defaults =
+            load_config_from_str(defaults_cfg).expect("hashline-edit defaults should parse");
+        assert!(parsed_defaults.hashline_edit);
     }
 
     #[test]
@@ -2969,7 +4481,7 @@ mod tests {
     }
 
     #[test]
-    fn top_level_agent_alias_and_default_agent_normalize_to_runtime_shape() {
+    fn default_agent_normalizes_to_runtime_shape() {
         let cfg = r#"
         {
           providers: {
@@ -2984,7 +4496,7 @@ mod tests {
               }
             }
           },
-          agent: {
+          agents: {
             build: {
               description: "Build work",
               model_ref: "default:gpt-4o-mini",
@@ -3028,7 +4540,7 @@ mod tests {
         }
         "#;
 
-        let parsed = load_config_from_str(cfg).expect("agent/default_agent config should parse");
+        let parsed = load_config_from_str(cfg).expect("default_agent config should parse");
         assert!(parsed.agents.contains_key("build"));
         assert!(parsed.agents.contains_key("plan"));
         assert_eq!(parsed.ui.default_profile.as_deref(), Some("build"));
@@ -3041,7 +4553,60 @@ mod tests {
     }
 
     #[test]
-    fn opencode_like_provider_name_and_options_normalize_to_runtime_shape() {
+    fn public_default_agents_continue_after_tool_failures() {
+        let cfg = r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              options: {
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKey: "test-key",
+              },
+              models: {
+                "gpt-4o-mini": {
+                  name: "GPT-4o mini"
+                }
+              }
+            }
+          },
+          model: "default/gpt-4o-mini",
+          small_model: "default/gpt-4o-mini",
+          agent: {
+            build: {
+              system_prompt: "Build work"
+            },
+            plan: {
+              system_prompt: "Plan work"
+            }
+          },
+          default_agent: "build",
+          permission: {
+            edit: "allow",
+            bash: "allow",
+            question: "allow",
+            task: "allow",
+            webfetch: "allow",
+            websearch: "allow",
+            codesearch: "allow",
+            lsp: "allow"
+          }
+        }
+        "#;
+
+        let parsed = load_config_from_str(cfg).expect("public config should parse");
+        assert_eq!(
+            parsed.agents["build"].tool_failure_mode,
+            ToolFailureMode::ContinueAsToolMessage
+        );
+        assert_eq!(
+            parsed.agents["plan"].tool_failure_mode,
+            ToolFailureMode::ContinueAsToolMessage
+        );
+    }
+
+    #[test]
+    fn legacy_provider_name_and_options_normalize_to_runtime_shape() {
         let cfg = r#"
         {
           providers: {
@@ -3091,7 +4656,7 @@ mod tests {
         }
         "#;
 
-        let parsed = load_config_from_str(cfg).expect("opencode-like provider config should parse");
+        let parsed = load_config_from_str(cfg).expect("legacy provider config should parse");
         let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
         assert_eq!(provider.name.as_deref(), Some("CLIProxyAPI"));
         assert_eq!(provider.base_url, "http://127.0.0.1:8317/v1");
@@ -3104,7 +4669,7 @@ mod tests {
     }
 
     #[test]
-    fn top_level_agent_and_agents_conflict_is_rejected() {
+    fn top_level_legacy_agent_key_is_translated() {
         let cfg = r#"
         {
           providers: {
@@ -3117,13 +4682,6 @@ mod tests {
                   display_name: "GPT-4o mini"
                 }
               }
-            }
-          },
-          agents: {
-            build: {
-              description: "Build work",
-              model_ref: "default:gpt-4o-mini",
-              tools: ["fs.read"]
             }
           },
           agent: {
@@ -3158,10 +4716,8 @@ mod tests {
         }
         "#;
 
-        let err = load_config_from_str(cfg).expect_err("conflicting agent shapes must fail");
-        assert!(err
-            .to_string()
-            .contains("top-level `agent` and `agents` both exist but differ"));
+        let parsed = load_config_from_str(cfg).expect("canonical `agent` key should parse");
+        assert!(parsed.agents.contains_key("plan"));
     }
 
     #[test]
@@ -3227,10 +4783,14 @@ mod tests {
 
     #[test]
     fn relative_paths_remain_cwd_relative_when_loading_from_file() {
+        let _lock = CONFIG_DISCOVERY_TEST_LOCK
+            .lock()
+            .expect("lock discovery tests");
         let temp = tempfile::tempdir().expect("tempdir");
         let config_path = temp.path().join("nested/config.jsonc");
         fs::create_dir_all(config_path.parent().expect("config parent"))
             .expect("create config parent");
+        let _ctx = DiscoveryTestContext::new(temp.path(), None);
         let cfg = r#"
             {
               providers: {
@@ -3301,7 +4861,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_uses_agents_runtime_and_integrations_without_legacy_keys() {
+    fn schema_uses_runtime_first_public_contract() {
         let schema = harness_schema_pretty_json().expect("schema generation should succeed");
         let parsed: serde_json::Value =
             serde_json::from_str(&schema).expect("schema output should be valid json");
@@ -3311,21 +4871,18 @@ mod tests {
             .expect("schema should contain properties");
 
         assert!(properties.contains_key("$schema"));
+        assert!(properties.contains_key("provider"));
         assert!(properties.contains_key("agent"));
-        assert!(properties.contains_key("providers"));
-        assert!(properties.contains_key("agents"));
         assert!(properties.contains_key("default_agent"));
-        assert!(properties.contains_key("permissions"));
-        assert!(properties.contains_key("runtime"));
-        assert!(properties.contains_key("hooks"));
-        assert!(properties.contains_key("skills"));
-        assert!(properties.contains_key("lsp"));
-        assert!(properties.contains_key("integrations"));
+        assert!(properties.contains_key("permission"));
+        assert!(properties.contains_key("model"));
+        assert!(properties.contains_key("small_model"));
+        assert!(properties.contains_key("mcp"));
+        assert!(properties.contains_key("instructions"));
         assert!(!properties.contains_key("categories"));
         assert!(!properties.contains_key("profiles"));
-        assert!(schema.contains("\"ask_timeout_ms\""));
-        assert!(schema.contains("\"wait_timeout_ms\""));
-        assert!(!schema.contains("HARNESS_PROMPT_WAIT_TIMEOUT_MS"));
+        assert!(!properties.contains_key("runtime"));
+        assert!(!properties.contains_key("integrations"));
     }
 
     #[test]
@@ -3333,7 +4890,7 @@ mod tests {
         let cfg = r#"
         {
           // optional editor schema hint
-          "$schema": "./harness.schema.json",
+            "$schema": "./config.json",
           providers: {
             default: {
               type: "openai_compatible",
@@ -3393,7 +4950,7 @@ mod tests {
         "#;
 
         let parsed = load_config_from_str(cfg).expect("json5 flavored config should parse");
-        assert_eq!(parsed.schema.as_deref(), Some("./harness.schema.json"));
+        assert_eq!(parsed.schema.as_deref(), Some("./config.json"));
         assert_eq!(parsed.agents["deep"].model_ref, "default:gpt-4o-mini");
     }
 
@@ -3404,7 +4961,7 @@ mod tests {
             .expect("lock discovery tests");
         let temp = tempfile::tempdir().expect("tempdir");
         let xdg_root = temp.path().join("xdg");
-        let xdg_config = xdg_root.join("harness/config.jsonc");
+        let xdg_config = xdg_root.join("harness/harness.jsonc");
         let cwd_config = temp.path().join("harness.jsonc");
         let explicit_config = temp.path().join("explicit.jsonc");
 
@@ -3429,7 +4986,7 @@ mod tests {
             .expect("lock discovery tests");
         let temp = tempfile::tempdir().expect("tempdir");
         let xdg_root = temp.path().join("xdg");
-        let xdg_config = xdg_root.join("harness/config.jsonc");
+        let xdg_config = xdg_root.join("harness/harness.jsonc");
         let cwd_config = temp.path().join("harness.jsonc");
 
         fs::create_dir_all(xdg_config.parent().expect("xdg parent"))
@@ -3439,10 +4996,282 @@ mod tests {
 
         let _context = DiscoveryTestContext::new(temp.path(), Some(&xdg_root));
 
+        assert_eq!(resolve_config_path(None), Some(cwd_config));
+    }
+
+    #[test]
+    fn resolve_config_layer_paths_orders_global_then_local() {
+        let _lock = CONFIG_DISCOVERY_TEST_LOCK
+            .lock()
+            .expect("lock discovery tests");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let xdg_root = temp.path().join("xdg");
+        let xdg_config = xdg_root.join("harness/harness.jsonc");
+        let cwd_config = temp.path().join("harness.jsonc");
+
+        fs::create_dir_all(xdg_config.parent().expect("xdg parent"))
+            .expect("create xdg config dir");
+        fs::write(
+            &xdg_config,
+            "{ providers: {}, permissions: {}, runtime: {}, integrations: {}, agents: {} }",
+        )
+        .expect("write xdg config");
+        fs::write(&cwd_config, "{ agents: {} }").expect("write cwd config");
+
+        let _context = DiscoveryTestContext::new(temp.path(), Some(&xdg_root));
+
         assert_eq!(
-            resolve_config_path(None),
-            Some(PathBuf::from("harness.jsonc"))
+            resolve_config_layer_paths(None),
+            vec![xdg_config, cwd_config]
         );
+    }
+
+    #[test]
+    fn resolve_config_layer_paths_include_env_and_project_ancestor_layers() {
+        let _lock = CONFIG_DISCOVERY_TEST_LOCK
+            .lock()
+            .expect("lock discovery tests");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let xdg_root = temp.path().join("xdg");
+        let repo = temp.path().join("repo");
+        let nested = repo.join("workspace/app");
+        let env_config = temp.path().join("env/harness.env.jsonc");
+        let xdg_config = xdg_root.join("harness/harness.jsonc");
+        let repo_config = repo.join("harness.jsonc");
+        let repo_dot_config = repo.join(".agent-harness/harness.jsonc");
+        let nested_config = nested.join("harness.json");
+        let nested_dot_config = nested.join(".agent-harness/harness.json");
+
+        fs::create_dir_all(xdg_config.parent().expect("xdg parent")).expect("create xdg dir");
+        fs::create_dir_all(
+            repo_dot_config
+                .parent()
+                .expect("repo .agent-harness parent"),
+        )
+        .expect("create repo .agent-harness dir");
+        fs::create_dir_all(
+            nested_dot_config
+                .parent()
+                .expect("nested .agent-harness parent"),
+        )
+        .expect("create nested .agent-harness dir");
+        fs::create_dir_all(env_config.parent().expect("env parent")).expect("create env dir");
+        fs::create_dir_all(repo.join(".git")).expect("create repo git dir");
+
+        for path in [
+            &xdg_config,
+            &env_config,
+            &repo_config,
+            &repo_dot_config,
+            &nested_config,
+            &nested_dot_config,
+        ] {
+            fs::write(path, "{}").expect("write placeholder config");
+        }
+
+        let _context = DiscoveryTestContext::new(&nested, Some(&xdg_root));
+        let env_config_value = env_config.to_str().expect("env config utf-8").to_string();
+        with_env_var_state("HARNESS_CONFIG", Some(&env_config_value), || {
+            assert_eq!(
+                resolve_config_layer_paths(None),
+                vec![
+                    xdg_config,
+                    env_config,
+                    repo_config,
+                    repo_dot_config,
+                    nested_config,
+                    nested_dot_config,
+                ]
+            );
+        });
+    }
+
+    #[test]
+    fn load_resolved_config_merges_global_then_local_and_prefers_local_values() {
+        let _lock = CONFIG_DISCOVERY_TEST_LOCK
+            .lock()
+            .expect("lock discovery tests");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let xdg_root = temp.path().join("xdg");
+        let xdg_config = xdg_root.join("harness/harness.jsonc");
+        let cwd_config = temp.path().join("harness.jsonc");
+
+        fs::create_dir_all(xdg_config.parent().expect("xdg parent"))
+            .expect("create xdg config dir");
+        fs::write(
+            &xdg_config,
+            r#"
+            {
+              providers: {
+                default: {
+                  type: "openai_compatible",
+                  base_url: "http://127.0.0.1:8317/v1",
+                  api_key: "test-key",
+                  api_mode: "responses",
+                  timeout_ms: 60000,
+                  models: {
+                    "gpt-4o-mini": {
+                      display_name: "GPT-4o mini",
+                    },
+                  },
+                },
+              },
+              permissions: {
+                defaults: {
+                  edit: "ask",
+                  shell: "deny",
+                  network: "allow",
+                },
+                shell_allowlist: {
+                  executables: ["git"],
+                  cwd_roots: ["."],
+                },
+              },
+              runtime: {
+                background_tasks: {
+                  default_concurrency: 2,
+                  provider_concurrency: 2,
+                  model_concurrency: 2,
+                  stale_timeout_ms: 15000,
+                  message_staleness_timeout_ms: 5000,
+                },
+                session_dir: ".agent-harness/sessions",
+                deterministic: {
+                  enabled: false,
+                  seed: 42,
+                },
+              },
+              integrations: {
+                remote_search: {
+                  endpoint: "https://mcp.exa.ai/mcp",
+                },
+              },
+            }
+            "#,
+        )
+        .expect("write xdg config");
+        fs::write(
+            &cwd_config,
+            r#"
+            {
+              agents: {
+                build: {
+                  description: "Build profile",
+                  model_ref: "default:gpt-4o-mini",
+                  tools: ["read"],
+                },
+              },
+              permissions: {
+                defaults: {
+                  shell: "allow",
+                },
+              },
+              ui: {
+                default_profile: "build",
+              },
+            }
+            "#,
+        )
+        .expect("write cwd config");
+
+        let _context = DiscoveryTestContext::new(temp.path(), Some(&xdg_root));
+
+        let loaded = load_resolved_config(None)
+            .expect("load resolved config")
+            .expect("merged config should resolve");
+
+        assert_eq!(loaded.paths, vec![xdg_config.clone(), cwd_config.clone()]);
+        assert_eq!(loaded.config.ui.default_profile.as_deref(), Some("build"));
+        assert!(matches!(
+            loaded.config.permissions.defaults.shell,
+            PermissionMode::Allow
+        ));
+        assert!(loaded.config.agents.contains_key("build"));
+        assert_eq!(loaded.primary_path(), Some(cwd_config.as_path()));
+    }
+
+    #[test]
+    fn load_resolved_config_applies_harness_config_content_last() {
+        let _lock = CONFIG_DISCOVERY_TEST_LOCK
+            .lock()
+            .expect("lock discovery tests");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config_path = temp.path().join("harness.jsonc");
+        fs::write(
+            &config_path,
+            serde_json::json!({
+                "provider": {
+                    "default": {
+                        "type": "openai_compatible",
+                        "base_url": "http://127.0.0.1:1/v1",
+                        "api_key": "DUMMY",
+                        "models": {
+                            "gpt-4o": { "name": "GPT-4o" },
+                            "gpt-4o-mini": { "name": "GPT-4o mini" }
+                        }
+                    }
+                },
+                "model": "default/gpt-4o",
+                "small_model": "default/gpt-4o-mini",
+                "default_agent": "build",
+                "permission": {
+                    "bash": "deny",
+                    "edit": "allow"
+                }
+            })
+            .to_string(),
+        )
+        .expect("write config");
+
+        let _context = DiscoveryTestContext::new(temp.path(), None);
+        with_env_var_state(
+            "HARNESS_CONFIG_CONTENT",
+            Some("{ permission: { bash: \"allow\" }, default_agent: \"plan\" }"),
+            || {
+                let loaded = load_resolved_config(None)
+                    .expect("load config")
+                    .expect("config should resolve");
+                assert!(matches!(
+                    loaded.config.permissions.defaults.shell,
+                    PermissionMode::Allow
+                ));
+                assert_eq!(loaded.config.default_agent.as_deref(), Some("plan"));
+            },
+        );
+    }
+
+    #[test]
+    fn load_resolved_config_explicit_path_bypasses_discovery_layers() {
+        let _lock = CONFIG_DISCOVERY_TEST_LOCK
+            .lock()
+            .expect("lock discovery tests");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let xdg_root = temp.path().join("xdg");
+        let xdg_config = xdg_root.join("harness/config.jsonc");
+        let cwd_config = temp.path().join("harness.jsonc");
+        let explicit_config = temp.path().join("explicit.jsonc");
+
+        fs::create_dir_all(xdg_config.parent().expect("xdg parent"))
+            .expect("create xdg config dir");
+        fs::write(
+            &xdg_config,
+            "{ providers: {}, permissions: {}, runtime: {}, integrations: {}, agents: {} }",
+        )
+        .expect("write xdg config");
+        fs::write(&cwd_config, "{ agents: {} }").expect("write cwd config");
+        fs::write(
+            &explicit_config,
+            config_fixture(&deep_profile(r#"tools: ["read"],"#), "test-key", None, None),
+        )
+        .expect("write explicit config");
+
+        let _context = DiscoveryTestContext::new(temp.path(), Some(&xdg_root));
+
+        let loaded = load_resolved_config(Some(&explicit_config))
+            .expect("load explicit config")
+            .expect("explicit config should resolve");
+
+        assert_eq!(loaded.paths, vec![explicit_config]);
     }
 
     #[test]
@@ -3499,7 +5328,7 @@ mod tests {
     }
 
     #[test]
-    fn profile_tool_failure_mode_defaults_to_fail_turn() {
+    fn runtime_profile_tool_failure_mode_defaults_to_continue_as_tool_message() {
         let cfg = config_fixture(&deep_profile(r#"tools: ["read"],"#), "test-key", None, None);
 
         let parsed =
@@ -3507,7 +5336,7 @@ mod tests {
         assert_eq!(parsed.agents["deep"].max_iters, default_max_iters());
         assert_eq!(
             parsed.agents["deep"].tool_failure_mode,
-            ToolFailureMode::FailTurn
+            ToolFailureMode::ContinueAsToolMessage
         );
     }
 
@@ -3613,32 +5442,306 @@ mod tests {
     }
 
     #[test]
-    fn missing_openai_api_key_uses_cliproxy_loopback_fallback() {
-        let resolved = apply_cliproxy_loopback_openai_fallback(
-            Err(ConfigError::MissingEnvironmentVariable(
-                "OPENAI_API_KEY".to_string(),
-            )),
-            "http://127.0.0.1:8317/v1",
-        )
-        .expect("local CLIProxy should use the default subscription placeholder key");
+    fn missing_openai_api_key_errors_even_for_cliproxy_loopback_base_url() {
+        let err = resolve_string_reference("${OPENAI_API_KEY}", None)
+            .expect_err("loopback providers should still require OPENAI_API_KEY");
 
-        assert_eq!(resolved, CLIPROXY_LOOPBACK_DEFAULT_API_KEY);
-    }
-
-    #[test]
-    fn missing_openai_api_key_still_errors_for_non_cliproxy_base_url() {
-        let err = apply_cliproxy_loopback_openai_fallback(
-            Err(ConfigError::MissingEnvironmentVariable(
-                "OPENAI_API_KEY".to_string(),
-            )),
-            "https://api.openai.com/v1",
-        )
-        .expect_err(
-            "non-local endpoints should still require OPENAI_API_KEY when no fallback is set",
-        );
         assert_eq!(
             err.to_string(),
             "environment variable `OPENAI_API_KEY` referenced in config is not set"
         );
+    }
+
+    #[test]
+    fn configured_openai_api_key_env_reference_resolves_without_fallback() {
+        with_env_var_state("OPENAI_API_KEY", Some("test-openai-api-key"), || {
+            let resolved = resolve_string_reference("${OPENAI_API_KEY}", None)
+                .expect("OPENAI_API_KEY should resolve when it is set");
+
+            assert_eq!(resolved, "test-openai-api-key");
+        });
+    }
+
+    #[test]
+    fn upstream_env_reference_uses_empty_string_when_missing() {
+        with_env_var_state("HARNESS_CONFIG_TEST_OPTIONAL_EMPTY", None, || {
+            let cfg = config_fixture(
+                &deep_profile(r#"tools: ["fs.read"],"#),
+                "{env:HARNESS_CONFIG_TEST_OPTIONAL_EMPTY}",
+                None,
+                None,
+            );
+
+            let parsed = load_config_from_str(&cfg).expect("upstream env reference should parse");
+            let ProviderConfig::OpenAiCompatible(provider) =
+                parsed.providers.get("default").unwrap();
+            assert_eq!(provider.api_key, "");
+        });
+    }
+
+    #[test]
+    fn upstream_file_reference_resolves_relative_to_config_file() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config_dir = temp.path().join("nested");
+        let secret_path = config_dir.join("secrets/api-key.txt");
+        let config_path = config_dir.join("harness.jsonc");
+        fs::create_dir_all(secret_path.parent().expect("secret parent"))
+            .expect("create secret parent");
+        fs::write(&secret_path, "file-key").expect("write secret file");
+        fs::write(
+            &config_path,
+            config_fixture(
+                &deep_profile(r#"tools: ["fs.read"],"#),
+                "{file:secrets/api-key.txt}",
+                None,
+                None,
+            ),
+        )
+        .expect("write config");
+
+        let parsed =
+            load_config_from_file(&config_path).expect("file reference config should parse");
+        let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
+        assert_eq!(provider.api_key, "file-key");
+    }
+
+    #[test]
+    fn load_config_from_file_can_define_agent_from_markdown_frontmatter() {
+        let _lock = CONFIG_DISCOVERY_TEST_LOCK
+            .lock()
+            .expect("lock discovery tests");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).expect("create repo dir");
+        fs::create_dir_all(repo.join(".git")).expect("create git dir");
+        let _ctx = DiscoveryTestContext::new(&repo, None);
+
+        let config_path = repo.join("harness.jsonc");
+        fs::write(&config_path, config_fixture("", "test-key", None, None)).expect("write config");
+        write_agent_markdown(
+            &repo,
+            "build",
+            r#"---
+{
+  description: "Build from markdown",
+  model_ref: "default:gpt-4o-mini",
+  tools: ["read", "grep"],
+  max_iters: 18
+}
+---
+
+Execute from markdown only."#,
+        );
+
+        let parsed = load_config_from_file(&config_path).expect("markdown-only agent config");
+        let build = parsed.agents.get("build").expect("build agent");
+        assert_eq!(build.description, "Build from markdown");
+        assert_eq!(build.model_ref, "default:gpt-4o-mini");
+        assert_eq!(build.tools, vec!["read", "grep"]);
+        assert_eq!(build.max_iters, 18);
+        assert_eq!(
+            build.system_prompt.as_deref(),
+            Some("Execute from markdown only.")
+        );
+    }
+
+    #[test]
+    fn load_config_from_file_still_accepts_legacy_agent_harness_prompt_dir() {
+        let _lock = CONFIG_DISCOVERY_TEST_LOCK
+            .lock()
+            .expect("lock discovery tests");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).expect("create repo dir");
+        fs::create_dir_all(repo.join(".git")).expect("create git dir");
+        let _ctx = DiscoveryTestContext::new(&repo, None);
+
+        let config_path = repo.join("harness.jsonc");
+        fs::write(&config_path, config_fixture("", "test-key", None, None)).expect("write config");
+        write_legacy_agent_markdown(
+            &repo,
+            "build",
+            r#"---
+{
+  description: "Legacy build prompt",
+  model_ref: "default:gpt-4o-mini"
+}
+---
+
+Legacy prompt body."#,
+        );
+
+        let parsed = load_config_from_file(&config_path)
+            .expect("legacy prompt dir should remain compatible");
+        assert_eq!(
+            parsed.agents["build"].system_prompt.as_deref(),
+            Some("Legacy prompt body.")
+        );
+    }
+
+    #[test]
+    fn load_config_from_file_keeps_inline_system_prompt_over_markdown_prompt() {
+        let _lock = CONFIG_DISCOVERY_TEST_LOCK
+            .lock()
+            .expect("lock discovery tests");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).expect("create repo dir");
+        fs::create_dir_all(repo.join(".git")).expect("create git dir");
+        let _ctx = DiscoveryTestContext::new(&repo, None);
+
+        let config_path = repo.join("harness.jsonc");
+        fs::write(
+            &config_path,
+            config_fixture(
+                &deep_profile(
+                    r#"
+                    system_prompt: "Inline prompt",
+                    tools: ["read"],
+                    "#,
+                ),
+                "test-key",
+                None,
+                None,
+            ),
+        )
+        .expect("write config");
+        write_agent_markdown(&repo, "deep", "Markdown prompt body.");
+
+        let parsed = load_config_from_file(&config_path).expect("config with markdown prompt");
+        assert_eq!(
+            parsed.agents["deep"].system_prompt.as_deref(),
+            Some("Inline prompt")
+        );
+    }
+
+    #[test]
+    fn load_config_from_file_discovers_project_agents_md_separately() {
+        let _lock = CONFIG_DISCOVERY_TEST_LOCK
+            .lock()
+            .expect("lock discovery tests");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).expect("create repo dir");
+        fs::create_dir_all(repo.join(".git")).expect("create git dir");
+        let _ctx = DiscoveryTestContext::new(&repo, None);
+
+        let config_path = repo.join("harness.jsonc");
+        fs::write(
+            &config_path,
+            config_fixture(&deep_profile(r#"tools: ["read"],"#), "test-key", None, None),
+        )
+        .expect("write config");
+        fs::write(repo.join("AGENTS.md"), "Project instructions live here.")
+            .expect("write AGENTS.md");
+
+        let parsed = load_config_from_file(&config_path).expect("config with project instructions");
+        assert_eq!(parsed.instruction_files.len(), 1);
+        assert_eq!(
+            parsed.instruction_files[0].content,
+            "Project instructions live here."
+        );
+        assert!(parsed.instruction_files[0].path.ends_with("AGENTS.md"));
+    }
+
+    #[test]
+    fn load_config_from_file_discovers_repo_assets_when_cwd_differs() {
+        let _lock = CONFIG_DISCOVERY_TEST_LOCK
+            .lock()
+            .expect("lock discovery tests");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let outside = temp.path().join("outside");
+        let repo = temp.path().join("repo");
+        let config_dir = repo.join("configs").join("nested");
+        fs::create_dir_all(&outside).expect("create outside dir");
+        fs::create_dir_all(&config_dir).expect("create config dir");
+        fs::create_dir_all(repo.join(".git")).expect("create git dir");
+        let _ctx = DiscoveryTestContext::new(&outside, None);
+
+        let config_path = config_dir.join("harness.jsonc");
+        fs::write(&config_path, config_fixture("", "test-key", None, None)).expect("write config");
+        write_agent_markdown(
+            &repo,
+            "build",
+            r#"---
+{
+  description: "Build from repo root markdown",
+  model_ref: "default:gpt-4o-mini"
+}
+---
+
+Prompt discovered from the config repo root."#,
+        );
+        fs::write(repo.join("AGENTS.md"), "Repo-root instructions.").expect("write repo AGENTS.md");
+
+        let parsed = load_config_from_file(&config_path).expect("discover repo-root assets");
+        let build = parsed.agents.get("build").expect("build agent");
+        assert_eq!(build.description, "Build from repo root markdown");
+        assert_eq!(
+            build.system_prompt.as_deref(),
+            Some("Prompt discovered from the config repo root.")
+        );
+        assert_eq!(parsed.instruction_files.len(), 1);
+        assert_eq!(
+            parsed.instruction_files[0].content,
+            "Repo-root instructions."
+        );
+        assert_eq!(parsed.instruction_files[0].path, repo.join("AGENTS.md"));
+    }
+
+    #[test]
+    fn load_config_from_file_ignores_unmatched_prompt_only_markdown_assets() {
+        let _lock = CONFIG_DISCOVERY_TEST_LOCK
+            .lock()
+            .expect("lock discovery tests");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).expect("create repo dir");
+        fs::create_dir_all(repo.join(".git")).expect("create git dir");
+        let _ctx = DiscoveryTestContext::new(&repo, None);
+
+        let config_path = repo.join("harness.jsonc");
+        fs::write(
+            &config_path,
+            config_fixture(&deep_profile(r#"tools: ["read"],"#), "test-key", None, None),
+        )
+        .expect("write config");
+        write_agent_markdown(&repo, "stray", "Prompt body without frontmatter metadata.");
+
+        let parsed = load_config_from_file(&config_path).expect("prompt-only stray asset ignored");
+        assert!(!parsed.agents.contains_key("stray"));
+        assert!(parsed.agents.contains_key("deep"));
+    }
+
+    #[test]
+    fn load_config_from_file_rejects_invalid_markdown_frontmatter() {
+        let _lock = CONFIG_DISCOVERY_TEST_LOCK
+            .lock()
+            .expect("lock discovery tests");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).expect("create repo dir");
+        fs::create_dir_all(repo.join(".git")).expect("create git dir");
+        let _ctx = DiscoveryTestContext::new(&repo, None);
+
+        let config_path = repo.join("harness.jsonc");
+        fs::write(
+            &config_path,
+            config_fixture(&deep_profile(r#"tools: ["read"],"#), "test-key", None, None),
+        )
+        .expect("write config");
+        write_agent_markdown(
+            &repo,
+            "deep",
+            r#"---
+{ description: }
+---
+
+Broken prompt."#,
+        );
+
+        let err = load_config_from_file(&config_path).expect_err("invalid markdown should fail");
+        assert!(err.to_string().contains("invalid markdown frontmatter"));
+        assert!(err.to_string().contains("deep.md"));
     }
 }

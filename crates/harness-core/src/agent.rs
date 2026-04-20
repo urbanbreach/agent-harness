@@ -83,17 +83,23 @@ pub struct AgentModelRef {
 
 impl AgentModelRef {
     pub fn parse(model_ref: &str) -> Self {
-        let mut parts = model_ref.splitn(2, ':');
-        let provider_id = parts
-            .next()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or("default")
-            .to_string();
-        let model_id = parts
-            .next()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or("default")
-            .to_string();
+        let (provider_id, model_id) = model_ref
+            .split_once(':')
+            .or_else(|| model_ref.split_once('/'))
+            .map(|(provider_id, model_id)| {
+                let provider_id = if provider_id.trim().is_empty() {
+                    "default"
+                } else {
+                    provider_id
+                };
+                let model_id = if model_id.trim().is_empty() {
+                    "default"
+                } else {
+                    model_id
+                };
+                (provider_id.to_string(), model_id.to_string())
+            })
+            .unwrap_or_else(|| ("default".to_string(), model_ref.to_string()));
 
         Self {
             provider_id,
@@ -137,7 +143,7 @@ pub fn default_provider() -> Arc<dyn Provider> {
     Arc::new(NullProvider)
 }
 
-const MAX_TOOL_CALLS_TOTAL: usize = 25;
+const MAX_TOOL_CALLS_TOTAL: usize = 1000;
 
 pub struct MultiTurnStreamingRequest<'a> {
     pub provider: Arc<dyn Provider>,
@@ -704,8 +710,8 @@ mod tests {
 
     use super::{
         build_provider_tool_defs, run_multi_turn_streaming, tool_result_to_message_content,
-        AgentModelSettings, AgentProfile, AgentRequest, AgentTurnOutcome,
-        MultiTurnStreamingRequest,
+        AgentModelRef, AgentModelSettings, AgentProfile, AgentRequest, AgentTurnOutcome,
+        MultiTurnStreamingRequest, MAX_TOOL_CALLS_TOTAL,
     };
     use crate::config::ToolFailureMode;
     use crate::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
@@ -822,6 +828,21 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, "read");
         assert_eq!(calls[0].1, json!({"filePath": "/tmp/demo.txt"}));
+    }
+
+    #[test]
+    fn agent_model_ref_parse_accepts_colon_and_slash_refs() {
+        let colon = AgentModelRef::parse("default:gpt-5.4-mini");
+        assert_eq!(colon.provider_id, "default");
+        assert_eq!(colon.model_id, "gpt-5.4-mini");
+
+        let slash = AgentModelRef::parse("default/gpt-5.4-mini");
+        assert_eq!(slash.provider_id, "default");
+        assert_eq!(slash.model_id, "gpt-5.4-mini");
+
+        let bare = AgentModelRef::parse("gpt-5.4-mini");
+        assert_eq!(bare.provider_id, "default");
+        assert_eq!(bare.model_id, "gpt-5.4-mini");
     }
 
     #[test]
@@ -1497,6 +1518,11 @@ mod tests {
             model_ref: "mock:model-1".to_string(),
             model_settings: AgentModelSettings::default(),
         }
+    }
+
+    #[test]
+    fn max_tool_calls_total_supports_tool_heavy_agents() {
+        assert_eq!(MAX_TOOL_CALLS_TOTAL, 1000);
     }
 
     fn completion_request(

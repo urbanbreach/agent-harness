@@ -73,13 +73,18 @@ pub struct ToolContext {
 
 impl ToolContext {
     pub fn resolve_workspace_path(&self, relative: &Path) -> Result<PathBuf, ToolError> {
-        let candidate = self.workspace_root.join(relative);
         let canonical_workspace = self.workspace_root.canonicalize().map_err(|source| {
             ToolError::WorkspaceRootUnavailable {
                 path: self.workspace_root.display().to_string(),
                 source,
             }
         })?;
+
+        let candidate = normalize_workspace_target_path(&canonical_workspace, relative)?;
+
+        if candidate == canonical_workspace {
+            return Ok(canonical_workspace);
+        }
 
         let canonical_candidate =
             candidate
@@ -102,6 +107,43 @@ impl ToolContext {
     pub fn artifact_store(&self) -> Result<ArtifactStore, ArtifactStoreError> {
         ArtifactStore::new(self.artifacts_dir.clone())
     }
+}
+
+fn normalize_workspace_target_path(workspace: &Path, input: &Path) -> Result<PathBuf, ToolError> {
+    let relative = if input.is_absolute() {
+        input
+            .strip_prefix(workspace)
+            .map_err(|_| ToolError::PathEscapesWorkspace {
+                workspace_root: workspace.display().to_string(),
+                path: input.display().to_string(),
+            })?
+    } else {
+        input
+    };
+
+    let mut normalized = workspace.to_path_buf();
+    for component in relative.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::Normal(segment) => normalized.push(segment),
+            std::path::Component::ParentDir => {
+                if normalized == workspace {
+                    return Err(ToolError::PathEscapesWorkspace {
+                        workspace_root: workspace.display().to_string(),
+                        path: input.display().to_string(),
+                    });
+                }
+                normalized.pop();
+            }
+            std::path::Component::Prefix(_) | std::path::Component::RootDir => {
+                return Err(ToolError::InvalidArguments(
+                    "path must be workspace-relative or inside the workspace".to_string(),
+                ));
+            }
+        }
+    }
+
+    Ok(normalized)
 }
 
 #[derive(Debug, Clone)]
@@ -421,11 +463,37 @@ pub fn actor_capabilities(actor_kind: ActorKind) -> BTreeSet<ToolCapability> {
 mod tests {
     use super::{
         build_tool_function_name_mapping, canonical_tool_id_for, sanitize_tool_function_name,
-        ArtifactStore, ArtifactStoreError, ToolCapability, ToolRegistry,
+        ArtifactStore, ArtifactStoreError, ToolCapability, ToolContext, ToolError, ToolRegistry,
     };
+    use crate::clock::RealClock;
+    use crate::coord::{spawn_coordinator, CoordinatorConfig};
     use crate::event::ActorKind;
+    use crate::event::EventActor;
+    use crate::redact::DefaultRedactor;
     use std::collections::BTreeSet;
     use std::fs;
+    use std::path::Path;
+    use std::sync::Arc;
+
+    fn tool_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
+        let coordinator = spawn_coordinator(
+            CoordinatorConfig::default(),
+            Arc::new(RealClock::new()),
+            Arc::new(DefaultRedactor::default()),
+        );
+
+        ToolContext {
+            run_id: "run-tool-tests".to_string(),
+            workspace_root: workspace_root.to_path_buf(),
+            artifacts_dir: workspace_root.join("artifacts"),
+            actor: EventActor::new(ActorKind::Supervisor, None),
+            category: Some("deep".to_string()),
+            plan_mode: false,
+            plan_exit_target_profile: None,
+            tool_call_id: tool_call_id.to_string(),
+            coordinator,
+        }
+    }
 
     #[test]
     fn worker_can_use_spawn_agent_capability() {
@@ -462,6 +530,37 @@ mod tests {
             .write_text("../escape.txt", "blocked")
             .expect_err("traversal must fail");
         assert!(matches!(err, ArtifactStoreError::ParentTraversal(_)));
+    }
+
+    #[tokio::test]
+    async fn resolve_workspace_path_lexically_normalizes_self_references() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let workspace = temp_dir.path().join("workspace");
+        fs::create_dir_all(&workspace).expect("workspace dir");
+        let ctx = tool_context(&workspace, "tool-call-1");
+
+        let resolved = ctx
+            .resolve_workspace_path(Path::new("missing/.."))
+            .expect("missing/.. should normalize to workspace root");
+
+        assert_eq!(
+            resolved,
+            workspace.canonicalize().expect("canonical workspace")
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_workspace_path_blocks_parent_traversal_above_workspace() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let workspace = temp_dir.path().join("workspace");
+        fs::create_dir_all(&workspace).expect("workspace dir");
+        let ctx = tool_context(&workspace, "tool-call-2");
+
+        let err = ctx
+            .resolve_workspace_path(Path::new("../escape.txt"))
+            .expect_err("parent traversal must be blocked");
+
+        assert!(matches!(err, ToolError::PathEscapesWorkspace { .. }));
     }
 
     #[test]
@@ -517,7 +616,6 @@ mod tests {
             "bash",
             "write",
             "edit",
-            "apply_patch",
             "webfetch",
             "todowrite",
             "todoread",

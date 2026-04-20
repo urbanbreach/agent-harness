@@ -153,6 +153,13 @@ pub enum TaskScheduleState {
     Started,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskTerminalScope {
+    AgentTurn,
+    ToolCall,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ToolIdentityMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -257,6 +264,8 @@ pub struct TaskCompletionMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lineage: Option<TaskLineageMetadata>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_scope: Option<TaskTerminalScope>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timing: Option<ExecutionTimingMetadata>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hook_executions: Vec<HookExecutionMetadata>,
@@ -266,6 +275,8 @@ pub struct TaskCompletionMetadata {
 pub struct TaskCancelledEvent {
     pub task_id: String,
     pub reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_scope: Option<TaskTerminalScope>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

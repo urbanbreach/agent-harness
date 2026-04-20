@@ -2417,21 +2417,21 @@ mod tests {
     fn live_smoke_env_reference_supports_default_fallback_syntax() {
         with_env_var_state("HARNESS_PROVIDER_TEST_API_KEY", None, || {
             assert_eq!(
-                resolve_env_reference("${HARNESS_PROVIDER_TEST_API_KEY:-sk-zerolimit}"),
-                "sk-zerolimit"
+                resolve_env_reference("${HARNESS_PROVIDER_TEST_API_KEY:-fallback-key}"),
+                "fallback-key"
             );
         });
 
         with_env_var_state("HARNESS_PROVIDER_TEST_API_KEY", Some(""), || {
             assert_eq!(
-                resolve_env_reference("${HARNESS_PROVIDER_TEST_API_KEY:-sk-zerolimit}"),
-                "sk-zerolimit"
+                resolve_env_reference("${HARNESS_PROVIDER_TEST_API_KEY:-fallback-key}"),
+                "fallback-key"
             );
         });
 
         with_env_var_state("HARNESS_PROVIDER_TEST_API_KEY", Some("real-key"), || {
             assert_eq!(
-                resolve_env_reference("${HARNESS_PROVIDER_TEST_API_KEY:-sk-zerolimit}"),
+                resolve_env_reference("${HARNESS_PROVIDER_TEST_API_KEY:-fallback-key}"),
                 "real-key"
             );
         });

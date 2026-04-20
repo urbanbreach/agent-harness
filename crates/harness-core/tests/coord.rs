@@ -2909,6 +2909,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                     result_digest: "digest-child-a-done".to_string(),
                     metadata: Some(TaskCompletionMetadata {
                         lineage: None,
+                        task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
                         timing: Some(ExecutionTimingMetadata {
                             started_mono_ms: Some(9),
                             finished_mono_ms: Some(60),
@@ -2950,6 +2951,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                 EventV1::TaskCancelled(TaskCancelledEvent {
                     task_id: "task_000302".to_string(),
                     reason: "cancelled while running".to_string(),
+                    task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
                 }),
             ),
             resume_fixture_event_with_actor_and_correlation(
@@ -3167,6 +3169,7 @@ fn replay_suppresses_hooks_but_preserves_hook_history() {
                     result_digest: "digest-child-hook".to_string(),
                     metadata: Some(TaskCompletionMetadata {
                         lineage: Some(lineage),
+                        task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
                         timing: Some(ExecutionTimingMetadata {
                             started_mono_ms: Some(6),
                             finished_mono_ms: Some(7),
@@ -3614,6 +3617,17 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
             3,
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000001"),
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: "task_000001".to_string(),
+                state: TaskScheduleState::Started,
+                queue_key: Some("provider_model:mock:model-1".to_string()),
+            }),
+        ),
+        resume_fixture_event_with_actor_and_correlation(
+            run_id,
+            4,
+            EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            Some("req_000001"),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
                 request_id: "req_000001".to_string(),
                 provider_id: "mock".to_string(),
@@ -3624,7 +3638,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
         ),
         resume_fixture_event_with_actor_and_correlation(
             run_id,
-            4,
+            5,
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000001"),
             EventV1::ProviderStreamDelta(harness_core::event::ProviderStreamDeltaEvent {
@@ -3634,7 +3648,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
         ),
         resume_fixture_event_with_actor_and_correlation(
             run_id,
-            5,
+            6,
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000001"),
             EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
@@ -3646,7 +3660,30 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
         ),
         resume_fixture_event_with_actor_and_correlation(
             run_id,
-            6,
+            7,
+            EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            Some("req_000001"),
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: "task_000002".to_string(),
+                state: TaskScheduleState::Started,
+                queue_key: Some("tool:edit.hashline_apply".to_string()),
+            }),
+        ),
+        resume_fixture_event_with_actor_and_correlation(
+            run_id,
+            8,
+            EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            Some("req_000001"),
+            EventV1::TaskCompleted(TaskCompletedEvent {
+                task_id: "task_000002".to_string(),
+                result_summary: "tool output".to_string(),
+                result_digest: "digest-tool-task".to_string(),
+                metadata: None,
+            }),
+        ),
+        resume_fixture_event_with_actor_and_correlation(
+            run_id,
+            9,
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000002"),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
@@ -3659,7 +3696,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
         ),
         resume_fixture_event_with_actor_and_correlation(
             run_id,
-            7,
+            10,
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000002"),
             EventV1::ProviderStreamDelta(harness_core::event::ProviderStreamDeltaEvent {
@@ -3669,7 +3706,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
         ),
         resume_fixture_event_with_actor_and_correlation(
             run_id,
-            8,
+            11,
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000002"),
             EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
@@ -3681,7 +3718,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
         ),
         resume_fixture_event_with_actor_and_correlation(
             run_id,
-            9,
+            12,
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000001"),
             EventV1::TaskCompleted(TaskCompletedEvent {
@@ -3693,7 +3730,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
         ),
         resume_fixture_event(
             run_id,
-            10,
+            13,
             EventV1::RunFinished(RunFinishedEvent {
                 summary: "segment complete".to_string(),
             }),

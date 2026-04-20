@@ -31,8 +31,8 @@ use crate::event::{
     PermissionResolvedEvent, PolicyViolationDetectedEvent, ProviderReasoningDeltaEvent,
     RunFinishedEvent, RunStartedEvent, StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent,
     TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState,
-    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallStartedEvent,
-    ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent,
+    TaskScheduledEvent, TaskTerminalScope, ToolCallFinishedEvent, ToolCallMetadata,
+    ToolCallStartedEvent, ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent,
 };
 use crate::perm::{
     permission_kind_for_tool, permission_kind_for_tool_call, PermissionDecision, PermissionKind,
@@ -2470,7 +2470,11 @@ impl Coordinator {
                 agent_actor(&queued.agent_id),
                 Some(format!("task:{task_id}")),
                 Some(queued.request_id),
-                EventV1::TaskCancelled(TaskCancelledEvent { task_id, reason }),
+                EventV1::TaskCancelled(TaskCancelledEvent {
+                    task_id,
+                    reason,
+                    task_scope: Some(TaskTerminalScope::AgentTurn),
+                }),
             )?;
             return Ok(());
         }
@@ -2485,7 +2489,11 @@ impl Coordinator {
                 agent_actor(&running.agent_id),
                 Some(format!("task:{task_id}")),
                 Some(running.request_id.clone()),
-                EventV1::TaskCancelled(TaskCancelledEvent { task_id, reason }),
+                EventV1::TaskCancelled(TaskCancelledEvent {
+                    task_id,
+                    reason,
+                    task_scope: Some(TaskTerminalScope::AgentTurn),
+                }),
             )?;
             return Ok(());
         }
@@ -2506,7 +2514,11 @@ impl Coordinator {
             owner_actor,
             Some(format!("task:{task_id}")),
             request_correlation_id,
-            EventV1::TaskCancelled(TaskCancelledEvent { task_id, reason }),
+            EventV1::TaskCancelled(TaskCancelledEvent {
+                task_id,
+                reason,
+                task_scope: Some(TaskTerminalScope::ToolCall),
+            }),
         )?;
 
         Ok(())
@@ -2733,6 +2745,7 @@ impl Coordinator {
                         EventV1::TaskCancelled(TaskCancelledEvent {
                             task_id,
                             reason: reason.clone(),
+                            task_scope: Some(TaskTerminalScope::ToolCall),
                         }),
                     )?;
                     append_failed_tool_call_finished_event(
@@ -2769,6 +2782,7 @@ impl Coordinator {
                         result_summary: result_summary.clone(),
                         metadata: Some(TaskCompletionMetadata {
                             lineage: Some(lineage.clone()),
+                            task_scope: Some(TaskTerminalScope::ToolCall),
                             timing: Some(timing.clone()),
                             hook_executions: hook_executions.clone(),
                         }),
@@ -2863,6 +2877,7 @@ impl Coordinator {
                     EventV1::TaskCancelled(TaskCancelledEvent {
                         task_id,
                         reason: final_error.clone(),
+                        task_scope: Some(TaskTerminalScope::ToolCall),
                     }),
                 )?;
 
@@ -2942,6 +2957,7 @@ impl Coordinator {
                     EventV1::TaskCancelled(TaskCancelledEvent {
                         task_id,
                         reason: final_reason.clone(),
+                        task_scope: Some(TaskTerminalScope::ToolCall),
                     }),
                 )?;
 
@@ -3050,7 +3066,11 @@ impl Coordinator {
                     agent_actor(&agent_id),
                     Some(format!("task:{task_id}")),
                     Some(request_id),
-                    EventV1::TaskCancelled(TaskCancelledEvent { task_id, reason }),
+                    EventV1::TaskCancelled(TaskCancelledEvent {
+                        task_id,
+                        reason,
+                        task_scope: Some(TaskTerminalScope::AgentTurn),
+                    }),
                 )?;
             }
         }
@@ -3192,7 +3212,11 @@ impl Coordinator {
                     agent_actor(&agent_id),
                     Some(format!("task:{task_id}")),
                     Some(request_id),
-                    EventV1::TaskCancelled(TaskCancelledEvent { task_id, reason }),
+                    EventV1::TaskCancelled(TaskCancelledEvent {
+                        task_id,
+                        reason,
+                        task_scope: Some(TaskTerminalScope::AgentTurn),
+                    }),
                 )?;
             }
         }
@@ -3313,7 +3337,11 @@ impl Coordinator {
                             agent_actor(&running.agent_id),
                             Some(format!("task:{task_id}")),
                             Some(request_id),
-                            EventV1::TaskCancelled(TaskCancelledEvent { task_id, reason }),
+                            EventV1::TaskCancelled(TaskCancelledEvent {
+                                task_id,
+                                reason,
+                                task_scope: Some(TaskTerminalScope::AgentTurn),
+                            }),
                         )?;
                     } else {
                         append_payload_event_with_correlation(
@@ -3329,6 +3357,7 @@ impl Coordinator {
                                 result_summary: output,
                                 metadata: Some(TaskCompletionMetadata {
                                     lineage: None,
+                                    task_scope: Some(TaskTerminalScope::AgentTurn),
                                     timing: Some(execution_timing_metadata(
                                         running.started_mono_ms,
                                         finished_mono_ms,
@@ -3353,7 +3382,11 @@ impl Coordinator {
                         agent_actor(&running.agent_id),
                         Some(format!("task:{task_id}")),
                         Some(request_id),
-                        EventV1::TaskCancelled(TaskCancelledEvent { task_id, reason }),
+                        EventV1::TaskCancelled(TaskCancelledEvent {
+                            task_id,
+                            reason,
+                            task_scope: Some(TaskTerminalScope::AgentTurn),
+                        }),
                     )?;
                 }
             }
@@ -5478,57 +5511,10 @@ fn hashline_diff_refs(result: &ToolResult) -> (Option<String>, Option<String>) {
 }
 
 fn applied_tool_edit_metadata(
-    tool_id: &str,
+    _tool_id: &str,
     result: &ToolResult,
     fallback: Option<&HashlineEditMetadata>,
 ) -> Vec<AppliedToolEditMetadata> {
-    if canonical_tool_id_for(tool_id) == Some("apply_patch") {
-        return result
-            .structured_json
-            .as_ref()
-            .and_then(|value| value.get("edits"))
-            .and_then(Value::as_array)
-            .map(|edits| {
-                edits
-                    .iter()
-                    .filter_map(|edit| {
-                        let edit_id = edit.get("edit_id").and_then(Value::as_str)?.trim();
-                        let path = edit.get("path").and_then(Value::as_str)?.trim();
-                        if edit_id.is_empty() || path.is_empty() {
-                            return None;
-                        }
-                        let summary = edit
-                            .get("summary")
-                            .and_then(Value::as_str)
-                            .map(str::trim)
-                            .filter(|value| !value.is_empty())
-                            .unwrap_or("apply patch update");
-                        Some(AppliedToolEditMetadata {
-                            metadata: HashlineEditMetadata {
-                                edit_id: edit_id.to_string(),
-                                path: path.to_string(),
-                                summary: summary.to_string(),
-                                patch_digest: digest12(edit_id.as_bytes()),
-                            },
-                            diff_rel_path: edit
-                                .get("diff_rel_path")
-                                .and_then(Value::as_str)
-                                .map(ToOwned::to_owned),
-                            diff_digest: edit
-                                .get("diff_digest")
-                                .and_then(Value::as_str)
-                                .map(ToOwned::to_owned),
-                            deleted: edit
-                                .get("deleted")
-                                .and_then(Value::as_bool)
-                                .unwrap_or(false),
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-    }
-
     let Some(metadata) = fallback else {
         return Vec::new();
     };
@@ -5926,6 +5912,8 @@ fn restore_provider_context_from_history(
 
     let mut histories: BTreeMap<String, Vec<ProviderConversationTurn>> = BTreeMap::new();
     let mut requests: BTreeMap<String, HistoricalRequestState> = BTreeMap::new();
+    let mut request_turn_task_ids: BTreeMap<String, String> = BTreeMap::new();
+    let mut historical_task_scopes: BTreeMap<String, TaskTerminalScope> = BTreeMap::new();
     let mut expected_seq = 1_u64;
 
     for (line_number, line) in BufReader::new(file).lines().enumerate() {
@@ -5996,10 +5984,42 @@ fn restore_provider_context_from_history(
                     .assistant_output
                     .push_str(&payload.delta);
             }
+            EventV1::TaskScheduled(payload) => {
+                let Some(queue_key) = payload.queue_key.as_deref() else {
+                    continue;
+                };
+
+                let scope = if queue_key.starts_with("provider_model:") {
+                    Some(TaskTerminalScope::AgentTurn)
+                } else if queue_key.starts_with("tool:") {
+                    Some(TaskTerminalScope::ToolCall)
+                } else {
+                    None
+                };
+
+                if let Some(scope) = scope {
+                    historical_task_scopes.insert(payload.task_id.clone(), scope);
+                    if matches!(scope, TaskTerminalScope::AgentTurn) {
+                        if let Some(request_id) = event.correlation_id.as_deref() {
+                            request_turn_task_ids
+                                .insert(request_id.to_string(), payload.task_id.clone());
+                        }
+                    }
+                }
+            }
             EventV1::TaskCompleted(payload) => {
                 let Some(request_id) = event.correlation_id.as_deref() else {
                     continue;
                 };
+
+                if !historical_task_completion_marks_agent_turn(
+                    request_id,
+                    payload,
+                    &historical_task_scopes,
+                    &request_turn_task_ids,
+                ) {
+                    continue;
+                }
 
                 let Some(agent_id) = event
                     .actor
@@ -6051,6 +6071,31 @@ fn restore_provider_context_from_history(
     }
 
     Ok(histories)
+}
+
+fn historical_task_completion_marks_agent_turn(
+    request_id: &str,
+    payload: &TaskCompletedEvent,
+    historical_task_scopes: &BTreeMap<String, TaskTerminalScope>,
+    request_turn_task_ids: &BTreeMap<String, String>,
+) -> bool {
+    if let Some(scope) = payload
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.task_scope)
+    {
+        return matches!(scope, TaskTerminalScope::AgentTurn);
+    }
+
+    if let Some(scope) = historical_task_scopes.get(&payload.task_id) {
+        return matches!(scope, TaskTerminalScope::AgentTurn);
+    }
+
+    if let Some(turn_task_id) = request_turn_task_ids.get(request_id) {
+        return turn_task_id == &payload.task_id;
+    }
+
+    true
 }
 
 fn parse_prefixed_counter(id: &str, expected_prefix: &str) -> Option<u64> {

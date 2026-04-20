@@ -136,8 +136,8 @@ fn integrations_mcp_accepts_stdio_and_http_server_shapes() {
 }
 
 #[test]
-fn integrations_mcp_accepts_opencode_local_and_remote_server_shapes() {
-    let parsed: HarnessConfig = json5::from_str(
+fn integrations_mcp_rejects_legacy_local_and_remote_server_shapes() {
+    let error = json5::from_str::<HarnessConfig>(
         r#"
         {
           providers: {
@@ -211,63 +211,20 @@ fn integrations_mcp_accepts_opencode_local_and_remote_server_shapes() {
         }
         "#,
     )
-    .expect("opencode-shaped MCP config should deserialize");
+    .expect_err("legacy-shaped MCP config should fail");
 
-    match parsed
-        .integrations
-        .mcp
-        .servers
-        .get("docs_rs")
-        .expect("docs-rs server")
-    {
-        McpServerConfig::Stdio {
-            command,
-            env,
-            timeout_secs,
-            enabled,
-            ..
-        } => {
-            assert_eq!(command, &["bunx", "-y", "@nuskey8/docs-rs-mcp@latest"]);
-            assert_eq!(env.get("RUST_LOG").map(String::as_str), Some("warn"));
-            assert_eq!(*timeout_secs, 19);
-            assert!(*enabled);
-        }
-        other => panic!("expected local server to normalize to stdio, got {other:?}"),
-    }
-
-    match parsed
-        .integrations
-        .mcp
-        .servers
-        .get("gh_grep")
-        .expect("gh_grep server")
-    {
-        McpServerConfig::Http {
-            endpoint,
-            headers,
-            timeout_secs,
-            enabled,
-        } => {
-            assert_eq!(endpoint, "https://mcp.grep.app");
-            assert_eq!(
-                headers.get("Authorization").map(String::as_str),
-                Some("Bearer token")
-            );
-            assert_eq!(*timeout_secs, 33);
-            assert!(!enabled);
-        }
-        other => panic!("expected remote server to normalize to http, got {other:?}"),
-    }
+    assert!(error.to_string().contains("missing field `transport`"));
 }
 
 #[test]
-fn config_schema_exports_integrations_mcp_servers() {
+fn config_schema_exports_top_level_mcp_servers() {
     let schema = harness_schema_pretty_json().expect("schema generation should succeed");
 
     assert!(schema.contains("\"mcp\""));
-    assert!(schema.contains("\"servers\""));
     assert!(schema.contains("\"transport\""));
     assert!(schema.contains("\"http\""));
+    assert!(!schema.contains("\"integrations\""));
+    assert!(!schema.contains("\"servers\""));
 }
 
 #[test]
@@ -320,8 +277,8 @@ fn integrations_mcp_rejects_invalid_server_ids() {
             mcp: {
               servers: {
                 "bad.name": {
-                  type: "remote",
-                  url: "https://example.test/mcp",
+                  transport: "http",
+                  endpoint: "https://example.test/mcp",
                 },
               },
             },
