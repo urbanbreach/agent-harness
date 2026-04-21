@@ -72,6 +72,25 @@ pub fn selected_live_viewport() -> LiveViewportPreset {
     }
 }
 
+pub(crate) fn parser_with_screen(lines: &[&str]) -> VtParser {
+    let mut parser = VtParser::new(24, 80, 0);
+    let mut frame = String::from("\u{1b}[2J\u{1b}[H");
+    for (idx, line) in lines.iter().enumerate() {
+        if idx > 0 {
+            frame.push('\n');
+        }
+        frame.push_str(line);
+    }
+    parser.process(frame.as_bytes());
+    parser
+}
+
+pub(crate) fn write_tiny_png(path: &Path) {
+    RgbImage::from_pixel(1, 1, image::Rgb([0, 0, 0]))
+        .save(path)
+        .unwrap_or_else(|err| panic!("failed to write tiny PNG {}: {err}", path.display()));
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FocusCapture {
     marker: String,

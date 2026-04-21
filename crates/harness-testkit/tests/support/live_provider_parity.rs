@@ -251,3 +251,15 @@ pub(crate) fn provider_turn_summary(
         }
     }))
 }
+
+pub(crate) fn assert_events_show_successful_provider_turn(provider_name: &str, events_body: &str) {
+    let observation = collect_provider_turn_observation(events_body);
+    assert_provider_turn_completed(&observation).unwrap_or_else(|err| {
+        panic!("provider turn did not complete successfully: {err}\nevents:\n{events_body}")
+    });
+    if provider_turn_expectation(provider_name).is_some() {
+        assert_registered_provider_turn(provider_name, &observation).unwrap_or_else(|err| {
+            panic!("provider turn parity mismatch: {err}\nevents:\n{events_body}")
+        });
+    }
+}

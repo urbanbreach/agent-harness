@@ -88,6 +88,30 @@ pub(crate) fn verdict_artifact_path(png_path: &Path) -> PathBuf {
     png_path.with_extension("verdict.json")
 }
 
+#[expect(
+    dead_code,
+    reason = "reserved for the ignored live visual-verifier lane"
+)]
+pub(crate) fn write_structured_vision_verdict(
+    checkpoint_id: &str,
+    verdict: &LiveVisionVerdict,
+) -> Result<PathBuf, String> {
+    let verdict_json = read_required_json(verdict.artifact_path())?;
+    let structured_path = verdict
+        .artifact_path()
+        .with_file_name(format!("{checkpoint_id}.vision.json"));
+    let rendered = serde_json::to_string_pretty(&verdict_json)
+        .map_err(|err| format!("failed to serialize structured vision verdict JSON: {err}"))?;
+    fs::write(&structured_path, rendered).map_err(|err| {
+        format!(
+            "failed to write structured vision verdict artifact {}: {err}",
+            structured_path.display()
+        )
+    })?;
+
+    Ok(structured_path)
+}
+
 pub(crate) async fn verify_checkpoint(
     client: &Client,
     config: &LiveVisionProxyConfig,
@@ -324,6 +348,13 @@ fn required_non_empty_string(value: &Value, field: &str) -> Result<String, Strin
     }
 
     Ok(trimmed.to_string())
+}
+
+fn read_required_json(path: &Path) -> Result<Value, String> {
+    let body = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read JSON artifact {}: {err}", path.display()))?;
+    serde_json::from_str(&body)
+        .map_err(|err| format!("failed to parse JSON artifact {}: {err}", path.display()))
 }
 
 fn required_string_array(value: &Value, field: &str) -> Result<Vec<String>, String> {

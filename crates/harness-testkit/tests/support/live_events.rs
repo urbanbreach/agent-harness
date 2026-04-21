@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::Value;
+use serde_json::{json, Value};
+
+use crate::{DEFAULT_LIVE_PROXY_VARIANT, LIVE_CHAT_TODO_CONTENT};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ToolFlowPhase {
@@ -371,6 +373,351 @@ pub(crate) fn resolve_tagged_run_dir(
             session_dir.display()
         )),
     }
+}
+
+pub(crate) fn read_required_json(path: &Path) -> Result<Value, String> {
+    let body = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read JSON artifact {}: {err}", path.display()))?;
+    serde_json::from_str(&body)
+        .map_err(|err| format!("failed to parse JSON artifact {}: {err}", path.display()))
+}
+
+pub(crate) fn assert_requested_tool_args(
+    events_body: &str,
+    expected_tool_id: &str,
+    expected_args: &Value,
+) -> Result<(), String> {
+    let args = first_requested_tool_args(events_body, expected_tool_id)?
+        .ok_or_else(|| format!("expected requested args for `{expected_tool_id}`"))?;
+    if &args == expected_args {
+        Ok(())
+    } else {
+        Err(format!(
+            "expected `{expected_tool_id}` args {} ; found {}",
+            expected_args, args
+        ))
+    }
+}
+
+pub(crate) fn assert_tool_call_output_contains(
+    events_body: &str,
+    expected_tool_id: &str,
+    needle: &str,
+) -> Result<(), String> {
+    let output = first_tool_call_output_summary(events_body, expected_tool_id)?
+        .ok_or_else(|| format!("expected output summary for `{expected_tool_id}`"))?;
+    if output.contains(needle) {
+        Ok(())
+    } else {
+        Err(format!(
+            "expected `{expected_tool_id}` output summary to contain `{needle}`; found `{output}`"
+        ))
+    }
+}
+
+pub(crate) fn assert_event_log_contains(events_body: &str, needle: &str) -> Result<(), String> {
+    if events_body.contains(needle) {
+        Ok(())
+    } else {
+        Err(format!("expected event log to contain `{needle}`"))
+    }
+}
+
+pub(crate) fn assert_requested_tool_sequence(
+    events_body: &str,
+    expected_tools: &[&str],
+) -> Result<(), String> {
+    let mut requested = Vec::<(String, String)>::new();
+    let mut finished = BTreeMap::<String, String>::new();
+
+    for (idx, line) in events_body.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let event: Value = serde_json::from_str(line)
+            .map_err(|err| format!("events line {} is invalid JSON: {err}", idx + 1))?;
+        let event_type = event
+            .get("payload")
+            .and_then(|payload| payload.get("event_type"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let data = event
+            .get("payload")
+            .and_then(|payload| payload.get("data"))
+            .cloned()
+            .unwrap_or(Value::Null);
+
+        match event_type {
+            "tool_call_requested" => {
+                let Some(tool_id) = data.get("tool_id").and_then(Value::as_str) else {
+                    continue;
+                };
+                let Some(tool_call_id) = data.get("tool_call_id").and_then(Value::as_str) else {
+                    continue;
+                };
+                requested.push((tool_id.to_string(), tool_call_id.to_string()));
+            }
+            "tool_call_finished" => {
+                let Some(tool_call_id) = data.get("tool_call_id").and_then(Value::as_str) else {
+                    continue;
+                };
+                let status = data
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .unwrap_or("missing");
+                finished.insert(tool_call_id.to_string(), status.to_string());
+            }
+            _ => {}
+        }
+    }
+
+    let actual_tools = requested
+        .iter()
+        .map(|(tool_id, _)| tool_id.as_str())
+        .collect::<Vec<_>>();
+    if actual_tools != expected_tools {
+        return Err(format!(
+            "expected requested tool sequence {:?}; found {:?}",
+            expected_tools, actual_tools
+        ));
+    }
+
+    for (tool_id, tool_call_id) in requested {
+        let status = finished
+            .get(&tool_call_id)
+            .map(String::as_str)
+            .unwrap_or("missing");
+        if status != "succeeded" {
+            return Err(format!(
+                "expected `{tool_id}` ({tool_call_id}) to finish with status `succeeded`; found `{status}`"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) fn assert_run_records_live_runtime_context(
+    run_dir: &Path,
+    expected_profile: &str,
+    expected_model: &str,
+    expected_variant: Option<&str>,
+) -> Result<(), String> {
+    let meta_path = run_dir.join("meta.json");
+    let meta = read_required_json(&meta_path)?;
+    let context = meta
+        .get("recorded_runtime_context")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            format!(
+                "expected recorded_runtime_context in {}",
+                meta_path.display()
+            )
+        })?;
+
+    if context.get("profile").and_then(Value::as_str) != Some(expected_profile) {
+        return Err(format!(
+            "expected runtime context profile `{expected_profile}` in {}; found {:?}",
+            meta_path.display(),
+            context.get("profile")
+        ));
+    }
+    if context.get("model").and_then(Value::as_str) != Some(expected_model) {
+        return Err(format!(
+            "expected runtime context model `{expected_model}` in {}; found {:?}",
+            meta_path.display(),
+            context.get("model")
+        ));
+    }
+    if context.get("variant").and_then(Value::as_str) != expected_variant {
+        return Err(format!(
+            "expected runtime context variant {:?} in {}; found {:?}",
+            expected_variant,
+            meta_path.display(),
+            context.get("variant")
+        ));
+    }
+    if expected_variant == Some(DEFAULT_LIVE_PROXY_VARIANT)
+        && context.get("reasoning_effort").and_then(Value::as_str) != Some("low")
+    {
+        return Err(format!(
+            "expected runtime context reasoning_effort `low` in {}; found {:?}",
+            meta_path.display(),
+            context.get("reasoning_effort")
+        ));
+    }
+
+    Ok(())
+}
+
+pub(crate) fn assert_todo_state_matches(run_dir: &Path) -> Result<(), String> {
+    let todos_path = run_dir.join("control-plane").join("todos.json");
+    let todos = read_required_json(&todos_path)?;
+    let expected = json!([
+        {
+            "content": LIVE_CHAT_TODO_CONTENT,
+            "status": "pending",
+            "priority": "high",
+        }
+    ]);
+    if todos == expected {
+        Ok(())
+    } else {
+        Err(format!(
+            "expected {} to equal {}; found {}",
+            todos_path.display(),
+            expected,
+            todos
+        ))
+    }
+}
+
+pub(crate) fn assert_question_state_matches(
+    run_dir: &Path,
+    events_body: &str,
+) -> Result<(), String> {
+    let tool_call_id = first_requested_tool_call_id(events_body, "question")?
+        .ok_or_else(|| "expected requested question tool_call_id".to_string())?;
+    let question_path = run_dir
+        .join("control-plane")
+        .join("questions")
+        .join(format!("{tool_call_id}.json"));
+    let question_state = read_required_json(&question_path)?;
+    let expected = json!([
+        {
+            "question": "Pick one",
+            "header": "Choice",
+            "multiple": Value::Null,
+            "options": [
+                {"label": "Yes", "description": "Choose yes"},
+                {"label": "No", "description": "Choose no"}
+            ]
+        }
+    ]);
+    if question_state == expected {
+        Ok(())
+    } else {
+        Err(format!(
+            "expected {} to equal {}; found {}",
+            question_path.display(),
+            expected,
+            question_state
+        ))
+    }
+}
+
+pub(crate) fn first_requested_tool_call_id(
+    events_body: &str,
+    expected_tool_id: &str,
+) -> Result<Option<String>, String> {
+    for (idx, line) in events_body.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let event: Value = serde_json::from_str(line)
+            .map_err(|err| format!("events line {} is invalid JSON: {err}", idx + 1))?;
+        let event_type = event
+            .get("payload")
+            .and_then(|payload| payload.get("event_type"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if event_type != "tool_call_requested" {
+            continue;
+        }
+        let data = event
+            .get("payload")
+            .and_then(|payload| payload.get("data"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        if data.get("tool_id").and_then(Value::as_str) != Some(expected_tool_id) {
+            continue;
+        }
+        if let Some(tool_call_id) = data.get("tool_call_id").and_then(Value::as_str) {
+            return Ok(Some(tool_call_id.to_string()));
+        }
+    }
+
+    Ok(None)
+}
+
+pub(crate) fn first_requested_tool_args(
+    events_body: &str,
+    expected_tool_id: &str,
+) -> Result<Option<Value>, String> {
+    for (idx, line) in events_body.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let event: Value = serde_json::from_str(line)
+            .map_err(|err| format!("events line {} is invalid JSON: {err}", idx + 1))?;
+        let event_type = event
+            .get("payload")
+            .and_then(|payload| payload.get("event_type"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if event_type != "tool_call_requested" {
+            continue;
+        }
+        let data = event
+            .get("payload")
+            .and_then(|payload| payload.get("data"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        if data.get("tool_id").and_then(Value::as_str) != Some(expected_tool_id) {
+            continue;
+        }
+        if let Some(args_summary) = data.get("args_summary").and_then(Value::as_str) {
+            let args = serde_json::from_str(args_summary).map_err(|err| {
+                format!(
+                    "failed to parse args_summary for `{expected_tool_id}` on line {}: {err}",
+                    idx + 1
+                )
+            })?;
+            return Ok(Some(args));
+        }
+    }
+
+    Ok(None)
+}
+
+pub(crate) fn first_tool_call_output_summary(
+    events_body: &str,
+    expected_tool_id: &str,
+) -> Result<Option<String>, String> {
+    let tool_call_id = first_requested_tool_call_id(events_body, expected_tool_id)?;
+    let Some(tool_call_id) = tool_call_id else {
+        return Ok(None);
+    };
+
+    for (idx, line) in events_body.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let event: Value = serde_json::from_str(line)
+            .map_err(|err| format!("events line {} is invalid JSON: {err}", idx + 1))?;
+        let event_type = event
+            .get("payload")
+            .and_then(|payload| payload.get("event_type"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if event_type != "tool_call_finished" {
+            continue;
+        }
+        let data = event
+            .get("payload")
+            .and_then(|payload| payload.get("data"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        if data.get("tool_call_id").and_then(Value::as_str) != Some(tool_call_id.as_str()) {
+            continue;
+        }
+        return Ok(data
+            .get("output_summary")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned));
+    }
+
+    Ok(None)
 }
 
 fn required_str<'a>(
