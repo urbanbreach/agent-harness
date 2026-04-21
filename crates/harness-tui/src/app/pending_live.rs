@@ -13,6 +13,13 @@ static PENDING_LIVE_LAUNCH_METADATA: OnceLock<Mutex<Option<LaunchMetadata>>> = O
 static PENDING_LIVE_PROMPT_DRAFT: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 #[cfg(not(test))]
 static PENDING_LIVE_PROMPT_AUTO_SUBMIT: OnceLock<Mutex<bool>> = OnceLock::new();
+#[cfg(not(test))]
+static PENDING_LIVE_PROMPT_ENV_CONSUMED: OnceLock<Mutex<bool>> = OnceLock::new();
+
+#[cfg(not(test))]
+const PENDING_LIVE_PROMPT_DRAFT_ENV: &str = "HARNESS_TUI_PENDING_LIVE_PROMPT_DRAFT";
+#[cfg(not(test))]
+const PENDING_LIVE_PROMPT_AUTO_SUBMIT_ENV: &str = "HARNESS_TUI_PENDING_LIVE_PROMPT_AUTO_SUBMIT";
 
 #[cfg(test)]
 thread_local! {
@@ -42,6 +49,11 @@ impl PendingLiveState {
     #[cfg(not(test))]
     fn prompt_auto_submit() -> &'static Mutex<bool> {
         PENDING_LIVE_PROMPT_AUTO_SUBMIT.get_or_init(|| Mutex::new(false))
+    }
+
+    #[cfg(not(test))]
+    fn prompt_env_consumed() -> &'static Mutex<bool> {
+        PENDING_LIVE_PROMPT_ENV_CONSUMED.get_or_init(|| Mutex::new(false))
     }
 
     fn set_launch_metadata(metadata: LaunchMetadata) {
@@ -116,7 +128,34 @@ impl PendingLiveState {
                 .expect("pending live prompt auto-submit lock poisoned"),
         );
 
-        draft.map(|text| PendingLivePrompt { text, auto_submit })
+        if let Some(text) = draft {
+            return Some(PendingLivePrompt { text, auto_submit });
+        }
+
+        #[cfg(not(test))]
+        {
+            let mut env_consumed = Self::prompt_env_consumed()
+                .lock()
+                .expect("pending live prompt env-consumed lock poisoned");
+            if *env_consumed {
+                return None;
+            }
+
+            let draft = std::env::var(PENDING_LIVE_PROMPT_DRAFT_ENV)
+                .ok()
+                .filter(|value| !value.trim().is_empty());
+            let auto_submit = std::env::var(PENDING_LIVE_PROMPT_AUTO_SUBMIT_ENV)
+                .ok()
+                .map(|value| matches!(value.trim(), "1" | "true" | "TRUE" | "yes" | "YES"))
+                .unwrap_or(false);
+            *env_consumed = true;
+            draft.map(|text| PendingLivePrompt { text, auto_submit })
+        }
+
+        #[cfg(test)]
+        {
+            None
+        }
     }
 }
 

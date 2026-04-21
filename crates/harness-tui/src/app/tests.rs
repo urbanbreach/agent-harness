@@ -2425,6 +2425,50 @@ fn tool_call_finished_plan_exit_handoff_emits_switch_model_then_submit_prompt() 
 }
 
 #[test]
+fn tool_call_finished_plan_exit_handoff_ignores_mismatched_source_profile() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(sink));
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_ref("plan", "mock:model-1")
+            .with_available_models(vec![
+                ModelOption::from_model_ref("plan", "mock:model-1"),
+                ModelOption::from_model_ref("build", "mock:model-1"),
+            ])
+            .with_mode_label("Demo"),
+    );
+
+    app.ingest_event(envelope(
+        1,
+        "req_plan_exit_ignored",
+        EventV1::ToolCallFinished(ToolCallFinishedEvent {
+            tool_call_id: "tc_plan_exit_ignored".to_string(),
+            status: ToolCallStatus::Succeeded,
+            output_summary: Some("plan exit handoff ignored".to_string()),
+            output_digest: Some("digest-plan-exit-ignored".to_string()),
+            output_json: Some(serde_json::json!({
+                "plan_exit_handoff": {
+                    "source_profile": "build",
+                    "target_profile": "build",
+                    "prompt": "The plan has been approved, you can now edit files. Execute the plan."
+                }
+            })),
+            metadata: None,
+        }),
+    ));
+
+    assert_eq!(app.active_profile(), "plan");
+    assert!(intents.lock().expect("lock intents").is_empty());
+    assert!(take_pending_live_launch_metadata().is_none());
+}
+
+#[test]
 fn replay_mode_focus_cycle_skips_prompt_and_blocks_draft_edits() {
     let mut app = AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new());
 

@@ -5618,7 +5618,7 @@ fn permission_overlay_preserves_existing_draft_without_buffering_new_letters() {
     assert_eq!(app.prompt_buffer, "keep t");
     assert_eq!(
         app.permission_modal_selection("perm_overlay_home_row_input"),
-        app::PermissionModalSelection::AllowOnce
+        app::permissions::PermissionModalSelection::AllowOnce
     );
 
     let debug = render_live_buffer(&app, 80, 24);

@@ -6,11 +6,13 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{
+use crate::app::session_navigation::{
     session_history_artifact_label, session_history_lineage_label, session_history_profile_label,
     session_history_provider_model_label, session_history_resumability_label,
-    session_history_run_name, session_history_status_label, ActivityEntry, ActivityStatus,
-    AppState, Focus, OrchestrationTaskRow, OrchestrationTaskState, ReviewSurface, RuntimeStateKind,
+    session_history_run_name, session_history_status_label,
+};
+use crate::app::{
+    ActivityEntry, ActivityStatus, AppState, Focus, ReviewSurface, RuntimeStateKind,
     StartupLauncherAction, Tab, ToastVariant, ToolCallDisplayStatus,
 };
 use crate::keybindings::Action;

@@ -12,6 +12,8 @@ use syntect::parsing::SyntaxSet;
 use super::*;
 
 use crate::app::OperatorSidebarSection;
+#[cfg(test)]
+use crate::app::{OrchestrationTaskRow, OrchestrationTaskState};
 use crate::theme::DIFF_SIDE_BY_SIDE_MIN_WIDTH;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1337,137 +1339,6 @@ fn operator_rail_activity_test_app() -> AppState {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
-fn operator_rail_tool_activity_app() -> AppState {
-    let mut app = AppState::new_live(None, false, None);
-    let request_id = "req_operator_rail_tools";
-    let system = harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None);
-
-    app.ingest_event(operator_rail_test_event(
-        1,
-        harness_core::event::EventActor::new(harness_core::event::ActorKind::User, None),
-        harness_core::event::EventV1::UserMessageSubmitted(
-            harness_core::event::UserMessageSubmittedEvent {
-                request_id: request_id.to_string(),
-                text: "Inspect operator rail taxonomy".to_string(),
-            },
-        ),
-    ));
-    app.ingest_event(operator_rail_test_event_with_correlation(
-        2,
-        system.clone(),
-        request_id,
-        harness_core::event::EventV1::ToolCallRequested(
-            harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_search_web".to_string(),
-                tool_id: "search.web".to_string(),
-                args_summary: serde_json::json!({"query": "operator rail taxonomy"}).to_string(),
-                args_digest: "digest-search-web".to_string(),
-                metadata: Some(harness_core::event::ToolCallMetadata {
-                    canonical_tool_id: Some("search.web".to_string()),
-                    ..Default::default()
-                }),
-            },
-        ),
-    ));
-    app.ingest_event(operator_rail_test_event_with_correlation(
-        3,
-        system.clone(),
-        request_id,
-        harness_core::event::EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
-            tool_call_id: "tool_call_search_web".to_string(),
-        }),
-    ));
-    app.ingest_event(operator_rail_test_event_with_correlation(
-        4,
-        system.clone(),
-        request_id,
-        harness_core::event::EventV1::ToolCallFinished(
-            harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_search_web".to_string(),
-                status: harness_core::event::ToolCallStatus::Succeeded,
-                output_summary: Some("Fetched operator rail examples".to_string()),
-                output_digest: Some("digest-search-web-output".to_string()),
-                output_json: None,
-                metadata: Some(harness_core::event::ToolCallMetadata {
-                    canonical_tool_id: Some("search.web".to_string()),
-                    ..Default::default()
-                }),
-            },
-        ),
-    ));
-    app.ingest_event(operator_rail_test_event_with_correlation(
-        5,
-        system.clone(),
-        request_id,
-        harness_core::event::EventV1::ToolCallRequested(
-            harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_search_code".to_string(),
-                tool_id: "search.code".to_string(),
-                args_summary: serde_json::json!({"query": "operator rail section"}).to_string(),
-                args_digest: "digest-search-code".to_string(),
-                metadata: Some(harness_core::event::ToolCallMetadata {
-                    canonical_tool_id: Some("search.code".to_string()),
-                    ..Default::default()
-                }),
-            },
-        ),
-    ));
-    app.ingest_event(operator_rail_test_event_with_correlation(
-        6,
-        system.clone(),
-        request_id,
-        harness_core::event::EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
-            tool_call_id: "tool_call_search_code".to_string(),
-        }),
-    ));
-    app.ingest_event(operator_rail_test_event_with_correlation(
-        7,
-        system.clone(),
-        request_id,
-        harness_core::event::EventV1::ToolCallRequested(
-            harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_web_fetch".to_string(),
-                tool_id: "web.fetch".to_string(),
-                args_summary: serde_json::json!({"url": "https://example.com"}).to_string(),
-                args_digest: "digest-web-fetch".to_string(),
-                metadata: Some(harness_core::event::ToolCallMetadata {
-                    canonical_tool_id: Some("web.fetch".to_string()),
-                    ..Default::default()
-                }),
-            },
-        ),
-    ));
-    app.ingest_event(operator_rail_test_event_with_correlation(
-        8,
-        system.clone(),
-        request_id,
-        harness_core::event::EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
-            tool_call_id: "tool_call_web_fetch".to_string(),
-        }),
-    ));
-    app.ingest_event(operator_rail_test_event_with_correlation(
-        9,
-        system,
-        request_id,
-        harness_core::event::EventV1::ToolCallFinished(
-            harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_web_fetch".to_string(),
-                status: harness_core::event::ToolCallStatus::Succeeded,
-                output_summary: Some("Fetched https://example.com".to_string()),
-                output_digest: Some("digest-web-fetch-output".to_string()),
-                output_json: None,
-                metadata: Some(harness_core::event::ToolCallMetadata {
-                    canonical_tool_id: Some("web.fetch".to_string()),
-                    ..Default::default()
-                }),
-            },
-        ),
-    ));
-    app
-}
-
-#[cfg(test)]
 fn operator_rail_test_event(
     seq: u64,
     actor: harness_core::event::EventActor,
@@ -1489,7 +1360,6 @@ fn operator_rail_test_event(
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
 fn operator_rail_test_event_with_correlation(
     seq: u64,
     actor: harness_core::event::EventActor,
@@ -1626,7 +1496,7 @@ fn render_operator_sidebar_surface(
     );
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn build_operator_sidebar_content(app: &AppState, theme: &Theme) -> Text<'static> {
     let rail = build_operator_rail_model(app);
     let mut lines = build_operator_rail_title_text(rail.title.as_deref(), theme, 80).lines;
@@ -2291,7 +2161,7 @@ fn activity_surface_visible(app: &AppState) -> bool {
         || (!app.replay_mode && app.review_surface().is_none())
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn orchestration_card_lines(
     app: &AppState,
     rows: &[OrchestrationTaskRow],
@@ -2342,7 +2212,7 @@ fn orchestration_card_lines(
     lines
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn orchestration_summary_line(app: &AppState, theme: &Theme, width: u16) -> Line<'static> {
     let summary = app.orchestration_summary();
     let text = format!(
@@ -2355,7 +2225,7 @@ fn orchestration_summary_line(app: &AppState, theme: &Theme, width: u16) -> Line
     ))
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn orchestration_warning_line(app: &AppState, theme: &Theme, width: u16) -> Line<'static> {
     let warning = app.orchestration_latest_warning().unwrap_or("none");
     let text = format!("watch · {warning}");
@@ -2365,7 +2235,7 @@ fn orchestration_warning_line(app: &AppState, theme: &Theme, width: u16) -> Line
     ))
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn orchestration_task_line(
     app: &AppState,
     row: &OrchestrationTaskRow,
@@ -2390,7 +2260,7 @@ fn orchestration_task_line(
     ])
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn orchestration_overflow_line(hidden_count: usize, theme: &Theme) -> Line<'static> {
     Line::from(Span::styled(
         format!("+{hidden_count} more"),
@@ -2400,7 +2270,7 @@ fn orchestration_overflow_line(hidden_count: usize, theme: &Theme) -> Line<'stat
     ))
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn orchestration_state_tokens(
     state: OrchestrationTaskState,
     theme: &Theme,
@@ -2415,7 +2285,6 @@ fn orchestration_state_tokens(
     }
 }
 
-#[allow(dead_code)]
 pub(crate) fn format_detail_payload(payload: &str) -> String {
     let trimmed = payload.trim();
     if trimmed.is_empty() {
@@ -4003,7 +3872,6 @@ fn normalize_diff_line(line: &str) -> &str {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
 fn line_to_plain_text(line: Line<'static>) -> String {
     line.spans
         .into_iter()

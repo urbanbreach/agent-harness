@@ -2,6 +2,9 @@ use super::*;
 
 use ratatui::widgets::Padding;
 
+use crate::app::permissions::{
+    PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage,
+};
 use crate::layout::{
     pad_rect, permission_dock_layout, ControlDockLayout, FrameLayoutPlan, SessionFooterMode,
     SessionHeaderMode,
@@ -317,10 +320,7 @@ fn header_identity_text(app: &AppState, header_mode: SessionHeaderMode) -> Strin
 
     let run_identity = format!("run {run_id}");
     match header_mode {
-        SessionHeaderMode::Hidden
-        | SessionHeaderMode::Standard
-        | SessionHeaderMode::Compact
-        | SessionHeaderMode::Minimal => {
+        SessionHeaderMode::Hidden => {
             let identity = format!(
                 "{run_identity} · {}/{} · {}",
                 app.active_profile(),
@@ -1035,7 +1035,7 @@ fn render_inline_permission_dock(
     let dock_layout = permission_dock_layout(area, is_question);
     let always_confirm = !is_question
         && app.permission_modal_stage(&permission.permission_id)
-            == crate::app::PermissionModalStage::AlwaysConfirm;
+            == PermissionModalStage::AlwaysConfirm;
     let shell_surface = theme.surface.panel;
     let tray_surface = theme.surface.panel_elevated;
     let tray_height = dock_layout.tray_height;
@@ -1191,7 +1191,6 @@ fn render_inline_permission_dock(
                 permission,
                 prompts,
                 submission_pending,
-                app.prompt_buffer.as_str(),
                 metadata_style,
                 summary_style,
                 guidance_style,
@@ -1297,12 +1296,12 @@ fn render_inline_permission_dock(
                 (
                     "Confirm",
                     app.permission_modal_confirm_selection(&permission.permission_id)
-                        == crate::app::PermissionConfirmSelection::Confirm,
+                        == PermissionConfirmSelection::Confirm,
                 ),
                 (
                     "Cancel",
                     app.permission_modal_confirm_selection(&permission.permission_id)
-                        == crate::app::PermissionConfirmSelection::Cancel,
+                        == PermissionConfirmSelection::Cancel,
                 ),
             ],
         )
@@ -1314,16 +1313,13 @@ fn render_inline_permission_dock(
             &[
                 (
                     "Allow once",
-                    selection == crate::app::PermissionModalSelection::AllowOnce,
+                    selection == PermissionModalSelection::AllowOnce,
                 ),
                 (
                     "Allow always",
-                    selection == crate::app::PermissionModalSelection::AllowAlways,
+                    selection == PermissionModalSelection::AllowAlways,
                 ),
-                (
-                    "Reject",
-                    selection == crate::app::PermissionModalSelection::Reject,
-                ),
+                ("Reject", selection == PermissionModalSelection::Reject),
             ],
         )
     };
@@ -1666,50 +1662,6 @@ fn composer_metadata_line(
     )
 }
 
-#[allow(dead_code)]
-fn live_composer_status_text(
-    dock: &crate::view_model::ControlDockViewModel,
-    max_width: usize,
-    theme: &Theme,
-) -> String {
-    let summary_text = dock.summary_segment.as_ref().map(|segment| {
-        control_dock_summary_segment_text_for_width(
-            segment,
-            u16::try_from(max_width).unwrap_or(u16::MAX),
-            theme,
-        )
-    });
-    let with_badge = format!("{}  ·  {}", dock.runtime_badge, dock.primary_summary);
-    let with_context = dock
-        .runtime_context
-        .as_ref()
-        .filter(|text| !text.trim().is_empty())
-        .map(|context| format!("{context}  ·  {with_badge}"));
-    let with_summary = summary_text
-        .as_ref()
-        .map(|text| format!("{with_badge}  ·  {text}"));
-    let full = with_context.as_ref().and_then(|context_text| {
-        summary_text
-            .as_ref()
-            .map(|summary| format!("{context_text}  ·  {summary}"))
-    });
-
-    best_fit_text(
-        &[
-            full,
-            with_summary,
-            with_context,
-            Some(with_badge),
-            Some(dock.primary_summary.clone()),
-        ]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>(),
-        max_width,
-    )
-}
-
-#[allow(dead_code)]
 fn runtime_kind_metadata_tone(kind: RuntimeStateKind) -> ComposerMetadataTone {
     match kind {
         RuntimeStateKind::Success => ComposerMetadataTone::Accent,
@@ -1726,7 +1678,6 @@ fn runtime_kind_metadata_tone(kind: RuntimeStateKind) -> ComposerMetadataTone {
     }
 }
 
-#[allow(dead_code)]
 fn control_dock_summary_tone_to_metadata_tone(
     tone: crate::view_model::ControlDockSummaryTone,
 ) -> ComposerMetadataTone {

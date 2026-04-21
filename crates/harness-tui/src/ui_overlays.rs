@@ -1228,7 +1228,6 @@ pub(super) fn question_permission_body_text(
     permission: &crate::app::ActivePermissionView,
     prompts: &[crate::app::QuestionPromptView],
     submission_pending: bool,
-    prompt_buffer: &str,
     metadata_style: Style,
     summary_style: Style,
     guidance_style: Style,
@@ -1243,7 +1242,7 @@ pub(super) fn question_permission_body_text(
             guidance_style,
         )]),
         Line::from(vec![Span::styled(
-            permission_modal_draft_line(prompt_buffer),
+            permission_modal_draft_line(app.prompt_buffer.as_str()),
             metadata_style,
         )]),
         Line::from(vec![Span::styled(

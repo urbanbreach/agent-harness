@@ -18,8 +18,6 @@ const LIVE_PERMISSION_PROMPT_MIN_HEIGHT: u16 = 11;
 const LIVE_QUESTION_PROMPT_MIN_HEIGHT: u16 = 9;
 const LIVE_EMPTY_STATE_MIN_HEIGHT: u16 = 9;
 const LIVE_DETAILS_MIN_TRANSCRIPT_WIDTH: u16 = 48;
-#[allow(dead_code)]
-const LIVE_DETAILS_MIN_TRANSCRIPT_HEIGHT: u16 = 8;
 const SECONDARY_STACK_MAX_WIDTH: u16 = 72;
 const SECONDARY_STACK_MIN_HEIGHT: u16 = 18;
 pub(crate) const REVIEW_SURFACE_SPLIT_PERCENT: u16 = 34;
@@ -46,13 +44,9 @@ enum SessionResponsiveMode {
     Primary,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SessionHeaderMode {
     Hidden,
-    Standard,
-    Compact,
-    Minimal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -365,10 +359,6 @@ fn session_responsive_mode(area: Rect, shell: LiveShellLayout) -> SessionRespons
     }
 }
 
-fn operator_sidebar_has_rail_sections(app: &AppState) -> bool {
-    app.operator_rail_has_sections()
-}
-
 fn hide_session_header(app: &AppState, contract: SessionGeometryContract) -> bool {
     !app.replay_mode
         && app.review_surface().is_none()
@@ -482,7 +472,7 @@ pub(crate) fn session_shell_layout(
     }
 
     let operator_sidebar_compact_empty =
-        operator_sidebar.is_some() && !operator_sidebar_has_rail_sections(app);
+        operator_sidebar.is_some() && !app.operator_rail_has_sections();
     let transcript = body;
     let operator_overlay = if operator_sidebar.is_some() {
         None
@@ -987,69 +977,6 @@ pub(crate) fn runtime_state_surface_area(area: Rect, width: u16, body_height: u1
         width,
         height,
     ))
-}
-
-#[allow(dead_code)]
-fn live_details_drawer_layout(
-    area: Rect,
-    theme: &Theme,
-    shell: LiveShellLayout,
-) -> (Rect, Option<Rect>) {
-    if area.width == 0 || area.height == 0 {
-        return (area, None);
-    }
-
-    let gap = theme.token_families().live_shell.spacing.rhythm.surface_gap / 2;
-    let sidebar_width = shell
-        .details_sidebar_width
-        .min(area.width.saturating_sub(1));
-    let min_transcript_width = shell
-        .transcript_min_width
-        .max(LIVE_DETAILS_MIN_TRANSCRIPT_WIDTH);
-
-    if area.width
-        >= min_transcript_width
-            .saturating_add(gap)
-            .saturating_add(sidebar_width)
-    {
-        let transcript_width = area.width.saturating_sub(sidebar_width).saturating_sub(gap);
-        let sidebar_x = area.x.saturating_add(transcript_width).saturating_add(gap);
-        return (
-            Rect::new(area.x, area.y, transcript_width, area.height),
-            Some(Rect::new(sidebar_x, area.y, sidebar_width, area.height)),
-        );
-    }
-
-    let min_transcript_height = if area.height <= 12 {
-        4
-    } else {
-        LIVE_DETAILS_MIN_TRANSCRIPT_HEIGHT
-    };
-    let max_details_height = area
-        .height
-        .saturating_sub(gap.saturating_add(min_transcript_height));
-    if max_details_height == 0 {
-        return (area, None);
-    }
-
-    let details_height = if area.height <= 12 {
-        max_details_height.clamp(5, 7)
-    } else {
-        area.height
-            .saturating_div(3)
-            .clamp(8, 10)
-            .min(max_details_height)
-    };
-    let transcript_height = area
-        .height
-        .saturating_sub(details_height)
-        .saturating_sub(gap);
-    let details_y = area.y.saturating_add(transcript_height).saturating_add(gap);
-
-    (
-        Rect::new(area.x, area.y, area.width, transcript_height),
-        Some(Rect::new(area.x, details_y, area.width, details_height)),
-    )
 }
 
 fn session_operator_overlay(body: Rect, contract: SessionGeometryContract) -> Option<Rect> {
