@@ -132,12 +132,12 @@ async fn native_write_requires_prior_read_for_existing_files() {
     handle.stop_run().await.expect("stop run");
 
     assert!(
-        error.contains("You must read file"),
+        error.contains("Read it before overwriting"),
         "unexpected error: {error}"
     );
-    assert!(
-        error.contains("read(hashlineAnchors=true)") || error.contains("edit.hashline_scan"),
-        "unexpected error: {error}"
+    assert_eq!(
+        fs::read_to_string(workspace.join("demo.txt")).expect("read overwritten file"),
+        "alpha\nbeta\n"
     );
 }
 
@@ -313,6 +313,66 @@ async fn native_edit_rejects_symlink_file_escape() {
         fs::read_to_string(outside.join("secret.txt")).expect("read outside file"),
         "outside\n"
     );
+}
+
+#[tokio::test]
+async fn native_edit_delete_with_absolute_path_emits_applied_event_without_rejection() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+    let file_path = workspace.join("demo.txt");
+    fs::write(&file_path, "alpha\n").expect("seed file");
+
+    let handle = test_coordinator(
+        temp_dir.path(),
+        PermissionPolicy::new(
+            PermissionMode::Allow,
+            PermissionMode::Deny,
+            PermissionMode::Deny,
+        ),
+        vec!["edit".to_string()],
+    );
+
+    let run = handle
+        .start_run("native_edit_delete_compat_absolute", &workspace)
+        .await
+        .expect("start run");
+    let worker_agent_id = handle
+        .spawn_agent(supervisor_actor(), "worker", None)
+        .await
+        .expect("spawn worker");
+
+    handle
+        .execute_agent_tool_call(
+            worker_actor(&worker_agent_id),
+            Some("deep".to_string()),
+            "edit",
+            serde_json::json!({
+                "filePath": file_path.display().to_string(),
+                "delete": true,
+                "editId": "delete-path-absolute"
+            }),
+        )
+        .await
+        .expect("path delete should succeed");
+    handle.stop_run().await.expect("stop run");
+
+    assert!(!file_path.exists(), "path delete should remove the file");
+
+    let events = read_events(&run.events_path);
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::EditApplied(data)
+                if data.edit_id == "delete-path-absolute" && data.path == "demo.txt"
+        )
+    }));
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::EditRejected(data) if data.edit_id == "delete-path-absolute"
+        )
+    }));
 }
 
 fn test_coordinator(

@@ -382,6 +382,218 @@ async fn native_question_tool_accepts_single_question_shape_and_legacy_fields() 
 }
 
 #[tokio::test]
+async fn native_question_tool_accepts_allow_freeform_legacy_field() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let session_dir = temp_dir.path().join("sessions");
+    let workspace_root = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace_root).expect("workspace");
+
+    let coordinator = spawn_question_coordinator(session_dir, 1_000);
+    let run = coordinator
+        .start_run("native_question_allow_freeform_legacy", &workspace_root)
+        .await
+        .expect("start run");
+
+    let question_tool = coordinator_registry(Default::default())
+        .get("question")
+        .expect("question tool");
+    let tool_task = tokio::spawn({
+        let question_tool = question_tool.clone();
+        let context = question_tool_context(
+            coordinator.clone(),
+            &run.run_id,
+            &workspace_root,
+            &run.artifacts_dir,
+            "native-question-allow-freeform-legacy",
+        );
+        async move {
+            question_tool
+                .call(
+                    context,
+                    json!({
+                        "questions": [{
+                            "question": "Pick the validation surface",
+                            "options": ["read", "bash"],
+                            "allowFreeform": false
+                        }]
+                    }),
+                )
+                .await
+        }
+    });
+
+    let permission_id = wait_for_question_permission(&run.events_path).await;
+    coordinator
+        .resolve_permission(
+            permission_id,
+            PermissionDecision::Allow,
+            Some(r#"[["read"]]"#.to_string()),
+        )
+        .await
+        .expect("resolve question permission");
+
+    let result = tool_task
+        .await
+        .expect("join question tool task")
+        .expect("allowFreeform legacy question tool result");
+    assert!(result
+        .display_text
+        .contains("\"Pick the validation surface\"=\"read\""));
+
+    coordinator.stop_run().await.expect("stop run");
+}
+
+#[tokio::test]
+async fn native_question_tool_accepts_text_prompt_compat_shape_and_schema_advertises_it() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let session_dir = temp_dir.path().join("sessions");
+    let workspace_root = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace_root).expect("workspace");
+
+    let coordinator = spawn_question_coordinator(session_dir, 1_000);
+    let run = coordinator
+        .start_run("native_question_text_compat", &workspace_root)
+        .await
+        .expect("start run");
+
+    let question_tool = coordinator_registry(Default::default())
+        .get("question")
+        .expect("question tool");
+    let schema = question_tool.parameters_json_schema();
+    assert_eq!(schema["type"], json!("object"));
+    assert_eq!(schema["required"], json!(["questions"]));
+    assert!(schema.to_string().contains("\"allowFreeform\""));
+    assert!(schema.to_string().contains("\"type\""));
+    assert!(schema["properties"]["questions"]["description"]
+        .as_str()
+        .is_some_and(|value| value.contains("top-level arrays and single-question payloads")));
+
+    let tool_task = tokio::spawn({
+        let question_tool = question_tool.clone();
+        let context = question_tool_context(
+            coordinator.clone(),
+            &run.run_id,
+            &workspace_root,
+            &run.artifacts_dir,
+            "native-question-text-compat",
+        );
+        async move {
+            question_tool
+                .call(
+                    context,
+                    json!({
+                        "questions": [{
+                            "id": "stress-sanity",
+                            "question": "Acknowledge that this question tool is reachable and return a one-line status.",
+                            "type": "text"
+                        }]
+                    }),
+                )
+                .await
+        }
+    });
+
+    let permission_id = wait_for_question_permission(&run.events_path).await;
+    coordinator
+        .resolve_permission(
+            permission_id,
+            PermissionDecision::Allow,
+            Some(r#"[["reachable"]]"#.to_string()),
+        )
+        .await
+        .expect("resolve question permission");
+
+    let result = tool_task
+        .await
+        .expect("join question tool task")
+        .expect("text compat question tool result");
+    assert!(result.display_text.contains("\"Acknowledge that this question tool is reachable and return a one-line status.\"=\"reachable\""));
+
+    let structured = result.structured_json.expect("structured json");
+    assert_eq!(structured.get("answers"), Some(&json!([["reachable"]])));
+    assert_eq!(
+        structured.get("questions"),
+        Some(&json!([
+            {
+                "question": "Acknowledge that this question tool is reachable and return a one-line status.",
+                "header": "Acknowledge that this question tool is reachable and return a one-line status.",
+                "options": [],
+                "multiple": Value::Null
+            }
+        ]))
+    );
+
+    coordinator.stop_run().await.expect("stop run");
+}
+
+#[tokio::test]
+async fn native_question_tool_waits_indefinitely_when_timeout_disabled() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let session_dir = temp_dir.path().join("sessions");
+    let workspace_root = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace_root).expect("workspace");
+
+    let coordinator = spawn_question_coordinator(session_dir, 0);
+    let run = coordinator
+        .start_run("native_question_no_timeout", &workspace_root)
+        .await
+        .expect("start run");
+
+    let question_tool = coordinator_registry(Default::default())
+        .get("question")
+        .expect("question tool");
+    let tool_task = tokio::spawn({
+        let question_tool = question_tool.clone();
+        let context = question_tool_context(
+            coordinator.clone(),
+            &run.run_id,
+            &workspace_root,
+            &run.artifacts_dir,
+            "native-question-no-timeout",
+        );
+        async move {
+            question_tool
+                .call(
+                    context,
+                    json!({
+                        "questions": [{
+                            "question": "Wait for a human answer",
+                            "options": ["keep waiting", "done"]
+                        }]
+                    }),
+                )
+                .await
+        }
+    });
+
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    assert!(
+        !tool_task.is_finished(),
+        "question should still be pending with timeout disabled"
+    );
+
+    let permission_id = wait_for_question_permission(&run.events_path).await;
+    coordinator
+        .resolve_permission(
+            permission_id,
+            PermissionDecision::Allow,
+            Some(r#"[["done"]]"#.to_string()),
+        )
+        .await
+        .expect("resolve question permission");
+
+    let result = tool_task
+        .await
+        .expect("join question tool task")
+        .expect("question result with timeout disabled");
+    assert!(result
+        .display_text
+        .contains("\"Wait for a human answer\"=\"done\""));
+
+    coordinator.stop_run().await.expect("stop run");
+}
+
+#[tokio::test]
 async fn native_question_tool_rejects_or_times_out_cleanly() {
     let reject_temp_dir = tempfile::tempdir().expect("tempdir");
     let reject_workspace_root = reject_temp_dir.path().join("workspace");

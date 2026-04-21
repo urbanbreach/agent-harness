@@ -52,7 +52,7 @@ impl WorkspaceEditExecutor {
 
         with_workspace_file_lock(&resolved_path, || {
             if existed {
-                assert_file_read_fresh(ctx, &resolved_path)?;
+                assert_existing_file_overwrite_is_fresh(ctx, &resolved_path)?;
             }
 
             let mut result = write_file_via_hashline_engine(
@@ -92,7 +92,7 @@ impl Tool for FsWriteTool {
     }
 
     fn description(&self) -> &str {
-        "Writes file contents to a workspace-relative path via the hashline edit engine."
+        "Writes file contents to a workspace-relative path via the hashline edit engine. Read existing files first so overwrites can be freshness-checked."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -177,7 +177,10 @@ fn record_file_read_with_anchors(
     Ok(())
 }
 
-fn assert_file_read_fresh(ctx: &ToolContext, resolved_path: &Path) -> Result<(), ToolError> {
+fn assert_existing_file_overwrite_is_fresh(
+    ctx: &ToolContext,
+    resolved_path: &Path,
+) -> Result<(), ToolError> {
     let key = file_read_key(ctx, resolved_path);
     let prior = {
         let registry = file_read_registry();
@@ -187,7 +190,7 @@ fn assert_file_read_fresh(ctx: &ToolContext, resolved_path: &Path) -> Result<(),
 
     let Some(prior) = prior else {
         return Err(ToolError::Execution(format!(
-            "You must read file {} before overwriting it. Prefer read(hashlineAnchors=true) or edit.hashline_scan first so you have fresh LINE#HASH anchors.",
+            "File {} already exists. Read it before overwriting so the harness can verify freshness.",
             resolved_path.display()
         )));
     };

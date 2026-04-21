@@ -10,6 +10,8 @@ use serde::Deserialize;
 use serde_json::json;
 use walkdir::{DirEntry, WalkDir};
 
+use crate::hashline_apply::resolve_workspace_target_path;
+
 const DEFAULT_LIMIT: usize = 100;
 const DEFAULT_CONTEXT: usize = 0;
 const SKIPPED_DIR_NAMES: &[&str] = &[".git", "target"];
@@ -67,20 +69,14 @@ impl Tool for FsGrepTool {
             .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
 
         let base_path = args.path.as_deref().unwrap_or(".");
-        let base_path = Path::new(base_path);
-        if base_path.is_absolute() {
-            return Err(ToolError::InvalidArguments(
-                "path must be relative to workspace root".to_string(),
-            ));
-        }
-
         let workspace_root = ctx.resolve_workspace_path(Path::new("."))?;
-        let resolved_base = ctx.resolve_workspace_path(base_path)?;
+        let resolved_base = resolve_workspace_target_path(&ctx, base_path)?;
         if !resolved_base.is_dir() {
             return Err(ToolError::InvalidArguments(
                 "path must resolve to a directory".to_string(),
             ));
         }
+        let display_path = workspace_relative_display(&workspace_root, &resolved_base)?;
 
         let limit = args.limit.map_or(DEFAULT_LIMIT, |value| value as usize);
         let context = args.context.map_or(DEFAULT_CONTEXT, |value| value as usize);
@@ -98,7 +94,7 @@ impl Tool for FsGrepTool {
             display_text: matches.lines.join("\n"),
             structured_json: Some(json!({
                 "pattern": args.pattern,
-                "path": base_path.display().to_string(),
+                "path": display_path,
                 "resolved_path": resolved_base.display().to_string(),
                 "include": args.include,
                 "limit": limit,
@@ -290,17 +286,62 @@ fn should_skip_entry(workspace_root: &Path, entry: &DirEntry) -> bool {
 }
 
 fn normalize_relative_path(path: &Path) -> String {
+    if path.as_os_str().is_empty() {
+        return ".".to_string();
+    }
+
     path.iter()
         .map(|segment| segment.to_string_lossy().to_string())
         .collect::<Vec<_>>()
         .join("/")
 }
 
+fn workspace_relative_display(
+    workspace_root: &Path,
+    resolved_path: &Path,
+) -> Result<String, ToolError> {
+    let relative = resolved_path.strip_prefix(workspace_root).map_err(|_| {
+        ToolError::PathEscapesWorkspace {
+            workspace_root: workspace_root.display().to_string(),
+            path: resolved_path.display().to_string(),
+        }
+    })?;
+    Ok(normalize_relative_path(relative))
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::Path;
+    use std::sync::Arc;
 
-    use super::collect_grep_matches;
+    use harness_core::clock::RealClock;
+    use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
+    use harness_core::event::{ActorKind, EventActor};
+    use harness_core::redact::DefaultRedactor;
+    use harness_core::tool::{Tool, ToolContext};
+    use serde_json::json;
+
+    use super::{collect_grep_matches, FsGrepTool};
+
+    fn test_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
+        let coordinator = spawn_coordinator(
+            CoordinatorConfig::default(),
+            Arc::new(RealClock::new()),
+            Arc::new(DefaultRedactor::default()),
+        );
+        ToolContext {
+            run_id: "run-fs-grep-tests".to_string(),
+            workspace_root: workspace_root.to_path_buf(),
+            artifacts_dir: workspace_root.join(".artifacts"),
+            actor: EventActor::new(ActorKind::Worker, Some("worker-1".to_string())),
+            category: Some("deep".to_string()),
+            plan_mode: false,
+            plan_exit_target_profile: None,
+            tool_call_id: tool_call_id.to_string(),
+            coordinator,
+        }
+    }
 
     #[test]
     fn collect_grep_matches_finds_matches_with_context_and_skips_ignored_directories() {
@@ -371,5 +412,28 @@ mod tests {
         assert_eq!(result.truncated_count, 1);
         assert!(result.is_truncated);
         assert_eq!(result.lines, vec!["a.txt:1: TODO a"]);
+    }
+
+    #[tokio::test]
+    async fn fs_grep_accepts_absolute_workspace_path() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let root = tempdir.path();
+        fs::write(root.join("main.rs"), "#[tokio::main]\nfn main() {}\n").expect("write main.rs");
+
+        let result = FsGrepTool
+            .call(
+                test_context(root, "grep-abs-path"),
+                json!({
+                    "pattern": "#\\[tokio::main\\]",
+                    "path": root.display().to_string(),
+                    "include": "*.rs"
+                }),
+            )
+            .await
+            .expect("grep with absolute workspace path should succeed");
+
+        assert!(result.display_text.contains("main.rs:1: #[tokio::main]"));
+        let structured = result.structured_json.expect("structured result");
+        assert_eq!(structured.get("path"), Some(&json!(".")));
     }
 }

@@ -77,44 +77,55 @@ impl Tool for HashlineEditTool {
     }
 
     fn description(&self) -> &str {
-        "Edit files using LINE#HASH anchors for precise, safe modifications. Use pos/end anchors for each edit, read the file first, batch related edits in one call, and re-read before editing the same file again."
+        "Edit files using LINE#HASH anchors for precise, safe modifications. Use pos/end anchors for each edit, read the file first, batch related edits in one call, and re-read before editing the same file again. Use delete=true by itself when you want to remove a file by path."
     }
 
     fn parameters_json_schema(&self) -> Value {
+        let edit_item_schema = json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["op"],
+            "properties": {
+                "op": {
+                    "type": "string",
+                    "enum": ["replace", "append", "prepend"]
+                },
+                "pos": { "type": "string" },
+                "end": { "type": "string" },
+                "lines": {
+                    "oneOf": [
+                        { "type": "string" },
+                        {
+                            "type": "array",
+                            "items": { "type": "string" }
+                        },
+                        { "type": "null" }
+                    ]
+                }
+            }
+        });
+
         json!({
             "type": "object",
             "additionalProperties": false,
-            "required": ["filePath", "edits"],
+            "required": ["filePath"],
             "properties": {
                 "filePath": { "type": "string" },
                 "editId": { "type": "string" },
-                "delete": { "type": "boolean", "default": false },
-                "rename": { "type": "string" },
+                "delete": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "When true, remove the whole file by path. Do not combine delete=true with edits or rename."
+                },
+                "rename": {
+                    "type": "string",
+                    "description": "Rename the file after applying edits. Requires an edit operation and cannot be combined with delete=true."
+                },
                 "edits": {
                     "type": "array",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": ["op"],
-                        "properties": {
-                            "op": {
-                                "type": "string",
-                                "enum": ["replace", "append", "prepend"]
-                            },
-                            "pos": { "type": "string" },
-                            "end": { "type": "string" },
-                            "lines": {
-                                "oneOf": [
-                                    { "type": "string" },
-                                    {
-                                        "type": "array",
-                                        "items": { "type": "string" }
-                                    },
-                                    { "type": "null" }
-                                ]
-                            }
-                        }
-                    }
+                    "minItems": 1,
+                    "items": edit_item_schema,
+                    "description": "Required for non-delete edit requests. Omit edits only when delete=true removes the whole file by path."
                 }
             }
         })
@@ -143,7 +154,8 @@ fn execute_hashline_edit(
     if args.delete {
         if !args.edits.is_empty() {
             return Err(ToolError::InvalidArguments(
-                "delete=true requires edits=[]".to_string(),
+                "delete=true removes the whole file by path and cannot be combined with edits"
+                    .to_string(),
             ));
         }
         if args.rename.is_some() {

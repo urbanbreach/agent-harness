@@ -183,7 +183,6 @@ pub(crate) fn apply_hashline_patch_to_workspace(
     build_hashline_tool_result(
         ctx,
         &patch.edit_id,
-        &patch.path,
         &resolved_path,
         applied.changed_ranges,
         &diff,
@@ -348,14 +347,7 @@ fn rewrite_workspace_file(
         added_lines: line_count(content),
     }];
 
-    build_hashline_tool_result(
-        ctx,
-        edit_id,
-        file_path,
-        &resolved_path,
-        changed_ranges,
-        &diff,
-    )
+    build_hashline_tool_result(ctx, edit_id, &resolved_path, changed_ranges, &diff)
 }
 
 fn delete_workspace_file(
@@ -379,14 +371,7 @@ fn delete_workspace_file(
         added_lines: 0,
     }];
 
-    build_hashline_tool_result(
-        ctx,
-        edit_id,
-        file_path,
-        &resolved_path,
-        changed_ranges,
-        &diff,
-    )
+    build_hashline_tool_result(ctx, edit_id, &resolved_path, changed_ranges, &diff)
 }
 
 fn move_workspace_file(
@@ -429,6 +414,8 @@ fn move_workspace_file(
     }
 
     let artifact = write_diff_artifact(ctx, edit_id, &diff)?;
+    let from_display_path = workspace_relative_display(ctx, &from_resolved_path)?;
+    let to_display_path = workspace_relative_display(ctx, &to_resolved_path)?;
     Ok(ToolResult {
         display_text: format!(
             "applied hashline edit {} to {}",
@@ -439,9 +426,9 @@ fn move_workspace_file(
             "edit_id": edit_id,
             "diff_rel_path": artifact.path,
             "diff_digest": artifact.digest,
-            "path": from_path,
+            "path": from_display_path,
             "resolved_path": from_resolved_path.display().to_string(),
-            "to_path": to_path,
+            "to_path": to_display_path,
             "resolved_to_path": to_resolved_path.display().to_string(),
             "changed_ranges": [],
         })),
@@ -452,12 +439,12 @@ fn move_workspace_file(
 fn build_hashline_tool_result(
     ctx: &ToolContext,
     edit_id: &str,
-    path: &str,
     resolved_path: &Path,
     changed_ranges: Vec<ChangedLineRange>,
     diff: &str,
 ) -> Result<ToolResult, ToolError> {
     let artifact = write_diff_artifact(ctx, edit_id, diff)?;
+    let display_path = workspace_relative_display(ctx, resolved_path)?;
     Ok(ToolResult {
         display_text: format!(
             "applied hashline edit {} to {}",
@@ -468,7 +455,7 @@ fn build_hashline_tool_result(
             "edit_id": edit_id,
             "diff_rel_path": artifact.path,
             "diff_digest": artifact.digest,
-            "path": path,
+            "path": display_path,
             "resolved_path": resolved_path.display().to_string(),
             "changed_ranges": changed_ranges,
         })),
@@ -489,6 +476,33 @@ fn write_diff_artifact(
 
 fn line_count(content: &str) -> u32 {
     content.lines().count() as u32
+}
+
+fn workspace_relative_display(
+    ctx: &ToolContext,
+    resolved_path: &Path,
+) -> Result<String, ToolError> {
+    let workspace = ctx
+        .workspace_root
+        .canonicalize()
+        .map_err(|err| ToolError::Execution(format!("failed to resolve workspace root: {err}")))?;
+    let relative =
+        resolved_path
+            .strip_prefix(&workspace)
+            .map_err(|_| ToolError::PathEscapesWorkspace {
+                workspace_root: workspace.display().to_string(),
+                path: resolved_path.display().to_string(),
+            })?;
+
+    if relative.as_os_str().is_empty() {
+        return Ok(".".to_string());
+    }
+
+    Ok(relative
+        .iter()
+        .map(|segment| segment.to_string_lossy().to_string())
+        .collect::<Vec<_>>()
+        .join("/"))
 }
 
 fn write_atomic(path: &Path, content: &str) -> Result<(), ToolError> {
