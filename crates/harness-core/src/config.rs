@@ -5,9 +5,22 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
-use schemars::{schema_for, JsonSchema};
-use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
+use schemars::JsonSchema;
+use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
+
+mod discovery;
+mod loader;
+mod public;
+
+pub use self::discovery::{resolve_config_layer_paths, resolve_config_path};
+pub use self::loader::{
+    load_config_from_file, load_config_from_str, load_resolved_config, LoadedConfig,
+};
+pub use self::public::{
+    harness_schema_pretty_json, harness_tui_schema_pretty_json, InstructionList, PublicAgentConfig,
+    PublicPermissionConfig, PublicProfilePermissions, PublicRuntimeConfig, PublicTuiConfig,
+};
 
 static PROFILE_MODEL_METADATA_REGISTRY: OnceLock<
     Mutex<BTreeMap<String, ResolvedProfileModelMetadata>>,
@@ -60,167 +73,6 @@ pub enum ConfigError {
 pub struct InstructionFile {
     pub path: PathBuf,
     pub content: String,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct PublicRuntimeConfig {
-    #[serde(rename = "$schema", default)]
-    pub schema: Option<String>,
-    #[serde(default)]
-    pub provider: BTreeMap<String, ProviderConfig>,
-    #[serde(default)]
-    pub model: Option<String>,
-    #[serde(default, alias = "smallModel")]
-    pub small_model: Option<String>,
-    #[serde(default)]
-    pub agent: BTreeMap<String, PublicAgentConfig>,
-    #[serde(default, alias = "defaultAgent")]
-    pub default_agent: Option<String>,
-    #[serde(default)]
-    pub permission: PublicPermissionConfig,
-    #[serde(default)]
-    pub mcp: BTreeMap<String, McpServerConfig>,
-    #[serde(default)]
-    pub instructions: Option<InstructionList>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct PublicAgentConfig {
-    #[serde(default)]
-    pub description: Option<String>,
-    #[serde(default, alias = "systemPrompt")]
-    pub system_prompt: Option<String>,
-    #[serde(default, alias = "model_ref", alias = "modelRef")]
-    pub model: Option<String>,
-    #[serde(default, alias = "smallModel")]
-    pub use_small_model: bool,
-    #[serde(default)]
-    pub variant: Option<String>,
-    #[serde(default)]
-    pub temperature: Option<f32>,
-    #[serde(default, alias = "permissions")]
-    pub permission: Option<PublicProfilePermissions>,
-    #[serde(default = "default_max_iters", alias = "maxIters")]
-    pub max_iters: usize,
-    #[serde(default, alias = "toolFailureMode")]
-    pub tool_failure_mode: ToolFailureMode,
-    #[serde(default, alias = "planMode")]
-    pub plan_mode: bool,
-    #[serde(default, alias = "exitTargetProfile")]
-    pub exit_target_profile: Option<String>,
-    #[serde(default)]
-    pub tools: Vec<String>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct PublicPermissionConfig {
-    #[serde(default)]
-    pub edit: Option<PermissionMode>,
-    #[serde(default, alias = "shell")]
-    pub bash: Option<PermissionMode>,
-    #[serde(default)]
-    pub question: Option<PermissionMode>,
-    #[serde(default)]
-    pub task: Option<PermissionMode>,
-    #[serde(default, alias = "webFetch")]
-    pub webfetch: Option<PermissionMode>,
-    #[serde(default, alias = "webSearch")]
-    pub websearch: Option<PermissionMode>,
-    #[serde(default, alias = "codeSearch")]
-    pub codesearch: Option<PermissionMode>,
-    #[serde(default, alias = "codeLsp")]
-    pub lsp: Option<PermissionMode>,
-    #[serde(default, skip_serializing)]
-    #[schemars(skip)]
-    pub network: Option<PermissionMode>,
-    #[serde(rename = "shell_allowlist", alias = "shellAllowlist", default)]
-    pub shell_allowlist: Option<ShellAllowlist>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct PublicProfilePermissions {
-    #[serde(default)]
-    pub edit: Option<PermissionMode>,
-    #[serde(default, alias = "shell")]
-    pub bash: Option<PermissionMode>,
-    #[serde(default)]
-    pub question: Option<PermissionMode>,
-    #[serde(default)]
-    pub task: Option<PermissionMode>,
-    #[serde(default, alias = "webFetch")]
-    pub webfetch: Option<PermissionMode>,
-    #[serde(default, alias = "webSearch")]
-    pub websearch: Option<PermissionMode>,
-    #[serde(default, alias = "codeSearch")]
-    pub codesearch: Option<PermissionMode>,
-    #[serde(default, alias = "codeLsp")]
-    pub lsp: Option<PermissionMode>,
-    #[serde(default, skip_serializing)]
-    #[schemars(skip)]
-    pub network: Option<PermissionMode>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(untagged)]
-pub enum InstructionList {
-    Single(String),
-    Many(Vec<String>),
-}
-
-impl Default for InstructionList {
-    fn default() -> Self {
-        Self::Many(Vec::new())
-    }
-}
-
-impl InstructionList {
-    fn entries(&self) -> Vec<String> {
-        match self {
-            Self::Single(value) => vec![value.clone()],
-            Self::Many(values) => values.clone(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct PublicTuiConfig {
-    #[serde(rename = "$schema", default)]
-    pub schema: Option<String>,
-    #[serde(rename = "keybinds", alias = "keybindings", default)]
-    pub keybindings: BTreeMap<String, String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(default, deny_unknown_fields)]
-struct MarkdownAgentFrontmatter {
-    pub description: Option<String>,
-    #[serde(alias = "systemPrompt")]
-    pub system_prompt: Option<String>,
-    #[serde(rename = "model_ref", alias = "modelRef")]
-    pub model_ref: Option<String>,
-    pub variant: Option<String>,
-    pub temperature: Option<f32>,
-    pub permissions: Option<ProfilePermissions>,
-    #[serde(alias = "maxIters")]
-    pub max_iters: Option<usize>,
-    #[serde(alias = "toolFailureMode")]
-    pub tool_failure_mode: Option<ToolFailureMode>,
-    #[serde(alias = "planMode")]
-    pub plan_mode: Option<bool>,
-    #[serde(alias = "exitTargetProfile")]
-    pub exit_target_profile: Option<String>,
-    pub tools: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone)]
-struct MarkdownAgentFile {
-    frontmatter: MarkdownAgentFrontmatter,
-    prompt_body: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -354,30 +206,6 @@ pub struct LoggingConfig {
     pub level: String,
     #[serde(default)]
     pub file: Option<PathBuf>,
-}
-
-#[derive(Debug, Clone)]
-pub struct LoadedConfig {
-    pub config: HarnessConfig,
-    pub paths: Vec<PathBuf>,
-}
-
-impl LoadedConfig {
-    pub fn primary_path(&self) -> Option<&Path> {
-        self.paths.last().map(PathBuf::as_path)
-    }
-
-    pub fn path_display(&self) -> String {
-        match self.paths.as_slice() {
-            [] => "<none>".to_string(),
-            [path] => path.display().to_string(),
-            paths => paths
-                .iter()
-                .map(|path| path.display().to_string())
-                .collect::<Vec<_>>()
-                .join(" + "),
-        }
-    }
 }
 
 impl Default for LoggingConfig {
@@ -783,316 +611,6 @@ impl HarnessConfig {
                 .collect::<Vec<_>>()
                 .join("\n\n"),
         )
-    }
-}
-
-fn resolve_discovered_prompt_assets(
-    parsed: &mut HarnessConfig,
-    config_path: &Path,
-) -> Result<(), ConfigError> {
-    parsed.agents = merge_configured_and_markdown_agents(&parsed.agents, config_path)?;
-    parsed.instruction_files = discover_instruction_files(config_path)?;
-    Ok(())
-}
-
-fn merge_configured_and_markdown_agents(
-    configured: &BTreeMap<String, ProfileConfig>,
-    config_path: &Path,
-) -> Result<BTreeMap<String, ProfileConfig>, ConfigError> {
-    let discovered = discover_markdown_agents(config_path)?;
-    let agent_names = discovered
-        .keys()
-        .chain(configured.keys())
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    let mut merged = BTreeMap::new();
-
-    for name in agent_names {
-        let profile = match (discovered.get(&name), configured.get(&name)) {
-            (Some(markdown), Some(config)) => {
-                Some(merge_markdown_agent_with_config(config, markdown))
-            }
-            (None, Some(config)) => Some(config.clone()),
-            (Some(markdown), None) => profile_from_markdown_agent(markdown)?,
-            (None, None) => None,
-        };
-
-        if let Some(profile) = profile {
-            merged.insert(name, profile);
-        }
-    }
-
-    Ok(merged)
-}
-
-fn merge_markdown_agent_with_config(
-    config: &ProfileConfig,
-    markdown: &MarkdownAgentFile,
-) -> ProfileConfig {
-    let prompt = config
-        .system_prompt
-        .clone()
-        .or_else(|| markdown.prompt_body.clone())
-        .or_else(|| markdown.frontmatter.system_prompt.clone());
-
-    ProfileConfig {
-        description: config.description.clone(),
-        system_prompt: prompt,
-        model_ref: config.model_ref.clone(),
-        variant: config.variant.clone(),
-        temperature: config.temperature,
-        permissions: config.permissions.clone(),
-        max_iters: config.max_iters,
-        tool_failure_mode: config.tool_failure_mode,
-        plan_mode: config.plan_mode,
-        exit_target_profile: config.exit_target_profile.clone(),
-        tools: config.tools.clone(),
-    }
-}
-
-fn profile_from_markdown_agent(
-    markdown: &MarkdownAgentFile,
-) -> Result<Option<ProfileConfig>, ConfigError> {
-    let Some(description) = markdown.frontmatter.description.clone() else {
-        return Ok(None);
-    };
-    let Some(model_ref) = markdown.frontmatter.model_ref.clone() else {
-        return Ok(None);
-    };
-
-    Ok(Some(ProfileConfig {
-        description,
-        system_prompt: markdown
-            .prompt_body
-            .clone()
-            .or_else(|| markdown.frontmatter.system_prompt.clone()),
-        model_ref,
-        variant: markdown.frontmatter.variant.clone(),
-        temperature: markdown.frontmatter.temperature,
-        permissions: markdown.frontmatter.permissions.clone(),
-        max_iters: markdown
-            .frontmatter
-            .max_iters
-            .unwrap_or_else(default_max_iters),
-        tool_failure_mode: markdown.frontmatter.tool_failure_mode.unwrap_or_default(),
-        plan_mode: markdown.frontmatter.plan_mode.unwrap_or(false),
-        exit_target_profile: markdown.frontmatter.exit_target_profile.clone(),
-        tools: markdown.frontmatter.tools.clone().unwrap_or_default(),
-    }))
-}
-
-fn discover_markdown_agents(
-    config_path: &Path,
-) -> Result<BTreeMap<String, MarkdownAgentFile>, ConfigError> {
-    let mut agents = BTreeMap::new();
-
-    for dir in agent_prompt_search_dirs(config_path) {
-        if !dir.exists() {
-            continue;
-        }
-
-        for file in markdown_files_in_dir(&dir)? {
-            let name = file
-                .file_stem()
-                .and_then(|stem| stem.to_str())
-                .map(str::trim)
-                .filter(|stem| !stem.is_empty())
-                .ok_or_else(|| {
-                    ConfigError::InvalidReference(format!(
-                        "agent markdown `{}` must have a valid UTF-8 file stem",
-                        file.display()
-                    ))
-                })?
-                .to_string();
-            if agents.contains_key(&name) {
-                continue;
-            }
-
-            let content =
-                fs::read_to_string(&file).map_err(|source| ConfigError::ReadMarkdownAsset {
-                    path: file.display().to_string(),
-                    source,
-                })?;
-            let (frontmatter, prompt_body) =
-                parse_markdown_frontmatter::<MarkdownAgentFrontmatter>(&file, &content)?;
-            agents.insert(
-                name,
-                MarkdownAgentFile {
-                    frontmatter,
-                    prompt_body: (!prompt_body.is_empty()).then_some(prompt_body),
-                },
-            );
-        }
-    }
-
-    Ok(agents)
-}
-
-fn discover_instruction_files(config_path: &Path) -> Result<Vec<InstructionFile>, ConfigError> {
-    let mut instructions = Vec::new();
-    let mut seen = BTreeSet::new();
-
-    for path in instruction_search_paths(config_path) {
-        if !path.exists() || !seen.insert(path.clone()) {
-            continue;
-        }
-
-        let content =
-            fs::read_to_string(&path).map_err(|source| ConfigError::ReadMarkdownAsset {
-                path: path.display().to_string(),
-                source,
-            })?;
-        let content = content.trim().to_string();
-        if content.is_empty() {
-            continue;
-        }
-
-        instructions.push(InstructionFile { path, content });
-    }
-
-    Ok(instructions)
-}
-
-fn parse_markdown_frontmatter<T>(path: &Path, content: &str) -> Result<(T, String), ConfigError>
-where
-    T: DeserializeOwned + Default,
-{
-    let mut lines = content.lines();
-    if lines.next() != Some("---") {
-        return Ok((T::default(), content.trim().to_string()));
-    }
-
-    let mut frontmatter_lines = Vec::new();
-    let mut found_closing = false;
-    for line in &mut lines {
-        if line == "---" {
-            found_closing = true;
-            break;
-        }
-        frontmatter_lines.push(line);
-    }
-
-    if !found_closing {
-        return Err(ConfigError::InvalidMarkdownFrontmatter {
-            path: path.display().to_string(),
-            reason: "frontmatter must end with `---`".to_string(),
-        });
-    }
-
-    let frontmatter_text = frontmatter_lines.join("\n");
-    let frontmatter = if frontmatter_text.trim().is_empty() {
-        T::default()
-    } else {
-        json5::from_str(&frontmatter_text).map_err(|err| {
-            ConfigError::InvalidMarkdownFrontmatter {
-                path: path.display().to_string(),
-                reason: err.to_string(),
-            }
-        })?
-    };
-
-    Ok((
-        frontmatter,
-        lines.collect::<Vec<_>>().join("\n").trim().to_string(),
-    ))
-}
-
-fn markdown_files_in_dir(dir: &Path) -> Result<Vec<PathBuf>, ConfigError> {
-    let mut files = Vec::new();
-    collect_markdown_files(dir, &mut files)?;
-    files.sort();
-    Ok(files)
-}
-
-fn collect_markdown_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), ConfigError> {
-    let mut entries = fs::read_dir(dir)
-        .map_err(|source| ConfigError::ReadMarkdownAsset {
-            path: dir.display().to_string(),
-            source,
-        })?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|source| ConfigError::ReadMarkdownAsset {
-            path: dir.display().to_string(),
-            source,
-        })?;
-    entries.sort_by_key(|entry| entry.file_name());
-
-    for entry in entries {
-        let path = entry.path();
-        if path.is_dir() {
-            collect_markdown_files(&path, files)?;
-            continue;
-        }
-
-        if path.extension().and_then(|ext| ext.to_str()) == Some("md") {
-            files.push(path);
-        }
-    }
-
-    Ok(())
-}
-
-fn agent_prompt_search_dirs(config_path: &Path) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-
-    for base in discovery_search_bases(config_path) {
-        push_unique_path(&mut dirs, base.join(".agent-harness").join("agents"));
-    }
-
-    if let Some(config_dir) = config_path.parent() {
-        push_unique_path(&mut dirs, config_dir.join(".agent-harness").join("agents"));
-    }
-
-    dirs
-}
-
-fn instruction_search_paths(config_path: &Path) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-
-    for base in discovery_search_bases(config_path) {
-        push_unique_path(&mut paths, base.join("AGENTS.md"));
-    }
-
-    if let Some(config_dir) = config_path.parent() {
-        push_unique_path(&mut paths, config_dir.join("AGENTS.md"));
-    }
-
-    paths
-}
-
-fn discovery_search_bases(config_path: &Path) -> Vec<PathBuf> {
-    let mut bases = Vec::new();
-
-    if let Ok(cwd) = env::current_dir() {
-        for base in project_search_bases(&cwd) {
-            push_unique_path(&mut bases, base);
-        }
-    }
-
-    if let Some(config_dir) = config_path.parent() {
-        for base in project_search_bases(config_dir) {
-            push_unique_path(&mut bases, base);
-        }
-    }
-
-    if bases.is_empty() {
-        bases.push(PathBuf::from("."));
-    }
-
-    bases
-}
-
-fn project_search_bases(start: &Path) -> Vec<PathBuf> {
-    let ancestors = start.ancestors().map(Path::to_path_buf).collect::<Vec<_>>();
-    if let Some(index) = ancestors.iter().position(|path| path.join(".git").exists()) {
-        return ancestors.into_iter().take(index + 1).collect();
-    }
-    vec![start.to_path_buf()]
-}
-
-fn push_unique_path(paths: &mut Vec<PathBuf>, candidate: PathBuf) {
-    if !paths.iter().any(|existing| existing == &candidate) {
-        paths.push(candidate);
     }
 }
 
@@ -2012,682 +1530,6 @@ fn default_provider_timeout_ms() -> u64 {
     60_000
 }
 
-fn resolve_string_reference(value: &str, base_dir: Option<&Path>) -> Result<String, ConfigError> {
-    if let Some(reference) = value
-        .strip_prefix("{env:")
-        .and_then(|reference| reference.strip_suffix('}'))
-    {
-        return Ok(env::var(reference).unwrap_or_default());
-    }
-
-    if let Some(reference) = value
-        .strip_prefix("{file:")
-        .and_then(|reference| reference.strip_suffix('}'))
-    {
-        let trimmed = reference.trim();
-        if trimmed.is_empty() {
-            return Ok(value.to_string());
-        }
-
-        let path = PathBuf::from(trimmed);
-        let resolved_path = if path.is_absolute() {
-            path
-        } else if let Some(base_dir) = base_dir {
-            base_dir.join(path)
-        } else {
-            path
-        };
-
-        return fs::read_to_string(&resolved_path).map_err(|source| ConfigError::ReadFile {
-            path: resolved_path.display().to_string(),
-            source,
-        });
-    }
-
-    if !(value.starts_with("${") && value.ends_with('}')) {
-        return Ok(value.to_string());
-    }
-
-    let reference = &value[2..value.len() - 1];
-    if reference.is_empty() {
-        return Ok(value.to_string());
-    }
-
-    if let Some((key, fallback)) = reference.split_once(":-") {
-        if key.is_empty() {
-            return Ok(value.to_string());
-        }
-        return Ok(env::var(key)
-            .ok()
-            .filter(|resolved| !resolved.is_empty())
-            .unwrap_or_else(|| fallback.to_string()));
-    }
-
-    match env::var(reference) {
-        Ok(resolved) => Ok(resolved),
-        Err(_) => Err(ConfigError::MissingEnvironmentVariable(
-            reference.to_string(),
-        )),
-    }
-}
-
-fn resolve_config_value_references(
-    value: &mut serde_json::Value,
-    base_dir: Option<&Path>,
-) -> Result<(), ConfigError> {
-    match value {
-        serde_json::Value::String(string) => {
-            *string = resolve_string_reference(string, base_dir)?;
-        }
-        serde_json::Value::Array(values) => {
-            for value in values {
-                resolve_config_value_references(value, base_dir)?;
-            }
-        }
-        serde_json::Value::Object(object) => {
-            for value in object.values_mut() {
-                resolve_config_value_references(value, base_dir)?;
-            }
-        }
-        serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => {}
-    }
-
-    Ok(())
-}
-
-const REQUIRED_INTERNAL_CONFIG_SECTIONS: [&str; 4] =
-    ["integrations", "permissions", "providers", "runtime"];
-
-const ALLOWED_INTERNAL_TOP_LEVEL_CONFIG_KEYS: [&str; 15] = [
-    "$schema",
-    "agents",
-    "defaultAgent",
-    "default_agent",
-    "hooks",
-    "hashlineEdit",
-    "hashline_edit",
-    "integrations",
-    "lsp",
-    "logging",
-    "permissions",
-    "providers",
-    "runtime",
-    "skills",
-    "ui",
-];
-
-const ALLOWED_PUBLIC_TOP_LEVEL_CONFIG_KEYS: [&str; 28] = [
-    "$schema",
-    "agent",
-    "agents",
-    "backgroundTask",
-    "categories",
-    "defaultAgent",
-    "default_agent",
-    "deterministic",
-    "hashlineEdit",
-    "hashline_edit",
-    "hooks",
-    "instructions",
-    "integrations",
-    "logging",
-    "lsp",
-    "mcp",
-    "model",
-    "paths",
-    "permission",
-    "permissions",
-    "profiles",
-    "provider",
-    "providers",
-    "runtime",
-    "skills",
-    "smallModel",
-    "small_model",
-    "ui",
-];
-
-fn validate_public_root_config_object(
-    object: &serde_json::Map<String, serde_json::Value>,
-) -> Result<(), ConfigError> {
-    let mut unknown = object
-        .keys()
-        .filter(|key| !ALLOWED_PUBLIC_TOP_LEVEL_CONFIG_KEYS.contains(&key.as_str()))
-        .map(String::as_str)
-        .collect::<Vec<_>>();
-    if !unknown.is_empty() {
-        unknown.sort_unstable();
-        return Err(ConfigError::UnknownTopLevelKeys(format!(
-            "unknown top-level config keys: {}; expected only {}",
-            format_backticked_list(unknown.iter().copied()),
-            format_backticked_list(ALLOWED_PUBLIC_TOP_LEVEL_CONFIG_KEYS)
-        )));
-    }
-
-    Ok(())
-}
-
-fn validate_internal_root_config_object(
-    object: &serde_json::Map<String, serde_json::Value>,
-) -> Result<(), ConfigError> {
-    validate_internal_root_config_object_internal(object, true)
-}
-
-fn validate_internal_root_config_object_internal(
-    object: &serde_json::Map<String, serde_json::Value>,
-    require_required_sections: bool,
-) -> Result<(), ConfigError> {
-    if require_required_sections {
-        let mut missing = REQUIRED_INTERNAL_CONFIG_SECTIONS
-            .iter()
-            .copied()
-            .filter(|key| !object.contains_key(*key))
-            .collect::<Vec<_>>();
-        if !object.contains_key("agents") {
-            missing.push("agents");
-        }
-        if !missing.is_empty() {
-            missing.sort_unstable();
-            return Err(ConfigError::MissingRequiredSections(missing.join(", ")));
-        }
-    }
-
-    let mut unknown = object
-        .keys()
-        .filter(|key| !ALLOWED_INTERNAL_TOP_LEVEL_CONFIG_KEYS.contains(&key.as_str()))
-        .map(String::as_str)
-        .collect::<Vec<_>>();
-    if !unknown.is_empty() {
-        unknown.sort_unstable();
-        return Err(ConfigError::UnknownTopLevelKeys(format!(
-            "unknown top-level config keys: {}; expected only {}",
-            format_backticked_list(unknown.iter().copied()),
-            format_backticked_list(ALLOWED_INTERNAL_TOP_LEVEL_CONFIG_KEYS)
-        )));
-    }
-
-    Ok(())
-}
-
-fn default_internal_permissions_config() -> PermissionsConfig {
-    PermissionsConfig {
-        defaults: PermissionDefaultsConfig {
-            edit: PermissionMode::Ask,
-            shell: PermissionMode::Ask,
-            network: PermissionMode::Ask,
-            question: Some(PermissionMode::Ask),
-            task: Some(PermissionMode::Ask),
-            webfetch: Some(PermissionMode::Ask),
-            websearch: Some(PermissionMode::Ask),
-            codesearch: Some(PermissionMode::Ask),
-            lsp: Some(PermissionMode::Ask),
-        },
-        shell_allowlist: ShellAllowlist::default(),
-    }
-}
-
-fn default_internal_integrations_config() -> IntegrationsConfig {
-    IntegrationsConfig {
-        remote_search: RemoteSearchConfig::default(),
-        mcp: McpConfig::default(),
-    }
-}
-
-fn default_shipped_agents(
-    model_ref: &str,
-    small_model_ref: Option<&str>,
-) -> BTreeMap<String, ProfileConfig> {
-    let small_model_ref = small_model_ref.unwrap_or(model_ref).to_string();
-    BTreeMap::from([
-        (
-            "build".to_string(),
-            ProfileConfig {
-                description: "Implementation lane: execute an approved plan and verify the result."
-                    .to_string(),
-                system_prompt: None,
-                model_ref: model_ref.to_string(),
-                variant: None,
-                temperature: None,
-                permissions: Some(ProfilePermissions {
-                    edit: Some(PermissionMode::Allow),
-                    shell: Some(PermissionMode::Allow),
-                    network: Some(PermissionMode::Allow),
-                    question: Some(PermissionMode::Allow),
-                    task: Some(PermissionMode::Allow),
-                    webfetch: Some(PermissionMode::Allow),
-                    websearch: Some(PermissionMode::Allow),
-                    codesearch: Some(PermissionMode::Allow),
-                    lsp: Some(PermissionMode::Allow),
-                }),
-                max_iters: 24,
-                tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
-                plan_mode: false,
-                exit_target_profile: None,
-                tools: vec![
-                    "todowrite",
-                    "todoread",
-                    "question",
-                    "skill",
-                    "websearch",
-                    "webfetch",
-                    "codesearch",
-                    "lsp",
-                    "read",
-                    "glob",
-                    "grep",
-                    "list",
-                    "write",
-                    "edit",
-                    "bash",
-                    "batch",
-                    "task",
-                ]
-                .into_iter()
-                .map(str::to_string)
-                .collect(),
-            },
-        ),
-        (
-            "plan".to_string(),
-            ProfileConfig {
-                description: "Planning lane: produce an approved plan and hand off to build."
-                    .to_string(),
-                system_prompt: None,
-                model_ref: small_model_ref.clone(),
-                variant: None,
-                temperature: None,
-                permissions: Some(ProfilePermissions {
-                    edit: Some(PermissionMode::Deny),
-                    shell: Some(PermissionMode::Deny),
-                    network: Some(PermissionMode::Allow),
-                    question: Some(PermissionMode::Allow),
-                    task: Some(PermissionMode::Deny),
-                    webfetch: Some(PermissionMode::Allow),
-                    websearch: Some(PermissionMode::Allow),
-                    codesearch: Some(PermissionMode::Allow),
-                    lsp: Some(PermissionMode::Allow),
-                }),
-                max_iters: 16,
-                tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
-                plan_mode: true,
-                exit_target_profile: Some("build".to_string()),
-                tools: vec![
-                    "todowrite",
-                    "todoread",
-                    "question",
-                    "skill",
-                    "websearch",
-                    "webfetch",
-                    "codesearch",
-                    "lsp",
-                    "read",
-                    "glob",
-                    "grep",
-                    "list",
-                    "batch",
-                    "plan_exit",
-                ]
-                .into_iter()
-                .map(str::to_string)
-                .collect(),
-            },
-        ),
-        (
-            "tool_audit".to_string(),
-            ProfileConfig {
-                description:
-                    "Evidence-first signoff profile for validating the shipped tool surface."
-                        .to_string(),
-                system_prompt: None,
-                model_ref: small_model_ref,
-                variant: None,
-                temperature: None,
-                permissions: None,
-                max_iters: 20,
-                tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
-                plan_mode: false,
-                exit_target_profile: None,
-                tools: vec![
-                    "skill",
-                    "question",
-                    "lsp",
-                    "task",
-                    "batch",
-                    "invalid",
-                    "todowrite",
-                    "todoread",
-                ]
-                .into_iter()
-                .map(str::to_string)
-                .collect(),
-            },
-        ),
-    ])
-}
-
-fn public_agent_to_profile(
-    name: &str,
-    agent: PublicAgentConfig,
-    default_model_ref: Option<&str>,
-    small_model_ref: Option<&str>,
-    base: Option<ProfileConfig>,
-) -> Result<ProfileConfig, ConfigError> {
-    let selected_model = agent.model.clone().or_else(|| {
-        if agent.use_small_model {
-            small_model_ref.map(str::to_string)
-        } else {
-            default_model_ref.map(str::to_string)
-        }
-    });
-    let description = agent
-        .description
-        .or_else(|| base.as_ref().map(|profile| profile.description.clone()))
-        .ok_or_else(|| {
-            ConfigError::InvalidReference(format!(
-                "agent `{name}` is missing `description`; provide `agent.{name}.description`"
-            ))
-        })?;
-    let model_ref = selected_model
-        .or_else(|| base.as_ref().map(|profile| profile.model_ref.clone()))
-        .ok_or_else(|| {
-            ConfigError::InvalidReference(format!(
-                "agent `{name}` is missing `model`; provide `agent.{name}.model`, set `small_model`, or add a top-level `model`"
-            ))
-        })?;
-
-    Ok(ProfileConfig {
-        description,
-        system_prompt: agent.system_prompt.or_else(|| {
-            base.as_ref()
-                .and_then(|profile| profile.system_prompt.clone())
-        }),
-        model_ref,
-        variant: agent
-            .variant
-            .or_else(|| base.as_ref().and_then(|profile| profile.variant.clone())),
-        temperature: agent
-            .temperature
-            .or_else(|| base.as_ref().and_then(|profile| profile.temperature)),
-        permissions: agent
-            .permission
-            .map(translate_public_profile_permissions)
-            .transpose()?
-            .or_else(|| {
-                base.as_ref()
-                    .and_then(|profile| profile.permissions.clone())
-            }),
-        max_iters: if agent.max_iters == default_max_iters() {
-            base.as_ref()
-                .map(|profile| profile.max_iters)
-                .unwrap_or(agent.max_iters)
-        } else {
-            agent.max_iters
-        },
-        tool_failure_mode: if matches!(agent.tool_failure_mode, ToolFailureMode::FailTurn) {
-            base.as_ref()
-                .map(|profile| profile.tool_failure_mode)
-                .unwrap_or(agent.tool_failure_mode)
-        } else {
-            agent.tool_failure_mode
-        },
-        plan_mode: agent.plan_mode
-            || base
-                .as_ref()
-                .map(|profile| profile.plan_mode)
-                .unwrap_or(false),
-        exit_target_profile: agent.exit_target_profile.or_else(|| {
-            base.as_ref()
-                .and_then(|profile| profile.exit_target_profile.clone())
-        }),
-        tools: if agent.tools.is_empty() {
-            base.as_ref()
-                .map(|profile| profile.tools.clone())
-                .unwrap_or_default()
-        } else {
-            agent.tools
-        },
-    })
-}
-
-fn translate_public_profile_permissions(
-    permissions: PublicProfilePermissions,
-) -> Result<ProfilePermissions, ConfigError> {
-    serde_json::from_value(serde_json::json!({
-        "edit": permissions.edit,
-        "shell": permissions.bash,
-        "network": permissions.network,
-        "question": permissions.question,
-        "task": permissions.task,
-        "webfetch": permissions.webfetch,
-        "websearch": permissions.websearch,
-        "codesearch": permissions.codesearch,
-        "lsp": permissions.lsp,
-    }))
-    .map_err(|err| ConfigError::ParseJson5(err.to_string()))
-}
-
-fn translate_public_permission_value(
-    value: serde_json::Value,
-) -> Result<serde_json::Value, ConfigError> {
-    if value
-        .as_object()
-        .map(|object| object.contains_key("defaults"))
-        .unwrap_or(false)
-    {
-        return Ok(value);
-    }
-
-    let parsed: PublicPermissionConfig =
-        serde_json::from_value(value).map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
-    let fallback = default_internal_permissions_config();
-
-    serde_json::to_value(PermissionsConfig {
-        defaults: PermissionDefaultsConfig {
-            edit: parsed.edit.unwrap_or(fallback.defaults.edit),
-            shell: parsed.bash.unwrap_or(fallback.defaults.shell),
-            network: parsed.network.unwrap_or(fallback.defaults.network),
-            question: parsed.question.or(fallback.defaults.question),
-            task: parsed.task.or(fallback.defaults.task),
-            webfetch: parsed.webfetch.or(fallback.defaults.webfetch),
-            websearch: parsed.websearch.or(fallback.defaults.websearch),
-            codesearch: parsed.codesearch.or(fallback.defaults.codesearch),
-            lsp: parsed.lsp.or(fallback.defaults.lsp),
-        },
-        shell_allowlist: parsed.shell_allowlist.unwrap_or(fallback.shell_allowlist),
-    })
-    .map_err(|err| ConfigError::ParseJson5(err.to_string()))
-}
-
-fn translate_public_runtime_root(
-    root: serde_json::Value,
-) -> Result<(serde_json::Value, Vec<String>), ConfigError> {
-    let object = root.as_object().ok_or(ConfigError::InvalidRootObject)?;
-    validate_public_root_config_object(object)?;
-
-    let mut translated = serde_json::Map::new();
-
-    if let Some(schema) = object.get("$schema").cloned() {
-        translated.insert("$schema".to_string(), schema);
-    }
-
-    let mut providers = serde_json::json!({});
-    if let Some(value) = object.get("providers") {
-        merge_config_value(&mut providers, value.clone());
-    }
-    if let Some(value) = object.get("provider") {
-        merge_config_value(&mut providers, value.clone());
-    }
-    translated.insert("providers".to_string(), providers);
-
-    let model = object
-        .get("model")
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_string);
-    let small_model = object
-        .get("small_model")
-        .or_else(|| object.get("smallModel"))
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_string);
-
-    let mut agents = BTreeMap::new();
-    if let Some(value) = object.get("agents") {
-        let legacy: BTreeMap<String, ProfileConfig> = serde_json::from_value(value.clone())
-            .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
-        agents.extend(legacy);
-    }
-    for alias in ["categories", "profiles"] {
-        if let Some(value) = object.get(alias) {
-            let legacy: BTreeMap<String, ProfileConfig> = serde_json::from_value(value.clone())
-                .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
-            agents.extend(legacy);
-        }
-    }
-
-    let shipped = model
-        .as_deref()
-        .map(|default_model| default_shipped_agents(default_model, small_model.as_deref()))
-        .unwrap_or_default();
-
-    if let Some(value) = object.get("agent") {
-        let public_agents: BTreeMap<String, PublicAgentConfig> =
-            serde_json::from_value(value.clone())
-                .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
-        for (name, public_agent) in public_agents {
-            let base = agents.remove(&name).or_else(|| shipped.get(&name).cloned());
-            let profile = public_agent_to_profile(
-                &name,
-                public_agent,
-                model.as_deref(),
-                small_model.as_deref(),
-                base,
-            )?;
-            agents.insert(name, profile);
-        }
-    }
-    if agents.is_empty() && !shipped.is_empty() {
-        agents = shipped;
-    }
-
-    translated.insert(
-        "agents".to_string(),
-        serde_json::to_value(agents).map_err(|err| ConfigError::ParseJson5(err.to_string()))?,
-    );
-
-    if let Some(default_agent) = object
-        .get("default_agent")
-        .or_else(|| object.get("defaultAgent"))
-        .cloned()
-    {
-        translated.insert("default_agent".to_string(), default_agent);
-    }
-
-    let mut permissions = serde_json::to_value(default_internal_permissions_config())
-        .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
-    if let Some(value) = object.get("permissions") {
-        merge_config_value(&mut permissions, value.clone());
-    }
-    if let Some(value) = object.get("permission") {
-        merge_config_value(
-            &mut permissions,
-            translate_public_permission_value(value.clone())?,
-        );
-    }
-    translated.insert("permissions".to_string(), permissions);
-
-    let mut runtime = serde_json::json!({
-        "background_tasks": {
-            "default_concurrency": default_background_task_default_concurrency(),
-            "provider_concurrency": default_background_task_provider_concurrency(),
-            "model_concurrency": default_background_task_model_concurrency(),
-            "stale_timeout_ms": default_background_task_stale_timeout_ms(),
-            "message_staleness_timeout_ms": default_background_task_message_staleness_timeout_ms(),
-        },
-        "session_dir": default_session_dir(),
-        "permissions": {
-            "ask_timeout_ms": default_runtime_ask_timeout_ms(),
-        },
-        "prompt": {
-            "wait_timeout_ms": default_prompt_wait_timeout_ms(),
-        },
-        "deterministic": {
-            "enabled": false,
-            "seed": 42,
-        },
-    });
-    if let Some(value) = object.get("runtime") {
-        merge_config_value(&mut runtime, value.clone());
-    }
-    if let Some(value) = object.get("backgroundTask") {
-        if let Some(runtime_object) = runtime.as_object_mut() {
-            runtime_object.insert("background_tasks".to_string(), value.clone());
-        }
-    }
-    if let Some(value) = object.get("deterministic") {
-        if let Some(runtime_object) = runtime.as_object_mut() {
-            runtime_object.insert("deterministic".to_string(), value.clone());
-        }
-    }
-    if let Some(value) = object.get("paths") {
-        if let Some(session_dir) = value
-            .as_object()
-            .and_then(|paths| paths.get("session_dir").or_else(|| paths.get("sessionDir")))
-        {
-            if let Some(runtime_object) = runtime.as_object_mut() {
-                runtime_object.insert("session_dir".to_string(), session_dir.clone());
-            }
-        }
-    }
-    translated.insert("runtime".to_string(), runtime);
-
-    let mut integrations = serde_json::to_value(default_internal_integrations_config())
-        .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
-    if let Some(value) = object.get("integrations") {
-        merge_config_value(&mut integrations, value.clone());
-    }
-    if let Some(value) = object.get("mcp") {
-        let mcp_value = serde_json::json!({ "servers": value.clone() });
-        if let Some(integrations_object) = integrations.as_object_mut() {
-            match integrations_object.get_mut("mcp") {
-                Some(existing) => merge_config_value(existing, mcp_value),
-                None => {
-                    integrations_object.insert("mcp".to_string(), mcp_value);
-                }
-            }
-        }
-    }
-    translated.insert("integrations".to_string(), integrations);
-
-    for (key, value) in [
-        ("hooks", object.get("hooks")),
-        ("skills", object.get("skills")),
-        ("lsp", object.get("lsp")),
-        ("logging", object.get("logging")),
-        ("ui", object.get("ui")),
-        (
-            "hashline_edit",
-            object
-                .get("hashline_edit")
-                .or_else(|| object.get("hashlineEdit")),
-        ),
-    ] {
-        if let Some(value) = value {
-            translated.insert(key.to_string(), value.clone());
-        }
-    }
-
-    let instructions = object
-        .get("instructions")
-        .map(|value| {
-            serde_json::from_value::<InstructionList>(value.clone())
-                .map(|parsed| parsed.entries())
-                .map_err(|err| ConfigError::ParseJson5(err.to_string()))
-        })
-        .transpose()?
-        .unwrap_or_default();
-
-    Ok((serde_json::Value::Object(translated), instructions))
-}
-
 fn parse_model_ref(model_ref: &str) -> Option<(&str, &str)> {
     let (provider_name, model_name) = model_ref
         .split_once(':')
@@ -3360,242 +2202,6 @@ fn model_variant_text_verbosity_label(verbosity: ModelVariantTextVerbosity) -> &
     }
 }
 
-pub fn load_config_from_file(path: &Path) -> Result<HarnessConfig, ConfigError> {
-    let raw = fs::read_to_string(path).map_err(|source| ConfigError::ReadFile {
-        path: path.display().to_string(),
-        source,
-    })?;
-
-    let (parsed, configured_instructions) =
-        parse_config_from_str(&raw, path.parent().or(Some(Path::new("."))))?;
-    finalize_loaded_config(parsed, Some(path), configured_instructions)
-}
-
-pub fn load_config_from_str(raw: &str) -> Result<HarnessConfig, ConfigError> {
-    let (parsed, configured_instructions) = parse_config_from_str(raw, None)?;
-    finalize_loaded_config(parsed, None, configured_instructions)
-}
-
-fn parse_config_from_str(
-    raw: &str,
-    base_dir: Option<&Path>,
-) -> Result<(HarnessConfig, Vec<String>), ConfigError> {
-    let root = parse_public_config_value_from_str(raw, base_dir)?;
-    let (translated, configured_instructions) = translate_public_runtime_root(root)?;
-    Ok((
-        parse_internal_config_from_value(translated)?,
-        configured_instructions,
-    ))
-}
-
-pub fn load_resolved_config(
-    explicit_path: Option<&Path>,
-) -> Result<Option<LoadedConfig>, ConfigError> {
-    let runtime_paths = resolve_config_layer_paths(explicit_path);
-    let runtime_content = env::var("HARNESS_CONFIG_CONTENT").ok();
-    if runtime_paths.is_empty() && runtime_content.is_none() {
-        return Ok(None);
-    }
-
-    let tui_paths = resolve_tui_config_layer_paths(explicit_path);
-    let config =
-        load_resolved_config_from_paths(&runtime_paths, runtime_content.as_deref(), &tui_paths)?;
-    let mut paths = runtime_paths.clone();
-    for path in tui_paths {
-        if !paths.iter().any(|existing| existing == &path) {
-            paths.push(path);
-        }
-    }
-
-    Ok(Some(LoadedConfig { config, paths }))
-}
-
-pub fn resolve_config_layer_paths(explicit_path: Option<&Path>) -> Vec<PathBuf> {
-    if let Some(path) = explicit_path {
-        return vec![path.to_path_buf()];
-    }
-
-    let mut paths = Vec::new();
-
-    if let Some(global_path) = discover_xdg_runtime_config_path() {
-        push_unique_path(&mut paths, global_path);
-    }
-
-    if let Some(env_path) = discover_runtime_config_env_path() {
-        push_unique_path(&mut paths, env_path);
-    }
-
-    for local_path in discover_project_runtime_config_paths(
-        env::current_dir()
-            .ok()
-            .as_deref()
-            .unwrap_or_else(|| Path::new(".")),
-    ) {
-        push_unique_path(&mut paths, local_path);
-    }
-
-    paths
-}
-
-fn parse_internal_config_from_value(root: serde_json::Value) -> Result<HarnessConfig, ConfigError> {
-    let object = root.as_object().ok_or(ConfigError::InvalidRootObject)?;
-    validate_internal_root_config_object(object)?;
-
-    let mut parsed: HarnessConfig =
-        serde_json::from_value(root).map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
-    parsed.normalize_public_config_aliases()?;
-    parsed.sync_derived_runtime_sections();
-    Ok(parsed)
-}
-
-fn finalize_loaded_config(
-    mut parsed: HarnessConfig,
-    config_path: Option<&Path>,
-    configured_instructions: Vec<String>,
-) -> Result<HarnessConfig, ConfigError> {
-    if let Some(path) = config_path {
-        resolve_discovered_prompt_assets(&mut parsed, path)?;
-    }
-    if !configured_instructions.is_empty() {
-        let mut resolved =
-            resolve_configured_instruction_entries(&configured_instructions, config_path)?;
-        resolved.extend(parsed.instruction_files.clone());
-        parsed.instruction_files = resolved;
-    }
-    parsed.validate_references()?;
-    refresh_hook_runtime_config_registry(&parsed);
-    refresh_skills_config_registry(&parsed);
-    refresh_lsp_config_registry(&parsed);
-    refresh_integrations_config_registry(&parsed);
-    refresh_profile_model_metadata_registry(&parsed)?;
-    Ok(parsed)
-}
-
-fn load_resolved_config_from_paths(
-    runtime_paths: &[PathBuf],
-    runtime_content: Option<&str>,
-    tui_paths: &[PathBuf],
-) -> Result<HarnessConfig, ConfigError> {
-    let mut merged: Option<serde_json::Value> = None;
-    let mut configured_instructions = Vec::new();
-
-    for path in runtime_paths {
-        let raw = fs::read_to_string(path).map_err(|source| ConfigError::ReadFile {
-            path: path.display().to_string(),
-            source,
-        })?;
-        let root = parse_public_config_value_from_str(&raw, path.parent())?;
-        let (fragment, instructions) = translate_public_runtime_root(root)?;
-        configured_instructions.extend(instructions);
-        match &mut merged {
-            Some(existing) => merge_config_value(existing, fragment),
-            None => merged = Some(fragment),
-        }
-    }
-
-    if let Some(runtime_content) = runtime_content {
-        let root = parse_public_config_value_from_str(runtime_content, None)?;
-        let (fragment, instructions) = translate_public_runtime_root(root)?;
-        configured_instructions.extend(instructions);
-        match &mut merged {
-            Some(existing) => merge_config_value(existing, fragment),
-            None => merged = Some(fragment),
-        }
-    }
-
-    let merged = merged.ok_or_else(|| ConfigError::ReadFile {
-        path: "<merged-config>".to_string(),
-        source: std::io::Error::new(std::io::ErrorKind::NotFound, "no config files resolved"),
-    })?;
-    let primary_path = runtime_paths.last().map(PathBuf::as_path);
-    let mut parsed = parse_internal_config_from_value(merged)?;
-    if !tui_paths.is_empty() {
-        let tui = load_merged_tui_config_from_files(tui_paths)?;
-        apply_public_tui_config(&mut parsed, tui);
-    }
-    finalize_loaded_config(parsed, primary_path, configured_instructions)
-}
-
-fn parse_public_config_value_from_str(
-    raw: &str,
-    base_dir: Option<&Path>,
-) -> Result<serde_json::Value, ConfigError> {
-    let mut root: serde_json::Value =
-        json5::from_str(raw).map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
-
-    let object = root.as_object().ok_or(ConfigError::InvalidRootObject)?;
-    validate_public_root_config_object(object)?;
-    resolve_config_value_references(&mut root, base_dir)?;
-    Ok(root)
-}
-
-fn load_merged_tui_config_from_files(paths: &[PathBuf]) -> Result<PublicTuiConfig, ConfigError> {
-    let mut merged: Option<serde_json::Value> = None;
-
-    for path in paths {
-        let raw = fs::read_to_string(path).map_err(|source| ConfigError::ReadFile {
-            path: path.display().to_string(),
-            source,
-        })?;
-        let fragment: serde_json::Value =
-            json5::from_str(&raw).map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
-        match &mut merged {
-            Some(existing) => merge_config_value(existing, fragment),
-            None => merged = Some(fragment),
-        }
-    }
-
-    serde_json::from_value(merged.unwrap_or_else(|| serde_json::json!({})))
-        .map_err(|err| ConfigError::ParseJson5(err.to_string()))
-}
-
-fn apply_public_tui_config(parsed: &mut HarnessConfig, tui: PublicTuiConfig) {
-    parsed.ui.keybindings = tui.keybindings;
-}
-
-fn resolve_configured_instruction_entries(
-    entries: &[String],
-    config_path: Option<&Path>,
-) -> Result<Vec<InstructionFile>, ConfigError> {
-    let mut resolved = Vec::new();
-    let base_dir = config_path.and_then(Path::parent);
-
-    for (index, entry) in entries.iter().enumerate() {
-        let trimmed = entry.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        let candidate = base_dir
-            .map(|base| base.join(trimmed))
-            .filter(|path| path.exists())
-            .or_else(|| {
-                let path = PathBuf::from(trimmed);
-                path.exists().then_some(path)
-            });
-
-        if let Some(path) = candidate {
-            let content =
-                fs::read_to_string(&path).map_err(|source| ConfigError::ReadMarkdownAsset {
-                    path: path.display().to_string(),
-                    source,
-                })?;
-            let content = content.trim().to_string();
-            if !content.is_empty() {
-                resolved.push(InstructionFile { path, content });
-            }
-            continue;
-        }
-
-        resolved.push(InstructionFile {
-            path: PathBuf::from(format!("<config instructions {}>", index + 1)),
-            content: trimmed.to_string(),
-        });
-    }
-
-    Ok(resolved)
-}
-
 fn merge_config_value(base: &mut serde_json::Value, overlay: serde_json::Value) {
     match (base, overlay) {
         (serde_json::Value::Object(base_map), serde_json::Value::Object(overlay_map)) => {
@@ -3617,137 +2223,6 @@ fn is_builtin_lsp_server(name: &str) -> bool {
         name,
         "go" | "json" | "python" | "rust" | "typescript" | "yaml"
     )
-}
-
-pub fn harness_schema_pretty_json() -> Result<String, ConfigError> {
-    let schema = schema_for!(PublicRuntimeConfig);
-    serde_json::to_string_pretty(&schema)
-        .map_err(|err| ConfigError::SerializeSchema(err.to_string()))
-}
-
-pub fn harness_tui_schema_pretty_json() -> Result<String, ConfigError> {
-    let schema = schema_for!(PublicTuiConfig);
-    serde_json::to_string_pretty(&schema)
-        .map_err(|err| ConfigError::SerializeSchema(err.to_string()))
-}
-
-pub fn resolve_config_path(explicit_path: Option<&Path>) -> Option<PathBuf> {
-    if let Some(path) = explicit_path {
-        return Some(path.to_path_buf());
-    }
-
-    resolve_config_layer_paths(None).into_iter().last()
-}
-
-fn resolve_tui_config_layer_paths(explicit_path: Option<&Path>) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-
-    if let Some(global_path) = discover_xdg_tui_config_path() {
-        push_unique_path(&mut paths, global_path);
-    }
-
-    if let Some(env_path) = discover_tui_config_env_path() {
-        push_unique_path(&mut paths, env_path);
-    }
-
-    let local_base = env::current_dir().unwrap_or_else(|_| {
-        explicit_path
-            .and_then(Path::parent)
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from("."))
-    });
-    for local_path in discover_project_tui_config_paths(&local_base) {
-        push_unique_path(&mut paths, local_path);
-    }
-
-    paths
-}
-
-fn discover_xdg_runtime_config_path() -> Option<PathBuf> {
-    config_home_dir().and_then(|base| {
-        [
-            base.join("harness").join("harness.jsonc"),
-            base.join("harness").join("harness.json"),
-            base.join("harness").join("config.jsonc"),
-        ]
-        .into_iter()
-        .find(|path| path.exists())
-    })
-}
-
-fn discover_xdg_tui_config_path() -> Option<PathBuf> {
-    config_home_dir().and_then(|base| {
-        [
-            base.join("harness").join("tui.jsonc"),
-            base.join("harness").join("tui.json"),
-        ]
-        .into_iter()
-        .find(|path| path.exists())
-    })
-}
-
-fn config_home_dir() -> Option<PathBuf> {
-    env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
-}
-
-fn discover_runtime_config_env_path() -> Option<PathBuf> {
-    env::var_os("HARNESS_CONFIG")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-}
-
-fn discover_tui_config_env_path() -> Option<PathBuf> {
-    env::var_os("HARNESS_TUI_CONFIG")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-}
-
-fn discover_project_runtime_config_paths(start: &Path) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-
-    for base in project_config_search_bases(start) {
-        for relative in [
-            Path::new("harness.jsonc"),
-            Path::new("harness.json"),
-            Path::new(".agent-harness/harness.jsonc"),
-            Path::new(".agent-harness/harness.json"),
-        ] {
-            let candidate = base.join(relative);
-            if candidate.exists() {
-                paths.push(candidate);
-            }
-        }
-    }
-
-    paths
-}
-
-fn discover_project_tui_config_paths(start: &Path) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-
-    for base in project_config_search_bases(start) {
-        for relative in [
-            Path::new("tui.jsonc"),
-            Path::new("tui.json"),
-            Path::new(".agent-harness/tui.jsonc"),
-            Path::new(".agent-harness/tui.json"),
-        ] {
-            let candidate = base.join(relative);
-            if candidate.exists() {
-                paths.push(candidate);
-            }
-        }
-    }
-
-    paths
-}
-
-fn project_config_search_bases(start: &Path) -> Vec<PathBuf> {
-    let mut bases = project_search_bases(start);
-    bases.reverse();
-    bases
 }
 
 #[cfg(test)]
@@ -4167,6 +2642,67 @@ mod tests {
         assert_eq!(
             parsed.paths.session_dir,
             PathBuf::from(".agent-harness/sessions")
+        );
+    }
+
+    #[test]
+    fn runtime_background_tasks_camel_case_aliases_parse_without_duplicate_fields() {
+        let parsed = load_config_from_str(
+            r#"
+            {
+              providers: {
+                default: {
+                  type: "openai_compatible",
+                  base_url: "http://127.0.0.1:8317/v1",
+                  api_key: "test-key",
+                  models: {
+                    "gpt-4o-mini": {
+                      display_name: "GPT-4o mini"
+                    }
+                  }
+                }
+              },
+              agents: {
+                deep: {
+                  description: "Deep work",
+                  model_ref: "default:gpt-4o-mini",
+                  tools: ["read"]
+                }
+              },
+              runtime: {
+                background_tasks: {
+                  defaultConcurrency: 2,
+                  providerConcurrency: 3,
+                  modelConcurrency: 4,
+                  staleTimeoutMs: 30000,
+                  messageStalenessTimeoutMs: 10000
+                },
+                permissions: {
+                  askTimeoutMs: 777
+                },
+                prompt: {
+                  waitTimeoutMs: 999
+                },
+                sessionDir: ".agent-harness/custom-sessions"
+              }
+            }
+            "#,
+        )
+        .expect("runtime camelCase aliases should parse without duplicate logical fields");
+
+        assert_eq!(parsed.runtime.background_tasks.default_concurrency, 2);
+        assert_eq!(parsed.runtime.background_tasks.provider_concurrency, 3);
+        assert_eq!(parsed.runtime.background_tasks.model_concurrency, 4);
+        assert_eq!(parsed.runtime.background_tasks.stale_timeout_ms, 30000);
+        assert_eq!(
+            parsed.runtime.background_tasks.message_staleness_timeout_ms,
+            10000
+        );
+        assert_eq!(parsed.runtime.permissions.ask_timeout_ms, 777);
+        assert_eq!(parsed.runtime.prompt.wait_timeout_ms, 999);
+        assert_eq!(
+            parsed.runtime.session_dir,
+            PathBuf::from(".agent-harness/custom-sessions")
         );
     }
 
@@ -4878,11 +3414,48 @@ mod tests {
         assert!(properties.contains_key("model"));
         assert!(properties.contains_key("small_model"));
         assert!(properties.contains_key("mcp"));
+        assert!(properties.contains_key("skills"));
         assert!(properties.contains_key("instructions"));
         assert!(!properties.contains_key("categories"));
         assert!(!properties.contains_key("profiles"));
         assert!(!properties.contains_key("runtime"));
         assert!(!properties.contains_key("integrations"));
+    }
+
+    #[test]
+    fn public_top_level_skills_translate_into_runtime_config() {
+        let parsed = load_config_from_str(
+            r#"
+            {
+              model: "default:gpt-4o-mini",
+              provider: {
+                default: {
+                  type: "openai_compatible",
+                  base_url: "http://127.0.0.1:8317/v1",
+                  api_key: "test-key",
+                  models: {
+                    "gpt-4o-mini": {
+                      display_name: "GPT-4o mini"
+                    }
+                  }
+                }
+              },
+              skills: {
+                walkToGitRoot: false,
+                permissions: {
+                  "internal-*": "deny"
+                }
+              }
+            }
+            "#,
+        )
+        .expect("runtime config with top-level skills should parse");
+
+        assert!(!parsed.skills.walk_to_git_root);
+        assert_eq!(
+            parsed.skills.permissions.get("internal-*"),
+            Some(&PermissionMode::Deny)
+        );
     }
 
     #[test]
@@ -5443,7 +4016,7 @@ mod tests {
 
     #[test]
     fn missing_openai_api_key_errors_even_for_cliproxy_loopback_base_url() {
-        let err = resolve_string_reference("${OPENAI_API_KEY}", None)
+        let err = loader::resolve_string_reference("${OPENAI_API_KEY}", None)
             .expect_err("loopback providers should still require OPENAI_API_KEY");
 
         assert_eq!(
@@ -5455,7 +4028,7 @@ mod tests {
     #[test]
     fn configured_openai_api_key_env_reference_resolves_without_fallback() {
         with_env_var_state("OPENAI_API_KEY", Some("test-openai-api-key"), || {
-            let resolved = resolve_string_reference("${OPENAI_API_KEY}", None)
+            let resolved = loader::resolve_string_reference("${OPENAI_API_KEY}", None)
                 .expect("OPENAI_API_KEY should resolve when it is set");
 
             assert_eq!(resolved, "test-openai-api-key");
