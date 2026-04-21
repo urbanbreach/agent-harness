@@ -5,7 +5,10 @@ use std::sync::Arc;
 
 use crate::agent_ops::{select_profile_name, AgentOpsExecutor, AgentSpawnRequest, BatchCall};
 use crate::code_lsp::{code_lsp_parameters_json_schema, parse_code_lsp_request, CodeLspExecutor};
-use crate::control_plane::{ControlPlaneExecutor, QuestionPrompt, TodoItem};
+use crate::control_plane::{
+    question_parameters_json_schema, todo_write_parameters_json_schema, ControlPlaneExecutor,
+    QuestionPrompt, TodoItem,
+};
 use crate::network::{
     CodeSearchRequest, NetworkExecutor, WebFetchFormat, WebFetchRequest, WebSearchRequest,
 };
@@ -371,6 +374,7 @@ struct BatchWrapperCall {
 #[serde(untagged)]
 enum BatchArgsCompat {
     Wrapped { tool_calls: Vec<BatchCall> },
+    WrappedWrapper { tool_calls: Vec<BatchWrapperCall> },
     Wrapper { tool_uses: Vec<BatchWrapperCall> },
     Calls { calls: Vec<BatchCall> },
     List(Vec<BatchCall>),
@@ -385,6 +389,11 @@ impl<'de> Deserialize<'de> for BatchArgs {
 
         let tool_calls = match BatchArgsCompat::deserialize(deserializer)? {
             BatchArgsCompat::Wrapped { tool_calls } => tool_calls,
+            BatchArgsCompat::WrappedWrapper { tool_calls } => tool_calls
+                .into_iter()
+                .map(BatchCall::try_from)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(D::Error::custom)?,
             BatchArgsCompat::Calls { calls } => calls,
             BatchArgsCompat::List(calls) => calls,
             BatchArgsCompat::Wrapper { tool_uses } => tool_uses
@@ -696,7 +705,7 @@ impl Tool for WriteTool {
     }
 
     fn description(&self) -> &str {
-        "Writes file contents using the canonical write semantics."
+        "Writes file contents using the canonical write semantics. Read existing files first so overwrites can be freshness-checked."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -760,7 +769,7 @@ impl Tool for TodoWriteTool {
     }
 
     fn parameters_json_schema(&self) -> Value {
-        super::json_schema_for::<TodoWriteArgs>()
+        todo_write_parameters_json_schema()
     }
 
     fn capability(&self) -> ToolCapability {
@@ -1017,7 +1026,7 @@ impl Tool for QuestionTool {
     }
 
     fn parameters_json_schema(&self) -> Value {
-        super::json_schema_for::<QuestionArgs>()
+        question_parameters_json_schema()
     }
 
     fn capability(&self) -> ToolCapability {
@@ -1641,6 +1650,24 @@ mod tests {
     }
 
     #[test]
+    fn question_args_accept_allow_freeform_legacy_field() {
+        let args: QuestionArgs = serde_json::from_value(json!({
+            "questions": [
+                {
+                    "question": "Choose a mode",
+                    "options": ["fast", "thorough"],
+                    "allowFreeform": false
+                }
+            ]
+        }))
+        .expect("question args should ignore allowFreeform legacy field");
+
+        assert_eq!(args.questions.len(), 1);
+        assert_eq!(args.questions[0].question, "Choose a mode");
+        assert_eq!(args.questions[0].options[1].label, "thorough");
+    }
+
+    #[test]
     fn task_args_accept_agent_alias_fields() {
         let args: TaskArgs = serde_json::from_value(json!({
             "description": "Explore codebase",
@@ -1675,5 +1702,45 @@ mod tests {
         assert_eq!(args.tool_calls[0].tool, "read");
         assert_eq!(args.tool_calls[1].tool, "bash");
         assert_eq!(args.tool_calls[1].parameters, json!({"command": "ls"}));
+    }
+
+    #[test]
+    fn batch_args_accept_wrapper_shape_inside_tool_calls() {
+        let args: BatchArgs = serde_json::from_value(json!({
+            "tool_calls": [
+                {
+                    "recipient_name": "functions.read",
+                    "parameters": {"filePath": "Cargo.toml"}
+                }
+            ]
+        }))
+        .expect("batch args should accept wrapper calls inside tool_calls");
+
+        assert_eq!(args.tool_calls.len(), 1);
+        assert_eq!(args.tool_calls[0].tool, "read");
+        assert_eq!(
+            args.tool_calls[0].parameters,
+            json!({"filePath": "Cargo.toml"})
+        );
+    }
+
+    #[test]
+    fn batch_args_accept_args_alias_inside_tool_calls() {
+        let args: BatchArgs = serde_json::from_value(json!({
+            "tool_calls": [
+                {
+                    "tool": "read",
+                    "args": {"filePath": "Cargo.toml"}
+                }
+            ]
+        }))
+        .expect("batch args should accept args alias");
+
+        assert_eq!(args.tool_calls.len(), 1);
+        assert_eq!(args.tool_calls[0].tool, "read");
+        assert_eq!(
+            args.tool_calls[0].parameters,
+            json!({"filePath": "Cargo.toml"})
+        );
     }
 }

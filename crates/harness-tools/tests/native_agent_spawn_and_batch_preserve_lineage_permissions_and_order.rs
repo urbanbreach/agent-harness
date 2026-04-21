@@ -573,3 +573,141 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
         .expect("second compat summary")
         .contains("|alpha"));
 }
+
+#[tokio::test]
+async fn task_tool_rejects_unknown_child_profile_before_spawning_fallback_model() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+
+    let (handle, run, worker_id) = spawn_run(&workspace).await;
+
+    let task_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "description": "Missing child profile",
+                "prompt": "Try to inspect the repo",
+                "subagent_type": "explore",
+                "run_in_background": false,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect("request task tool");
+    wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
+
+    handle.stop_run().await.expect("stop run");
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &task_tool_call_id);
+
+    assert_eq!(finished.status, ToolCallStatus::Failed);
+    assert!(finished
+        .output_summary
+        .as_deref()
+        .expect("output summary")
+        .contains("Unknown child profile `explore`"));
+}
+
+#[tokio::test]
+async fn batch_tool_accepts_args_alias_on_real_tool_path() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+    fs::write(workspace.join("fixture.txt"), "alpha\nbeta\n").expect("fixture file");
+
+    let (handle, run, worker_id) = spawn_run(&workspace).await;
+
+    let batch_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "batch",
+            json!({
+                "tool_calls": [
+                    {"tool": "read", "args": {"filePath": "fixture.txt", "offset": 2, "limit": 1}},
+                    {"tool": "read", "args": {"filePath": "fixture.txt", "offset": 1, "limit": 1}}
+                ]
+            }),
+        )
+        .await
+        .expect("request batch tool");
+    wait_for_tool_call_finish(&run.events_path, &batch_tool_call_id).await;
+
+    handle.stop_run().await.expect("stop run");
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &batch_tool_call_id);
+
+    assert_eq!(finished.status, ToolCallStatus::Succeeded);
+    let output = finished.output_json.as_ref().expect("batch output json");
+    assert_eq!(output.pointer("/audit/successful"), Some(&json!(2)));
+    let details = output
+        .get("details")
+        .and_then(Value::as_array)
+        .expect("batch details");
+    assert_eq!(
+        details[0].pointer("/request/parameters/filePath"),
+        Some(&json!("fixture.txt"))
+    );
+    assert!(details[0]
+        .get("summary")
+        .and_then(Value::as_str)
+        .expect("first summary")
+        .contains("|beta"));
+    assert!(details[1]
+        .get("summary")
+        .and_then(Value::as_str)
+        .expect("second summary")
+        .contains("|alpha"));
+}
+
+#[tokio::test]
+async fn batch_tool_accepts_wrapper_calls_inside_tool_calls_on_real_path() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+    fs::write(workspace.join("fixture.txt"), "alpha\nbeta\n").expect("fixture file");
+
+    let (handle, run, worker_id) = spawn_run(&workspace).await;
+
+    let batch_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "batch",
+            json!({
+                "tool_calls": [
+                    {"recipient_name": "functions.read", "parameters": {"filePath": "fixture.txt", "offset": 2, "limit": 1}},
+                    {"recipient_name": "functions.read", "parameters": {"filePath": "fixture.txt", "offset": 1, "limit": 1}}
+                ]
+            }),
+        )
+        .await
+        .expect("request batch tool");
+    wait_for_tool_call_finish(&run.events_path, &batch_tool_call_id).await;
+
+    handle.stop_run().await.expect("stop run");
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &batch_tool_call_id);
+
+    assert_eq!(finished.status, ToolCallStatus::Succeeded);
+    let output = finished.output_json.as_ref().expect("batch output json");
+    assert_eq!(output.pointer("/audit/successful"), Some(&json!(2)));
+    let details = output
+        .get("details")
+        .and_then(Value::as_array)
+        .expect("batch details");
+    assert_eq!(details[0].get("tool_id"), Some(&json!("read")));
+    assert!(details[0]
+        .get("summary")
+        .and_then(Value::as_str)
+        .expect("first summary")
+        .contains("|beta"));
+    assert!(details[1]
+        .get("summary")
+        .and_then(Value::as_str)
+        .expect("second summary")
+        .contains("|alpha"));
+}

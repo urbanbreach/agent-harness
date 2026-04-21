@@ -7,6 +7,7 @@ use harness_core::config::{
     McpConfig, McpServerConfig, McpServerConnectionState,
 };
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
+use reqwest::StatusCode;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -1282,15 +1283,10 @@ impl HttpMcpSession {
 
         let status = response.status();
         if !status.is_success() {
+            let headers = response.headers().clone();
             let body = response.text().await.unwrap_or_default();
-            return Err(ToolError::Execution(format!(
-                "MCP HTTP request failed with status {}{}",
-                status,
-                if body.trim().is_empty() {
-                    String::new()
-                } else {
-                    format!(": {}", collapse_whitespace(&body))
-                }
+            return Err(ToolError::Execution(render_mcp_http_status_error(
+                status, &headers, &body,
             )));
         }
 
@@ -1314,9 +1310,8 @@ impl HttpMcpSession {
         if body.trim().is_empty() {
             return Ok(Value::Null);
         }
-        serde_json::from_str(&body).map_err(|err| {
-            ToolError::Execution(format!("failed to parse MCP HTTP response: {err}"))
-        })
+        serde_json::from_str(&body)
+            .map_err(|err| ToolError::Execution(render_mcp_http_parse_error(&body, &err)))
     }
 
     fn next_request_id(&mut self) -> String {
@@ -1400,9 +1395,13 @@ fn parse_sse_event(event: &str) -> Result<Option<Value>, ToolError> {
     if data_lines.is_empty() {
         return Ok(None);
     }
-    serde_json::from_str(&data_lines.join("\n"))
-        .map(Some)
-        .map_err(|err| ToolError::Execution(format!("failed to parse MCP SSE data: {err}")))
+    let joined = data_lines.join("\n");
+    serde_json::from_str(&joined).map(Some).map_err(|err| {
+        ToolError::Execution(format!(
+            "failed to parse MCP SSE data: {}",
+            describe_upstream_non_json_response(&joined).unwrap_or_else(|| err.to_string())
+        ))
+    })
 }
 
 fn extract_jsonrpc_result(message: Value, method: &str) -> Result<Value, ToolError> {
@@ -1550,11 +1549,129 @@ fn jsonrpc_error_message(error: &Value) -> String {
     let message = error
         .get("message")
         .and_then(Value::as_str)
-        .map(ToString::to_string)
+        .map(normalize_mcp_error_message)
         .unwrap_or_else(|| compact_json(error));
     match code {
         Some(code) => format!("{message} (code {code})"),
         None => message,
+    }
+}
+
+fn render_mcp_http_parse_error(body: &str, err: &serde_json::Error) -> String {
+    match describe_upstream_non_json_response(body) {
+        Some(message) => format!("failed to parse MCP HTTP response: {message}"),
+        None => format!("failed to parse MCP HTTP response: {err}"),
+    }
+}
+
+fn render_mcp_http_status_error(
+    status: StatusCode,
+    headers: &reqwest::header::HeaderMap,
+    body: &str,
+) -> String {
+    let status_prefix = format!("MCP HTTP request failed with status {status}");
+
+    if status == StatusCode::TOO_MANY_REQUESTS {
+        let retry_after = retry_after_hint(headers)
+            .map(|value| format!("; retry-after {value}"))
+            .unwrap_or_default();
+        let detail = extract_upstream_error_detail(body)
+            .or_else(|| describe_upstream_non_json_response(body))
+            .unwrap_or_else(|| "upstream service rate limited the request".to_string());
+        return format!("{status_prefix}: {detail}{retry_after}");
+    }
+
+    if let Some(detail) =
+        extract_upstream_error_detail(body).or_else(|| describe_upstream_non_json_response(body))
+    {
+        return format!("{status_prefix}: {detail}");
+    }
+
+    status_prefix
+}
+
+fn normalize_mcp_error_message(message: &str) -> String {
+    describe_upstream_non_json_response(message).unwrap_or_else(|| collapse_whitespace(message))
+}
+
+fn extract_upstream_error_detail(body: &str) -> Option<String> {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let value: Value = serde_json::from_str(trimmed).ok()?;
+    if let Some(error) = value.get("error") {
+        return Some(jsonrpc_error_message(error));
+    }
+    for field in ["message", "detail", "error_description", "error"] {
+        if let Some(message) = value.get(field).and_then(Value::as_str) {
+            let collapsed = collapse_whitespace(message);
+            if !collapsed.is_empty() {
+                return Some(collapsed);
+            }
+        }
+    }
+    None
+}
+
+fn describe_upstream_non_json_response(body: &str) -> Option<String> {
+    let collapsed = collapse_whitespace(body);
+    if collapsed.is_empty() {
+        return None;
+    }
+
+    let snippet = truncated_snippet(&collapsed, 160);
+    let lower = collapsed.to_ascii_lowercase();
+    let looks_like_non_json = lower.contains("unexpected token")
+        || lower.contains("not valid json")
+        || lower.contains("failed to parse");
+    let looks_like_too_many_requests = lower.contains("too many requests")
+        || lower.contains("too many request")
+        || lower.contains("too many r");
+    let looks_like_rate_limit = looks_like_too_many_requests || lower.contains("rate limit");
+    let looks_like_html =
+        lower.contains("<html") || lower.contains("<!doctype html") || lower.contains("<body");
+
+    if looks_like_too_many_requests {
+        return Some(
+            "upstream service returned a non-JSON rate-limit response (Too Many Requests)"
+                .to_string(),
+        );
+    }
+    if looks_like_rate_limit {
+        return Some(format!(
+            "upstream service rate limited the request: {snippet}"
+        ));
+    }
+    if looks_like_html {
+        return Some(format!(
+            "upstream service returned HTML instead of JSON: {snippet}"
+        ));
+    }
+    if looks_like_non_json {
+        return Some(format!(
+            "upstream service returned non-JSON content: {snippet}"
+        ));
+    }
+    None
+}
+
+fn retry_after_hint(headers: &reqwest::header::HeaderMap) -> Option<String> {
+    headers
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn truncated_snippet(value: &str, max_chars: usize) -> String {
+    let truncated = value.chars().take(max_chars).collect::<String>();
+    if truncated.chars().count() == value.chars().count() {
+        truncated
+    } else {
+        format!("{truncated}…")
     }
 }
 
@@ -1564,4 +1681,70 @@ fn parse_content_length(line: &str) -> Result<usize, ToolError> {
         .ok_or_else(|| ToolError::Execution("invalid MCP content-length header".to_string()))?
         .parse::<usize>()
         .map_err(|err| ToolError::Execution(format!("invalid MCP content length: {err}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        describe_upstream_non_json_response, normalize_mcp_error_message,
+        render_mcp_http_parse_error, render_mcp_http_status_error,
+    };
+    use reqwest::{header::HeaderMap, StatusCode};
+    use serde_json::Value;
+
+    #[test]
+    fn mcp_error_normalization_marks_rate_limited_non_json_errors() {
+        let message = normalize_mcp_error_message(
+            "Unexpected token 'T', \"Too Many R\"... is not valid JSON",
+        );
+        assert_eq!(
+            message,
+            "upstream service returned a non-JSON rate-limit response (Too Many Requests)"
+        );
+    }
+
+    #[test]
+    fn mcp_http_parse_error_uses_body_context_for_non_json_responses() {
+        let err = serde_json::from_str::<Value>("Too Many Requests")
+            .expect_err("plain text should not parse as json");
+        let message = render_mcp_http_parse_error("Too Many Requests", &err);
+        assert!(message.contains("non-JSON"));
+        assert!(message.contains("Too Many Requests"));
+    }
+
+    #[test]
+    fn mcp_non_json_description_ignores_normal_text() {
+        assert!(describe_upstream_non_json_response("transient upstream issue").is_none());
+    }
+
+    #[test]
+    fn mcp_http_status_error_extracts_jsonrpc_body_message() {
+        let message = render_mcp_http_status_error(
+            StatusCode::BAD_GATEWAY,
+            &HeaderMap::new(),
+            r#"{"error":{"code":-32000,"message":"backend unavailable"}}"#,
+        );
+        assert!(message.contains("502 Bad Gateway"));
+        assert!(message.contains("backend unavailable"));
+        assert!(message.contains("code -32000"));
+    }
+
+    #[test]
+    fn mcp_http_status_error_marks_rate_limits_and_retry_after() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            reqwest::header::RETRY_AFTER,
+            "12".parse().expect("retry-after"),
+        );
+
+        let message = render_mcp_http_status_error(
+            StatusCode::TOO_MANY_REQUESTS,
+            &headers,
+            "<html><body>Too Many Requests</body></html>",
+        );
+        assert!(message.contains("429 Too Many Requests"));
+        assert!(message.contains("rate-limit response"));
+        assert!(message.contains("retry-after 12"));
+        assert!(!message.contains("<html>"));
+    }
 }

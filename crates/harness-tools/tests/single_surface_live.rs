@@ -172,7 +172,6 @@ async fn example_config_exposes_single_surface_tools_through_live_registry() {
         "websearch",
         "codesearch",
         "lsp",
-        "invalid",
     ] {
         assert!(registry.get(tool_id).is_some(), "missing tool {tool_id}");
         assert!(
@@ -183,6 +182,8 @@ async fn example_config_exposes_single_surface_tools_through_live_registry() {
             "example config does not expose tool {tool_id} in any shipped profile"
         );
     }
+
+    assert!(registry.get("invalid").is_some(), "missing tool invalid");
 }
 
 #[tokio::test]

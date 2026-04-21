@@ -17,6 +17,8 @@ const PLAN_EXIT_SYNTHETIC_PROMPT: &str =
     "The plan has been approved, you can now edit files. Execute the plan.";
 const SKILL_LOAD_CONFIRM_YES: &str = "Yes";
 const SKILL_LOAD_CONFIRM_NO: &str = "No";
+const TODO_STATUSES: &[&str] = &["pending", "in_progress", "completed", "cancelled"];
+const TODO_PRIORITIES: &[&str] = &["high", "medium", "low"];
 
 pub(crate) struct ControlPlaneExecutor;
 
@@ -309,6 +311,12 @@ struct QuestionPromptCompat {
     answers: Option<Vec<QuestionOptionInput>>,
     #[serde(default, alias = "allowMultiple", alias = "allow_multiple")]
     multiple: Option<bool>,
+    #[serde(default, alias = "allowFreeform", alias = "allow_freeform")]
+    allow_freeform: Option<bool>,
+    #[serde(default)]
+    custom: Option<bool>,
+    #[serde(default, rename = "type")]
+    question_type: Option<String>,
     #[serde(default)]
     required: Option<bool>,
     #[serde(default)]
@@ -339,9 +347,12 @@ struct TodoItemCompat {
     text: Option<String>,
     #[serde(default)]
     title: Option<String>,
-    status: String,
+    #[serde(default)]
+    status: Option<String>,
     #[serde(default)]
     priority: Option<String>,
+    #[serde(default)]
+    done: Option<bool>,
     #[serde(default)]
     id: Option<Value>,
 }
@@ -358,9 +369,21 @@ impl<'de> Deserialize<'de> for TodoItem {
             .or(compat.text)
             .or(compat.title)
             .ok_or_else(|| D::Error::custom("missing field `content`"))?;
+        let status = compat
+            .status
+            .or_else(|| {
+                compat.done.map(|done| {
+                    if done {
+                        "completed".to_string()
+                    } else {
+                        "pending".to_string()
+                    }
+                })
+            })
+            .unwrap_or_else(|| "pending".to_string());
         Ok(Self {
             content,
-            status: compat.status,
+            status,
             priority: compat.priority.unwrap_or_else(|| "medium".to_string()),
         })
     }
@@ -379,11 +402,25 @@ impl<'de> Deserialize<'de> for QuestionPrompt {
             .or(compat.prompt)
             .or(compat.text)
             .ok_or_else(|| D::Error::custom("missing field `question`"))?;
+        let is_freeform = compat.allow_freeform.unwrap_or(false)
+            || compat.custom.unwrap_or(false)
+            || compat
+                .question_type
+                .as_deref()
+                .is_some_and(|question_type| {
+                    matches!(
+                        question_type.trim().to_ascii_lowercase().as_str(),
+                        "text" | "input" | "freeform" | "string"
+                    )
+                });
         let options = compat
             .options
             .or(compat.choices)
             .or(compat.answers)
-            .ok_or_else(|| D::Error::custom("missing field `options`"))?;
+            .unwrap_or_default();
+        if options.is_empty() && !is_freeform {
+            return Err(D::Error::custom("missing field `options`"));
+        }
         let header = compat
             .header
             .or(compat.title)
@@ -397,6 +434,111 @@ impl<'de> Deserialize<'de> for QuestionPrompt {
             multiple: compat.multiple,
         })
     }
+}
+
+pub(crate) fn todo_write_parameters_json_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["todos"],
+        "properties": {
+            "todos": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "content": { "type": "string" },
+                        "text": { "type": "string" },
+                        "title": { "type": "string" },
+                        "status": {
+                            "type": "string",
+                            "enum": TODO_STATUSES
+                        },
+                        "priority": {
+                            "type": "string",
+                            "enum": TODO_PRIORITIES
+                        },
+                        "done": { "type": "boolean" },
+                        "id": {}
+                    },
+                    "anyOf": [
+                        { "required": ["content"] },
+                        { "required": ["text"] },
+                        { "required": ["title"] }
+                    ]
+                }
+            }
+        }
+    })
+}
+
+pub(crate) fn question_parameters_json_schema() -> Value {
+    let question_options_schema = json!({
+        "type": "array",
+        "items": {
+            "oneOf": [
+                { "type": "string" },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["label"],
+                    "properties": {
+                        "label": { "type": "string" },
+                        "description": { "type": "string" }
+                    }
+                }
+            ]
+        }
+    });
+    let question_prompt_schema = json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "question": { "type": "string" },
+            "prompt": { "type": "string" },
+            "text": { "type": "string" },
+            "header": { "type": "string" },
+            "title": { "type": "string" },
+            "options": { "$ref": "#/definitions/question_options" },
+            "choices": { "$ref": "#/definitions/question_options" },
+            "answers": { "$ref": "#/definitions/question_options" },
+            "multiple": { "type": "boolean" },
+            "allowMultiple": { "type": "boolean" },
+            "allow_multiple": { "type": "boolean" },
+            "allowFreeform": { "type": "boolean" },
+            "allow_freeform": { "type": "boolean" },
+            "custom": { "type": "boolean" },
+            "required": { "type": "boolean" },
+            "type": { "type": "string" },
+            "id": {}
+        },
+        "anyOf": [
+            { "required": ["question"] },
+            { "required": ["prompt"] },
+            { "required": ["text"] }
+        ]
+    });
+
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["questions"],
+        "definitions": {
+            "question_options": question_options_schema,
+            "question_prompt": question_prompt_schema
+        },
+        "properties": {
+            "questions": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "$ref": "#/definitions/question_prompt"
+                },
+                "description": "Canonical provider-facing shape. Runtime compatibility still accepts top-level arrays and single-question payloads, but exported provider schemas use this wrapper so tool definitions stay provider-safe."
+            }
+        }
+    })
 }
 
 impl<'de> Deserialize<'de> for QuestionOption {
@@ -470,6 +612,28 @@ fn validate_todo_items(todos: &[TodoItem]) -> Result<(), String> {
         .count();
     if in_progress > 1 {
         return Err("todo.write accepts at most one item with status `in_progress`".to_string());
+    }
+    if let Some(todo) = todos
+        .iter()
+        .find(|todo| !TODO_STATUSES.contains(&todo.status.as_str()))
+    {
+        return Err(format!(
+            "todo.write status must be one of {} (got `{}` for `{}`)",
+            TODO_STATUSES.join(", "),
+            todo.status,
+            todo.content
+        ));
+    }
+    if let Some(todo) = todos
+        .iter()
+        .find(|todo| !TODO_PRIORITIES.contains(&todo.priority.as_str()))
+    {
+        return Err(format!(
+            "todo.write priority must be one of {} (got `{}` for `{}`)",
+            TODO_PRIORITIES.join(", "),
+            todo.priority,
+            todo.content
+        ));
     }
     Ok(())
 }

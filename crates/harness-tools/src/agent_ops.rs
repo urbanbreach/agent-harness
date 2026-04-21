@@ -40,7 +40,7 @@ impl AgentOpsExecutor {
                     ctx.actor.agent_id.clone(),
                 )
                 .await
-                .map_err(|err| ToolError::Execution(format!("failed to spawn agent: {err}")))?
+                .map_err(|err| map_spawn_agent_error(err, &request))?
         };
         let request_id = ctx
             .coordinator
@@ -248,6 +248,7 @@ pub(crate) struct AgentSpawnRequest {
 #[serde(deny_unknown_fields)]
 pub(crate) struct BatchCall {
     pub(crate) tool: String,
+    #[serde(alias = "args", alias = "arguments")]
     pub(crate) parameters: Value,
 }
 
@@ -383,6 +384,16 @@ fn map_request_agent_turn_error(err: CoordinatorError, request: &AgentSpawnReque
             ToolError::InvalidArguments(message)
         }
         other => ToolError::Execution(format!("failed to request agent turn: {other}")),
+    }
+}
+
+fn map_spawn_agent_error(err: CoordinatorError, request: &AgentSpawnRequest) -> ToolError {
+    match err {
+        CoordinatorError::UnknownAgent(profile_name) => ToolError::InvalidArguments(format!(
+            "Unknown child profile `{profile_name}`. Configure that agent profile before using task with category/subagent_type `{}`.",
+            request.profile_name
+        )),
+        other => ToolError::Execution(format!("failed to spawn agent: {other}")),
     }
 }
 
@@ -658,7 +669,9 @@ fn batch_detail_json(outcome: BatchCallOutcome) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{map_request_agent_turn_error, select_profile_name, AgentSpawnRequest};
+    use super::{
+        map_request_agent_turn_error, map_spawn_agent_error, select_profile_name, AgentSpawnRequest,
+    };
     use harness_core::coord::CoordinatorError;
     use harness_core::tool::ToolError;
 
@@ -712,6 +725,26 @@ mod tests {
         );
         assert!(
             matches!(err, ToolError::InvalidArguments(message) if message.contains("Unknown child session `explorer`") && message.contains("subagent_type: \"explore\""))
+        );
+    }
+
+    #[test]
+    fn unknown_child_profile_returns_guidance() {
+        let err = map_spawn_agent_error(
+            CoordinatorError::UnknownAgent("explore".to_string()),
+            &AgentSpawnRequest {
+                description: "spawn child".to_string(),
+                profile_name: "explore".to_string(),
+                prompt: "inspect".to_string(),
+                task_id: None,
+                session_id: None,
+                run_in_background: false,
+                load_skills: Vec::new(),
+                command: None,
+            },
+        );
+        assert!(
+            matches!(err, ToolError::InvalidArguments(message) if message.contains("Unknown child profile `explore`") && message.contains("category/subagent_type `explore`"))
         );
     }
 }
