@@ -157,6 +157,80 @@ impl Drop for LspConfigGuard {
     }
 }
 
+fn install_empty_definition_lsp_binary(directory: &Path, name: &str, counter_path: &Path) {
+    let script = r#"#!/usr/bin/env python3
+import json
+import pathlib
+import sys
+
+COUNTER_PATH = pathlib.Path(__COUNTER_PATH__)
+
+
+def read_message():
+    headers = {}
+    while True:
+        line = sys.stdin.buffer.readline()
+        if not line:
+            return None
+        if line in (b"\r\n", b"\n"):
+            break
+        key, value = line.decode("utf-8").split(":", 1)
+        headers[key.strip().lower()] = value.strip()
+    length = int(headers.get("content-length", "0"))
+    if length <= 0:
+        return None
+    body = sys.stdin.buffer.read(length)
+    if not body:
+        return None
+    return json.loads(body.decode("utf-8"))
+
+
+def send(payload):
+    data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    sys.stdout.buffer.write(f"Content-Length: {len(data)}\r\n\r\n".encode("utf-8"))
+    sys.stdout.buffer.write(data)
+    sys.stdout.buffer.flush()
+
+
+while True:
+    message = read_message()
+    if message is None:
+        break
+
+    method = message.get("method")
+    message_id = message.get("id")
+
+    if method == "initialize" and message_id is not None:
+        send({"jsonrpc": "2.0", "id": message_id, "result": {"capabilities": {}}})
+        continue
+
+    if method == "textDocument/didOpen":
+        continue
+
+    if method == "textDocument/definition" and message_id is not None:
+        count = 0
+        if COUNTER_PATH.exists():
+            count = int(COUNTER_PATH.read_text())
+        COUNTER_PATH.write_text(str(count + 1))
+        send({"jsonrpc": "2.0", "id": message_id, "result": []})
+        break
+
+    if message_id is not None:
+        send({"jsonrpc": "2.0", "id": message_id, "result": []})
+"#
+    .replace(
+        "__COUNTER_PATH__",
+        &serde_json::to_string(&counter_path.display().to_string()).expect("counter path json"),
+    );
+    let path = directory.join(name);
+    fs::write(&path, script).expect("write empty definition lsp binary");
+    let mut permissions = fs::metadata(&path)
+        .expect("empty definition lsp metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&path, permissions).expect("set empty definition lsp permissions");
+}
+
 struct FakeLspSpec<'a> {
     result_uri: &'a str,
     diagnostic_message: &'a str,
@@ -751,6 +825,56 @@ async fn native_code_lsp_supports_configured_custom_servers() {
         .ends_with("custom/schema.foo"));
     assert!(
         first_diagnostic_message(&custom_json).contains("env_ok=True; lang_ok=True; init_ok=True")
+    );
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global test lock intentionally serializes PATH and LSP registry mutations across awaits"
+)]
+async fn native_code_lsp_returns_empty_definition_without_retry_loop() {
+    let _lock = test_lock().lock().expect("test lock");
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let bin_dir = temp_dir.path().join("bin");
+    fs::create_dir_all(&bin_dir).expect("bin dir");
+    let counter_path = temp_dir.path().join("definition-count.txt");
+    install_empty_definition_lsp_binary(&bin_dir, "custom-rust-analyzer", &counter_path);
+    let _path_guard = PathEnvGuard::prepend(&bin_dir);
+    let _config_guard = LspConfigGuard::install(LspConfig {
+        disabled: false,
+        servers: BTreeMap::from([(
+            "rust".to_string(),
+            LspServerConfig {
+                disabled: false,
+                command: Some(vec!["custom-rust-analyzer".to_string()]),
+                extensions: None,
+                env: BTreeMap::new(),
+                initialization: None,
+            },
+        )]),
+    });
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let lsp = registry.get("lsp").expect("lsp tool");
+    let result = lsp
+        .call(
+            test_context(&workspace, "empty-definition"),
+            json!({
+                "operation": "goToDefinition",
+                "filePath": "src/lib.rs",
+                "line": 4,
+                "character": 6,
+            }),
+        )
+        .await
+        .expect("empty definition request should succeed");
+
+    assert_eq!(result.display_text, "No results found for goToDefinition");
+    assert_eq!(
+        fs::read_to_string(&counter_path).expect("read counter"),
+        "1"
     );
 }
 

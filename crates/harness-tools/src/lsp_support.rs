@@ -313,7 +313,7 @@ pub(crate) fn execute_lsp_operation(
     }
 
     let result = match request.operation {
-        LspOperation::GoToDefinition => request_with_retry(
+        LspOperation::GoToDefinition => request_with_retry_no_empty_retry(
             &mut session,
             "textDocument/definition",
             position_request_params(request, &file_path)?,
@@ -1192,10 +1192,29 @@ fn request_with_retry(
     method: &str,
     params: Value,
 ) -> Result<Value, ToolError> {
+    request_with_retry_mode(session, method, params, true)
+}
+
+fn request_with_retry_no_empty_retry(
+    session: &mut LspSession,
+    method: &str,
+    params: Value,
+) -> Result<Value, ToolError> {
+    request_with_retry_mode(session, method, params, false)
+}
+
+fn request_with_retry_mode(
+    session: &mut LspSession,
+    method: &str,
+    params: Value,
+    retry_on_empty: bool,
+) -> Result<Value, ToolError> {
     for attempt in 0..DEFAULT_LSP_RETRY_ATTEMPTS {
         match session.request(method, params.clone()) {
             Ok(value)
-                if !lsp_value_is_empty(&value) || attempt + 1 == DEFAULT_LSP_RETRY_ATTEMPTS =>
+                if !lsp_value_is_empty(&value)
+                    || !retry_on_empty
+                    || attempt + 1 == DEFAULT_LSP_RETRY_ATTEMPTS =>
             {
                 return Ok(value)
             }

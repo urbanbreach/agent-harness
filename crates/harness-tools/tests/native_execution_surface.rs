@@ -2,6 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
+use harness_core::agent::{build_provider_tool_defs, AgentProfile};
 use harness_core::clock::RealClock;
 use harness_core::config::ShellAllowlist;
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
@@ -172,6 +173,71 @@ async fn native_todowrite_accepts_legacy_text_shape_and_defaults_priority() {
 }
 
 #[tokio::test]
+async fn native_todowrite_accepts_done_shape_and_schema_advertises_it() {
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let registry = coordinator_registry(ShellAllowlist::default());
+
+    let todo_write = registry.get("todowrite").expect("todowrite in registry");
+    let schema = todo_write.parameters_json_schema();
+    assert!(schema.to_string().contains("\"done\""));
+    assert_eq!(
+        schema["properties"]["todos"]["items"]["anyOf"]
+            .as_array()
+            .map(Vec::len),
+        Some(3)
+    );
+
+    let todo_write_result = todo_write
+        .call(
+            test_context(&workspace, "todo-write-done-shape"),
+            json!({
+                "todos": [
+                    {"done": false, "text": "stress-test harness tools"},
+                    {"done": true, "text": "verify read/write/edit/pty paths"}
+                ]
+            }),
+        )
+        .await
+        .expect("done-shape todowrite");
+
+    assert_eq!(
+        todo_write_result.structured_json,
+        Some(json!({
+            "todos": [
+                {"content": "stress-test harness tools", "status": "pending", "priority": "medium"},
+                {"content": "verify read/write/edit/pty paths", "status": "completed", "priority": "medium"}
+            ]
+        }))
+    );
+}
+
+#[tokio::test]
+async fn native_todowrite_rejects_unknown_status_values() {
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let registry = coordinator_registry(ShellAllowlist::default());
+
+    let todo_write = registry.get("todowrite").expect("todowrite in registry");
+
+    let error = todo_write
+        .call(
+            test_context(&workspace, "todo-write-invalid-status"),
+            json!({
+                "todos": [
+                    {"text": "legacy text entry", "status": "doing"}
+                ]
+            }),
+        )
+        .await
+        .expect_err("unknown todo status should fail");
+
+    let error = error.to_string();
+    assert!(error.contains("status must be one of"));
+    assert!(error.contains("doing"));
+}
+
+#[tokio::test]
 async fn native_public_edit_uses_hashline_surface_and_reports_success() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
@@ -267,6 +333,75 @@ async fn native_public_edit_accepts_opless_anchored_delete_shape() {
         fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
         "next\n"
     );
+}
+
+#[tokio::test]
+async fn native_public_edit_rejects_delete_flag_with_edit_payload() {
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let edit = registry.get("edit").expect("edit in registry");
+    let schema = edit.parameters_json_schema();
+
+    assert_eq!(schema["type"], json!("object"));
+    assert_eq!(schema["required"], json!(["filePath"]));
+    assert_eq!(schema["properties"]["edits"]["minItems"], json!(1));
+    assert!(schema["properties"]["delete"]["description"]
+        .as_str()
+        .is_some_and(|value| value.contains("remove the whole file by path")));
+
+    let file_path = workspace.join("surface.txt");
+    fs::write(&file_path, "before\n").expect("seed existing file");
+
+    let error = edit
+        .call(
+            test_context(&workspace, "edit-delete-compat"),
+            json!({
+                "filePath": file_path.display().to_string(),
+                "delete": true,
+                "editId": "delete-path-only",
+                "edits": [
+                    {
+                        "op": "replace",
+                        "pos": format!("1#{}", compute_line_hash("before")),
+                        "end": format!("1#{}", compute_line_hash("before")),
+                        "lines": null
+                    }
+                ]
+            }),
+        )
+        .await
+        .expect_err("delete=true should reject edit payloads");
+
+    let error = error.to_string();
+    assert!(error.contains("cannot be combined with edits"));
+    assert!(
+        file_path.exists(),
+        "delete should not run when edit payload is invalid"
+    );
+}
+
+#[test]
+fn native_provider_tool_defs_accept_edit_and_question_export_schemas() {
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let profile = AgentProfile {
+        name: "provider-safe-native-schemas".to_string(),
+        category: "test".to_string(),
+        model_ref: "mock:model".to_string(),
+        system_prompt: "test".to_string(),
+        max_iters: 4,
+        temperature: Some(0.0),
+        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+        toolset: vec!["edit".to_string(), "question".to_string()],
+    };
+
+    let defs = build_provider_tool_defs(&profile, &registry)
+        .expect("native edit/question schemas should be provider-safe");
+
+    assert_eq!(defs.len(), 2);
+    for def in defs {
+        assert_eq!(def.parameters["type"], json!("object"));
+    }
 }
 
 #[tokio::test]
