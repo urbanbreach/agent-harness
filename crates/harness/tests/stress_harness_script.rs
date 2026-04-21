@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 fn stress_harness_script_offline_mode_writes_summary_and_stage_artifacts() {
@@ -79,4 +80,50 @@ fn stress_harness_script_reports_missing_option_values_cleanly() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn stress_harness_script_accepts_relative_artifact_dir_with_missing_parent() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("repo root from harness crate path");
+    let script_path = repo_root.join("scripts/stress-harness.sh");
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time after unix epoch")
+        .as_nanos();
+    let relative_artifact_dir =
+        format!("target/harness-stress/relative-artifact-dir-{unique}/artifacts");
+    let absolute_artifact_dir = repo_root.join(&relative_artifact_dir);
+    if absolute_artifact_dir.exists() {
+        fs::remove_dir_all(&absolute_artifact_dir).expect("remove pre-existing artifact dir");
+    }
+
+    let output = Command::new("bash")
+        .current_dir(repo_root)
+        .arg(script_path)
+        .arg("--mode")
+        .arg("offline")
+        .arg("--artifact-dir")
+        .arg(&relative_artifact_dir)
+        .arg("--harness-bin")
+        .arg(env!("CARGO_BIN_EXE_harness"))
+        .output()
+        .expect("run stress harness script with relative artifact dir");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(absolute_artifact_dir.join("summary.txt").exists());
+
+    fs::remove_dir_all(
+        absolute_artifact_dir
+            .parent()
+            .expect("artifact dir should have a parent"),
+    )
+    .expect("clean up artifact dir tree");
 }

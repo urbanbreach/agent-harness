@@ -44,13 +44,7 @@ abspath() {
     return 0
   fi
 
-  local parent
-  local base
-  local dir
-  parent="$(dirname -- "$input")"
-  base="$(basename -- "$input")"
-  dir="$(cd "$parent" 2>/dev/null && pwd)" || return 1
-  printf '%s/%s\n' "$dir" "$base"
+  python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$input" || return 1
 }
 
 require_option_value() {
