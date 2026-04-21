@@ -1,13 +1,12 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-assertion_line: 1375
 expression: "checkpoint_visual_snapshot(&continued_screen,\n&[\"historical answer\", LIVE_OPERATOR_EMPTY_MARKER,\nLIVE_READY_NEXT_TURN_MARKER,], &continued_visual,)"
 ---
 historical answer: true
 Context: true
 Ctrl+p commands: true
 focus_marker: Ctrl+p commands
-focus_render_state_blake3: 8e95cf23cd7e3a292e66694e1b9b610f3085409d76d92c05ecb4f102c33aabed
+focus_render_state_blake3: 2086cb023851a5a0ef0438e96501da1d405d5e1ff056b01935c275780de741b6
 focus_region_cells: row=47, col=103, height=1, width=20
 image: pty_continue_quiescent_session.png
 manifest_json: pty-manifests/continue_session/manifest.json

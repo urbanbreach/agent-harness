@@ -8,7 +8,7 @@ Modified Files: true
 Context: true
 Replay is read-only.: true
 focus_marker: Replay · read-only
-focus_render_state_blake3: c5ccf1dbaa8d8205e285573f939c46f0286dad1c43b7adc6a741a7465bbad65c
+focus_render_state_blake3: 18c2f1219c0d8c0a6d3d965214df39b634b4ceb42edd97ac6bba8c960aea22c3
 focus_region_cells: row=0, col=0, height=2, width=20
 image: pty_session_shell_primary_replay.png
 manifest_json: pty-manifests/replay_shell/manifest.json

@@ -68,12 +68,11 @@ fn pty_e2e_permission_dock_parity() {
     let mut harness = spawn_harness_tui(PtyGeometry::MINIMUM_SIGNOFF, &session_dir, |command| {
         command.arg("--scenario");
         command.arg("golden_path_interactive");
+        command.env(
+            "HARNESS_TUI_PENDING_LIVE_PROMPT_DRAFT",
+            LIVE_STATE_FIXTURES.permission.draft_text,
+        );
     });
-
-    LIVE_STATE_FIXTURES
-        .permission
-        .write_preserved_draft(harness.writer.as_mut())
-        .expect("queue preserved draft before permission prompt");
 
     wait_for_screen_contains(
         &mut harness.parser,
@@ -135,12 +134,11 @@ fn pty_helper_permission_with_draft() {
     let mut harness = spawn_harness_tui(PtyGeometry::MINIMUM_SIGNOFF, &session_dir, |command| {
         command.arg("--scenario");
         command.arg("golden_path_interactive");
+        command.env(
+            "HARNESS_TUI_PENDING_LIVE_PROMPT_DRAFT",
+            LIVE_STATE_FIXTURES.permission.draft_text,
+        );
     });
-
-    LIVE_STATE_FIXTURES
-        .permission
-        .write_preserved_draft(harness.writer.as_mut())
-        .expect("queue preserved draft before permission prompt");
 
     wait_for_screen_contains(
         &mut harness.parser,
@@ -991,13 +989,12 @@ async fn pty_e2e_lifecycle_shell_flow() {
         |command| {
             command.arg("--scenario");
             command.arg("golden_path_interactive");
+            command.env(
+                "HARNESS_TUI_PENDING_LIVE_PROMPT_DRAFT",
+                LIVE_STATE_FIXTURES.permission.draft_text,
+            );
         },
     );
-
-    LIVE_STATE_FIXTURES
-        .permission
-        .write_preserved_draft(scenario_harness.writer.as_mut())
-        .expect("queue preserved draft before permission prompt");
 
     let permission_checkpoint = wait_for_screen_contains(
         &mut scenario_harness.parser,
@@ -2217,6 +2214,10 @@ fn pty_signoff_helpers_cover_primary_and_minimum_geometries() {
         .expect("serialize prompt focus fixture");
     assert_eq!(prompt_keys, b"");
 
+    let mut live_prompt_keys = Vec::new();
+    focus_live_prompt(&mut live_prompt_keys).expect("serialize live prompt focus fixture");
+    assert_eq!(live_prompt_keys, b"\t");
+
     let mut draft_bytes = Vec::new();
     LIVE_STATE_FIXTURES
         .draft
@@ -2300,11 +2301,13 @@ fn write_wiremock_tui_config(session_dir: &Path, wiremock_uri: &str) -> PathBuf 
         "agents": {
             "deep": {
                 "description": "deep work agent",
+                "system_prompt": "Deep prompt",
                 "model_ref": "default:model-1",
                 "tools": ["read"],
             },
             "worker": {
                 "description": "worker agent",
+                "system_prompt": "Worker prompt",
                 "model_ref": "default:model-1",
                 "tools": ["read"],
             }
@@ -2392,6 +2395,10 @@ fn wait_for_screen_contains(
             }
         }
     }
+}
+
+fn focus_live_prompt(writer: &mut dyn Write) -> std::io::Result<()> {
+    send_key(writer, b'\t')
 }
 
 #[test]

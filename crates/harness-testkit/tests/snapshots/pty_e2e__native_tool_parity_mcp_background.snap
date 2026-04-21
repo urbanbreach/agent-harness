@@ -1,12 +1,11 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-assertion_line: 873
 expression: "checkpoint_visual_snapshot(&screen,\n&[\"docs-rs_search_in_crate Layout [crate_name=ratatui]\",\nREPLAY_DENSE_READY_MARKER,], &mcp_visual,)"
 ---
 docs-rs_search_in_crate Layout [crate_name=ratatui]: true
 Replay · read-only: true
 focus_marker: docs-rs_search_in_crate Layout [crate_name=ratatui]
-focus_render_state_blake3: 0628b61f937133f29d700e728a77cea3b19932b0a165d21e842b2b60354aadcb
+focus_render_state_blake3: fb2583ed50b4bec74385176c6045e4039db36f4a0f33e064c9e06b1467468cdd
 focus_region_cells: row=14, col=7, height=6, width=44
 image: pty_native_tool_parity_mcp_background.png
 manifest_json: pty-manifests/transcript_shell/manifest.json

@@ -1,6 +1,5 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-assertion_line: 859
 expression: "checkpoint_visual_snapshot(&screen,\n&[\"webfetch https://example.test/report.pdf [format=markdown]\",\n\"Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact\",\n\"bash Run harness-tui tests [command=cargo test -p harness-tui] [workdir=/workspace]\",\n\"exit code: 1\", \"stderr: snapshot mismatch\",], &fetch_visual,)"
 ---
 webfetch https://example.test/report.pdf [format=markdown]: true
@@ -9,7 +8,7 @@ bash Run harness-tui tests [command=cargo test -p harness-tui] [workdir=/workspa
 exit code: 1: true
 stderr: snapshot mismatch: true
 focus_marker: artifacts/toolcalls/tc-fetch/web.fetch.pdf
-focus_render_state_blake3: a015153d36764551348dbefa171710098de22c5b1f08e51c3b1dcd65faac4186
+focus_render_state_blake3: 44dcb4090ed098a7afcb9ec3b1bc30aae1b8be32fe796571bcd9a8db79e43e2c
 focus_region_cells: row=13, col=19, height=6, width=44
 image: pty_native_tool_parity_fetch_row.png
 manifest_json: pty-manifests/transcript_shell/manifest.json

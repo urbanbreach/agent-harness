@@ -1,13 +1,12 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-assertion_line: 484
 expression: "checkpoint_visual_snapshot(&screen,\n&[STARTUP_HOME_SHORTCUT_MARKER, STARTUP_HOME_VALUE_PROP_MARKER,\nSTARTUP_HOME_COMPOSER_HINT_MARKER,], &visual,)"
 ---
 Ctrl+p open: true
 open a fresh session in this directory: true
 Ask anything... "inspect src/ui.rs": true
 focus_marker: open a fresh session in this directory
-focus_render_state_blake3: 9193fb39a73df3c1edc82c78641fe4fc910bccdf7bf90b2663000f482a34716c
+focus_render_state_blake3: 9cdc376a6dd9e7e174906c7ac34cf829d8808f0c5b70f214bd85dce6f9471a4b
 focus_region_cells: row=24, col=61, height=8, width=48
 image: pty_startup_home_primary.png
 manifest_json: pty-manifests/startup_shell/manifest.json
