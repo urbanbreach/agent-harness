@@ -1,0 +1,916 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PublicRuntimeConfig",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "agent": {
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/PublicAgentConfig"
+      }
+    },
+    "default_agent": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "instructions": {
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/InstructionList"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "mcp": {
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/McpServerConfig"
+      }
+    },
+    "model": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "permission": {
+      "default": {
+        "bash": null,
+        "codesearch": null,
+        "edit": null,
+        "lsp": null,
+        "question": null,
+        "shell_allowlist": null,
+        "task": null,
+        "webfetch": null,
+        "websearch": null
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/PublicPermissionConfig"
+        }
+      ]
+    },
+    "provider": {
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/ProviderConfig"
+      }
+    },
+    "skills": {
+      "default": {
+        "global_roots": [
+          "~/.config/agent-harness/skills"
+        ],
+        "permissions": {
+          "*": "allow",
+          "experimental-*": "ask",
+          "internal-*": "deny"
+        },
+        "project_roots": [
+          ".agent-harness/skills",
+          ".codex/skills"
+        ],
+        "walk_to_git_root": true
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/SkillsConfig"
+        }
+      ]
+    },
+    "small_model": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "InstructionList": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "McpServerConfig": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "command",
+            "transport"
+          ],
+          "properties": {
+            "command": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "cwd": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "env": {
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "timeout_secs": {
+              "default": 30,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "transport": {
+              "type": "string",
+              "enum": [
+                "stdio"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "endpoint",
+            "transport"
+          ],
+          "properties": {
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "endpoint": {
+              "type": "string"
+            },
+            "headers": {
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "timeout_secs": {
+              "default": 30,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "transport": {
+              "type": "string",
+              "enum": [
+                "http"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ModelConfig": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "max_input_tokens": {
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "max_output_tokens": {
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "metadata": {
+          "default": {
+            "context_window_tokens": null,
+            "family": null,
+            "release_stage": null,
+            "supports_reasoning_summaries": null,
+            "supports_tool_calls": null
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/ModelMetadataConfig"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "variants": {
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/ModelVariantConfig"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ModelMetadataConfig": {
+      "type": "object",
+      "properties": {
+        "context_window_tokens": {
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "family": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "release_stage": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ModelReleaseStage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "supports_reasoning_summaries": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "supports_tool_calls": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ModelReleaseStage": {
+      "type": "string",
+      "enum": [
+        "stable",
+        "preview",
+        "deprecated"
+      ]
+    },
+    "ModelVariantConfig": {
+      "type": "object",
+      "properties": {
+        "disabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "max_input_tokens": {
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "max_output_tokens": {
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "metadata": {
+          "default": {
+            "description": null,
+            "reasoning_effort": null,
+            "recommended_for": null,
+            "text_verbosity": null
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/ModelVariantMetadataConfig"
+            }
+          ]
+        },
+        "name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ModelVariantMetadataConfig": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasoning_effort": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ModelVariantReasoningEffort"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recommended_for": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text_verbosity": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ModelVariantTextVerbosity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ModelVariantReasoningEffort": {
+      "type": "string",
+      "enum": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "ModelVariantTextVerbosity": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "OpenAiApiMode": {
+      "type": "string",
+      "enum": [
+        "responses",
+        "chat_completions",
+        "auto"
+      ]
+    },
+    "OpenAiCompatibleProviderOptions": {
+      "type": "object",
+      "properties": {
+        "apiKey": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "apiMode": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/OpenAiApiMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "baseURL": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "headers": {
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timeoutMs": {
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "PermissionMode": {
+      "type": "string",
+      "enum": [
+        "allow",
+        "deny",
+        "ask"
+      ]
+    },
+    "ProviderConfig": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "apiKey": {
+              "default": "",
+              "type": "string"
+            },
+            "apiMode": {
+              "default": "auto",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/OpenAiApiMode"
+                }
+              ]
+            },
+            "baseURL": {
+              "default": "",
+              "type": "string"
+            },
+            "headers": {
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "models": {
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/ModelConfig"
+              }
+            },
+            "name": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "options": {
+              "default": {
+                "apiKey": null,
+                "apiMode": null,
+                "baseURL": null,
+                "headers": {},
+                "name": null,
+                "timeoutMs": null
+              },
+              "allOf": [
+                {
+                  "$ref": "#/definitions/OpenAiCompatibleProviderOptions"
+                }
+              ]
+            },
+            "timeoutMs": {
+              "default": 60000,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "openai_compatible"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "PublicAgentConfig": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "exit_target_profile": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_iters": {
+          "default": 12,
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "model": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permission": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicProfilePermissions"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "plan_mode": {
+          "default": false,
+          "type": "boolean"
+        },
+        "system_prompt": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "temperature": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "tool_failure_mode": {
+          "default": "fail_turn",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ToolFailureMode"
+            }
+          ]
+        },
+        "tools": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "use_small_model": {
+          "default": false,
+          "type": "boolean"
+        },
+        "variant": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "PublicPermissionConfig": {
+      "type": "object",
+      "properties": {
+        "bash": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "codesearch": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "edit": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lsp": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "question": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shell_allowlist": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ShellAllowlist"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "task": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "webfetch": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "websearch": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "PublicProfilePermissions": {
+      "type": "object",
+      "properties": {
+        "bash": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "codesearch": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "edit": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lsp": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "question": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "task": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "webfetch": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "websearch": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ShellAllowlist": {
+      "type": "object",
+      "properties": {
+        "cwd_roots": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "executables": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "SkillsConfig": {
+      "type": "object",
+      "properties": {
+        "global_roots": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "permissions": {
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/PermissionMode"
+          }
+        },
+        "project_roots": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "walk_to_git_root": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ToolFailureMode": {
+      "type": "string",
+      "enum": [
+        "fail_turn",
+        "continue_as_tool_message"
+      ]
+    }
+  }
+}

@@ -238,7 +238,8 @@ fn interactive_plan_profiles(cfg: &HarnessConfig) -> BTreeMap<String, PlanProfil
 
 #[cfg(test)]
 mod tests {
-    use harness_core::config::load_config_from_str;
+    use harness_core::config::{load_config_from_file, load_config_from_str};
+    use std::path::PathBuf;
 
     use super::*;
 
@@ -452,5 +453,31 @@ mod tests {
         );
 
         assert_eq!(interactive_profile_name(&cfg), "deep");
+    }
+
+    #[test]
+    fn shipped_example_config_exposes_builtin_subagents() {
+        let config_path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs/harness.example.jsonc");
+        let cfg = load_config_from_file(&config_path).expect("shipped example config should parse");
+
+        assert!(cfg.agents.contains_key("build"));
+        assert!(cfg.agents.contains_key("plan"));
+        assert!(cfg.agents.contains_key("explore"));
+        assert!(cfg.agents.contains_key("executor"));
+
+        let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles");
+        assert!(profiles.contains_key("explore"));
+        assert!(profiles.contains_key("executor"));
+        assert!(profiles["explore"].toolset.contains(&"read".to_string()));
+        assert!(!profiles["explore"].toolset.contains(&"edit".to_string()));
+        assert!(!profiles["explore"].toolset.contains(&"bash".to_string()));
+        assert!(!profiles["explore"].toolset.contains(&"task".to_string()));
+        assert!(profiles["executor"].toolset.contains(&"edit".to_string()));
+        assert!(profiles["executor"].toolset.contains(&"bash".to_string()));
+        assert!(!profiles["executor"].toolset.contains(&"task".to_string()));
+        assert!(!profiles["executor"]
+            .toolset
+            .contains(&"todowrite".to_string()));
     }
 }

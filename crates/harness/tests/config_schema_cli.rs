@@ -6,7 +6,7 @@ use std::sync::{Mutex, OnceLock};
 
 use harness_core::config::{
     harness_schema_pretty_json, harness_tui_schema_pretty_json, load_config_from_file,
-    OpenAiApiMode, ProviderConfig, PublicRuntimeConfig, PublicTuiConfig,
+    OpenAiApiMode, PermissionMode, ProviderConfig, PublicRuntimeConfig, PublicTuiConfig,
 };
 use serde_json::Value;
 use tempfile::tempdir;
@@ -666,6 +666,29 @@ fn shipped_runtime_example_parses_as_public_runtime_config() {
     assert!(!shipped.contains("\"api_key\""));
     assert!(!shipped.contains("\"api_mode\""));
     assert!(!shipped.contains("\"timeout_ms\""));
+}
+
+#[test]
+fn public_runtime_config_accepts_top_level_skills() {
+    let parsed: PublicRuntimeConfig = json5::from_str(
+        r#"
+        {
+          skills: {
+            walkToGitRoot: false,
+            permissions: {
+              "*": "allow"
+            }
+          }
+        }
+        "#,
+    )
+    .expect("parse runtime config with top-level skills");
+
+    assert!(!parsed.skills.walk_to_git_root);
+    assert_eq!(
+        parsed.skills.permissions.get("*"),
+        Some(&PermissionMode::Allow)
+    );
 }
 
 #[test]

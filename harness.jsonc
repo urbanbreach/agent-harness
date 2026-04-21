@@ -34,16 +34,6 @@
           "max_input_tokens": 272000,
           "max_output_tokens": 128000,
           "variants": {
-            "deterministic": {
-              "name": "Deterministic",
-              "max_output_tokens": 4096,
-              "metadata": {
-                "description": "Low-variance evidence collection profile.",
-                "reasoning_effort": "minimal",
-                "text_verbosity": "low",
-                "recommended_for": "tool_audit"
-              }
-            },
             "low": {
               "name": "Low",
               "max_output_tokens": 4096,
@@ -79,10 +69,6 @@
     "plan": {
       "use_small_model": true,
       "variant": "low"
-    },
-    "tool_audit": {
-      "use_small_model": true,
-      "variant": "deterministic"
     }
   },
   "default_agent": "build",

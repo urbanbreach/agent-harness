@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PublicTuiConfig",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "keybinds": {
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}
