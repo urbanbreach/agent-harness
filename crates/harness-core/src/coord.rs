@@ -55,7 +55,7 @@ const DEFAULT_PROVIDER_MODEL_CONCURRENCY: usize = 1;
 const DEFAULT_STALE_TIMEOUT_MS: u64 = 15_000;
 const DEFAULT_WATCHDOG_TICK_MS: u64 = 100;
 const DEFAULT_SIMULATED_JOB_DURATION_MS: u64 = 10;
-const DEFAULT_QUESTION_TIMEOUT_MS: u64 = 300_000;
+const DEFAULT_QUESTION_TIMEOUT_MS: u64 = 0;
 const COORDINATOR_AGENT_ID: &str = "coordinator";
 const HASHLINE_APPLY_TOOL_ID: &str = "edit.hashline_apply";
 
@@ -1352,6 +1352,13 @@ impl Coordinator {
             ));
         }
 
+        let profile_cfg = self
+            .config
+            .agent_profiles
+            .get(&profile)
+            .cloned()
+            .ok_or_else(|| CoordinatorError::UnknownAgent(profile.clone()))?;
+
         let agent_id = format!("agent_{:06}", run_state.next_agent_id);
         run_state.next_agent_id += 1;
 
@@ -1401,12 +1408,6 @@ impl Coordinator {
             }),
         )?;
 
-        let profile_cfg = self
-            .config
-            .agent_profiles
-            .get(&profile)
-            .cloned()
-            .unwrap_or_else(|| AgentProfile::fallback(profile.clone()));
         let should_record_runtime_context =
             run_state.allow_initial_runtime_context_recording && parent_agent_id.is_none();
         run_state
@@ -1900,12 +1901,14 @@ impl Coordinator {
                     .pending_permissions
                     .insert(permission_id.clone(), pending);
 
-                tokio::spawn(async move {
-                    tokio::time::sleep(Duration::from_millis(timeout_ms)).await;
-                    let _ = job_tx
-                        .send(Command::PermissionTimedOut { permission_id })
-                        .await;
-                });
+                if timeout_ms > 0 {
+                    tokio::spawn(async move {
+                        tokio::time::sleep(Duration::from_millis(timeout_ms)).await;
+                        let _ = job_tx
+                            .send(Command::PermissionTimedOut { permission_id })
+                            .await;
+                    });
+                }
             }
             Some(PolicyDecision::Allow) | None => {
                 start_tool_call_execution(
@@ -2420,12 +2423,14 @@ impl Coordinator {
                 .insert(permission_id.clone(), pending);
 
             let job_tx = self.job_tx.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_millis(timeout_ms)).await;
-                let _ = job_tx
-                    .send(Command::PermissionTimedOut { permission_id })
-                    .await;
-            });
+            if timeout_ms > 0 {
+                tokio::spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(timeout_ms)).await;
+                    let _ = job_tx
+                        .send(Command::PermissionTimedOut { permission_id })
+                        .await;
+                });
+            }
 
             Ok(())
         }
@@ -5518,12 +5523,37 @@ fn applied_tool_edit_metadata(
     let Some(metadata) = fallback else {
         return Vec::new();
     };
+    let structured = result.structured_json.as_ref().and_then(Value::as_object);
+    let mut metadata = metadata.clone();
+    if let Some(edit_id) = structured
+        .and_then(|value| value.get("edit_id"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        metadata.edit_id = edit_id.to_string();
+    }
+    if let Some(path) = structured
+        .and_then(|value| value.get("path"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        metadata.path = path.to_string();
+    }
+    let deleted = structured
+        .and_then(|value| value.get("resolved_to_path"))
+        .is_none()
+        && structured
+            .and_then(|value| value.get("resolved_path"))
+            .and_then(Value::as_str)
+            .is_some_and(|path| !Path::new(path).exists());
     let (diff_rel_path, diff_digest) = hashline_diff_refs(result);
     vec![AppliedToolEditMetadata {
-        metadata: metadata.clone(),
+        metadata,
         diff_rel_path,
         diff_digest,
-        deleted: false,
+        deleted,
     }]
 }
 
@@ -5829,14 +5859,17 @@ fn failed_tool_output_json(reason: &str, hook_executions: &[HookExecutionMetadat
 }
 
 fn workspace_file_digest(workspace_root: &Path, relative_path: &str) -> Result<String, String> {
-    let relative = Path::new(relative_path);
-    if relative.is_absolute() {
-        return Err("path must be relative to workspace root".to_string());
-    }
-
     let canonical_workspace = workspace_root
         .canonicalize()
         .map_err(|err| format!("failed to resolve workspace root: {err}"))?;
+    let input = Path::new(relative_path);
+    let relative = if input.is_absolute() {
+        input
+            .strip_prefix(&canonical_workspace)
+            .map_err(|_| "path must be relative to workspace root".to_string())?
+    } else {
+        input
+    };
     let candidate = canonical_workspace.join(relative);
     let canonical_candidate = candidate
         .canonicalize()

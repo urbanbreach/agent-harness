@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use crate::config::{CategoryPermissions, HarnessConfig, PermissionMode};
 use crate::tool::{canonical_tool_id_for, ToolCapability};
 
-const DEFAULT_ASK_TIMEOUT_MS: u64 = 30_000;
+const DEFAULT_ASK_TIMEOUT_MS: u64 = 0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermissionKind {

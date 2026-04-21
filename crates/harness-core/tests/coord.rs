@@ -322,6 +322,35 @@ async fn coord_spawn_two_agents_respects_provider_concurrency_and_queues() {
 }
 
 #[tokio::test]
+async fn coord_spawn_unknown_profile_returns_error() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let coordinator = test_coordinator(temp_dir.path());
+
+    let run = coordinator
+        .start_run("coord_unknown_profile", PathBuf::from("/workspace/project"))
+        .await
+        .expect("start run");
+
+    let actor = EventActor::new(ActorKind::Supervisor, Some("agent_supervisor".to_string()));
+    let err = coordinator
+        .spawn_agent(actor, "explore", None)
+        .await
+        .expect_err("unknown profile should fail");
+
+    assert!(matches!(err, CoordinatorError::UnknownAgent(profile) if profile == "explore"));
+
+    coordinator.stop_run().await.expect("stop run");
+    let events = load_events(&run.events_path);
+    assert!(
+        !events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::AgentSpawned(AgentSpawnedEvent { profile, .. }) if profile == "explore"
+        )),
+        "unknown profiles should not emit AgentSpawned events"
+    );
+}
+
+#[tokio::test]
 async fn coordinator_runs_parallel_child_sessions_under_slot_limits() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let provider = Arc::new(PromptScriptedProvider::new(

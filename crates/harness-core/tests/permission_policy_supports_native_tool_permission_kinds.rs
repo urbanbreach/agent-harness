@@ -81,23 +81,38 @@ fn permission_policy_supports_native_tool_permission_kinds() {
     );
     assert_eq!(
         policy.evaluate(None, PermissionKind::Task),
-        PolicyDecision::Allow
+        PolicyDecision::Ask {
+            timeout_ms: 321,
+            default_decision: PermissionDecision::Deny,
+        }
     );
     assert_eq!(
         policy.evaluate(None, PermissionKind::WebFetch),
-        PolicyDecision::Deny
+        PolicyDecision::Ask {
+            timeout_ms: 321,
+            default_decision: PermissionDecision::Deny,
+        }
     );
     assert_eq!(
         policy.evaluate(None, PermissionKind::WebSearch),
-        PolicyDecision::Deny
+        PolicyDecision::Ask {
+            timeout_ms: 321,
+            default_decision: PermissionDecision::Deny,
+        }
     );
     assert_eq!(
         policy.evaluate(None, PermissionKind::CodeSearch),
-        PolicyDecision::Deny
+        PolicyDecision::Ask {
+            timeout_ms: 321,
+            default_decision: PermissionDecision::Deny,
+        }
     );
     assert_eq!(
         policy.evaluate(None, PermissionKind::Lsp),
-        PolicyDecision::Allow
+        PolicyDecision::Ask {
+            timeout_ms: 321,
+            default_decision: PermissionDecision::Deny,
+        }
     );
 
     assert_eq!(
@@ -106,7 +121,10 @@ fn permission_policy_supports_native_tool_permission_kinds() {
     );
     assert_eq!(
         policy.evaluate(Some("deep"), PermissionKind::WebFetch),
-        PolicyDecision::Deny
+        PolicyDecision::Ask {
+            timeout_ms: 321,
+            default_decision: PermissionDecision::Deny,
+        }
     );
     assert_eq!(
         policy.evaluate(Some("deep"), PermissionKind::WebSearch),
