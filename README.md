@@ -13,7 +13,7 @@ Rust workspace for an event-sourced agent harness with:
 ## Configuration
 
 The current public integration surface is documented in [`docs/config.md`](docs/config.md).
-Config-backed `integrations.mcp.servers` are first-class: enabled MCP servers are
+Config-backed `mcp` servers are first-class: enabled MCP servers are
 registered into the runtime tool registry, discovered server tools are exposed to
 interactive profiles alongside the built-ins, and the generic
 `mcp.<server>.tool.call` wrappers remain available for explicit discovery-oriented
@@ -22,7 +22,7 @@ flows.
 - a CLI entrypoint
 - coordinator/runtime core
 - provider adapters
-- built-in Opencode-style tools
+- built-in native tools
 - a Ratatui TUI
 - native screenshot signoff plus deterministic PTY/live verification lanes
 
@@ -31,18 +31,14 @@ flows.
 The current blessed default path is:
 
 - provider: `default` (`openai_compatible`) via the local CLIProxy-compatible loopback endpoint
-- default profile: `build`
-- planning profile: `plan`
-- default model: `gpt-5.4-mini`
+- default agent: `build`
+- default model: `default/gpt-5.4`
+- interactive model: `default/gpt-5.4-mini`
 
-Primary shipped agents:
+Primary shipped agents are discovered from `.agent-harness/agents/*.md` and
+filled in from the runtime config's `model` default:
 
 - `build` — default implementation lane
-- `plan` — restricted planning lane with `plan_exit` handoff to `build`
-
-Secondary shipped agents:
-
-- `tool_audit` — evidence/signoff lane
 
 Validate the shipped example config:
 
@@ -50,22 +46,78 @@ Validate the shipped example config:
 cargo run -p harness -- --config configs/harness.example.jsonc config validate
 ```
 
-Launch the interactive harness with the canonical plan -> build split:
+Shared runtime defaults can live at `$XDG_CONFIG_HOME/harness/harness.jsonc`
+(fallback: `~/.config/harness/harness.jsonc`) or `$XDG_CONFIG_HOME/harness/harness.json`.
+Project-local runtime config lives at `./harness.jsonc` or `./harness.json`.
+TUI-only settings live separately in `./tui.jsonc` / `./tui.json` and the matching
+XDG locations. When both global and local files exist, the harness merges global
+defaults first and local files override them.
+
+The older broad runtime shape plus `$XDG_CONFIG_HOME/harness/config.jsonc` still
+load for compatibility, but `harness.json{,c}` and the matching XDG runtime paths
+are the canonical public contract.
+
+Launch the interactive harness with the canonical Build-only surface:
 
 ```bash
 cargo run -p harness -- --config configs/harness.example.jsonc
 ```
 
-The shipped config starts in the `build` agent by default. When you want a planning-first pass, launch `plan` explicitly and use `plan_exit` to hand off to `build` after approval.
-The shipped `default` provider points at the local CLIProxy-compatible bridge (`http://127.0.0.1:8317/v1`) so the default flow stays aligned between docs, config, and live signoff lanes.
+Run the harness headlessly from the terminal with the provider-backed `prompt` command:
 
-Inside the running harness, use `/model` or the command palette `switch_model` action to switch the active next-turn agent/profile between options such as `build` and `plan`.
+```bash
+cargo run -p harness -- prompt "Summarize the current workspace"
+printf 'Review the changed files' | cargo run -p harness -- prompt --stdin
+```
+
+For tool-enabled headless stress tests, point `prompt` at a tool-capable config and
+persist the event log for later inspection:
+
+```bash
+cargo run -p harness -- --config configs/harness.example.jsonc \
+  prompt --text "Use read on README.md and summarize it." \
+  --out /tmp/harness-events.jsonl
+```
+
+The shipped `build` profile now continues after recoverable tool failures by
+turning them into tool messages, so unsupported LSP/file probes can be surfaced to
+the model without aborting the whole turn.
+
+## Command-driven stress harness
+
+Agents can now run a reusable stress suite directly from the terminal:
+
+```bash
+scripts/stress-harness.sh --mode offline
+scripts/stress-harness.sh --mode live --config configs/harness.example.jsonc
+scripts/stress-harness.sh --mode all --config configs/harness.example.jsonc
+```
+
+The script builds or reuses the harness binary, copies a fixture workspace from
+`crates/harness-testkit/fixtures/stress_harness/`, and writes per-stage artifacts under
+`target/harness-stress/run-*/` by default:
+
+- `command.txt` — exact command that was executed
+- `stdout.txt` / `stderr.txt` — captured terminal output
+- `events.jsonl` — copied prompt/run event logs when a stage uses the harness event store
+- `verification.txt` — simple invariant checks for the stage
+- `summary.txt` — stage-by-stage PASS/FAIL rollup
+
+Use `--harness-bin <path>` to skip the build step when a test runner already built the binary.
+Every mode starts by validating the selected harness config, then `--mode offline` stays
+deterministic and provider-free. `--mode live` and `--mode all` exercise the tool-enabled `prompt`
+path against the configured provider, including best-effort LSP diagnostics, fail-open unsupported
+LSP probes, and absolute-path workspace reads.
+
+The shipped `default` provider points at the local CLIProxy-compatible bridge (`http://127.0.0.1:8317/v1`) and uses an explicit local placeholder bearer token so the default flow stays aligned between docs, config, and live signoff lanes without depending on `OPENAI_API_KEY`.
+
+Model switching is not exposed in the TUI yet; the unfinished `/model` slash command and `switch_model` palette entry are intentionally hidden until that surface is fully implemented.
 
 ## Shipped workflow surfaces
 
 - `configs/harness.example.jsonc` — canonical example config
-- `docs/plan-build-workflow.md` — first-run and handoff docs
-- `crates/harness-tools/tests/native_control_plane_tools.rs` — `plan_exit` behavior coverage
+- `configs/tui.example.jsonc` — canonical TUI config example
+- `.agent-harness/agents/*.md` — shipped build prompt plus any optional local additions
 - `crates/harness-testkit/tests/live_proxy_e2e.rs` — shipped config/signoff coverage
 
 ## Common commands

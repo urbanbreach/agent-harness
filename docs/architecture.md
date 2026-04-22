@@ -32,6 +32,16 @@ Core runtime and domain logic:
 - **clock** - Clock abstraction (real and fake for determinism)
 - **redact** - Secret redaction before persistence
 
+### Agent prompt assets and instructions
+
+Interactive agent runtime settings still come from structured config, but prompt bodies are now resolved separately from markdown assets and project instructions:
+
+- `.agent-harness/agents/<agent>.md` provides the canonical file-backed prompt body for an agent.
+- inline `system_prompt` in config remains a compatibility override and wins over the markdown body.
+- `AGENTS.md` is loaded as a separate project-instruction layer and prepended to the final runtime system prompt.
+
+This keeps config focused on structured behavior while moving prompt prose into dedicated workspace assets.
+
 ### harness-providers (library)
 
 Provider abstraction for LLM completions:
@@ -45,14 +55,14 @@ Provider abstraction for LLM completions:
 Built-in tool implementations:
 
 - `read` / `list` / `glob` / `grep` - Safe workspace discovery and search
-- `write` / `edit` / `apply_patch` - File editing and patch workflows
+- `write` / `edit` - Default file editing workflows (`edit` is hashline-first)
 - `bash` - Execute shell commands with allowlist
-- `task` / `batch` / `question` / `skill` / `plan_exit` - Control-plane and delegation workflows
+- `task` / `batch` / `question` / `skill` - Control-plane and delegation workflows
 - `webfetch` / `websearch` / `codesearch` / `lsp` - Network and language-intelligence workflows
 
-The active registry exposes a single Opencode-style provider surface. Canonical ids such as
+The active registry exposes a single native provider surface. Canonical ids such as
 `read`, `write`, `bash`, `webfetch`, `websearch`, `codesearch`, `question`, `batch`, `task`,
-`plan_exit`, and `lsp` are the documented tool surface, while lower-level executors remain
+and `lsp` are the documented tool surface, while lower-level executors remain
 internal implementation details behind those tool ids.
 
 ### harness-tui (library)
@@ -177,13 +187,12 @@ The Coordinator is the single authority for:
 
 ## Permission Model
 
-The native permission taxonomy is capability- and family-aware. The core policy buckets are:
+The native permission taxonomy is capability- and family-aware. The canonical public buckets are:
 
 | Permission | Tool Capability | Policy Options |
 |------------|-----------------|----------------|
 | `edit` | `EditFs` | allow / deny / ask |
-| `shell` | `Shell` | allow / deny / ask |
-| `network` | legacy migration umbrella for network-capable tools | allow / deny / ask |
+| `bash` | `Shell` | allow / deny / ask |
 | `question` | interactive user question / confirmation flow | allow / deny / ask |
 | `task` | task / agent orchestration flow | allow / deny / ask |
 | `webfetch` | `webfetch` | allow / deny / ask |
@@ -191,9 +200,8 @@ The native permission taxonomy is capability- and family-aware. The core policy 
 | `codesearch` | `codesearch` | allow / deny / ask |
 | `lsp` | `lsp` / `lsp.rename` | allow / deny / ask |
 
-`network` remains as a broad fallback bucket for network-capable operations when the more specific
-web and search permissions are omitted, but user-facing configs should prefer the native permission
-names above.
+Legacy `shell` and `network` names remain migration-only compatibility aliases. User-facing configs
+should use the canonical public names above.
 
 ### Policy Resolution
 
@@ -225,19 +233,10 @@ Guardrails bound the loop by iteration count and total tool calls per turn.
 
 ## Tool Surface Policy
 
-Provider and tool exposure is selected per agent by its configured `tools` list. The harness now
-ships a single Opencode-style tool surface, so profiles opt in by naming canonical tool ids such as
-`read`, `write`, `bash`, `task`, and `plan_exit` directly.
-
-Planner handoff is controlled separately by agent config:
-
-- `plan_mode: true` marks an agent as plan-capable.
-- `exit_target_profile: <agent>` declares which agent `plan_exit` should hand off to.
-- `plan_exit` is not an ambient tool. Expose it only on planner agents that intentionally set
-  `plan_mode: true`.
-
-In practice this means the common worker agent stays lean without `plan_exit`, while an explicit
-planner agent can expose `plan_exit` when it owns handoff into another agent.
+Provider and tool exposure is selected per agent by its configured `tools` list. The harness ships
+a single native tool surface, so profiles opt in by naming canonical tool ids such as `read`,
+`write`, `edit`, `bash`, and `task` directly. By default, `read` emits
+`LINE#HASH|text` anchors and `edit` consumes hashline operations on that anchored view.
 
 ## Hashline Spec
 
@@ -247,7 +246,7 @@ Hashline provides atomic, content-addressed file edits.
 
 ```rust
 struct LineAnchor {
-    line: u32,       // 0-indexed line number
+    line: u32,       // 1-based line number
     hash: String,    // blake3(line_bytes), 12 hex chars
 }
 ```

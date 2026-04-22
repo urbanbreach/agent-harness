@@ -1,6 +1,6 @@
 # Starter skills
 
-The repository ships a small starter skill pack under `.agents/skills/`.
+The repository ships a small starter skill pack under `.agent-harness/skills/`.
 
 ## Included skills
 - `rust-best-practices` — Rust-focused contribution and verification guidance for this workspace.
@@ -8,11 +8,9 @@ The repository ships a small starter skill pack under `.agents/skills/`.
 
 ## Discovery order
 By default the harness searches these project roots, in order:
-1. `.opencode/skills`
-2. `.claude/skills`
-3. `.agents/skills`
+1. `.agent-harness/skills`
 
-That means the bundled starter pack acts as a safe fallback. To override a shipped skill, add a directory with the same skill name earlier in the search order (for example `.opencode/skills/rust-best-practices/SKILL.md`).
+That means the bundled starter pack is the canonical project-local location. To override a shipped skill, replace the matching directory under `.agent-harness/skills` (for example `.agent-harness/skills/rust-best-practices/SKILL.md`).
 
 ## Extending the pack
 - Add new project-local skills under any configured project root.
@@ -22,7 +20,10 @@ That means the bundled starter pack acts as a safe fallback. To override a shipp
 
 ## Using the shipped example config
 The repo also ships `configs/harness.example.jsonc`, but the CLI only auto-discovers
-`./harness.jsonc` or the XDG config path. For a fresh checkout, run with:
+`./harness.jsonc` / `./harness.json` plus the XDG runtime config paths. TUI-only
+settings live separately in `tui.jsonc` / `tui.json`. When both global and local
+runtime files exist, the XDG file provides shared defaults and the local file
+overrides it. For a fresh checkout, run with:
 
 ```bash
 cargo run -p harness -- --config configs/harness.example.jsonc tui
