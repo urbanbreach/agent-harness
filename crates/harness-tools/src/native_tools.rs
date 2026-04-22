@@ -63,9 +63,6 @@ pub(crate) struct SkillTool {
 pub(crate) struct InvalidTool {
     executor: Arc<ControlPlaneExecutor>,
 }
-pub(crate) struct PlanExitTool {
-    executor: Arc<ControlPlaneExecutor>,
-}
 pub(crate) struct WebSearchTool {
     executor: Arc<NetworkExecutor>,
 }
@@ -130,12 +127,6 @@ impl SkillTool {
 }
 
 impl InvalidTool {
-    pub(crate) fn new(executor: Arc<ControlPlaneExecutor>) -> Self {
-        Self { executor }
-    }
-}
-
-impl PlanExitTool {
     pub(crate) fn new(executor: Arc<ControlPlaneExecutor>) -> Self {
         Self { executor }
     }
@@ -493,10 +484,6 @@ impl TryFrom<BatchWrapperCall> for BatchCall {
         Ok(Self { tool, parameters })
     }
 }
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct PlanExitArgs {}
 
 #[async_trait]
 impl Tool for ReadTool {
@@ -926,29 +913,6 @@ impl Tool for InvalidTool {
         let args: InvalidArgs = serde_json::from_value(args_json)
             .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
         Ok(self.executor.invalid_tool(&args.tool, &args.error))
-    }
-}
-
-#[async_trait]
-impl Tool for PlanExitTool {
-    fn id(&self) -> &str {
-        "plan_exit"
-    }
-
-    fn description(&self) -> &str {
-        "Requests approval to leave plan mode and hand off to the configured build profile."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
-        super::json_schema_for::<PlanExitArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
-
-    async fn call(&self, ctx: ToolContext, _args_json: Value) -> Result<ToolResult, ToolError> {
-        self.executor.plan_exit(&ctx).await
     }
 }
 

@@ -194,8 +194,6 @@ mod tests {
             artifacts_dir: artifacts_dir.to_path_buf(),
             actor: EventActor::new(ActorKind::Worker, Some("worker-1".to_string())),
             category: Some("deep".to_string()),
-            plan_mode: false,
-            plan_exit_target_profile: None,
             tool_call_id: "tool-call-1".to_string(),
             coordinator,
         }

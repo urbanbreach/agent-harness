@@ -590,7 +590,7 @@ async fn task_tool_rejects_unknown_child_profile_before_spawning_fallback_model(
             json!({
                 "description": "Missing child profile",
                 "prompt": "Try to inspect the repo",
-                "subagent_type": "explore",
+                "subagent_type": "missing_profile",
                 "run_in_background": false,
                 "load_skills": []
             }),
@@ -608,7 +608,7 @@ async fn task_tool_rejects_unknown_child_profile_before_spawning_fallback_model(
         .output_summary
         .as_deref()
         .expect("output summary")
-        .contains("Unknown child profile `explore`"));
+        .contains("Unknown child profile `missing_profile`"));
 }
 
 #[tokio::test]

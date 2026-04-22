@@ -25,8 +25,6 @@ fn test_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
         artifacts_dir: workspace_root.join("artifacts"),
         actor: EventActor::new(ActorKind::Worker, Some("worker-1".to_string())),
         category: Some("deep".to_string()),
-        plan_mode: false,
-        plan_exit_target_profile: None,
         tool_call_id: tool_call_id.to_string(),
         coordinator,
     }
@@ -790,7 +788,6 @@ async fn native_registry_exposes_only_single_surface_ids() {
         "lsp",
         "lsp.rename",
         "batch",
-        "plan_exit",
         "task",
         "list",
     ] {

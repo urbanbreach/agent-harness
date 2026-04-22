@@ -360,10 +360,7 @@ fn normalize_profile_selector(selector: Option<&str>) -> Option<&str> {
 }
 
 fn normalize_subagent_selector(selector: Option<&str>) -> Option<String> {
-    normalize_profile_selector(selector).map(|value| match value.to_ascii_lowercase().as_str() {
-        "explorer" => "explore".to_string(),
-        _ => value.to_string(),
-    })
+    normalize_profile_selector(selector).map(str::to_string)
 }
 
 fn map_request_agent_turn_error(err: CoordinatorError, request: &AgentSpawnRequest) -> ToolError {
@@ -678,14 +675,14 @@ mod tests {
     #[test]
     fn select_profile_name_accepts_matching_category_and_subagent_type() {
         assert_eq!(
-            select_profile_name(Some("explore"), Some("explore")).expect("matching selectors"),
-            "explore"
+            select_profile_name(Some("child"), Some("child")).expect("matching selectors"),
+            "child"
         );
     }
 
     #[test]
     fn select_profile_name_rejects_conflicting_selectors() {
-        let err = select_profile_name(Some("quick"), Some("explore"))
+        let err = select_profile_name(Some("quick"), Some("child"))
             .expect_err("conflicting selectors should fail");
         assert!(
             matches!(err, ToolError::InvalidArguments(message) if message == "provide either category or subagent_type, not both")
@@ -695,28 +692,20 @@ mod tests {
     #[test]
     fn select_profile_name_ignores_blank_selectors() {
         assert_eq!(
-            select_profile_name(Some("  "), Some("explore")).expect("blank category is ignored"),
-            "explore"
-        );
-    }
-
-    #[test]
-    fn select_profile_name_normalizes_explorer_alias() {
-        assert_eq!(
-            select_profile_name(None, Some("explorer")).expect("explorer alias should normalize"),
-            "explore"
+            select_profile_name(Some("  "), Some("child")).expect("blank category is ignored"),
+            "child"
         );
     }
 
     #[test]
     fn unknown_existing_session_returns_guidance() {
         let err = map_request_agent_turn_error(
-            CoordinatorError::UnknownAgent("explorer".to_string()),
+            CoordinatorError::UnknownAgent("missing-session".to_string()),
             &AgentSpawnRequest {
                 description: "resume child".to_string(),
                 profile_name: "deep".to_string(),
                 prompt: "resume".to_string(),
-                task_id: Some("explorer".to_string()),
+                task_id: Some("missing-session".to_string()),
                 session_id: None,
                 run_in_background: false,
                 load_skills: Vec::new(),
@@ -724,17 +713,17 @@ mod tests {
             },
         );
         assert!(
-            matches!(err, ToolError::InvalidArguments(message) if message.contains("Unknown child session `explorer`") && message.contains("subagent_type: \"explore\""))
+            matches!(err, ToolError::InvalidArguments(message) if message.contains("Unknown child session `missing-session`") && message.contains("start a new child session"))
         );
     }
 
     #[test]
     fn unknown_child_profile_returns_guidance() {
         let err = map_spawn_agent_error(
-            CoordinatorError::UnknownAgent("explore".to_string()),
+            CoordinatorError::UnknownAgent("missing_profile".to_string()),
             &AgentSpawnRequest {
                 description: "spawn child".to_string(),
-                profile_name: "explore".to_string(),
+                profile_name: "missing_profile".to_string(),
                 prompt: "inspect".to_string(),
                 task_id: None,
                 session_id: None,
@@ -744,7 +733,7 @@ mod tests {
             },
         );
         assert!(
-            matches!(err, ToolError::InvalidArguments(message) if message.contains("Unknown child profile `explore`") && message.contains("category/subagent_type `explore`"))
+            matches!(err, ToolError::InvalidArguments(message) if message.contains("Unknown child profile `missing_profile`") && message.contains("category/subagent_type `missing_profile`"))
         );
     }
 }

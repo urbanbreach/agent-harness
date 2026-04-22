@@ -11,10 +11,6 @@ use serde_json::{json, Value};
 const TODO_STATE_FILE: &str = "control-plane/todos.json";
 const QUESTION_STATE_DIR: &str = "control-plane/questions";
 const QUESTION_ANSWERS_ENV_VAR: &str = "HARNESS_QUESTION_ANSWERS";
-const PLAN_EXIT_CONFIRM_YES: &str = "Yes";
-const PLAN_EXIT_CONFIRM_NO: &str = "No";
-const PLAN_EXIT_SYNTHETIC_PROMPT: &str =
-    "The plan has been approved, you can now edit files. Execute the plan.";
 const SKILL_LOAD_CONFIRM_YES: &str = "Yes";
 const SKILL_LOAD_CONFIRM_NO: &str = "No";
 const TODO_STATUSES: &[&str] = &["pending", "in_progress", "completed", "cancelled"];
@@ -195,70 +191,6 @@ impl ControlPlaneExecutor {
                 "answers": answers,
                 "output": display_text,
                 "state_path": state_path.display().to_string(),
-            })),
-            artifacts: Vec::new(),
-        })
-    }
-
-    pub(crate) async fn plan_exit(&self, ctx: &ToolContext) -> Result<ToolResult, ToolError> {
-        let source_profile = ctx
-            .category
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .ok_or_else(|| {
-                ToolError::Execution("plan.exit requires an active agent context".to_string())
-            })?;
-        if !ctx.plan_mode {
-            return Err(ToolError::Execution(format!(
-                "plan.exit is only available for plan-mode agents; `{source_profile}` is not plan-capable"
-            )));
-        }
-        let target_profile = ctx
-            .plan_exit_target_profile
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .ok_or_else(|| {
-                ToolError::Execution(format!(
-                    "plan.exit for `{source_profile}` requires a configured exit target agent"
-                ))
-            })?;
-
-        let questions = vec![plan_exit_confirmation_question(target_profile)];
-        let answers = match read_question_answers_from_env()? {
-            Some(answers) => answers,
-            None => ctx
-                .coordinator
-                .request_question(
-                    ctx.actor.clone(),
-                    ctx.tool_call_id.clone(),
-                    json!({ "questions": questions }),
-                )
-                .await
-                .map_err(ToolError::Execution)?,
-        };
-        let answers =
-            validate_question_answers(&questions, answers).map_err(ToolError::Execution)?;
-        let approved = answers
-            .first()
-            .and_then(|answer| answer.first())
-            .is_some_and(|answer| answer == PLAN_EXIT_CONFIRM_YES);
-        if !approved {
-            return Err(ToolError::Execution(
-                "plan.exit cancelled by user confirmation".to_string(),
-            ));
-        }
-
-        Ok(ToolResult {
-            display_text: format!(
-                "User approved switching from `{source_profile}` to `{target_profile}`. The implementation handoff is ready."
-            ),
-            structured_json: Some(json!({
-                "plan_exit_handoff": {
-                    "source_profile": source_profile,
-                    "target_profile": target_profile,
-                    "prompt": PLAN_EXIT_SYNTHETIC_PROMPT,
-                },
-                "confirmed": true,
             })),
             artifacts: Vec::new(),
         })
@@ -693,7 +625,7 @@ fn skill_not_found_message(name: &str, catalog: &BTreeMap<String, DiscoveredSkil
 
     if let Some(agent_name) = known_agent_name(trimmed) {
         message.push_str(&format!(
-            ". `{trimmed}` is an agent, not a skill; use task(subagent_type=\"{agent_name}\", ...) or @{agent_name} instead"
+            ". `{trimmed}` is an agent, not a skill; use task(category=\"{agent_name}\", ...) if you need a child session"
         ));
     }
 
@@ -715,12 +647,7 @@ fn skill_not_found_message(name: &str, catalog: &BTreeMap<String, DiscoveredSkil
 
 fn known_agent_name(name: &str) -> Option<&'static str> {
     match name.trim().to_ascii_lowercase().as_str() {
-        "explore" | "explorer" => Some("explore"),
-        "general" => Some("general"),
-        "librarian" => Some("librarian"),
-        "oracle" => Some("oracle"),
         "build" => Some("build"),
-        "plan" => Some("plan"),
         _ => None,
     }
 }
@@ -783,28 +710,6 @@ fn canonicalize_question_answer(question: &QuestionPrompt, answer: String) -> St
         .unwrap_or(answer)
 }
 
-fn plan_exit_confirmation_question(target_profile: &str) -> QuestionPrompt {
-    QuestionPrompt {
-        question: format!(
-            "Planning is complete. Would you like to switch to the {target_profile} agent and start implementing?"
-        ),
-        header: format!("{} Agent", title_case_label(target_profile)),
-        options: vec![
-            QuestionOption {
-                label: PLAN_EXIT_CONFIRM_YES.to_string(),
-                description: format!(
-                    "Switch to the {target_profile} agent and start implementing the approved plan"
-                ),
-            },
-            QuestionOption {
-                label: PLAN_EXIT_CONFIRM_NO.to_string(),
-                description: "Stay in the current planning session".to_string(),
-            },
-        ],
-        multiple: Some(false),
-    }
-}
-
 fn skill_load_confirmation_question(skill_name: &str) -> QuestionPrompt {
     QuestionPrompt {
         question: format!("Would you like to load the `{skill_name}` skill?"),
@@ -823,14 +728,6 @@ fn skill_load_confirmation_question(skill_name: &str) -> QuestionPrompt {
         ],
         multiple: Some(false),
     }
-}
-
-fn title_case_label(label: &str) -> String {
-    let mut chars = label.chars();
-    let Some(first) = chars.next() else {
-        return String::new();
-    };
-    first.to_uppercase().collect::<String>() + chars.as_str()
 }
 
 fn format_question_answers(questions: &[QuestionPrompt], answers: &[Vec<String>]) -> String {

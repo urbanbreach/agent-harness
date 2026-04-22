@@ -11,7 +11,7 @@ use harness_core::config::{
     refresh_skills_config_registry, registered_skills_config, HarnessConfig, PermissionMode,
     ShellAllowlist, SkillsConfig, ToolFailureMode,
 };
-use harness_core::coord::{spawn_coordinator, CoordinatorConfig, PlanProfileConfig, RunInfo};
+use harness_core::coord::{spawn_coordinator, CoordinatorConfig, RunInfo};
 use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1};
 use harness_core::perm::{PermissionDecision, PermissionPolicy};
 use harness_core::redact::DefaultRedactor;
@@ -87,8 +87,6 @@ fn tool_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
         artifacts_dir: workspace_root.join(".artifacts"),
         actor: EventActor::new(ActorKind::Supervisor, None),
         category: Some("deep".to_string()),
-        plan_mode: false,
-        plan_exit_target_profile: None,
         tool_call_id: tool_call_id.to_string(),
         coordinator,
     }
@@ -175,9 +173,6 @@ async fn spawn_worker_run(
     );
     config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
     config.agent_profiles = agent_profiles;
-    config.plan_profiles =
-        BTreeMap::from([(profile_name.to_string(), PlanProfileConfig::default())]);
-
     let handle = spawn_coordinator(
         config,
         Arc::new(RealClock::new()),
@@ -559,7 +554,7 @@ async fn codex_skill_pack_is_discoverable_from_repo_checkout() {
     clippy::await_holding_lock,
     reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
 )]
-async fn skill_load_reports_agent_hint_for_explore() {
+async fn skill_load_reports_agent_hint_for_build() {
     let _guard = SKILL_DISCOVERY_ENV_LOCK.lock().expect("env test lock");
     let repo = repo_root();
     let _cwd = CurrentDirGuard::set(&repo);
@@ -568,16 +563,16 @@ async fn skill_load_reports_agent_hint_for_explore() {
 
     let err = skill_tool
         .call(
-            tool_context(&repo, "toolcall-explore-agent-hint"),
-            json!({"name": "explore"}),
+            tool_context(&repo, "toolcall-build-agent-hint"),
+            json!({"name": "build"}),
         )
         .await
-        .expect_err("explore is an agent, not a skill");
+        .expect_err("build is an agent, not a skill");
 
     let message = err.to_string();
-    assert!(message.contains("Skill \"explore\" not found"));
-    assert!(message.contains("`explore` is an agent, not a skill"));
-    assert!(message.contains("subagent_type=\"explore\""));
+    assert!(message.contains("Skill \"build\" not found"));
+    assert!(message.contains("`build` is an agent, not a skill"));
+    assert!(message.contains("task"));
 }
 
 #[tokio::test]

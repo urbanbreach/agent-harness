@@ -61,8 +61,6 @@ fn question_tool_context(
         artifacts_dir: artifacts_dir.to_path_buf(),
         actor: actor(),
         category: Some("deep".to_string()),
-        plan_mode: false,
-        plan_exit_target_profile: None,
         tool_call_id: tool_call_id.to_string(),
         coordinator,
     }

@@ -65,8 +65,8 @@ mod lsp_support;
 mod native_tools;
 use native_tools::{
     blocked_shell_command_message, BashTool, BatchTool, CodeSearchTool, GlobTool, GrepTool,
-    InvalidTool, ListTool, LspTool, PlanExitTool, QuestionTool, ReadTool, SkillTool, TaskTool,
-    TodoReadTool, TodoWriteTool, WebFetchTool, WebSearchTool, WriteTool,
+    InvalidTool, ListTool, LspTool, QuestionTool, ReadTool, SkillTool, TaskTool, TodoReadTool,
+    TodoWriteTool, WebFetchTool, WebSearchTool, WriteTool,
 };
 
 pub use harness_core::tool::canonical_tool_id_for;
@@ -138,7 +138,6 @@ pub fn coordinator_registry_with_mcp_and_editing(
     registry.register(Arc::new(SkillTool::new(control_plane_executor.clone())));
     registry.register(Arc::new(BatchTool::new(agent_ops_executor.clone())));
     registry.register(Arc::new(QuestionTool::new(control_plane_executor.clone())));
-    registry.register(Arc::new(PlanExitTool::new(control_plane_executor.clone())));
     registry.register(Arc::new(CodeLspRenameTool::new(code_lsp_rename_executor)));
     registry.register(Arc::new(LspTool::new(code_lsp_executor)));
     registry.register(Arc::new(InvalidTool::new(control_plane_executor)));
@@ -885,8 +884,6 @@ mod tests {
             artifacts_dir: workspace_root.join(".artifacts"),
             actor: EventActor::new(ActorKind::Supervisor, None),
             category: Some("deep".to_string()),
-            plan_mode: false,
-            plan_exit_target_profile: None,
             tool_call_id: tool_call_id.to_string(),
             coordinator,
         }
@@ -909,7 +906,6 @@ mod tests {
             "invalid",
             "list",
             "lsp",
-            "plan_exit",
             "question",
             "read",
             "skill",

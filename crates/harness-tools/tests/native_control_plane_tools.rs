@@ -6,14 +6,12 @@ use std::sync::Arc;
 use harness_core::agent::AgentProfile;
 use harness_core::clock::RealClock;
 use harness_core::config::{PermissionMode, ShellAllowlist};
-use harness_core::coord::{spawn_coordinator, CoordinatorConfig, PlanProfileConfig, RunInfo};
-use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1};
-use harness_core::perm::PermissionDecision;
+use harness_core::coord::{spawn_coordinator, CoordinatorConfig, RunInfo};
+use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1};
 use harness_core::perm::PermissionPolicy;
 use harness_core::redact::DefaultRedactor;
 use harness_tools::coordinator_registry;
 use serde_json::json;
-use tokio::time::{sleep, Duration, Instant};
 
 fn actor(agent_id: &str) -> EventActor {
     EventActor::new(ActorKind::Worker, Some(agent_id.to_string()))
@@ -33,14 +31,13 @@ fn worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
 }
 
 fn control_plane_toolset() -> Vec<&'static str> {
-    vec!["todowrite", "todoread", "skill", "invalid", "plan_exit"]
+    vec!["todowrite", "todoread", "skill", "invalid"]
 }
 
 async fn spawn_worker_run(
     workspace: &Path,
     worker_profile_name: &str,
     agent_profiles: BTreeMap<String, AgentProfile>,
-    plan_profiles: BTreeMap<String, PlanProfileConfig>,
 ) -> (harness_core::coord::CoordinatorHandle, RunInfo, String) {
     let session_dir = workspace.join("session-dir");
     fs::create_dir_all(&session_dir).expect("session dir");
@@ -53,7 +50,6 @@ async fn spawn_worker_run(
     );
     config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
     config.agent_profiles = agent_profiles;
-    config.plan_profiles = plan_profiles;
 
     let handle = spawn_coordinator(
         config,
@@ -91,55 +87,15 @@ fn read_events(path: &Path) -> Vec<EventEnvelopeV1> {
         .collect()
 }
 
-async fn wait_for_question_permission(path: &Path, previous: Option<&str>) -> String {
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        if let Some(permission_id) =
-            read_events(path)
-                .into_iter()
-                .rev()
-                .find_map(|event| match event.payload {
-                    EventV1::PermissionRequested(data)
-                        if data.kind == "question"
-                            && previous.is_none_or(|previous| previous != data.permission_id) =>
-                    {
-                        Some(data.permission_id)
-                    }
-                    _ => None,
-                })
-        {
-            return permission_id;
-        }
-        if Instant::now() >= deadline {
-            panic!("timed out waiting for question permission");
-        }
-        sleep(Duration::from_millis(20)).await;
-    }
-}
-
 #[tokio::test]
-async fn native_control_plane_tools_cover_invalid_todo_skill_and_plan_exit() {
+async fn native_control_plane_tools_cover_invalid_todo_and_skill() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let workspace = temp_dir.path().join("workspace");
     fs::create_dir_all(&workspace).expect("workspace");
 
     let toolset = control_plane_toolset();
-    let agent_profiles = BTreeMap::from([
-        ("plan".to_string(), worker_profile("plan", &toolset)),
-        ("build".to_string(), worker_profile("build", &[])),
-    ]);
-    let plan_profiles = BTreeMap::from([
-        (
-            "plan".to_string(),
-            PlanProfileConfig {
-                plan_mode: true,
-                exit_target_profile: Some("build".to_string()),
-            },
-        ),
-        ("build".to_string(), PlanProfileConfig::default()),
-    ]);
-    let (handle, run, worker_id) =
-        spawn_worker_run(&workspace, "plan", agent_profiles, plan_profiles).await;
+    let agent_profiles = BTreeMap::from([("build".to_string(), worker_profile("build", &toolset))]);
+    let (handle, run, worker_id) = spawn_worker_run(&workspace, "build", agent_profiles).await;
 
     let todos_payload = json!({
         "todos": [{"content": "task", "status": "pending", "priority": "high"}]
@@ -147,7 +103,7 @@ async fn native_control_plane_tools_cover_invalid_todo_skill_and_plan_exit() {
     let todo_write = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("plan".to_string()),
+            Some("build".to_string()),
             "todowrite",
             todos_payload,
         )
@@ -170,7 +126,7 @@ async fn native_control_plane_tools_cover_invalid_todo_skill_and_plan_exit() {
     let todo_read = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("plan".to_string()),
+            Some("build".to_string()),
             "todoread",
             json!({}),
         )
@@ -181,7 +137,7 @@ async fn native_control_plane_tools_cover_invalid_todo_skill_and_plan_exit() {
     let invalid = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("plan".to_string()),
+            Some("build".to_string()),
             "invalid",
             json!({"tool": "todowrite", "error": "bad args"}),
         )
@@ -192,121 +148,13 @@ async fn native_control_plane_tools_cover_invalid_todo_skill_and_plan_exit() {
     let skill = handle
         .execute_agent_tool_call(
             actor(&worker_id),
-            Some("plan".to_string()),
+            Some("build".to_string()),
             "skill",
             json!({"name": "rust-best-practices"}),
         )
         .await
         .expect("skill");
     assert!(skill.display_text.contains("# Skill: rust-best-practices"));
-
-    let plan_exit_handle = {
-        let handle = handle.clone();
-        let worker_id = worker_id.clone();
-        tokio::spawn(async move {
-            handle
-                .execute_agent_tool_call(
-                    actor(&worker_id),
-                    Some("plan".to_string()),
-                    "plan_exit",
-                    json!({}),
-                )
-                .await
-        })
-    };
-    let permission_id = wait_for_question_permission(&run.events_path, None).await;
-    handle
-        .resolve_permission(
-            permission_id,
-            PermissionDecision::Allow,
-            Some("[[\"Yes\"]]".to_string()),
-        )
-        .await
-        .expect("approve plan_exit");
-    let plan_exit = plan_exit_handle
-        .await
-        .expect("join plan_exit")
-        .expect("plan_exit");
-    let handoff = plan_exit
-        .structured_json
-        .as_ref()
-        .and_then(|value| value.get("plan_exit_handoff"))
-        .expect("plan exit handoff");
-    assert_eq!(handoff.get("source_profile"), Some(&json!("plan")));
-    assert_eq!(handoff.get("target_profile"), Some(&json!("build")));
-    assert_eq!(
-        handoff.get("prompt"),
-        Some(&json!(
-            "The plan has been approved, you can now edit files. Execute the plan."
-        ))
-    );
-}
-
-#[tokio::test]
-async fn plan_exit_rejects_non_plan_profile_or_missing_exit_target() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    let non_plan_workspace = temp_dir.path().join("workspace-non-plan");
-    fs::create_dir_all(&non_plan_workspace).expect("non-plan workspace");
-    let missing_build_workspace = temp_dir.path().join("workspace-missing-build");
-    fs::create_dir_all(&missing_build_workspace).expect("missing-build workspace");
-
-    let toolset = control_plane_toolset();
-    let non_plan_profiles =
-        BTreeMap::from([("deep".to_string(), worker_profile("deep", &toolset))]);
-    let non_plan_metadata = BTreeMap::from([(
-        "deep".to_string(),
-        PlanProfileConfig {
-            plan_mode: false,
-            exit_target_profile: Some("build".to_string()),
-        },
-    )]);
-    let (handle, _run, worker_id) = spawn_worker_run(
-        &non_plan_workspace,
-        "deep",
-        non_plan_profiles,
-        non_plan_metadata,
-    )
-    .await;
-    let err = handle
-        .execute_agent_tool_call(
-            actor(&worker_id),
-            Some("deep".to_string()),
-            "plan_exit",
-            json!({}),
-        )
-        .await
-        .expect_err("plan_exit should reject non-plan profile");
-    assert!(err.contains("not plan-capable"), "unexpected error: {err}");
-
-    let missing_build_profiles =
-        BTreeMap::from([("plan".to_string(), worker_profile("plan", &toolset))]);
-    let missing_build_metadata = BTreeMap::from([(
-        "plan".to_string(),
-        PlanProfileConfig {
-            plan_mode: true,
-            exit_target_profile: None,
-        },
-    )]);
-    let (handle, _run, worker_id) = spawn_worker_run(
-        &missing_build_workspace,
-        "plan",
-        missing_build_profiles,
-        missing_build_metadata,
-    )
-    .await;
-    let err = handle
-        .execute_agent_tool_call(
-            actor(&worker_id),
-            Some("plan".to_string()),
-            "plan_exit",
-            json!({}),
-        )
-        .await
-        .expect_err("plan_exit should reject missing exit target");
-    assert!(
-        err.contains("configured exit target agent"),
-        "unexpected error: {err}"
-    );
 }
 
 #[tokio::test]
@@ -319,9 +167,7 @@ async fn native_todo_write_rejects_multiple_in_progress_items() {
         "deep".to_string(),
         worker_profile("deep", &["todowrite", "todoread"]),
     )]);
-    let plan_profiles = BTreeMap::from([("deep".to_string(), PlanProfileConfig::default())]);
-    let (handle, run, worker_id) =
-        spawn_worker_run(&workspace, "deep", agent_profiles, plan_profiles).await;
+    let (handle, run, worker_id) = spawn_worker_run(&workspace, "deep", agent_profiles).await;
 
     handle
         .execute_agent_tool_call(
@@ -374,5 +220,15 @@ async fn native_todo_write_rejects_multiple_in_progress_items() {
                 {"content": "keep", "status": "pending", "priority": "high"}
             ]
         }))
+    );
+
+    let events = read_events(&run.events_path);
+    assert!(
+        events.iter().any(|event| matches!(
+            &event.payload,
+            harness_core::event::EventV1::ToolCallFinished(data)
+                if data.status == harness_core::event::ToolCallStatus::Failed
+        )),
+        "expected a failed tool call event for the rejected todo write"
     );
 }
