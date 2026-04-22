@@ -41,6 +41,7 @@ Rust has powerful pattern matching with `match`, `if let`, and `while let`.
 ### Error handling
 
 Rust encourages explicit error handling with `Option<T>` and `Result<T, E>`, so failure paths stay visible and intentional.
+The `?` operator keeps propagation concise in functions that return `Result` or `Option`.
 
 ## Example
 
@@ -67,11 +68,11 @@ fn greet(name: &str) -> Result<(), &'static str> {
 
 ## Common tooling
 
-- `cargo` — build, test, package, and manage Rust projects
-- `cargo check` — quickly validate code without producing a binary
-- `rustc` — Rust compiler
-- `rustfmt` — code formatting
-- `clippy` — linting
+ `cargo` — build, test, package, and manage Rust projects
+ `cargo check` — quickly validate code without producing a binary
+ `rustc` — Rust compiler
+ `rustfmt` — code formatting
+ `clippy` — linting
 
 ## Editions and ecosystem
 
@@ -85,8 +86,8 @@ Most reusable Rust code is published as a crate on [crates.io](https://crates.io
 - Run `cargo check` for fast feedback while iterating
 - Run `cargo clippy` to catch common mistakes early
 - Use `cargo test` often while iterating
-- Read compiler errors carefully; they are usually specific and actionable
-- Start with small, focused functions and let the compiler guide refactoring
+Read compiler errors carefully; they are usually specific and actionable
+Start with small, focused functions and let the compiler guide refactoring
 
 ## First commands to try
 
