@@ -1030,7 +1030,6 @@ fn seed_inline_system_prompts(config: &mut Value) -> Result<(), String> {
         .ok_or_else(|| "config.agents must be an object".to_string())?;
 
     let build_prompt = shipped_agent_prompt_body("build");
-    let plan_prompt = shipped_agent_prompt_body("plan");
 
     for (profile_name, profile_value) in categories.iter_mut() {
         let profile = profile_value
@@ -1040,19 +1039,10 @@ fn seed_inline_system_prompts(config: &mut Value) -> Result<(), String> {
             continue;
         }
 
-        let prompt = if profile_name == "plan"
-            || profile
-                .get("plan_mode")
-                .or_else(|| profile.get("planMode"))
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-        {
-            &plan_prompt
-        } else {
-            &build_prompt
-        };
-
-        profile.insert("system_prompt".to_string(), Value::String(prompt.clone()));
+        profile.insert(
+            "system_prompt".to_string(),
+            Value::String(build_prompt.clone()),
+        );
     }
 
     Ok(())

@@ -64,7 +64,7 @@ cargo test -p harness-testkit live_proxy_e2e_tui_parity_signoff -- --ignored --e
 
 These wrappers chain the shipped live lanes instead of inventing a second verification category:
 
-- CLI: `live_proxy_prompt_responses_smoke` → `live_proxy_prompt_chat_tool_flow` → `live_proxy_prompt_native_tool_flow` → `live_proxy_prompt_compat_edit_flow`
+- CLI: `live_proxy_prompt_responses_smoke` → `live_proxy_prompt_chat_tool_flow` → `live_proxy_prompt_native_tool_flow`
 - TUI: `live_proxy_preflight` → `live_proxy_e2e_tui_prompt_responses_smoke` → `live_proxy_e2e_tui_tool_flow`
 
 Batch 1 live parity signoff is scoped to the selected
@@ -94,7 +94,7 @@ This lane exercises a real model against prepared live agents for:
 When the selected model exposes the documented `low` variant, the prepared signoff
 agents prefer it automatically so `gpt-5.4-mini` stays on the low-reasoning parity path.
 
-The repo now ships `rust-best-practices` in `.agents/skills`, and the prepared live chat-tool lane
+The repo now ships `rust-best-practices` in `.agent-harness/skills`, and the prepared live chat-tool lane
 copies that skill into its temporary workspace before the `skill` stage runs. A fresh checkout
 therefore does not depend on an externally installed skill. You can still override it by placing a
 same-named skill earlier in the configured project-root search order.
@@ -116,17 +116,7 @@ cargo test -p harness-testkit live_proxy_prompt_native_tool_flow -- --ignored --
 This keeps the headless signoff aligned with the same `write` → `read` →
 `edit.hashline_scan` → `edit.hashline_apply` → `read` path that the TUI live lane exercises.
 
-Then run the compat file-edit lane:
-
-```bash
-HARNESS_LIVE_PROXY=1 \
-HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
-HARNESS_LIVE_PROXY_PROVIDER=default \
-HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
-cargo test -p harness-testkit live_proxy_prompt_compat_edit_flow -- --ignored --exact
-```
-
-Then run the file-edit / visual lane:
+Then run the hashline-first visual lane:
 
 ```bash
 HARNESS_LIVE_PROXY=1 \
@@ -227,11 +217,10 @@ Use this order while iterating:
 1. `live_proxy_preflight`
 2. `live_proxy_prompt_chat_tool_flow`
 3. `live_proxy_prompt_native_tool_flow`
-4. `live_proxy_prompt_compat_edit_flow`
-5. `live_proxy_prompt_parity_signoff` when you want the full prompt/CLI Batch 1 closeout
-6. `live_proxy_e2e_tui_tool_flow`
-7. `live_proxy_e2e_tui_parity_signoff` when you want the full TUI Batch 1 closeout
-8. `live_proxy_e2e_visual_verifier` only for screenshot/signoff work
+4. `live_proxy_prompt_parity_signoff` when you want the full prompt/CLI Batch 1 closeout
+5. `live_proxy_e2e_tui_tool_flow`
+6. `live_proxy_e2e_tui_parity_signoff` when you want the full TUI Batch 1 closeout
+7. `live_proxy_e2e_visual_verifier` only for screenshot/signoff work
 
 The tests are still live-model dependent, so retries are expected and already built into the
 TUI tool-flow lane.

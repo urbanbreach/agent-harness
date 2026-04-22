@@ -1322,21 +1322,6 @@ fn example_config_ships_canonical_plan_and_build_agents() {
         .and_then(Value::as_object)
         .expect("agent block present in example config");
 
-    let plan = config
-        .get("agent")
-        .and_then(Value::as_object)
-        .and_then(|agents| agents.get("plan"))
-        .and_then(Value::as_object)
-        .expect("plan agent present in example config");
-    assert_eq!(
-        plan.get("use_small_model").and_then(Value::as_bool),
-        Some(true)
-    );
-    assert_eq!(plan.get("variant").and_then(Value::as_str), Some("low"));
-    let plan_prompt = read_shipped_agent_prompt_asset("plan");
-    assert!(plan_prompt.contains("plan_exit"));
-    assert!(plan_prompt.contains("hand off"));
-
     let build = config
         .get("agent")
         .and_then(Value::as_object)
@@ -1349,9 +1334,21 @@ fn example_config_ships_canonical_plan_and_build_agents() {
     );
     assert_eq!(build.get("variant").and_then(Value::as_str), Some("high"));
     let build_prompt = read_shipped_agent_prompt_asset("build");
-    assert!(build_prompt.contains("approved plan"));
-    assert!(build_prompt.contains("changed files"));
+    assert!(build_prompt.contains("apply_patch"));
+    assert!(build_prompt.contains("do the work without asking questions"));
 
+    assert!(
+        !agents.contains_key("plan"),
+        "plan should not be part of the shipped default agent surface"
+    );
+    assert!(
+        !agents.contains_key("explore"),
+        "explore should not be part of the shipped default agent surface"
+    );
+    assert!(
+        !agents.contains_key("executor"),
+        "executor should not be part of the shipped default agent surface"
+    );
     assert!(
         !agents.contains_key("tool_audit"),
         "tool_audit should not be part of the shipped default agent surface"
@@ -1389,7 +1386,7 @@ fn example_config_ships_canonical_plan_and_build_agents() {
             .get("metadata")
             .and_then(|metadata| metadata.get("recommended_for"))
             .and_then(Value::as_str),
-        Some("plan")
+        Some("lightweight runs")
     );
 
     let high_variant = config
