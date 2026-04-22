@@ -67,12 +67,10 @@ fn interactive_bootstrap_builds_runtime_state_from_agents() {
               model_ref: "default:gpt-4o-mini",
               tools: [],
             },
-            planner: {
-              description: "Planning mode",
-              system_prompt: "Planner prompt",
+            review: {
+              description: "Review mode",
+              system_prompt: "Review prompt",
               model_ref: "default:gpt-4o-mini",
-              plan_mode: true,
-              exit_target_profile: "deep",
               permissions: {
                 task: "deny",
               },
@@ -114,30 +112,22 @@ fn interactive_bootstrap_builds_runtime_state_from_agents() {
         bootstrap::build_interactive_coordinator_config(&config).expect("build config");
 
     assert!(coordinator_config.agent_profiles.contains_key("deep"));
-    assert!(coordinator_config.agent_profiles.contains_key("planner"));
+    assert!(coordinator_config.agent_profiles.contains_key("review"));
     assert_eq!(
-        coordinator_config.agent_profiles["planner"].system_prompt,
-        "Planner prompt"
-    );
-
-    assert!(coordinator_config.plan_profiles["planner"].plan_mode);
-    assert_eq!(
-        coordinator_config.plan_profiles["planner"]
-            .exit_target_profile
-            .as_deref(),
-        Some("deep")
+        coordinator_config.agent_profiles["review"].system_prompt,
+        "Review prompt"
     );
 
     assert_eq!(
         coordinator_config
             .permission_policy
-            .evaluate(Some("planner"), PermissionKind::Task),
+            .evaluate(Some("review"), PermissionKind::Task),
         PolicyDecision::Deny
     );
 }
 
 #[test]
-fn legacy_primary_agents_enforce_build_and_plan_permissions() {
+fn build_and_review_permissions_follow_configured_policy() {
     let config = load_config_from_str(
         r#"
         {
@@ -167,12 +157,10 @@ fn legacy_primary_agents_enforce_build_and_plan_permissions() {
               },
               tools: [],
             },
-            plan: {
-              description: "Planning mode",
-              system_prompt: "Plan prompt",
+            review: {
+              description: "Review mode",
+              system_prompt: "Review prompt",
               model_ref: "default:gpt-4o-mini",
-              plan_mode: true,
-              exit_target_profile: "build",
               permissions: {
                 edit: "deny",
                 shell: "deny",
@@ -218,13 +206,6 @@ fn legacy_primary_agents_enforce_build_and_plan_permissions() {
         bootstrap::build_interactive_coordinator_config(&config).expect("build config");
 
     assert_eq!(bootstrap::interactive_profile_name(&config), "build");
-    assert!(coordinator_config.plan_profiles["plan"].plan_mode);
-    assert_eq!(
-        coordinator_config.plan_profiles["plan"]
-            .exit_target_profile
-            .as_deref(),
-        Some("build")
-    );
     assert_eq!(
         coordinator_config
             .permission_policy
@@ -240,19 +221,19 @@ fn legacy_primary_agents_enforce_build_and_plan_permissions() {
     assert_eq!(
         coordinator_config
             .permission_policy
-            .evaluate(Some("plan"), PermissionKind::EditFs),
+            .evaluate(Some("review"), PermissionKind::EditFs),
         PolicyDecision::Deny
     );
     assert_eq!(
         coordinator_config
             .permission_policy
-            .evaluate(Some("plan"), PermissionKind::Shell),
+            .evaluate(Some("review"), PermissionKind::Shell),
         PolicyDecision::Deny
     );
     assert_eq!(
         coordinator_config
             .permission_policy
-            .evaluate(Some("plan"), PermissionKind::Task),
+            .evaluate(Some("review"), PermissionKind::Task),
         PolicyDecision::Deny
     );
 }

@@ -2126,7 +2126,7 @@ mod tests {
             .and(path("/v1/chat/completions"))
             .respond_with(ResponseTemplate::new(400).set_body_json(json!({
                 "error": {
-                    "message": "Invalid schema for function 'plan_exit': object schema missing properties"
+                    "message": "Invalid schema for function 'question': object schema missing properties"
                 }
             })))
             .mount(&server)
@@ -2141,7 +2141,7 @@ mod tests {
         };
 
         assert!(message.contains("status 400"));
-        assert!(message.contains("Invalid schema for function 'plan_exit'"));
+        assert!(message.contains("Invalid schema for function 'question'"));
         assert!(message.contains("object schema missing properties"));
     }
 

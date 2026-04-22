@@ -319,15 +319,6 @@ impl HarnessConfig {
                     )));
                 }
             }
-
-            if let Some(target_profile) = agent.exit_target_profile.as_deref() {
-                if !self.agents.contains_key(target_profile) {
-                    return Err(ConfigError::InvalidReference(format!(
-                        "agent `{agent_name}` references unknown `exit_target_profile` `{target_profile}`; available agents: {}",
-                        format_name_list(self.agents.keys().map(|name| name.as_str()))
-                    )));
-                }
-            }
         }
 
         if let Some(default_profile) = self.ui.default_profile.as_deref() {
@@ -1105,10 +1096,6 @@ pub struct ProfileConfig {
         alias = "toolFailureMode"
     )]
     pub tool_failure_mode: ToolFailureMode,
-    #[serde(default, alias = "planMode")]
-    pub plan_mode: bool,
-    #[serde(default, alias = "exitTargetProfile")]
-    pub exit_target_profile: Option<String>,
     #[serde(default)]
     pub tools: Vec<String>,
 }
@@ -2443,8 +2430,8 @@ mod tests {
               model_ref: "default:gpt-4o-mini",
               tools: ["read"],
             },
-            tool_audit: {
-              description: "Audit profile",
+            review: {
+              description: "Review profile",
               model_ref: "default:gpt-4o-mini",
               max_iters: 20,
               tool_failure_mode: "continue_as_tool_message",
@@ -2470,10 +2457,10 @@ mod tests {
         assert!(parsed.providers.contains_key("default"));
         assert!(parsed.agents.contains_key("deep"));
         assert_eq!(
-            parsed.agents["tool_audit"].tool_failure_mode,
+            parsed.agents["review"].tool_failure_mode,
             ToolFailureMode::ContinueAsToolMessage
         );
-        assert_eq!(parsed.agents["tool_audit"].max_iters, 20);
+        assert_eq!(parsed.agents["review"].max_iters, 20);
         assert_eq!(
             parsed.permissions.defaults.question,
             Some(PermissionMode::Ask)
@@ -2974,11 +2961,11 @@ mod tests {
     }
 
     #[test]
-    fn profile_exit_target_profile_must_exist() {
+    fn profile_rejects_legacy_plan_mode_field() {
         let cfg = config_fixture(
             &deep_profile(
                 r#"
-                exit_target_profile: "ops",
+                plan_mode: true,
                 tools: ["fs.read"],
                 "#,
             ),
@@ -2987,11 +2974,28 @@ mod tests {
             None,
         );
 
-        let err = load_config_from_str(&cfg).expect_err("unknown exit target profile must fail");
-        assert_eq!(
-            err.to_string(),
-            "agent `deep` references unknown `exit_target_profile` `ops`; available agents: deep"
+        let err = load_config_from_str(&cfg).expect_err("legacy plan_mode must fail");
+        assert!(err.to_string().contains("unknown field `plan_mode`"));
+    }
+
+    #[test]
+    fn profile_rejects_legacy_exit_target_profile_field() {
+        let cfg = config_fixture(
+            &deep_profile(
+                r#"
+                exit_target_profile: "build",
+                tools: ["fs.read"],
+                "#,
+            ),
+            "test-key",
+            None,
+            None,
         );
+
+        let err = load_config_from_str(&cfg).expect_err("legacy exit_target_profile must fail");
+        assert!(err
+            .to_string()
+            .contains("unknown field `exit_target_profile`"));
     }
 
     #[test]
@@ -3041,13 +3045,11 @@ mod tests {
             plan: {
               description: "Planning work",
               model_ref: "default:gpt-4o-mini",
-              plan_mode: true,
-              exit_target_profile: "build",
               permissions: {
                 edit: "deny",
                 shell: "deny"
               },
-              tools: ["fs.read", "plan.exit"]
+              tools: ["fs.read"]
             }
           },
           default_agent: "build",
@@ -3081,10 +3083,13 @@ mod tests {
         assert!(parsed.agents.contains_key("plan"));
         assert_eq!(parsed.ui.default_profile.as_deref(), Some("build"));
         assert_eq!(parsed.default_agent.as_deref(), Some("build"));
-        assert!(parsed.agents["plan"].plan_mode);
         assert_eq!(
-            parsed.agents["plan"].exit_target_profile.as_deref(),
-            Some("build")
+            parsed.agents["plan"].permissions.as_ref().unwrap().edit,
+            Some(PermissionMode::Deny)
+        );
+        assert_eq!(
+            parsed.agents["plan"].permissions.as_ref().unwrap().shell,
+            Some(PermissionMode::Deny)
         );
     }
 
@@ -3111,9 +3116,6 @@ mod tests {
           agent: {
             build: {
               system_prompt: "Build work"
-            },
-            plan: {
-              system_prompt: "Plan work"
             }
           },
           default_agent: "build",
@@ -3133,10 +3135,6 @@ mod tests {
         let parsed = load_config_from_str(cfg).expect("public config should parse");
         assert_eq!(
             parsed.agents["build"].tool_failure_mode,
-            ToolFailureMode::ContinueAsToolMessage
-        );
-        assert_eq!(
-            parsed.agents["plan"].tool_failure_mode,
             ToolFailureMode::ContinueAsToolMessage
         );
     }
@@ -3808,7 +3806,7 @@ mod tests {
                     loaded.config.permissions.defaults.shell,
                     PermissionMode::Allow
                 ));
-                assert_eq!(loaded.config.default_agent.as_deref(), Some("plan"));
+                assert_eq!(loaded.config.default_agent.as_deref(), Some("build"));
             },
         );
     }
@@ -4316,5 +4314,42 @@ Broken prompt."#,
         let err = load_config_from_file(&config_path).expect_err("invalid markdown should fail");
         assert!(err.to_string().contains("invalid markdown frontmatter"));
         assert!(err.to_string().contains("deep.md"));
+    }
+
+    #[test]
+    fn load_config_from_file_rejects_legacy_plan_markdown_frontmatter() {
+        let _lock = CONFIG_DISCOVERY_TEST_LOCK
+            .lock()
+            .expect("lock discovery tests");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).expect("create repo dir");
+        fs::create_dir_all(repo.join(".git")).expect("create git dir");
+        let _ctx = DiscoveryTestContext::new(&repo, None);
+
+        let config_path = repo.join("harness.jsonc");
+        fs::write(
+            &config_path,
+            config_fixture(&deep_profile(r#"tools: ["read"],"#), "test-key", None, None),
+        )
+        .expect("write config");
+        write_agent_markdown(
+            &repo,
+            "deep",
+            r#"---
+{
+  description: "Legacy plan prompt",
+  model_ref: "default:gpt-4o-mini",
+  planMode: true
+}
+---
+
+Legacy prompt."#,
+        );
+
+        let err =
+            load_config_from_file(&config_path).expect_err("legacy plan frontmatter should fail");
+        assert!(err.to_string().contains("invalid markdown frontmatter"));
+        assert!(err.to_string().contains("unknown field `planMode`"));
     }
 }

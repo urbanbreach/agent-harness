@@ -14,7 +14,6 @@ fn function_name_mapping_is_stable_for_single_surface_tool_ids() {
         "invalid",
         "list",
         "lsp",
-        "plan_exit",
         "question",
         "read",
         "skill",

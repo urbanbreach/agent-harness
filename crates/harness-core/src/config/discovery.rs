@@ -17,10 +17,6 @@ struct MarkdownAgentFrontmatter {
     pub max_iters: Option<usize>,
     #[serde(alias = "toolFailureMode")]
     pub tool_failure_mode: Option<ToolFailureMode>,
-    #[serde(alias = "planMode")]
-    pub plan_mode: Option<bool>,
-    #[serde(alias = "exitTargetProfile")]
-    pub exit_target_profile: Option<String>,
     pub tools: Option<Vec<String>>,
 }
 
@@ -88,8 +84,6 @@ fn merge_markdown_agent_with_config(
         permissions: config.permissions.clone(),
         max_iters: config.max_iters,
         tool_failure_mode: config.tool_failure_mode,
-        plan_mode: config.plan_mode,
-        exit_target_profile: config.exit_target_profile.clone(),
         tools: config.tools.clone(),
     }
 }
@@ -119,8 +113,6 @@ fn profile_from_markdown_agent(
             .max_iters
             .unwrap_or_else(default_max_iters),
         tool_failure_mode: markdown.frontmatter.tool_failure_mode.unwrap_or_default(),
-        plan_mode: markdown.frontmatter.plan_mode.unwrap_or(false),
-        exit_target_profile: markdown.frontmatter.exit_target_profile.clone(),
         tools: markdown.frontmatter.tools.clone().unwrap_or_default(),
     }))
 }

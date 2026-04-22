@@ -65,8 +65,6 @@ pub struct ToolContext {
     pub artifacts_dir: PathBuf,
     pub actor: EventActor,
     pub category: Option<String>,
-    pub plan_mode: bool,
-    pub plan_exit_target_profile: Option<String>,
     pub tool_call_id: String,
     pub coordinator: CoordinatorHandle,
 }
@@ -488,8 +486,6 @@ mod tests {
             artifacts_dir: workspace_root.join("artifacts"),
             actor: EventActor::new(ActorKind::Supervisor, None),
             category: Some("deep".to_string()),
-            plan_mode: false,
-            plan_exit_target_profile: None,
             tool_call_id: tool_call_id.to_string(),
             coordinator,
         }
@@ -623,7 +619,6 @@ mod tests {
             "question",
             "batch",
             "task",
-            "plan_exit",
             "lsp",
             "invalid",
             "websearch",

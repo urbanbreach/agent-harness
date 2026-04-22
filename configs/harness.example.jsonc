@@ -3,8 +3,6 @@
 
   // Shipped interactive workflow:
   //   - `build` is the default agent
-  //   - `plan` stays read-only and hands back to `build`
-  //   - `explore` and `executor` are available as built-in child agents for `task`
   //   - prompts live in `.agent-harness/agents/*.md`
   "provider": {
     "default": {
@@ -44,10 +42,10 @@
               "name": "Low",
               "max_output_tokens": 4096,
               "metadata": {
-                "description": "Low-reasoning signoff profile.",
+                "description": "Low-reasoning profile.",
                 "reasoning_effort": "low",
                 "text_verbosity": "low",
-                "recommended_for": "plan"
+                "recommended_for": "lightweight runs"
               }
             },
             "high": {
@@ -66,15 +64,10 @@
     }
   },
   "model": "default/gpt-5.4",
-  "small_model": "default/gpt-5.4-mini",
   "agent": {
     "build": {
       "model": "default/gpt-5.4-mini",
       "variant": "high"
-    },
-    "plan": {
-      "use_small_model": true,
-      "variant": "low"
     }
   },
   "default_agent": "build",

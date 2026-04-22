@@ -6,7 +6,7 @@ use harness_core::config::{
     refresh_profile_model_metadata_registry, HarnessConfig, OpenAiApiMode as CoreOpenAiApiMode,
     ProviderConfig,
 };
-use harness_core::coord::{CoordinatorConfig, PlanProfileConfig};
+use harness_core::coord::CoordinatorConfig;
 use harness_core::perm::PermissionPolicy;
 use harness_core::tool::ToolRegistry;
 use harness_providers::openai::{
@@ -27,7 +27,7 @@ const CONFIG_SEARCH_LOCATIONS: [&str; 4] = [
 
 pub fn interactive_config_guidance() -> String {
     format!(
-            "interactive mode requires a config file; pass --config <path> or create {}. A starting point lives at configs/harness.example.jsonc and defaults to the build agent while keeping the plan -> build handoff available. If you want the demo/mock UI instead, re-run with --mock",
+            "interactive mode requires a config file; pass --config <path> or create {}. A starting point lives at configs/harness.example.jsonc and defaults to the build agent. If you want the demo/mock UI instead, re-run with --mock",
             CONFIG_SEARCH_LOCATIONS.join(" or ")
         )
 }
@@ -52,7 +52,6 @@ pub fn build_interactive_coordinator_config(
     coordinator_config.provider = Arc::new(build_provider_router(cfg)?);
     coordinator_config.agent_profiles =
         interactive_agent_profiles_with_extra_tools(cfg, &auto_tool_ids)?;
-    coordinator_config.plan_profiles = interactive_plan_profiles(cfg);
     Ok(coordinator_config)
 }
 
@@ -221,21 +220,6 @@ fn auto_mcp_tool_ids(tool_registry: &ToolRegistry) -> Vec<String> {
         .collect()
 }
 
-fn interactive_plan_profiles(cfg: &HarnessConfig) -> BTreeMap<String, PlanProfileConfig> {
-    cfg.agents
-        .iter()
-        .map(|(name, profile)| {
-            (
-                name.clone(),
-                PlanProfileConfig {
-                    plan_mode: profile.plan_mode,
-                    exit_target_profile: profile.exit_target_profile.clone(),
-                },
-            )
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use harness_core::config::{load_config_from_file, load_config_from_str};
@@ -325,9 +309,9 @@ mod tests {
               temperature: 0.7,
               tools: ["fs.read"],
             },
-            tool_audit: {
-              description: "Longer tool audit budget",
-              system_prompt: "Tool audit prompt",
+            review: {
+              description: "Longer review budget",
+              system_prompt: "Review prompt",
               model_ref: "default:gpt-5.4-mini",
               max_iters: 20,
               tools: ["fs.read"],
@@ -338,8 +322,8 @@ mod tests {
         let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles");
         assert_eq!(profiles["deep"].max_iters, 12);
         assert_eq!(profiles["deep"].temperature, Some(0.7));
-        assert_eq!(profiles["tool_audit"].max_iters, 20);
-        assert_eq!(profiles["tool_audit"].temperature, None);
+        assert_eq!(profiles["review"].max_iters, 20);
+        assert_eq!(profiles["review"].temperature, None);
     }
 
     #[test]
@@ -349,8 +333,8 @@ mod tests {
         let configured_prompt_json = configured_prompt.replace('\n', "\\n");
         let cfg = config_fixture(&format!(
             r#"
-            tool_audit: {{
-              description: "Audit profile",
+            review: {{
+              description: "Review profile",
               system_prompt: "{configured_prompt_json}",
               model_ref: "default:gpt-5.4-mini",
               tools: ["read"],
@@ -359,12 +343,12 @@ mod tests {
         ));
 
         let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles");
-        assert_eq!(profiles["tool_audit"].system_prompt, configured_prompt);
+        assert_eq!(profiles["review"].system_prompt, configured_prompt);
 
         let coordinator_config =
             build_interactive_coordinator_config(&cfg).expect("coordinator config");
         assert_eq!(
-            coordinator_config.agent_profiles["tool_audit"].system_prompt,
+            coordinator_config.agent_profiles["review"].system_prompt,
             configured_prompt
         );
     }
@@ -429,11 +413,6 @@ mod tests {
               model_ref: "default:gpt-5.4-mini",
               tools: ["fs.read"],
             },
-            plan: {
-              description: "Plan lane",
-              model_ref: "default:gpt-5.4-mini",
-              tools: ["fs.read"],
-            },
             "#,
         );
 
@@ -456,28 +435,19 @@ mod tests {
     }
 
     #[test]
-    fn shipped_example_config_exposes_builtin_subagents() {
+    fn shipped_example_config_only_seeds_build() {
         let config_path =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs/harness.example.jsonc");
         let cfg = load_config_from_file(&config_path).expect("shipped example config should parse");
 
         assert!(cfg.agents.contains_key("build"));
-        assert!(cfg.agents.contains_key("plan"));
-        assert!(cfg.agents.contains_key("explore"));
-        assert!(cfg.agents.contains_key("executor"));
+        assert_eq!(cfg.agents.len(), 1);
 
         let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles");
-        assert!(profiles.contains_key("explore"));
-        assert!(profiles.contains_key("executor"));
-        assert!(profiles["explore"].toolset.contains(&"read".to_string()));
-        assert!(!profiles["explore"].toolset.contains(&"edit".to_string()));
-        assert!(!profiles["explore"].toolset.contains(&"bash".to_string()));
-        assert!(!profiles["explore"].toolset.contains(&"task".to_string()));
-        assert!(profiles["executor"].toolset.contains(&"edit".to_string()));
-        assert!(profiles["executor"].toolset.contains(&"bash".to_string()));
-        assert!(!profiles["executor"].toolset.contains(&"task".to_string()));
-        assert!(!profiles["executor"]
-            .toolset
-            .contains(&"todowrite".to_string()));
+        assert_eq!(profiles.len(), 1);
+        assert!(profiles["build"].toolset.contains(&"edit".to_string()));
+        assert!(profiles["build"].toolset.contains(&"bash".to_string()));
+        assert!(profiles["build"].toolset.contains(&"task".to_string()));
+        assert!(profiles["build"].toolset.contains(&"todowrite".to_string()));
     }
 }

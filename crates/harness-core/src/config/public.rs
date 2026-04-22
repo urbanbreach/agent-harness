@@ -79,10 +79,6 @@ pub struct PublicAgentConfig {
     pub max_iters: usize,
     #[serde(default, alias = "toolFailureMode")]
     pub tool_failure_mode: ToolFailureMode,
-    #[serde(default, alias = "planMode")]
-    pub plan_mode: bool,
-    #[serde(default, alias = "exitTargetProfile")]
-    pub exit_target_profile: Option<String>,
     #[serde(default)]
     pub tools: Vec<String>,
 }
@@ -272,193 +268,53 @@ fn canonicalize_runtime_aliases(runtime: &mut serde_json::Value) {
     }
 }
 
-fn default_shipped_agents(
-    model_ref: &str,
-    small_model_ref: Option<&str>,
-) -> BTreeMap<String, ProfileConfig> {
-    let small_model_ref = small_model_ref.unwrap_or(model_ref).to_string();
-    BTreeMap::from([
-        (
-            "build".to_string(),
-            ProfileConfig {
-                description: "Implementation lane: execute an approved plan and verify the result."
-                    .to_string(),
-                system_prompt: None,
-                model_ref: model_ref.to_string(),
-                variant: None,
-                temperature: None,
-                permissions: Some(ProfilePermissions {
-                    edit: Some(PermissionMode::Allow),
-                    shell: Some(PermissionMode::Allow),
-                    network: Some(PermissionMode::Allow),
-                    question: Some(PermissionMode::Allow),
-                    task: Some(PermissionMode::Allow),
-                    webfetch: Some(PermissionMode::Allow),
-                    websearch: Some(PermissionMode::Allow),
-                    codesearch: Some(PermissionMode::Allow),
-                    lsp: Some(PermissionMode::Allow),
-                }),
-                max_iters: 24,
-                tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
-                plan_mode: false,
-                exit_target_profile: None,
-                tools: vec![
-                    "todowrite",
-                    "todoread",
-                    "question",
-                    "skill",
-                    "websearch",
-                    "webfetch",
-                    "codesearch",
-                    "lsp",
-                    "read",
-                    "glob",
-                    "grep",
-                    "list",
-                    "write",
-                    "edit",
-                    "bash",
-                    "batch",
-                    "task",
-                ]
-                .into_iter()
-                .map(str::to_string)
-                .collect(),
-            },
-        ),
-        (
-            "executor".to_string(),
-            ProfileConfig {
-                description: "Execution subagent: implement a bounded child task and report concrete results."
-                    .to_string(),
-                system_prompt: None,
-                model_ref: small_model_ref.clone(),
-                variant: None,
-                temperature: None,
-                permissions: Some(ProfilePermissions {
-                    edit: Some(PermissionMode::Allow),
-                    shell: Some(PermissionMode::Allow),
-                    network: Some(PermissionMode::Allow),
-                    question: Some(PermissionMode::Allow),
-                    task: Some(PermissionMode::Deny),
-                    webfetch: Some(PermissionMode::Allow),
-                    websearch: Some(PermissionMode::Allow),
-                    codesearch: Some(PermissionMode::Allow),
-                    lsp: Some(PermissionMode::Allow),
-                }),
-                max_iters: 16,
-                tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
-                plan_mode: false,
-                exit_target_profile: None,
-                tools: vec![
-                    "question",
-                    "skill",
-                    "websearch",
-                    "webfetch",
-                    "codesearch",
-                    "lsp",
-                    "read",
-                    "glob",
-                    "grep",
-                    "list",
-                    "write",
-                    "edit",
-                    "bash",
-                    "batch",
-                ]
-                .into_iter()
-                .map(str::to_string)
-                .collect(),
-            },
-        ),
-        (
-            "explore".to_string(),
-            ProfileConfig {
-                description: "Read-only subagent: map the codebase and return file-backed findings."
-                    .to_string(),
-                system_prompt: None,
-                model_ref: small_model_ref.clone(),
-                variant: None,
-                temperature: None,
-                permissions: Some(ProfilePermissions {
-                    edit: Some(PermissionMode::Deny),
-                    shell: Some(PermissionMode::Deny),
-                    network: Some(PermissionMode::Allow),
-                    question: Some(PermissionMode::Allow),
-                    task: Some(PermissionMode::Deny),
-                    webfetch: Some(PermissionMode::Allow),
-                    websearch: Some(PermissionMode::Allow),
-                    codesearch: Some(PermissionMode::Allow),
-                    lsp: Some(PermissionMode::Allow),
-                }),
-                max_iters: 12,
-                tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
-                plan_mode: false,
-                exit_target_profile: None,
-                tools: vec![
-                    "question",
-                    "skill",
-                    "websearch",
-                    "webfetch",
-                    "codesearch",
-                    "lsp",
-                    "read",
-                    "glob",
-                    "grep",
-                    "list",
-                    "batch",
-                ]
-                .into_iter()
-                .map(str::to_string)
-                .collect(),
-            },
-        ),
-        (
-            "plan".to_string(),
-            ProfileConfig {
-                description: "Planning lane: produce an approved plan and hand off to build."
-                    .to_string(),
-                system_prompt: None,
-                model_ref: small_model_ref.clone(),
-                variant: None,
-                temperature: None,
-                permissions: Some(ProfilePermissions {
-                    edit: Some(PermissionMode::Deny),
-                    shell: Some(PermissionMode::Deny),
-                    network: Some(PermissionMode::Allow),
-                    question: Some(PermissionMode::Allow),
-                    task: Some(PermissionMode::Deny),
-                    webfetch: Some(PermissionMode::Allow),
-                    websearch: Some(PermissionMode::Allow),
-                    codesearch: Some(PermissionMode::Allow),
-                    lsp: Some(PermissionMode::Allow),
-                }),
-                max_iters: 16,
-                tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
-                plan_mode: true,
-                exit_target_profile: Some("build".to_string()),
-                tools: vec![
-                    "todowrite",
-                    "todoread",
-                    "question",
-                    "skill",
-                    "websearch",
-                    "webfetch",
-                    "codesearch",
-                    "lsp",
-                    "read",
-                    "glob",
-                    "grep",
-                    "list",
-                    "batch",
-                    "plan_exit",
-                ]
-                .into_iter()
-                .map(str::to_string)
-                .collect(),
-            },
-        ),
-    ])
+fn default_shipped_agents(model_ref: &str) -> BTreeMap<String, ProfileConfig> {
+    BTreeMap::from([(
+        "build".to_string(),
+        ProfileConfig {
+            description: "Implementation lane: execute the requested work and verify the result."
+                .to_string(),
+            system_prompt: None,
+            model_ref: model_ref.to_string(),
+            variant: None,
+            temperature: None,
+            permissions: Some(ProfilePermissions {
+                edit: Some(PermissionMode::Allow),
+                shell: Some(PermissionMode::Allow),
+                network: Some(PermissionMode::Allow),
+                question: Some(PermissionMode::Allow),
+                task: Some(PermissionMode::Allow),
+                webfetch: Some(PermissionMode::Allow),
+                websearch: Some(PermissionMode::Allow),
+                codesearch: Some(PermissionMode::Allow),
+                lsp: Some(PermissionMode::Allow),
+            }),
+            max_iters: 24,
+            tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
+            tools: vec![
+                "todowrite",
+                "todoread",
+                "question",
+                "skill",
+                "websearch",
+                "webfetch",
+                "codesearch",
+                "lsp",
+                "read",
+                "glob",
+                "grep",
+                "list",
+                "write",
+                "edit",
+                "bash",
+                "batch",
+                "task",
+            ]
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+        },
+    )])
 }
 
 fn public_agent_to_profile(
@@ -526,15 +382,6 @@ fn public_agent_to_profile(
         } else {
             agent.tool_failure_mode
         },
-        plan_mode: agent.plan_mode
-            || base
-                .as_ref()
-                .map(|profile| profile.plan_mode)
-                .unwrap_or(false),
-        exit_target_profile: agent.exit_target_profile.or_else(|| {
-            base.as_ref()
-                .and_then(|profile| profile.exit_target_profile.clone())
-        }),
         tools: if agent.tools.is_empty() {
             base.as_ref()
                 .map(|profile| profile.tools.clone())
@@ -641,7 +488,7 @@ pub(super) fn translate_public_runtime_root(
 
     let shipped = model
         .as_deref()
-        .map(|default_model| default_shipped_agents(default_model, small_model.as_deref()))
+        .map(default_shipped_agents)
         .unwrap_or_default();
 
     if let Some(value) = object.get("agent") {

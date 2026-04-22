@@ -185,7 +185,7 @@ async fn coord_start_run_appends_run_started() {
 #[tokio::test]
 async fn coord_spawn_agent_appends_agent_spawned() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
-    let coordinator = test_coordinator(temp_dir.path());
+    let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(0));
 
     let run = coordinator
         .start_run("coord_spawn", PathBuf::from("/workspace/project"))
@@ -194,7 +194,7 @@ async fn coord_spawn_agent_appends_agent_spawned() {
 
     let actor = EventActor::new(ActorKind::Supervisor, Some("agent_supervisor".to_string()));
     let _agent_id = coordinator
-        .spawn_agent(actor, "worker", None)
+        .spawn_agent(actor, "alpha", None)
         .await
         .expect("spawn agent");
 
@@ -258,7 +258,7 @@ async fn coord_event_store_subscribe_emits_live_events() {
 #[tokio::test]
 async fn coord_worker_spawn_attempt_records_policy_violation_and_returns_error() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
-    let coordinator = test_coordinator(temp_dir.path());
+    let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(0));
 
     let run = coordinator
         .start_run("coord_policy", PathBuf::from("/workspace/project"))
@@ -266,7 +266,7 @@ async fn coord_worker_spawn_attempt_records_policy_violation_and_returns_error()
         .expect("start run");
 
     let actor = EventActor::new(ActorKind::Worker, Some("agent_worker".to_string()));
-    let result = coordinator.spawn_agent(actor, "worker", None).await;
+    let result = coordinator.spawn_agent(actor, "alpha", None).await;
     assert!(result.is_err(), "worker spawn must fail");
 
     coordinator.stop_run().await.expect("stop run");
@@ -333,18 +333,18 @@ async fn coord_spawn_unknown_profile_returns_error() {
 
     let actor = EventActor::new(ActorKind::Supervisor, Some("agent_supervisor".to_string()));
     let err = coordinator
-        .spawn_agent(actor, "explore", None)
+        .spawn_agent(actor, "missing_profile", None)
         .await
         .expect_err("unknown profile should fail");
 
-    assert!(matches!(err, CoordinatorError::UnknownAgent(profile) if profile == "explore"));
+    assert!(matches!(err, CoordinatorError::UnknownAgent(profile) if profile == "missing_profile"));
 
     coordinator.stop_run().await.expect("stop run");
     let events = load_events(&run.events_path);
     assert!(
         !events.iter().any(|event| matches!(
             &event.payload,
-            EventV1::AgentSpawned(AgentSpawnedEvent { profile, .. }) if profile == "explore"
+            EventV1::AgentSpawned(AgentSpawnedEvent { profile, .. }) if profile == "missing_profile"
         )),
         "unknown profiles should not emit AgentSpawned events"
     );
@@ -2800,7 +2800,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                 3,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_000101".to_string(),
-                    profile: "explore".to_string(),
+                    profile: "build".to_string(),
                     parent_agent_id: Some("agent_000001".to_string()),
                 }),
             ),

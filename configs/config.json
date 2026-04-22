@@ -576,13 +576,6 @@
             "null"
           ]
         },
-        "exit_target_profile": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "max_iters": {
           "default": 12,
           "type": "integer",
@@ -606,10 +599,6 @@
               "type": "null"
             }
           ]
-        },
-        "plan_mode": {
-          "default": false,
-          "type": "boolean"
         },
         "system_prompt": {
           "default": null,

@@ -92,16 +92,9 @@ pub struct CoordinatorConfig {
     pub tool_registry: Arc<ToolRegistry>,
     pub provider: Arc<dyn Provider>,
     pub agent_profiles: BTreeMap<String, AgentProfile>,
-    pub plan_profiles: BTreeMap<String, PlanProfileConfig>,
     pub hook_runtime_config: HookRuntimeConfig,
     pub config_digest: String,
     pub harness_version: String,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct PlanProfileConfig {
-    pub plan_mode: bool,
-    pub exit_target_profile: Option<String>,
 }
 
 impl CoordinatorConfig {
@@ -120,7 +113,6 @@ impl CoordinatorConfig {
             tool_registry: Arc::new(ToolRegistry::new()),
             provider: default_provider(),
             agent_profiles: BTreeMap::new(),
-            plan_profiles: BTreeMap::new(),
             hook_runtime_config: registered_hook_runtime_config(),
             config_digest: "none".to_string(),
             harness_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -1696,12 +1688,6 @@ impl Coordinator {
         } else {
             category.clone()
         };
-        let (plan_mode, plan_exit_target_profile) = resolve_plan_profile_context(
-            effective_category.as_deref(),
-            &self.config.plan_profiles,
-            &self.config.agent_profiles,
-        );
-
         let skip_outer_question_permission = canonical_tool_id_for(&tool_id) == Some("question");
         let maybe_kind = if skip_outer_question_permission {
             None
@@ -1807,8 +1793,6 @@ impl Coordinator {
                         args_json,
                         actor,
                         category: effective_category.clone(),
-                        plan_mode,
-                        plan_exit_target_profile,
                         respond_to,
                     },
                 };
@@ -1924,8 +1908,6 @@ impl Coordinator {
                         actor,
                         category: effective_category.clone(),
                         hook_executions: Vec::new(),
-                        plan_mode,
-                        plan_exit_target_profile,
                         tool_registry: self.config.tool_registry.clone(),
                         request_correlation_id,
                         respond_to,
@@ -2048,8 +2030,6 @@ impl Coordinator {
                         args_json,
                         actor,
                         category,
-                        plan_mode,
-                        plan_exit_target_profile,
                         respond_to,
                     },
                 ..
@@ -2068,8 +2048,6 @@ impl Coordinator {
                             actor,
                             category,
                             hook_executions: permission_hook_executions,
-                            plan_mode,
-                            plan_exit_target_profile,
                             tool_registry: self.config.tool_registry.clone(),
                             request_correlation_id,
                             respond_to,
@@ -2106,8 +2084,6 @@ impl Coordinator {
                                 args_json,
                                 actor,
                                 category,
-                                plan_mode,
-                                plan_exit_target_profile,
                                 respond_to,
                             },
                         },
@@ -2225,8 +2201,6 @@ impl Coordinator {
                         args_json,
                         actor,
                         category,
-                        plan_mode,
-                        plan_exit_target_profile,
                         respond_to,
                     },
                 ..
@@ -2260,8 +2234,6 @@ impl Coordinator {
                             args_json,
                             actor,
                             category,
-                            plan_mode,
-                            plan_exit_target_profile,
                             respond_to,
                         },
                     },
@@ -3537,8 +3509,6 @@ enum PendingPermissionResolution {
         args_json: Value,
         actor: EventActor,
         category: Option<String>,
-        plan_mode: bool,
-        plan_exit_target_profile: Option<String>,
         respond_to: Option<oneshot::Sender<Result<ToolResult, String>>>,
     },
     Question {
@@ -3644,8 +3614,6 @@ struct ToolCallExecutionArgs {
     actor: EventActor,
     category: Option<String>,
     hook_executions: Vec<HookExecutionMetadata>,
-    plan_mode: bool,
-    plan_exit_target_profile: Option<String>,
     tool_registry: Arc<ToolRegistry>,
     request_correlation_id: Option<String>,
     respond_to: Option<oneshot::Sender<Result<ToolResult, String>>>,
@@ -3686,36 +3654,6 @@ struct ScheduleAgentTurnArgs {
     profile: AgentProfile,
     request: AgentRequest,
     request_id: String,
-}
-
-fn resolve_plan_profile_context(
-    category: Option<&str>,
-    plan_profiles: &BTreeMap<String, PlanProfileConfig>,
-    agent_profiles: &BTreeMap<String, AgentProfile>,
-) -> (bool, Option<String>) {
-    let Some(category) = category else {
-        return (false, None);
-    };
-    let Some(profile) = plan_profiles.get(category) else {
-        return (false, None);
-    };
-    if !profile.plan_mode {
-        return (false, None);
-    }
-    if let Some(target) = profile
-        .exit_target_profile
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        let target = target.to_string();
-        let resolved = agent_profiles.contains_key(&target).then_some(target);
-        return (true, resolved);
-    }
-    let fallback = agent_profiles
-        .contains_key("build")
-        .then(|| "build".to_string());
-    (true, fallback)
 }
 
 #[cfg(test)]
@@ -4097,8 +4035,6 @@ where
         actor,
         category,
         hook_executions,
-        plan_mode,
-        plan_exit_target_profile,
         tool_registry,
         request_correlation_id,
         respond_to,
@@ -4305,8 +4241,6 @@ where
             artifacts_dir,
             actor,
             category,
-            plan_mode,
-            plan_exit_target_profile,
             tool_call_id: tool_call_id.clone(),
             coordinator,
         };
