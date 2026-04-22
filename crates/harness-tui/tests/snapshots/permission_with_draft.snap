@@ -22,7 +22,7 @@ run run_fixture · default/local · -
 ┃
 ┃  Apply hashline edit to demo.txt
 ┃  call tool_call_pty · dig digest… · timeout 30s
-┃  Draft preserved · keep t
+┃  Draft preserved · keep
 ┃
 ┃
 ┃

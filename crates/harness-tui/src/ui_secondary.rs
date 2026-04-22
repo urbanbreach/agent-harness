@@ -2,11 +2,16 @@ use imara_diff::{Algorithm, Diff, InternedInput};
 use std::cmp::max;
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::OnceLock;
 #[cfg(test)]
 use std::sync::{Mutex, MutexGuard};
 use syntect::easy::HighlightLines;
-use syntect::highlighting::{FontStyle as SyntectFontStyle, Theme as SyntectTheme};
+use syntect::highlighting::{
+    Color as SyntectColor, FontStyle as SyntectFontStyle, ScopeSelectors,
+    StyleModifier as SyntectStyleModifier, Theme as SyntectTheme, ThemeItem,
+    ThemeSettings as SyntectThemeSettings,
+};
 use syntect::parsing::SyntaxSet;
 
 use super::*;
@@ -860,14 +865,13 @@ pub(crate) fn exact_test_operator_rail_section_model_keeps_native_prefix_tools_o
     let mcp_items = model.body.sections[1].item_texts();
     assert!(
         mcp_items == ["websearch Disconnected".to_string()]
-            || mcp_items == ["No MCP integrations configured".to_string()],
+            || mcp_items == ["No MCP servers configured".to_string()],
         "unexpected MCP summary items: {mcp_items:?}"
     );
 
     let sidebar = operator_sidebar_text_for_test(&app).join("\n");
     assert!(
-        sidebar.contains("websearch Disconnected")
-            || sidebar.contains("No MCP integrations configured")
+        sidebar.contains("websearch Disconnected") || sidebar.contains("No MCP servers configured")
     );
     assert!(!sidebar.contains("edit.hashline_apply"));
     assert!(!sidebar.contains("hashline_apply"));
@@ -1932,7 +1936,7 @@ fn operator_sidebar_mcp_items(app: &AppState) -> Vec<OperatorRailItem> {
 
     if items.is_empty() {
         vec![OperatorRailItem::Plain(
-            "No MCP integrations configured".to_string(),
+            "No MCP servers configured".to_string(),
         )]
     } else {
         items
@@ -1955,7 +1959,7 @@ fn operator_sidebar_mcp_items(app: &AppState) -> Vec<OperatorRailItem> {
 fn operator_sidebar_lsp_items(app: &AppState) -> Vec<OperatorRailItem> {
     let config = harness_core::config::registered_lsp_config();
     if config.disabled {
-        return vec![OperatorRailItem::Plain("LSP disabled".to_string())];
+        return vec![OperatorRailItem::Plain("LSP is disabled".to_string())];
     }
 
     let mut items = BTreeMap::new();
@@ -2150,7 +2154,7 @@ fn operator_sidebar_modified_file_rows(app: &AppState) -> Vec<OperatorRailItem> 
     }
 
     if items.is_empty() {
-        vec![OperatorRailItem::Plain("No modified files".to_string())]
+        vec![OperatorRailItem::Plain("No files modified".to_string())]
     } else {
         items
     }
@@ -3259,8 +3263,8 @@ fn stacked_diff_gutter_spans(
 
 fn diff_marker_style(marker: char, row_bg: Option<Color>, _theme: &Theme) -> Style {
     let style = match marker {
-        '+' => Style::default().fg(diff_add_marker_color()),
-        '-' => Style::default().fg(diff_delete_marker_color()),
+        '+' => Style::default().fg(opencode_diff_highlight_added()),
+        '-' => Style::default().fg(opencode_diff_highlight_removed()),
         _ => muted_meta_style(_theme),
     };
     apply_optional_bg(style, row_bg)
@@ -3287,14 +3291,14 @@ fn diff_segment_style(
         DiffSegmentKind::Removed => {
             let fg = match accent_kind {
                 DiffSegmentKind::Removed => theme.text.primary,
-                _ => theme.status.error,
+                _ => opencode_diff_highlight_removed(),
             };
             apply_optional_bg(Style::default().fg(fg), row_bg)
         }
         DiffSegmentKind::Added => {
             let fg = match accent_kind {
                 DiffSegmentKind::Added => theme.text.primary,
-                _ => theme.status.success,
+                _ => opencode_diff_highlight_added(),
             };
             apply_optional_bg(Style::default().fg(fg), row_bg)
         }
@@ -3329,7 +3333,7 @@ fn render_diff_hunk_header(
     spans.push(Span::styled(
         truncate_plain_text(&format!("⋮ {text}"), header_width),
         apply_optional_bg(
-            Style::default().fg(theme.text.secondary),
+            Style::default().fg(opencode_diff_hunk_header()),
             Some(palette.content_bg),
         ),
     ));
@@ -3578,15 +3582,187 @@ fn diff_syntax_highlight_assets() -> &'static DiffSyntaxHighlightAssets {
 
     SYNTAX_ASSETS.get_or_init(|| {
         let syntax_set = SyntaxSet::load_defaults_nonewlines();
-        let theme_set = syntect::highlighting::ThemeSet::load_defaults();
-        let theme = theme_set
-            .themes
-            .get("base16-ocean.dark")
-            .cloned()
-            .or_else(|| theme_set.themes.values().next().cloned())
-            .unwrap_or_default();
+        let theme = opencode_diff_syntect_theme();
         DiffSyntaxHighlightAssets { syntax_set, theme }
     })
+}
+
+fn opencode_diff_syntect_theme() -> SyntectTheme {
+    let mut scopes = Vec::new();
+    push_syntect_scope(
+        &mut scopes,
+        "comment, comment.documentation",
+        Some(opencode_syntax_comment()),
+        None,
+        Some(SyntectFontStyle::ITALIC),
+    );
+    push_syntect_scope(
+        &mut scopes,
+        "string, string.quoted, string.unquoted, symbol, character.special, constant.character.escape",
+        Some(opencode_syntax_string()),
+        None,
+        None,
+    );
+    push_syntect_scope(
+        &mut scopes,
+        "number, boolean, constant.numeric, constant.language.boolean, constant",
+        Some(opencode_syntax_number()),
+        None,
+        None,
+    );
+    push_syntect_scope(
+        &mut scopes,
+        "keyword, keyword.control, keyword.return, keyword.conditional, keyword.repeat, keyword.coroutine, storage, storage.modifier",
+        Some(opencode_syntax_keyword()),
+        None,
+        Some(SyntectFontStyle::ITALIC),
+    );
+    push_syntect_scope(
+        &mut scopes,
+        "keyword.import, keyword.export, string.escape, string.regexp, keyword.directive, keyword.modifier, keyword.exception, tag.attribute",
+        Some(opencode_syntax_keyword()),
+        None,
+        None,
+    );
+    push_syntect_scope(
+        &mut scopes,
+        "keyword.type, storage.type, storage.type.primitive",
+        Some(opencode_syntax_type()),
+        None,
+        Some(SyntectFontStyle::BOLD.union(SyntectFontStyle::ITALIC)),
+    );
+    push_syntect_scope(
+        &mut scopes,
+        "keyword.function, function.method, variable.member, function, constructor, entity.name.function, support.function, support.function.builtin",
+        Some(opencode_syntax_function()),
+        None,
+        None,
+    );
+    push_syntect_scope(
+        &mut scopes,
+        "variable, variable.parameter, function.method.call, function.call, property, parameter, field",
+        Some(opencode_syntax_variable()),
+        None,
+        None,
+    );
+    push_syntect_scope(
+        &mut scopes,
+        "type, module, namespace, class, type.definition, entity.name.type, support.type, support.class",
+        Some(opencode_syntax_type()),
+        None,
+        Some(SyntectFontStyle::BOLD),
+    );
+    push_syntect_scope(
+        &mut scopes,
+        "operator, keyword.operator, keyword.operator.word, punctuation.delimiter, punctuation.separator, keyword.conditional.ternary, tag.delimiter",
+        Some(opencode_syntax_operator()),
+        None,
+        None,
+    );
+    push_syntect_scope(
+        &mut scopes,
+        "punctuation, punctuation.bracket",
+        Some(opencode_syntax_punctuation()),
+        None,
+        None,
+    );
+    push_syntect_scope(
+        &mut scopes,
+        "variable.builtin, type.builtin, function.builtin, module.builtin, constant.builtin, tag, attribute, annotation",
+        Some(opencode_syntax_error()),
+        None,
+        None,
+    );
+    push_syntect_scope(
+        &mut scopes,
+        "markup.raw, markup.raw.block, markup.raw.inline",
+        Some(opencode_syntax_string()),
+        None,
+        None,
+    );
+
+    SyntectTheme {
+        name: Some("opencode-diff".to_string()),
+        author: Some("agent-harness".to_string()),
+        settings: SyntectThemeSettings {
+            foreground: Some(opencode_syntax_punctuation()),
+            background: Some(opencode_diff_context_bg()),
+            ..SyntectThemeSettings::default()
+        },
+        scopes,
+    }
+}
+
+fn push_syntect_scope(
+    scopes: &mut Vec<ThemeItem>,
+    selector: &str,
+    foreground: Option<SyntectColor>,
+    background: Option<SyntectColor>,
+    font_style: Option<SyntectFontStyle>,
+) {
+    let scope = ScopeSelectors::from_str(selector)
+        .unwrap_or_else(|error| panic!("invalid syntect selector {selector:?}: {error:?}"));
+    scopes.push(ThemeItem {
+        scope,
+        style: SyntectStyleModifier {
+            foreground,
+            background,
+            font_style,
+        },
+    });
+}
+
+fn syntect_rgb(red: u8, green: u8, blue: u8) -> SyntectColor {
+    SyntectColor {
+        r: red,
+        g: green,
+        b: blue,
+        a: 0xFF,
+    }
+}
+
+fn opencode_diff_context_bg() -> SyntectColor {
+    syntect_rgb(0x14, 0x14, 0x14)
+}
+
+fn opencode_syntax_comment() -> SyntectColor {
+    syntect_rgb(0x80, 0x80, 0x80)
+}
+
+fn opencode_syntax_keyword() -> SyntectColor {
+    syntect_rgb(0x9D, 0x7C, 0xD8)
+}
+
+fn opencode_syntax_function() -> SyntectColor {
+    syntect_rgb(0xFA, 0xB2, 0x83)
+}
+
+fn opencode_syntax_variable() -> SyntectColor {
+    syntect_rgb(0xE0, 0x6C, 0x75)
+}
+
+fn opencode_syntax_string() -> SyntectColor {
+    syntect_rgb(0x7F, 0xD8, 0x8F)
+}
+
+fn opencode_syntax_number() -> SyntectColor {
+    syntect_rgb(0xF5, 0xA7, 0x42)
+}
+
+fn opencode_syntax_type() -> SyntectColor {
+    syntect_rgb(0xE5, 0xC0, 0x7B)
+}
+
+fn opencode_syntax_operator() -> SyntectColor {
+    syntect_rgb(0x56, 0xB6, 0xC2)
+}
+
+fn opencode_syntax_punctuation() -> SyntectColor {
+    syntect_rgb(0xEE, 0xEE, 0xEE)
+}
+
+fn opencode_syntax_error() -> SyntectColor {
+    syntect_rgb(0xE0, 0x6C, 0x75)
 }
 
 struct DiffSyntaxHighlightAssets {
@@ -3622,15 +3798,15 @@ fn diff_syntect_style_to_ratatui(
 fn diff_row_palette(marker: char, theme: &Theme) -> DiffRowPalette {
     match marker {
         '+' => DiffRowPalette {
-            gutter_bg: blend_colors(theme.surface.panel, diff_add_background_base(), 0.85),
-            content_bg: blend_colors(theme.surface.panel, diff_add_background_base(), 0.92),
+            gutter_bg: opencode_diff_added_line_number_bg(),
+            content_bg: opencode_diff_added_bg(),
         },
         '-' => DiffRowPalette {
-            gutter_bg: blend_colors(theme.surface.panel, diff_delete_background_base(), 0.85),
-            content_bg: blend_colors(theme.surface.panel, diff_delete_background_base(), 0.92),
+            gutter_bg: opencode_diff_removed_line_number_bg(),
+            content_bg: opencode_diff_removed_bg(),
         },
         _ => DiffRowPalette {
-            gutter_bg: diff_context_gutter_background(),
+            gutter_bg: diff_context_background(theme),
             content_bg: diff_panel_background(theme),
         },
     }
@@ -3640,57 +3816,43 @@ fn diff_panel_background(theme: &Theme) -> Color {
     theme.surface.panel
 }
 
-fn diff_hunk_palette(_theme: &Theme) -> DiffRowPalette {
+fn diff_context_background(theme: &Theme) -> Color {
+    theme.surface.panel
+}
+
+fn diff_hunk_palette(theme: &Theme) -> DiffRowPalette {
     DiffRowPalette {
-        gutter_bg: diff_hunk_gutter_background(),
-        content_bg: diff_hunk_content_background(),
+        gutter_bg: diff_context_background(theme),
+        content_bg: diff_context_background(theme),
     }
 }
 
-fn diff_context_gutter_background() -> Color {
-    Color::Rgb(0x15, 0x15, 0x15)
+fn opencode_diff_added_bg() -> Color {
+    Color::Rgb(0x20, 0x30, 0x3B)
 }
 
-fn diff_hunk_content_background() -> Color {
-    Color::Rgb(0x0C, 0x19, 0x28)
+fn opencode_diff_removed_bg() -> Color {
+    Color::Rgb(0x37, 0x22, 0x2C)
 }
 
-fn diff_hunk_gutter_background() -> Color {
-    Color::Rgb(0x07, 0x39, 0x66)
+fn opencode_diff_added_line_number_bg() -> Color {
+    Color::Rgb(0x1B, 0x2B, 0x34)
 }
 
-fn diff_add_marker_color() -> Color {
-    Color::Rgb(0x9B, 0xCD, 0x97)
+fn opencode_diff_removed_line_number_bg() -> Color {
+    Color::Rgb(0x2D, 0x1F, 0x26)
 }
 
-fn diff_delete_marker_color() -> Color {
-    Color::Rgb(0xFC, 0x53, 0x3A)
+fn opencode_diff_highlight_added() -> Color {
+    Color::Rgb(0xB8, 0xDB, 0x87)
 }
 
-fn diff_add_background_base() -> Color {
-    Color::Rgb(0x9B, 0xCD, 0x97)
+fn opencode_diff_highlight_removed() -> Color {
+    Color::Rgb(0xE2, 0x6A, 0x75)
 }
 
-fn diff_delete_background_base() -> Color {
-    Color::Rgb(0xFA, 0xA4, 0x94)
-}
-
-fn blend_colors(base: Color, overlay: Color, base_weight: f32) -> Color {
-    match (base, overlay) {
-        (Color::Rgb(base_r, base_g, base_b), Color::Rgb(overlay_r, overlay_g, overlay_b)) => {
-            let overlay_weight = 1.0 - base_weight;
-            Color::Rgb(
-                blend_channel(base_r, overlay_r, base_weight, overlay_weight),
-                blend_channel(base_g, overlay_g, base_weight, overlay_weight),
-                blend_channel(base_b, overlay_b, base_weight, overlay_weight),
-            )
-        }
-        _ => base,
-    }
-}
-
-fn blend_channel(base: u8, overlay: u8, base_weight: f32, overlay_weight: f32) -> u8 {
-    ((f32::from(base) * base_weight) + (f32::from(overlay) * overlay_weight)).round() as u8
+fn opencode_diff_hunk_header() -> Color {
+    Color::Rgb(0x82, 0x8B, 0xB8)
 }
 
 fn apply_optional_bg(style: Style, background: Option<Color>) -> Style {
@@ -3958,6 +4120,97 @@ mod tests {
             added_span.style.bg,
             Some(diff_row_palette('+', &theme).content_bg)
         );
+    }
+
+    #[test]
+    fn structured_diff_palette_matches_opencode_inline_diff_colors() {
+        let theme = Theme::default();
+
+        assert_eq!(
+            diff_row_palette('+', &theme).content_bg,
+            opencode_diff_added_bg()
+        );
+        assert_eq!(
+            diff_row_palette('+', &theme).gutter_bg,
+            opencode_diff_added_line_number_bg()
+        );
+        assert_eq!(
+            diff_row_palette('-', &theme).content_bg,
+            opencode_diff_removed_bg()
+        );
+        assert_eq!(
+            diff_row_palette('-', &theme).gutter_bg,
+            opencode_diff_removed_line_number_bg()
+        );
+        assert_eq!(diff_hunk_palette(&theme).content_bg, theme.surface.panel);
+        assert_eq!(
+            diff_marker_style('+', None, &theme).fg,
+            Some(opencode_diff_highlight_added())
+        );
+        assert_eq!(
+            diff_marker_style('-', None, &theme).fg,
+            Some(opencode_diff_highlight_removed())
+        );
+        assert_eq!(
+            diff_segment_style(
+                DiffSegmentKind::Added,
+                DiffSegmentKind::Removed,
+                None,
+                &theme
+            )
+            .fg,
+            Some(opencode_diff_highlight_added())
+        );
+        assert_eq!(
+            diff_segment_style(
+                DiffSegmentKind::Removed,
+                DiffSegmentKind::Added,
+                None,
+                &theme
+            )
+            .fg,
+            Some(opencode_diff_highlight_removed())
+        );
+
+        let hunk_header = render_diff_hunk_header("", "@@ -1,1 +1,1 @@", 48, 2, &theme);
+        let hunk_span = hunk_header
+            .spans
+            .iter()
+            .find(|span| span.content.contains("@@ -1,1 +1,1 @@"))
+            .expect("hunk header span");
+        assert_eq!(hunk_span.style.fg, Some(opencode_diff_hunk_header()));
+        assert_eq!(hunk_span.style.bg, Some(theme.surface.panel));
+    }
+
+    #[test]
+    fn structured_diff_syntax_highlighting_uses_opencode_token_colors() {
+        let chunks = highlight_diff_line_chunks(
+            Some("src/demo.rs"),
+            "let value = \"hi\"; let total = 42; // note",
+            Some(opencode_diff_added_bg()),
+        )
+        .expect("syntax-highlighted diff chunks");
+
+        let find_chunk = |needle: &str| {
+            chunks
+                .iter()
+                .find(|chunk| chunk.text.contains(needle))
+                .unwrap_or_else(|| panic!("missing chunk containing {needle:?}: {chunks:#?}"))
+        };
+
+        assert_eq!(
+            find_chunk("hi").style.fg,
+            Some(Color::Rgb(0x7F, 0xD8, 0x8F))
+        );
+        assert_eq!(
+            find_chunk("42").style.fg,
+            Some(Color::Rgb(0xF5, 0xA7, 0x42))
+        );
+        assert_eq!(
+            find_chunk("note").style.fg,
+            Some(Color::Rgb(0x80, 0x80, 0x80))
+        );
+        assert_eq!(find_chunk("note").style.bg, Some(opencode_diff_added_bg()));
     }
 
     #[test]

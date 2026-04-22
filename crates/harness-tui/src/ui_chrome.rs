@@ -15,7 +15,7 @@ use super::ui_overlays::{
     permission_modal_actions_text, permission_modal_draft_line, permission_modal_guidance,
     permission_modal_icon, permission_modal_metadata_line, permission_modal_subject_line,
     permission_modal_summary_line, permission_modal_title, question_permission_actions_text,
-    question_permission_answer_text, question_permission_body_text,
+    question_permission_body_text,
 };
 
 struct DocumentComposerRenderContext<'a> {
@@ -58,6 +58,14 @@ pub(super) const fn composer_input_accent(theme: &Theme) -> Color {
 
 pub(super) const fn command_palette_surface(theme: &Theme) -> Color {
     theme.surface.panel
+}
+
+pub(super) const fn slash_command_surface(theme: &Theme) -> Color {
+    theme.surface.panel
+}
+
+pub(super) const fn slash_command_selection_bg(theme: &Theme) -> Color {
+    theme.surface.panel_elevated
 }
 
 pub(super) const fn command_palette_title(theme: &Theme) -> Color {
@@ -506,6 +514,15 @@ pub(super) fn overlay_focus_row_style(_theme: &Theme) -> Style {
     Style::default()
         .fg(command_palette_selection_fg(_theme))
         .bg(command_palette_selection_bg(_theme))
+}
+
+pub(super) fn slash_command_row_style(theme: &Theme, is_selected: bool) -> Style {
+    let surface = slash_command_surface(theme);
+    if is_selected {
+        Style::default().bg(slash_command_selection_bg(theme))
+    } else {
+        Style::default().bg(surface)
+    }
 }
 
 pub(super) fn open_canvas(theme: &Theme) -> Block<'static> {
@@ -1032,6 +1049,11 @@ fn render_inline_permission_dock(
 
     let submission_pending = app.permission_submission_pending(&permission.permission_id);
     let is_question = permission.question_prompts.is_some();
+    if is_question {
+        render_question_permission_dock(frame, app, area, theme, permission, submission_pending);
+        return;
+    }
+
     let dock_layout = permission_dock_layout(area, is_question);
     let always_confirm = !is_question
         && app.permission_modal_stage(&permission.permission_id)
@@ -1185,23 +1207,7 @@ fn render_inline_permission_dock(
         let metadata_style = Style::default().fg(theme.text.secondary).bg(shell_surface);
         let summary_style = Style::default().fg(theme.text.primary).bg(shell_surface);
         let guidance_style = Style::default().fg(theme.text.secondary).bg(shell_surface);
-        let body = if let Some(prompts) = permission.question_prompts.as_ref() {
-            let mut lines = question_permission_body_text(
-                app,
-                permission,
-                prompts,
-                submission_pending,
-                metadata_style,
-                summary_style,
-                guidance_style,
-            )
-            .lines;
-            lines.push(Line::default());
-            lines.extend(
-                question_permission_answer_text(app, permission, theme, shell_surface).lines,
-            );
-            Text::from(lines)
-        } else if submission_pending {
+        let body = if submission_pending {
             Text::from(vec![
                 Line::from(vec![Span::styled(
                     permission_modal_summary_line(permission, submission_pending),
@@ -1363,6 +1369,104 @@ fn render_inline_permission_dock(
             footer_columns[1],
         );
     }
+}
+
+fn render_question_permission_dock(
+    frame: &mut Frame,
+    app: &AppState,
+    area: Rect,
+    theme: &Theme,
+    permission: &crate::app::ActivePermissionView,
+    submission_pending: bool,
+) {
+    let surface = theme.surface.panel;
+    let rail_color = question_prompt_accent(theme);
+    let columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .split(area);
+    let rail_area = columns[0];
+    let body_area = columns[1];
+
+    if body_area.width == 0 || body_area.height == 0 {
+        return;
+    }
+
+    frame.render_widget(
+        Block::default().style(Style::default().bg(surface)),
+        body_area,
+    );
+
+    if rail_area.width > 0 && rail_area.height > 0 {
+        let lines = std::iter::repeat_with(|| {
+            Line::from(Span::styled(
+                COMPOSER_RAIL_GLYPH,
+                Style::default().fg(rail_color).bg(surface),
+            ))
+        })
+        .take(usize::from(rail_area.height))
+        .collect::<Vec<_>>();
+        frame.render_widget(Paragraph::new(lines), rail_area);
+    }
+
+    let inner = pad_rect(body_area, crate::layout::EdgeInsets::new(1, 3, 1, 1));
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+
+    let content_height = inner.height.saturating_sub(2);
+    let content_width = inner.width.saturating_sub(1);
+    if content_height > 0 && content_width > 0 {
+        let content_area = Rect::new(
+            inner.x.saturating_add(1),
+            inner.y,
+            content_width,
+            content_height,
+        );
+        let prompts = permission.question_prompts.as_deref().unwrap_or(&[]);
+        let body = question_permission_body_text(app, permission, prompts, theme, surface);
+        frame.render_widget(
+            Paragraph::new(body)
+                .style(Style::default().bg(surface))
+                .wrap(Wrap { trim: false }),
+            content_area,
+        );
+    }
+
+    let footer_width = inner.width.saturating_sub(1);
+    if footer_width == 0 || inner.height == 0 {
+        return;
+    }
+
+    let footer_area = Rect::new(
+        inner.x.saturating_add(1),
+        inner.y.saturating_add(inner.height.saturating_sub(1)),
+        footer_width,
+        1,
+    );
+    let footer = if submission_pending {
+        permission_modal_actions_text(app, theme, surface, true, true)
+    } else {
+        question_permission_actions_text(
+            app,
+            permission,
+            permission.question_prompts.as_deref().unwrap_or(&[]),
+            theme,
+            surface,
+        )
+    };
+    frame.render_widget(
+        Paragraph::new(footer).style(Style::default().bg(surface)),
+        footer_area,
+    );
+}
+
+pub(super) const fn question_prompt_accent(theme: &Theme) -> Color {
+    theme.question_prompt.accent
+}
+
+pub(super) const fn question_prompt_secondary(theme: &Theme) -> Color {
+    theme.question_prompt.secondary
 }
 
 fn permission_prompt_action_line(

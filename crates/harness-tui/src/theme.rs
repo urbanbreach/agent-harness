@@ -443,6 +443,12 @@ pub struct TextColors {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QuestionPromptColors {
+    pub accent: Color,
+    pub secondary: Color,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StatusColors {
     pub success: Color,
     pub warning: Color,
@@ -478,6 +484,7 @@ pub struct Theme {
     pub surface: SurfaceColors,
     pub border: BorderColors,
     pub text: TextColors,
+    pub question_prompt: QuestionPromptColors,
     pub status: StatusColors,
     pub scrollbar: ScrollbarColors,
     pub live_shell: LiveShellTokens,
@@ -773,6 +780,10 @@ impl Theme {
                 accent: rgb(0xFA, 0xB2, 0x83),
                 inverse: rgb(0x0A, 0x0A, 0x0A),
             },
+            question_prompt: QuestionPromptColors {
+                accent: rgb(0x9D, 0x7C, 0xD8),
+                secondary: rgb(0x5C, 0x9C, 0xF5),
+            },
             status: StatusColors {
                 success: rgb(0x7F, 0xD8, 0x8F),
                 warning: rgb(0xF5, 0xA7, 0x42),
@@ -824,6 +835,8 @@ mod tests {
         assert_eq!(theme.text.tertiary, rgb(0x80, 0x80, 0x80));
         assert_eq!(theme.text.accent, rgb(0xFA, 0xB2, 0x83));
         assert_eq!(theme.text.inverse, rgb(0x0A, 0x0A, 0x0A));
+        assert_eq!(theme.question_prompt.accent, rgb(0x9D, 0x7C, 0xD8));
+        assert_eq!(theme.question_prompt.secondary, rgb(0x5C, 0x9C, 0xF5));
         assert_eq!(theme.status.success, rgb(0x7F, 0xD8, 0x8F));
         assert_eq!(theme.status.warning, rgb(0xF5, 0xA7, 0x42));
         assert_eq!(theme.status.error, rgb(0xE0, 0x6C, 0x75));

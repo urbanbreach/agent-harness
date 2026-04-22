@@ -2,15 +2,15 @@
 
      events   18 recorded · selected seq 18 · follow on
     Event log · j/k active · Event details
-       ┃ ↗ Spawn researcher · audit tool lifecycle parity
-         1oreground · agent_wo{ker · req_child · completed · 2 child tool
+       ↗ Spawn researcher · audit tool lifecycle parity  ▸
+         1reground · agent_wor{er · req_child · completed · 2 child tool
      UserMessageSubmitted(U   "schema_version": 1,
-     serMessageSubmittedEveol "event_id": "evt-0018",
-     nt { request_ids · task →"seq": 18,wn                                 █
-         2 cargo test -p harne"run_id": "run_fixture",ailed                █
-     ProviderRequestStartedrne"mono_ms": 18,                               █
+     serMessageSubmittedEvel p"event_id": "evt-0018",
+     nt { request_id · task → "seq": 18,n
+         2hell  ▸             "run_id": "run_fixture",                     █
+     ProviderRequestStartedarn"mono_ms": 18,                               █
      (ProviderRequestStarte   "actor": {                                   █
-     dEvent { request_idt mism"kind": "system",                            █
+     dEvent { request_idot mis"kind": "system",                            █
          3                    "agent_id": "pty-helper"                     █
      ToolCallRequested(Toolow },sier to scan, and edits stay inline.       █
      CallRequestedEvent {     "correlation_id": "req_tool_lifecycle",      █

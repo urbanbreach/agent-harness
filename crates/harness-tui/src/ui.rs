@@ -50,10 +50,10 @@ use ui_secondary::{
 };
 pub use ui_transcript::hovered_wheel_target;
 use ui_transcript::render_transcript_pane;
+pub(crate) use ui_transcript::transcript_mouse_target;
 pub(crate) use ui_transcript::transcript_scrollbar_hit;
 #[cfg(test)]
 pub(crate) use ui_transcript::transcript_selection_debug_snapshot;
-pub(crate) use ui_transcript::TranscriptScrollbarHit;
 #[cfg(test)]
 pub(crate) use ui_transcript::{
     reset_transcript_selection_cache_metrics_for_test,
@@ -63,6 +63,7 @@ pub(crate) use ui_transcript::{
     transcript_selection_cell, transcript_selection_text, TranscriptSelection,
     TranscriptSelectionCell,
 };
+pub(crate) use ui_transcript::{TranscriptMouseTarget, TranscriptScrollbarHit};
 
 #[cfg(test)]
 pub(crate) use ui_chrome::{
@@ -1718,6 +1719,7 @@ mod tests {
         assert!(
             debug.contains("tool")
                 || debug.contains("false")
+                || debug.contains("Shell")
                 || debug.contains("Check tool status"),
             "status strip should surface active tool context\n{debug}"
         );

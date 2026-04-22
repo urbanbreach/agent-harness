@@ -64,6 +64,26 @@ fn key_with_modifiers(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
     KeyEvent::new(code, modifiers)
 }
 
+fn transcript_click_position(app: &AppState, needle: &str) -> (u16, u16) {
+    let backend = TestBackend::new(TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| render_app(frame, app))
+        .expect("draw transcript frame");
+    let buffer = terminal.backend().buffer();
+
+    for y in 0..TEST_FRAME_AREA.height {
+        let row = (0..TEST_FRAME_AREA.width)
+            .map(|x| buffer[(x, y)].symbol())
+            .collect::<String>();
+        if let Some(column) = row.find(needle) {
+            return (u16::try_from(column + 1).expect("column fits"), y);
+        }
+    }
+
+    panic!("expected row containing {needle:?}");
+}
+
 fn default_navigation_keybindings() -> BTreeMap<String, String> {
     BTreeMap::from([
         ("session_child_first".to_string(), "ctrl+]".to_string()),
@@ -103,6 +123,228 @@ fn runtime_context_model_option(
     }
 }
 
+#[test]
+fn mouse_click_toggles_transcript_tool_disclosure() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        "req_tool_toggle",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_tool_toggle".to_string(),
+            provider_id: "openai".to_string(),
+            model_id: "gpt-5-codex".to_string(),
+            prompt_summary: "Toggle shell tool".to_string(),
+            request_digest: "digest-tool-toggle".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_tool_toggle",
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: "tc_shell_toggle".to_string(),
+            tool_id: "shell.run".to_string(),
+            args_summary: r#"{"cmd":"false"}"#.to_string(),
+            args_digest: "digest-tool-toggle-args".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "req_tool_toggle",
+        EventV1::ToolCallFinished(ToolCallFinishedEvent {
+            tool_call_id: "tc_shell_toggle".to_string(),
+            status: ToolCallStatus::Failed,
+            output_summary: Some("exit code: 1\nstderr: nope".to_string()),
+            output_digest: None,
+            output_json: None,
+            metadata: None,
+        }),
+    ));
+
+    let (column, row) = transcript_click_position(&app, "Shell");
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+    assert!(app.expanded_tool_outputs.contains("tc_shell_toggle"));
+
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+    assert!(!app.expanded_tool_outputs.contains("tc_shell_toggle"));
+}
+
+#[test]
+fn mouse_click_toggles_apply_patch_file_disclosure() {
+    let run_dir = tempfile::tempdir().expect("create run dir");
+    let artifacts_dir = run_dir.path().join("artifacts");
+    fs::create_dir_all(&artifacts_dir).expect("create artifacts dir");
+    fs::write(
+        artifacts_dir.join("apply-a.diff"),
+        "@@ -1,1 +1,1 @@\n-old a\n+new a\n",
+    )
+    .expect("write apply patch diff");
+
+    let mut app = AppState::new_live(Some(run_dir.path().to_path_buf()), false, None);
+    app.ingest_event(envelope(
+        1,
+        "req_patch_toggle",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_patch_toggle".to_string(),
+            provider_id: "openai".to_string(),
+            model_id: "gpt-5-codex".to_string(),
+            prompt_summary: "Toggle patch file".to_string(),
+            request_digest: "digest-patch-toggle".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_patch_toggle",
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: "tc_patch_toggle".to_string(),
+            tool_id: "apply_patch".to_string(),
+            args_summary: r#"{"patchText":"*** Begin Patch"}"#.to_string(),
+            args_digest: "digest-patch-toggle-args".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "req_patch_toggle",
+        EventV1::ToolCallFinished(ToolCallFinishedEvent {
+            tool_call_id: "tc_patch_toggle".to_string(),
+            status: ToolCallStatus::Succeeded,
+            output_summary: Some("Success. Updated the following files".to_string()),
+            output_digest: None,
+            output_json: Some(serde_json::json!({
+                "files": ["M notes/a.md", "M notes/b.md"],
+                "edits": [
+                    {
+                        "edit_id": "apply-patch-a",
+                        "path": "notes/a.md",
+                        "summary": "apply patch update notes/a.md",
+                        "deleted": false,
+                        "diff_rel_path": "artifacts/apply-a.diff",
+                        "diff_digest": "digest-apply-a"
+                    },
+                    {
+                        "edit_id": "apply-patch-b",
+                        "path": "notes/b.md",
+                        "summary": "apply patch update notes/b.md",
+                        "deleted": false
+                    }
+                ]
+            })),
+            metadata: None,
+        }),
+    ));
+
+    assert!(app.patch_file_output_expanded("tc_patch_toggle", "notes/a.md"));
+    let (column, row) = transcript_click_position(&app, "a.md · notes");
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+    assert!(!app.patch_file_output_expanded("tc_patch_toggle", "notes/a.md"));
+
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+    assert!(app.patch_file_output_expanded("tc_patch_toggle", "notes/a.md"));
+}
+
+#[test]
+fn apply_patch_default_expansion_skips_deleted_files() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        "req_patch_defaults",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_patch_defaults".to_string(),
+            provider_id: "openai".to_string(),
+            model_id: "gpt-5-codex".to_string(),
+            prompt_summary: "Seed patch defaults".to_string(),
+            request_digest: "digest-patch-defaults".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_patch_defaults",
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: "tc_patch_defaults".to_string(),
+            tool_id: "apply_patch".to_string(),
+            args_summary: r#"{"patchText":"*** Begin Patch"}"#.to_string(),
+            args_digest: "digest-patch-defaults-args".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "req_patch_defaults",
+        EventV1::ToolCallFinished(ToolCallFinishedEvent {
+            tool_call_id: "tc_patch_defaults".to_string(),
+            status: ToolCallStatus::Succeeded,
+            output_summary: Some("Success. Updated the following files".to_string()),
+            output_digest: None,
+            output_json: Some(serde_json::json!({
+                "files": ["M notes/a.md", "D notes/old.md"],
+                "edits": [
+                    {
+                        "edit_id": "apply-patch-a",
+                        "path": "notes/a.md",
+                        "summary": "apply patch update notes/a.md",
+                        "deleted": false
+                    },
+                    {
+                        "edit_id": "apply-patch-old",
+                        "path": "notes/old.md",
+                        "summary": "apply patch delete notes/old.md",
+                        "deleted": true
+                    }
+                ]
+            })),
+            metadata: None,
+        }),
+    ));
+
+    assert!(app.patch_file_output_expanded("tc_patch_defaults", "notes/a.md"));
+    assert!(!app.patch_file_output_expanded("tc_patch_defaults", "notes/old.md"));
+}
+
 fn metadata_model_option(
     profile: &str,
     profile_description: Option<&str>,
@@ -131,6 +373,148 @@ fn metadata_model_option(
         text_verbosity: None,
         recommended_for: None,
     }
+}
+
+#[test]
+fn question_modal_ignores_digits_past_visible_choices() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        "req_question_digit_bounds",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_question_digit_bounds".to_string(),
+            kind: "question".to_string(),
+            tool_call_id: Some("tool_call_question_digit_bounds".to_string()),
+            summary: serde_json::json!({
+                "questions": [{
+                    "question": "Pick one",
+                    "header": "Choice",
+                    "options": [
+                        {"label": "A", "description": "Option A"},
+                        {"label": "B", "description": "Option B"},
+                        {"label": "C", "description": "Option C"}
+                    ],
+                    "custom": false
+                }]
+            })
+            .to_string(),
+            request_digest: "digest-question-digit-bounds".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    app.handle_key(key(KeyCode::Down));
+    assert_eq!(
+        app.question_prompt_selection("perm_question_digit_bounds"),
+        1
+    );
+
+    app.handle_key(key(KeyCode::Char('9')));
+
+    assert_eq!(
+        app.question_prompt_selection("perm_question_digit_bounds"),
+        1
+    );
+    assert!(app.question_prompt_answers("perm_question_digit_bounds")[0].is_empty());
+}
+
+#[test]
+fn question_modal_multi_custom_selection_toggles_saved_custom_answer() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        "req_question_multi_custom",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_question_multi_custom".to_string(),
+            kind: "question".to_string(),
+            tool_call_id: Some("tool_call_question_multi_custom".to_string()),
+            summary: serde_json::json!({
+                "questions": [{
+                    "question": "Pick any",
+                    "header": "Choice",
+                    "options": [{"label": "A", "description": "Option A"}],
+                    "multiple": true
+                }]
+            })
+            .to_string(),
+            request_digest: "digest-question-multi-custom".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    app.handle_key(key(KeyCode::Down));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(app.question_prompt_editing("perm_question_multi_custom"));
+
+    app.handle_key(key(KeyCode::Char('x')));
+    app.handle_key(key(KeyCode::Enter));
+
+    assert!(!app.question_prompt_editing("perm_question_multi_custom"));
+    assert_eq!(
+        app.question_prompt_answers("perm_question_multi_custom"),
+        vec![vec!["x".to_string()]]
+    );
+
+    app.handle_key(key(KeyCode::Enter));
+
+    assert!(!app.question_prompt_editing("perm_question_multi_custom"));
+    assert!(app.question_prompt_answers("perm_question_multi_custom")[0].is_empty());
+}
+
+#[test]
+fn question_modal_submit_allows_unanswered_questions_on_confirm() {
+    let intents = std::sync::Arc::new(std::sync::Mutex::new(Vec::<UiIntent>::new()));
+    let intent_sink = {
+        let intents = std::sync::Arc::clone(&intents);
+        std::sync::Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+    let mut app = AppState::new_live(None, false, Some(intent_sink));
+    app.ingest_event(envelope(
+        1,
+        "req_question_partial_submit",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_question_partial_submit".to_string(),
+            kind: "question".to_string(),
+            tool_call_id: Some("tool_call_question_partial_submit".to_string()),
+            summary: serde_json::json!({
+                "questions": [
+                    {
+                        "question": "Pick one",
+                        "header": "Choice",
+                        "options": [{"label": "A", "description": "Option A"}],
+                    },
+                    {
+                        "question": "Optional second",
+                        "header": "Mode",
+                        "options": [{"label": "B", "description": "Option B"}],
+                    }
+                ]
+            })
+            .to_string(),
+            request_digest: "digest-question-partial-submit".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key(KeyCode::Right));
+    app.handle_key(key(KeyCode::Enter));
+
+    let intents = intents.lock().expect("lock intents");
+    assert_eq!(intents.len(), 1);
+    assert_eq!(
+        intents[0],
+        UiIntent::ResolvePermission {
+            permission_id: "perm_question_partial_submit".to_string(),
+            decision: PermissionDecision::Allow,
+            reason: Some("[[\"A\"],[]]".to_string()),
+        }
+    );
 }
 
 fn write_events_jsonl(run_dir: &Path, events: &[EventEnvelopeV1]) {
@@ -1794,12 +2178,61 @@ fn startup_prompt_enter_emits_submit_intent_and_quits_launcher() {
     app.handle_key(key(KeyCode::Enter));
 
     assert!(app.should_quit, "startup submit should leave the launcher");
+    let next_live = AppState::new_live(None, false, None);
     assert_eq!(
         intents.lock().expect("lock intents").as_slice(),
-        &[UiIntent::SubmitPrompt {
-            text: "ship it".to_string(),
-            launch_metadata: LaunchMetadata::default(),
-        }]
+        &[UiIntent::NewSession]
+    );
+    assert_eq!(next_live.prompt_history, vec!["ship it".to_string()]);
+    assert_eq!(
+        next_live
+            .activities
+            .back()
+            .and_then(|activity| activity.user_message.as_ref())
+            .map(|message| message.text.as_str()),
+        Some("ship it")
+    );
+}
+
+#[test]
+fn slash_new_then_submit_bootstraps_fresh_session_instead_of_live_turn_submit() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
+    for ch in "/new".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+    assert!(app.startup_shell_visible());
+
+    app.clear_prompt_input();
+    for ch in "fresh run".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+
+    assert!(app.should_quit);
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::NewSession]
+    );
+
+    let relaunched = AppState::new_live(None, false, None);
+    assert_eq!(relaunched.prompt_buffer, "");
+    assert_eq!(relaunched.prompt_history, vec!["fresh run".to_string()]);
+    assert_eq!(
+        relaunched
+            .activities
+            .back()
+            .and_then(|activity| activity.user_message.as_ref())
+            .map(|message| message.text.as_str()),
+        Some("fresh run")
     );
 }
 
@@ -2358,117 +2791,6 @@ fn live_bootstrap_auto_submit_echoes_and_emits_first_prompt() {
 }
 
 #[test]
-fn tool_call_finished_plan_exit_handoff_emits_switch_model_then_submit_prompt() {
-    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
-    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
-        let intents = Arc::clone(&intents);
-        Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
-        })
-    };
-
-    let mut app = AppState::new_live(None, false, Some(sink));
-    let expected_launch_metadata = LaunchMetadata::from_model_ref("build", "mock:model-1")
-        .with_available_models(vec![
-            ModelOption::from_model_ref("plan", "mock:model-1"),
-            ModelOption::from_model_ref("build", "mock:model-1"),
-            ModelOption::from_model_ref("build", "mock:model-2"),
-        ])
-        .with_mode_label("Demo");
-    app.set_launch_metadata(
-        LaunchMetadata::from_model_ref("plan", "mock:model-1")
-            .with_available_models(expected_launch_metadata.available_models().to_vec())
-            .with_mode_label("Demo"),
-    );
-
-    app.ingest_event(envelope(
-        1,
-        "req_plan_exit_handoff",
-        EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tc_plan_exit_handoff".to_string(),
-            status: ToolCallStatus::Succeeded,
-            output_summary: Some("plan exit handoff ready".to_string()),
-            output_digest: Some("digest-plan-exit".to_string()),
-            output_json: Some(serde_json::json!({
-                "plan_exit_handoff": {
-                    "source_profile": "plan",
-                    "target_profile": "build",
-                    "prompt": "The plan has been approved, you can now edit files. Execute the plan."
-                }
-            })),
-            metadata: None,
-        }),
-    ));
-
-    assert_eq!(app.active_profile(), "build");
-    assert!(app
-        .launch_metadata
-        .available_models()
-        .iter()
-        .any(|option| option.profile == "plan"));
-    assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
-        &[
-            UiIntent::SwitchModel {
-                profile: "build".to_string(),
-                launch_metadata: expected_launch_metadata.clone(),
-            },
-            UiIntent::SubmitPrompt {
-                text: "The plan has been approved, you can now edit files. Execute the plan."
-                    .to_string(),
-                launch_metadata: expected_launch_metadata.clone(),
-            },
-        ]
-    );
-
-    let _ = take_pending_live_launch_metadata();
-}
-
-#[test]
-fn tool_call_finished_plan_exit_handoff_ignores_mismatched_source_profile() {
-    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
-    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
-        let intents = Arc::clone(&intents);
-        Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
-        })
-    };
-
-    let mut app = AppState::new_live(None, false, Some(sink));
-    app.set_launch_metadata(
-        LaunchMetadata::from_model_ref("plan", "mock:model-1")
-            .with_available_models(vec![
-                ModelOption::from_model_ref("plan", "mock:model-1"),
-                ModelOption::from_model_ref("build", "mock:model-1"),
-            ])
-            .with_mode_label("Demo"),
-    );
-
-    app.ingest_event(envelope(
-        1,
-        "req_plan_exit_ignored",
-        EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tc_plan_exit_ignored".to_string(),
-            status: ToolCallStatus::Succeeded,
-            output_summary: Some("plan exit handoff ignored".to_string()),
-            output_digest: Some("digest-plan-exit-ignored".to_string()),
-            output_json: Some(serde_json::json!({
-                "plan_exit_handoff": {
-                    "source_profile": "build",
-                    "target_profile": "build",
-                    "prompt": "The plan has been approved, you can now edit files. Execute the plan."
-                }
-            })),
-            metadata: None,
-        }),
-    ));
-
-    assert_eq!(app.active_profile(), "plan");
-    assert!(intents.lock().expect("lock intents").is_empty());
-    assert!(take_pending_live_launch_metadata().is_none());
-}
-
-#[test]
 fn replay_mode_focus_cycle_skips_prompt_and_blocks_draft_edits() {
     let mut app = AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new());
 
@@ -2673,6 +2995,22 @@ fn slash_menu_closes_after_whitespace() {
 }
 
 #[test]
+fn slash_menu_resets_selection_when_filter_changes() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+
+    app.handle_key(key(KeyCode::Char('/')));
+    app.slash_selected = 2;
+    assert_eq!(app.slash_selected, 2);
+
+    app.handle_key(key(KeyCode::Char('r')));
+    app.handle_key(key(KeyCode::Char('e')));
+    app.handle_key(key(KeyCode::Char('p')));
+
+    assert_eq!(app.slash_filtered, vec!["replay".to_string()]);
+    assert_eq!(app.slash_selected, 0);
+}
+
+#[test]
 fn slash_exit_matches_quit_requested_behavior() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
@@ -2693,6 +3031,68 @@ fn slash_exit_matches_quit_requested_behavior() {
         intents.lock().expect("lock intents").as_slice(),
         &[UiIntent::QuitRequested]
     );
+}
+
+#[test]
+fn slash_menu_supports_mouse_selection() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+    app.handle_key(key(KeyCode::Char('/')));
+
+    let frame = Rect::new(0, 0, 100, 24);
+    let overlay = crate::layout::FrameLayoutPlan::for_app(&app, frame)
+        .slash_overlay
+        .expect("slash overlay");
+    let list_area = crate::layout::slash_command_overlay_content_area(overlay);
+    let target_index = app
+        .slash_filtered
+        .iter()
+        .position(|command| command == "new")
+        .expect("new slash command visible");
+    let target_row = list_area
+        .y
+        .saturating_add(u16::try_from(target_index).expect("target row fits in u16"));
+
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: list_area.x.saturating_add(1),
+            row: target_row,
+            modifiers: KeyModifiers::NONE,
+        },
+        frame,
+        None,
+        None,
+        None,
+    );
+    assert_eq!(app.slash_selected, target_index);
+
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column: list_area.x.saturating_add(1),
+            row: target_row,
+            modifiers: KeyModifiers::NONE,
+        },
+        frame,
+        None,
+        None,
+        None,
+    );
+
+    assert!(app.startup_shell_visible());
+    assert_eq!(
+        app.startup_launcher_action,
+        StartupLauncherAction::NewSession
+    );
+}
+
+#[test]
+fn slash_menu_hides_unimplemented_model_switcher() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+
+    app.handle_key(key(KeyCode::Char('/')));
+
+    assert!(!app.slash_filtered.iter().any(|command| command == "model"));
 }
 
 #[test]

@@ -1,5 +1,7 @@
 use super::*;
 
+use ratatui::symbols::border;
+
 pub(super) fn render_overlays(
     frame: &mut Frame,
     app: &AppState,
@@ -9,6 +11,9 @@ pub(super) fn render_overlays(
     for overlay in &app.overlay_stack() {
         match overlay {
             OverlayKind::DetailsDrawer => {}
+            OverlayKind::SlashCommands => {
+                render_slash_commands_overlay(frame, app, theme, plan.slash_overlay)
+            }
             OverlayKind::CommandPalette => {
                 render_command_palette_overlay(frame, app, theme, plan.root, plan.palette_overlay)
             }
@@ -52,6 +57,131 @@ fn render_command_palette_overlay(
         render_command_palette_input(frame, app, theme, input);
         render_command_palette_list(frame, app, theme, list);
     }
+}
+
+fn render_slash_commands_overlay(
+    frame: &mut Frame,
+    app: &AppState,
+    theme: &Theme,
+    overlay: Option<Rect>,
+) {
+    let Some(overlay) = overlay else {
+        return;
+    };
+    if overlay.width <= 2 || overlay.height == 0 {
+        return;
+    }
+
+    let surface = ui_chrome::slash_command_surface(theme);
+    frame.render_widget(Clear, overlay);
+    frame.render_widget(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_set(border::ROUNDED)
+            .border_style(Style::default().fg(theme.border.subtle).bg(surface))
+            .style(Style::default().bg(surface)),
+        overlay,
+    );
+
+    let inner = crate::layout::slash_command_overlay_content_area(overlay);
+    render_slash_commands_list(frame, app, theme, inner);
+}
+
+fn render_slash_commands_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let surface = ui_chrome::slash_command_surface(theme);
+    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
+
+    if app.slash_filtered.is_empty() {
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(" ", Style::default().bg(surface)),
+                Span::styled(
+                    "No matching items",
+                    Style::default()
+                        .fg(ui_chrome::command_palette_muted(theme))
+                        .bg(surface),
+                ),
+                Span::styled(" ", Style::default().bg(surface)),
+            ])),
+            area,
+        );
+        return;
+    }
+
+    let visible_rows = usize::from(area.height);
+    let selected = app
+        .slash_selected
+        .min(app.slash_filtered.len().saturating_sub(1));
+    let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
+    for (row, command) in app
+        .slash_filtered
+        .iter()
+        .enumerate()
+        .skip(scroll)
+        .take(visible_rows)
+    {
+        let row_y = area
+            .y
+            .saturating_add(u16::try_from(row - scroll).unwrap_or(u16::MAX));
+        let row_area = Rect::new(area.x, row_y, area.width, 1);
+        let is_selected = row == selected;
+        frame.render_widget(
+            Block::default().style(ui_chrome::slash_command_row_style(theme, is_selected)),
+            row_area,
+        );
+
+        frame.render_widget(
+            Paragraph::new(slash_command_row(
+                command,
+                crate::app::slash_command_description(command),
+                is_selected,
+                theme,
+                row_area.width,
+            )),
+            row_area,
+        );
+    }
+}
+
+fn slash_command_row(
+    command: &str,
+    description: &str,
+    is_selected: bool,
+    theme: &Theme,
+    width: u16,
+) -> Line<'static> {
+    let row_width = usize::from(width);
+    let row_style = ui_chrome::slash_command_row_style(theme, is_selected);
+    let label_style = row_style.fg(ui_chrome::command_palette_title(theme));
+    let description_style = row_style.fg(ui_chrome::command_palette_muted(theme));
+
+    let label = format!("/{command}");
+    let prefix = " ";
+    let used = prefix.chars().count().saturating_add(label.chars().count());
+    let description_width = row_width.saturating_sub(used.saturating_add(1));
+    let description = truncate_plain_text(description, description_width);
+    let consumed = used
+        .saturating_add(usize::from(!description.is_empty()))
+        .saturating_add(description.chars().count());
+    let trailing = row_width.saturating_sub(consumed);
+
+    let mut spans = vec![
+        Span::styled(prefix.to_string(), row_style),
+        Span::styled(label, label_style),
+    ];
+    if !description.is_empty() {
+        spans.push(Span::styled(" ", row_style));
+        spans.push(Span::styled(description, description_style));
+    }
+    if trailing > 0 {
+        spans.push(Span::styled(" ".repeat(trailing), row_style));
+    }
+
+    Line::from(spans)
 }
 
 fn render_command_palette_surface(frame: &mut Frame, theme: &Theme, overlay: Rect) -> Option<Rect> {
@@ -1174,7 +1304,6 @@ pub(super) fn question_permission_actions_text(
     let metadata_style = Style::default().fg(theme.text.secondary).bg(surface);
     let single = prompts.len() == 1 && !prompts[0].multiple;
     let confirm = !single && app.question_prompt_tab(&permission.permission_id) >= prompts.len();
-    let editing = app.question_prompt_editing(&permission.permission_id);
     let submit_label = if confirm {
         "submit"
     } else if prompts
@@ -1193,19 +1322,6 @@ pub(super) fn question_permission_actions_text(
         spans.push(Span::styled("⇆", primary_style));
         spans.push(Span::styled(" tab  ", metadata_style));
     }
-    if editing {
-        spans.push(Span::styled("enter", primary_style));
-        spans.push(Span::styled(" save  ", metadata_style));
-        spans.push(Span::styled("esc", primary_style));
-        spans.push(Span::styled(" cancel", metadata_style));
-        return Text::from(vec![
-            Line::from(spans),
-            Line::from(vec![Span::styled(
-                "default deny · stays fail-closed",
-                metadata_style,
-            )]),
-        ]);
-    }
     if !confirm {
         spans.push(Span::styled("↑↓", primary_style));
         spans.push(Span::styled(" select  ", metadata_style));
@@ -1214,98 +1330,82 @@ pub(super) fn question_permission_actions_text(
     spans.push(Span::styled(format!(" {submit_label}  "), metadata_style));
     spans.push(Span::styled("esc", primary_style));
     spans.push(Span::styled(" dismiss", metadata_style));
-    Text::from(vec![
-        Line::from(spans),
-        Line::from(vec![Span::styled(
-            "default deny · stays fail-closed",
-            metadata_style,
-        )]),
-    ])
+    Text::from(Line::from(spans))
 }
 
 pub(super) fn question_permission_body_text(
     app: &AppState,
     permission: &crate::app::ActivePermissionView,
     prompts: &[crate::app::QuestionPromptView],
-    submission_pending: bool,
-    metadata_style: Style,
-    summary_style: Style,
-    guidance_style: Style,
+    theme: &Theme,
+    surface: Color,
 ) -> Text<'static> {
-    let mut lines = vec![
-        Line::from(vec![Span::styled(
-            permission_modal_summary_line(permission, submission_pending),
-            summary_style.add_modifier(Modifier::BOLD),
-        )]),
-        Line::from(vec![Span::styled(
-            permission_modal_guidance(permission, submission_pending),
-            guidance_style,
-        )]),
-        Line::from(vec![Span::styled(
-            permission_modal_draft_line(app.prompt_buffer.as_str()),
-            metadata_style,
-        )]),
-        Line::from(vec![Span::styled(
-            permission_modal_metadata_line(permission),
-            metadata_style,
-        )]),
-        Line::from(""),
-    ];
-
     if prompts.is_empty() {
-        return Text::from(lines);
+        return Text::default();
     }
 
+    let primary_style = Style::default().fg(theme.text.primary).bg(surface);
+    let muted_style = Style::default().fg(theme.text.secondary).bg(surface);
+    let accent_style = Style::default()
+        .fg(theme.text.inverse)
+        .bg(ui_chrome::question_prompt_accent(theme));
+    let active_surface = theme.surface.panel_elevated;
+    let active_number_style = Style::default()
+        .fg(question_prompt_tint(
+            theme.text.secondary,
+            ui_chrome::question_prompt_secondary(theme),
+            0.6,
+        ))
+        .bg(active_surface);
+    let active_label_style = Style::default()
+        .fg(ui_chrome::question_prompt_secondary(theme))
+        .bg(active_surface);
+    let success_style = Style::default().fg(theme.status.success).bg(surface);
+    let error_style = Style::default().fg(theme.status.error).bg(surface);
     let single = prompts.len() == 1 && !prompts[0].multiple;
     let tab = app
         .question_prompt_tab(&permission.permission_id)
         .min(prompts.len());
     let confirm = !single && tab >= prompts.len();
     let answers = app.question_prompt_answers(&permission.permission_id);
+    let mut lines = Vec::new();
 
     if !single {
         let mut tabs = Vec::new();
         for (index, prompt) in prompts.iter().enumerate() {
             if index > 0 {
-                tabs.push(Span::styled(" ", metadata_style));
+                tabs.push(Span::styled(" ", Style::default().bg(surface)));
             }
             let answered = answers.get(index).is_some_and(|value| !value.is_empty());
             tabs.push(Span::styled(
                 format!(" {} ", prompt.header),
                 if index == tab {
-                    summary_style.add_modifier(Modifier::BOLD)
+                    accent_style
                 } else if answered {
-                    summary_style
+                    primary_style
                 } else {
-                    metadata_style
+                    muted_style
                 },
             ));
         }
-        tabs.push(Span::styled(" ", metadata_style));
+        tabs.push(Span::styled(" ", Style::default().bg(surface)));
         tabs.push(Span::styled(
             " Confirm ",
-            if confirm {
-                summary_style.add_modifier(Modifier::BOLD)
-            } else {
-                metadata_style
-            },
+            if confirm { accent_style } else { muted_style },
         ));
         lines.push(Line::from(tabs));
-        lines.push(Line::from(""));
+        lines.push(Line::default());
     }
 
     if confirm {
-        lines.push(Line::from(vec![Span::styled(
-            "Review",
-            summary_style.add_modifier(Modifier::BOLD),
-        )]));
+        lines.push(Line::from(vec![Span::styled("Review", primary_style)]));
         for (index, prompt) in prompts.iter().enumerate() {
             let value = answers
                 .get(index)
                 .map(|value| value.join(", "))
                 .unwrap_or_default();
             lines.push(Line::from(vec![
-                Span::styled(format!("{}: ", prompt.header), metadata_style),
+                Span::styled(format!("{}: ", prompt.header), muted_style),
                 Span::styled(
                     if value.is_empty() {
                         "(not answered)".to_string()
@@ -1313,9 +1413,9 @@ pub(super) fn question_permission_body_text(
                         value
                     },
                     if answers.get(index).is_some_and(|value| !value.is_empty()) {
-                        summary_style
+                        primary_style
                     } else {
-                        metadata_style
+                        error_style
                     },
                 ),
             ]));
@@ -1333,122 +1433,131 @@ pub(super) fn question_permission_body_text(
         } else {
             prompt.question.clone()
         },
-        summary_style.add_modifier(Modifier::BOLD),
+        primary_style,
     )]));
+    lines.push(Line::default());
 
     for (index, option) in prompt.options.iter().enumerate() {
         let picked = current_answers.iter().any(|value| value == &option.label);
-        let marker = if index == selected { "›" } else { " " };
-        let label = if prompt.multiple {
-            format!("[{}] {}", if picked { '✓' } else { ' ' }, option.label)
-        } else if picked {
-            format!("{} ✓", option.label)
-        } else {
-            option.label.clone()
-        };
-        lines.push(Line::from(vec![Span::styled(
-            format!("{marker} {}. {label}", index + 1),
-            if index == selected {
-                summary_style
+        let active = index == selected;
+        let mut row = vec![Span::styled(
+            format!("{}.", index + 1),
+            if active {
+                active_number_style
             } else {
-                guidance_style
+                muted_style
             },
-        )]));
+        )];
+        row.push(Span::styled(
+            " ",
+            Style::default().bg(if active { active_surface } else { surface }),
+        ));
+        row.push(Span::styled(
+            if prompt.multiple {
+                format!("[{}] {}", if picked { '✓' } else { ' ' }, option.label)
+            } else {
+                option.label.clone()
+            },
+            if active {
+                active_label_style
+            } else if prompt.multiple && picked {
+                success_style
+            } else {
+                primary_style
+            },
+        ));
+        if !prompt.multiple {
+            row.push(Span::styled(if picked { "✓" } else { "" }, success_style));
+        }
+        lines.push(Line::from(row));
         lines.push(Line::from(vec![Span::styled(
-            format!("    {}", option.description),
-            metadata_style,
+            format!("   {}", option.description),
+            muted_style,
         )]));
     }
 
     if prompt.custom {
-        let picked = app
+        let custom_value = app
             .question_prompt_custom(&permission.permission_id, tab)
-            .is_some_and(|value| !value.is_empty())
-            && current_answers.iter().any(|value| {
-                app.question_prompt_custom(&permission.permission_id, tab)
-                    .is_some_and(|custom| custom == value)
-            });
+            .unwrap_or_default();
+        let picked =
+            !custom_value.is_empty() && current_answers.iter().any(|value| value == custom_value);
         let active = selected == prompt.options.len();
-        lines.push(Line::from(vec![Span::styled(
-            format!(
-                "{} {}. {}",
-                if active { "›" } else { " " },
-                prompt.options.len() + 1,
-                if prompt.multiple {
-                    format!("[{}] Type your own answer", if picked { '✓' } else { ' ' })
-                } else if picked {
-                    "Type your own answer ✓".to_string()
-                } else {
-                    "Type your own answer".to_string()
-                }
-            ),
+        let mut row = vec![Span::styled(
+            format!("{}.", prompt.options.len() + 1),
             if active {
-                summary_style
+                active_number_style
             } else {
-                guidance_style
+                muted_style
             },
+        )];
+        row.push(Span::styled(
+            " ",
+            Style::default().bg(if active { active_surface } else { surface }),
+        ));
+        row.push(Span::styled(
+            if prompt.multiple {
+                format!("[{}] Type your own answer", if picked { '✓' } else { ' ' })
+            } else {
+                "Type your own answer".to_string()
+            },
+            if active {
+                active_label_style
+            } else if prompt.multiple && picked {
+                success_style
+            } else {
+                primary_style
+            },
+        ));
+        if !prompt.multiple {
+            row.push(Span::styled(if picked { "✓" } else { "" }, success_style));
+        }
+        lines.push(Line::from(row));
+
+        let editing = app.question_prompt_editing(&permission.permission_id) && active;
+        if editing {
+            let preview = app.question_answer_preview(&permission.permission_id);
+            let (text, style) = if preview == "█" {
+                ("Type your own answer".to_string(), muted_style)
+            } else {
+                (preview, primary_style)
+            };
+            lines.push(Line::from(vec![Span::styled(format!("   {text}"), style)]));
+        } else if !custom_value.is_empty() {
+            lines.push(Line::from(vec![Span::styled(
+                format!("   {custom_value}"),
+                muted_style,
+            )]));
+        }
+    }
+
+    if let Some(error) = app.question_answer_error(&permission.permission_id) {
+        lines.push(Line::default());
+        lines.push(Line::from(vec![Span::styled(
+            error.to_string(),
+            error_style,
         )]));
     }
 
     Text::from(lines)
 }
 
-pub(super) fn question_permission_answer_text(
-    app: &AppState,
-    permission: &crate::app::ActivePermissionView,
-    theme: &Theme,
-    surface: Color,
-) -> Text<'static> {
-    let metadata_style = Style::default().fg(theme.text.secondary).bg(surface);
-    let primary_style = Style::default().fg(theme.text.primary).bg(surface);
-    let Some(prompts) = permission.question_prompts.as_ref() else {
-        return Text::default();
-    };
-    let single = prompts.len() == 1 && !prompts[0].multiple;
-    let confirm = !single && app.question_prompt_tab(&permission.permission_id) >= prompts.len();
-    let editing = app.question_prompt_editing(&permission.permission_id);
-    let mut lines = if confirm {
-        vec![Line::from(vec![Span::styled(
-            "Allow once submits the selected answers.",
-            metadata_style,
-        )])]
-    } else if editing {
-        vec![
-            Line::from(vec![Span::styled(
-                "Custom answer",
-                primary_style.add_modifier(Modifier::BOLD),
-            )]),
-            Line::from(vec![Span::styled(
-                app.question_answer_preview(&permission.permission_id),
-                primary_style,
-            )]),
-        ]
-    } else {
-        let value = app.question_answer_preview(&permission.permission_id);
-        let mut lines = Vec::new();
-        if !value.is_empty() {
-            lines.push(Line::from(vec![Span::styled(
-                "Custom answer",
-                primary_style.add_modifier(Modifier::BOLD),
-            )]));
-            lines.push(Line::from(vec![Span::styled(value, metadata_style)]));
+fn question_prompt_tint(base: Color, overlay: Color, alpha: f32) -> Color {
+    match (base, overlay) {
+        (
+            Color::Rgb(base_red, base_green, base_blue),
+            Color::Rgb(overlay_red, overlay_green, overlay_blue),
+        ) => {
+            let blend = |base: u8, overlay: u8| -> u8 {
+                let value = (f32::from(base) * (1.0 - alpha)) + (f32::from(overlay) * alpha);
+                value.round().clamp(0.0, 255.0) as u8
+            };
+            Color::Rgb(
+                blend(base_red, overlay_red),
+                blend(base_green, overlay_green),
+                blend(base_blue, overlay_blue),
+            )
         }
-        lines
-    };
-    if let Some(error) = app.question_answer_error(&permission.permission_id) {
-        lines.push(Line::from(vec![Span::styled(
-            error.to_string(),
-            Style::default().fg(theme.status.error).bg(surface),
-        )]));
-    } else {
-        lines.push(Line::from(vec![Span::styled(
-            if editing {
-                "Press Enter to save the custom answer."
-            } else {
-                "Select an option, then allow once sends the answers."
-            },
-            metadata_style,
-        )]));
+        _ => overlay,
     }
-    Text::from(lines)
 }

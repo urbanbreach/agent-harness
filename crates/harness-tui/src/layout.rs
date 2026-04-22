@@ -26,7 +26,6 @@ const DENSE_SESSION_MAX_HEIGHT: u16 = 18;
 const COMPACT_SESSION_MAX_WIDTH: u16 = 80;
 const COMPACT_SESSION_MAX_HEIGHT: u16 = 24;
 const DENSE_SESSION_PALETTE_MAX_WIDTH: u16 = 46;
-const DENSE_SESSION_SLASH_MAX_WIDTH: u16 = 32;
 const COMMAND_PALETTE_WIDTH: u16 = 60;
 const PERSISTENT_SIDEBAR_MIN_WIDTH: u16 = 121;
 const STARTUP_COMPOSER_MAX_WIDTH: u16 = 75;
@@ -34,6 +33,9 @@ const RUNTIME_STATE_SURFACE_HORIZONTAL_INSET: u16 = 6;
 const RUNTIME_STATE_SURFACE_MAX_WIDTH: u16 = 68;
 const RUNTIME_STATE_SURFACE_MIN_WIDTH: u16 = 32;
 const RUNTIME_STATE_SURFACE_MIN_HEIGHT: u16 = 5;
+const SLASH_COMMAND_OVERLAY_GAP_Y: u16 = 1;
+const SLASH_COMMAND_OVERLAY_INSET_X: u16 = 2;
+const SLASH_COMMAND_OVERLAY_INSET_Y: u16 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SessionResponsiveMode {
@@ -161,6 +163,7 @@ pub struct FrameLayoutPlan {
     pub footer_text: Rect,
     pub details_overlay: Option<Rect>,
     pub palette_overlay: Option<Rect>,
+    pub slash_overlay: Option<Rect>,
     pub wheel_hit_areas: WheelHitAreas,
     pub(crate) session_contract: SessionGeometryContract,
 }
@@ -245,6 +248,7 @@ impl FrameLayoutPlan {
             footer_text,
             details_overlay: None,
             palette_overlay,
+            slash_overlay: None,
             wheel_hit_areas: WheelHitAreas::default(),
             session_contract,
         };
@@ -258,6 +262,11 @@ impl FrameLayoutPlan {
         plan.composer = Some(session.dock.composer);
         plan.disclosure = session.dock.disclosure;
         plan.details_overlay = session.operator_overlay;
+        plan.slash_overlay = matches!(app.overlay_stack().top(), Some(OverlayKind::SlashCommands))
+            .then(|| {
+                slash_command_overlay_area(session.dock.composer, theme, session_contract, app)
+            })
+            .flatten();
         plan.wheel_hit_areas = WheelHitAreas {
             transcript: Some(session.transcript),
             overlay: (!session.operator_sidebar_compact_empty)
@@ -291,7 +300,7 @@ pub(crate) fn session_geometry_contract(
             footer_mode: SessionFooterMode::Minimal,
             sidebar_mode: SessionSidebarMode::Hidden,
             palette_overlay_max_width: Some(DENSE_SESSION_PALETTE_MAX_WIDTH),
-            slash_overlay_max_width: Some(DENSE_SESSION_SLASH_MAX_WIDTH),
+            slash_overlay_max_width: None,
         },
         SessionResponsiveMode::CompactMinimum => SessionGeometryContract {
             header_mode: SessionHeaderMode::Hidden,
@@ -1065,6 +1074,64 @@ fn command_palette_overlay_height(app: &AppState, terminal_height: u16) -> u16 {
         let command_rows = u16::try_from(command_rows).unwrap_or(u16::MAX);
         COMMAND_OVERLAY_ROWS.saturating_add(command_rows)
     }
+}
+
+fn slash_command_overlay_area(
+    composer: Rect,
+    _theme: &Theme,
+    contract: SessionGeometryContract,
+    app: &AppState,
+) -> Option<Rect> {
+    if !app.slash_visible || composer.width == 0 || composer.y <= SLASH_COMMAND_OVERLAY_GAP_Y {
+        return None;
+    }
+
+    let popup_width = composer
+        .width
+        .min(contract.slash_overlay_max_width.unwrap_or(u16::MAX))
+        .max(1);
+    let popup_x = composer
+        .x
+        .saturating_add(composer.width.saturating_sub(popup_width) / 2);
+    let popup_height = slash_command_overlay_height(app)
+        .saturating_add(SLASH_COMMAND_OVERLAY_INSET_Y.saturating_mul(2))
+        .min(
+            composer
+                .y
+                .saturating_sub(SLASH_COMMAND_OVERLAY_GAP_Y)
+                .max(1),
+        );
+    if popup_height <= SLASH_COMMAND_OVERLAY_INSET_Y.saturating_mul(2) {
+        return None;
+    }
+
+    let popup_y = composer
+        .y
+        .saturating_sub(SLASH_COMMAND_OVERLAY_GAP_Y)
+        .saturating_sub(popup_height);
+    Some(Rect::new(popup_x, popup_y, popup_width, popup_height))
+}
+
+pub(crate) fn slash_command_overlay_content_area(overlay: Rect) -> Rect {
+    let horizontal_inset = SLASH_COMMAND_OVERLAY_INSET_X.min(overlay.width / 2);
+    let vertical_inset = SLASH_COMMAND_OVERLAY_INSET_Y.min(overlay.height / 2);
+    Rect::new(
+        overlay.x.saturating_add(horizontal_inset),
+        overlay.y.saturating_add(vertical_inset),
+        overlay
+            .width
+            .saturating_sub(horizontal_inset.saturating_mul(2)),
+        overlay
+            .height
+            .saturating_sub(vertical_inset.saturating_mul(2)),
+    )
+}
+
+fn slash_command_overlay_height(app: &AppState) -> u16 {
+    const MAX_ROWS: usize = 10;
+
+    let rows = app.slash_filtered.len().clamp(1, MAX_ROWS);
+    u16::try_from(rows).unwrap_or(u16::MAX)
 }
 
 fn command_palette_visible_rows(app: &AppState) -> usize {

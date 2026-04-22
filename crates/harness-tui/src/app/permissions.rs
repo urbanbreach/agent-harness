@@ -340,7 +340,10 @@ impl AppState {
         let mut slash_app = AppState::new_live(None, false, None);
         slash_app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
         assert!(slash_app.slash_visible);
-        assert_eq!(slash_app.overlay_stack().top(), None);
+        assert_eq!(
+            slash_app.overlay_stack().top(),
+            Some(OverlayKind::SlashCommands)
+        );
 
         slash_app.ingest_event(permission_event(
             1,
@@ -563,6 +566,13 @@ impl AppState {
                 KeyCode::Char(c @ '1'..='9') => {
                     if !confirm {
                         let index = usize::from((c as u8).saturating_sub(b'1'));
+                        let Some(prompt) = prompts.get(self.question_prompt_tab) else {
+                            return;
+                        };
+                        let max = question_prompt_choice_count(prompt).min(9);
+                        if index >= max {
+                            return;
+                        }
                         self.question_prompt_selection = index;
                         self.activate_question_selection(&permission.permission_id, prompts);
                         self.maybe_auto_exit();
@@ -720,6 +730,21 @@ impl AppState {
         self.question_prompt_selection =
             self.question_prompt_selection.min(total.saturating_sub(1));
         if prompt.custom && self.question_prompt_selection == prompt.options.len() {
+            if prompt.multiple {
+                let current = self
+                    .question_prompt_custom
+                    .get(self.question_prompt_tab)
+                    .cloned()
+                    .unwrap_or_default();
+                if !current.is_empty()
+                    && self.question_prompt_answers[self.question_prompt_tab]
+                        .iter()
+                        .any(|value| value == &current)
+                {
+                    self.toggle_question_answer(self.question_prompt_tab, &current);
+                    return;
+                }
+            }
             self.start_question_custom_edit(permission_id);
             return;
         }
@@ -1005,14 +1030,6 @@ fn build_question_answers(
 
     for (index, prompt) in prompts.iter().enumerate() {
         let values = current_answers.get(index).cloned().unwrap_or_default();
-        if values.is_empty() {
-            return Err(format!(
-                "Answer question {} ({}) before continuing.",
-                index + 1,
-                prompt.header
-            ));
-        }
-
         if !prompt.multiple && values.len() > 1 {
             return Err(format!(
                 "Question {} ({}) accepts only one answer.",

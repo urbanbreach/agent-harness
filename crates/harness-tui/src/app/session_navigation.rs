@@ -1053,7 +1053,7 @@ impl AppState {
     }
 
     pub(in crate::app) fn slash_overlay_should_render(&self) -> bool {
-        false
+        self.slash_visible
     }
 
     pub(in crate::app) fn sync_slash_overlay(&mut self) {
@@ -1075,19 +1075,17 @@ impl AppState {
         let slash_query = self.active_slash_query().unwrap_or_default().to_lowercase();
 
         self.slash_visible = true;
-        self.slash_filtered = SLASH_COMMANDS
+        let mut filtered = SLASH_COMMANDS
             .iter()
             .filter(|(command, _)| self.slash_command_available(command))
-            .filter(|(command, description)| {
-                slash_query.is_empty()
-                    || command.starts_with(&slash_query)
-                    || description.to_lowercase().contains(&slash_query)
+            .filter_map(|(command, description)| {
+                slash_command_match_rank(command, description, &slash_query)
+                    .map(|rank| (rank, (*command).to_string()))
             })
-            .map(|(command, _)| (*command).to_string())
-            .collect();
-        self.slash_selected = self
-            .slash_selected
-            .min(self.slash_filtered.len().saturating_sub(1));
+            .collect::<Vec<_>>();
+        filtered.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
+        self.slash_filtered = filtered.into_iter().map(|(_, command)| command).collect();
+        self.slash_selected = 0;
     }
 
     pub(in crate::app) fn typed_slash_command(&self) -> Option<&'static str> {
@@ -1104,12 +1102,17 @@ impl AppState {
     fn slash_command_available(&self, command: &str) -> bool {
         match command {
             "new" | "exit" => true,
-            "resume" | "replay" | "model" => !self.replay_mode,
+            "resume" | "replay" => !self.replay_mode,
+            "model" => self.model_switcher_supported(),
             "events" => !self.startup_mode,
             "shell" => self.active_review_surface.is_some(),
             "follow" => !self.replay_mode && !self.startup_mode,
             _ => false,
         }
+    }
+
+    fn model_switcher_supported(&self) -> bool {
+        false
     }
 
     fn restore_slash_draft(&mut self, preserved_draft: Option<String>) {
@@ -1242,29 +1245,51 @@ impl AppState {
     }
 
     pub(in crate::app) fn handle_slash_key(&mut self, key: &KeyEvent) -> bool {
-        match key.code {
-            KeyCode::Esc => {
-                self.clear_slash_menu();
+        match (key.code, key.modifiers) {
+            (KeyCode::Esc, _) => {
+                self.restore_slash_draft(self.slash_draft_snapshot.clone());
                 true
             }
-            KeyCode::Enter | KeyCode::Tab => {
+            (KeyCode::Enter, _) | (KeyCode::Tab, _) => {
                 self.apply_selected_slash_completion();
                 true
             }
-            KeyCode::Up => {
-                if self.slash_selected > 0 {
-                    self.slash_selected -= 1;
-                }
+            (KeyCode::Up, KeyModifiers::NONE) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
+                self.move_slash_selection(-1);
                 true
             }
-            KeyCode::Down => {
-                if self.slash_selected + 1 < self.slash_filtered.len() {
-                    self.slash_selected += 1;
-                }
+            (KeyCode::Down, KeyModifiers::NONE) | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
+                self.move_slash_selection(1);
                 true
             }
             _ => false,
         }
+    }
+
+    fn move_slash_selection(&mut self, delta: isize) {
+        let len = self.slash_filtered.len();
+        if len == 0 {
+            self.slash_selected = 0;
+            return;
+        }
+
+        if delta == -1 {
+            self.slash_selected = if self.slash_selected == 0 {
+                len - 1
+            } else {
+                self.slash_selected - 1
+            };
+            return;
+        }
+
+        if delta == 1 {
+            self.slash_selected = (self.slash_selected + 1) % len;
+            return;
+        }
+
+        let current = self.slash_selected.min(len.saturating_sub(1)) as isize;
+        let next = (current + delta).clamp(0, len.saturating_sub(1) as isize);
+        self.slash_selected = usize::try_from(next).unwrap_or(0);
     }
 
     fn handle_palette_key(&mut self, key: &KeyEvent) -> bool {
@@ -1498,7 +1523,7 @@ impl AppState {
 
     fn palette_command_available(&self, command_id: &str) -> bool {
         if command_id == "switch_model" {
-            return !self.replay_mode;
+            return self.model_switcher_supported();
         }
 
         if command_id == "cycle_variant" {
@@ -2122,6 +2147,10 @@ impl AppState {
     }
 
     pub(super) fn open_model_switcher(&mut self) {
+        if !self.model_switcher_supported() {
+            self.model_switcher_visible = false;
+            return;
+        }
         if !self.model_switcher_visible {
             self.palette_focus_return.get_or_insert(self.focus);
         }
@@ -2399,6 +2428,48 @@ impl AppState {
             }
         }
     }
+}
+
+fn slash_command_match_rank(command: &str, description: &str, query: &str) -> Option<(u8, usize)> {
+    if query.is_empty() {
+        return Some((5, 0));
+    }
+
+    if command == query {
+        return Some((6, 0));
+    }
+
+    if command.starts_with(query) {
+        return Some((5, command.len().saturating_sub(query.len())));
+    }
+
+    if let Some(index) = command.find(query) {
+        return Some((4, index));
+    }
+
+    if let Some(score) = slash_subsequence_score(command, query) {
+        return Some((3, score));
+    }
+
+    description
+        .to_lowercase()
+        .find(query)
+        .map(|index| (2, index))
+}
+
+fn slash_subsequence_score(haystack: &str, needle: &str) -> Option<usize> {
+    let mut total_gap = 0usize;
+    let mut last_index = 0usize;
+
+    for ch in needle.chars() {
+        let next = haystack[last_index..].find(ch)?;
+        total_gap = total_gap.saturating_add(next);
+        last_index = last_index
+            .saturating_add(next)
+            .saturating_add(ch.len_utf8());
+    }
+
+    Some(total_gap)
 }
 
 fn humanize_profile_label(profile: &str) -> String {

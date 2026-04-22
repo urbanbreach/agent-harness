@@ -10,6 +10,7 @@ use crossterm::event::{
     PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
 use harness_core::event::EventEnvelopeV1;
+use ratatui::buffer::Buffer;
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 use crate::app::{AppState, LaunchMetadata, SessionHistoryEntry, UiIntent};
@@ -25,11 +26,12 @@ struct LiveUpdateDrainState {
     disconnected: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct PreservedTerminalSession {
     active: bool,
     keyboard_enhancements_enabled: bool,
     mouse_capture_enabled: bool,
+    buffer: Option<Buffer>,
 }
 
 fn recover_mutex_lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -139,7 +141,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         }
     };
 
-    let preserved_terminal = *recover_mutex_lock(preserved_terminal_session());
+    let preserved_terminal = recover_mutex_lock(preserved_terminal_session()).clone();
     let reusing_terminal = preserved_terminal.active;
     let mut keyboard_enhancements_enabled = preserved_terminal.keyboard_enhancements_enabled;
     let mut mouse_capture_enabled = preserved_terminal.mouse_capture_enabled;
@@ -186,6 +188,11 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
 
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+    if let Some(buffer) = preserved_terminal.buffer.as_ref() {
+        if terminal.current_buffer_mut().area == buffer.area {
+            *terminal.current_buffer_mut() = buffer.clone();
+        }
+    }
 
     let run_result = (|| -> Result<()> {
         let mut redraw_requested = true;
@@ -300,6 +307,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             active: true,
             keyboard_enhancements_enabled,
             mouse_capture_enabled,
+            buffer: Some(terminal.current_buffer_mut().clone()),
         };
         return run_result;
     }

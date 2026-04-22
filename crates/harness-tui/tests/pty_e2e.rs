@@ -266,6 +266,11 @@ fn pty_e2e_snapshots_are_stable() {
     assert_or_update_snapshot("startup_palette", &startup_palette);
     assert_visual_artifact_exists("startup_palette", PtyGeometry::PRIMARY_SIGNOFF);
 
+    let startup_slash_commands =
+        capture_startup_slash_commands_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
+    assert_or_update_snapshot("startup_slash_commands", &startup_slash_commands);
+    assert_visual_artifact_exists("startup_slash_commands", PtyGeometry::PRIMARY_SIGNOFF);
+
     let startup_session_history =
         capture_startup_session_history_snapshot(PtyGeometry::PRIMARY_SIGNOFF);
     assert_or_update_snapshot("startup_session_history", &startup_session_history);
@@ -613,7 +618,7 @@ fn question_permission_renders_inline_prompt_in_pty() {
     let screen = wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
-        "Question required",
+        "Type your own answer",
         MARKER_TIMEOUT,
     )
     .expect("wait for question permission marker");
@@ -621,11 +626,11 @@ fn question_permission_renders_inline_prompt_in_pty() {
     assert_screen_contains_all(
         &screen,
         &[
-            "Question required",
             "Pick one",
             "Type your own answer",
             "↑↓ select",
-            "default deny",
+            "enter submit",
+            "esc dismiss",
         ],
     );
     write_visual_artifact(
@@ -2032,6 +2037,38 @@ fn capture_startup_palette_snapshot(geometry: PtyGeometry) -> String {
     normalize_snapshot(&screen)
 }
 
+fn capture_startup_slash_commands_snapshot(geometry: PtyGeometry) -> String {
+    let mut helper = spawn_helper_pty(HelperScenario::StartupShell, geometry);
+    wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        STARTUP_LAUNCHER_READY_MARKER,
+        STARTUP_TIMEOUT,
+    )
+    .expect("wait for startup launcher before opening slash commands");
+
+    helper
+        .writer
+        .write_all(b"/")
+        .expect("type startup slash command trigger");
+    helper
+        .writer
+        .flush()
+        .expect("flush startup slash command trigger");
+
+    let screen = wait_for_screen_contains(
+        &mut helper.parser,
+        &helper.output_rx,
+        "/new",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for startup slash command overlay");
+
+    write_visual_artifact("startup_slash_commands", geometry, &helper.parser);
+    terminate_child(helper.child);
+    normalize_snapshot(&screen)
+}
+
 fn capture_startup_session_history_snapshot(geometry: PtyGeometry) -> String {
     let mut helper = spawn_helper_pty(HelperScenario::StartupSessionHistory, geometry);
     wait_for_screen_contains(
@@ -2143,7 +2180,7 @@ fn capture_permission_with_draft_snapshot(geometry: PtyGeometry) -> String {
 
     assert!(
         screen.contains("Allow always"),
-        "permission snapshot lost Opencode-style controls"
+        "permission snapshot lost reference dialog controls"
     );
     write_visual_artifact("permission_with_draft", geometry, &helper.parser);
     terminate_child(helper.child);

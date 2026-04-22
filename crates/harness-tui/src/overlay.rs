@@ -1,6 +1,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OverlayKind {
     DetailsDrawer,
+    SlashCommands,
     CommandPalette,
     PermissionModal,
 }
@@ -8,6 +9,7 @@ pub enum OverlayKind {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OverlayState {
     pub details_drawer_open: bool,
+    pub slash_visible: bool,
     pub palette_visible: bool,
     pub session_history_visible: bool,
     pub permission_pending: bool,
@@ -26,9 +28,12 @@ pub struct OverlayStack {
 
 impl OverlayStack {
     pub fn from_state(state: OverlayState) -> Self {
-        let mut overlays = Vec::with_capacity(3);
+        let mut overlays = Vec::with_capacity(4);
         if state.details_drawer_open {
             overlays.push(OverlayKind::DetailsDrawer);
+        }
+        if state.slash_visible && !state.permission_pending {
+            overlays.push(OverlayKind::SlashCommands);
         }
         if state.command_palette_channel_visible() && !state.permission_pending {
             overlays.push(OverlayKind::CommandPalette);
@@ -50,7 +55,11 @@ impl OverlayStack {
     pub fn blocks_pointer_interaction(&self) -> bool {
         matches!(
             self.top(),
-            Some(OverlayKind::CommandPalette | OverlayKind::PermissionModal)
+            Some(
+                OverlayKind::SlashCommands
+                    | OverlayKind::CommandPalette
+                    | OverlayKind::PermissionModal
+            )
         )
     }
 }

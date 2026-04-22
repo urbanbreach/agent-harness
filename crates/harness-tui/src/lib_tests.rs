@@ -357,6 +357,7 @@ fn operator_sidebar_compact_empty_mode_preserves_anchor_copy_with_fixed_width() 
     for (label, app) in [("live", &live_empty), ("replay", &replay_empty)] {
         let sidebar = operator_sidebar_text(app);
         let has_mcp_state = sidebar.contains("No MCP integrations configured")
+            || sidebar.contains("No MCP servers configured")
             || sidebar.contains("websearch Disconnected");
         let has_lsp_state =
             sidebar.contains("No active LSP servers") || sidebar.contains("LSP disabled");
@@ -447,6 +448,10 @@ delegate_test!(startup_slash_commands_execute_without_menu => app::exact_test_st
 delegate_test!(slash_new_preserves_draft_and_returns_home => app::exact_test_slash_new_preserves_draft_and_returns_home);
 delegate_test!(replay_mode_disables_slash_workflow => app::exact_test_replay_mode_disables_slash_workflow);
 delegate_test!(slash_replay_opens_history_and_restores_draft => app::exact_test_slash_replay_opens_history_and_restores_draft);
+delegate_test!(slash_resume_opens_history_and_restores_draft => app::exact_test_slash_resume_opens_history_and_restores_draft);
+delegate_test!(slash_events_opens_review_surface => app::exact_test_slash_events_opens_review_surface);
+delegate_test!(slash_shell_closes_review_surface => app::exact_test_slash_shell_closes_review_surface);
+delegate_test!(slash_follow_toggles_follow_mode => app::exact_test_slash_follow_toggles_follow_mode);
 
 #[cfg(test)]
 #[test]
@@ -1007,7 +1012,10 @@ fn slash_commands_only_track_leading_slash_input() {
     let mut app = app::AppState::new_live(None, false, None);
     app.handle_key(key(crossterm::event::KeyCode::Char('/')));
     assert!(app.slash_visible);
-    assert_eq!(app.overlay_stack().top(), None);
+    assert_eq!(
+        app.overlay_stack().top(),
+        Some(overlay::OverlayKind::SlashCommands)
+    );
 
     app.handle_key(key(crossterm::event::KeyCode::Char('h')));
     assert!(app.slash_visible);
@@ -1173,20 +1181,41 @@ fn live_composer_disclosure_keeps_compact_summary_and_commands() {
 
 #[cfg(test)]
 #[test]
-fn command_palette_preserves_typed_slash_input() {
+fn slash_overlay_uses_opencode_navigation_keys() {
     let mut app = app::AppState::new_live(None, false, None);
     app.handle_key(key(crossterm::event::KeyCode::Char('/')));
-    assert_eq!(app.overlay_stack().top(), None);
+    assert_eq!(
+        app.overlay_stack().top(),
+        Some(overlay::OverlayKind::SlashCommands)
+    );
 
     app.handle_key(key_with_modifiers(
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
     assert_eq!(
-        app.overlay_stack().top(),
-        Some(overlay::OverlayKind::CommandPalette)
+        app.slash_selected,
+        app.slash_filtered.len().saturating_sub(1)
     );
-    assert_eq!(app.prompt_buffer, "/");
+
+    app.handle_key(key(crossterm::event::KeyCode::Down));
+    assert_eq!(app.slash_selected, 0);
+
+    app.handle_key(key(crossterm::event::KeyCode::Up));
+    assert_eq!(
+        app.slash_selected,
+        app.slash_filtered.len().saturating_sub(1)
+    );
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('n'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    assert_eq!(app.slash_selected, 0);
+
+    app.handle_key(key(crossterm::event::KeyCode::Esc));
+    assert_eq!(app.prompt_buffer, "");
+    assert!(!app.slash_visible);
 }
 
 #[cfg(test)]
@@ -1397,7 +1426,7 @@ fn dense_minimum_shell_hides_sidebar_and_caps_overlays() {
     assert_eq!(contract.footer_mode, layout::SessionFooterMode::Minimal);
     assert_eq!(contract.sidebar_mode, layout::SessionSidebarMode::Hidden);
     assert_eq!(contract.palette_overlay_max_width, Some(46));
-    assert_eq!(contract.slash_overlay_max_width, Some(32));
+    assert_eq!(contract.slash_overlay_max_width, None);
 
     let non_dense = layout::session_geometry_contract(
         ratatui::layout::Rect::new(0, 0, 61, 19),
@@ -1423,6 +1452,30 @@ fn dense_minimum_shell_hides_sidebar_and_caps_overlays() {
         palette_plan.palette_overlay.map(|overlay| overlay.width),
         Some(58)
     );
+}
+
+#[cfg(test)]
+#[test]
+fn slash_overlay_matches_composer_width_and_keeps_reference_gap() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.handle_key(exact_test_key(crossterm::event::KeyCode::Char('/')));
+
+    let area = ratatui::layout::Rect::new(0, 0, 100, 30);
+    let plan = layout::FrameLayoutPlan::for_app(&app, area);
+    let composer = plan.dock.expect("live dock layout").composer;
+    let overlay = plan.slash_overlay.expect("slash overlay");
+    let content = layout::slash_command_overlay_content_area(overlay);
+
+    assert_eq!(overlay.x, composer.x);
+    assert_eq!(overlay.width, composer.width);
+    assert_eq!(
+        overlay.y.saturating_add(overlay.height).saturating_add(1),
+        composer.y
+    );
+    assert_eq!(content.x, overlay.x.saturating_add(2));
+    assert_eq!(content.width, overlay.width.saturating_sub(4));
+    assert_eq!(content.y, overlay.y.saturating_add(1));
+    assert_eq!(content.height, overlay.height.saturating_sub(2));
 }
 
 #[cfg(test)]
@@ -5999,7 +6052,6 @@ fn command_palette_renders_and_filters() {
             "new_session".to_string(),
             "resume_session".to_string(),
             "replay_session".to_string(),
-            "switch_model".to_string(),
             "cycle_variant".to_string(),
             "open_event_log".to_string(),
             "toggle_follow".to_string(),
@@ -6026,6 +6078,23 @@ fn command_palette_renders_and_filters() {
     assert!(filtered_debug.contains("Commands"));
     assert!(filtered_debug.contains("Start a fresh live session"));
     assert!(!filtered_debug.contains("Review diff artifact"));
+}
+
+#[cfg(test)]
+#[test]
+fn command_palette_hides_unimplemented_model_switcher() {
+    let mut app = app::AppState::new_live(None, false, None);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+
+    assert!(app.palette_visible);
+    assert!(!app
+        .palette_filtered
+        .iter()
+        .any(|command| command == "switch_model"));
 }
 
 #[cfg(test)]
@@ -8511,6 +8580,7 @@ fn live_shell_details_drawer_orchestration_primary_snapshot() {
     assert!(!rendered.contains("provider openai"));
     assert!(
         rendered.contains("No MCP integrations configured")
+            || rendered.contains("No MCP servers configured")
             || rendered.contains("websearch Disconnected")
     );
     assert!(rendered.contains("No active LSP servers"));
@@ -9357,6 +9427,7 @@ fn operator_sidebar_matches_parity_information_architecture() {
     assert!(sidebar.contains("0 tokens"));
     assert!(
         sidebar.contains("No MCP integrations configured")
+            || sidebar.contains("No MCP servers configured")
             || sidebar.contains("websearch Disconnected")
     );
     assert!(sidebar.contains("No active LSP servers"));
@@ -9402,7 +9473,11 @@ fn operator_sidebar_uses_explicit_empty_states() {
     assert!(sidebar.contains("Context"));
     assert!(sidebar.contains("0 tokens"));
     assert!(sidebar.contains("▼ MCP"));
-    assert!(sidebar.contains("websearch Disconnected"));
+    assert!(
+        sidebar.contains("No MCP integrations configured")
+            || sidebar.contains("No MCP servers configured")
+            || sidebar.contains("websearch Disconnected")
+    );
     assert!(sidebar.contains("▼ LSP"));
     assert!(sidebar.contains("No active LSP servers"));
     assert!(sidebar.contains("▶ Modified Files"));

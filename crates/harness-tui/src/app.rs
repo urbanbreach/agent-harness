@@ -23,14 +23,14 @@ use crate::keybindings::{Action, KeyMap};
 use crate::overlay::{OverlayKind, OverlayStack, OverlayState};
 use crate::theme::Theme;
 use crate::ui::{
-    TranscriptScrollbarHit, TranscriptSelection, TranscriptSelectionCell, WheelTarget,
+    TranscriptMouseTarget, TranscriptScrollbarHit, TranscriptSelection, TranscriptSelectionCell,
+    WheelTarget,
 };
 use crate::view_model;
 use crate::{clipboard, ui};
 
 mod pending_live;
 pub(crate) mod permissions;
-mod plan_exit_handoff;
 pub(crate) mod session_navigation;
 mod session_projection;
 #[cfg(test)]
@@ -68,6 +68,13 @@ pub(crate) const SLASH_COMMANDS: [(&str, &str); 8] = [
     ("follow", "Toggle follow mode"),
     ("exit", "Quit Harness"),
 ];
+
+pub(crate) fn slash_command_description(command: &str) -> &'static str {
+    SLASH_COMMANDS
+        .iter()
+        .find_map(|(name, description)| (*name == command).then_some(*description))
+        .unwrap_or("")
+}
 
 static NEXT_TRANSCRIPT_CACHE_INSTANCE_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -1055,6 +1062,7 @@ pub struct AppState {
     show_generic_tool_output: bool,
     stacked_transcript_diffs: bool,
     expanded_tool_outputs: BTreeSet<String>,
+    expanded_patch_file_outputs: BTreeSet<String>,
     collapsed_operator_sidebar_sections: BTreeSet<OperatorSidebarSection>,
     pub startup_mode: bool,
     pub startup_launcher_action: StartupLauncherAction,
@@ -1144,6 +1152,7 @@ impl Default for AppState {
             show_generic_tool_output: false,
             stacked_transcript_diffs: false,
             expanded_tool_outputs: BTreeSet::new(),
+            expanded_patch_file_outputs: BTreeSet::new(),
             collapsed_operator_sidebar_sections: BTreeSet::from([
                 OperatorSidebarSection::ModifiedFiles,
             ]),
@@ -1297,6 +1306,7 @@ impl AppState {
         self.question_prompt_custom.clear();
         self.question_prompt_editing = false;
         self.expanded_tool_outputs.clear();
+        self.expanded_patch_file_outputs.clear();
 
         for event in events {
             self.ingest_event(event);
@@ -1357,19 +1367,21 @@ impl AppState {
         if !historical {
             self.continued_live_reopen_surface_active = false;
         }
-        let plan_exit_output_json = match &event.payload {
+        let completed_tool_call_id = match &event.payload {
             EventV1::ToolCallFinished(data) if data.status == ToolCallStatus::Succeeded => {
-                data.output_json.clone()
+                Some(data.tool_call_id.clone())
             }
             _ => None,
         };
         self.update_transient_state_for_event(&event);
         let trimmed_events = self.projection.ingest_event(event, historical);
+        if let Some(tool_call_id) = completed_tool_call_id.as_deref() {
+            self.seed_apply_patch_file_outputs_for_tool_call(tool_call_id);
+        }
         if let Some(permission_id) = auto_allow_permission {
             self.dismissed_permissions.insert(permission_id.clone());
             self.send_permission_intent(permission_id, PermissionDecision::Allow, None);
         }
-        self.maybe_apply_plan_exit_handoff(plan_exit_output_json.as_ref(), historical);
 
         if trimmed_events > 0 {
             if self.selected_event_index >= trimmed_events {
@@ -1587,36 +1599,6 @@ impl AppState {
         self.launch_metadata.mode_label()
     }
 
-    fn maybe_apply_plan_exit_handoff(
-        &mut self,
-        output_json: Option<&serde_json::Value>,
-        historical: bool,
-    ) {
-        if historical || self.replay_mode || self.on_ui_intent.is_none() {
-            return;
-        }
-        let Some(output_json) = output_json else {
-            return;
-        };
-        let Some(handoff) = plan_exit_handoff::resolve_plan_exit_handoff(
-            self.active_profile(),
-            &self.launch_metadata,
-            output_json,
-        ) else {
-            return;
-        };
-        self.launch_metadata = handoff.launch_metadata.clone();
-        set_pending_live_launch_metadata(handoff.launch_metadata.clone());
-        self.emit_ui_intent(UiIntent::SwitchModel {
-            profile: handoff.target_profile.clone(),
-            launch_metadata: handoff.launch_metadata.clone(),
-        });
-        self.emit_ui_intent(UiIntent::SubmitPrompt {
-            text: handoff.prompt,
-            launch_metadata: self.launch_metadata.clone(),
-        });
-    }
-
     pub(crate) fn transcript_thinking_visible(&self) -> bool {
         self.show_transcript_thinking
     }
@@ -1666,6 +1648,9 @@ impl AppState {
         self.session_path.hash(&mut hasher);
         for tool_call_id in &self.expanded_tool_outputs {
             tool_call_id.hash(&mut hasher);
+        }
+        for file_key in &self.expanded_patch_file_outputs {
+            file_key.hash(&mut hasher);
         }
 
         hasher.finish()
@@ -1750,6 +1735,9 @@ impl AppState {
         for tool_call_id in &self.expanded_tool_outputs {
             tool_call_id.hash(&mut hasher);
         }
+        for file_key in &self.expanded_patch_file_outputs {
+            file_key.hash(&mut hasher);
+        }
 
         for (permission_id, summary) in self.transcript_pending_permissions() {
             permission_id.hash(&mut hasher);
@@ -1803,6 +1791,167 @@ impl AppState {
         self.expanded_tool_outputs.contains(&tool_call.tool_call_id)
     }
 
+    pub(crate) fn patch_file_output_expanded(&self, tool_call_id: &str, file_path: &str) -> bool {
+        self.expanded_patch_file_outputs
+            .contains(&Self::patch_file_disclosure_key(tool_call_id, file_path))
+    }
+
+    fn patch_file_disclosure_key(tool_call_id: &str, file_path: &str) -> String {
+        format!("{tool_call_id}\u{1f}{file_path}")
+    }
+
+    fn toggle_tool_output(&mut self, tool_call_id: &str) {
+        if !self.expanded_tool_outputs.insert(tool_call_id.to_string()) {
+            self.expanded_tool_outputs.remove(tool_call_id);
+        }
+    }
+
+    fn set_tool_output_expanded(&mut self, tool_call_id: &str, expanded: bool) {
+        if expanded {
+            self.expanded_tool_outputs.insert(tool_call_id.to_string());
+        } else {
+            self.expanded_tool_outputs.remove(tool_call_id);
+        }
+    }
+
+    fn toggle_patch_file_output(&mut self, tool_call_id: &str, file_path: &str) {
+        let disclosure_key = Self::patch_file_disclosure_key(tool_call_id, file_path);
+        if !self
+            .expanded_patch_file_outputs
+            .insert(disclosure_key.clone())
+        {
+            self.expanded_patch_file_outputs.remove(&disclosure_key);
+        }
+    }
+
+    fn set_tool_group_outputs_expanded(&mut self, tool_call_ids: &[String], expanded: bool) {
+        for tool_call_id in tool_call_ids {
+            self.set_tool_output_expanded(tool_call_id, expanded);
+        }
+    }
+
+    fn tool_call_entry(&self, tool_call_id: &str) -> Option<&ToolCallEntry> {
+        self.activities
+            .iter()
+            .flat_map(|activity| activity.tool_calls.iter())
+            .find(|tool_call| tool_call.tool_call_id == tool_call_id)
+    }
+
+    fn apply_patch_default_expanded_files(tool_call: &ToolCallEntry) -> Vec<String> {
+        if tool_call.effective_tool_id() != "apply_patch" {
+            return Vec::new();
+        }
+
+        let mut seen = BTreeSet::new();
+        let mut files = Vec::new();
+
+        if let Some(edits) = tool_call
+            .output_json
+            .as_ref()
+            .and_then(|value| value.get("edits"))
+            .and_then(serde_json::Value::as_array)
+        {
+            for edit in edits {
+                let Some(path) = edit
+                    .get("path")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|path| !path.is_empty())
+                    .map(str::to_string)
+                else {
+                    continue;
+                };
+                let deleted = edit
+                    .get("deleted")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false);
+                if deleted || !seen.insert(path.clone()) {
+                    continue;
+                }
+                files.push(path);
+            }
+        }
+
+        if !files.is_empty() {
+            return files;
+        }
+
+        let Some(rows) = tool_call
+            .output_json
+            .as_ref()
+            .and_then(|value| value.get("files"))
+            .and_then(serde_json::Value::as_array)
+        else {
+            return files;
+        };
+
+        for row in rows {
+            let Some(row) = row.as_str().map(str::trim).filter(|row| !row.is_empty()) else {
+                continue;
+            };
+            let (status, path) = row
+                .split_once(' ')
+                .map(|(status, path)| (status.trim(), path.trim()))
+                .filter(|(_, path)| !path.is_empty())
+                .unwrap_or(("", row));
+            if status.eq_ignore_ascii_case("D") {
+                continue;
+            }
+            let path = path.to_string();
+            if seen.insert(path.clone()) {
+                files.push(path);
+            }
+        }
+
+        files
+    }
+
+    fn seed_apply_patch_file_outputs_for_tool_call(&mut self, tool_call_id: &str) {
+        let files = self
+            .tool_call_entry(tool_call_id)
+            .map(Self::apply_patch_default_expanded_files)
+            .unwrap_or_default();
+        for file_path in files {
+            self.expanded_patch_file_outputs
+                .insert(Self::patch_file_disclosure_key(tool_call_id, &file_path));
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_patch_file_output_expanded_for_test(
+        &mut self,
+        tool_call_id: &str,
+        file_path: &str,
+        expanded: bool,
+    ) {
+        let disclosure_key = Self::patch_file_disclosure_key(tool_call_id, file_path);
+        if expanded {
+            self.expanded_patch_file_outputs.insert(disclosure_key);
+        } else {
+            self.expanded_patch_file_outputs.remove(&disclosure_key);
+        }
+    }
+
+    fn activate_transcript_mouse_target(&mut self, target: TranscriptMouseTarget) {
+        match target {
+            TranscriptMouseTarget::Tool { tool_call_id } => {
+                self.toggle_tool_output(&tool_call_id);
+            }
+            TranscriptMouseTarget::ToolGroup { tool_call_ids } => {
+                let expand_group = tool_call_ids
+                    .iter()
+                    .any(|tool_call_id| !self.expanded_tool_outputs.contains(tool_call_id));
+                self.set_tool_group_outputs_expanded(&tool_call_ids, expand_group);
+            }
+            TranscriptMouseTarget::PatchFile {
+                tool_call_id,
+                file_path,
+            } => {
+                self.toggle_patch_file_output(&tool_call_id, &file_path);
+            }
+        }
+    }
+
     fn selected_activity_expandable_tool_ids(&self) -> Vec<String> {
         self.activities
             .get(self.selected_activity_index)
@@ -1842,6 +1991,7 @@ impl AppState {
     pub fn overlay_stack(&self) -> OverlayStack {
         OverlayStack::from_state(OverlayState {
             details_drawer_open: self.details_drawer_open(),
+            slash_visible: self.slash_overlay_should_render(),
             palette_visible: self.palette_visible,
             session_history_visible: self.session_history_visible,
             permission_pending: self.active_permission().is_some(),
@@ -2132,6 +2282,17 @@ impl AppState {
         clicked_operator_sidebar_section: Option<OperatorSidebarSection>,
         transcript_scrollbar_hit: Option<TranscriptScrollbarHit>,
     ) {
+        if self.slash_visible {
+            let slash_overlay =
+                crate::layout::FrameLayoutPlan::for_app(self, frame_area).slash_overlay;
+            if let Some(overlay) =
+                slash_overlay.filter(|overlay| rect_contains(*overlay, mouse.column, mouse.row))
+            {
+                self.handle_slash_mouse(mouse, overlay);
+                return;
+            }
+        }
+
         if self.overlay_stack().blocks_pointer_interaction() {
             self.transcript_scrollbar_drag = None;
             self.clear_transcript_selection();
@@ -2157,6 +2318,13 @@ impl AppState {
                 }
 
                 self.transcript_scrollbar_drag = None;
+                if let Some(target) =
+                    ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
+                {
+                    self.activate_transcript_mouse_target(target);
+                    self.clear_transcript_selection();
+                    return;
+                }
                 let transcript_hit =
                     ui::transcript_selection_cell(self, frame_area, mouse.column, mouse.row);
                 if let Some(cell) = transcript_hit {
@@ -2451,6 +2619,42 @@ impl AppState {
         self.active_review_surface = None;
         self.active_tab = Tab::Run;
         self.normalize_focus_for_active_surface();
+    }
+
+    fn handle_slash_mouse(&mut self, mouse: MouseEvent, overlay: Rect) {
+        let list_area = crate::layout::slash_command_overlay_content_area(overlay);
+        if self.slash_filtered.is_empty()
+            || list_area.height == 0
+            || !rect_contains(list_area, mouse.column, mouse.row)
+        {
+            return;
+        }
+
+        let visible_rows = usize::from(list_area.height);
+        let selected = self
+            .slash_selected
+            .min(self.slash_filtered.len().saturating_sub(1));
+        let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
+        let row = usize::from(mouse.row.saturating_sub(list_area.y));
+        let Some(next) = scroll
+            .checked_add(row)
+            .filter(|index| *index < self.slash_filtered.len())
+        else {
+            return;
+        };
+
+        match mouse.kind {
+            MouseEventKind::Moved
+            | MouseEventKind::Drag(MouseButton::Left)
+            | MouseEventKind::Down(MouseButton::Left) => {
+                self.slash_selected = next;
+            }
+            MouseEventKind::Up(MouseButton::Left) => {
+                self.slash_selected = next;
+                self.apply_selected_slash_completion();
+            }
+            _ => {}
+        }
     }
 
     fn open_review_surface(&mut self, surface: ReviewSurface) {
@@ -3027,10 +3231,9 @@ impl AppState {
 
         if self.startup_mode {
             let text = self.prompt_buffer.clone();
-            self.emit_ui_intent(UiIntent::SubmitPrompt {
-                text,
-                launch_metadata: self.launch_metadata.clone(),
-            });
+            set_pending_live_launch_metadata(self.launch_metadata.clone());
+            set_pending_live_prompt_auto_submit(Some(text));
+            self.emit_ui_intent(UiIntent::NewSession);
             self.should_quit = true;
             return;
         }
@@ -3080,6 +3283,66 @@ fn json_string_field(output_json: Option<&serde_json::Value>, keys: &[&str]) -> 
 }
 
 fn tool_call_has_expandable_output(tool_call: &ToolCallEntry) -> bool {
+    if matches!(
+        tool_call.effective_tool_id(),
+        "fs.read" | "read" | "fs.glob" | "glob" | "fs.grep" | "grep" | "fs.ls" | "list"
+    ) {
+        return true;
+    }
+
+    if matches!(tool_call.effective_tool_id(), "shell.run")
+        && tool_call
+            .output_summary
+            .as_deref()
+            .is_some_and(|output| !output.trim().is_empty())
+    {
+        return true;
+    }
+
+    if matches!(tool_call.effective_tool_id(), "edit" | "fs.write")
+        && serde_json::from_str::<serde_json::Value>(&tool_call.args_summary)
+            .ok()
+            .and_then(|value| value.as_object().cloned())
+            .is_some_and(|object| {
+                let path = object
+                    .get("filePath")
+                    .or_else(|| object.get("path"))
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|path| !path.trim().is_empty());
+                let inline_preview = match tool_call.effective_tool_id() {
+                    "edit" => {
+                        object
+                            .get("oldString")
+                            .and_then(serde_json::Value::as_str)
+                            .is_some()
+                            || object
+                                .get("newString")
+                                .and_then(serde_json::Value::as_str)
+                                .is_some()
+                    }
+                    "fs.write" => object
+                        .get("content")
+                        .and_then(serde_json::Value::as_str)
+                        .is_some(),
+                    _ => false,
+                };
+                path && inline_preview
+            })
+    {
+        return true;
+    }
+
+    if tool_call.effective_tool_id() == "apply_patch"
+        && tool_call
+            .output_json
+            .as_ref()
+            .and_then(|value| value.get("files"))
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|files| !files.is_empty())
+    {
+        return true;
+    }
+
     if tool_call.status == ToolCallDisplayStatus::Succeeded
         && tool_call.effective_tool_id().starts_with("mcp.")
         && tool_call
@@ -3115,16 +3378,15 @@ pub(crate) fn exact_test_startup_slash_commands_execute_without_menu() {
     let mut app = AppState::new_startup(Vec::new(), None);
     app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
 
-    assert!(!app.slash_overlay_should_render());
-    assert_eq!(app.overlay_stack().top(), None);
+    assert!(app.slash_overlay_should_render());
+    assert_eq!(app.overlay_stack().top(), Some(OverlayKind::SlashCommands));
     assert_eq!(
         app.slash_filtered,
         vec![
-            "new".to_string(),
-            "resume".to_string(),
-            "replay".to_string(),
-            "model".to_string(),
             "exit".to_string(),
+            "new".to_string(),
+            "replay".to_string(),
+            "resume".to_string(),
         ]
     );
 }
@@ -3176,6 +3438,76 @@ pub(crate) fn exact_test_slash_replay_opens_history_and_restores_draft() {
         StartupLauncherAction::ReplaySession
     );
     assert_eq!(app.prompt_buffer, "keep this draft");
+    assert!(!app.slash_visible);
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_slash_resume_opens_history_and_restores_draft() {
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    app.prompt_buffer = "/resume".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.slash_draft_snapshot = Some("resume this draft".to_string());
+    app.sync_slash_overlay();
+
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert!(app.palette_visible);
+    assert!(app.session_history_visible);
+    assert_eq!(
+        app.startup_launcher_action,
+        StartupLauncherAction::ContinueSession
+    );
+    assert_eq!(app.prompt_buffer, "resume this draft");
+    assert!(!app.slash_visible);
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_slash_events_opens_review_surface() {
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    app.prompt_buffer = "/events".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.slash_draft_snapshot = Some("keep events draft".to_string());
+    app.sync_slash_overlay();
+
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert_eq!(app.active_review_surface, Some(ReviewSurface::Events));
+    assert_eq!(app.prompt_buffer, "keep events draft");
+    assert!(!app.slash_visible);
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_slash_shell_closes_review_surface() {
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    app.open_review_surface(ReviewSurface::Events);
+    app.focus = Focus::Prompt;
+    app.prompt_buffer = "/shell".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.slash_draft_snapshot = Some("back to shell".to_string());
+    app.sync_slash_overlay();
+
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert_eq!(app.active_review_surface, None);
+    assert_eq!(app.prompt_buffer, "back to shell");
+    assert!(!app.slash_visible);
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_slash_follow_toggles_follow_mode() {
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    app.follow_mode = false;
+    app.transcript_scroll = 12;
+    app.prompt_buffer = "/follow".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.slash_draft_snapshot = Some("follow draft".to_string());
+    app.sync_slash_overlay();
+
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert!(app.follow_mode);
+    assert_eq!(app.transcript_scroll, 0);
+    assert_eq!(app.prompt_buffer, "follow draft");
     assert!(!app.slash_visible);
 }
 
