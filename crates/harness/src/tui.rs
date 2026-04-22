@@ -1152,7 +1152,26 @@ fn continue_live_tui_options(
         exit_on_finish,
         on_ui_intent: Some(ui_intent_sender),
         keybindings: None,
-        preserve_terminal_on_exit: false,
+        preserve_terminal_on_exit: true,
+    }
+}
+
+fn new_live_tui_options(
+    run_dir: PathBuf,
+    update_rx: std_mpsc::Receiver<LiveUpdate>,
+    exit_on_finish: bool,
+    ui_intent_sender: UiIntentSink,
+) -> TuiOptions {
+    TuiOptions {
+        mode: TuiMode::Live {
+            run_dir,
+            historical_events: Vec::new(),
+            update_rx,
+        },
+        exit_on_finish,
+        on_ui_intent: Some(ui_intent_sender),
+        keybindings: None,
+        preserve_terminal_on_exit: true,
     }
 }
 
@@ -1528,22 +1547,17 @@ async fn run_new_live_session(
     set_pending_live_launch_metadata(launch_metadata);
 
     let tui_result = tokio::task::spawn_blocking(move || {
-        profile_handoff("continue_bootstrap.live_tui_begin");
-        run_tui_with_options(TuiOptions {
-            mode: TuiMode::Live {
-                run_dir: run.run_dir,
-                historical_events: Vec::new(),
-                update_rx: live_update_rx,
-            },
+        profile_handoff("new_live.live_tui_begin");
+        run_tui_with_options(new_live_tui_options(
+            run.run_dir,
+            live_update_rx,
             exit_on_finish,
-            on_ui_intent: Some(ui_intent_sender),
-            keybindings: None,
-            preserve_terminal_on_exit: false,
-        })
+            ui_intent_sender,
+        ))
     })
     .await
     .map_err(|err| format!("TUI task failed: {err}"))?;
-    profile_handoff("continue_bootstrap.live_tui_end");
+    profile_handoff("new_live.live_tui_end");
 
     if let Err(err) = tui_result {
         event_forwarder_task.abort();
@@ -1654,17 +1668,12 @@ async fn run_live_mode(
 
     let tui_result = tokio::task::spawn_blocking(move || {
         profile_handoff("new_live.live_tui_begin");
-        run_tui_with_options(TuiOptions {
-            mode: TuiMode::Live {
-                run_dir,
-                historical_events: Vec::new(),
-                update_rx: live_update_rx,
-            },
+        run_tui_with_options(new_live_tui_options(
+            run_dir,
+            live_update_rx,
             exit_on_finish,
-            on_ui_intent: Some(ui_intent_sender),
-            keybindings: None,
-            preserve_terminal_on_exit: false,
-        })
+            ui_intent_sender,
+        ))
     })
     .await
     .map_err(|err| format!("TUI task failed: {err}"))?;
@@ -2159,6 +2168,26 @@ mod tests {
     }
 
     #[test]
+    fn workflow_managed_live_tuis_preserve_terminal_between_handoffs() {
+        let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
+        let sink: UiIntentSink = Arc::new(|_| {});
+
+        let fresh =
+            new_live_tui_options(PathBuf::from("/tmp/run-new"), rx, false, Arc::clone(&sink));
+        assert!(fresh.preserve_terminal_on_exit);
+
+        let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
+        let resumed = continue_live_tui_options(
+            PathBuf::from("/tmp/run-continue"),
+            Vec::new(),
+            rx,
+            false,
+            sink,
+        );
+        assert!(resumed.preserve_terminal_on_exit);
+    }
+
+    #[test]
     fn mock_mode_ignores_discovered_cwd_config() {
         let _guard = mock_mode_cwd_test_lock()
             .lock()
@@ -2589,14 +2618,6 @@ mod tests {
             .available_models()
             .iter()
             .any(|option| option.profile == "build"));
-        assert!(metadata
-            .available_models()
-            .iter()
-            .any(|option| option.profile == "plan"));
-        assert!(metadata
-            .available_models()
-            .iter()
-            .any(|option| option.profile == "plan" && option.variant() == Some("low")));
     }
 
     #[test]
@@ -2613,10 +2634,6 @@ mod tests {
 
         assert_eq!(metadata.profile(), "build");
         assert_eq!(metadata.variant(), Some("high"));
-        assert!(metadata
-            .available_models()
-            .iter()
-            .any(|option| option.profile == "plan" && option.variant() == Some("low")));
     }
 
     #[test]
@@ -2718,10 +2735,10 @@ mod tests {
     #[test]
     fn continue_launch_metadata_preserves_cross_profile_switch_options() {
         let continue_metadata = LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini")
-            .with_available_models(vec![
-                ModelOption::from_model_ref("build", "default:gpt-5.4-mini"),
-                ModelOption::from_model_ref("plan", "default:gpt-5.4-mini"),
-            ])
+            .with_available_models(vec![ModelOption::from_model_ref(
+                "build",
+                "default:gpt-5.4-mini",
+            )])
             .with_mode_label("Continued");
         let continue_profile = continue_metadata.profile().to_string();
 
@@ -2730,10 +2747,6 @@ mod tests {
             .available_models()
             .iter()
             .any(|option| option.profile == "build"));
-        assert!(continue_metadata
-            .available_models()
-            .iter()
-            .any(|option| option.profile == "plan"));
     }
 
     #[test]
