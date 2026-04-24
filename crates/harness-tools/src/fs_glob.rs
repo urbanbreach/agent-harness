@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use async_trait::async_trait;
@@ -101,34 +102,29 @@ fn collect_glob_matches(
         .map_err(|err| ToolError::InvalidArguments(format!("invalid glob pattern: {err}")))?
         .compile_matcher();
 
-    let mut matched_paths = WalkDir::new(base_dir)
+    let mut matched_paths = BTreeSet::new();
+    for entry in WalkDir::new(base_dir)
         .follow_links(false)
         .into_iter()
         .filter_entry(|entry| !should_skip_entry(workspace_root, entry))
-        .map(|entry| {
-            entry.map_err(|err| {
-                ToolError::Execution(format!("failed to traverse directory tree: {err}"))
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .filter(|entry| entry.file_type().is_file())
-        .map(|entry| {
-            let relative = entry.path().strip_prefix(workspace_root).map_err(|_| {
-                ToolError::Execution(format!(
-                    "failed to compute workspace-relative path for {}",
-                    entry.path().display()
-                ))
-            })?;
-
-            Ok(normalize_relative_path(relative))
-        })
-        .collect::<Result<Vec<_>, ToolError>>()?
-        .into_iter()
-        .filter(|relative| matcher.is_match(relative))
-        .collect::<Vec<_>>();
-
-    matched_paths.sort();
+    {
+        let entry = entry.map_err(|err| {
+            ToolError::Execution(format!("failed to traverse directory tree: {err}"))
+        })?;
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let relative = entry.path().strip_prefix(workspace_root).map_err(|_| {
+            ToolError::Execution(format!(
+                "failed to compute workspace-relative path for {}",
+                entry.path().display()
+            ))
+        })?;
+        let relative = normalize_relative_path(relative);
+        if matcher.is_match(&relative) {
+            matched_paths.insert(relative);
+        }
+    }
 
     let total_count = matched_paths.len();
     let capped_limit = limit.min(total_count);

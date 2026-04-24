@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::io::BufRead;
 use std::path::Path;
 
 use async_trait::async_trait;
@@ -123,32 +124,30 @@ fn collect_grep_matches(
         .map_err(|err| ToolError::InvalidArguments(format!("invalid regex pattern: {err}")))?;
     let include_matcher = compile_include_matcher(include)?;
 
-    let mut files = WalkDir::new(base_dir)
+    let mut files = Vec::new();
+    for entry in WalkDir::new(base_dir)
         .follow_links(false)
         .into_iter()
         .filter_entry(|entry| !should_skip_entry(workspace_root, entry))
-        .map(|entry| {
-            entry.map_err(|err| {
-                ToolError::Execution(format!("failed to traverse directory tree: {err}"))
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .filter(|entry| entry.file_type().is_file())
-        .map(|entry| {
-            let relative = entry.path().strip_prefix(workspace_root).map_err(|_| {
-                ToolError::Execution(format!(
-                    "failed to compute workspace-relative path for {}",
-                    entry.path().display()
-                ))
-            })?;
+    {
+        let entry = entry.map_err(|err| {
+            ToolError::Execution(format!("failed to traverse directory tree: {err}"))
+        })?;
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let relative = entry.path().strip_prefix(workspace_root).map_err(|_| {
+            ToolError::Execution(format!(
+                "failed to compute workspace-relative path for {}",
+                entry.path().display()
+            ))
+        })?;
 
-            let relative = normalize_relative_path(relative);
-            let file_name = entry.file_name().to_string_lossy().to_string();
-            let path = entry.into_path();
-            Ok((relative, file_name, path))
-        })
-        .collect::<Result<Vec<_>, ToolError>>()?;
+        let relative = normalize_relative_path(relative);
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        let path = entry.into_path();
+        files.push((relative, file_name, path));
+    }
 
     if let Some(matcher) = include_matcher.as_ref() {
         files.retain(|(relative, file_name, _)| {
@@ -163,14 +162,9 @@ fn collect_grep_matches(
     let mut returned_count = 0usize;
 
     for (relative, _file_name, path) in files {
-        let bytes = std::fs::read(&path).map_err(|err| {
-            ToolError::Execution(format!("failed to read file {}: {err}", path.display()))
-        })?;
-
-        let Ok(text) = String::from_utf8(bytes) else {
+        let Some(lines) = read_utf8_lines(&path)? else {
             continue;
         };
-        let lines = text.lines().collect::<Vec<_>>();
         if lines.is_empty() {
             continue;
         }
@@ -224,7 +218,7 @@ fn compile_include_matcher(include: Option<&str>) -> Result<Option<GlobMatcher>,
 fn append_rendered_lines(
     output: &mut Vec<String>,
     relative_path: &str,
-    lines: &[&str],
+    lines: &[String],
     match_line_indexes: &[usize],
     context: usize,
 ) {
@@ -259,6 +253,38 @@ fn append_rendered_lines(
             lines[line_idx]
         ));
     }
+}
+
+fn read_utf8_lines(path: &Path) -> Result<Option<Vec<String>>, ToolError> {
+    let file = std::fs::File::open(path).map_err(|err| {
+        ToolError::Execution(format!("failed to read file {}: {err}", path.display()))
+    })?;
+    let mut reader = std::io::BufReader::new(file);
+    let mut raw_line = Vec::new();
+    let mut lines = Vec::new();
+
+    loop {
+        raw_line.clear();
+        let bytes_read = reader.read_until(b'\n', &mut raw_line).map_err(|err| {
+            ToolError::Execution(format!("failed to read file {}: {err}", path.display()))
+        })?;
+        if bytes_read == 0 {
+            break;
+        }
+        let mut line = raw_line.as_slice();
+        if let Some(stripped) = line.strip_suffix(b"\n") {
+            line = stripped;
+            if let Some(stripped) = line.strip_suffix(b"\r") {
+                line = stripped;
+            }
+        }
+        let Ok(line) = String::from_utf8(line.to_vec()) else {
+            return Ok(None);
+        };
+        lines.push(line);
+    }
+
+    Ok(Some(lines))
 }
 
 fn should_skip_entry(workspace_root: &Path, entry: &DirEntry) -> bool {
