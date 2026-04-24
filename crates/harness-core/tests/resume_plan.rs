@@ -1,15 +1,18 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
 use harness_core::event::{
-    ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1, PermissionDecision,
-    PermissionRequestedEvent, PermissionResolvedEvent, ProviderRequestStartedEvent,
-    RunFinishedEvent, RunStartedEvent, TaskCompletedEvent, TaskLineageMetadata, TaskScheduleState,
-    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallLifecycleState, ToolCallMetadata,
-    ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent,
-    SCHEMA_VERSION,
+    ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, EventActor, EventEnvelopeV1, EventV1,
+    PermissionDecision, PermissionRequestedEvent, PermissionResolvedEvent,
+    ProviderRequestStartedEvent, RunFinishedEvent, RunStartedEvent, TaskCompletedEvent,
+    TaskLineageMetadata, TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent,
+    ToolCallLifecycleState, ToolCallMetadata, ToolCallRequestedEvent, ToolCallStartedEvent,
+    ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
-use harness_core::proj::{inspect_resume_plan, LifecycleSegmentStatus};
+use harness_core::proj::{
+    inspect_resume_plan, project_session_catalog_entry, LifecycleSegmentStatus,
+};
 
 #[test]
 fn resume_plan_reconstructs_sequence_and_id_watermarks() {
@@ -858,6 +861,94 @@ fn resume_plan_preserves_child_session_lineage_across_open_and_quit_resumed_segm
         Some("toolcall_000777")
     );
     assert_eq!(child.latest_child_request_id.as_deref(), Some("req_000777"));
+}
+
+#[test]
+fn session_catalog_counts_checkpoint_artifacts_alongside_tool_artifacts() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let run_dir = temp_dir.path().join("run_resume_checkpoint_artifacts");
+
+    let mut tool_artifact = envelope(
+        3,
+        EventV1::ArtifactWritten(ArtifactWrittenEvent {
+            path: "artifacts/toolcalls/toolcall_000001/result.json".to_string(),
+            digest: "digest-tool".to_string(),
+            bytes: 42,
+            tool_call_id: Some("toolcall_000001".to_string()),
+            tool_metadata: None,
+            metadata: BTreeMap::new(),
+        }),
+    );
+    tool_artifact.correlation_id = Some("req_000001".to_string());
+
+    write_events(
+        &run_dir,
+        &[
+            envelope(
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/workspace/project".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_000001".to_string(),
+                    profile: "default".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            tool_artifact,
+            envelope(
+                4,
+                EventV1::ArtifactWritten(ArtifactWrittenEvent {
+                    path: "artifacts/compactions/agent_000001/checkpoint_000004.json".to_string(),
+                    digest: "digest-checkpoint".to_string(),
+                    bytes: 84,
+                    tool_call_id: None,
+                    tool_metadata: None,
+                    metadata: BTreeMap::from([
+                        (
+                            "artifact_kind".to_string(),
+                            "provider_context_checkpoint".to_string(),
+                        ),
+                        ("checkpoint_id".to_string(), "checkpoint_000004".to_string()),
+                        ("agent_id".to_string(), "agent_000001".to_string()),
+                    ]),
+                }),
+            ),
+            envelope(
+                5,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "finished".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let plan = inspect_resume_plan(&run_dir);
+    assert_eq!(plan.session_artifacts.len(), 2);
+    assert!(plan.session_artifacts.values().any(|artifact| {
+        artifact.artifact_kind.as_deref() == Some("provider_context_checkpoint")
+            && artifact.tool_call_id.is_none()
+    }));
+
+    let events_path = run_dir.join("events.jsonl");
+    let body = fs::read_to_string(&events_path).expect("read events");
+    let events = body
+        .lines()
+        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).expect("valid event"))
+        .collect::<Vec<_>>();
+    let entry = project_session_catalog_entry(
+        events.iter(),
+        "run_resume_fixture",
+        None,
+        Some("2026-04-23T00:00:00Z".to_string()),
+        None,
+    )
+    .expect("project session catalog entry");
+    assert_eq!(entry.artifact_count, 2);
 }
 
 fn envelope(seq: u64, payload: EventV1) -> EventEnvelopeV1 {
