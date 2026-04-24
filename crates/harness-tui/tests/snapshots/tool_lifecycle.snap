@@ -1,17 +1,17 @@
 
                                                                                                                                                                                     Inspect tool activity
      → Read src/ui.rs [offset=1, limit=24]  ▸
-      ↳ Loaded src/ui.rs                                                                                                                                                       █    Context
-      Compat alias · read → fs.read                                                                                                                                            █    0 tokens
+      ↳ Loaded src/ui.rs                                                                                                                                                       █    ▼ MCP
+      Compat alias · read → fs.read                                                                                                                                            █    • No MCP servers configured
      ← Patch · ui.rs  ▸                                                                                                                                                        █
-      crates/harness-tui/src                                                                                                                                                   █    ▼ MCP
-        44   use ui_secondary::{                                                             44   use ui_secondary::{                                                          █    • No MCP servers configured
+      crates/harness-tui/src                                                                                                                                                   █    ▼ LSP
+        44   use ui_secondary::{                                                             44   use ui_secondary::{                                                          █    • No active LSP servers
         45 -     render_diff_tab, render_events_tab, render_help_tab,                        45 +     render_events_tab, render_help_tab, render_live_details_overlay,         █
-        46       render_operator_sidebar,                                                    46       render_operator_sidebar,                                                 █    ▼ LSP
-        47   };                                                                              47   };                                                                           █    • No active LSP servers
+        46       render_operator_sidebar,                                                    46       render_operator_sidebar,                                                 █    ▼ Modified Files
+        47   };                                                                              47   };                                                                           █    • crates/harness-tui/src/ui.rs · +1 -1
      ↗ Spawn researcher · audit tool lifecycle parity  ▸                                                                                                                       █
-      foreground · agent_worker · req_child · completed · 2 child tool calls                                                                                                   █    ▼ Modified Files
-      Found the whole-tool parity path.                                                                                                                                        █    • crates/harness-tui/src/ui.rs · +1 -1
+      foreground · agent_worker · req_child · completed · 2 child tool calls                                                                                                   █
+      Found the whole-tool parity path.                                                                                                                                        █
       Compat alias · task → agent.spawn                                                                                                                                        █
      ┃ Shell  ▸                                                                                                                                                                █
       ┃ $ cargo test -p harness-tui                                                                                                                                            █
@@ -27,4 +27,4 @@
 ┃
 ┃  model-1 mock · success
 ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-                                                                                                                                                                0  Ctrl+p commands
+                                                                                                                                                           live 0  Ctrl+p commands

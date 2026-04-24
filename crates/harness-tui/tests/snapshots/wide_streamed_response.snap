@@ -1,16 +1,16 @@
 
   ┃                                                                                                                     Hello from PTY
   ┃  Hello from PTY
-  ┃                                                                                                                     Context
-                                                                                                                        0 tokens
+  ┃                                                                                                                     ▼ MCP
+                                                                                                                        • No MCP servers configured
      Hello world
-                                                                                                                        ▼ MCP
-     ▪ Assistant · model-1 · 4ms                                                                                        • No MCP servers configured
-
                                                                                                                         ▼ LSP
-                                                                                                                        • No active LSP servers
+     ▪ Assistant · model-1 · 4ms                                                                                        • No active LSP servers
 
                                                                                                                         ▶ Modified Files
+
+
+
 
 
 
@@ -27,4 +27,4 @@
 ┃
 ┃  model-1 mock · success
 ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-                                                                                                    0  Ctrl+p commands
+                                                                                               live 0  Ctrl+p commands
