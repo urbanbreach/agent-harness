@@ -5,7 +5,7 @@
       Compat alias · read → fs.read                                                                                                                                            █    0 tokens
      ← Patch · ui.rs  ▸                                                                                                                                                        █
       crates/harness-tui/src                                                                                                                                                   █    ▼ MCP
-        44   use ui_secondary::{                                                             44   use ui_secondary::{                                                          █    • No MCP integrations configured
+        44   use ui_secondary::{                                                             44   use ui_secondary::{                                                          █    • No MCP servers configured
         45 -     render_diff_tab, render_events_tab, render_help_tab,                        45 +     render_events_tab, render_help_tab, render_live_details_overlay,         █
         46       render_operator_sidebar,                                                    46       render_operator_sidebar,                                                 █    ▼ LSP
         47   };                                                                              47   };                                                                           █    • No active LSP servers
