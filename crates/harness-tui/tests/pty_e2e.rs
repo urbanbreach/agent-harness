@@ -61,7 +61,7 @@ impl PtyGeometry {
         cols: 160,
         rows: 48,
     };
-    const OPENCODE_EDIT_SIGNOFF: Self = Self {
+    const WIDE_EDIT_SIGNOFF: Self = Self {
         cols: 220,
         rows: 30,
     };
@@ -284,9 +284,9 @@ fn pty_e2e_snapshots_are_stable() {
     assert_or_update_snapshot("wide_streamed_response", &wide_streamed_response);
     assert_visual_artifact_exists("streamed_response", PtyGeometry::WIDE_SIGNOFF);
 
-    let tool_lifecycle = capture_tool_lifecycle_snapshot(PtyGeometry::OPENCODE_EDIT_SIGNOFF);
+    let tool_lifecycle = capture_tool_lifecycle_snapshot(PtyGeometry::WIDE_EDIT_SIGNOFF);
     assert_or_update_snapshot("tool_lifecycle", &tool_lifecycle);
-    assert_visual_artifact_exists("tool_lifecycle", PtyGeometry::OPENCODE_EDIT_SIGNOFF);
+    assert_visual_artifact_exists("tool_lifecycle", PtyGeometry::WIDE_EDIT_SIGNOFF);
 
     let inline_diff_parity = capture_helper_screen_snapshot(
         HelperScenario::InlineDiffParity,

@@ -1214,7 +1214,7 @@ fn live_composer_disclosure_keeps_compact_summary_and_commands() {
 
 #[cfg(test)]
 #[test]
-fn slash_overlay_uses_opencode_navigation_keys() {
+fn slash_overlay_uses_reference_navigation_keys() {
     let mut app = app::AppState::new_live(None, false, None);
     app.handle_key(key(crossterm::event::KeyCode::Char('/')));
     assert_eq!(

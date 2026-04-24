@@ -80,7 +80,7 @@ fn live_mode_snapshot_renders_grouped_streams() {
 }
 
 #[test]
-fn slash_commands_snapshot_renders_opencode_style_popup() {
+fn slash_commands_snapshot_renders_reference_style_popup() {
     let mut app = AppState::new_live(None, false, None);
     app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
 
@@ -91,7 +91,7 @@ fn slash_commands_snapshot_renders_opencode_style_popup() {
         .expect("draw slash popup frame");
 
     assert_buffer_snapshot(
-        "slash_commands_snapshot_renders_opencode_style_popup",
+        "slash_commands_snapshot_renders_reference_style_popup",
         terminal.backend().buffer(),
     );
 }

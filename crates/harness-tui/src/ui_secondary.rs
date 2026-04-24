@@ -3238,8 +3238,8 @@ fn stacked_diff_gutter_spans(
 
 fn diff_marker_style(marker: char, row_bg: Option<Color>, _theme: &Theme) -> Style {
     let style = match marker {
-        '+' => Style::default().fg(opencode_diff_highlight_added()),
-        '-' => Style::default().fg(opencode_diff_highlight_removed()),
+        '+' => Style::default().fg(reference_diff_highlight_added()),
+        '-' => Style::default().fg(reference_diff_highlight_removed()),
         _ => muted_meta_style(_theme),
     };
     apply_optional_bg(style, row_bg)
@@ -3266,14 +3266,14 @@ fn diff_segment_style(
         DiffSegmentKind::Removed => {
             let fg = match accent_kind {
                 DiffSegmentKind::Removed => theme.text.primary,
-                _ => opencode_diff_highlight_removed(),
+                _ => reference_diff_highlight_removed(),
             };
             apply_optional_bg(Style::default().fg(fg), row_bg)
         }
         DiffSegmentKind::Added => {
             let fg = match accent_kind {
                 DiffSegmentKind::Added => theme.text.primary,
-                _ => opencode_diff_highlight_added(),
+                _ => reference_diff_highlight_added(),
             };
             apply_optional_bg(Style::default().fg(fg), row_bg)
         }
@@ -3308,7 +3308,7 @@ fn render_diff_hunk_header(
     spans.push(Span::styled(
         truncate_plain_text(&format!("⋮ {text}"), header_width),
         apply_optional_bg(
-            Style::default().fg(opencode_diff_hunk_header()),
+            Style::default().fg(reference_diff_hunk_header()),
             Some(palette.content_bg),
         ),
     ));
@@ -3557,111 +3557,111 @@ fn diff_syntax_highlight_assets() -> &'static DiffSyntaxHighlightAssets {
 
     SYNTAX_ASSETS.get_or_init(|| {
         let syntax_set = SyntaxSet::load_defaults_nonewlines();
-        let theme = opencode_diff_syntect_theme();
+        let theme = reference_diff_syntect_theme();
         DiffSyntaxHighlightAssets { syntax_set, theme }
     })
 }
 
-fn opencode_diff_syntect_theme() -> SyntectTheme {
+fn reference_diff_syntect_theme() -> SyntectTheme {
     let mut scopes = Vec::new();
     push_syntect_scope(
         &mut scopes,
         "comment, comment.documentation",
-        Some(opencode_syntax_comment()),
+        Some(reference_syntax_comment()),
         None,
         Some(SyntectFontStyle::ITALIC),
     );
     push_syntect_scope(
         &mut scopes,
         "string, string.quoted, string.unquoted, symbol, character.special, constant.character.escape",
-        Some(opencode_syntax_string()),
+        Some(reference_syntax_string()),
         None,
         None,
     );
     push_syntect_scope(
         &mut scopes,
         "number, boolean, constant.numeric, constant.language.boolean, constant",
-        Some(opencode_syntax_number()),
+        Some(reference_syntax_number()),
         None,
         None,
     );
     push_syntect_scope(
         &mut scopes,
         "keyword, keyword.control, keyword.return, keyword.conditional, keyword.repeat, keyword.coroutine, storage, storage.modifier",
-        Some(opencode_syntax_keyword()),
+        Some(reference_syntax_keyword()),
         None,
         Some(SyntectFontStyle::ITALIC),
     );
     push_syntect_scope(
         &mut scopes,
         "keyword.import, keyword.export, string.escape, string.regexp, keyword.directive, keyword.modifier, keyword.exception, tag.attribute",
-        Some(opencode_syntax_keyword()),
+        Some(reference_syntax_keyword()),
         None,
         None,
     );
     push_syntect_scope(
         &mut scopes,
         "keyword.type, storage.type, storage.type.primitive",
-        Some(opencode_syntax_type()),
+        Some(reference_syntax_type()),
         None,
         Some(SyntectFontStyle::BOLD.union(SyntectFontStyle::ITALIC)),
     );
     push_syntect_scope(
         &mut scopes,
         "keyword.function, function.method, variable.member, function, constructor, entity.name.function, support.function, support.function.builtin",
-        Some(opencode_syntax_function()),
+        Some(reference_syntax_function()),
         None,
         None,
     );
     push_syntect_scope(
         &mut scopes,
         "variable, variable.parameter, function.method.call, function.call, property, parameter, field",
-        Some(opencode_syntax_variable()),
+        Some(reference_syntax_variable()),
         None,
         None,
     );
     push_syntect_scope(
         &mut scopes,
         "type, module, namespace, class, type.definition, entity.name.type, support.type, support.class",
-        Some(opencode_syntax_type()),
+        Some(reference_syntax_type()),
         None,
         Some(SyntectFontStyle::BOLD),
     );
     push_syntect_scope(
         &mut scopes,
         "operator, keyword.operator, keyword.operator.word, punctuation.delimiter, punctuation.separator, keyword.conditional.ternary, tag.delimiter",
-        Some(opencode_syntax_operator()),
+        Some(reference_syntax_operator()),
         None,
         None,
     );
     push_syntect_scope(
         &mut scopes,
         "punctuation, punctuation.bracket",
-        Some(opencode_syntax_punctuation()),
+        Some(reference_syntax_punctuation()),
         None,
         None,
     );
     push_syntect_scope(
         &mut scopes,
         "variable.builtin, type.builtin, function.builtin, module.builtin, constant.builtin, tag, attribute, annotation",
-        Some(opencode_syntax_error()),
+        Some(reference_syntax_error()),
         None,
         None,
     );
     push_syntect_scope(
         &mut scopes,
         "markup.raw, markup.raw.block, markup.raw.inline",
-        Some(opencode_syntax_string()),
+        Some(reference_syntax_string()),
         None,
         None,
     );
 
     SyntectTheme {
-        name: Some("opencode-diff".to_string()),
+        name: Some("harness-diff".to_string()),
         author: Some("agent-harness".to_string()),
         settings: SyntectThemeSettings {
-            foreground: Some(opencode_syntax_punctuation()),
-            background: Some(opencode_diff_context_bg()),
+            foreground: Some(reference_syntax_punctuation()),
+            background: Some(reference_diff_context_bg()),
             ..SyntectThemeSettings::default()
         },
         scopes,
@@ -3696,47 +3696,47 @@ fn syntect_rgb(red: u8, green: u8, blue: u8) -> SyntectColor {
     }
 }
 
-fn opencode_diff_context_bg() -> SyntectColor {
+fn reference_diff_context_bg() -> SyntectColor {
     syntect_rgb(0x14, 0x14, 0x14)
 }
 
-fn opencode_syntax_comment() -> SyntectColor {
+fn reference_syntax_comment() -> SyntectColor {
     syntect_rgb(0x80, 0x80, 0x80)
 }
 
-fn opencode_syntax_keyword() -> SyntectColor {
+fn reference_syntax_keyword() -> SyntectColor {
     syntect_rgb(0x9D, 0x7C, 0xD8)
 }
 
-fn opencode_syntax_function() -> SyntectColor {
+fn reference_syntax_function() -> SyntectColor {
     syntect_rgb(0xFA, 0xB2, 0x83)
 }
 
-fn opencode_syntax_variable() -> SyntectColor {
+fn reference_syntax_variable() -> SyntectColor {
     syntect_rgb(0xE0, 0x6C, 0x75)
 }
 
-fn opencode_syntax_string() -> SyntectColor {
+fn reference_syntax_string() -> SyntectColor {
     syntect_rgb(0x7F, 0xD8, 0x8F)
 }
 
-fn opencode_syntax_number() -> SyntectColor {
+fn reference_syntax_number() -> SyntectColor {
     syntect_rgb(0xF5, 0xA7, 0x42)
 }
 
-fn opencode_syntax_type() -> SyntectColor {
+fn reference_syntax_type() -> SyntectColor {
     syntect_rgb(0xE5, 0xC0, 0x7B)
 }
 
-fn opencode_syntax_operator() -> SyntectColor {
+fn reference_syntax_operator() -> SyntectColor {
     syntect_rgb(0x56, 0xB6, 0xC2)
 }
 
-fn opencode_syntax_punctuation() -> SyntectColor {
+fn reference_syntax_punctuation() -> SyntectColor {
     syntect_rgb(0xEE, 0xEE, 0xEE)
 }
 
-fn opencode_syntax_error() -> SyntectColor {
+fn reference_syntax_error() -> SyntectColor {
     syntect_rgb(0xE0, 0x6C, 0x75)
 }
 
@@ -3773,12 +3773,12 @@ fn diff_syntect_style_to_ratatui(
 fn diff_row_palette(marker: char, theme: &Theme) -> DiffRowPalette {
     match marker {
         '+' => DiffRowPalette {
-            gutter_bg: opencode_diff_added_line_number_bg(),
-            content_bg: opencode_diff_added_bg(),
+            gutter_bg: reference_diff_added_line_number_bg(),
+            content_bg: reference_diff_added_bg(),
         },
         '-' => DiffRowPalette {
-            gutter_bg: opencode_diff_removed_line_number_bg(),
-            content_bg: opencode_diff_removed_bg(),
+            gutter_bg: reference_diff_removed_line_number_bg(),
+            content_bg: reference_diff_removed_bg(),
         },
         _ => DiffRowPalette {
             gutter_bg: diff_context_background(theme),
@@ -3802,31 +3802,31 @@ fn diff_hunk_palette(theme: &Theme) -> DiffRowPalette {
     }
 }
 
-fn opencode_diff_added_bg() -> Color {
+fn reference_diff_added_bg() -> Color {
     Color::Rgb(0x20, 0x30, 0x3B)
 }
 
-fn opencode_diff_removed_bg() -> Color {
+fn reference_diff_removed_bg() -> Color {
     Color::Rgb(0x37, 0x22, 0x2C)
 }
 
-fn opencode_diff_added_line_number_bg() -> Color {
+fn reference_diff_added_line_number_bg() -> Color {
     Color::Rgb(0x1B, 0x2B, 0x34)
 }
 
-fn opencode_diff_removed_line_number_bg() -> Color {
+fn reference_diff_removed_line_number_bg() -> Color {
     Color::Rgb(0x2D, 0x1F, 0x26)
 }
 
-fn opencode_diff_highlight_added() -> Color {
+fn reference_diff_highlight_added() -> Color {
     Color::Rgb(0xB8, 0xDB, 0x87)
 }
 
-fn opencode_diff_highlight_removed() -> Color {
+fn reference_diff_highlight_removed() -> Color {
     Color::Rgb(0xE2, 0x6A, 0x75)
 }
 
-fn opencode_diff_hunk_header() -> Color {
+fn reference_diff_hunk_header() -> Color {
     Color::Rgb(0x82, 0x8B, 0xB8)
 }
 
@@ -4098,33 +4098,33 @@ mod tests {
     }
 
     #[test]
-    fn structured_diff_palette_matches_opencode_inline_diff_colors() {
+    fn structured_diff_palette_matches_reference_inline_diff_colors() {
         let theme = Theme::default();
 
         assert_eq!(
             diff_row_palette('+', &theme).content_bg,
-            opencode_diff_added_bg()
+            reference_diff_added_bg()
         );
         assert_eq!(
             diff_row_palette('+', &theme).gutter_bg,
-            opencode_diff_added_line_number_bg()
+            reference_diff_added_line_number_bg()
         );
         assert_eq!(
             diff_row_palette('-', &theme).content_bg,
-            opencode_diff_removed_bg()
+            reference_diff_removed_bg()
         );
         assert_eq!(
             diff_row_palette('-', &theme).gutter_bg,
-            opencode_diff_removed_line_number_bg()
+            reference_diff_removed_line_number_bg()
         );
         assert_eq!(diff_hunk_palette(&theme).content_bg, theme.surface.panel);
         assert_eq!(
             diff_marker_style('+', None, &theme).fg,
-            Some(opencode_diff_highlight_added())
+            Some(reference_diff_highlight_added())
         );
         assert_eq!(
             diff_marker_style('-', None, &theme).fg,
-            Some(opencode_diff_highlight_removed())
+            Some(reference_diff_highlight_removed())
         );
         assert_eq!(
             diff_segment_style(
@@ -4134,7 +4134,7 @@ mod tests {
                 &theme
             )
             .fg,
-            Some(opencode_diff_highlight_added())
+            Some(reference_diff_highlight_added())
         );
         assert_eq!(
             diff_segment_style(
@@ -4144,7 +4144,7 @@ mod tests {
                 &theme
             )
             .fg,
-            Some(opencode_diff_highlight_removed())
+            Some(reference_diff_highlight_removed())
         );
 
         let hunk_header = render_diff_hunk_header("", "@@ -1,1 +1,1 @@", 48, 2, &theme);
@@ -4153,16 +4153,16 @@ mod tests {
             .iter()
             .find(|span| span.content.contains("@@ -1,1 +1,1 @@"))
             .expect("hunk header span");
-        assert_eq!(hunk_span.style.fg, Some(opencode_diff_hunk_header()));
+        assert_eq!(hunk_span.style.fg, Some(reference_diff_hunk_header()));
         assert_eq!(hunk_span.style.bg, Some(theme.surface.panel));
     }
 
     #[test]
-    fn structured_diff_syntax_highlighting_uses_opencode_token_colors() {
+    fn structured_diff_syntax_highlighting_uses_reference_token_colors() {
         let chunks = highlight_diff_line_chunks(
             Some("src/demo.rs"),
             "let value = \"hi\"; let total = 42; // note",
-            Some(opencode_diff_added_bg()),
+            Some(reference_diff_added_bg()),
         )
         .expect("syntax-highlighted diff chunks");
 
@@ -4185,7 +4185,7 @@ mod tests {
             find_chunk("note").style.fg,
             Some(Color::Rgb(0x80, 0x80, 0x80))
         );
-        assert_eq!(find_chunk("note").style.bg, Some(opencode_diff_added_bg()));
+        assert_eq!(find_chunk("note").style.bg, Some(reference_diff_added_bg()));
     }
 
     #[test]
