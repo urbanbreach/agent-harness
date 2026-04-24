@@ -9,9 +9,9 @@ use super::{
     merge_orchestration_task_event, merge_resolved_tool_identity, merge_tool_call_metadata,
     new_streaming_activity_entry, task_completed_updates_assistant_transcript, ActiveContextUsage,
     ActivityEntry, ActivityStatus, ActivityUsage, AppState, CompactionState, CompactionStatus,
-    Focus, MemoryCaps, NewStreamingActivityEntryArgs, OrchestrationOwnerLabels,
-    OrchestrationSummary, OrchestrationTaskRow, OrchestrationTaskState, ToolCallDisplayStatus,
-    ToolCallEntry, TOOL_OUTPUT_DISPLAY_MAX_CHARS,
+    CompactionUsageMetrics, Focus, MemoryCaps, NewStreamingActivityEntryArgs,
+    OrchestrationOwnerLabels, OrchestrationSummary, OrchestrationTaskRow, OrchestrationTaskState,
+    ToolCallDisplayStatus, ToolCallEntry, TOOL_OUTPUT_DISPLAY_MAX_CHARS,
 };
 use crate::view_model;
 
@@ -21,6 +21,7 @@ pub struct SessionProjection {
     pub(crate) activities: VecDeque<ActivityEntry>,
     pub(crate) active_context_usage: Option<ActiveContextUsage>,
     pub(crate) compaction_status: Option<CompactionStatus>,
+    pub(crate) compaction_usage_metrics: CompactionUsageMetrics,
     pub(crate) memory_caps: MemoryCaps,
     pub(crate) events_trimmed_count: usize,
     pub(crate) transcript_trimmed_count: usize,
@@ -37,6 +38,7 @@ impl SessionProjection {
         self.activities.clear();
         self.active_context_usage = None;
         self.compaction_status = None;
+        self.compaction_usage_metrics = CompactionUsageMetrics::default();
         self.orchestration_tasks.clear();
         self.agent_profiles.clear();
         self.seen_seqs.clear();
@@ -624,6 +626,24 @@ impl SessionProjection {
                         .map(ActiveContextUsage::estimate)
                         .unwrap_or_else(ActiveContextUsage::compacted_pending_refresh),
                 );
+                self.compaction_usage_metrics.completed_count = self
+                    .compaction_usage_metrics
+                    .completed_count
+                    .saturating_add(1);
+                self.compaction_usage_metrics.summary_tokens_estimate = self
+                    .compaction_usage_metrics
+                    .summary_tokens_estimate
+                    .saturating_add(u64::from(data.summary_tokens_estimate.unwrap_or(0)));
+                self.compaction_usage_metrics.reduction_tokens_estimate = self
+                    .compaction_usage_metrics
+                    .reduction_tokens_estimate
+                    .saturating_add(u64::from(data.reduction_tokens_estimate.unwrap_or(0)));
+                self.compaction_usage_metrics.last_tokens_before_estimate =
+                    data.tokens_before_estimate;
+                self.compaction_usage_metrics.last_tokens_after_estimate =
+                    data.tokens_after_estimate;
+                self.compaction_usage_metrics
+                    .last_reduction_percent_estimate = data.reduction_percent_estimate;
                 self.compaction_status = Some(CompactionStatus {
                     agent_id: data.agent_id.clone(),
                     checkpoint_id: Some(data.checkpoint_id.clone()),

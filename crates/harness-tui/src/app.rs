@@ -545,6 +545,16 @@ pub struct CompactionStatus {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CompactionUsageMetrics {
+    pub completed_count: u32,
+    pub summary_tokens_estimate: u64,
+    pub reduction_tokens_estimate: u64,
+    pub last_tokens_before_estimate: Option<u32>,
+    pub last_tokens_after_estimate: Option<u32>,
+    pub last_reduction_percent_estimate: Option<u32>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompactionState {
     Requested,
@@ -1276,12 +1286,8 @@ impl AppState {
         self.projection.compaction_status.as_ref()
     }
 
-    pub(crate) fn cumulative_token_spend(&self) -> u64 {
-        self.activities
-            .iter()
-            .filter_map(|activity| activity.usage)
-            .map(|usage| u64::from(usage.total_tokens))
-            .sum()
+    pub(crate) fn compaction_usage_metrics(&self) -> CompactionUsageMetrics {
+        self.projection.compaction_usage_metrics
     }
 
     pub fn new_live(
