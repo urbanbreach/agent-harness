@@ -449,7 +449,11 @@ impl ExaRemoteSearchBackend {
             }
 
             if !status.is_success() {
-                let body = response.text().await.unwrap_or_default();
+                let body = response.text().await.map_err(|err| {
+                    ToolError::Execution(format!(
+                        "remote search request failed with status {status}; failed to read error body: {err}"
+                    ))
+                })?;
                 return Err(ToolError::Execution(format!(
                     "remote search request failed with status {status}{}",
                     backend_error_suffix(&body),

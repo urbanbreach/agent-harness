@@ -1123,8 +1123,8 @@ fn build_recursive_tree(
         .iter()
         .filter_map(|pattern| Glob::new(pattern).ok().map(|glob| glob.compile_matcher()))
         .collect::<Vec<_>>();
-    let mut dirs = BTreeSet::new();
-    let mut files_by_dir = BTreeMap::<String, Vec<String>>::new();
+    let mut child_dirs_by_dir = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut files_by_dir = BTreeMap::<String, BTreeSet<String>>::new();
     let mut count = 0usize;
     let mut truncated = false;
 
@@ -1148,20 +1148,8 @@ fn build_recursive_tree(
             .parent()
             .map(normalize_relative_path)
             .unwrap_or_else(|| ".".to_string());
-        let parts = if dir == "." {
-            Vec::new()
-        } else {
-            dir.split('/').map(ToOwned::to_owned).collect::<Vec<_>>()
-        };
-        for idx in 0..=parts.len() {
-            let dir_path = if idx == 0 {
-                ".".to_string()
-            } else {
-                parts[..idx].join("/")
-            };
-            dirs.insert(dir_path);
-        }
-        files_by_dir.entry(dir.clone()).or_default().push(
+        register_tree_dirs(&mut child_dirs_by_dir, &dir);
+        files_by_dir.entry(dir.clone()).or_default().insert(
             Path::new(&rel)
                 .file_name()
                 .unwrap_or_else(|| OsStr::new(&rel))
@@ -1172,8 +1160,8 @@ fn build_recursive_tree(
 
     fn render_dir(
         dir_path: &str,
-        dirs: &BTreeSet<String>,
-        files_by_dir: &BTreeMap<String, Vec<String>>,
+        child_dirs_by_dir: &BTreeMap<String, BTreeSet<String>>,
+        files_by_dir: &BTreeMap<String, BTreeSet<String>>,
         depth: usize,
     ) -> String {
         let indent = "  ".repeat(depth);
@@ -1189,26 +1177,17 @@ fn build_recursive_tree(
             ));
         }
         let child_indent = "  ".repeat(depth + 1);
-        let children = dirs
-            .iter()
-            .filter(|child| {
-                if child.as_str() == dir_path {
-                    return false;
-                }
-                Path::new(child)
-                    .parent()
-                    .map(normalize_relative_path)
-                    .unwrap_or_else(|| ".".to_string())
-                    == dir_path
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        for child in children {
-            output.push_str(&render_dir(&child, dirs, files_by_dir, depth + 1));
+        if let Some(children) = child_dirs_by_dir.get(dir_path) {
+            for child in children {
+                output.push_str(&render_dir(
+                    child,
+                    child_dirs_by_dir,
+                    files_by_dir,
+                    depth + 1,
+                ));
+            }
         }
         if let Some(files) = files_by_dir.get(dir_path) {
-            let mut files = files.clone();
-            files.sort();
             for file in files {
                 output.push_str(&format!("{child_indent}{file}\n"));
             }
@@ -1217,12 +1196,34 @@ fn build_recursive_tree(
     }
 
     let mut rendered = format!("{}/\n", root.display());
-    rendered.push_str(&render_dir(".", &dirs, &files_by_dir, 0));
+    rendered.push_str(&render_dir(".", &child_dirs_by_dir, &files_by_dir, 0));
     Ok(RenderedTree {
         rendered: rendered.trim_end().to_string(),
         count: count.min(limit),
         truncated,
     })
+}
+
+fn register_tree_dirs(child_dirs_by_dir: &mut BTreeMap<String, BTreeSet<String>>, dir: &str) {
+    child_dirs_by_dir.entry(".".to_string()).or_default();
+    if dir == "." {
+        return;
+    }
+
+    let parts = dir.split('/').collect::<Vec<_>>();
+    for idx in 0..parts.len() {
+        let parent = if idx == 0 {
+            ".".to_string()
+        } else {
+            parts[..idx].join("/")
+        };
+        let child = parts[..=idx].join("/");
+        child_dirs_by_dir
+            .entry(parent)
+            .or_default()
+            .insert(child.clone());
+        child_dirs_by_dir.entry(child).or_default();
+    }
 }
 
 fn should_skip_entry(ctx: &ToolContext, entry: &DirEntry) -> bool {
@@ -1540,10 +1541,17 @@ fn looks_like_shell_path_argument(token: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        blocked_shell_command_message, validate_bash_command, BatchArgs, QuestionArgs, TaskArgs,
+        blocked_shell_command_message, build_recursive_tree, validate_bash_command, BatchArgs,
+        QuestionArgs, TaskArgs,
     };
+    use std::sync::Arc;
+
+    use harness_core::clock::RealClock;
     use harness_core::config::ShellAllowlist;
-    use harness_core::tool::ToolError;
+    use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
+    use harness_core::event::{ActorKind, EventActor};
+    use harness_core::redact::DefaultRedactor;
+    use harness_core::tool::{ToolContext, ToolError};
     use serde_json::json;
 
     #[test]
@@ -1592,6 +1600,44 @@ mod tests {
             }
             other => panic!("expected command blocked error, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn recursive_tree_renders_direct_children_once_in_sorted_order() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let root = tempdir.path();
+        std::fs::create_dir_all(root.join("src/zeta")).expect("create zeta");
+        std::fs::create_dir_all(root.join("src/alpha")).expect("create alpha");
+        std::fs::write(root.join("src/zeta/mod.rs"), "").expect("write zeta mod");
+        std::fs::write(root.join("src/alpha/lib.rs"), "").expect("write alpha lib");
+        std::fs::write(root.join("README.md"), "").expect("write readme");
+
+        let coordinator = spawn_coordinator(
+            CoordinatorConfig::default(),
+            Arc::new(RealClock::new()),
+            Arc::new(DefaultRedactor::default()),
+        );
+        let ctx = ToolContext {
+            run_id: "run-tree-tests".to_string(),
+            workspace_root: root.to_path_buf(),
+            artifacts_dir: root.join("artifacts"),
+            actor: EventActor::new(ActorKind::Worker, Some("worker-1".to_string())),
+            category: Some("quick".to_string()),
+            tool_call_id: "tree-test".to_string(),
+            coordinator,
+        };
+
+        let tree = build_recursive_tree(&ctx, root, &[], 100).expect("render tree");
+
+        assert_eq!(tree.count, 3);
+        assert!(!tree.truncated);
+        assert_eq!(
+            tree.rendered,
+            format!(
+                "{}/\n  src/\n    alpha/\n      lib.rs\n    zeta/\n      mod.rs\n  README.md",
+                root.display()
+            )
+        );
     }
 
     #[test]
