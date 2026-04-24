@@ -460,6 +460,10 @@ where
         Ok(tool_defs) => tool_defs,
         Err(reason) => return AgentTurnOutcome::Failed { reason },
     };
+    let function_to_tool_id = tool_defs
+        .iter()
+        .map(|tool| (tool.function_name.clone(), tool.tool_id.clone()))
+        .collect::<BTreeMap<_, _>>();
 
     let mut messages = build_provider_context_messages(profile, prior_context, &request.prompt);
 
@@ -489,7 +493,7 @@ where
         ))
         .await;
 
-        let mut stream = provider.stream_completion(completion_request.clone()).await;
+        let mut stream = provider.stream_completion(completion_request).await;
         let mut output = String::new();
         let mut tool_calls = Vec::new();
         let mut finished = false;
@@ -594,17 +598,6 @@ where
                 reason: format!("agent turn exceeded MAX_TOOL_CALLS_TOTAL={MAX_TOOL_CALLS_TOTAL}"),
             };
         }
-
-        let function_to_tool_id = completion_request
-            .tools
-            .as_ref()
-            .map(|tools| {
-                tools
-                    .iter()
-                    .map(|tool| (tool.function_name.clone(), tool.tool_id.clone()))
-                    .collect::<BTreeMap<_, _>>()
-            })
-            .unwrap_or_default();
 
         for tool_call in tool_calls {
             let Some(tool_id) = function_to_tool_id.get(&tool_call.function_name) else {

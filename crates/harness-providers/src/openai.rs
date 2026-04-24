@@ -125,7 +125,7 @@ impl OpenAiCompatibleProvider {
             .json(request)
             .send()
             .await
-            .map_err(|_| "openai_compatible request failed before receiving response".to_string())
+            .map_err(format_transport_error)
     }
 
     async fn send_chat_request(
@@ -204,9 +204,6 @@ fn openai_role(role: &MessageRole) -> String {
 #[async_trait]
 impl Provider for OpenAiCompatibleProvider {
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
-        let chat_request = OpenAiChatCompletionsRequest::from(req.clone());
-        let responses_request = OpenAiResponsesRequest::from(req);
-
         let strategy = match self.api_mode {
             OpenAiApiMode::ChatCompletions => RequestStrategy::ChatCompletions,
             OpenAiApiMode::Responses => RequestStrategy::Responses,
@@ -214,13 +211,17 @@ impl Provider for OpenAiCompatibleProvider {
         };
 
         let (mode, response) = match strategy {
-            RequestStrategy::ChatCompletions => match self.send_chat_request(&chat_request).await {
-                Ok(response) => (OpenAiApiMode::ChatCompletions, response),
-                Err(message) => {
-                    return Box::pin(stream::iter(vec![ProviderStreamEvent::Error { message }]))
+            RequestStrategy::ChatCompletions => {
+                let chat_request = OpenAiChatCompletionsRequest::from(req);
+                match self.send_chat_request(&chat_request).await {
+                    Ok(response) => (OpenAiApiMode::ChatCompletions, response),
+                    Err(message) => {
+                        return Box::pin(stream::iter(vec![ProviderStreamEvent::Error { message }]))
+                    }
                 }
-            },
+            }
             RequestStrategy::Responses => {
+                let responses_request = OpenAiResponsesRequest::from(req);
                 match self.send_responses_request(&responses_request).await {
                     Ok(response) => (OpenAiApiMode::Responses, response),
                     Err(message) => {
@@ -229,6 +230,7 @@ impl Provider for OpenAiCompatibleProvider {
                 }
             }
             RequestStrategy::Auto => {
+                let responses_request = OpenAiResponsesRequest::from(req.clone());
                 let response = match self.send_responses_request(&responses_request).await {
                     Ok(response) => response,
                     Err(message) => {
@@ -239,6 +241,7 @@ impl Provider for OpenAiCompatibleProvider {
                 if matches!(response.status().as_u16(), 404 | 405)
                     || (response.status().as_u16() == 400 && self.is_loopback_base_url())
                 {
+                    let chat_request = OpenAiChatCompletionsRequest::from(req);
                     match self.send_chat_request(&chat_request).await {
                         Ok(fallback_response) => {
                             (OpenAiApiMode::ChatCompletions, fallback_response)
@@ -273,6 +276,31 @@ impl Provider for OpenAiCompatibleProvider {
 
         Box::pin(tokio_stream::wrappers::ReceiverStream::new(rx))
     }
+}
+
+fn format_transport_error(err: reqwest::Error) -> String {
+    let is_timeout = err.is_timeout();
+    let is_connect = err.is_connect();
+    let status = err.status();
+    let sanitized = err.without_url();
+    let mut details = Vec::new();
+    if is_timeout {
+        details.push("timeout");
+    }
+    if is_connect {
+        details.push("connection");
+    }
+    if status.is_some() {
+        details.push("status");
+    }
+    let category = if details.is_empty() {
+        "transport".to_string()
+    } else {
+        details.join("/")
+    };
+    format!(
+        "openai_compatible request failed before receiving response ({category} error): {sanitized}"
+    )
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1631,6 +1659,32 @@ mod tests {
         assert_eq!(requests.len(), 2);
         assert_eq!(requests[0].url.path(), "/v1/responses");
         assert_eq!(requests[1].url.path(), "/v1/chat/completions");
+    }
+
+    #[tokio::test]
+    async fn openai_transport_failure_keeps_sanitized_context() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind local port");
+        let addr = listener.local_addr().expect("local addr");
+        drop(listener);
+
+        let provider = OpenAiCompatibleProvider::new(OpenAiCompatibleProviderConfig {
+            base_url: format!("http://{addr}/v1?api_key=should-not-leak"),
+            api_key: "test-secret-key".to_string(),
+            api_mode: OpenAiApiMode::ChatCompletions,
+            timeout_ms: 1_000,
+            headers: BTreeMap::new(),
+        })
+        .expect("build provider");
+
+        let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
+        let [ProviderStreamEvent::Error { message }] = events.as_slice() else {
+            panic!("expected one provider error, got {events:?}");
+        };
+
+        assert!(message.contains("before receiving response"));
+        assert!(message.contains("connection") || message.contains("transport"));
+        assert!(!message.contains("should-not-leak"));
+        assert!(!message.contains("test-secret-key"));
     }
 
     #[test]
