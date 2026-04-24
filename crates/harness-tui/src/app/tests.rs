@@ -3011,6 +3011,90 @@ fn slash_menu_resets_selection_when_filter_changes() {
 }
 
 #[test]
+fn slash_menu_matches_descriptions_and_boosts_prefixes() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+
+    for ch in "/saved".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+
+    assert_eq!(&app.slash_filtered[..2], ["replay", "resume"]);
+
+    app.clear_prompt_input();
+    for ch in "/re".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+
+    assert_eq!(&app.slash_filtered[..2], ["replay", "resume"]);
+    assert!(app.slash_filtered.iter().any(|command| command == "new"));
+
+    app.clear_prompt_input();
+    for ch in "/nw".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+
+    assert_eq!(app.slash_filtered.first().map(String::as_str), Some("new"));
+
+    app.clear_prompt_input();
+    for ch in "/continue".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+
+    assert_eq!(
+        app.slash_filtered.first().map(String::as_str),
+        Some("resume")
+    );
+}
+
+#[test]
+fn slash_alias_executes_matching_command_without_menu() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_startup(Vec::new(), Some(sink));
+    for ch in "/quit".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+
+    assert!(app.should_quit);
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::QuitRequested]
+    );
+}
+
+#[test]
+fn slash_escape_clears_token_or_restores_prior_draft() {
+    let mut fresh = AppState::new_startup(Vec::new(), None);
+    for ch in "/re".chars() {
+        fresh.handle_key(key(KeyCode::Char(ch)));
+    }
+
+    fresh.handle_key(key(KeyCode::Esc));
+
+    assert_eq!(fresh.prompt_buffer, "");
+    assert_eq!(fresh.prompt_cursor, 0);
+    assert!(!fresh.slash_visible);
+
+    let mut with_draft = AppState::new_startup(Vec::new(), None);
+    with_draft.prompt_buffer = "draft".to_string();
+    with_draft.prompt_cursor = 0;
+    with_draft.handle_key(key(KeyCode::Char('/')));
+
+    with_draft.handle_key(key(KeyCode::Esc));
+
+    assert_eq!(with_draft.prompt_buffer, "draft");
+    assert_eq!(with_draft.prompt_cursor, "draft".chars().count());
+    assert!(!with_draft.slash_visible);
+}
+
+#[test]
 fn slash_exit_matches_quit_requested_behavior() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {

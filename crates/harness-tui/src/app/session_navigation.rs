@@ -17,6 +17,8 @@ use super::{
 };
 use crate::keybindings::Action;
 
+const SLASH_COMMAND_RESULT_LIMIT: usize = 10;
+
 #[derive(Debug, Clone)]
 pub(super) struct SessionNavigationSnapshot {
     pub(super) session_path: PathBuf,
@@ -1042,7 +1044,12 @@ impl AppState {
     }
 
     fn active_slash_query(&self) -> Option<&str> {
-        let query = self.prompt_buffer.strip_prefix('/')?;
+        if self.prompt_cursor == 0 || self.prompt_buffer.chars().any(char::is_whitespace) {
+            return None;
+        }
+
+        let cursor_byte = self.prompt_cursor_byte_index();
+        let query = self.prompt_buffer[..cursor_byte].strip_prefix('/')?;
         (!query.chars().any(char::is_whitespace)).then_some(query)
     }
 
@@ -1083,8 +1090,12 @@ impl AppState {
                     .map(|rank| (rank, (*command).to_string()))
             })
             .collect::<Vec<_>>();
-        filtered.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
-        self.slash_filtered = filtered.into_iter().map(|(_, command)| command).collect();
+        filtered.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+        self.slash_filtered = filtered
+            .into_iter()
+            .take(SLASH_COMMAND_RESULT_LIMIT)
+            .map(|(_, command)| command)
+            .collect();
         self.slash_selected = 0;
     }
 
@@ -1094,9 +1105,21 @@ impl AppState {
             .strip_prefix('/')
             .and_then(|command| {
                 SLASH_COMMANDS.iter().find_map(|(name, _)| {
-                    (*name == command && self.slash_command_available(name)).then_some(*name)
+                    ((*name == command || slash_command_aliases(name).contains(&command))
+                        && self.slash_command_available(name))
+                    .then_some(*name)
                 })
             })
+    }
+
+    pub(crate) fn slash_command_column_width(&self) -> usize {
+        SLASH_COMMANDS
+            .iter()
+            .filter(|(command, _)| self.slash_command_available(command))
+            .map(|(command, _)| slash_command_display_width(command))
+            .max()
+            .unwrap_or(0)
+            .saturating_add(2)
     }
 
     fn slash_command_available(&self, command: &str) -> bool {
@@ -2437,29 +2460,63 @@ impl AppState {
 
 fn slash_command_match_rank(command: &str, description: &str, query: &str) -> Option<(u8, usize)> {
     if query.is_empty() {
-        return Some((5, 0));
+        return Some((0, 0));
     }
 
-    if command == query {
-        return Some((6, 0));
+    let display = format!("/{command}");
+    let command = command.to_lowercase();
+    let description = description.to_lowercase();
+    let aliases = slash_command_aliases(command.as_str());
+
+    if command == query || display == query || aliases.contains(&query) {
+        return Some((0, 0));
     }
 
-    if command.starts_with(query) {
-        return Some((5, command.len().saturating_sub(query.len())));
+    if command.starts_with(query)
+        || display.starts_with(query)
+        || aliases.iter().any(|alias| alias.starts_with(query))
+    {
+        return Some((0, command.len().saturating_sub(query.len())));
     }
 
-    if let Some(index) = command.find(query) {
-        return Some((4, index));
+    if let Some(index) = command.find(query).or_else(|| display.find(query)) {
+        return Some((1, index));
     }
 
-    if let Some(score) = slash_subsequence_score(command, query) {
-        return Some((3, score));
+    if let Some(index) = aliases.iter().find_map(|alias| alias.find(query)) {
+        return Some((1, index));
     }
 
-    description
-        .to_lowercase()
-        .find(query)
-        .map(|index| (2, index))
+    if let Some(score) = slash_subsequence_score(&command, query)
+        .or_else(|| slash_subsequence_score(&display, query))
+        .or_else(|| {
+            aliases
+                .iter()
+                .filter_map(|alias| slash_subsequence_score(alias, query))
+                .min()
+        })
+    {
+        return Some((2, score));
+    }
+
+    description.find(query).map(|index| (3, index))
+}
+
+fn slash_command_aliases(command: &str) -> &'static [&'static str] {
+    match command {
+        "new" => &["new-session", "session"],
+        "resume" => &["continue"],
+        "model" => &["models"],
+        "events" => &["event-log"],
+        "shell" => &["session-shell"],
+        "compact" => &["summarize", "summary"],
+        "exit" => &["quit", "q"],
+        _ => &[],
+    }
+}
+
+fn slash_command_display_width(command: &str) -> usize {
+    command.chars().count().saturating_add(1)
 }
 
 fn slash_subsequence_score(haystack: &str, needle: &str) -> Option<usize> {
