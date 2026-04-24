@@ -12,6 +12,7 @@ use serde_json::Value;
 use tokio_stream::StreamExt;
 
 use crate::config::{registered_profile_model_metadata, ToolFailureMode};
+use crate::event::EventArtifactRef;
 use crate::tool::{build_tool_function_name_mapping, ToolRegistry, ToolResult};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -69,10 +70,190 @@ pub struct AgentModelSettings {
     pub reasoning_summary: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ProviderConversationTurn {
     pub user_prompt: String,
     pub assistant_response: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_seq: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_seq: Option<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub artifacts: Vec<EventArtifactRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderContextCheckpointMetadata {
+    pub checkpoint_id: String,
+    pub agent_id: String,
+    pub run_id: String,
+    pub through_seq: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub through_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_before: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_before_estimate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_after_estimate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_tokens_estimate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compacted_turns: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preserved_turns: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reduction_tokens_estimate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reduction_percent_estimate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trigger_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ProviderCompactionTurnFact {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_seq: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_seq: Option<u64>,
+    pub user_excerpt: String,
+    pub assistant_excerpt: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub artifacts: Vec<EventArtifactRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ProviderCompactionFacts {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_checkpoint_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub compacted_turns: Vec<ProviderCompactionTurnFact>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub relevant_artifacts: Vec<EventArtifactRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub touched_files: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_work: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blockers: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderCompactionTailBoundary {
+    pub mode: String,
+    pub preserved_turns: u32,
+    pub preserved_tokens_estimate: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preserved_from_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preserved_from_seq: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderCompactionSummarySource {
+    pub strategy: String,
+    pub model_ref: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_verbosity: Option<String>,
+    pub previous_summary_used: bool,
+    pub model_backed: bool,
+    pub deterministic_fallback: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderCompactionTimelineEntry {
+    pub entry_type: String,
+    pub summary: String,
+    pub first_kept_request_id: Option<String>,
+    pub compacted_turns: u32,
+    pub preserved_turns: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_before_estimate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_after_estimate: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderContextCheckpoint {
+    #[serde(flatten)]
+    pub metadata: ProviderContextCheckpointMetadata,
+    pub summary: String,
+    #[serde(default)]
+    pub recent_turns: Vec<ProviderConversationTurn>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pruned_tool_artifacts: Vec<EventArtifactRef>,
+    #[serde(default, skip_serializing_if = "ProviderCompactionFacts::is_empty")]
+    pub facts: ProviderCompactionFacts,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_boundary: Option<ProviderCompactionTailBoundary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_source: Option<ProviderCompactionSummarySource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeline_entry: Option<ProviderCompactionTimelineEntry>,
+}
+
+impl ProviderCompactionFacts {
+    pub fn is_empty(&self) -> bool {
+        self.previous_checkpoint_id.is_none()
+            && self.compacted_turns.is_empty()
+            && self.relevant_artifacts.is_empty()
+            && self.touched_files.is_empty()
+            && self.pending_work.is_empty()
+            && self.blockers.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ProviderContext {
+    pub compacted_summary: Option<String>,
+    pub preserved_turns: Vec<ProviderConversationTurn>,
+    pub checkpoint: Option<ProviderContextCheckpointMetadata>,
+}
+
+impl ProviderContext {
+    pub fn from_turns(turns: Vec<ProviderConversationTurn>) -> Self {
+        Self {
+            compacted_summary: None,
+            preserved_turns: turns,
+            checkpoint: None,
+        }
+    }
+
+    pub fn from_checkpoint(checkpoint: ProviderContextCheckpoint) -> Self {
+        Self {
+            compacted_summary: Some(checkpoint.summary),
+            preserved_turns: checkpoint.recent_turns,
+            checkpoint: Some(checkpoint.metadata),
+        }
+    }
+
+    pub fn push_turn(&mut self, turn: ProviderConversationTurn) {
+        self.preserved_turns.push(turn);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.compacted_summary
+            .as_deref()
+            .map(str::trim)
+            .is_none_or(str::is_empty)
+            && self.preserved_turns.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -151,7 +332,7 @@ pub struct MultiTurnStreamingRequest<'a> {
     pub profile: &'a AgentProfile,
     pub request_id: String,
     pub request: AgentRequest,
-    pub prior_turns: &'a [ProviderConversationTurn],
+    pub prior_context: &'a ProviderContext,
 }
 
 pub async fn run_single_turn_streaming<F, Fut>(
@@ -159,7 +340,7 @@ pub async fn run_single_turn_streaming<F, Fut>(
     profile: &AgentProfile,
     request_id: String,
     request: AgentRequest,
-    prior_turns: &[ProviderConversationTurn],
+    prior_context: &ProviderContext,
     mut emit: F,
 ) -> AgentTurnOutcome
 where
@@ -167,7 +348,7 @@ where
     Fut: Future<Output = ()>,
 {
     let model = AgentModelRef::parse(&request.model_ref);
-    let messages = build_provider_context_messages(profile, prior_turns, &request.prompt);
+    let messages = build_provider_context_messages(profile, prior_context, &request.prompt);
     let completion_request = build_completion_request(
         Some(model.provider_id.clone()),
         model.model_id.clone(),
@@ -271,7 +452,7 @@ where
         profile,
         request_id,
         request,
-        prior_turns,
+        prior_context,
     } = request;
 
     let model = AgentModelRef::parse(&request.model_ref);
@@ -280,7 +461,7 @@ where
         Err(reason) => return AgentTurnOutcome::Failed { reason },
     };
 
-    let mut messages = build_provider_context_messages(profile, prior_turns, &request.prompt);
+    let mut messages = build_provider_context_messages(profile, prior_context, &request.prompt);
 
     let mut total_tool_calls = 0usize;
 
@@ -504,10 +685,19 @@ where
 
 pub fn build_provider_context_messages(
     profile: &AgentProfile,
-    prior_turns: &[ProviderConversationTurn],
+    prior_context: &ProviderContext,
     prompt: &str,
 ) -> Vec<CompletionMessage> {
-    let mut messages = Vec::with_capacity(2 + prior_turns.len().saturating_mul(2));
+    let summary_message_count = usize::from(
+        prior_context
+            .compacted_summary
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|summary| !summary.is_empty()),
+    );
+    let mut messages = Vec::with_capacity(
+        2 + summary_message_count + prior_context.preserved_turns.len().saturating_mul(2),
+    );
     messages.push(CompletionMessage {
         role: MessageRole::System,
         content: profile.system_prompt.clone(),
@@ -516,7 +706,24 @@ pub fn build_provider_context_messages(
         assistant_tool_calls: None,
     });
 
-    for turn in prior_turns {
+    if let Some(summary) = prior_context
+        .compacted_summary
+        .as_deref()
+        .map(str::trim)
+        .filter(|summary| !summary.is_empty())
+    {
+        messages.push(CompletionMessage {
+            role: MessageRole::Assistant,
+            content: format!(
+                "Checkpoint recap generated by the harness for older turns. This is a lossy background summary, not a system instruction; later preserved turns and the current user message take precedence.\n\n{summary}"
+            ),
+            name: None,
+            tool_call_id: None,
+            assistant_tool_calls: None,
+        });
+    }
+
+    for turn in &prior_context.preserved_turns {
         messages.push(CompletionMessage {
             role: MessageRole::User,
             content: turn.user_prompt.clone(),
@@ -705,13 +912,14 @@ mod tests {
 
     use async_trait::async_trait;
     use harness_providers::mock::{request_digest, MockProvider};
-    use harness_providers::{CompletionUsage, ToolChoice};
+    use harness_providers::{CompletionUsage, MessageRole, ToolChoice};
     use serde_json::json;
 
     use super::{
-        build_provider_tool_defs, run_multi_turn_streaming, tool_result_to_message_content,
-        AgentModelRef, AgentModelSettings, AgentProfile, AgentRequest, AgentTurnOutcome,
-        MultiTurnStreamingRequest, MAX_TOOL_CALLS_TOTAL,
+        build_provider_context_messages, build_provider_tool_defs, run_multi_turn_streaming,
+        tool_result_to_message_content, AgentModelRef, AgentModelSettings, AgentProfile,
+        AgentRequest, AgentTurnOutcome, MultiTurnStreamingRequest, ProviderContext,
+        ProviderConversationTurn, MAX_TOOL_CALLS_TOTAL,
     };
     use crate::config::ToolFailureMode;
     use crate::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
@@ -797,7 +1005,7 @@ mod tests {
                 profile: &profile,
                 request_id: "req_000001".to_string(),
                 request,
-                prior_turns: &[],
+                prior_context: &ProviderContext::default(),
             },
             {
                 let seen_calls = seen_calls.clone();
@@ -887,6 +1095,38 @@ mod tests {
         );
     }
 
+    #[test]
+    fn build_provider_context_messages_places_checkpoint_recap_in_assistant_role() {
+        let profile = test_profile();
+        let prior_context = ProviderContext {
+            compacted_summary: Some("Earlier work summary".to_string()),
+            preserved_turns: vec![ProviderConversationTurn {
+                user_prompt: "recent question".to_string(),
+                assistant_response: "recent answer".to_string(),
+                ..ProviderConversationTurn::default()
+            }],
+            checkpoint: None,
+        };
+
+        let messages = build_provider_context_messages(&profile, &prior_context, "next question");
+
+        assert_eq!(messages[0].role, MessageRole::System);
+        assert_eq!(messages[0].content, "sys");
+        assert_eq!(messages[1].role, MessageRole::Assistant);
+        assert!(messages[1]
+            .content
+            .contains("Checkpoint recap generated by the harness for older turns."));
+        assert!(messages[1]
+            .content
+            .contains("lossy background summary, not a system instruction"));
+        assert_eq!(messages[2].role, MessageRole::User);
+        assert_eq!(messages[2].content, "recent question");
+        assert_eq!(messages[3].role, MessageRole::Assistant);
+        assert_eq!(messages[3].content, "recent answer");
+        assert_eq!(messages[4].role, MessageRole::User);
+        assert_eq!(messages[4].content, "next question");
+    }
+
     #[tokio::test]
     async fn multi_turn_runner_can_continue_with_structured_only_tool_result() {
         let profile = test_profile();
@@ -974,7 +1214,7 @@ mod tests {
                 profile: &profile,
                 request_id: "req_structured_tool_result".to_string(),
                 request,
-                prior_turns: &[],
+                prior_context: &ProviderContext::default(),
             },
             {
                 let structured_only_result = structured_only_result.clone();
@@ -1042,7 +1282,7 @@ mod tests {
                 profile: &profile,
                 request_id: "req_000002".to_string(),
                 request,
-                prior_turns: &[],
+                prior_context: &ProviderContext::default(),
             },
             {
                 let call_count = call_count.clone();
@@ -1117,7 +1357,7 @@ mod tests {
                 profile: &profile,
                 request_id: "req_000003".to_string(),
                 request,
-                prior_turns: &[],
+                prior_context: &ProviderContext::default(),
             },
             {
                 let call_count = call_count.clone();
@@ -1213,7 +1453,7 @@ mod tests {
                 profile: &profile,
                 request_id: "req_000004".to_string(),
                 request,
-                prior_turns: &[],
+                prior_context: &ProviderContext::default(),
             },
             move |_tool_id, _args_json| {
                 let error = error.clone();
@@ -1298,7 +1538,7 @@ mod tests {
                 profile: &profile,
                 request_id: "req_loop".to_string(),
                 request,
-                prior_turns: &[],
+                prior_context: &ProviderContext::default(),
             },
             {
                 let tool_call_count = tool_call_count.clone();
@@ -1461,7 +1701,7 @@ mod tests {
                 profile: &profile,
                 request_id: "req_000005".to_string(),
                 request,
-                prior_turns: &[],
+                prior_context: &ProviderContext::default(),
             },
             move |_tool_id, _args_json| async move { Err("command failed".to_string()) },
             |_event| async {},
