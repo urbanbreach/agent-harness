@@ -229,6 +229,29 @@ pub struct ResumeTaskSnapshot {
     pub metadata: Option<TaskCompletionMetadata>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResumeArtifactSnapshot {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_tool_call_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_task_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub child_session_id: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChildSessionTerminalState {
@@ -280,6 +303,8 @@ pub struct ResumePlan {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub completed_tasks: BTreeMap<String, ResumeTaskSnapshot>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub session_artifacts: BTreeMap<String, ResumeArtifactSnapshot>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub child_sessions: BTreeMap<String, ResumeChildSessionSnapshot>,
     pub workspace_root: Option<String>,
     pub provider_model: Option<String>,
@@ -304,6 +329,7 @@ impl ResumePlan {
             tasks_in_flight: BTreeSet::new(),
             tool_calls: BTreeMap::new(),
             completed_tasks: BTreeMap::new(),
+            session_artifacts: BTreeMap::new(),
             child_sessions: BTreeMap::new(),
             workspace_root: None,
             provider_model: None,
@@ -323,19 +349,7 @@ impl SessionCatalogEntry {
 }
 
 fn resume_plan_artifact_count(plan: &ResumePlan) -> usize {
-    let mut refs = BTreeSet::new();
-
-    for snapshot in plan.tool_calls.values() {
-        let Some(metadata) = snapshot.metadata.as_ref() else {
-            continue;
-        };
-
-        for artifact in &metadata.artifact_refs {
-            refs.insert((artifact.path.as_str(), artifact.digest.as_deref()));
-        }
-    }
-
-    refs.len()
+    plan.session_artifacts.len()
 }
 
 fn resume_plan_child_session_count(plan: &ResumePlan) -> usize {
@@ -510,6 +524,7 @@ pub fn project_resume_plan<'a>(
     let mut tasks_in_flight = BTreeSet::new();
     let mut tool_calls = BTreeMap::new();
     let mut completed_tasks = BTreeMap::new();
+    let mut session_artifacts = BTreeMap::new();
     let mut child_sessions = BTreeMap::new();
     let mut agent_turns_in_flight = BTreeMap::new();
     let mut agent_turns_terminal_pending_late = BTreeMap::new();
@@ -550,6 +565,7 @@ pub fn project_resume_plan<'a>(
                 tasks_in_flight.clear();
                 tool_calls.clear();
                 completed_tasks.clear();
+                session_artifacts.clear();
                 agent_turns_in_flight.clear();
                 agent_turns_terminal_pending_late.clear();
             }
@@ -798,6 +814,12 @@ pub fn project_resume_plan<'a>(
                         &metadata.hook_executions,
                     );
                     merge_tool_call_metadata(tool_call, metadata.clone());
+                    merge_tool_metadata_artifacts(
+                        &mut session_artifacts,
+                        &payload.tool_call_id,
+                        tool_call,
+                        metadata,
+                    );
                 }
             }
             EventV1::ToolCallStarted(payload) => {
@@ -843,6 +865,12 @@ pub fn project_resume_plan<'a>(
                         &metadata.hook_executions,
                     );
                     merge_tool_call_metadata(tool_call, metadata.clone());
+                    merge_tool_metadata_artifacts(
+                        &mut session_artifacts,
+                        &payload.tool_call_id,
+                        tool_call,
+                        metadata,
+                    );
                 }
             }
             EventV1::ArtifactWritten(payload) => {
@@ -880,6 +908,8 @@ pub fn project_resume_plan<'a>(
                         },
                     );
                 }
+
+                merge_session_artifact(&mut session_artifacts, &tool_calls, payload);
             }
             EventV1::PermissionRequested(payload) => {
                 update_id_watermark(
@@ -933,6 +963,7 @@ pub fn project_resume_plan<'a>(
         tasks_in_flight,
         tool_calls,
         completed_tasks,
+        session_artifacts,
         child_sessions,
         workspace_root,
         provider_model,
@@ -997,6 +1028,148 @@ fn merge_tool_call_metadata(snapshot: &mut ResumeToolCallSnapshot, incoming: Too
     for hook_execution in hook_executions {
         merge_hook_execution(&mut metadata.hook_executions, hook_execution);
     }
+}
+
+fn merge_session_artifact(
+    session_artifacts: &mut BTreeMap<String, ResumeArtifactSnapshot>,
+    tool_calls: &BTreeMap<String, ResumeToolCallSnapshot>,
+    payload: &crate::event::ArtifactWrittenEvent,
+) {
+    let tool_snapshot = payload
+        .tool_call_id
+        .as_ref()
+        .and_then(|tool_call_id| tool_calls.get(tool_call_id));
+    let lineage = tool_snapshot
+        .and_then(|snapshot| snapshot.metadata.as_ref())
+        .and_then(|metadata| metadata.lineage.as_ref());
+    let tool_id = tool_snapshot
+        .and_then(|snapshot| snapshot.tool_id.clone())
+        .or_else(|| {
+            payload
+                .tool_metadata
+                .as_ref()
+                .and_then(|metadata| metadata.canonical_tool_id.clone())
+        });
+    let key = artifact_snapshot_key(&payload.path, Some(payload.digest.as_str()));
+
+    session_artifacts
+        .entry(key)
+        .and_modify(|artifact| {
+            if artifact.bytes.is_none() {
+                artifact.bytes = Some(payload.bytes);
+            }
+            if artifact.tool_call_id.is_none() {
+                artifact.tool_call_id = payload.tool_call_id.clone();
+            }
+            if artifact.tool_id.is_none() {
+                artifact.tool_id = tool_id.clone();
+            }
+            if artifact.artifact_kind.is_none() {
+                artifact.artifact_kind = payload.metadata.get("artifact_kind").cloned();
+            }
+            if artifact.parent_tool_call_id.is_none() {
+                artifact.parent_tool_call_id =
+                    lineage.and_then(|lineage| lineage.parent_tool_call_id.clone());
+            }
+            if artifact.parent_task_id.is_none() {
+                artifact.parent_task_id =
+                    lineage.and_then(|lineage| lineage.parent_task_id.clone());
+            }
+            if artifact.parent_request_id.is_none() {
+                artifact.parent_request_id =
+                    lineage.and_then(|lineage| lineage.parent_request_id.clone());
+            }
+            if artifact.child_session_id.is_none() {
+                artifact.child_session_id =
+                    lineage.and_then(|lineage| lineage.child_session_id.clone());
+            }
+        })
+        .or_insert_with(|| ResumeArtifactSnapshot {
+            path: payload.path.clone(),
+            digest: Some(payload.digest.clone()),
+            bytes: Some(payload.bytes),
+            tool_call_id: payload.tool_call_id.clone(),
+            tool_id,
+            artifact_kind: payload.metadata.get("artifact_kind").cloned(),
+            parent_tool_call_id: lineage.and_then(|lineage| lineage.parent_tool_call_id.clone()),
+            parent_task_id: lineage.and_then(|lineage| lineage.parent_task_id.clone()),
+            parent_request_id: lineage.and_then(|lineage| lineage.parent_request_id.clone()),
+            child_session_id: lineage.and_then(|lineage| lineage.child_session_id.clone()),
+        });
+}
+
+fn merge_tool_metadata_artifacts(
+    session_artifacts: &mut BTreeMap<String, ResumeArtifactSnapshot>,
+    tool_call_id: &str,
+    snapshot: &ResumeToolCallSnapshot,
+    metadata: &ToolCallMetadata,
+) {
+    for artifact in &metadata.artifact_refs {
+        let key = artifact_snapshot_key(&artifact.path, artifact.digest.as_deref());
+        session_artifacts
+            .entry(key)
+            .and_modify(|entry| {
+                if entry.tool_call_id.is_none() {
+                    entry.tool_call_id = Some(tool_call_id.to_string());
+                }
+                if entry.tool_id.is_none() {
+                    entry.tool_id = snapshot.tool_id.clone();
+                }
+                if entry.parent_tool_call_id.is_none() {
+                    entry.parent_tool_call_id = metadata
+                        .lineage
+                        .as_ref()
+                        .and_then(|lineage| lineage.parent_tool_call_id.clone());
+                }
+                if entry.parent_task_id.is_none() {
+                    entry.parent_task_id = metadata
+                        .lineage
+                        .as_ref()
+                        .and_then(|lineage| lineage.parent_task_id.clone());
+                }
+                if entry.parent_request_id.is_none() {
+                    entry.parent_request_id = metadata
+                        .lineage
+                        .as_ref()
+                        .and_then(|lineage| lineage.parent_request_id.clone());
+                }
+                if entry.child_session_id.is_none() {
+                    entry.child_session_id = metadata
+                        .lineage
+                        .as_ref()
+                        .and_then(|lineage| lineage.child_session_id.clone());
+                }
+            })
+            .or_insert_with(|| ResumeArtifactSnapshot {
+                path: artifact.path.clone(),
+                digest: artifact.digest.clone(),
+                bytes: None,
+                tool_call_id: Some(tool_call_id.to_string()),
+                tool_id: snapshot.tool_id.clone(),
+                artifact_kind: None,
+                parent_tool_call_id: metadata
+                    .lineage
+                    .as_ref()
+                    .and_then(|lineage| lineage.parent_tool_call_id.clone()),
+                parent_task_id: metadata
+                    .lineage
+                    .as_ref()
+                    .and_then(|lineage| lineage.parent_task_id.clone()),
+                parent_request_id: metadata
+                    .lineage
+                    .as_ref()
+                    .and_then(|lineage| lineage.parent_request_id.clone()),
+                child_session_id: metadata
+                    .lineage
+                    .as_ref()
+                    .and_then(|lineage| lineage.child_session_id.clone()),
+            });
+    }
+}
+
+fn artifact_snapshot_key(path: &str, digest: Option<&str>) -> String {
+    let digest = digest.unwrap_or_default();
+    format!("{path}\u{001f}{digest}")
 }
 
 fn merge_artifact_ref(existing: &mut Vec<EventArtifactRef>, candidate: EventArtifactRef) {
@@ -1388,6 +1561,10 @@ fn event_type_name(event: &EventV1) -> String {
         EventV1::ProviderStreamDelta(_) => "provider_stream_delta",
         EventV1::ProviderReasoningDelta(_) => "provider_reasoning_delta",
         EventV1::ProviderRequestFinished(_) => "provider_request_finished",
+        EventV1::CompactionRequested(_) => "compaction_requested",
+        EventV1::CompactionWritten(_) => "compaction_written",
+        EventV1::CompactionApplied(_) => "compaction_applied",
+        EventV1::CompactionFailed(_) => "compaction_failed",
         EventV1::ToolCallRequested(_) => "tool_call_requested",
         EventV1::ToolCallStarted(_) => "tool_call_started",
         EventV1::ToolCallFinished(_) => "tool_call_finished",

@@ -95,6 +95,10 @@ pub enum EventV1 {
     ProviderStreamDelta(ProviderStreamDeltaEvent),
     ProviderReasoningDelta(ProviderReasoningDeltaEvent),
     ProviderRequestFinished(ProviderRequestFinishedEvent),
+    CompactionRequested(CompactionRequestedEvent),
+    CompactionWritten(CompactionWrittenEvent),
+    CompactionApplied(CompactionAppliedEvent),
+    CompactionFailed(CompactionFailedEvent),
     ToolCallRequested(ToolCallRequestedEvent),
     ToolCallStarted(ToolCallStartedEvent),
     ToolCallFinished(ToolCallFinishedEvent),
@@ -335,6 +339,93 @@ pub struct ProviderRequestFinishedEvent {
     pub output_digest: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<CompletionUsage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompactionRequestedEvent {
+    pub checkpoint_id: String,
+    pub agent_id: String,
+    pub trigger_reason: String,
+    pub through_seq: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub through_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_before: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_before_estimate: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompactionWrittenEvent {
+    pub checkpoint_id: String,
+    pub agent_id: String,
+    pub artifact_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact_digest: Option<String>,
+    pub artifact_bytes: u64,
+    pub trigger_reason: String,
+    pub through_seq: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub through_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_before: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_before_estimate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_after_estimate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_tokens_estimate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compacted_turns: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reduction_tokens_estimate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reduction_percent_estimate: Option<u32>,
+    pub preserved_turns: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompactionAppliedEvent {
+    pub checkpoint_id: String,
+    pub agent_id: String,
+    pub through_seq: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub through_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_before_estimate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_after_estimate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_tokens_estimate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compacted_turns: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preserved_turns: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reduction_tokens_estimate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reduction_percent_estimate: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompactionFailedEvent {
+    pub agent_id: String,
+    pub trigger_reason: String,
+    pub reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub through_seq: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub through_request_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
