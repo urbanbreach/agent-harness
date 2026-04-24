@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use harness_core::agent::AgentProfile;
+use harness_core::agent::{AgentProfile, ProviderContextCheckpoint};
 use harness_core::clock::FakeClock;
 use harness_core::config::{
     HookLifecycleEvent, HookRuntimeConfig, HooksConfig, LifecycleHookConfig, PermissionMode,
@@ -13,7 +13,7 @@ use harness_core::config::{
 };
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle, JobOutcome,
-    JobProgressKind,
+    JobProgressKind, ManualCompactionOutcome,
 };
 use harness_core::event::{
     ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
@@ -154,6 +154,58 @@ impl Provider for CapturingProvider {
                 },
             },
         ]))
+    }
+}
+
+#[derive(Clone)]
+struct SequentialScriptedProvider {
+    captured_requests: Arc<Mutex<Vec<CompletionRequest>>>,
+    scripted_events: Arc<Vec<Vec<ProviderStreamEvent>>>,
+    next_call_index: Arc<Mutex<usize>>,
+}
+
+impl SequentialScriptedProvider {
+    fn new(scripted_events: Vec<Vec<ProviderStreamEvent>>) -> Self {
+        Self {
+            captured_requests: Arc::new(Mutex::new(Vec::new())),
+            scripted_events: Arc::new(scripted_events),
+            next_call_index: Arc::new(Mutex::new(0)),
+        }
+    }
+
+    fn requests(&self) -> Vec<CompletionRequest> {
+        self.captured_requests
+            .lock()
+            .expect("sequential scripted provider lock")
+            .clone()
+    }
+}
+
+#[async_trait]
+impl Provider for SequentialScriptedProvider {
+    async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
+        self.captured_requests
+            .lock()
+            .expect("sequential scripted provider lock")
+            .push(req);
+
+        let mut next_call_index = self
+            .next_call_index
+            .lock()
+            .expect("sequential scripted call index");
+        let call_index = *next_call_index;
+        *next_call_index += 1;
+
+        Box::pin(tokio_stream::iter(
+            self.scripted_events
+                .get(call_index)
+                .cloned()
+                .unwrap_or_else(|| {
+                    vec![ProviderStreamEvent::Error {
+                        message: format!("unexpected stream_completion call index {call_index}"),
+                    }]
+                }),
+        ))
     }
 }
 
@@ -1953,6 +2005,683 @@ async fn resume_restores_multi_turn_historical_context_with_final_task_output() 
             (MessageRole::User, "second question".to_string()),
         ]
     );
+}
+
+#[tokio::test]
+async fn overflow_retry_compacts_context_and_retries_with_summary() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("A".repeat(12_000)),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 100,
+                    completion_tokens: 100,
+                    total_tokens: 200,
+                },
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("B".repeat(12_000)),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 100,
+                    completion_tokens: 100,
+                    total_tokens: 200,
+                },
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::Error {
+                message: "prompt token count of 128713 exceeds the limit of 128000".to_string(),
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("recovered answer".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 64,
+                    completion_tokens: 8,
+                    total_tokens: 72,
+                },
+            },
+        ],
+    ]);
+    let coordinator =
+        test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider.clone()), 1);
+
+    let run = coordinator
+        .start_run(
+            "coord_overflow_retry_compaction",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
+        .await
+        .expect("first turn");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "second question")
+        .await
+        .expect("second turn");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    let third_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "third question")
+        .await
+        .expect("third turn with overflow retry");
+    tokio::time::sleep(Duration::from_millis(180)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let requests = provider.requests();
+    assert_eq!(
+        requests.len(),
+        4,
+        "third turn should retry once after compaction"
+    );
+    let retried_messages = requests
+        .last()
+        .expect("retried provider request")
+        .messages
+        .iter()
+        .map(|message| (message.role.clone(), message.content.clone()))
+        .collect::<Vec<_>>();
+    assert!(retried_messages.iter().any(|(role, content)| {
+        *role == MessageRole::Assistant
+            && content.contains("Checkpoint recap generated by the harness for older turns")
+    }));
+    assert!(retried_messages
+        .iter()
+        .any(|(role, content)| { *role == MessageRole::User && content == "third question" }));
+
+    let events = load_events(&run.events_path);
+    assert!(events
+        .iter()
+        .any(|event| matches!(event.payload, EventV1::CompactionApplied(_))));
+    let provider_finishes = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ProviderRequestFinished(payload)
+                    if payload.request_id == third_request_id
+            )
+        })
+        .count();
+    assert_eq!(
+        provider_finishes, 2,
+        "overflow retry should emit error then success finishes"
+    );
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCompleted(payload)
+                if event.correlation_id.as_deref() == Some(third_request_id.as_str())
+                    && payload.result_summary == "recovered answer"
+        )
+    }));
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCompleted(payload)
+                if payload.result_summary == "A".repeat(12_000)
+        )
+    }));
+}
+
+#[tokio::test]
+async fn overflow_retry_can_compact_a_single_large_preserved_turn() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("A".repeat(12_000)),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 100,
+                    completion_tokens: 100,
+                    total_tokens: 200,
+                },
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::Error {
+                message: "prompt token count of 128713 exceeds the limit of 128000".to_string(),
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("recovered answer".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 64,
+                    completion_tokens: 8,
+                    total_tokens: 72,
+                },
+            },
+        ],
+    ]);
+    let coordinator =
+        test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider.clone()), 1);
+
+    let run = coordinator
+        .start_run(
+            "coord_overflow_retry_single_large_turn",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
+        .await
+        .expect("first turn");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    let second_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "second question")
+        .await
+        .expect("second turn with overflow retry");
+    tokio::time::sleep(Duration::from_millis(180)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let requests = provider.requests();
+    assert_eq!(
+        requests.len(),
+        3,
+        "single preserved turn should still retry once after summary-only compaction"
+    );
+    let retried_messages = requests
+        .last()
+        .expect("retried provider request")
+        .messages
+        .iter()
+        .map(|message| (message.role.clone(), message.content.clone()))
+        .collect::<Vec<_>>();
+    assert!(retried_messages.iter().any(|(role, content)| {
+        *role == MessageRole::Assistant
+            && content.contains("Checkpoint recap generated by the harness for older turns")
+    }));
+    assert!(!retried_messages
+        .iter()
+        .any(|(role, content)| { *role == MessageRole::User && content == "first question" }));
+    assert!(retried_messages
+        .iter()
+        .any(|(role, content)| { *role == MessageRole::User && content == "second question" }));
+
+    let events = load_events(&run.events_path);
+    assert!(events
+        .iter()
+        .any(|event| matches!(event.payload, EventV1::CompactionApplied(_))));
+    let provider_finishes = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ProviderRequestFinished(payload)
+                    if payload.request_id == second_request_id
+            )
+        })
+        .count();
+    assert_eq!(
+        provider_finishes, 2,
+        "overflow retry should emit error then success finishes"
+    );
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCompleted(payload)
+                if event.correlation_id.as_deref() == Some(second_request_id.as_str())
+                    && payload.result_summary == "recovered answer"
+        )
+    }));
+}
+
+#[tokio::test]
+async fn overflow_retry_does_not_resend_same_context_when_compaction_is_noop() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("first answer".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 32,
+                    completion_tokens: 8,
+                    total_tokens: 40,
+                },
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::Error {
+                message: "prompt token count of 128713 exceeds the limit of 128000".to_string(),
+            },
+        ],
+    ]);
+    let coordinator =
+        test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider.clone()), 1);
+
+    let run = coordinator
+        .start_run(
+            "coord_overflow_retry_noop_compaction",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
+        .await
+        .expect("first turn");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    let second_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "second question")
+        .await
+        .expect("second turn with overflow");
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let requests = provider.requests();
+    assert_eq!(
+        requests.len(),
+        2,
+        "overflow retry should not resend when compaction cannot shrink context"
+    );
+
+    let events = load_events(&run.events_path);
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::CompactionFailed(payload)
+                if payload.agent_id == "agent_000001"
+                    && payload.trigger_reason == "overflow_retry"
+        )
+    }));
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCancelled(payload)
+                if event.correlation_id.as_deref() == Some(second_request_id.as_str())
+                    && payload.reason.contains("no checkpoint reduced the active provider context")
+        )
+    }));
+}
+
+#[tokio::test]
+async fn manual_compaction_writes_checkpoint_and_manual_events() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("A".repeat(12_000)),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 100,
+                    completion_tokens: 100,
+                    total_tokens: 200,
+                },
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("B".repeat(12_000)),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 100,
+                    completion_tokens: 100,
+                    total_tokens: 200,
+                },
+            },
+        ],
+    ]);
+    let coordinator =
+        test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider.clone()), 1);
+
+    let run = coordinator
+        .start_run(
+            "coord_manual_compaction",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
+        .await
+        .expect("first turn");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    let second_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "second question")
+        .await
+        .expect("second turn");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+
+    let outcome = coordinator
+        .compact_agent_context(agent_id, Some(second_request_id.clone()), "manual")
+        .await
+        .expect("manual compaction succeeds");
+    let ManualCompactionOutcome::CheckpointWritten {
+        checkpoint_id,
+        tokens_before_estimate,
+        tokens_after_estimate,
+    } = outcome
+    else {
+        panic!("expected checkpoint to be written");
+    };
+    assert!(tokens_before_estimate.is_some());
+    assert!(tokens_after_estimate.is_some());
+    assert!(tokens_after_estimate < tokens_before_estimate);
+
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::CompactionRequested(payload)
+                if payload.agent_id == "agent_000001"
+                    && payload.trigger_reason == "manual"
+                    && payload.through_request_id.as_deref() == Some(second_request_id.as_str())
+                    && payload.checkpoint_id == checkpoint_id
+        )
+    }));
+    let written = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::CompactionWritten(payload) if payload.trigger_reason == "manual" => {
+                Some(payload.clone())
+            }
+            _ => None,
+        })
+        .expect("manual compaction written event");
+    assert_eq!(written.checkpoint_id, checkpoint_id);
+    assert_eq!(written.tokens_before_estimate, tokens_before_estimate);
+    assert_eq!(written.tokens_after_estimate, tokens_after_estimate);
+    assert_eq!(written.compacted_turns, Some(1));
+    assert_eq!(
+        written.through_request_id.as_deref(),
+        Some(second_request_id.as_str())
+    );
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::CompactionApplied(payload)
+                if payload.checkpoint_id == checkpoint_id
+                    && payload.through_request_id.as_deref() == Some(second_request_id.as_str())
+                    && payload.tokens_before_estimate == tokens_before_estimate
+                    && payload.tokens_after_estimate == tokens_after_estimate
+        )
+    }));
+    let checkpoint_path = run.run_dir.join(&written.artifact_path);
+    assert!(
+        checkpoint_path.exists(),
+        "checkpoint artifact should be written"
+    );
+}
+
+#[tokio::test]
+async fn manual_compaction_after_four_small_turns_writes_checkpoint_with_latest_turn() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(
+        [
+            "first answer",
+            "second answer",
+            "third answer",
+            "fourth answer",
+        ]
+        .into_iter()
+        .map(|answer| {
+            vec![
+                ProviderStreamEvent::Start,
+                ProviderStreamEvent::TextDelta(answer.to_string()),
+                ProviderStreamEvent::Done {
+                    usage: CompletionUsage {
+                        prompt_tokens: 100,
+                        completion_tokens: 100,
+                        total_tokens: 200,
+                    },
+                },
+            ]
+        })
+        .collect(),
+    );
+    let coordinator =
+        test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider.clone()), 1);
+
+    let run = coordinator
+        .start_run(
+            "coord_manual_compaction_forced_checkpoint",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    for question in [
+        "first small question",
+        "second small question",
+        "third small question",
+        "fourth small question",
+    ] {
+        coordinator
+            .request_agent_turn(supervisor_actor(), agent_id.clone(), question)
+            .await
+            .expect("turn request");
+        tokio::time::sleep(Duration::from_millis(80)).await;
+    }
+
+    let outcome = coordinator
+        .compact_agent_context(agent_id, Some("req_000004".to_string()), "manual")
+        .await
+        .expect("manual compaction succeeds");
+    let ManualCompactionOutcome::CheckpointWritten { checkpoint_id, .. } = outcome else {
+        panic!("expected manual compaction to force a checkpoint");
+    };
+
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    let written = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::CompactionWritten(payload) if payload.trigger_reason == "manual" => {
+                Some(payload.clone())
+            }
+            _ => None,
+        })
+        .expect("manual compaction written event");
+    assert_eq!(written.checkpoint_id, checkpoint_id);
+    assert_eq!(written.preserved_turns, 1);
+
+    let checkpoint_path = run.run_dir.join(&written.artifact_path);
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint: ProviderContextCheckpoint =
+        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact");
+    assert_eq!(
+        checkpoint.metadata.trigger_reason.as_deref(),
+        Some("manual")
+    );
+    assert_eq!(checkpoint.recent_turns.len(), 1);
+    assert_eq!(
+        checkpoint.recent_turns[0].user_prompt,
+        "fourth small question"
+    );
+    assert_eq!(
+        checkpoint.recent_turns[0].assistant_response,
+        "fourth answer"
+    );
+    assert!(checkpoint.summary.contains("first small question"));
+    assert!(checkpoint.summary.contains("second small question"));
+    assert!(checkpoint.summary.contains("third small question"));
+    assert!(!checkpoint.summary.contains("fourth small question"));
+}
+
+#[tokio::test]
+async fn manual_compaction_after_two_turns_summarizes_first_and_preserves_latest() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(
+        ["first answer", "second answer"]
+            .into_iter()
+            .map(|answer| {
+                vec![
+                    ProviderStreamEvent::Start,
+                    ProviderStreamEvent::TextDelta(answer.to_string()),
+                    ProviderStreamEvent::Done {
+                        usage: CompletionUsage {
+                            prompt_tokens: 100,
+                            completion_tokens: 100,
+                            total_tokens: 200,
+                        },
+                    },
+                ]
+            })
+            .collect(),
+    );
+    let coordinator =
+        test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider.clone()), 1);
+
+    let run = coordinator
+        .start_run(
+            "coord_manual_compaction_two_turns",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    for question in ["first question", "second question"] {
+        coordinator
+            .request_agent_turn(supervisor_actor(), agent_id.clone(), question)
+            .await
+            .expect("turn request");
+        tokio::time::sleep(Duration::from_millis(80)).await;
+    }
+
+    let outcome = coordinator
+        .compact_agent_context(agent_id, Some("req_000002".to_string()), "manual")
+        .await
+        .expect("manual compaction succeeds");
+    let ManualCompactionOutcome::CheckpointWritten { checkpoint_id, .. } = outcome else {
+        panic!("expected manual compaction to force a checkpoint");
+    };
+
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    let written = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::CompactionWritten(payload) if payload.trigger_reason == "manual" => {
+                Some(payload.clone())
+            }
+            _ => None,
+        })
+        .expect("manual compaction written event");
+    assert_eq!(written.checkpoint_id, checkpoint_id);
+    assert_eq!(written.trigger_reason, "manual");
+    assert_eq!(written.preserved_turns, 1);
+
+    let checkpoint_path = run.run_dir.join(&written.artifact_path);
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint: ProviderContextCheckpoint =
+        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact");
+    assert_eq!(
+        checkpoint.metadata.trigger_reason.as_deref(),
+        Some("manual")
+    );
+    assert_eq!(checkpoint.recent_turns.len(), 1);
+    assert_eq!(checkpoint.recent_turns[0].user_prompt, "second question");
+    assert_eq!(
+        checkpoint.recent_turns[0].assistant_response,
+        "second answer"
+    );
+    assert!(checkpoint.summary.contains("first question"));
+    assert!(checkpoint.summary.contains("first answer"));
+    assert!(!checkpoint.summary.contains("second question"));
+    assert!(!checkpoint.summary.contains("second answer"));
+}
+
+#[tokio::test]
+async fn manual_compaction_returns_noop_when_context_has_single_turn() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![vec![
+        ProviderStreamEvent::Start,
+        ProviderStreamEvent::TextDelta("first answer".to_string()),
+        ProviderStreamEvent::Done {
+            usage: CompletionUsage {
+                prompt_tokens: 32,
+                completion_tokens: 8,
+                total_tokens: 40,
+            },
+        },
+    ]]);
+    let coordinator =
+        test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider.clone()), 1);
+
+    let run = coordinator
+        .start_run(
+            "coord_manual_compaction_noop",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let first_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
+        .await
+        .expect("first turn");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+
+    let outcome = coordinator
+        .compact_agent_context(agent_id, Some(first_request_id), "manual")
+        .await
+        .expect("manual noop succeeds");
+    assert_eq!(outcome, ManualCompactionOutcome::NoOp);
+
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    assert!(events.iter().all(|event| {
+        !matches!(
+            event.payload,
+            EventV1::CompactionRequested(_)
+                | EventV1::CompactionWritten(_)
+                | EventV1::CompactionApplied(_)
+        )
+    }));
 }
 
 #[tokio::test]

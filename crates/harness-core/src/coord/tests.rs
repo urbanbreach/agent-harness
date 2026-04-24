@@ -8,25 +8,35 @@ use serde_json::json;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use crate::agent::{
+    ProviderCompactionFacts, ProviderCompactionSummarySource, ProviderCompactionTailBoundary,
+    ProviderContext, ProviderContextCheckpoint, ProviderContextCheckpointMetadata,
+    ProviderConversationTurn,
+};
 use crate::clock::{FakeClock, RealClock};
 use crate::config::{
-    clear_registered_mcp_server_first_class_tool_ids,
-    set_registered_mcp_server_first_class_tool_ids, PermissionMode,
+    clear_registered_mcp_server_first_class_tool_ids, load_config_from_str,
+    resolve_profile_model_metadata, set_registered_mcp_server_first_class_tool_ids, PermissionMode,
 };
 use crate::event::{
-    ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1,
-    ProviderRequestStartedEvent, RunFinishedEvent, RunStartedEvent, TaskCompletedEvent,
-    ToolCallStatus, SCHEMA_VERSION,
+    ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, CompactionAppliedEvent,
+    CompactionWrittenEvent, EventActor, EventEnvelopeV1, EventV1, HookExecutionMetadata,
+    HookExecutionStatus, ProviderRequestStartedEvent, RunFinishedEvent, RunStartedEvent,
+    TaskCompletedEvent, ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use crate::perm::{PermissionDecision, PermissionPolicy};
-use crate::proj::inspect_resume_plan;
+use crate::proj::{inspect_resume_plan, RecordedRuntimeContext};
 use crate::redact::DefaultRedactor;
-use crate::sched::{ConcurrencyKey, ScheduleDecision};
+use crate::sched::{ConcurrencyKey, ScheduleDecision, Scheduler, SchedulerLimits};
+use crate::store::JsonlFileEventStore;
 use crate::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 
 use super::{
-    restore_provider_context_from_history, spawn_coordinator, Coordinator, CoordinatorConfig,
-    JobOutcome, JobProgressKind, TaskExecutionState, TaskState,
+    build_provider_context_summary, compact_provider_context,
+    compaction_summary_override_from_hooks, restore_provider_context_from_history,
+    spawn_coordinator, Coordinator, CoordinatorConfig, CoordinatorError, HookExecutionBatch,
+    JobOutcome, JobProgressKind, ProviderCompactionTrigger, RunInfo, RunState, TaskExecutionState,
+    TaskState,
 };
 
 struct TestShellTool;
@@ -901,9 +911,877 @@ fn restore_provider_context_uses_task_completed_summary_for_iterative_history() 
     let turns = restored
         .get("agent_000001")
         .expect("agent should have restored history");
-    assert_eq!(turns.len(), 1);
-    assert_eq!(turns[0].user_prompt, "first question");
-    assert_eq!(turns[0].assistant_response, "final answer");
+    assert_eq!(turns.preserved_turns.len(), 1);
+    assert_eq!(turns.preserved_turns[0].user_prompt, "first question");
+    assert_eq!(turns.preserved_turns[0].assistant_response, "final answer");
+}
+
+#[test]
+fn proactive_compaction_writes_checkpoint_artifact_and_updates_provider_context() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let clock = FakeClock::new();
+    let redactor = DefaultRedactor::default();
+    let mut run_state = test_run_state(temp_dir.path(), "run_compaction_proactive");
+    run_state.recorded_runtime_context = Some(compaction_runtime_context());
+    run_state.provider_context_by_agent.insert(
+        "agent_000001".to_string(),
+        ProviderContext::from_turns(vec![
+            long_turn("first question", 'A'),
+            long_turn("second question", 'B'),
+        ]),
+    );
+
+    let updated = compact_provider_context(
+        &clock,
+        &redactor,
+        &mut run_state,
+        &ProviderCompactionTrigger {
+            agent_id: "agent_000001".to_string(),
+            profile_name: "alpha".to_string(),
+            model_ref: "default:model-1".to_string(),
+            provider_id: Some("default".to_string()),
+            model_id: Some("model-1".to_string()),
+            through_request_id: Some("req_000002".to_string()),
+            trigger_reason: "proactive".to_string(),
+            tokens_before: Some(3_900),
+        },
+        None,
+    )
+    .expect("proactive compaction should succeed")
+    .expect("proactive compaction should write a checkpoint");
+
+    assert!(updated.updated_context.compacted_summary.is_some());
+    assert_eq!(updated.updated_context.preserved_turns.len(), 1);
+    assert_eq!(
+        updated.updated_context.preserved_turns[0].user_prompt,
+        "second question"
+    );
+
+    let events = read_events(&run_state.info.events_path);
+    assert!(events
+        .iter()
+        .any(|event| matches!(event.payload, EventV1::CompactionRequested(_))));
+    let written = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::CompactionWritten(payload) => Some(payload.clone()),
+            _ => None,
+        })
+        .expect("compaction written event");
+    assert!(events
+        .iter()
+        .any(|event| matches!(event.payload, EventV1::CompactionApplied(_))));
+    assert!(written.tokens_before_estimate.is_some());
+    assert!(written.tokens_after_estimate.is_some());
+    assert!(written.tokens_after_estimate < written.tokens_before_estimate);
+    assert_eq!(written.compacted_turns, Some(1));
+
+    let checkpoint_path = run_state.info.run_dir.join(&written.artifact_path);
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint: ProviderContextCheckpoint =
+        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact");
+    assert_eq!(checkpoint.metadata.agent_id, "agent_000001");
+    assert_eq!(
+        checkpoint.metadata.tokens_before_estimate,
+        written.tokens_before_estimate
+    );
+    assert_eq!(
+        checkpoint.metadata.tokens_after_estimate,
+        written.tokens_after_estimate
+    );
+    assert_eq!(
+        checkpoint.metadata.summary_tokens_estimate,
+        written.summary_tokens_estimate
+    );
+    assert!(checkpoint.metadata.reduction_tokens_estimate.is_some());
+    assert_eq!(checkpoint.recent_turns.len(), 1);
+    assert_eq!(checkpoint.facts.compacted_turns.len(), 1);
+    assert_eq!(
+        checkpoint.facts.compacted_turns[0].user_excerpt,
+        "first question"
+    );
+    assert_eq!(
+        checkpoint
+            .tail_boundary
+            .as_ref()
+            .map(|boundary| boundary.mode.as_str()),
+        Some("whole_turn_tail")
+    );
+    assert_eq!(
+        checkpoint
+            .summary_source
+            .as_ref()
+            .map(|source| source.strategy.as_str()),
+        Some("deterministic_rolling_summary")
+    );
+    assert_eq!(
+        checkpoint
+            .timeline_entry
+            .as_ref()
+            .map(|entry| entry.entry_type.as_str()),
+        Some("proactive_compaction")
+    );
+    for heading in [
+        "## Goal",
+        "## Constraints & Preferences",
+        "## Progress",
+        "### Done",
+        "### In Progress",
+        "### Blocked",
+        "## Key Decisions",
+        "## Next Steps",
+        "## Critical Context",
+        "## Source Facts",
+        "## Relevant Files / Artifacts",
+    ] {
+        assert!(
+            checkpoint.summary.contains(heading),
+            "summary missing structured heading {heading}:\n{}",
+            checkpoint.summary
+        );
+    }
+    assert!(checkpoint.summary.contains("first question"));
+}
+
+#[test]
+fn proactive_compaction_records_pruned_tool_artifacts_for_compacted_turns() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let clock = FakeClock::new();
+    let redactor = DefaultRedactor::default();
+    let first_answer = 'A'.to_string().repeat(6_000);
+    let second_answer = 'B'.to_string().repeat(6_000);
+    write_restore_history_fixture(
+        temp_dir.path(),
+        "run_compaction_pruned_artifacts",
+        &[
+            restore_fixture_event(
+                "run_compaction_pruned_artifacts",
+                1,
+                EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+                None,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/workspace/project".to_string(),
+                }),
+            ),
+            restore_fixture_event(
+                "run_compaction_pruned_artifacts",
+                2,
+                EventActor::new(ActorKind::User, None),
+                None,
+                EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                    request_id: "req_000001".to_string(),
+                    text: "first question".to_string(),
+                }),
+            ),
+            restore_fixture_event(
+                "run_compaction_pruned_artifacts",
+                3,
+                EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                Some("req_000001"),
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_000001".to_string(),
+                    provider_id: "default".to_string(),
+                    model_id: "model-1".to_string(),
+                    prompt_summary: "first question".to_string(),
+                    request_digest: "digest-1".to_string(),
+                }),
+            ),
+            restore_fixture_event(
+                "run_compaction_pruned_artifacts",
+                4,
+                EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+                Some("req_000001"),
+                EventV1::ArtifactWritten(ArtifactWrittenEvent {
+                    path: "artifacts/toolcalls/toolcall_000001/result.txt".to_string(),
+                    digest: "digest-artifact-1".to_string(),
+                    bytes: 42,
+                    tool_call_id: Some("toolcall_000001".to_string()),
+                    tool_metadata: None,
+                    metadata: std::collections::BTreeMap::new(),
+                }),
+            ),
+            restore_fixture_event(
+                "run_compaction_pruned_artifacts",
+                5,
+                EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                Some("req_000001"),
+                EventV1::TaskCompleted(TaskCompletedEvent {
+                    task_id: "task_000001".to_string(),
+                    result_summary: first_answer.clone(),
+                    result_digest: "digest-task-1".to_string(),
+                    metadata: None,
+                }),
+            ),
+            restore_fixture_event(
+                "run_compaction_pruned_artifacts",
+                6,
+                EventActor::new(ActorKind::User, None),
+                None,
+                EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                    request_id: "req_000002".to_string(),
+                    text: "second question".to_string(),
+                }),
+            ),
+            restore_fixture_event(
+                "run_compaction_pruned_artifacts",
+                7,
+                EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                Some("req_000002"),
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_000002".to_string(),
+                    provider_id: "default".to_string(),
+                    model_id: "model-1".to_string(),
+                    prompt_summary: "second question".to_string(),
+                    request_digest: "digest-2".to_string(),
+                }),
+            ),
+            restore_fixture_event(
+                "run_compaction_pruned_artifacts",
+                8,
+                EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                Some("req_000002"),
+                EventV1::TaskCompleted(TaskCompletedEvent {
+                    task_id: "task_000002".to_string(),
+                    result_summary: second_answer.clone(),
+                    result_digest: "digest-task-2".to_string(),
+                    metadata: None,
+                }),
+            ),
+        ],
+    );
+    let mut run_state = test_run_state(temp_dir.path(), "run_compaction_pruned_artifacts");
+    run_state.recorded_runtime_context = Some(compaction_runtime_context());
+    run_state.provider_context_by_agent.insert(
+        "agent_000001".to_string(),
+        ProviderContext::from_turns(vec![
+            ProviderConversationTurn {
+                user_prompt: "first question".to_string(),
+                assistant_response: first_answer.clone(),
+                ..ProviderConversationTurn::default()
+            },
+            ProviderConversationTurn {
+                user_prompt: "second question".to_string(),
+                assistant_response: second_answer.clone(),
+                ..ProviderConversationTurn::default()
+            },
+        ]),
+    );
+    run_state.next_event_seq = 9;
+
+    let updated = compact_provider_context(
+        &clock,
+        &redactor,
+        &mut run_state,
+        &ProviderCompactionTrigger {
+            agent_id: "agent_000001".to_string(),
+            profile_name: "alpha".to_string(),
+            model_ref: "default:model-1".to_string(),
+            provider_id: Some("default".to_string()),
+            model_id: Some("model-1".to_string()),
+            through_request_id: Some("req_000002".to_string()),
+            trigger_reason: "proactive".to_string(),
+            tokens_before: Some(3_900),
+        },
+        None,
+    )
+    .expect("proactive compaction should succeed")
+    .expect("proactive compaction should write a checkpoint");
+
+    assert!(updated.updated_context.compacted_summary.is_some());
+    let events = read_events(&run_state.info.events_path);
+    let written = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::CompactionWritten(payload) => Some(payload.clone()),
+            _ => None,
+        })
+        .expect("compaction written event");
+    let checkpoint_path = run_state.info.run_dir.join(&written.artifact_path);
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint: ProviderContextCheckpoint =
+        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact");
+    assert_eq!(checkpoint.pruned_tool_artifacts.len(), 1);
+    assert_eq!(
+        checkpoint.pruned_tool_artifacts[0].path,
+        "artifacts/toolcalls/toolcall_000001/result.txt"
+    );
+    assert_eq!(
+        checkpoint.pruned_tool_artifacts[0].digest.as_deref(),
+        Some("digest-artifact-1")
+    );
+    assert!(checkpoint
+        .summary
+        .contains("artifacts/toolcalls/toolcall_000001/result.txt"));
+}
+
+#[test]
+fn provider_context_checkpoint_deserializes_older_turn_shape() {
+    let body = r#"{
+        "checkpoint_id": "checkpoint_legacy",
+        "agent_id": "agent_000001",
+        "run_id": "run_legacy",
+        "through_seq": 7,
+        "summary": "legacy summary",
+        "recent_turns": [
+            {
+                "user_prompt": "legacy question",
+                "assistant_response": "legacy answer"
+            }
+        ]
+    }"#;
+
+    let checkpoint: ProviderContextCheckpoint =
+        serde_json::from_str(body).expect("legacy checkpoint should deserialize");
+
+    assert_eq!(checkpoint.metadata.tokens_before_estimate, None);
+    assert_eq!(checkpoint.metadata.tokens_after_estimate, None);
+    assert_eq!(checkpoint.recent_turns.len(), 1);
+    assert_eq!(checkpoint.recent_turns[0].request_id, None);
+    assert_eq!(checkpoint.recent_turns[0].artifacts, Vec::new());
+}
+
+#[test]
+fn repeated_compaction_updates_existing_summary_without_legacy_append_format() {
+    let summary = build_provider_context_summary(
+        Some("## Goal\n- Keep existing constraints\n## Next Steps\n1. Continue"),
+        &[ProviderConversationTurn {
+            user_prompt: "new compacted question".to_string(),
+            assistant_response: "new compacted answer".to_string(),
+            ..ProviderConversationTurn::default()
+        }],
+        &[],
+        &ProviderCompactionFacts::default(),
+        &ProviderCompactionTailBoundary {
+            mode: "whole_turn_tail".to_string(),
+            preserved_turns: 1,
+            preserved_tokens_estimate: 10,
+            preserved_from_request_id: None,
+            preserved_from_seq: None,
+            note: None,
+        },
+        &ProviderCompactionSummarySource {
+            strategy: "deterministic_rolling_summary".to_string(),
+            model_ref: "default:model-1".to_string(),
+            provider_id: Some("default".to_string()),
+            model_id: Some("model-1".to_string()),
+            reasoning_effort: None,
+            text_verbosity: None,
+            previous_summary_used: true,
+            model_backed: false,
+            deterministic_fallback: true,
+        },
+    );
+
+    assert!(summary.contains("## Goal"));
+    assert!(summary.contains("Previous Summary"));
+    assert!(summary.contains("Keep existing constraints"));
+    assert!(summary.contains("new compacted question"));
+    assert!(!summary.contains("Earlier checkpoint summary:"));
+}
+
+#[test]
+fn compaction_summary_override_uses_explicit_hook_prefix_only() {
+    let batch = HookExecutionBatch {
+        hook_executions: vec![
+            HookExecutionMetadata {
+                hook_name: "ignored".to_string(),
+                status: HookExecutionStatus::Succeeded,
+                hook_event: Some("compaction_requested".to_string()),
+                command_digest: None,
+                output_digest: None,
+                output_summary: Some("ordinary hook output".to_string()),
+                duration_ms: Some(1),
+            },
+            HookExecutionMetadata {
+                hook_name: "summary".to_string(),
+                status: HookExecutionStatus::Succeeded,
+                hook_event: Some("compaction_requested".to_string()),
+                command_digest: None,
+                output_digest: None,
+                output_summary: Some("compaction_summary: custom compacted recap".to_string()),
+                duration_ms: Some(1),
+            },
+        ],
+        critical_failure: None,
+    };
+
+    assert_eq!(
+        compaction_summary_override_from_hooks(&batch).as_deref(),
+        Some("custom compacted recap")
+    );
+}
+
+#[test]
+fn restore_provider_context_from_history_uses_checkpoint_then_replays_post_checkpoint_turns() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let run_id = "run_restore_checkpointed_context";
+    let run_dir = temp_dir.path().join(run_id);
+    let checkpoint_rel = "artifacts/compactions/agent_000001/checkpoint_000010.json".to_string();
+    let checkpoint_path = run_dir.join(&checkpoint_rel);
+    fs::create_dir_all(checkpoint_path.parent().expect("checkpoint parent"))
+        .expect("create checkpoint directory");
+    fs::write(
+        &checkpoint_path,
+        serde_json::to_string_pretty(&ProviderContextCheckpoint {
+            metadata: ProviderContextCheckpointMetadata {
+                checkpoint_id: "checkpoint_000010".to_string(),
+                agent_id: "agent_000001".to_string(),
+                run_id: run_id.to_string(),
+                through_seq: 9,
+                through_request_id: Some("req_000002".to_string()),
+                provider_id: Some("default".to_string()),
+                model_id: Some("model-1".to_string()),
+                tokens_before: Some(3_900),
+                tokens_before_estimate: None,
+                tokens_after_estimate: None,
+                summary_tokens_estimate: None,
+                compacted_turns: None,
+                preserved_turns: None,
+                reduction_tokens_estimate: None,
+                reduction_percent_estimate: None,
+                trigger_reason: Some("proactive".to_string()),
+            },
+            summary: "Earlier checkpoint summary".to_string(),
+            recent_turns: vec![ProviderConversationTurn {
+                user_prompt: "second question".to_string(),
+                assistant_response: "second answer".to_string(),
+                ..ProviderConversationTurn::default()
+            }],
+            pruned_tool_artifacts: Vec::new(),
+            facts: ProviderCompactionFacts::default(),
+            tail_boundary: None,
+            summary_source: None,
+            timeline_entry: None,
+        })
+        .expect("serialize checkpoint"),
+    )
+    .expect("write checkpoint artifact");
+
+    write_restore_history_fixture(
+        temp_dir.path(),
+        run_id,
+        &[
+            restore_fixture_event(
+                run_id,
+                1,
+                EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+                None,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/workspace/project".to_string(),
+                }),
+            ),
+            restore_fixture_event(
+                run_id,
+                2,
+                EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                Some("req_000001"),
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_000001".to_string(),
+                    provider_id: "default".to_string(),
+                    model_id: "model-1".to_string(),
+                    prompt_summary: "first question".to_string(),
+                    request_digest: "digest-1".to_string(),
+                }),
+            ),
+            restore_fixture_event(
+                run_id,
+                3,
+                EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                Some("req_000001"),
+                EventV1::ProviderStreamDelta(crate::event::ProviderStreamDeltaEvent {
+                    request_id: "req_000001".to_string(),
+                    delta: "first answer".to_string(),
+                }),
+            ),
+            restore_fixture_event(
+                run_id,
+                4,
+                EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                Some("req_000001"),
+                EventV1::TaskCompleted(TaskCompletedEvent {
+                    task_id: "task_000001".to_string(),
+                    result_summary: "first answer".to_string(),
+                    result_digest: "digest-task-1".to_string(),
+                    metadata: None,
+                }),
+            ),
+            restore_fixture_event(
+                run_id,
+                5,
+                EventActor::new(ActorKind::User, None),
+                None,
+                EventV1::UserMessageSubmitted(crate::event::UserMessageSubmittedEvent {
+                    request_id: "req_000002".to_string(),
+                    text: "second question".to_string(),
+                }),
+            ),
+            restore_fixture_event(
+                run_id,
+                6,
+                EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                Some("req_000002"),
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_000002".to_string(),
+                    provider_id: "default".to_string(),
+                    model_id: "model-1".to_string(),
+                    prompt_summary: "second question".to_string(),
+                    request_digest: "digest-2".to_string(),
+                }),
+            ),
+            restore_fixture_event(
+                run_id,
+                7,
+                EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                Some("req_000002"),
+                EventV1::ProviderStreamDelta(crate::event::ProviderStreamDeltaEvent {
+                    request_id: "req_000002".to_string(),
+                    delta: "second answer".to_string(),
+                }),
+            ),
+            restore_fixture_event(
+                run_id,
+                8,
+                EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                Some("req_000002"),
+                EventV1::TaskCompleted(TaskCompletedEvent {
+                    task_id: "task_000002".to_string(),
+                    result_summary: "second answer".to_string(),
+                    result_digest: "digest-task-2".to_string(),
+                    metadata: None,
+                }),
+            ),
+            restore_fixture_event(
+                run_id,
+                9,
+                EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+                None,
+                EventV1::CompactionWritten(CompactionWrittenEvent {
+                    checkpoint_id: "checkpoint_000010".to_string(),
+                    agent_id: "agent_000001".to_string(),
+                    artifact_path: checkpoint_rel.clone(),
+                    artifact_digest: Some("digest-checkpoint".to_string()),
+                    artifact_bytes: 512,
+                    trigger_reason: "proactive".to_string(),
+                    through_seq: 9,
+                    through_request_id: Some("req_000002".to_string()),
+                    provider_id: Some("default".to_string()),
+                    model_id: Some("model-1".to_string()),
+                    tokens_before: Some(3_900),
+                    tokens_before_estimate: None,
+                    tokens_after_estimate: None,
+                    summary_tokens_estimate: None,
+                    compacted_turns: None,
+                    reduction_tokens_estimate: None,
+                    reduction_percent_estimate: None,
+                    preserved_turns: 1,
+                }),
+            ),
+            restore_fixture_event(
+                run_id,
+                10,
+                EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+                None,
+                EventV1::CompactionApplied(CompactionAppliedEvent {
+                    checkpoint_id: "checkpoint_000010".to_string(),
+                    agent_id: "agent_000001".to_string(),
+                    through_seq: 9,
+                    through_request_id: Some("req_000002".to_string()),
+                    tokens_before_estimate: None,
+                    tokens_after_estimate: None,
+                    summary_tokens_estimate: None,
+                    compacted_turns: None,
+                    preserved_turns: None,
+                    reduction_tokens_estimate: None,
+                    reduction_percent_estimate: None,
+                }),
+            ),
+            restore_fixture_event(
+                run_id,
+                11,
+                EventActor::new(ActorKind::User, None),
+                None,
+                EventV1::UserMessageSubmitted(crate::event::UserMessageSubmittedEvent {
+                    request_id: "req_000003".to_string(),
+                    text: "third question".to_string(),
+                }),
+            ),
+            restore_fixture_event(
+                run_id,
+                12,
+                EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                Some("req_000003"),
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_000003".to_string(),
+                    provider_id: "default".to_string(),
+                    model_id: "model-1".to_string(),
+                    prompt_summary: "third question".to_string(),
+                    request_digest: "digest-3".to_string(),
+                }),
+            ),
+            restore_fixture_event(
+                run_id,
+                13,
+                EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                Some("req_000003"),
+                EventV1::ProviderStreamDelta(crate::event::ProviderStreamDeltaEvent {
+                    request_id: "req_000003".to_string(),
+                    delta: "third answer".to_string(),
+                }),
+            ),
+            restore_fixture_event(
+                run_id,
+                14,
+                EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+                Some("req_000003"),
+                EventV1::TaskCompleted(TaskCompletedEvent {
+                    task_id: "task_000003".to_string(),
+                    result_summary: "third answer".to_string(),
+                    result_digest: "digest-task-3".to_string(),
+                    metadata: None,
+                }),
+            ),
+        ],
+    );
+
+    let restored = restore_provider_context_from_history(temp_dir.path(), run_id)
+        .expect("restore checkpointed provider context");
+    let context = restored
+        .get("agent_000001")
+        .expect("checkpointed agent context");
+    assert_eq!(
+        context.compacted_summary.as_deref(),
+        Some("Earlier checkpoint summary")
+    );
+    assert_eq!(context.preserved_turns.len(), 2);
+    assert_eq!(context.preserved_turns[0].user_prompt, "second question");
+    assert_eq!(context.preserved_turns[1].user_prompt, "third question");
+}
+
+#[test]
+fn restore_provider_context_from_history_rejects_checkpoint_metadata_mismatch() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let run_id = "run_restore_checkpoint_metadata_mismatch";
+    let run_dir = temp_dir.path().join(run_id);
+    let checkpoint_rel = "artifacts/compactions/agent_000001/checkpoint_000010.json".to_string();
+    let checkpoint_path = run_dir.join(&checkpoint_rel);
+    fs::create_dir_all(checkpoint_path.parent().expect("checkpoint parent"))
+        .expect("create checkpoint directory");
+    fs::write(
+        &checkpoint_path,
+        serde_json::to_string_pretty(&ProviderContextCheckpoint {
+            metadata: ProviderContextCheckpointMetadata {
+                checkpoint_id: "checkpoint_000010".to_string(),
+                agent_id: "agent_000001".to_string(),
+                run_id: "wrong_run".to_string(),
+                through_seq: 8,
+                through_request_id: Some("req_000002".to_string()),
+                provider_id: Some("default".to_string()),
+                model_id: Some("model-1".to_string()),
+                tokens_before: Some(3_900),
+                tokens_before_estimate: None,
+                tokens_after_estimate: None,
+                summary_tokens_estimate: None,
+                compacted_turns: None,
+                preserved_turns: None,
+                reduction_tokens_estimate: None,
+                reduction_percent_estimate: None,
+                trigger_reason: Some("proactive".to_string()),
+            },
+            summary: "Earlier checkpoint summary".to_string(),
+            recent_turns: vec![ProviderConversationTurn {
+                user_prompt: "second question".to_string(),
+                assistant_response: "second answer".to_string(),
+                ..ProviderConversationTurn::default()
+            }],
+            pruned_tool_artifacts: Vec::new(),
+            facts: ProviderCompactionFacts::default(),
+            tail_boundary: None,
+            summary_source: None,
+            timeline_entry: None,
+        })
+        .expect("serialize checkpoint"),
+    )
+    .expect("write checkpoint artifact");
+
+    write_restore_history_fixture(
+        temp_dir.path(),
+        run_id,
+        &[
+            restore_fixture_event(
+                run_id,
+                1,
+                EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+                None,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/workspace/project".to_string(),
+                }),
+            ),
+            restore_fixture_event(
+                run_id,
+                2,
+                EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+                None,
+                EventV1::CompactionWritten(CompactionWrittenEvent {
+                    checkpoint_id: "checkpoint_000010".to_string(),
+                    agent_id: "agent_000001".to_string(),
+                    artifact_path: checkpoint_rel,
+                    artifact_digest: Some("digest-checkpoint".to_string()),
+                    artifact_bytes: 512,
+                    trigger_reason: "proactive".to_string(),
+                    through_seq: 9,
+                    through_request_id: Some("req_000002".to_string()),
+                    provider_id: Some("default".to_string()),
+                    model_id: Some("model-1".to_string()),
+                    tokens_before: Some(3_900),
+                    tokens_before_estimate: None,
+                    tokens_after_estimate: None,
+                    summary_tokens_estimate: None,
+                    compacted_turns: None,
+                    reduction_tokens_estimate: None,
+                    reduction_percent_estimate: None,
+                    preserved_turns: 1,
+                }),
+            ),
+            restore_fixture_event(
+                run_id,
+                3,
+                EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+                None,
+                EventV1::CompactionApplied(CompactionAppliedEvent {
+                    checkpoint_id: "checkpoint_000010".to_string(),
+                    agent_id: "agent_000001".to_string(),
+                    through_seq: 9,
+                    through_request_id: Some("req_000002".to_string()),
+                    tokens_before_estimate: None,
+                    tokens_after_estimate: None,
+                    summary_tokens_estimate: None,
+                    compacted_turns: None,
+                    preserved_turns: None,
+                    reduction_tokens_estimate: None,
+                    reduction_percent_estimate: None,
+                }),
+            ),
+        ],
+    );
+
+    let err = restore_provider_context_from_history(temp_dir.path(), run_id)
+        .expect_err("restore should reject mismatched checkpoint metadata");
+    assert!(matches!(err, CoordinatorError::ResumeRestoreFailed { .. }));
+}
+
+fn compaction_profile_config() -> crate::config::HarnessConfig {
+    load_config_from_str(
+        r#"
+        {
+          providers: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              models: {
+                "model-1": {
+                  display_name: "Model 1",
+                  max_input_tokens: 4096,
+                  max_output_tokens: 1024,
+                  metadata: {
+                    context_window_tokens: 4096
+                  }
+                }
+              }
+            }
+          },
+          agents: {
+            alpha: {
+              description: "Alpha",
+              model_ref: "default:model-1",
+              tools: ["read"]
+            }
+          },
+          permissions: {
+            defaults: {
+              edit: "deny",
+              shell: "deny",
+              network: "deny"
+            }
+          },
+          runtime: {
+            background_tasks: {
+              default_concurrency: 1,
+              provider_concurrency: 1,
+              model_concurrency: 1,
+              stale_timeout_ms: 1000,
+              message_staleness_timeout_ms: 1000
+            },
+            session_dir: ".agent-harness/sessions"
+          },
+          integrations: {
+            remote_search: {
+              endpoint: "https://mcp.exa.ai/mcp"
+            }
+          }
+        }
+        "#,
+    )
+    .expect("parse compaction metadata config")
+}
+
+fn compaction_runtime_context() -> RecordedRuntimeContext {
+    resolve_profile_model_metadata(&compaction_profile_config(), "alpha")
+        .expect("resolve compaction runtime context")
+        .into()
+}
+
+fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
+    let event_store =
+        Arc::new(JsonlFileEventStore::open(session_dir, run_id, true).expect("open event store"));
+    let run_dir = session_dir.join(run_id);
+    let artifacts_dir = run_dir.join("artifacts");
+    fs::create_dir_all(&artifacts_dir).expect("create artifacts dir");
+    RunState {
+        info: RunInfo {
+            run_id: run_id.to_string(),
+            run_name: "interactive".to_string(),
+            workspace_root: Path::new("/workspace/project").to_path_buf(),
+            run_dir,
+            artifacts_dir,
+            events_path: event_store.file_path().to_path_buf(),
+        },
+        event_store,
+        next_event_seq: 1,
+        next_agent_id: 1,
+        next_tool_call_id: 1,
+        next_task_id: 1,
+        next_provider_request_id: 1,
+        next_permission_id: 1,
+        agents: std::collections::BTreeMap::new(),
+        provider_context_by_agent: std::collections::BTreeMap::new(),
+        tasks: std::collections::BTreeMap::new(),
+        task_hook_state: std::collections::BTreeMap::new(),
+        agent_hook_state: std::collections::BTreeMap::new(),
+        subagent_parent_by_id: std::collections::BTreeMap::new(),
+        pending_permissions: std::collections::BTreeMap::new(),
+        cancelled_running_tasks: std::collections::BTreeSet::new(),
+        queued_agent_turns: std::collections::BTreeMap::new(),
+        running_agent_turns: std::collections::BTreeMap::new(),
+        scheduler: Scheduler::new(SchedulerLimits {
+            provider_model: 1,
+            tool: 1,
+        }),
+        recorded_runtime_context: None,
+        allow_initial_runtime_context_recording: false,
+        shutdown_token: CancellationToken::new(),
+    }
+}
+
+fn long_turn(prompt: &str, fill: char) -> ProviderConversationTurn {
+    ProviderConversationTurn {
+        user_prompt: prompt.to_string(),
+        assistant_response: fill.to_string().repeat(6_000),
+        ..ProviderConversationTurn::default()
+    }
 }
 
 fn write_restore_history_fixture(session_dir: &Path, run_id: &str, events: &[EventEnvelopeV1]) {
