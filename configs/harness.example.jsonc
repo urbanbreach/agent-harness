@@ -64,6 +64,7 @@
     }
   },
   "model": "default/gpt-5.4",
+  "small_model": "default/gpt-5.4-mini",
   "agent": {
     "build": {
       "model": "default/gpt-5.4-mini",

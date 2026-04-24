@@ -317,6 +317,26 @@ fn default_shipped_agents(model_ref: &str) -> BTreeMap<String, ProfileConfig> {
     )])
 }
 
+fn fallback_public_agent_description(name: &str) -> String {
+    let words = name
+        .split(['_', '-', ' '])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            let Some(first) = chars.next() else {
+                return String::new();
+            };
+            format!("{}{}", first.to_uppercase(), chars.as_str())
+        })
+        .collect::<Vec<_>>();
+    let humanized = if words.is_empty() {
+        name.to_string()
+    } else {
+        words.join(" ")
+    };
+    format!("The {humanized} agent")
+}
+
 fn public_agent_to_profile(
     name: &str,
     agent: PublicAgentConfig,
@@ -334,11 +354,7 @@ fn public_agent_to_profile(
     let description = agent
         .description
         .or_else(|| base.as_ref().map(|profile| profile.description.clone()))
-        .ok_or_else(|| {
-            ConfigError::InvalidReference(format!(
-                "agent `{name}` is missing `description`; provide `agent.{name}.description`"
-            ))
-        })?;
+        .unwrap_or_else(|| fallback_public_agent_description(name));
     let model_ref = selected_model
         .or_else(|| base.as_ref().map(|profile| profile.model_ref.clone()))
         .ok_or_else(|| {
