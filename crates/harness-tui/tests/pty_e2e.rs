@@ -536,12 +536,12 @@ fn pty_live_details_drawer_remains_reachable() {
             let screen = wait_for_screen_contains(
                 &mut helper.parser,
                 &helper.output_rx,
-                "Context",
+                "▼ MCP",
                 MARKER_TIMEOUT,
             )
             .expect("wait for operator sidebar markers");
 
-            assert!(screen.contains("Context"));
+            assert!(screen.contains("▼ MCP"));
         }
 
         terminate_child(helper.child);
@@ -578,7 +578,6 @@ fn operator_sidebar_matches_information_architecture() {
         &screen,
         &[
             "Inspect sidebar parity",
-            "Context",
             "▼ MCP",
             "▼ LSP",
             "▼ Modified Files",
@@ -657,11 +656,11 @@ fn pty_live_orchestration_drawer_and_status() {
     let queued_screen = wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
-        "Context",
+        "▼ MCP",
         MARKER_TIMEOUT,
     )
-    .expect("wait for operator sidebar context");
-    assert_screen_contains_all(&queued_screen, &["Context", "▶ Modified Files"]);
+    .expect("wait for operator sidebar sections");
+    assert_screen_contains_all(&queued_screen, &["▼ MCP", "▶ Modified Files"]);
     assert!(!queued_screen.contains("No modified files"));
 
     thread::sleep(ORCHESTRATION_EVENT_DELAY + STABLE_WINDOW);
@@ -674,7 +673,7 @@ fn pty_live_orchestration_drawer_and_status() {
     );
     assert_screen_contains_all(
         &completed_screen,
-        &["Context", "▶ Modified Files", "Ctrl+p commands"],
+        &["▼ MCP", "▶ Modified Files", "Ctrl+p commands"],
     );
     assert!(!completed_screen.contains("No modified files"));
     assert!(!completed_screen.contains("Todo ·"));
@@ -704,11 +703,11 @@ fn pty_live_orchestration_stale_late_result_flow() {
     let late_result_screen = wait_for_screen_contains(
         &mut helper.parser,
         &helper.output_rx,
-        "Context",
+        "▼ MCP",
         MARKER_TIMEOUT,
     )
     .expect("wait for late result sidebar state");
-    assert_screen_contains_all(&late_result_screen, &["Context", "▶ Modified Files"]);
+    assert_screen_contains_all(&late_result_screen, &["▼ MCP", "▶ Modified Files"]);
     assert!(!late_result_screen.contains("No modified files"));
 
     terminate_child(helper.child);
