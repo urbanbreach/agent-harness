@@ -9,13 +9,13 @@
 
 
                                   ╻ ╻  ┏━┓  ┏━┓  ┏┓╻  ┏━╸  ┏━┓  ┏━┓
-            ╭─────────────────────────────────────────────────────────────────────────╮
-            │  /exit Quit Harness                                                     │
-            │  /new Return to the home shell                                          │
-            │  /replay Replay a saved session                                         │
-            │  /resume Continue a saved session                                       │
-            ╰─────────────────────────────────────────────────────────────────────────╯
-
+                                  ┣━┫  ┣━┫  ┣┳┛  ┃┗┫  ┣╸   ┗━┓  ┗━┓
+                                  ╹ ╹  ╹ ╹  ╹┗╸  ╹ ╹  ┗━╸  ┗━┛  ┗━┛
+                                      Launch: worker · model-1
+                /exit    Quit Harness
+                /new     Return to the home shell
+                /replay  Replay a saved session
+                /resume  Continue a saved session
             ┃
             ┃  /
             ┃
