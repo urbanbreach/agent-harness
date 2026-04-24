@@ -1,5 +1,5 @@
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Mutex, MutexGuard};
@@ -252,6 +252,15 @@ impl Drop for WriterLock {
 struct JsonlState {
     file: File,
     next_seq: u64,
+    replay_index: Vec<EventLogIndexEntry>,
+    indexed_len: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct EventLogIndexEntry {
+    seq: u64,
+    line: usize,
+    offset: u64,
 }
 
 impl JsonlFileEventStore {
@@ -304,14 +313,19 @@ impl JsonlFileEventStore {
                 source,
             })?;
 
-        let next_seq = scan_events_from_file(&file_path, None)?.next_seq;
+        let scan = scan_events_from_file(&file_path)?;
         let (tx, _) = broadcast::channel(SUBSCRIBER_BUFFER);
 
         Ok(Self {
             _writer_lock: writer_lock,
             file_path,
             deterministic,
-            state: Mutex::new(JsonlState { file, next_seq }),
+            state: Mutex::new(JsonlState {
+                file,
+                next_seq: scan.next_seq,
+                replay_index: scan.index,
+                indexed_len: scan.file_len,
+            }),
             tx,
         })
     }
@@ -335,6 +349,7 @@ impl EventStore for JsonlFileEventStore {
         let envelope = envelope.with_seq(state.next_seq);
         let serialized =
             serde_json::to_string(&envelope).map_err(EventStoreError::SerializeEnvelope)?;
+        let offset = state.indexed_len;
 
         state
             .file
@@ -357,6 +372,16 @@ impl EventStore for JsonlFileEventStore {
         }
 
         state.next_seq += 1;
+        let line = state.replay_index.len() + 1;
+        state.replay_index.push(EventLogIndexEntry {
+            seq: envelope.seq,
+            line,
+            offset,
+        });
+        state.indexed_len = state
+            .indexed_len
+            .saturating_add(serialized.len() as u64)
+            .saturating_add(1);
         drop(state);
 
         let _ = self.tx.send(envelope.clone());
@@ -365,8 +390,8 @@ impl EventStore for JsonlFileEventStore {
 
     fn replay(&self, from_seq: u64) -> Result<EventStream, EventStoreError> {
         let replayed = {
-            let _state = lock_state(&self.state)?;
-            scan_events_from_file(&self.file_path, Some(from_seq))?.events
+            let mut state = lock_state(&self.state)?;
+            replay_events_from_index(&self.file_path, &mut state, from_seq)?
         };
 
         Ok(Box::pin(tokio_stream::iter(replayed.into_iter().map(Ok))))
@@ -374,8 +399,8 @@ impl EventStore for JsonlFileEventStore {
 
     fn subscribe(&self, from_seq: u64) -> Result<EventStream, EventStoreError> {
         let (replayed, max_replayed_seq, rx) = {
-            let _state = lock_state(&self.state)?;
-            let replayed = scan_events_from_file(&self.file_path, Some(from_seq))?.events;
+            let mut state = lock_state(&self.state)?;
+            let replayed = replay_events_from_index(&self.file_path, &mut state, from_seq)?;
             let max_replayed_seq = replayed
                 .last()
                 .map(|event| event.seq)
@@ -411,28 +436,48 @@ fn display_path(path: &Path) -> String {
 }
 
 struct ScanResult {
-    events: Vec<EventEnvelopeV1>,
+    index: Vec<EventLogIndexEntry>,
     next_seq: u64,
+    file_len: u64,
 }
 
-fn scan_events_from_file(
-    file_path: &Path,
-    from_seq: Option<u64>,
-) -> Result<ScanResult, EventStoreError> {
+fn scan_events_from_file(file_path: &Path) -> Result<ScanResult, EventStoreError> {
     let file = File::open(file_path).map_err(|source| EventStoreError::ReadLog {
         path: display_path(file_path),
         source,
     })?;
-
-    let mut events = Vec::new();
-    let mut expected_seq = 1;
-
-    for (index, line_result) in BufReader::new(file).lines().enumerate() {
-        let line_number = index + 1;
-        let line = line_result.map_err(|source| EventStoreError::ReadLog {
+    let file_len = file
+        .metadata()
+        .map(|metadata| metadata.len())
+        .map_err(|source| EventStoreError::ReadLog {
             path: display_path(file_path),
             source,
         })?;
+
+    let mut index = Vec::new();
+    let mut expected_seq = 1;
+    let mut offset = 0_u64;
+
+    let mut reader = BufReader::new(file);
+    let mut raw_line = Vec::new();
+    let mut line_number = 0usize;
+    loop {
+        raw_line.clear();
+        let bytes_read =
+            reader
+                .read_until(b'\n', &mut raw_line)
+                .map_err(|source| EventStoreError::ReadLog {
+                    path: display_path(file_path),
+                    source,
+                })?;
+        if bytes_read == 0 {
+            break;
+        }
+
+        line_number += 1;
+        let line_offset = offset;
+        offset = offset.saturating_add(bytes_read as u64);
+        let line = decode_jsonl_line(&raw_line, file_path)?;
 
         let event: EventEnvelopeV1 =
             serde_json::from_str(&line).map_err(|source| EventStoreError::InvalidJsonLine {
@@ -448,17 +493,101 @@ fn scan_events_from_file(
             });
         }
 
-        if from_seq.is_some_and(|start_seq| event.seq >= start_seq) {
-            events.push(event);
-        }
+        index.push(EventLogIndexEntry {
+            seq: event.seq,
+            line: line_number,
+            offset: line_offset,
+        });
 
         expected_seq += 1;
     }
 
     Ok(ScanResult {
-        events,
+        index,
         next_seq: expected_seq,
+        file_len,
     })
+}
+
+fn decode_jsonl_line(raw_line: &[u8], file_path: &Path) -> Result<String, EventStoreError> {
+    let mut line = raw_line;
+    if let Some(stripped) = line.strip_suffix(b"\n") {
+        line = stripped;
+        if let Some(stripped) = line.strip_suffix(b"\r") {
+            line = stripped;
+        }
+    }
+
+    String::from_utf8(line.to_vec()).map_err(|source| EventStoreError::ReadLog {
+        path: display_path(file_path),
+        source: std::io::Error::new(std::io::ErrorKind::InvalidData, source),
+    })
+}
+
+fn replay_events_from_index(
+    file_path: &Path,
+    state: &mut JsonlState,
+    from_seq: u64,
+) -> Result<Vec<EventEnvelopeV1>, EventStoreError> {
+    let current_len = state
+        .file
+        .metadata()
+        .map(|metadata| metadata.len())
+        .map_err(|source| EventStoreError::ReadLog {
+            path: display_path(file_path),
+            source,
+        })?;
+
+    if current_len != state.indexed_len {
+        let scan = scan_events_from_file(file_path)?;
+        state.next_seq = scan.next_seq;
+        state.replay_index = scan.index;
+        state.indexed_len = scan.file_len;
+    }
+
+    let start_index = state
+        .replay_index
+        .partition_point(|entry| entry.seq < from_seq);
+
+    let Some(first_entry) = state.replay_index.get(start_index).copied() else {
+        return Ok(Vec::new());
+    };
+
+    let mut file = File::open(file_path).map_err(|source| EventStoreError::ReadLog {
+        path: display_path(file_path),
+        source,
+    })?;
+    file.seek(SeekFrom::Start(first_entry.offset))
+        .map_err(|source| EventStoreError::ReadLog {
+            path: display_path(file_path),
+            source,
+        })?;
+
+    let mut events = Vec::new();
+    let mut expected_seq = first_entry.seq;
+    for (offset_index, line_result) in BufReader::new(file).lines().enumerate() {
+        let line_number = first_entry.line + offset_index;
+        let line = line_result.map_err(|source| EventStoreError::ReadLog {
+            path: display_path(file_path),
+            source,
+        })?;
+        let event: EventEnvelopeV1 =
+            serde_json::from_str(&line).map_err(|source| EventStoreError::InvalidJsonLine {
+                line: line_number,
+                source,
+            })?;
+        if event.seq != expected_seq {
+            return Err(EventStoreError::NonMonotonicSequence {
+                line: line_number,
+                expected: expected_seq,
+                actual: event.seq,
+            });
+        }
+        events.push(event);
+        expected_seq += 1;
+    }
+
+    Ok(events)
 }
 
 #[cfg(test)]
@@ -576,6 +705,64 @@ mod tests {
             .expect("stream should not end")
             .expect("stream item should be valid");
         assert_eq!(live.seq, 3);
+    }
+
+    #[tokio::test]
+    async fn jsonl_subscribe_replays_high_sequence_suffix_then_live_events() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let store = JsonlFileEventStore::open(temp_dir.path(), "run_file_subscribe", false)
+            .expect("open jsonl event store");
+
+        for marker in 1..=5 {
+            store
+                .append(run_started_draft("run_file_subscribe", marker))
+                .expect("append event");
+        }
+
+        let mut stream = store.subscribe(5).expect("build subscribe stream");
+        let replayed = timeout(Duration::from_secs(1), stream.next())
+            .await
+            .expect("replayed event should arrive")
+            .expect("stream should not end")
+            .expect("stream item should be valid");
+        assert_eq!(replayed.seq, 5);
+
+        store
+            .append(run_started_draft("run_file_subscribe", 6))
+            .expect("append live event");
+
+        let live = timeout(Duration::from_secs(1), stream.next())
+            .await
+            .expect("live event should arrive")
+            .expect("stream should not end")
+            .expect("stream item should be valid");
+        assert_eq!(live.seq, 6);
+    }
+
+    #[tokio::test]
+    async fn jsonl_replay_index_handles_crlf_logs() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let run_id = "run_crlf_replay";
+        let file_path = {
+            let store = JsonlFileEventStore::open(temp_dir.path(), run_id, false)
+                .expect("open jsonl event store");
+            for marker in 1..=3 {
+                store
+                    .append(run_started_draft(run_id, marker))
+                    .expect("append event");
+            }
+            store.file_path().to_path_buf()
+        };
+
+        let lf_log = fs::read_to_string(&file_path).expect("read lf log");
+        fs::write(&file_path, lf_log.replace('\n', "\r\n")).expect("rewrite as crlf log");
+
+        let store = JsonlFileEventStore::open_existing(temp_dir.path(), run_id, false)
+            .expect("reopen crlf jsonl event store");
+        let replayed = collect_stream(store.replay(2).expect("build replay stream")).await;
+        let replayed_seqs: Vec<u64> = replayed.into_iter().map(|event| event.seq).collect();
+
+        assert_eq!(replayed_seqs, vec![2, 3]);
     }
 
     #[test]
