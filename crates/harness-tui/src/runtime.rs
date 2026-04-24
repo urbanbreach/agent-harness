@@ -13,7 +13,7 @@ use harness_core::event::EventEnvelopeV1;
 use ratatui::buffer::Buffer;
 use ratatui::{backend::CrosstermBackend, Terminal};
 
-use crate::app::{AppState, LaunchMetadata, SessionHistoryEntry, UiIntent};
+use crate::app::{AppState, LaunchMetadata, SessionHistoryEntry, ToastVariant, UiIntent};
 use crate::event::{self, poll};
 use crate::ui;
 
@@ -62,6 +62,16 @@ fn take_pending_replay_launch_metadata() -> Option<LaunchMetadata> {
 pub enum LiveUpdate {
     Event(Box<EventEnvelopeV1>),
     Status(String),
+    OperatorNotice {
+        message: String,
+        level: OperatorNoticeLevel,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OperatorNoticeLevel {
+    Info,
+    Error,
 }
 
 pub enum TuiMode {
@@ -76,6 +86,7 @@ pub enum TuiMode {
         run_dir: PathBuf,
         historical_events: Vec<EventEnvelopeV1>,
         update_rx: Receiver<LiveUpdate>,
+        compact_session_supported: bool,
     },
 }
 
@@ -129,8 +140,10 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             run_dir,
             historical_events,
             update_rx,
+            compact_session_supported,
         } => {
             let mut app = AppState::new_live(Some(run_dir), exit_on_finish, on_ui_intent);
+            app.set_compact_session_supported(compact_session_supported);
             if let Some(bindings) = keybindings.as_ref() {
                 app.apply_keybindings(bindings.clone());
             }
@@ -379,6 +392,7 @@ pub fn run_tui() -> Result<()> {
             run_dir: PathBuf::from("."),
             historical_events: Vec::new(),
             update_rx: rx,
+            compact_session_supported: false,
         },
         exit_on_finish: false,
         on_ui_intent: None,
@@ -435,6 +449,21 @@ fn drain_live_updates(
                     app.set_status_banner(Some(status));
                     state.changed = true;
                 }
+            }
+            Ok(LiveUpdate::OperatorNotice { message, level }) => {
+                if matches!(level, OperatorNoticeLevel::Error)
+                    && app.status_banner.as_deref() != Some(message.as_str())
+                {
+                    app.set_status_banner(Some(message.clone()));
+                }
+                app.show_toast(
+                    message,
+                    match level {
+                        OperatorNoticeLevel::Info => ToastVariant::Info,
+                        OperatorNoticeLevel::Error => ToastVariant::Error,
+                    },
+                );
+                state.changed = true;
             }
             Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Disconnected) => {
@@ -506,5 +535,65 @@ mod tests {
         app.set_toast_for_test("Copied", ToastVariant::Info);
 
         assert!(app.has_active_animations());
+    }
+
+    #[test]
+    fn drain_live_updates_routes_operator_notice_to_toast() {
+        let (tx, rx) = mpsc::channel();
+        tx.send(LiveUpdate::OperatorNotice {
+            message: "manual compaction skipped: need at least two completed turns".to_string(),
+            level: OperatorNoticeLevel::Info,
+        })
+        .expect("send operator notice");
+
+        let mut app = AppState::default();
+        let state = drain_live_updates(&mut app, &rx);
+
+        assert_eq!(
+            state,
+            LiveUpdateDrainState {
+                changed: true,
+                disconnected: false,
+            }
+        );
+        assert_eq!(app.status_banner.as_deref(), None);
+        assert_eq!(
+            app.toast()
+                .map(|toast| (toast.message.as_str(), toast.variant)),
+            Some((
+                "manual compaction skipped: need at least two completed turns",
+                ToastVariant::Info,
+            ))
+        );
+    }
+
+    #[test]
+    fn drain_live_updates_keeps_error_operator_notice_persistent() {
+        let (tx, rx) = mpsc::channel();
+        tx.send(LiveUpdate::OperatorNotice {
+            message: "manual compaction failed: boom".to_string(),
+            level: OperatorNoticeLevel::Error,
+        })
+        .expect("send error operator notice");
+
+        let mut app = AppState::default();
+        let state = drain_live_updates(&mut app, &rx);
+
+        assert_eq!(
+            state,
+            LiveUpdateDrainState {
+                changed: true,
+                disconnected: false,
+            }
+        );
+        assert_eq!(
+            app.status_banner.as_deref(),
+            Some("manual compaction failed: boom")
+        );
+        assert_eq!(
+            app.toast()
+                .map(|toast| (toast.message.as_str(), toast.variant)),
+            Some(("manual compaction failed: boom", ToastVariant::Error))
+        );
     }
 }

@@ -24,6 +24,6 @@ pub use keybindings::{Action, KeyMap};
 pub use layout::FrameLayoutPlan;
 pub use runtime::{
     close_preserved_terminal_session, load_events_from_run_dir, run_tui, run_tui_with_options,
-    set_pending_replay_launch_metadata, LiveUpdate, TuiMode, TuiOptions,
+    set_pending_replay_launch_metadata, LiveUpdate, OperatorNoticeLevel, TuiMode, TuiOptions,
 };
 pub use theme::{LiveShellLayout, LiveShellTokens, ShellGeometry, ShellGeometryTarget, Theme};

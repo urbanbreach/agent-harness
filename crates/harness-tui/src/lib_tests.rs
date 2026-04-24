@@ -285,6 +285,7 @@ fn transcript_turn_sections_keep_nested_tool_details() {
 }
 
 delegate_test!(operator_rail_section_model_builds_pinned_summary => ui::exact_test_operator_rail_section_model_builds_pinned_summary);
+delegate_test!(compaction_applied_updates_active_context_usage_estimate => ui::exact_test_compaction_applied_updates_active_context_usage_estimate);
 delegate_test!(operator_rail_sanitizes_control_chars_in_sidebar_strings => ui::exact_test_operator_rail_sanitizes_control_chars_in_sidebar_strings);
 delegate_test!(operator_rail_section_model_hides_empty_sources_but_preserves_order => ui::exact_test_operator_rail_section_model_hides_empty_sources_but_preserves_order);
 delegate_test!(operator_rail_section_model_counts_generic_mcp_activity => ui::exact_test_operator_rail_section_model_counts_generic_mcp_activity);
@@ -452,6 +453,9 @@ delegate_test!(slash_resume_opens_history_and_restores_draft => app::exact_test_
 delegate_test!(slash_events_opens_review_surface => app::exact_test_slash_events_opens_review_surface);
 delegate_test!(slash_shell_closes_review_surface => app::exact_test_slash_shell_closes_review_surface);
 delegate_test!(slash_follow_toggles_follow_mode => app::exact_test_slash_follow_toggles_follow_mode);
+delegate_test!(live_slash_compact_appears_when_supported => app::exact_test_live_slash_compact_appears_when_supported);
+delegate_test!(live_slash_compact_emits_ui_intent => app::exact_test_live_slash_compact_emits_ui_intent);
+delegate_test!(live_without_compact_support_hides_slash_compact => app::exact_test_live_without_compact_support_hides_slash_compact);
 
 #[cfg(test)]
 #[test]
@@ -1154,6 +1158,37 @@ fn dense_live_composer_uses_full_height_without_metadata_row() {
         )
         .is_none(),
         "dense live composer should remove the status row under the draft\n{rendered}"
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn dense_live_compaction_feedback_uses_toast_when_metadata_row_is_absent() {
+    let mut ready = app::AppState::new_live(None, false, None);
+    ready.prompt_buffer = "draft".to_string();
+    ready.prompt_cursor = ready.prompt_buffer.chars().count();
+    ready.set_toast_for_test(
+        "manual compaction skipped: need at least two completed turns",
+        app::ToastVariant::Info,
+    );
+
+    let rendered = render_live_lines(&ready, 60, 18);
+    let lines = rendered.lines().collect::<Vec<_>>();
+    let (_, composer_input_row, composer_last_row) = live_shell_composer_input_span(&lines);
+
+    assert!(
+        find_line_containing_in_range(
+            &lines,
+            composer_input_row + 1,
+            composer_last_row + 1,
+            "Current runtime:"
+        )
+        .is_none(),
+        "dense live composer should still omit the metadata row\n{rendered}"
+    );
+    assert!(
+        rendered.contains("manual compaction skipped"),
+        "manual compaction feedback should stay visible via toast when the footer metadata row is absent\n{rendered}"
     );
 }
 
