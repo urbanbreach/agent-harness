@@ -33,9 +33,7 @@ const RUNTIME_STATE_SURFACE_HORIZONTAL_INSET: u16 = 6;
 const RUNTIME_STATE_SURFACE_MAX_WIDTH: u16 = 68;
 const RUNTIME_STATE_SURFACE_MIN_WIDTH: u16 = 32;
 const RUNTIME_STATE_SURFACE_MIN_HEIGHT: u16 = 5;
-const SLASH_COMMAND_OVERLAY_GAP_Y: u16 = 1;
-const SLASH_COMMAND_OVERLAY_INSET_X: u16 = 2;
-const SLASH_COMMAND_OVERLAY_INSET_Y: u16 = 1;
+const SLASH_COMMAND_OVERLAY_GAP_Y: u16 = 0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SessionResponsiveMode {
@@ -1078,30 +1076,30 @@ fn command_palette_overlay_height(app: &AppState, terminal_height: u16) -> u16 {
 
 fn slash_command_overlay_area(
     composer: Rect,
-    _theme: &Theme,
-    contract: SessionGeometryContract,
+    theme: &Theme,
+    _contract: SessionGeometryContract,
     app: &AppState,
 ) -> Option<Rect> {
-    if !app.slash_visible || composer.width == 0 || composer.y <= SLASH_COMMAND_OVERLAY_GAP_Y {
+    if !app.slash_visible || composer.width == 0 || composer.y == 0 {
         return None;
     }
 
-    let popup_width = composer
-        .width
-        .min(contract.slash_overlay_max_width.unwrap_or(u16::MAX))
-        .max(1);
-    let popup_x = composer
-        .x
-        .saturating_add(composer.width.saturating_sub(popup_width) / 2);
+    let body_width = composer.width.saturating_sub(1);
+    let input_padding = theme
+        .live_shell
+        .rhythm
+        .composer_padding_x
+        .min(body_width.saturating_sub(1));
+    let input_x = composer.x.saturating_add(1).saturating_add(input_padding);
+    let input_width = body_width.saturating_sub(input_padding.saturating_mul(2));
+    if input_width == 0 {
+        return None;
+    }
+
+    let popup_width = input_width.max(1);
     let popup_height = slash_command_overlay_height(app)
-        .saturating_add(SLASH_COMMAND_OVERLAY_INSET_Y.saturating_mul(2))
-        .min(
-            composer
-                .y
-                .saturating_sub(SLASH_COMMAND_OVERLAY_GAP_Y)
-                .max(1),
-        );
-    if popup_height <= SLASH_COMMAND_OVERLAY_INSET_Y.saturating_mul(2) {
+        .min(composer.y.saturating_sub(SLASH_COMMAND_OVERLAY_GAP_Y));
+    if popup_height == 0 {
         return None;
     }
 
@@ -1109,22 +1107,11 @@ fn slash_command_overlay_area(
         .y
         .saturating_sub(SLASH_COMMAND_OVERLAY_GAP_Y)
         .saturating_sub(popup_height);
-    Some(Rect::new(popup_x, popup_y, popup_width, popup_height))
+    Some(Rect::new(input_x, popup_y, popup_width, popup_height))
 }
 
 pub(crate) fn slash_command_overlay_content_area(overlay: Rect) -> Rect {
-    let horizontal_inset = SLASH_COMMAND_OVERLAY_INSET_X.min(overlay.width / 2);
-    let vertical_inset = SLASH_COMMAND_OVERLAY_INSET_Y.min(overlay.height / 2);
-    Rect::new(
-        overlay.x.saturating_add(horizontal_inset),
-        overlay.y.saturating_add(vertical_inset),
-        overlay
-            .width
-            .saturating_sub(horizontal_inset.saturating_mul(2)),
-        overlay
-            .height
-            .saturating_sub(vertical_inset.saturating_mul(2)),
-    )
+    overlay
 }
 
 fn slash_command_overlay_height(app: &AppState) -> u16 {

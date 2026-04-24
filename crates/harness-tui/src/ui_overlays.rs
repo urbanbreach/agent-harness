@@ -71,8 +71,6 @@ fn render_slash_commands_overlay(
     }
 
     frame.render_widget(Clear, overlay);
-    frame.render_widget(ui_chrome::slash_command_block(theme), overlay);
-
     let inner = crate::layout::slash_command_overlay_content_area(overlay);
     render_slash_commands_list(frame, app, theme, inner);
 }
@@ -107,6 +105,7 @@ fn render_slash_commands_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
         .slash_selected
         .min(app.slash_filtered.len().saturating_sub(1));
     let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
+    let command_column_width = app.slash_command_column_width();
     for (row, command) in app
         .slash_filtered
         .iter()
@@ -131,6 +130,7 @@ fn render_slash_commands_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
                 is_selected,
                 theme,
                 row_area.width,
+                command_column_width,
             )),
             row_area,
         );
@@ -143,28 +143,48 @@ fn slash_command_row(
     is_selected: bool,
     theme: &Theme,
     width: u16,
+    command_column_width: usize,
 ) -> Line<'static> {
     let row_width = usize::from(width);
     let row_style = ui_chrome::slash_command_row_style(theme, is_selected);
-    let label_style = row_style.fg(ui_chrome::command_palette_title(theme));
-    let description_style = row_style.fg(ui_chrome::command_palette_muted(theme));
+    let label_style = if is_selected {
+        row_style.fg(ui_chrome::slash_command_selection_fg(theme))
+    } else {
+        row_style.fg(ui_chrome::command_palette_title(theme))
+    };
+    let description_style = if is_selected {
+        row_style.fg(ui_chrome::slash_command_selection_fg(theme))
+    } else {
+        row_style.fg(ui_chrome::command_palette_muted(theme))
+    };
 
-    let label = format!("/{command}");
-    let prefix = " ";
-    let used = prefix.chars().count().saturating_add(label.chars().count());
-    let description_width = row_width.saturating_sub(used.saturating_add(1));
+    let label = slash_command_display(command);
+    let side_padding = usize::from(row_width > 0);
+    let available_width = row_width.saturating_sub(side_padding.saturating_mul(2));
+    let label_width = label.chars().count();
+    let label_column_width = command_column_width.max(label_width).min(available_width);
+    let label = truncate_plain_text(&label, label_column_width);
+    let label_used = label.chars().count();
+    let label_padding = label_column_width.saturating_sub(label_used);
+    let description_width = available_width.saturating_sub(label_column_width);
     let description = truncate_plain_text(description, description_width);
-    let consumed = used
-        .saturating_add(usize::from(!description.is_empty()))
+    let consumed = side_padding
+        .saturating_add(label_used)
+        .saturating_add(label_padding)
         .saturating_add(description.chars().count());
     let trailing = row_width.saturating_sub(consumed);
 
-    let mut spans = vec![
-        Span::styled(prefix.to_string(), row_style),
-        Span::styled(label, label_style),
-    ];
-    if !description.is_empty() {
-        spans.push(Span::styled(" ", row_style));
+    let mut spans = Vec::new();
+    if side_padding > 0 {
+        spans.push(Span::styled(" ".repeat(side_padding), row_style));
+    }
+    if !label.is_empty() {
+        spans.push(Span::styled(label, label_style));
+    }
+    if label_padding > 0 {
+        spans.push(Span::styled(" ".repeat(label_padding), row_style));
+    }
+    if !description.is_empty() && description_width > 0 {
         spans.push(Span::styled(description, description_style));
     }
     if trailing > 0 {
@@ -172,6 +192,10 @@ fn slash_command_row(
     }
 
     Line::from(spans)
+}
+
+fn slash_command_display(command: &str) -> String {
+    format!("/{command}")
 }
 
 fn render_command_palette_surface(frame: &mut Frame, theme: &Theme, overlay: Rect) -> Option<Rect> {

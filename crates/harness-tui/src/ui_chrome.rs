@@ -1,6 +1,5 @@
 use super::*;
 
-use ratatui::symbols::border;
 use ratatui::widgets::Padding;
 
 use crate::app::permissions::{
@@ -62,20 +61,15 @@ pub(super) const fn command_palette_surface(theme: &Theme) -> Color {
 }
 
 pub(super) const fn slash_command_surface(theme: &Theme) -> Color {
-    theme.surface.panel
-}
-
-pub(super) fn slash_command_block(theme: &Theme) -> Block<'static> {
-    let surface = slash_command_surface(theme);
-    Block::default()
-        .borders(Borders::ALL)
-        .border_set(border::ROUNDED)
-        .border_style(Style::default().fg(theme.border.subtle).bg(surface))
-        .style(Style::default().bg(surface))
+    theme.surface.panel_elevated
 }
 
 pub(super) const fn slash_command_selection_bg(theme: &Theme) -> Color {
-    theme.surface.panel_elevated
+    theme.text.accent
+}
+
+pub(super) const fn slash_command_selection_fg(theme: &Theme) -> Color {
+    theme.text.inverse
 }
 
 pub(super) const fn command_palette_title(theme: &Theme) -> Color {
@@ -529,7 +523,9 @@ pub(super) fn overlay_focus_row_style(_theme: &Theme) -> Style {
 pub(super) fn slash_command_row_style(theme: &Theme, is_selected: bool) -> Style {
     let surface = slash_command_surface(theme);
     if is_selected {
-        Style::default().bg(slash_command_selection_bg(theme))
+        Style::default()
+            .fg(slash_command_selection_fg(theme))
+            .bg(slash_command_selection_bg(theme))
     } else {
         Style::default().bg(surface)
     }

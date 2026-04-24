@@ -1252,6 +1252,46 @@ fn slash_overlay_uses_opencode_navigation_keys() {
 }
 
 #[cfg(test)]
+#[test]
+fn slash_overlay_uses_input_width_aligned_rows_and_accent_selection() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.handle_key(exact_test_key(crossterm::event::KeyCode::Char('/')));
+
+    let rendered = render_live_lines(&app, 100, 24);
+    let lines = rendered.lines().collect::<Vec<_>>();
+    let row = find_line_containing_all(&lines, &["/events", "Open the event log review"])
+        .unwrap_or_else(|| panic!("slash /events row\n{rendered}"));
+    let events_description = lines[row]
+        .find("Open the event log review")
+        .expect("events description column");
+    let new_row = find_line_containing_all(&lines, &["/new", "Return to the home shell"])
+        .unwrap_or_else(|| panic!("slash /new row\n{rendered}"));
+    let new_description = lines[new_row]
+        .find("Return to the home shell")
+        .expect("new description column");
+
+    assert_eq!(events_description, new_description);
+    assert!(!lines[row].contains('┃'));
+    assert!(!rendered.contains('╭') && !rendered.contains('╰') && !rendered.contains('│'));
+
+    let buffer = render_live_cells(&app, 100, 24);
+    let (selected_row, selected_fgs, selected_bgs) =
+        row_text_and_palette(&buffer, 100, "/events").expect("selected slash row palette");
+    let command_start = selected_row
+        .find("/events")
+        .expect("selected command start");
+    let description_start = selected_row
+        .find("Open the event log review")
+        .expect("selected description start");
+    let theme = Theme::default();
+
+    assert_eq!(selected_bgs[command_start], theme.text.accent);
+    assert_eq!(selected_bgs[description_start], theme.text.accent);
+    assert_eq!(selected_fgs[command_start], theme.text.inverse);
+    assert_eq!(selected_fgs[description_start], theme.text.inverse);
+}
+
+#[cfg(test)]
 fn exact_test_key(code: crossterm::event::KeyCode) -> crossterm::event::KeyEvent {
     crossterm::event::KeyEvent::new(code, crossterm::event::KeyModifiers::NONE)
 }
@@ -1489,7 +1529,7 @@ fn dense_minimum_shell_hides_sidebar_and_caps_overlays() {
 
 #[cfg(test)]
 #[test]
-fn slash_overlay_matches_composer_width_and_keeps_reference_gap() {
+fn slash_overlay_matches_composer_text_input_width() {
     let mut app = app::AppState::new_live(None, false, None);
     app.handle_key(exact_test_key(crossterm::event::KeyCode::Char('/')));
 
@@ -1498,17 +1538,25 @@ fn slash_overlay_matches_composer_width_and_keeps_reference_gap() {
     let composer = plan.dock.expect("live dock layout").composer;
     let overlay = plan.slash_overlay.expect("slash overlay");
     let content = layout::slash_command_overlay_content_area(overlay);
+    let theme = Theme::default();
+    let body_width = composer.width.saturating_sub(1);
+    let input_padding = theme
+        .live_shell
+        .rhythm
+        .composer_padding_x
+        .min(body_width.saturating_sub(1));
+    let input_x = composer.x.saturating_add(1).saturating_add(input_padding);
+    let input_width = body_width.saturating_sub(input_padding.saturating_mul(2));
 
-    assert_eq!(overlay.x, composer.x);
-    assert_eq!(overlay.width, composer.width);
-    assert_eq!(
-        overlay.y.saturating_add(overlay.height).saturating_add(1),
-        composer.y
-    );
-    assert_eq!(content.x, overlay.x.saturating_add(2));
-    assert_eq!(content.width, overlay.width.saturating_sub(4));
-    assert_eq!(content.y, overlay.y.saturating_add(1));
-    assert_eq!(content.height, overlay.height.saturating_sub(2));
+    assert_eq!(overlay.x, input_x);
+    assert_eq!(overlay.width, input_width);
+    assert_eq!(overlay.y.saturating_add(overlay.height), composer.y);
+    assert_eq!(overlay.height, app.slash_filtered.len() as u16);
+    assert!(overlay.height <= 10);
+    assert_eq!(content.x, overlay.x);
+    assert_eq!(content.width, overlay.width);
+    assert_eq!(content.y, overlay.y);
+    assert_eq!(content.height, overlay.height);
 }
 
 #[cfg(test)]
