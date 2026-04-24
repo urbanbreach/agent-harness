@@ -13,9 +13,12 @@ use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::{
-    default_model_settings_for_profile, default_provider, run_multi_turn_streaming,
+    default_model_settings_for_profile, default_provider, run_multi_turn_streaming, AgentModelRef,
     AgentModelSettings, AgentProfile, AgentRequest, AgentRuntimeEvent, AgentTurnOutcome,
-    MultiTurnStreamingRequest, ProviderConversationTurn,
+    MultiTurnStreamingRequest, ProviderCompactionFacts, ProviderCompactionSummarySource,
+    ProviderCompactionTailBoundary, ProviderCompactionTimelineEntry, ProviderCompactionTurnFact,
+    ProviderContext, ProviderContextCheckpoint, ProviderContextCheckpointMetadata,
+    ProviderConversationTurn,
 };
 use crate::clock::Clock;
 use crate::config::{
@@ -24,15 +27,17 @@ use crate::config::{
 };
 use crate::edit::hashline::HashlinePatch;
 use crate::event::{
-    ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, EditAppliedEvent, EditProposedEvent,
-    EditRejectedEvent, EventActor, EventArtifactRef, EventBuildError, EventBuilder, EventContext,
-    EventEnvelopeV1, EventV1, ExecutionTimingMetadata, HookExecutionMetadata, HookExecutionStatus,
-    PermissionDecision as EventPermissionDecision, PermissionRequestedArgs,
-    PermissionResolvedEvent, PolicyViolationDetectedEvent, ProviderReasoningDeltaEvent,
-    RunFinishedEvent, RunStartedEvent, StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent,
-    TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState,
-    TaskScheduledEvent, TaskTerminalScope, ToolCallFinishedEvent, ToolCallMetadata,
-    ToolCallStartedEvent, ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent,
+    ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, CompactionAppliedEvent,
+    CompactionFailedEvent, CompactionRequestedEvent, CompactionWrittenEvent, EditAppliedEvent,
+    EditProposedEvent, EditRejectedEvent, EventActor, EventArtifactRef, EventBuildError,
+    EventBuilder, EventContext, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
+    HookExecutionMetadata, HookExecutionStatus, PermissionDecision as EventPermissionDecision,
+    PermissionRequestedArgs, PermissionResolvedEvent, PolicyViolationDetectedEvent,
+    ProviderReasoningDeltaEvent, RunFinishedEvent, RunStartedEvent, StaleDetectedEvent,
+    TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata, TaskLineageMetadata,
+    TaskResultLateEvent, TaskScheduleState, TaskScheduledEvent, TaskTerminalScope,
+    ToolCallFinishedEvent, ToolCallMetadata, ToolCallStartedEvent, ToolCallStatus,
+    ToolIdentityMetadata, UserMessageSubmittedEvent,
 };
 use crate::perm::{
     permission_kind_for_tool, permission_kind_for_tool_call, PermissionDecision, PermissionKind,
@@ -58,6 +63,11 @@ const DEFAULT_SIMULATED_JOB_DURATION_MS: u64 = 10;
 const DEFAULT_QUESTION_TIMEOUT_MS: u64 = 0;
 const COORDINATOR_AGENT_ID: &str = "coordinator";
 const HASHLINE_APPLY_TOOL_ID: &str = "edit.hashline_apply";
+const PROVIDER_CONTEXT_COMPACTION_RESERVE_TOKENS: u32 = 1_024;
+const PROVIDER_CONTEXT_COMPACTION_KEEP_RECENT_MAX_TOKENS: u32 = 8_000;
+const PROVIDER_CONTEXT_COMPACTION_KEEP_RECENT_MIN_TOKENS: u32 = 2_000;
+const PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS: usize = 6_000;
+const PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS: usize = 240;
 
 fn warn_oneshot_send_failure<T>(result: Result<(), T>, operation: &str) {
     if result.is_err() {
@@ -263,6 +273,20 @@ pub enum Command {
         output_digest: Option<String>,
         usage: Option<harness_providers::CompletionUsage>,
     },
+    CompactAgentContext {
+        task_id: String,
+        agent_id: String,
+        request_id: String,
+        trigger_reason: String,
+        usage: Option<harness_providers::CompletionUsage>,
+        respond_to: oneshot::Sender<Result<ProviderContext, CoordinatorError>>,
+    },
+    ManualCompactAgentContext {
+        agent_id: String,
+        through_request_id: Option<String>,
+        trigger_reason: String,
+        respond_to: oneshot::Sender<Result<ManualCompactionOutcome, CoordinatorError>>,
+    },
     AgentTurnFinished {
         task_id: String,
         agent_id: String,
@@ -321,8 +345,20 @@ pub enum CoordinatorError {
     ResumeDisabled { run_id: String, reason: String },
     #[error("resume restoration failed for run `{run_id}`: {reason}")]
     ResumeRestoreFailed { run_id: String, reason: String },
+    #[error("provider context compaction failed: {0}")]
+    CompactionFailed(String),
     #[error("lifecycle hook failed: {0}")]
     LifecycleHookFailed(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ManualCompactionOutcome {
+    CheckpointWritten {
+        checkpoint_id: String,
+        tokens_before_estimate: Option<u32>,
+        tokens_after_estimate: Option<u32>,
+    },
+    NoOp,
 }
 
 #[derive(Debug, Clone)]
@@ -515,6 +551,28 @@ impl CoordinatorHandle {
                 prompt: prompt.into(),
                 model_ref_override,
                 model_settings_override,
+                respond_to,
+            })
+            .await
+            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
+
+        response_rx
+            .await
+            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+    }
+
+    pub async fn compact_agent_context(
+        &self,
+        agent_id: impl Into<String>,
+        through_request_id: Option<String>,
+        trigger_reason: impl Into<String>,
+    ) -> Result<ManualCompactionOutcome, CoordinatorError> {
+        let (respond_to, response_rx) = oneshot::channel();
+        self.tx
+            .send(Command::ManualCompactAgentContext {
+                agent_id: agent_id.into(),
+                through_request_id,
+                trigger_reason: trigger_reason.into(),
                 respond_to,
             })
             .await
@@ -907,6 +965,44 @@ impl Coordinator {
                         usage,
                     )
                     .await;
+            }
+            Command::CompactAgentContext {
+                task_id,
+                agent_id,
+                request_id,
+                trigger_reason,
+                usage,
+                respond_to,
+            } => {
+                let result = self
+                    .compact_agent_context_internal(
+                        Some(&task_id),
+                        &agent_id,
+                        Some(request_id),
+                        &trigger_reason,
+                        usage,
+                    )
+                    .await
+                    .map(CompactAgentContextResult::into_context);
+                warn_oneshot_send_failure(respond_to.send(result), "compact_agent_context");
+            }
+            Command::ManualCompactAgentContext {
+                agent_id,
+                through_request_id,
+                trigger_reason,
+                respond_to,
+            } => {
+                let result = self
+                    .compact_agent_context_internal(
+                        None,
+                        &agent_id,
+                        through_request_id,
+                        &trigger_reason,
+                        None,
+                    )
+                    .await
+                    .map(CompactAgentContextResult::into_manual_outcome);
+                warn_oneshot_send_failure(respond_to.send(result), "manual_compact_agent_context");
             }
             Command::AgentTurnFinished {
                 task_id,
@@ -2986,6 +3082,8 @@ impl Coordinator {
         let category = running.category.clone();
         let cancellation_token = running.cancellation_token.clone();
         let parent_agent_id = run_state.subagent_parent_by_id.get(&agent_id).cloned();
+        let provider_id_for_state = provider_id.clone();
+        let model_id_for_state = model_id.clone();
 
         append_payload_event_with_correlation(
             self.clock.as_ref(),
@@ -3029,6 +3127,8 @@ impl Coordinator {
         )
         .await;
         if let Some(running) = run_state.running_agent_turns.get_mut(&task_id) {
+            running.latest_provider_id = Some(provider_id_for_state);
+            running.latest_model_id = Some(model_id_for_state);
             running
                 .hook_executions
                 .extend(hook_batch.hook_executions.clone());
@@ -3133,6 +3233,7 @@ impl Coordinator {
         let category = running.category.clone();
         let cancellation_token = running.cancellation_token.clone();
         let parent_agent_id = run_state.subagent_parent_by_id.get(&agent_id).cloned();
+        let usage_for_state = usage.clone();
 
         append_payload_event_with_correlation(
             self.clock.as_ref(),
@@ -3145,7 +3246,7 @@ impl Coordinator {
                 request_id: request_id.clone(),
                 finish_reason: finish_reason.clone(),
                 output_digest: output_digest.clone(),
-                usage,
+                usage: usage.clone(),
             }),
         )?;
 
@@ -3175,6 +3276,7 @@ impl Coordinator {
         )
         .await;
         if let Some(running) = run_state.running_agent_turns.get_mut(&task_id) {
+            running.latest_provider_usage = usage_for_state;
             running
                 .hook_executions
                 .extend(hook_batch.hook_executions.clone());
@@ -3199,6 +3301,172 @@ impl Coordinator {
         }
 
         Ok(())
+    }
+
+    async fn compact_agent_context_internal(
+        &mut self,
+        task_id: Option<&str>,
+        agent_id: &str,
+        through_request_id: Option<String>,
+        trigger_reason: &str,
+        usage: Option<harness_providers::CompletionUsage>,
+    ) -> Result<CompactAgentContextResult, CoordinatorError> {
+        let (existing_context, trigger, hook_context) = {
+            let Some(run_state) = self.run_state.as_ref() else {
+                return Err(CoordinatorError::RunNotStarted);
+            };
+
+            let existing_context = run_state
+                .provider_context_by_agent
+                .get(agent_id)
+                .cloned()
+                .unwrap_or_default();
+            let manual_tokens_before = (trigger_reason == "manual")
+                .then(|| approximate_provider_context_tokens(&existing_context));
+
+            let running_turn = task_id
+                .and_then(|task_id| run_state.running_agent_turns.get(task_id))
+                .or_else(|| {
+                    run_state.running_agent_turns.values().find(|running| {
+                        running.agent_id == agent_id
+                            && through_request_id
+                                .as_deref()
+                                .is_none_or(|request_id| running.request_id == request_id)
+                    })
+                });
+
+            let trigger = if let Some(running) = running_turn {
+                ProviderCompactionTrigger {
+                    agent_id: agent_id.to_string(),
+                    profile_name: running.profile_name.clone(),
+                    model_ref: running.model_ref.clone(),
+                    provider_id: running.latest_provider_id.clone(),
+                    model_id: running.latest_model_id.clone(),
+                    through_request_id,
+                    trigger_reason: trigger_reason.to_string(),
+                    tokens_before: usage
+                        .as_ref()
+                        .map(|usage| usage.prompt_tokens)
+                        .or(manual_tokens_before),
+                }
+            } else {
+                let profile = run_state
+                    .agents
+                    .get(agent_id)
+                    .cloned()
+                    .ok_or_else(|| CoordinatorError::UnknownAgent(agent_id.to_string()))?;
+                ProviderCompactionTrigger {
+                    agent_id: agent_id.to_string(),
+                    profile_name: profile.name,
+                    model_ref: profile.model_ref,
+                    provider_id: None,
+                    model_id: None,
+                    through_request_id,
+                    trigger_reason: trigger_reason.to_string(),
+                    tokens_before: usage
+                        .as_ref()
+                        .map(|usage| usage.prompt_tokens)
+                        .or(manual_tokens_before),
+                }
+            };
+
+            let hook_context = HookInvocationContext {
+                event: HookLifecycleEvent::CompactionRequested,
+                run_id: run_state.info.run_id.clone(),
+                workspace_root: run_state.info.workspace_root.clone(),
+                artifacts_dir: run_state.info.artifacts_dir.clone(),
+                actor: Some(agent_actor(agent_id)),
+                agent_id: Some(agent_id.to_string()),
+                request_id: trigger.through_request_id.clone(),
+                permission_id: None,
+                task_id: task_id.map(str::to_string),
+                tool_call_id: None,
+                tool_id: None,
+                provider_id: trigger.provider_id.clone(),
+                model_id: trigger.model_id.clone(),
+                parent_agent_id: run_state.subagent_parent_by_id.get(agent_id).cloned(),
+                category: Some(trigger.profile_name.clone()),
+                outcome: Some(trigger.trigger_reason.clone()),
+                output_summary: trigger.tokens_before.map(|tokens| tokens.to_string()),
+                failure_reason: None,
+            };
+
+            (existing_context, trigger, hook_context)
+        };
+
+        let requested_hook_batch = run_lifecycle_hooks(
+            self.clock.as_ref(),
+            &self.config.hook_runtime_config,
+            hook_context,
+        )
+        .await;
+
+        let Some(run_state) = self.run_state.as_mut() else {
+            return Err(CoordinatorError::RunNotStarted);
+        };
+
+        if let Some(reason) = requested_hook_batch.critical_failure {
+            append_compaction_failed_event(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                run_state,
+                &trigger,
+                &reason,
+                None,
+                None,
+            )?;
+            return Err(CoordinatorError::LifecycleHookFailed(reason));
+        }
+        let summary_override = compaction_summary_override_from_hooks(&requested_hook_batch);
+
+        let updated_context = match compact_provider_context(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            &trigger,
+            summary_override.as_deref(),
+        ) {
+            Ok(Some(compaction)) => compaction,
+            Ok(None) if trigger.trigger_reason == "overflow_retry" => {
+                let reason = "overflow retry requested compaction, but no checkpoint reduced the active provider context"
+                    .to_string();
+                append_compaction_failed_event(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    &trigger,
+                    &reason,
+                    None,
+                    None,
+                )?;
+                return Err(CoordinatorError::CompactionFailed(reason));
+            }
+            Ok(None) => {
+                return Ok(CompactAgentContextResult::NoOp {
+                    context: existing_context,
+                })
+            }
+            Err(err) => {
+                let reason = err.to_string();
+                let _ = append_compaction_failed_event(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    &trigger,
+                    &reason,
+                    None,
+                    None,
+                );
+                return Err(err);
+            }
+        };
+
+        Ok(CompactAgentContextResult::CheckpointWritten {
+            context: updated_context.updated_context,
+            checkpoint_id: updated_context.checkpoint_id,
+            tokens_before_estimate: updated_context.tokens_before_estimate,
+            tokens_after_estimate: updated_context.tokens_after_estimate,
+        })
     }
 
     async fn agent_turn_finished_internal(
@@ -3302,9 +3570,13 @@ impl Coordinator {
                         .provider_context_by_agent
                         .entry(running.agent_id.clone())
                         .or_default()
-                        .push(ProviderConversationTurn {
+                        .push_turn(ProviderConversationTurn {
                             user_prompt: running.request_prompt,
                             assistant_response: output.clone(),
+                            request_id: Some(request_id.clone()),
+                            first_seq: None,
+                            last_seq: None,
+                            artifacts: Vec::new(),
                         });
                     if let Some(reason) = critical_hook_failure.clone() {
                         append_payload_event_with_correlation(
@@ -3327,7 +3599,7 @@ impl Coordinator {
                             run_state,
                             agent_actor(&running.agent_id),
                             Some(format!("task:{task_id}")),
-                            Some(request_id),
+                            Some(request_id.clone()),
                             EventV1::TaskCompleted(TaskCompletedEvent {
                                 task_id,
                                 result_digest: digest12(output.as_bytes()),
@@ -3343,6 +3615,33 @@ impl Coordinator {
                                 }),
                             }),
                         )?;
+
+                        let proactive_trigger = ProviderCompactionTrigger {
+                            agent_id: running.agent_id.clone(),
+                            profile_name: running.profile_name.clone(),
+                            model_ref: running.model_ref.clone(),
+                            provider_id: running.latest_provider_id.clone(),
+                            model_id: running.latest_model_id.clone(),
+                            through_request_id: Some(request_id.clone()),
+                            trigger_reason: "proactive".to_string(),
+                            tokens_before: running
+                                .latest_provider_usage
+                                .as_ref()
+                                .map(|usage| usage.prompt_tokens),
+                        };
+                        if let Err(err) = compact_provider_context(
+                            self.clock.as_ref(),
+                            self.redactor.as_ref(),
+                            run_state,
+                            &proactive_trigger,
+                            None,
+                        ) {
+                            tracing::warn!(
+                                agent_id = %running.agent_id,
+                                error = %err,
+                                "provider context compaction failed after successful agent turn"
+                            );
+                        }
                     }
                 }
                 AgentTurnTaskOutcome::Failed { reason } => {
@@ -3415,7 +3714,7 @@ struct RunState {
     next_provider_request_id: u64,
     next_permission_id: u64,
     agents: BTreeMap<String, AgentProfile>,
-    provider_context_by_agent: BTreeMap<String, Vec<ProviderConversationTurn>>,
+    provider_context_by_agent: BTreeMap<String, ProviderContext>,
     tasks: BTreeMap<String, TaskState>,
     task_hook_state: BTreeMap<String, TaskHookState>,
     agent_hook_state: BTreeMap<String, Vec<HookExecutionMetadata>>,
@@ -3437,7 +3736,7 @@ struct QueuedAgentTurn {
     request_id: String,
     profile: AgentProfile,
     request: AgentRequest,
-    prior_turns: Vec<ProviderConversationTurn>,
+    prior_context: ProviderContext,
     queue_key: ConcurrencyKey,
 }
 
@@ -3446,11 +3745,73 @@ struct RunningAgentTurn {
     agent_id: String,
     request_id: String,
     request_prompt: String,
+    profile_name: String,
+    model_ref: String,
     category: Option<String>,
     queue_key: ConcurrencyKey,
     cancellation_token: CancellationToken,
     started_mono_ms: u64,
     hook_executions: Vec<HookExecutionMetadata>,
+    latest_provider_usage: Option<harness_providers::CompletionUsage>,
+    latest_provider_id: Option<String>,
+    latest_model_id: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct AppliedCompaction {
+    updated_context: ProviderContext,
+    checkpoint_id: String,
+    tokens_before_estimate: Option<u32>,
+    tokens_after_estimate: Option<u32>,
+}
+
+#[derive(Debug, Clone)]
+enum CompactAgentContextResult {
+    CheckpointWritten {
+        context: ProviderContext,
+        checkpoint_id: String,
+        tokens_before_estimate: Option<u32>,
+        tokens_after_estimate: Option<u32>,
+    },
+    NoOp {
+        context: ProviderContext,
+    },
+}
+
+impl CompactAgentContextResult {
+    fn into_context(self) -> ProviderContext {
+        match self {
+            Self::CheckpointWritten { context, .. } | Self::NoOp { context } => context,
+        }
+    }
+
+    fn into_manual_outcome(self) -> ManualCompactionOutcome {
+        match self {
+            Self::CheckpointWritten {
+                checkpoint_id,
+                tokens_before_estimate,
+                tokens_after_estimate,
+                ..
+            } => ManualCompactionOutcome::CheckpointWritten {
+                checkpoint_id,
+                tokens_before_estimate,
+                tokens_after_estimate,
+            },
+            Self::NoOp { .. } => ManualCompactionOutcome::NoOp,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ProviderCompactionTrigger {
+    agent_id: String,
+    profile_name: String,
+    model_ref: String,
+    provider_id: Option<String>,
+    model_id: Option<String>,
+    through_request_id: Option<String>,
+    trigger_reason: String,
+    tokens_before: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4298,7 +4659,7 @@ where
     } = args;
     let model = crate::agent::AgentModelRef::parse(&request.model_ref);
     let agent_id = request.agent_id.clone();
-    let prior_turns = run_state
+    let prior_context = run_state
         .provider_context_by_agent
         .get(&agent_id)
         .cloned()
@@ -4343,7 +4704,7 @@ where
                     request_id,
                     profile,
                     request,
-                    prior_turns,
+                    prior_context,
                     queue_key,
                 },
             )
@@ -4371,7 +4732,7 @@ where
                     request_id,
                     profile,
                     request,
-                    prior_turns,
+                    prior_context,
                     queue_key,
                 },
             );
@@ -4472,11 +4833,16 @@ where
             agent_id: task.agent_id.clone(),
             request_id: task.request_id.clone(),
             request_prompt: task.request.prompt.clone(),
+            profile_name: task.profile.name.clone(),
+            model_ref: task.request.model_ref.clone(),
             category: category.clone(),
             queue_key: task.queue_key.clone(),
             cancellation_token: cancellation_token.clone(),
             started_mono_ms: clock.mono_ms(),
             hook_executions,
+            latest_provider_usage: None,
+            latest_provider_id: None,
+            latest_model_id: None,
         },
     );
 
@@ -4511,88 +4877,154 @@ where
                     },
                 }).await, "agent_turn_finished_from_cancellation");
             }
-            outcome = run_multi_turn_streaming(
-                MultiTurnStreamingRequest {
-                    provider,
-                    tool_registry,
-                    profile: &task.profile,
-                    request_id: task.request_id.clone(),
-                    request: task.request,
-                    prior_turns: &task.prior_turns,
-                },
-                {
-                    let job_tx = job_tx.clone();
-                    let agent_id = task.agent_id.clone();
-                    let category = Some(task.profile.category.clone());
-                    move |tool_id, args_json| {
-                        let job_tx = job_tx.clone();
-                        let agent_id = agent_id.clone();
-                        let category = category.clone();
-                        async move {
+            outcome = async {
+                let mut prior_context = task.prior_context.clone();
+                let mut overflow_retry_attempted = false;
+
+                loop {
+                    let outcome = run_multi_turn_streaming(
+                        MultiTurnStreamingRequest {
+                            provider: provider.clone(),
+                            tool_registry: tool_registry.clone(),
+                            profile: &task.profile,
+                            request_id: task.request_id.clone(),
+                            request: task.request.clone(),
+                            prior_context: &prior_context,
+                        },
+                        {
+                            let job_tx = job_tx.clone();
+                            let agent_id = task.agent_id.clone();
+                            let category = Some(task.profile.category.clone());
+                            move |tool_id, args_json| {
+                                let job_tx = job_tx.clone();
+                                let agent_id = agent_id.clone();
+                                let category = category.clone();
+                                async move {
+                                    let (respond_to, response_rx) = oneshot::channel();
+                                    job_tx
+                                        .send(Command::ExecuteAgentToolCall {
+                                            actor: EventActor::new(ActorKind::Worker, Some(agent_id)),
+                                            category,
+                                            tool_id,
+                                            args_json,
+                                            respond_to,
+                                        })
+                                        .await
+                                        .map_err(|_| "tool call channel closed".to_string())?;
+                                    response_rx
+                                        .await
+                                        .map_err(|_| "tool call response channel closed".to_string())?
+                                }
+                            }
+                        },
+                        |event| {
+                            let job_tx = job_tx.clone();
+                            let task_id = task.task_id.clone();
+                            let agent_id = task.agent_id.clone();
+                            async move {
+                                match event {
+                                    AgentRuntimeEvent::ProviderRequestStarted(started) => {
+                                        warn_command_send_failure(job_tx.send(Command::AgentProviderRequestStarted {
+                                            task_id,
+                                            agent_id,
+                                            request_id: started.request_id,
+                                            provider_id: started.provider_id,
+                                            model_id: started.model_id,
+                                            prompt_summary: started.prompt_summary,
+                                            request_digest: started.request_digest,
+                                        }).await, "agent_provider_request_started");
+                                    }
+                                    AgentRuntimeEvent::ProviderStreamDelta { request_id, delta } => {
+                                        warn_command_send_failure(job_tx.send(Command::AgentProviderStreamDelta {
+                                            task_id,
+                                            agent_id,
+                                            request_id,
+                                            delta,
+                                        }).await, "agent_provider_stream_delta");
+                                    }
+                                    AgentRuntimeEvent::ProviderReasoningDelta { request_id, delta } => {
+                                        warn_command_send_failure(job_tx.send(Command::AgentProviderReasoningDelta {
+                                            task_id,
+                                            agent_id,
+                                            request_id,
+                                            delta,
+                                        }).await, "agent_provider_reasoning_delta");
+                                    }
+                                    AgentRuntimeEvent::ProviderRequestFinished(finished) => {
+                                        warn_command_send_failure(job_tx.send(Command::AgentProviderRequestFinished {
+                                            task_id,
+                                            agent_id,
+                                            request_id: finished.request_id,
+                                            finish_reason: finished.finish_reason,
+                                            output_digest: finished.output_digest,
+                                            usage: finished.usage,
+                                        }).await, "agent_provider_request_finished");
+                                    }
+                                }
+                            }
+                        }
+                    ).await;
+
+                    match &outcome {
+                        AgentTurnOutcome::Failed { reason }
+                            if !overflow_retry_attempted
+                                && is_provider_context_overflow_reason(reason) =>
+                        {
                             let (respond_to, response_rx) = oneshot::channel();
-                            job_tx
-                                .send(Command::ExecuteAgentToolCall {
-                                    actor: EventActor::new(ActorKind::Worker, Some(agent_id)),
-                                    category,
-                                    tool_id,
-                                    args_json,
+                            let send_result = job_tx
+                                .send(Command::CompactAgentContext {
+                                    task_id: task.task_id.clone(),
+                                    agent_id: task.agent_id.clone(),
+                                    request_id: task.request_id.clone(),
+                                    trigger_reason: "overflow_retry".to_string(),
+                                    usage: None,
                                     respond_to,
                                 })
-                                .await
-                                .map_err(|_| "tool call channel closed".to_string())?;
-                            response_rx
-                                .await
-                                .map_err(|_| "tool call response channel closed".to_string())?
-                        }
-                    }
-                },
-                |event| {
-                    let job_tx = job_tx.clone();
-                    let task_id = task.task_id.clone();
-                    let agent_id = task.agent_id.clone();
-                    async move {
-                        match event {
-                            AgentRuntimeEvent::ProviderRequestStarted(started) => {
-                                warn_command_send_failure(job_tx.send(Command::AgentProviderRequestStarted {
-                                    task_id,
-                                    agent_id,
-                                    request_id: started.request_id,
-                                    provider_id: started.provider_id,
-                                    model_id: started.model_id,
-                                    prompt_summary: started.prompt_summary,
-                                    request_digest: started.request_digest,
-                                }).await, "agent_provider_request_started");
+                                .await;
+                            if send_result.is_err() {
+                                break AgentTurnOutcome::Failed {
+                                    reason: format!(
+                                        "{reason}; failed to request overflow compaction because the coordinator channel is closed"
+                                    ),
+                                };
                             }
-                            AgentRuntimeEvent::ProviderStreamDelta { request_id, delta } => {
-                                warn_command_send_failure(job_tx.send(Command::AgentProviderStreamDelta {
-                                    task_id,
-                                    agent_id,
-                                    request_id,
-                                    delta,
-                                }).await, "agent_provider_stream_delta");
-                            }
-                            AgentRuntimeEvent::ProviderReasoningDelta { request_id, delta } => {
-                                warn_command_send_failure(job_tx.send(Command::AgentProviderReasoningDelta {
-                                    task_id,
-                                    agent_id,
-                                    request_id,
-                                    delta,
-                                }).await, "agent_provider_reasoning_delta");
-                            }
-                            AgentRuntimeEvent::ProviderRequestFinished(finished) => {
-                                warn_command_send_failure(job_tx.send(Command::AgentProviderRequestFinished {
-                                    task_id,
-                                    agent_id,
-                                    request_id: finished.request_id,
-                                    finish_reason: finished.finish_reason,
-                                    output_digest: finished.output_digest,
-                                    usage: finished.usage,
-                                }).await, "agent_provider_request_finished");
+
+                            match response_rx.await {
+                                Ok(Ok(compacted_context)) => {
+                                    overflow_retry_attempted = true;
+                                    prior_context = compacted_context;
+                                    continue;
+                                }
+                                Ok(Err(err)) => {
+                                    break AgentTurnOutcome::Failed {
+                                        reason: format!(
+                                            "{reason}; overflow compaction failed: {err}"
+                                        ),
+                                    };
+                                }
+                                Err(_) => {
+                                    break AgentTurnOutcome::Failed {
+                                        reason: format!(
+                                            "{reason}; overflow compaction response channel closed"
+                                        ),
+                                    };
+                                }
                             }
                         }
+                        AgentTurnOutcome::Failed { reason }
+                            if overflow_retry_attempted
+                                && is_provider_context_overflow_reason(reason) =>
+                        {
+                            break AgentTurnOutcome::Failed {
+                                reason: format!(
+                                    "{reason}; overflow persisted after checkpoint compaction; likely the active prompt or latest preserved turn still exceeds the provider window"
+                                ),
+                            };
+                        }
+                        _ => break outcome,
                     }
                 }
-            ) => {
+            } => {
                 let outcome = match outcome {
                     AgentTurnOutcome::Succeeded { output } => AgentTurnTaskOutcome::Succeeded { output },
                     AgentTurnOutcome::Failed { reason } => AgentTurnTaskOutcome::Failed { reason },
@@ -5331,6 +5763,1014 @@ fn write_run_metadata(
     Ok(())
 }
 
+fn compact_provider_context<C, R>(
+    clock: &C,
+    redactor: &R,
+    run_state: &mut RunState,
+    trigger: &ProviderCompactionTrigger,
+    summary_override: Option<&str>,
+) -> Result<Option<AppliedCompaction>, CoordinatorError>
+where
+    C: Clock + ?Sized,
+    R: Redactor + ?Sized,
+{
+    let current_context = run_state
+        .provider_context_by_agent
+        .get(&trigger.agent_id)
+        .cloned()
+        .unwrap_or_default();
+    let current_tokens = approximate_provider_context_tokens(&current_context);
+
+    let metadata = recorded_runtime_context_for_compaction(run_state, trigger);
+    if !should_compact_provider_context(&current_context, &metadata, trigger) {
+        return Ok(None);
+    }
+
+    let keep_recent_budget = provider_context_keep_recent_tokens(&metadata);
+    let Some(checkpoint) = build_provider_context_checkpoint(
+        run_state,
+        trigger,
+        &current_context,
+        keep_recent_budget,
+        current_tokens,
+        summary_override,
+    ) else {
+        return Ok(None);
+    };
+    let checkpoint_id = checkpoint.metadata.checkpoint_id.clone();
+    let updated_context = ProviderContext::from_checkpoint(checkpoint.clone());
+    if trigger.trigger_reason != "manual"
+        && approximate_provider_context_tokens(&updated_context) >= current_tokens
+    {
+        return Ok(None);
+    }
+
+    append_payload_event(
+        clock,
+        redactor,
+        run_state,
+        system_actor(),
+        Some(format!("compaction:{}", trigger.agent_id)),
+        EventV1::CompactionRequested(CompactionRequestedEvent {
+            checkpoint_id: checkpoint.metadata.checkpoint_id.clone(),
+            agent_id: checkpoint.metadata.agent_id.clone(),
+            trigger_reason: trigger.trigger_reason.clone(),
+            through_seq: checkpoint.metadata.through_seq,
+            through_request_id: checkpoint.metadata.through_request_id.clone(),
+            provider_id: checkpoint.metadata.provider_id.clone(),
+            model_id: checkpoint.metadata.model_id.clone(),
+            tokens_before: checkpoint.metadata.tokens_before,
+            tokens_before_estimate: checkpoint.metadata.tokens_before_estimate,
+        }),
+    )?;
+
+    let body = serde_json::to_string_pretty(&checkpoint)?;
+    let artifact_store = crate::tool::ArtifactStore::new(run_state.info.artifacts_dir.clone())
+        .map_err(|err| CoordinatorError::ResumeRestoreFailed {
+            run_id: run_state.info.run_id.clone(),
+            reason: format!("failed to open compaction artifact store: {err}"),
+        })?;
+    let artifact_name = format!(
+        "compactions/{}/{}.json",
+        trigger.agent_id, checkpoint.metadata.checkpoint_id
+    );
+    let artifact = artifact_store
+        .write_text(&artifact_name, &body)
+        .map_err(|err| CoordinatorError::ResumeRestoreFailed {
+            run_id: run_state.info.run_id.clone(),
+            reason: format!("failed to write compaction checkpoint artifact: {err}"),
+        })?;
+    append_compaction_artifact_written_event(clock, redactor, run_state, &checkpoint, &artifact)?;
+    append_payload_event(
+        clock,
+        redactor,
+        run_state,
+        system_actor(),
+        Some(format!("compaction:{}", trigger.agent_id)),
+        EventV1::CompactionWritten(CompactionWrittenEvent {
+            checkpoint_id: checkpoint.metadata.checkpoint_id.clone(),
+            agent_id: checkpoint.metadata.agent_id.clone(),
+            artifact_path: artifact.path.clone(),
+            artifact_digest: artifact.digest.clone(),
+            artifact_bytes: body.len() as u64,
+            trigger_reason: trigger.trigger_reason.clone(),
+            through_seq: checkpoint.metadata.through_seq,
+            through_request_id: checkpoint.metadata.through_request_id.clone(),
+            provider_id: checkpoint.metadata.provider_id.clone(),
+            model_id: checkpoint.metadata.model_id.clone(),
+            tokens_before: checkpoint.metadata.tokens_before,
+            tokens_before_estimate: checkpoint.metadata.tokens_before_estimate,
+            tokens_after_estimate: checkpoint.metadata.tokens_after_estimate,
+            summary_tokens_estimate: checkpoint.metadata.summary_tokens_estimate,
+            compacted_turns: checkpoint.metadata.compacted_turns,
+            reduction_tokens_estimate: checkpoint.metadata.reduction_tokens_estimate,
+            reduction_percent_estimate: checkpoint.metadata.reduction_percent_estimate,
+            preserved_turns: checkpoint.recent_turns.len() as u32,
+        }),
+    )?;
+
+    append_payload_event(
+        clock,
+        redactor,
+        run_state,
+        system_actor(),
+        Some(format!("compaction:{}", trigger.agent_id)),
+        EventV1::CompactionApplied(CompactionAppliedEvent {
+            checkpoint_id: checkpoint.metadata.checkpoint_id.clone(),
+            agent_id: trigger.agent_id.clone(),
+            through_seq: checkpoint.metadata.through_seq,
+            through_request_id: checkpoint.metadata.through_request_id.clone(),
+            tokens_before_estimate: checkpoint.metadata.tokens_before_estimate,
+            tokens_after_estimate: checkpoint.metadata.tokens_after_estimate,
+            summary_tokens_estimate: checkpoint.metadata.summary_tokens_estimate,
+            compacted_turns: checkpoint.metadata.compacted_turns,
+            preserved_turns: checkpoint.metadata.preserved_turns,
+            reduction_tokens_estimate: checkpoint.metadata.reduction_tokens_estimate,
+            reduction_percent_estimate: checkpoint.metadata.reduction_percent_estimate,
+        }),
+    )?;
+
+    run_state
+        .provider_context_by_agent
+        .insert(trigger.agent_id.clone(), updated_context.clone());
+
+    Ok(Some(AppliedCompaction {
+        updated_context,
+        checkpoint_id,
+        tokens_before_estimate: checkpoint.metadata.tokens_before_estimate,
+        tokens_after_estimate: checkpoint.metadata.tokens_after_estimate,
+    }))
+}
+
+fn recorded_runtime_context_for_compaction(
+    run_state: &RunState,
+    trigger: &ProviderCompactionTrigger,
+) -> RecordedRuntimeContext {
+    let requested_model = AgentModelRef::parse(&trigger.model_ref);
+    let requested_provider_id = trigger
+        .provider_id
+        .as_deref()
+        .unwrap_or(requested_model.provider_id.as_str());
+    let requested_model_id = trigger
+        .model_id
+        .as_deref()
+        .unwrap_or(requested_model.model_id.as_str());
+
+    if let Some(recorded) = run_state
+        .recorded_runtime_context
+        .as_ref()
+        .filter(|context| {
+            context.profile == trigger.profile_name
+                && context.provider == requested_provider_id
+                && context.model == requested_model_id
+        })
+    {
+        return recorded.clone();
+    }
+
+    RecordedRuntimeContext::from_profile_model(&trigger.profile_name, &trigger.model_ref)
+}
+
+fn should_compact_provider_context(
+    context: &ProviderContext,
+    metadata: &RecordedRuntimeContext,
+    trigger: &ProviderCompactionTrigger,
+) -> bool {
+    if trigger.trigger_reason == "manual" {
+        return context.preserved_turns.len() >= 2;
+    }
+
+    if trigger.trigger_reason == "overflow_retry" {
+        return !context.is_empty();
+    }
+
+    if context.preserved_turns.len() < 2 {
+        return false;
+    }
+
+    let Some(tokens_before) = trigger.tokens_before else {
+        return false;
+    };
+    let Some(input_budget) = metadata.max_input_tokens.or(metadata.context_window_tokens) else {
+        return false;
+    };
+    let reserve = provider_context_reserve_tokens(metadata, input_budget);
+    tokens_before >= input_budget.saturating_sub(reserve)
+}
+
+fn build_provider_context_checkpoint(
+    run_state: &RunState,
+    trigger: &ProviderCompactionTrigger,
+    context: &ProviderContext,
+    keep_recent_budget: u32,
+    tokens_before_estimate: u32,
+    summary_override: Option<&str>,
+) -> Option<ProviderContextCheckpoint> {
+    let (older_turns, recent_turns) = if let Some(split_index) =
+        provider_context_split_index(&context.preserved_turns, keep_recent_budget)
+    {
+        (
+            &context.preserved_turns[..split_index],
+            context.preserved_turns[split_index..].to_vec(),
+        )
+    } else if trigger.trigger_reason == "manual" && context.preserved_turns.len() >= 2 {
+        let split_index = context.preserved_turns.len() - 1;
+        (
+            &context.preserved_turns[..split_index],
+            context.preserved_turns[split_index..].to_vec(),
+        )
+    } else if trigger.trigger_reason == "overflow_retry" && !context.preserved_turns.is_empty() {
+        (&context.preserved_turns[..], Vec::new())
+    } else {
+        return None;
+    };
+    let pruned_tool_artifacts =
+        collect_pruned_tool_artifacts(run_state, trigger, context, older_turns);
+    let facts = build_provider_compaction_facts(context, older_turns, &pruned_tool_artifacts);
+    let tail_boundary = build_provider_compaction_tail_boundary(
+        &recent_turns,
+        preserved_tokens_estimate(&recent_turns),
+        keep_recent_budget,
+        trigger,
+    );
+    let metadata = recorded_runtime_context_for_compaction(run_state, trigger);
+    let summary_source = build_provider_compaction_summary_source(
+        &metadata,
+        trigger,
+        context.compacted_summary.as_deref(),
+        summary_override.is_some(),
+    );
+    let summary = summary_override
+        .map(str::trim)
+        .filter(|summary| !summary.is_empty())
+        .map(|summary| truncate_chars(summary, PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS))
+        .unwrap_or_else(|| {
+            build_provider_context_summary(
+                context.compacted_summary.as_deref(),
+                older_turns,
+                &pruned_tool_artifacts,
+                &facts,
+                &tail_boundary,
+                &summary_source,
+            )
+        });
+    if summary.trim().is_empty() {
+        return None;
+    }
+    let summary_tokens_estimate = approximate_text_tokens(&summary);
+    let preserved_tokens_estimate = preserved_tokens_estimate(&recent_turns);
+    let tokens_after_estimate = summary_tokens_estimate.saturating_add(preserved_tokens_estimate);
+    let reduction_tokens_estimate = tokens_before_estimate.saturating_sub(tokens_after_estimate);
+    let reduction_percent_estimate = (tokens_before_estimate > 0).then(|| {
+        ((u64::from(reduction_tokens_estimate) * 100) / u64::from(tokens_before_estimate)) as u32
+    });
+
+    let first_kept_request_id = recent_turns
+        .first()
+        .and_then(|turn| turn.request_id.clone());
+    let timeline_entry = ProviderCompactionTimelineEntry {
+        entry_type: if trigger.trigger_reason == "manual" {
+            "manual_compaction".to_string()
+        } else if trigger.trigger_reason == "overflow_retry" {
+            "overflow_compaction".to_string()
+        } else {
+            "proactive_compaction".to_string()
+        },
+        summary: summarize_compaction_text(&summary),
+        first_kept_request_id,
+        compacted_turns: older_turns.len() as u32,
+        preserved_turns: recent_turns.len() as u32,
+        tokens_before_estimate: Some(tokens_before_estimate),
+        tokens_after_estimate: Some(tokens_after_estimate),
+    };
+
+    Some(ProviderContextCheckpoint {
+        metadata: ProviderContextCheckpointMetadata {
+            checkpoint_id: format!("checkpoint_{:06}", run_state.next_event_seq),
+            agent_id: trigger.agent_id.clone(),
+            run_id: run_state.info.run_id.clone(),
+            through_seq: run_state.next_event_seq.saturating_sub(1),
+            through_request_id: trigger.through_request_id.clone(),
+            provider_id: trigger.provider_id.clone(),
+            model_id: trigger.model_id.clone(),
+            tokens_before: trigger.tokens_before,
+            tokens_before_estimate: Some(tokens_before_estimate),
+            tokens_after_estimate: Some(tokens_after_estimate),
+            summary_tokens_estimate: Some(summary_tokens_estimate),
+            compacted_turns: Some(older_turns.len() as u32),
+            preserved_turns: Some(recent_turns.len() as u32),
+            reduction_tokens_estimate: Some(reduction_tokens_estimate),
+            reduction_percent_estimate,
+            trigger_reason: Some(trigger.trigger_reason.clone()),
+        },
+        summary,
+        recent_turns,
+        pruned_tool_artifacts,
+        facts,
+        tail_boundary: Some(tail_boundary),
+        summary_source: Some(summary_source),
+        timeline_entry: Some(timeline_entry),
+    })
+}
+
+fn provider_context_keep_recent_tokens(metadata: &RecordedRuntimeContext) -> u32 {
+    metadata
+        .max_input_tokens
+        .or(metadata.context_window_tokens)
+        .map(|budget| {
+            (budget / 4).clamp(
+                PROVIDER_CONTEXT_COMPACTION_KEEP_RECENT_MIN_TOKENS,
+                PROVIDER_CONTEXT_COMPACTION_KEEP_RECENT_MAX_TOKENS,
+            )
+        })
+        .unwrap_or(2_048)
+}
+
+fn provider_context_reserve_tokens(metadata: &RecordedRuntimeContext, input_budget: u32) -> u32 {
+    metadata
+        .max_output_tokens
+        .unwrap_or(PROVIDER_CONTEXT_COMPACTION_RESERVE_TOKENS)
+        .max(PROVIDER_CONTEXT_COMPACTION_RESERVE_TOKENS)
+        .min(input_budget.saturating_sub(1))
+}
+
+fn provider_context_split_index(
+    turns: &[ProviderConversationTurn],
+    keep_recent_budget: u32,
+) -> Option<usize> {
+    if turns.len() < 2 {
+        return None;
+    }
+
+    let mut keep_from = turns.len() - 1;
+    let mut kept_tokens = approximate_turn_tokens(&turns[keep_from]);
+    for index in (0..keep_from).rev() {
+        let candidate_tokens = approximate_turn_tokens(&turns[index]);
+        if kept_tokens.saturating_add(candidate_tokens) > keep_recent_budget {
+            break;
+        }
+        kept_tokens = kept_tokens.saturating_add(candidate_tokens);
+        keep_from = index;
+    }
+
+    (keep_from > 0).then_some(keep_from)
+}
+
+fn preserved_tokens_estimate(turns: &[ProviderConversationTurn]) -> u32 {
+    turns.iter().map(approximate_turn_tokens).sum::<u32>()
+}
+
+fn build_provider_compaction_facts(
+    context: &ProviderContext,
+    older_turns: &[ProviderConversationTurn],
+    pruned_tool_artifacts: &[EventArtifactRef],
+) -> ProviderCompactionFacts {
+    let compacted_turns = older_turns
+        .iter()
+        .map(|turn| ProviderCompactionTurnFact {
+            request_id: turn.request_id.clone(),
+            first_seq: turn.first_seq,
+            last_seq: turn.last_seq,
+            user_excerpt: summarize_compaction_text(&turn.user_prompt),
+            assistant_excerpt: summarize_compaction_text(&turn.assistant_response),
+            artifacts: turn.artifacts.clone(),
+        })
+        .collect::<Vec<_>>();
+
+    let mut relevant_artifacts = Vec::new();
+    let mut artifact_seen = BTreeSet::new();
+    for artifact in pruned_tool_artifacts
+        .iter()
+        .chain(older_turns.iter().flat_map(|turn| turn.artifacts.iter()))
+    {
+        let key = (artifact.path.clone(), artifact.digest.clone());
+        if artifact_seen.insert(key) {
+            relevant_artifacts.push(artifact.clone());
+        }
+    }
+
+    let mut touched_files = relevant_artifacts
+        .iter()
+        .map(|artifact| artifact.path.clone())
+        .collect::<Vec<_>>();
+    touched_files.sort();
+    touched_files.dedup();
+
+    ProviderCompactionFacts {
+        previous_checkpoint_id: context
+            .checkpoint
+            .as_ref()
+            .map(|checkpoint| checkpoint.checkpoint_id.clone()),
+        compacted_turns,
+        relevant_artifacts,
+        touched_files,
+        pending_work: Vec::new(),
+        blockers: Vec::new(),
+    }
+}
+
+fn build_provider_compaction_tail_boundary(
+    recent_turns: &[ProviderConversationTurn],
+    preserved_tokens_estimate: u32,
+    keep_recent_budget: u32,
+    trigger: &ProviderCompactionTrigger,
+) -> ProviderCompactionTailBoundary {
+    let first_preserved = recent_turns.first();
+    let mode = if recent_turns.is_empty() {
+        "summary_only".to_string()
+    } else if preserved_tokens_estimate > keep_recent_budget {
+        "oversized_whole_turn_tail".to_string()
+    } else {
+        "whole_turn_tail".to_string()
+    };
+    let note = if mode == "oversized_whole_turn_tail" {
+        Some("Latest preserved turn exceeds the keep-recent budget; the harness records this tail boundary but does not split provider/tool turns yet.".to_string())
+    } else if trigger.trigger_reason == "overflow_retry" && recent_turns.is_empty() {
+        Some("Overflow retry compacted to summary-only context because preserving a recent turn would still exceed the provider window.".to_string())
+    } else {
+        None
+    };
+
+    ProviderCompactionTailBoundary {
+        mode,
+        preserved_turns: recent_turns.len() as u32,
+        preserved_tokens_estimate,
+        preserved_from_request_id: first_preserved.and_then(|turn| turn.request_id.clone()),
+        preserved_from_seq: first_preserved.and_then(|turn| turn.first_seq),
+        note,
+    }
+}
+
+fn build_provider_compaction_summary_source(
+    metadata: &RecordedRuntimeContext,
+    trigger: &ProviderCompactionTrigger,
+    existing_summary: Option<&str>,
+    hook_supplied_summary: bool,
+) -> ProviderCompactionSummarySource {
+    ProviderCompactionSummarySource {
+        strategy: if hook_supplied_summary {
+            "hook_supplied_summary".to_string()
+        } else {
+            "deterministic_rolling_summary".to_string()
+        },
+        model_ref: trigger.model_ref.clone(),
+        provider_id: trigger
+            .provider_id
+            .clone()
+            .or_else(|| Some(metadata.provider.clone())),
+        model_id: trigger
+            .model_id
+            .clone()
+            .or_else(|| Some(metadata.model.clone())),
+        reasoning_effort: metadata.reasoning_effort.clone(),
+        text_verbosity: metadata.text_verbosity.clone(),
+        previous_summary_used: existing_summary
+            .map(str::trim)
+            .is_some_and(|summary| !summary.is_empty()),
+        model_backed: false,
+        deterministic_fallback: true,
+    }
+}
+
+fn compaction_summary_override_from_hooks(batch: &HookExecutionBatch) -> Option<String> {
+    batch.hook_executions.iter().rev().find_map(|execution| {
+        if execution.status != HookExecutionStatus::Succeeded {
+            return None;
+        }
+        let summary = execution.output_summary.as_deref()?.trim();
+        summary
+            .strip_prefix("compaction_summary:")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+    })
+}
+
+fn build_provider_context_summary(
+    existing_summary: Option<&str>,
+    older_turns: &[ProviderConversationTurn],
+    pruned_tool_artifacts: &[EventArtifactRef],
+    facts: &ProviderCompactionFacts,
+    tail_boundary: &ProviderCompactionTailBoundary,
+    summary_source: &ProviderCompactionSummarySource,
+) -> String {
+    let mut lines = Vec::new();
+    lines.push("## Goal".to_string());
+    lines.push(format!(
+        "- Continue the current agent session after compacting {} older turn(s).",
+        older_turns.len()
+    ));
+    lines.push(String::new());
+
+    lines.push("## Constraints & Preferences".to_string());
+    if let Some(existing_summary) = existing_summary
+        .map(str::trim)
+        .filter(|summary| !summary.is_empty())
+    {
+        lines.push("- Preserve still-relevant constraints, decisions, files, and next steps from the previous checkpoint summary.".to_string());
+        lines.push("- Previous Summary:".to_string());
+        lines.push(truncate_chars(
+            existing_summary,
+            PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS / 2,
+        ));
+    } else {
+        lines.push("- (none recorded explicitly)".to_string());
+    }
+    lines.push(String::new());
+
+    lines.push("## Progress".to_string());
+    lines.push("### Done".to_string());
+    for (index, turn) in older_turns.iter().enumerate() {
+        lines.push(format!(
+            "- Turn {} user: {}",
+            index + 1,
+            summarize_compaction_text(&turn.user_prompt)
+        ));
+        lines.push(format!(
+            "  Assistant: {}",
+            summarize_compaction_text(&turn.assistant_response)
+        ));
+    }
+    lines.push("### In Progress".to_string());
+    lines.push(
+        "- Continue from the preserved recent turn(s) that follow this checkpoint summary."
+            .to_string(),
+    );
+    lines.push("### Blocked".to_string());
+    lines.push("- (none recorded explicitly)".to_string());
+    lines.push(String::new());
+
+    lines.push("## Key Decisions".to_string());
+    lines.push("- Older provider-visible turns were compacted into this checkpoint; preserved recent turns and the current user message take precedence over this lossy summary.".to_string());
+    lines.push(String::new());
+
+    lines.push("## Next Steps".to_string());
+    lines.push("1. Use the preserved recent turn(s) plus this checkpoint summary to continue the user's current task.".to_string());
+    lines.push(String::new());
+
+    lines.push("## Critical Context".to_string());
+    lines.push(format!("- Compacted turns: {}", older_turns.len()));
+    if let Some(previous_checkpoint_id) = facts.previous_checkpoint_id.as_deref() {
+        lines.push(format!(
+            "- Previous checkpoint: {previous_checkpoint_id}; this summary rolls forward from it."
+        ));
+    }
+    lines.push(format!(
+        "- Tail boundary: {} ({} preserved turn(s), ~{} token(s)).",
+        tail_boundary.mode, tail_boundary.preserved_turns, tail_boundary.preserved_tokens_estimate
+    ));
+    if let Some(note) = tail_boundary.note.as_deref() {
+        lines.push(format!("- Tail note: {note}"));
+    }
+    lines.push(format!(
+        "- Summary source: {} using {} (model-backed: {}, deterministic fallback: {}).",
+        summary_source.strategy,
+        summary_source.model_ref,
+        summary_source.model_backed,
+        summary_source.deterministic_fallback
+    ));
+    lines.push("- This summary is deterministic and lossy; verify details against artifacts or the event log when precision matters.".to_string());
+    lines.push(String::new());
+
+    lines.push("## Source Facts".to_string());
+    if facts.compacted_turns.is_empty() {
+        lines.push("- (no compacted turn facts recorded)".to_string());
+    } else {
+        for fact in facts.compacted_turns.iter().take(8) {
+            let request = fact
+                .request_id
+                .as_deref()
+                .map(|request_id| format!(" `{request_id}`"))
+                .unwrap_or_default();
+            lines.push(format!("- Request{request}: {}", fact.user_excerpt));
+            lines.push(format!("  Assistant: {}", fact.assistant_excerpt));
+        }
+    }
+    if !facts.touched_files.is_empty() {
+        lines.push("<read-files>".to_string());
+        lines.extend(facts.touched_files.iter().take(12).cloned());
+        lines.push("</read-files>".to_string());
+    }
+    lines.push(String::new());
+
+    lines.push("## Relevant Files / Artifacts".to_string());
+    let mut artifact_lines = Vec::new();
+    let mut seen = BTreeSet::new();
+    for artifact in pruned_tool_artifacts {
+        if seen.insert((artifact.path.clone(), artifact.digest.clone())) {
+            let digest = artifact
+                .digest
+                .as_deref()
+                .map(|value| format!(" ({value})"))
+                .unwrap_or_default();
+            artifact_lines.push(format!(
+                "- {}{}: referenced by compacted turn/tool output",
+                artifact.path, digest
+            ));
+        }
+    }
+    for turn in older_turns {
+        for artifact in &turn.artifacts {
+            if seen.insert((artifact.path.clone(), artifact.digest.clone())) {
+                let digest = artifact
+                    .digest
+                    .as_deref()
+                    .map(|value| format!(" ({value})"))
+                    .unwrap_or_default();
+                artifact_lines.push(format!(
+                    "- {}{}: referenced by compacted provider turn",
+                    artifact.path, digest
+                ));
+            }
+        }
+    }
+    if artifact_lines.is_empty() {
+        lines.push("- (none recorded)".to_string());
+    } else {
+        lines.extend(artifact_lines.into_iter().take(12));
+    }
+
+    truncate_chars(
+        &lines.join("\n"),
+        PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS,
+    )
+}
+
+fn summarize_compaction_text(text: &str) -> String {
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    truncate_chars(
+        &normalized,
+        PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS,
+    )
+}
+
+fn truncate_chars(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+
+    let mut truncated = text.chars().take(max_chars).collect::<String>();
+    truncated.push('…');
+    truncated
+}
+
+fn approximate_turn_tokens(turn: &ProviderConversationTurn) -> u32 {
+    approximate_text_tokens(&turn.user_prompt)
+        .saturating_add(approximate_text_tokens(&turn.assistant_response))
+}
+
+fn approximate_text_tokens(text: &str) -> u32 {
+    (text.chars().count() as u32 / 4).max(1)
+}
+
+fn approximate_provider_context_tokens(context: &ProviderContext) -> u32 {
+    let summary_tokens = context
+        .compacted_summary
+        .as_deref()
+        .map(approximate_text_tokens)
+        .unwrap_or(0);
+    summary_tokens.saturating_add(
+        context
+            .preserved_turns
+            .iter()
+            .map(approximate_turn_tokens)
+            .sum::<u32>(),
+    )
+}
+
+fn collect_pruned_tool_artifacts(
+    run_state: &RunState,
+    trigger: &ProviderCompactionTrigger,
+    context: &ProviderContext,
+    older_turns: &[ProviderConversationTurn],
+) -> Vec<EventArtifactRef> {
+    if older_turns.is_empty() {
+        return Vec::new();
+    }
+
+    let lower_bound_seq = context
+        .checkpoint
+        .as_ref()
+        .map(|checkpoint| checkpoint.through_seq)
+        .unwrap_or(0);
+    let historical_turns = match collect_historical_agent_turns_until(
+        &run_state.info.run_id,
+        &run_state.info.events_path,
+        &trigger.agent_id,
+        lower_bound_seq,
+        run_state.next_event_seq.saturating_sub(1),
+    ) {
+        Ok(turns) => turns,
+        Err(_) => return Vec::new(),
+    };
+
+    if historical_turns.len() < context.preserved_turns.len() {
+        return Vec::new();
+    }
+
+    let aligned_turns = &historical_turns[historical_turns.len() - context.preserved_turns.len()..];
+    if !aligned_turns
+        .iter()
+        .zip(&context.preserved_turns)
+        .all(|(historical, current)| {
+            historical.user_prompt == current.user_prompt
+                && historical.assistant_response == current.assistant_response
+        })
+    {
+        return Vec::new();
+    }
+
+    let mut refs = Vec::new();
+    let mut seen = BTreeSet::new();
+    for historical in aligned_turns.iter().take(older_turns.len()) {
+        for artifact in &historical.artifact_refs {
+            let key = (artifact.path.clone(), artifact.digest.clone());
+            if seen.insert(key) {
+                refs.push(artifact.clone());
+            }
+        }
+    }
+    refs
+}
+
+fn collect_historical_agent_turns_until(
+    run_id: &str,
+    events_path: &Path,
+    agent_id: &str,
+    lower_bound_seq: u64,
+    through_seq: u64,
+) -> Result<Vec<HistoricalCompletedAgentTurn>, CoordinatorError> {
+    let file =
+        fs::File::open(events_path).map_err(|source| CoordinatorError::ResumeRestoreFailed {
+            run_id: run_id.to_string(),
+            reason: format!(
+                "failed to open historical events {}: {source}",
+                events_path.display()
+            ),
+        })?;
+
+    let mut expected_seq = 1_u64;
+    let mut requests: BTreeMap<String, HistoricalRequestState> = BTreeMap::new();
+    let mut request_turn_task_ids: BTreeMap<String, String> = BTreeMap::new();
+    let mut historical_task_scopes: BTreeMap<String, TaskTerminalScope> = BTreeMap::new();
+    let mut request_artifacts: BTreeMap<String, Vec<EventArtifactRef>> = BTreeMap::new();
+    let mut turns = Vec::new();
+
+    for (line_number, line) in BufReader::new(file).lines().enumerate() {
+        let line = line.map_err(|source| CoordinatorError::ResumeRestoreFailed {
+            run_id: run_id.to_string(),
+            reason: format!(
+                "failed to read historical event line {} in {}: {source}",
+                line_number + 1,
+                events_path.display()
+            ),
+        })?;
+
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        let event: EventEnvelopeV1 = serde_json::from_str(&line).map_err(|source| {
+            CoordinatorError::ResumeRestoreFailed {
+                run_id: run_id.to_string(),
+                reason: format!(
+                    "invalid historical event line {} in {}: {source}",
+                    line_number + 1,
+                    events_path.display()
+                ),
+            }
+        })?;
+
+        if event.seq != expected_seq {
+            return Err(CoordinatorError::ResumeRestoreFailed {
+                run_id: run_id.to_string(),
+                reason: format!(
+                    "historical sequence mismatch at {}: expected {expected_seq}, got {}",
+                    events_path.display(),
+                    event.seq
+                ),
+            });
+        }
+        expected_seq = expected_seq.saturating_add(1);
+
+        if event.seq > through_seq {
+            break;
+        }
+        if event.seq <= lower_bound_seq {
+            continue;
+        }
+
+        match &event.payload {
+            EventV1::UserMessageSubmitted(payload) => {
+                let request = requests.entry(payload.request_id.clone()).or_default();
+                request.first_seq.get_or_insert(event.seq);
+                request.user_text = Some(payload.text.clone());
+            }
+            EventV1::ProviderRequestStarted(payload)
+                if event.actor.agent_id.as_deref() == Some(agent_id) =>
+            {
+                let request = requests.entry(payload.request_id.clone()).or_default();
+                request.first_seq.get_or_insert(event.seq);
+                request.prompt_summary = Some(payload.prompt_summary.clone());
+                request.agent_id = Some(agent_id.to_string());
+            }
+            EventV1::ProviderStreamDelta(payload)
+                if event.actor.agent_id.as_deref() == Some(agent_id) =>
+            {
+                requests
+                    .entry(payload.request_id.clone())
+                    .or_default()
+                    .assistant_output
+                    .push_str(&payload.delta);
+            }
+            EventV1::TaskScheduled(payload)
+                if event.actor.agent_id.as_deref() == Some(agent_id) =>
+            {
+                let Some(queue_key) = payload.queue_key.as_deref() else {
+                    continue;
+                };
+
+                let scope = if queue_key.starts_with("provider_model:") {
+                    Some(TaskTerminalScope::AgentTurn)
+                } else if queue_key.starts_with("tool:") {
+                    Some(TaskTerminalScope::ToolCall)
+                } else {
+                    None
+                };
+
+                if let Some(scope) = scope {
+                    historical_task_scopes.insert(payload.task_id.clone(), scope);
+                    if matches!(scope, TaskTerminalScope::AgentTurn) {
+                        if let Some(request_id) = event.correlation_id.as_deref() {
+                            request_turn_task_ids
+                                .insert(request_id.to_string(), payload.task_id.clone());
+                        }
+                    }
+                }
+            }
+            EventV1::ArtifactWritten(payload) => {
+                let Some(request_id) = event.correlation_id.as_deref() else {
+                    continue;
+                };
+                request_artifacts
+                    .entry(request_id.to_string())
+                    .or_default()
+                    .push(EventArtifactRef {
+                        path: payload.path.clone(),
+                        digest: Some(payload.digest.clone()),
+                    });
+            }
+            EventV1::TaskCompleted(payload)
+                if event.actor.agent_id.as_deref() == Some(agent_id) =>
+            {
+                let Some(request_id) = event.correlation_id.as_deref() else {
+                    continue;
+                };
+
+                if !historical_task_completion_marks_agent_turn(
+                    request_id,
+                    payload,
+                    &historical_task_scopes,
+                    &request_turn_task_ids,
+                ) {
+                    continue;
+                }
+
+                let request_state = requests.remove(request_id).ok_or_else(|| {
+                    CoordinatorError::ResumeRestoreFailed {
+                        run_id: run_id.to_string(),
+                        reason: format!(
+                            "missing provider request history for completed request `{request_id}`"
+                        ),
+                    }
+                })?;
+
+                let user_prompt = restore_historical_user_prompt(
+                    run_id,
+                    request_id,
+                    request_state.user_text,
+                    request_state.prompt_summary,
+                )?;
+                let assistant_response = if payload.result_summary.is_empty() {
+                    request_state.assistant_output
+                } else {
+                    payload.result_summary.clone()
+                };
+                let mut artifact_refs = request_artifacts.remove(request_id).unwrap_or_default();
+                artifact_refs.sort_by(|left, right| {
+                    left.path
+                        .cmp(&right.path)
+                        .then_with(|| left.digest.cmp(&right.digest))
+                });
+                artifact_refs
+                    .dedup_by(|left, right| left.path == right.path && left.digest == right.digest);
+                turns.push(HistoricalCompletedAgentTurn {
+                    user_prompt,
+                    assistant_response,
+                    artifact_refs,
+                });
+            }
+            _ => {}
+        }
+    }
+
+    Ok(turns)
+}
+
+fn append_compaction_artifact_written_event<C, R>(
+    clock: &C,
+    redactor: &R,
+    run_state: &mut RunState,
+    checkpoint: &ProviderContextCheckpoint,
+    artifact: &crate::tool::ArtifactRef,
+) -> Result<EventEnvelopeV1, CoordinatorError>
+where
+    C: Clock + ?Sized,
+    R: Redactor + ?Sized,
+{
+    let artifact_path = run_state.info.run_dir.join(&artifact.path);
+    let bytes = fs::metadata(&artifact_path)
+        .map(|meta| meta.len())
+        .unwrap_or(0);
+    let digest = artifact
+        .digest
+        .clone()
+        .unwrap_or_else(|| digest12(artifact.path.as_bytes()));
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "artifact_kind".to_string(),
+        "provider_context_checkpoint".to_string(),
+    );
+    metadata.insert(
+        "checkpoint_id".to_string(),
+        checkpoint.metadata.checkpoint_id.clone(),
+    );
+    metadata.insert("agent_id".to_string(), checkpoint.metadata.agent_id.clone());
+
+    append_payload_event(
+        clock,
+        redactor,
+        run_state,
+        system_actor(),
+        Some(format!("compaction:{}", checkpoint.metadata.agent_id)),
+        EventV1::ArtifactWritten(ArtifactWrittenEvent {
+            path: artifact.path.clone(),
+            digest,
+            bytes,
+            tool_call_id: None,
+            tool_metadata: None,
+            metadata,
+        }),
+    )
+}
+
+fn append_compaction_failed_event<C, R>(
+    clock: &C,
+    redactor: &R,
+    run_state: &mut RunState,
+    trigger: &ProviderCompactionTrigger,
+    reason: &str,
+    checkpoint_id: Option<String>,
+    through_seq: Option<u64>,
+) -> Result<EventEnvelopeV1, CoordinatorError>
+where
+    C: Clock + ?Sized,
+    R: Redactor + ?Sized,
+{
+    append_payload_event(
+        clock,
+        redactor,
+        run_state,
+        system_actor(),
+        Some(format!("compaction:{}", trigger.agent_id)),
+        EventV1::CompactionFailed(CompactionFailedEvent {
+            agent_id: trigger.agent_id.clone(),
+            trigger_reason: trigger.trigger_reason.clone(),
+            reason: reason.to_string(),
+            checkpoint_id,
+            through_seq,
+            through_request_id: trigger.through_request_id.clone(),
+        }),
+    )
+}
+
+fn is_provider_context_overflow_reason(reason: &str) -> bool {
+    let normalized = reason.to_ascii_lowercase();
+    [
+        "context length",
+        "context window",
+        "too many tokens",
+        "prompt token count",
+        "maximum context",
+        "input token",
+        "reduce the length",
+        "token count of",
+        "exceeds the limit",
+    ]
+    .iter()
+    .any(|needle| normalized.contains(needle))
+}
+
 fn event_permission_decision(decision: PermissionDecision) -> EventPermissionDecision {
     match decision {
         PermissionDecision::Allow => EventPermissionDecision::Allow,
@@ -5828,6 +7268,22 @@ struct HistoricalRequestState {
     prompt_summary: Option<String>,
     assistant_output: String,
     agent_id: Option<String>,
+    first_seq: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
+struct AppliedCheckpointRecord {
+    checkpoint_id: String,
+    artifact_path: String,
+    through_seq: u64,
+    through_request_id: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct HistoricalCompletedAgentTurn {
+    user_prompt: String,
+    assistant_response: String,
+    artifact_refs: Vec<EventArtifactRef>,
 }
 
 fn restore_historical_user_prompt(
@@ -5866,8 +7322,9 @@ fn restore_historical_user_prompt(
 fn restore_provider_context_from_history(
     session_dir: &Path,
     run_id: &str,
-) -> Result<BTreeMap<String, Vec<ProviderConversationTurn>>, CoordinatorError> {
-    let events_path = session_dir.join(run_id).join("events.jsonl");
+) -> Result<BTreeMap<String, ProviderContext>, CoordinatorError> {
+    let run_dir = session_dir.join(run_id);
+    let events_path = run_dir.join("events.jsonl");
     let file =
         fs::File::open(&events_path).map_err(|source| CoordinatorError::ResumeRestoreFailed {
             run_id: run_id.to_string(),
@@ -5877,11 +7334,8 @@ fn restore_provider_context_from_history(
             ),
         })?;
 
-    let mut histories: BTreeMap<String, Vec<ProviderConversationTurn>> = BTreeMap::new();
-    let mut requests: BTreeMap<String, HistoricalRequestState> = BTreeMap::new();
-    let mut request_turn_task_ids: BTreeMap<String, String> = BTreeMap::new();
-    let mut historical_task_scopes: BTreeMap<String, TaskTerminalScope> = BTreeMap::new();
     let mut expected_seq = 1_u64;
+    let mut historical_events = Vec::new();
 
     for (line_number, line) in BufReader::new(file).lines().enumerate() {
         let line = line.map_err(|source| CoordinatorError::ResumeRestoreFailed {
@@ -5920,31 +7374,111 @@ fn restore_provider_context_from_history(
         }
         expected_seq = expected_seq.saturating_add(1);
 
+        historical_events.push(event);
+    }
+
+    let applied_checkpoints = discover_applied_checkpoints(run_id, &run_dir, &historical_events)?;
+    let checkpoint_boundaries = applied_checkpoints
+        .iter()
+        .map(|(agent_id, checkpoint)| (agent_id.clone(), checkpoint.through_seq))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut histories = BTreeMap::new();
+    for (agent_id, checkpoint) in &applied_checkpoints {
+        let checkpoint_artifact = load_provider_context_checkpoint(run_id, &run_dir, checkpoint)?;
+        if checkpoint_artifact.metadata.run_id != run_id {
+            return Err(CoordinatorError::ResumeRestoreFailed {
+                run_id: run_id.to_string(),
+                reason: format!(
+                    "checkpoint `{}` run mismatch: expected `{run_id}`, got `{}`",
+                    checkpoint.checkpoint_id, checkpoint_artifact.metadata.run_id
+                ),
+            });
+        }
+        if checkpoint_artifact.metadata.checkpoint_id != checkpoint.checkpoint_id {
+            return Err(CoordinatorError::ResumeRestoreFailed {
+                run_id: run_id.to_string(),
+                reason: format!(
+                    "checkpoint artifact id mismatch for agent `{agent_id}`: expected `{}`, got `{}`",
+                    checkpoint.checkpoint_id, checkpoint_artifact.metadata.checkpoint_id
+                ),
+            });
+        }
+        if checkpoint_artifact.metadata.agent_id != *agent_id {
+            return Err(CoordinatorError::ResumeRestoreFailed {
+                run_id: run_id.to_string(),
+                reason: format!(
+                    "checkpoint `{}` agent mismatch: expected `{agent_id}`, got `{}`",
+                    checkpoint.checkpoint_id, checkpoint_artifact.metadata.agent_id
+                ),
+            });
+        }
+        if checkpoint_artifact.metadata.through_seq != checkpoint.through_seq {
+            return Err(CoordinatorError::ResumeRestoreFailed {
+                run_id: run_id.to_string(),
+                reason: format!(
+                    "checkpoint `{}` through_seq mismatch: expected `{}`, got `{}`",
+                    checkpoint.checkpoint_id,
+                    checkpoint.through_seq,
+                    checkpoint_artifact.metadata.through_seq
+                ),
+            });
+        }
+        if checkpoint_artifact.metadata.through_request_id != checkpoint.through_request_id {
+            return Err(CoordinatorError::ResumeRestoreFailed {
+                run_id: run_id.to_string(),
+                reason: format!(
+                    "checkpoint `{}` through_request_id mismatch: expected `{:?}`, got `{:?}`",
+                    checkpoint.checkpoint_id,
+                    checkpoint.through_request_id,
+                    checkpoint_artifact.metadata.through_request_id
+                ),
+            });
+        }
+        histories.insert(
+            agent_id.clone(),
+            ProviderContext::from_checkpoint(checkpoint_artifact),
+        );
+    }
+
+    let mut requests: BTreeMap<String, HistoricalRequestState> = BTreeMap::new();
+    let mut request_turn_task_ids: BTreeMap<String, String> = BTreeMap::new();
+    let mut historical_task_scopes: BTreeMap<String, TaskTerminalScope> = BTreeMap::new();
+    let mut request_artifacts: BTreeMap<String, Vec<EventArtifactRef>> = BTreeMap::new();
+
+    for event in &historical_events {
+        let replay_agent_event = should_replay_agent_scoped_event(
+            event.seq,
+            event.actor.agent_id.as_deref(),
+            &checkpoint_boundaries,
+        );
+
         match &event.payload {
             EventV1::UserMessageSubmitted(payload) => {
-                requests
-                    .entry(payload.request_id.clone())
-                    .or_default()
-                    .user_text = Some(payload.text.clone());
+                let request = requests.entry(payload.request_id.clone()).or_default();
+                request.first_seq.get_or_insert(event.seq);
+                request.user_text = Some(payload.text.clone());
             }
             EventV1::ProviderRequestStarted(payload) => {
-                requests
-                    .entry(payload.request_id.clone())
-                    .or_default()
-                    .prompt_summary = Some(payload.prompt_summary.clone());
+                if !replay_agent_event {
+                    continue;
+                }
+                let request = requests.entry(payload.request_id.clone()).or_default();
+                request.first_seq.get_or_insert(event.seq);
+                request.prompt_summary = Some(payload.prompt_summary.clone());
                 if let Some(agent_id) = event
                     .actor
                     .agent_id
                     .as_deref()
                     .filter(|value| !value.trim().is_empty())
                 {
-                    requests
-                        .entry(payload.request_id.clone())
-                        .or_default()
-                        .agent_id = Some(agent_id.to_string());
+                    request.agent_id = Some(agent_id.to_string());
                 }
             }
             EventV1::ProviderStreamDelta(payload) => {
+                if !replay_agent_event {
+                    continue;
+                }
                 requests
                     .entry(payload.request_id.clone())
                     .or_default()
@@ -5952,6 +7486,9 @@ fn restore_provider_context_from_history(
                     .push_str(&payload.delta);
             }
             EventV1::TaskScheduled(payload) => {
+                if !replay_agent_event {
+                    continue;
+                }
                 let Some(queue_key) = payload.queue_key.as_deref() else {
                     continue;
                 };
@@ -5974,7 +7511,22 @@ fn restore_provider_context_from_history(
                     }
                 }
             }
+            EventV1::ArtifactWritten(payload) => {
+                let Some(request_id) = event.correlation_id.as_deref() else {
+                    continue;
+                };
+                request_artifacts
+                    .entry(request_id.to_string())
+                    .or_default()
+                    .push(EventArtifactRef {
+                        path: payload.path.clone(),
+                        digest: Some(payload.digest.clone()),
+                    });
+            }
             EventV1::TaskCompleted(payload) => {
+                if !replay_agent_event {
+                    continue;
+                }
                 let Some(request_id) = event.correlation_id.as_deref() else {
                     continue;
                 };
@@ -6024,13 +7576,25 @@ fn restore_provider_context_from_history(
                 } else {
                     payload.result_summary.clone()
                 };
+                let mut artifacts = request_artifacts.remove(request_id).unwrap_or_default();
+                artifacts.sort_by(|left, right| {
+                    left.path
+                        .cmp(&right.path)
+                        .then_with(|| left.digest.cmp(&right.digest))
+                });
+                artifacts
+                    .dedup_by(|left, right| left.path == right.path && left.digest == right.digest);
 
                 histories
                     .entry(request_state.agent_id.unwrap_or(agent_id))
                     .or_default()
-                    .push(ProviderConversationTurn {
+                    .push_turn(ProviderConversationTurn {
                         user_prompt,
                         assistant_response,
+                        request_id: Some(request_id.to_string()),
+                        first_seq: request_state.first_seq,
+                        last_seq: Some(event.seq),
+                        artifacts,
                     });
             }
             _ => {}
@@ -6038,6 +7602,102 @@ fn restore_provider_context_from_history(
     }
 
     Ok(histories)
+}
+
+fn should_replay_agent_scoped_event(
+    seq: u64,
+    agent_id: Option<&str>,
+    checkpoint_boundaries: &BTreeMap<String, u64>,
+) -> bool {
+    let Some(agent_id) = agent_id else {
+        return true;
+    };
+
+    seq > checkpoint_boundaries.get(agent_id).copied().unwrap_or(0)
+}
+
+fn discover_applied_checkpoints(
+    run_id: &str,
+    run_dir: &Path,
+    events: &[EventEnvelopeV1],
+) -> Result<BTreeMap<String, AppliedCheckpointRecord>, CoordinatorError> {
+    let mut written_by_id = BTreeMap::new();
+    let mut latest_applied_by_agent: BTreeMap<String, (u64, String)> = BTreeMap::new();
+
+    for event in events {
+        match &event.payload {
+            EventV1::CompactionWritten(payload) => {
+                written_by_id.insert(payload.checkpoint_id.clone(), payload.clone());
+            }
+            EventV1::CompactionApplied(payload) => {
+                latest_applied_by_agent.insert(
+                    payload.agent_id.clone(),
+                    (event.seq, payload.checkpoint_id.clone()),
+                );
+            }
+            _ => {}
+        }
+    }
+
+    let mut applied = BTreeMap::new();
+    for (agent_id, (_, checkpoint_id)) in latest_applied_by_agent {
+        let Some(written) = written_by_id.get(&checkpoint_id) else {
+            return Err(CoordinatorError::ResumeRestoreFailed {
+                run_id: run_id.to_string(),
+                reason: format!(
+                    "compaction checkpoint `{checkpoint_id}` was applied without a matching written event"
+                ),
+            });
+        };
+
+        if written.agent_id != agent_id {
+            return Err(CoordinatorError::ResumeRestoreFailed {
+                run_id: run_id.to_string(),
+                reason: format!(
+                    "compaction checkpoint `{checkpoint_id}` agent mismatch between applied `{agent_id}` and written `{}`",
+                    written.agent_id
+                ),
+            });
+        }
+
+        applied.insert(
+            agent_id,
+            AppliedCheckpointRecord {
+                checkpoint_id: checkpoint_id.clone(),
+                artifact_path: written.artifact_path.clone(),
+                through_seq: written.through_seq,
+                through_request_id: written.through_request_id.clone(),
+            },
+        );
+    }
+
+    let _ = run_dir;
+    Ok(applied)
+}
+
+fn load_provider_context_checkpoint(
+    run_id: &str,
+    run_dir: &Path,
+    checkpoint: &AppliedCheckpointRecord,
+) -> Result<ProviderContextCheckpoint, CoordinatorError> {
+    let checkpoint_path = run_dir.join(&checkpoint.artifact_path);
+    let body = fs::read_to_string(&checkpoint_path).map_err(|source| {
+        CoordinatorError::ResumeRestoreFailed {
+            run_id: run_id.to_string(),
+            reason: format!(
+                "failed to read checkpoint artifact {}: {source}",
+                checkpoint_path.display()
+            ),
+        }
+    })?;
+
+    serde_json::from_str(&body).map_err(|source| CoordinatorError::ResumeRestoreFailed {
+        run_id: run_id.to_string(),
+        reason: format!(
+            "invalid checkpoint artifact {}: {source}",
+            checkpoint_path.display()
+        ),
+    })
 }
 
 fn historical_task_completion_marks_agent_turn(
