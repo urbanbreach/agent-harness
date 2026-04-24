@@ -1,64 +1,60 @@
 # AGENTS: crates/harness-testkit/tests
 
 ## OVERVIEW
-Test-orchestration subtree for deterministic PTY E2E and env-gated live-proxy signoff. This is workflow-heavy test code, not reusable runtime logic.
+Workflow-heavy E2E tests for native screenshot signoff, deterministic PTY simulation, and env-gated live-proxy signoff. Runtime-independent helpers belong in `crates/harness-testkit/src/`.
 
-Read the workspace root `AGENTS.md` first for crate ownership, search exclusions, and the cross-crate verification matrix.
+Read the workspace root `AGENTS.md` first. TUI shell contract details live in `crates/harness-tui/AGENTS.md`; this file focuses on test lanes and artifact provenance.
 
 ## STRUCTURE
 ```text
 tests/
+├── native_visual_e2e.rs   # local Ghostty/tmux real-screenshot signoff lane
 ├── pty_e2e.rs             # offline deterministic PTY lane
 ├── live_proxy_e2e.rs      # real provider / real prompt + TUI tool-flow lanes
 ├── README.live-proxy.md   # preflight, env, artifact layout, retention
-├── support/               # live_events, live_vision, live_visual helpers
-└── snapshots/             # screenshot/snapshot expectations
+├── support/               # live_events, live_vision, live_visual, pty_process helpers
+└── snapshots/             # PTY snapshot expectations
 ```
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |------|----------|-------|
-| Offline UI regression lane | `pty_e2e.rs` | Single-threaded, deterministic, artifact-producing |
-| Live prompt chat-control lane | `live_proxy_e2e.rs` | Real model + live config for `todowrite`, `question`, and `skill` |
-| Live proxy TUI tool-flow lane | `live_proxy_e2e.rs` | Real model + live config for file/tool-flow and screenshots |
-| Live lane setup and artifact contract | `README.live-proxy.md` | Preflight first |
-| Shared test helpers | `support/` | Reuse and extend helper modules before adding more test logic to `pty_e2e.rs` |
+| Native local screenshot lane | `native_visual_e2e.rs` | Ghostty renderer + tmux control + manifest-backed screenshots. |
+| Offline UI regression lane | `pty_e2e.rs` | Single-threaded, deterministic, artifact-producing fallback. |
+| Live prompt/chat-control lanes | `live_proxy_e2e.rs` | Real model + live config for prompt, tools, TUI parity. |
+| Live setup and artifacts | `README.live-proxy.md` | Preflight and retention contract. |
+| Shared helpers | `support/` | Extract repeated markers/assertions/setup before growing E2E files. |
 
-## RENDERING DEPENDENCIES
-Approved rendering stack (do not add alternatives without explicit signoff):
-- `syntect` for syntax highlighting
-- `imara-diff` for diff visualization
+## LANE ORDER
+- PTY fallback: `RUST_TEST_THREADS=1 cargo test -p harness-testkit pty_e2e`.
+- Live TUI order: `live_proxy_preflight` → `live_proxy_e2e_tui_prompt_responses_smoke` → `live_proxy_e2e_tui_tool_flow`.
+- Live CLI order: `live_proxy_prompt_responses_smoke` → `live_proxy_prompt_chat_tool_flow` → `live_proxy_prompt_native_tool_flow`.
+- Native screenshots are local signoff only; run ignored native tests single-threaded.
 
-## SHELL CONTRACT (T14+)
-The TUI implements a strict surface hierarchy that tests must respect:
-- **Compose-first home screen**: entry point is the composer, not a replay browser.
-- **Transcript-first session shell**: live sessions prioritize transcript rendering with the operator sidebar for context/tooling.
-- **Operator sidebar**: persistent right-hand surface for operator state, file context, and tool status.
-- **No default tab chrome**: surfaces are chromeless by default; tab-like chrome is opt-in per context.
-- **No debug inspector in the primary path**: debug/inspector surfaces live in secondary paths, not the main UX flow.
+## ENV CONTRACT
+- Visual artifacts root: `HARNESS_VISUAL_ARTIFACT_DIR`.
+- Native gates: `HARNESS_NATIVE_VISUAL`, `HARNESS_NATIVE_VISUAL_FONT_FAMILY`, `HARNESS_NATIVE_VISUAL_FONT_SIZE`, `HARNESS_NATIVE_VISUAL_CAPTURE_HELPER`.
+- Live gates: `HARNESS_LIVE_PROXY`, `HARNESS_LIVE_PROXY_CONFIG`, `HARNESS_LIVE_PROXY_PROVIDER`, `HARNESS_LIVE_PROXY_MODEL`, optional `HARNESS_LIVE_PROXY_VARIANT`.
+- `live_proxy_prompt_chat_tool_flow` depends on the `rust-best-practices` skill being available to the `skill` tool.
 
 ## CONVENTIONS
-- Treat `pty_e2e` as the default offline lane; treat `live_proxy_*` as explicit signoff.
-- Run PTY flows single-threaded.
-- Prefer extracting markers, visual contracts, and repeated assertion/setup helpers into `support/` modules instead of growing `pty_e2e.rs`.
-- **Screenshot-generated PTY/live-visual artifacts are the primary verification workflow**. Prefer visual parity over text assertions.
-- For chat/tool-flow iteration, use the live-config order: `live_proxy_preflight` → `live_proxy_prompt_chat_tool_flow` → `live_proxy_e2e_tui_tool_flow`.
-- Key shell contract terms: compose-first, transcript-first, operator sidebar, no default tab chrome, no debug inspector in primary path.
-- Respect `HARNESS_VISUAL_ARTIFACT_DIR` for screenshot output. This env var sets the root for all visual artifacts in both PTY and live-proxy lanes.
-- Respect live env gates: `HARNESS_LIVE_PROXY`, `HARNESS_LIVE_PROXY_CONFIG`, `HARNESS_LIVE_PROXY_PROVIDER`, `HARNESS_LIVE_PROXY_MODEL`.
-- `live_proxy_preflight` validates the live TUI lane via the bundled PTY→PNG capture path; do not
-  assume a KDE desktop or desktop screenshot tools.
-- `live_proxy_prompt_chat_tool_flow` depends on the `rust-best-practices` skill being available to the `skill` tool.
-- Artifact retention and viewport presets are documented in `README.live-proxy.md`, not in crate root docs.
+- Treat `pty_e2e` as the deterministic CI/headless oracle and fallback lane.
+- Treat `live_proxy_*` as explicit provider signoff; never run without documented preflight.
+- Treat native screenshots as provenance-checked local visual signoff, not a portable hash oracle.
+- Manifest-backed screenshots plus PTY/live artifacts are the verification record; do not claim success without artifact paths and capture provenance.
+- The native lane assumes Ghostty + tmux + `xprop` plus an authorized capture helper inside managed 2560×1440 nested KWin/XWayland; if unavailable, fail closed and use PTY.
+- When `HARNESS_NATIVE_VISUAL=1`, missing `DISPLAY` is a hard failure, not a skip.
 
 ## ANTI-PATTERNS
-- Do not run live-proxy lanes without the documented preflight.
+- Do not parallelize PTY/native visual lanes or remove determinism env guards.
 - Do not assume run IDs or screenshot artifact paths are stable across executions.
-- Do not parallelize PTY tests or remove determinism env guards.
+- Do not edit renderer defaults, font candidate order, raster/cell sizing, viewport, focus regions, or capture settings unless the task is visual fidelity and you rerun the visual lane.
+- Do not claim native screenshot success unless capture used the exact terminal window id and cleaned it up afterward.
 
 ## COMMANDS
 ```bash
 RUST_TEST_THREADS=1 cargo test -p harness-testkit pty_e2e
+HARNESS_NATIVE_VISUAL=1 cargo test -p harness-testkit --test native_visual_e2e -- --ignored --test-threads=1
 HARNESS_LIVE_PROXY=1 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc HARNESS_LIVE_PROXY_PROVIDER=default HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini cargo test -p harness-testkit live_proxy_preflight -- --ignored --exact
 HARNESS_LIVE_PROXY=1 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc HARNESS_LIVE_PROXY_PROVIDER=default HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini cargo test -p harness-testkit live_proxy_prompt_chat_tool_flow -- --ignored --exact
 HARNESS_LIVE_PROXY=1 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc HARNESS_LIVE_PROXY_PROVIDER=default HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini HARNESS_VISUAL_ARTIFACT_DIR=target/pty-visual-artifacts cargo test -p harness-testkit live_proxy_e2e_tui_tool_flow -- --ignored --exact
