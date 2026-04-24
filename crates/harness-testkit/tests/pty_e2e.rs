@@ -769,7 +769,7 @@ fn native_tool_parity_pty_lane() {
         ),
         &[
             "Bring native tool parity inline",
-            "read src/ui.rs [offset=12] [limit=24]",
+            "Gathered context · 2 reads",
             "task audit transcript parity [subagent_type=researcher]",
             "webfetch https://example.test/report.pdf [format=markdown]",
             "docs-rs_search_in_crate Layout [crate_name=ratatui]",
@@ -781,10 +781,13 @@ fn native_tool_parity_pty_lane() {
         "native_tool_parity_fetch_row",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact("artifacts/toolcalls/tc-fetch/web.fetch.pdf", 44, 6),
+        FocusCapture::anchored_exact(
+            "webfetch https://example.test/report.pdf [format=markdown]",
+            44,
+            6,
+        ),
         &[
             "webfetch https://example.test/report.pdf [format=markdown]",
-            "Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact",
             "bash Run harness-tui tests [command=cargo test -p harness-tui] [workdir=/workspace]",
             "exit code: 1",
             "stderr: snapshot mismatch",
@@ -807,12 +810,9 @@ fn native_tool_parity_pty_lane() {
     assert!(screen.contains("Bring native tool parity inline"));
     assert!(screen.contains("Thinking: Drafting the inline parity pass."));
     assert!(screen.contains("Inline transcript parity is easier to scan now."));
-    assert!(screen.contains("read src/ui.rs [offset=12] [limit=24]"));
+    assert!(screen.contains("Gathered context · 2 reads"));
     assert!(screen.contains("task audit transcript parity [subagent_type=researcher]"));
     assert!(screen.contains("webfetch https://example.test/report.pdf [format=markdown]"));
-    assert!(screen.contains(
-        "Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact"
-    ));
     assert!(screen.contains("docs-rs_search_in_crate Layout [crate_name=ratatui]"));
     assert!(!screen.contains("struct Layout"));
     assert!(!screen.contains("module layout"));
@@ -847,7 +847,7 @@ fn native_tool_parity_pty_lane() {
             &screen,
             &[
                 "Bring native tool parity inline",
-                "read src/ui.rs [offset=12] [limit=24]",
+                "Gathered context · 2 reads",
                 "task audit transcript parity [subagent_type=researcher]",
                 "webfetch https://example.test/report.pdf [format=markdown]",
                 "docs-rs_search_in_crate Layout [crate_name=ratatui]",
@@ -861,7 +861,6 @@ fn native_tool_parity_pty_lane() {
             &screen,
             &[
                 "webfetch https://example.test/report.pdf [format=markdown]",
-                "Attachment · artifacts/toolcalls/tc-fetch/web.fetch.pdf · digest-fetch-artifact",
                 "bash Run harness-tui tests [command=cargo test -p harness-tui] [workdir=/workspace]",
                 "exit code: 1",
                 "stderr: snapshot mismatch",
