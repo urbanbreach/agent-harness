@@ -1,6 +1,5 @@
 ---
 source: crates/harness-tui/src/tests.rs
-assertion_line: 1943
 expression: normalized
 ---
 Buffer {
@@ -29,7 +28,7 @@ Buffer {
         "            â                                                                                       ",
         "            â                                                                                       ",
         "            â¹âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ            ",
-        "                                                                      0  Ctrl+p commands            ",
+        "                                                                 live 0  Ctrl+p commands            ",
     ],
     styles: [
         x: 0, y: 0, fg: Reset, bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
@@ -121,7 +120,7 @@ Buffer {
         x: 12, y: 22, fg: Rgb(250, 178, 131), bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
         x: 13, y: 22, fg: Rgb(30, 30, 30), bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
         x: 88, y: 22, fg: Reset, bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
-        x: 70, y: 23, fg: Rgb(128, 128, 128), bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
+        x: 65, y: 23, fg: Rgb(128, 128, 128), bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
         x: 71, y: 23, fg: Reset, bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
         x: 73, y: 23, fg: Rgb(238, 238, 238), bg: Rgb(10, 10, 10), underline: Reset, modifier: BOLD,
         x: 79, y: 23, fg: Rgb(128, 128, 128), bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
