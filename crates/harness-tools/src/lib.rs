@@ -4,6 +4,7 @@
 //! Runtime policy lives in `harness-core`; this crate should focus on tool
 //! argument validation, execution, and stable schema exposure.
 
+use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,7 +13,9 @@ use async_trait::async_trait;
 use harness_core::config::{McpConfig, ShellAllowlist};
 use harness_core::edit::hashline::{compute_line_hash, LineAnchor};
 use harness_core::event::ActorKind;
-use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
+use harness_core::tool::{
+    ArtifactRef, Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult,
+};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
@@ -265,58 +268,21 @@ fn normalize_fs_read_limit(limit: u32) -> u32 {
     }
 }
 
-fn format_fs_read_lines(lines: &[&str], start_line_index: usize, line_numbers: bool) -> String {
-    lines
-        .iter()
-        .enumerate()
-        .map(|(index, line)| {
-            if line_numbers {
-                format!("{}: {}", start_line_index + index + 1, line)
-            } else {
-                (*line).to_string()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+fn format_fs_read_line(line: &str, line_number: usize, line_numbers: bool) -> String {
+    if line_numbers {
+        format!("{line_number}: {line}")
+    } else {
+        line.to_string()
+    }
 }
 
-fn format_fs_read_hashline_lines(lines: &[&str], start_line_index: usize) -> String {
-    lines
-        .iter()
-        .enumerate()
-        .map(|(index, line)| {
-            format!(
-                "{}#{}|{}",
-                start_line_index + index + 1,
-                compute_line_hash(line),
-                line.strip_suffix('\r').unwrap_or(line)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn build_fs_read_anchors(lines: &[&str], start_line_index: usize) -> Vec<LineAnchor> {
-    lines
-        .iter()
-        .enumerate()
-        .map(|(index, line)| LineAnchor {
-            line: (start_line_index + index + 1) as u32,
-            hash: compute_line_hash(line),
-        })
-        .collect()
-}
-
-fn build_fs_read_anchor_payload(lines: &[&str], start_line_index: usize) -> serde_json::Value {
-    json!(lines
-        .iter()
-        .enumerate()
-        .map(|(index, line)| json!({
-            "line": start_line_index + index + 1,
-            "hash": compute_line_hash(line),
-            "text": line.strip_suffix('\r').unwrap_or(line),
-        }))
-        .collect::<Vec<_>>())
+fn format_fs_read_hashline_line(line: &str, line_number: usize) -> String {
+    format!(
+        "{}#{}|{}",
+        line_number,
+        compute_line_hash(line),
+        line.strip_suffix('\r').unwrap_or(line)
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -543,58 +509,32 @@ impl Tool for FsReadTool {
 
         let path = Path::new(&args.path);
         let resolved = ctx.resolve_workspace_path(path)?;
-        let bytes = std::fs::read(&resolved)
-            .map_err(|err| ToolError::Execution(format!("failed to read file: {err}")))?;
-        let text = String::from_utf8(bytes)
-            .map_err(|_| ToolError::Execution("binary file not supported".to_string()))?;
-
-        let lines: Vec<&str> = text.lines().collect();
-        let total_lines = lines.len();
         let start_line_index = (offset - 1) as usize;
-
-        let available_lines: &[&str] = if start_line_index < total_lines {
-            &lines[start_line_index..]
-        } else {
-            &[][..]
-        };
-
         let line_limit = limit as usize;
-        let shown_count = available_lines.len().min(line_limit);
-        let truncated = available_lines.len() > line_limit;
-        let shown_lines = &available_lines[..shown_count];
-        let read_anchors =
-            hashline_anchors.then(|| build_fs_read_anchors(shown_lines, start_line_index));
-
-        let mut display_text = if hashline_anchors {
-            format_fs_read_hashline_lines(shown_lines, start_line_index)
-        } else {
-            format_fs_read_lines(shown_lines, start_line_index, args.line_numbers)
-        };
+        let read = read_fs_window(
+            &resolved,
+            start_line_index,
+            line_limit,
+            args.line_numbers,
+            hashline_anchors,
+        )?;
+        let shown_count = read.shown_lines.len();
+        let mut display_text = read.display_text.clone();
         let mut artifacts = Vec::new();
 
-        if truncated {
-            let full_output = if hashline_anchors {
-                format_fs_read_hashline_lines(available_lines, start_line_index)
-            } else {
-                format_fs_read_lines(available_lines, start_line_index, args.line_numbers)
-            };
-            let artifact = ctx
-                .artifact_store()
-                .map_err(|err| {
-                    ToolError::Execution(format!("failed to access artifact store: {err}"))
-                })?
-                .write_text(
-                    &format!("toolcalls/{}/fs.read.redacted.txt", ctx.tool_call_id),
-                    &full_output,
-                )
-                .map_err(|err| {
-                    ToolError::Execution(format!("failed to write fs.read artifact: {err}"))
-                })?;
+        if read.truncated {
+            let artifact = write_fs_read_artifact_streaming(
+                &ctx,
+                &resolved,
+                start_line_index,
+                args.line_numbers,
+                hashline_anchors,
+            )?;
 
             let marker = format!(
                 "... [truncated: showing {} of {} lines from line {}; full output: {}]",
                 shown_count,
-                available_lines.len(),
+                read.available_lines,
                 start_line_index + 1,
                 artifact.path
             );
@@ -609,7 +549,7 @@ impl Tool for FsReadTool {
             artifacts.push(artifact);
         }
 
-        if let Some(anchors) = read_anchors {
+        if let Some(anchors) = read.anchors {
             record_file_hashline_read(&ctx, &resolved, anchors)?;
         } else {
             record_file_read(&ctx, &resolved)?;
@@ -622,19 +562,182 @@ impl Tool for FsReadTool {
                 "resolved_path": resolved.display().to_string(),
                 "offset": offset,
                 "limit": limit,
-                "total_lines": total_lines,
+                "total_lines": read.total_lines,
                 "line_numbers": args.line_numbers,
                 "hashline_anchors": hashline_anchors,
                 "anchors": if hashline_anchors {
-                    build_fs_read_anchor_payload(shown_lines, start_line_index)
+                    build_fs_read_anchor_payload_from_owned(&read.shown_lines, start_line_index)
                 } else {
                     serde_json::Value::Null
                 },
-                "truncated": truncated,
+                "truncated": read.truncated,
             })),
             artifacts,
         })
     }
+}
+
+#[derive(Debug)]
+struct FsReadWindow {
+    shown_lines: Vec<String>,
+    display_text: String,
+    anchors: Option<Vec<LineAnchor>>,
+    total_lines: usize,
+    available_lines: usize,
+    truncated: bool,
+}
+
+fn read_fs_window(
+    path: &Path,
+    start_line_index: usize,
+    line_limit: usize,
+    line_numbers: bool,
+    hashline_anchors: bool,
+) -> Result<FsReadWindow, ToolError> {
+    let file = std::fs::File::open(path)
+        .map_err(|err| ToolError::Execution(format!("failed to read file: {err}")))?;
+    let mut reader = std::io::BufReader::new(file);
+    let mut raw_line = Vec::new();
+    let mut total_lines = 0usize;
+    let mut available_lines = 0usize;
+    let mut shown_lines = Vec::new();
+    let mut display_parts = Vec::new();
+    let mut anchors = hashline_anchors.then(Vec::new);
+
+    loop {
+        raw_line.clear();
+        let bytes_read = reader
+            .read_until(b'\n', &mut raw_line)
+            .map_err(|err| ToolError::Execution(format!("failed to read file: {err}")))?;
+        if bytes_read == 0 {
+            break;
+        }
+
+        total_lines += 1;
+        let line = decode_fs_read_line(&raw_line)?;
+        if total_lines <= start_line_index {
+            continue;
+        }
+
+        available_lines += 1;
+        let line_number = total_lines;
+        let rendered = if hashline_anchors {
+            format_fs_read_hashline_line(&line, line_number)
+        } else {
+            format_fs_read_line(&line, line_number, line_numbers)
+        };
+
+        if shown_lines.len() < line_limit {
+            if let Some(anchors) = anchors.as_mut() {
+                anchors.push(LineAnchor {
+                    line: line_number as u32,
+                    hash: compute_line_hash(&line),
+                });
+            }
+            shown_lines.push(line);
+            display_parts.push(rendered.clone());
+        }
+    }
+
+    let truncated = available_lines > line_limit;
+    Ok(FsReadWindow {
+        shown_lines,
+        display_text: display_parts.join("\n"),
+        anchors,
+        total_lines,
+        available_lines,
+        truncated,
+    })
+}
+
+fn write_fs_read_artifact_streaming(
+    ctx: &ToolContext,
+    path: &Path,
+    start_line_index: usize,
+    line_numbers: bool,
+    hashline_anchors: bool,
+) -> Result<ArtifactRef, ToolError> {
+    let relative = format!("toolcalls/{}/fs.read.redacted.txt", ctx.tool_call_id);
+    let target = ctx.artifacts_dir.join(&relative);
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| {
+            ToolError::Execution(format!(
+                "failed to create fs.read artifact directory: {err}"
+            ))
+        })?;
+    }
+
+    let source = std::fs::File::open(path)
+        .map_err(|err| ToolError::Execution(format!("failed to read file: {err}")))?;
+    let mut reader = std::io::BufReader::new(source);
+    let mut artifact = std::fs::File::create(&target)
+        .map_err(|err| ToolError::Execution(format!("failed to write fs.read artifact: {err}")))?;
+    let mut raw_line = Vec::new();
+    let mut line_number = 0usize;
+    let mut wrote_any = false;
+
+    loop {
+        raw_line.clear();
+        let bytes_read = reader
+            .read_until(b'\n', &mut raw_line)
+            .map_err(|err| ToolError::Execution(format!("failed to read file: {err}")))?;
+        if bytes_read == 0 {
+            break;
+        }
+
+        line_number += 1;
+        if line_number <= start_line_index {
+            continue;
+        }
+
+        let line = decode_fs_read_line(&raw_line)?;
+        let rendered = if hashline_anchors {
+            format_fs_read_hashline_line(&line, line_number)
+        } else {
+            format_fs_read_line(&line, line_number, line_numbers)
+        };
+        if wrote_any {
+            artifact.write_all(b"\n").map_err(|err| {
+                ToolError::Execution(format!("failed to write fs.read artifact: {err}"))
+            })?;
+        }
+        artifact.write_all(rendered.as_bytes()).map_err(|err| {
+            ToolError::Execution(format!("failed to write fs.read artifact: {err}"))
+        })?;
+        wrote_any = true;
+    }
+
+    Ok(ArtifactRef {
+        path: format!("artifacts/{relative}"),
+        digest: None,
+    })
+}
+
+fn decode_fs_read_line(raw_line: &[u8]) -> Result<String, ToolError> {
+    let mut line = raw_line;
+    if let Some(stripped) = line.strip_suffix(b"\n") {
+        line = stripped;
+        if let Some(stripped) = line.strip_suffix(b"\r") {
+            line = stripped;
+        }
+    }
+    String::from_utf8(line.to_vec())
+        .map_err(|_| ToolError::Execution("binary file not supported".to_string()))
+}
+
+fn build_fs_read_anchor_payload_from_owned(
+    lines: &[String],
+    start_line_index: usize,
+) -> serde_json::Value {
+    json!(lines
+        .iter()
+        .enumerate()
+        .map(|(index, line)| json!({
+            "line": start_line_index + index + 1,
+            "hash": compute_line_hash(line),
+            "text": line.strip_suffix('\r').unwrap_or(line),
+        }))
+        .collect::<Vec<_>>())
 }
 
 pub(crate) struct ShellRunTool {
