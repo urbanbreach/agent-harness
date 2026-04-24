@@ -68,11 +68,11 @@ fn greet(name: &str) -> Result<(), &'static str> {
 
 ## Common tooling
 
- `cargo` — build, test, package, and manage Rust projects
- `cargo check` — quickly validate code without producing a binary
- `rustc` — Rust compiler
- `rustfmt` — code formatting
- `clippy` — linting
+`cargo` — build, test, package, and manage Rust projects
+`cargo check` — quickly validate code without producing a binary
+`rustc` — Rust compiler
+`rustfmt` — code formatting
+`clippy` — linting
 
 ## Editions and ecosystem
 

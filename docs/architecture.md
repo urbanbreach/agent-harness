@@ -119,12 +119,15 @@ Events are the source of truth. All state is derived from events.
 
 **Progress and Staleness**
 - `StaleDetected` - Task exceeded staleness timeout
+- `UserMessageSubmitted` - User prompt accepted into the event stream
 
 **Provider Streaming**
 - `ProviderRequestStarted`
 - `ProviderStreamDelta` - Text chunk
+- `ProviderReasoningDelta` - Reasoning/thinking chunk
 - `ProviderRequestFinished`
 - Provider tool-call deltas/completions are normalized before coordinator execution
+- `CompactionRequested` / `CompactionWritten` / `CompactionApplied` / `CompactionFailed` - provider-context checkpoint lifecycle; written/applied events carry additive active-context estimate metadata so projections can separate active context from cumulative token spend.
 
 **Tool Execution**
 - `ToolCallRequested`
@@ -143,6 +146,9 @@ Events are the source of truth. All state is derived from events.
 **Artifacts and Policy**
 - `ArtifactWritten` - File stored to session
 - `PolicyViolationDetected` - Security rule triggered
+
+**UI Intent**
+- `UiIntentReceived` - Live UI intent recorded before coordinator handling
 
 ## Coordinator Invariants
 
@@ -298,6 +304,41 @@ Tool results are persisted in two layers:
 Interactive question state for `user.question` is stored separately under
 `state/questions/<tool_call_id>.json` inside the run root so headless flows and replay helpers can
 inspect the native prompt/answer handoff without scraping tool artifacts.
+
+## Provider Context Compaction
+
+Provider-visible conversation state is compacted without rewriting `events.jsonl`.
+
+- `events.jsonl` remains append-only and stays the source of truth.
+- Compaction writes checkpoint artifacts under `artifacts/compactions/<agent_id>/<checkpoint_id>.json`.
+- The coordinator emits `CompactionRequested`, `ArtifactWritten`, `CompactionWritten`, and `CompactionApplied` for successful checkpoints, or `CompactionFailed` when a retry cannot shrink context safely.
+- Resume restores provider context from the latest applied checkpoint artifact, then replays post-checkpoint deltas from `events.jsonl`.
+
+Checkpoint payloads carry:
+
+- a lossy summary of older turns,
+- recent preserved turns kept verbatim,
+- advisory `pruned_tool_artifacts` metadata for artifacts associated with compacted turns,
+- structured source facts for compacted turns, relevant artifacts, touched files, and previous-checkpoint lineage,
+- tail-boundary metadata describing whether the preserved suffix is whole-turn, oversized whole-turn, or summary-only,
+- summary-source metadata recording deterministic fallback versus hook-supplied summaries,
+- a first-class timeline entry that UIs/replay views can render without parsing prose.
+
+The checkpoint recap injected back into provider requests is historical background only. It is intentionally not treated as a system instruction; preserved recent turns and the live user prompt take precedence.
+
+Lifecycle hooks can observe `compaction_requested`. Critical hook failure cancels the checkpoint and records `CompactionFailed`. A successful hook may supply a custom summary by writing output beginning with `compaction_summary:`; otherwise the deterministic rolling summary remains the default.
+
+### Manual `/compact`
+
+Manual `/compact` means "write a checkpoint now, preserving the latest completed turn." It summarizes older turns, keeps the latest turn verbatim, and writes the same checkpoint artifacts and append-only compaction events as normal provider-context compaction. The checkpoint summary is lossy, and the command does not guarantee immediate provider context/token reduction; one-turn sessions no-op because there is no older completed turn to summarize. Automatic proactive compaction and overflow-retry compaction remain separate coordinator paths.
+
+### Overflow retry behavior
+
+After an overflow-style provider failure, the coordinator may compact and retry once. Normal proactive compaction keeps recent turns verbatim and summarizes older turns. Overflow retry can also fall back to a summary-only checkpoint when a single preserved turn is itself too large, but only when the resulting checkpoint is strictly smaller than the active provider context.
+
+### Session artifacts vs UI memory caps
+
+Compaction is a provider-context persistence feature. It is separate from TUI/session presentation caps that trim or collapse on-screen history for usability. UI memory caps do not rewrite provider context, do not create compaction checkpoints, and should not be treated as compaction.
 
 ## Replay Contract
 

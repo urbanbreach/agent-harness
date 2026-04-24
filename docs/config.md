@@ -101,3 +101,23 @@ harness-centered runtime/TUI split shown above.
 - `{env:VAR}` resolves to an empty string when `VAR` is unset.
 - `{file:path}` is supported for string references and resolves relative to the config file when the config comes from disk.
 - Legacy `${VAR}` and `${VAR:-fallback}` references remain accepted for compatibility.
+
+## Provider context compaction expectations
+
+Provider-context compaction relies on the active profile/model metadata, especially:
+
+- `context_window_tokens`
+- `max_input_tokens`
+- `max_output_tokens`
+
+The coordinator uses those values to decide when proactive compaction should checkpoint older provider-visible history and how much recent context to preserve verbatim. The preserved tail defaults to roughly a quarter of usable context, clamped to a practical coding-agent range, while always keeping at least the latest complete turn when possible.
+
+On successful compaction, checkpoints are written under `artifacts/compactions/<agent_id>/` and recorded in the session event log. Checkpoints and compaction events include additive before/after active-context estimates (`tokens_before_estimate`, `tokens_after_estimate`, summary-token estimate, compacted/preserved turn counts, and estimated reduction) so UIs can report whether compaction helped without treating historical provider spend as active context. Checkpoints also include structured source facts, tail-boundary metadata, summary-source metadata, and a timeline entry for replay/UIs. Resume reconstructs provider context from the latest applied checkpoint plus post-checkpoint deltas in `events.jsonl`; the event log itself stays append-only.
+
+Manual `/compact` is a checkpoint command, not a guaranteed immediate token-shrink command: it writes a checkpoint now, summarizes older completed turns, preserves the latest completed turn verbatim, and uses the normal compaction artifact/event format. The success notice reports the active-context estimate delta when available, or says the estimate was unchanged. The summary is a deterministic structured checkpoint with sections for goal, constraints, progress, blockers, decisions, next steps, critical context, source facts, and relevant files/artifacts; it is still lossy. Sessions with only one completed turn no-op because there is no older turn to summarize.
+
+Lifecycle hooks may use `event = "compaction_requested"` to observe or cancel compaction. A critical hook failure cancels compaction and records `CompactionFailed`. A successful hook can replace the summary by emitting output prefixed with `compaction_summary:`; otherwise the deterministic summary builder is used.
+
+Overflow retry is related but distinct: if the provider rejects a request for context-window reasons, the coordinator may compact and retry once with the checkpointed context when that retry can prove it shrank the provider-visible payload.
+
+TUI memory or transcript caps are separate presentation settings. They affect what the operator sees on screen, not the persisted provider context used for resume or overflow-retry compaction. The TUI distinguishes active context estimate from cumulative provider tokens spent: active context may decrease after `CompactionApplied`, while total spend remains cumulative and never decreases.
