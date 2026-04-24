@@ -2072,8 +2072,9 @@ fn composer_context_summary_candidates(
     surface: Color,
 ) -> Vec<Vec<Span<'static>>> {
     let (tokens, percent) = composer_context_usage(app);
+    let metrics = app.compaction_usage_metrics();
     let mut primary = vec![disclosure_segment(
-        tokens.clone(),
+        format!("live {tokens}"),
         ComposerMetadataTone::Secondary,
         theme,
         surface,
@@ -2086,18 +2087,102 @@ fn composer_context_summary_candidates(
             surface,
         ));
     }
+    append_composer_compaction_metrics(&mut primary, app, metrics, theme, surface, false);
 
     let mut candidates = vec![primary];
+    let mut compact = vec![disclosure_segment(
+        tokens.clone(),
+        ComposerMetadataTone::Secondary,
+        theme,
+        surface,
+    )];
     if percent.is_some() {
-        candidates.push(vec![disclosure_segment(
-            tokens,
-            ComposerMetadataTone::Secondary,
-            theme,
-            surface,
-        )]);
+        append_composer_compaction_metrics(&mut compact, app, metrics, theme, surface, true);
+        candidates.push(compact);
+    }
+    if metrics.completed_count > 0 {
+        candidates.push(composer_compaction_only_summary(
+            app, metrics, theme, surface,
+        ));
     }
     candidates.push(Vec::new());
     candidates
+}
+
+fn append_composer_compaction_metrics(
+    spans: &mut Vec<Span<'static>>,
+    app: &AppState,
+    metrics: crate::app::CompactionUsageMetrics,
+    theme: &Theme,
+    surface: Color,
+    compact: bool,
+) {
+    let compaction_text = composer_compaction_metrics_text(app, metrics, compact);
+    if compaction_text.is_empty() {
+        return;
+    }
+    spans.push(disclosure_separator(theme, surface));
+    spans.push(disclosure_segment(
+        compaction_text,
+        ComposerMetadataTone::Secondary,
+        theme,
+        surface,
+    ));
+}
+
+fn composer_compaction_only_summary(
+    app: &AppState,
+    metrics: crate::app::CompactionUsageMetrics,
+    theme: &Theme,
+    surface: Color,
+) -> Vec<Span<'static>> {
+    let text = composer_compaction_metrics_text(app, metrics, false);
+    if text.is_empty() {
+        Vec::new()
+    } else {
+        vec![disclosure_segment(
+            text,
+            ComposerMetadataTone::Secondary,
+            theme,
+            surface,
+        )]
+    }
+}
+
+fn composer_compaction_metrics_text(
+    app: &AppState,
+    metrics: crate::app::CompactionUsageMetrics,
+    compact: bool,
+) -> String {
+    if metrics.completed_count == 0 {
+        return app
+            .compaction_status()
+            .and_then(|status| {
+                (!matches!(status.state, crate::app::CompactionState::Applied))
+                    .then(|| status.message.clone())
+            })
+            .unwrap_or_default();
+    }
+
+    let count_label = if compact { "cmp" } else { "compactions" };
+    let summary_label = if compact { "sum" } else { "summary" };
+    let mut parts = vec![format!("{count_label} {}", metrics.completed_count)];
+    parts.push(format!(
+        "{summary_label} {} tok",
+        compact_usage_count(metrics.summary_tokens_estimate)
+    ));
+    if metrics.reduction_tokens_estimate > 0 && !compact {
+        parts.push(format!(
+            "saved {} tok",
+            compact_usage_count(metrics.reduction_tokens_estimate)
+        ));
+    } else if let Some(percent) = metrics
+        .last_reduction_percent_estimate
+        .filter(|value| *value > 0)
+    {
+        parts.push(format!("{percent}% saved"));
+    }
+    parts.join(" · ")
 }
 
 fn composer_newline_binding_hint(app: &AppState) -> String {
@@ -2820,4 +2905,60 @@ pub(crate) fn exact_test_live_composer_reserves_right_gap() {
     assert!(plan.operator_sidebar.is_some());
     assert_eq!(dock.composer.x, dock.shell.x);
     assert_eq!(dock.composer.width.saturating_add(2), dock.shell.width);
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_live_composer_disclosure_summarizes_compaction_metrics() {
+    let mut app = AppState::new_live(None, false, None);
+    app.active_context_usage = Some(crate::app::ActiveContextUsage::estimate(500));
+    app.ingest_event(harness_core::event::EventEnvelopeV1 {
+        schema_version: harness_core::event::SCHEMA_VERSION,
+        event_id: "evt_compaction_applied".to_string(),
+        seq: 1,
+        run_id: "run_fixture".to_string(),
+        mono_ms: 10,
+        ts: None,
+        actor: harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::System,
+            Some("coordinator".to_string()),
+        ),
+        correlation_id: None,
+        causation_id: None,
+        stream_key: Some("run:run_fixture".to_string()),
+        payload: harness_core::event::EventV1::CompactionApplied(
+            harness_core::event::CompactionAppliedEvent {
+                checkpoint_id: "checkpoint_000001".to_string(),
+                agent_id: "agent_000001".to_string(),
+                through_seq: 1,
+                through_request_id: Some("req_000001".to_string()),
+                tokens_before_estimate: Some(500),
+                tokens_after_estimate: Some(120),
+                summary_tokens_estimate: Some(80),
+                compacted_turns: Some(1),
+                preserved_turns: Some(1),
+                reduction_tokens_estimate: Some(380),
+                reduction_percent_estimate: Some(76),
+            },
+        ),
+    });
+
+    let surface = control_dock_surface(app.theme(), crate::view_model::ControlDockVariant::Live);
+    let candidates = composer_context_summary_candidates(&app, app.theme(), surface)
+        .into_iter()
+        .map(|spans| {
+            spans
+                .into_iter()
+                .map(|span| span.content.into_owned())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>();
+
+    assert!(candidates
+        .iter()
+        .any(|candidate| candidate.contains("live ctx 120 est")));
+    assert!(candidates
+        .iter()
+        .any(|candidate| candidate.contains("compactions 1")
+            && candidate.contains("summary 80 tok")
+            && candidate.contains("saved 380 tok")));
 }

@@ -206,9 +206,6 @@ struct OperatorRailBodyLayout {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum OperatorRailBodySection {
-    Context {
-        items: Vec<String>,
-    },
     Mcp {
         items: Vec<OperatorRailItem>,
         disclosure: OperatorRailSectionDisclosure,
@@ -229,9 +226,9 @@ enum OperatorRailBodyPresentation {
 }
 
 impl OperatorRailBodySection {
+    #[cfg(test)]
     fn heading(&self) -> String {
         match self {
-            Self::Context { .. } => "Context".to_string(),
             Self::Mcp { disclosure, .. } => {
                 format!("{} MCP", disclosure_glyph(*disclosure))
             }
@@ -247,7 +244,6 @@ impl OperatorRailBodySection {
     fn heading_line(&self, theme: &Theme) -> Line<'static> {
         let heading_style = self.heading_style(theme);
         match self {
-            Self::Context { .. } => Line::from(Span::styled(self.heading(), heading_style)),
             Self::Mcp { items, disclosure } => {
                 let mut spans = vec![
                     Span::styled(format!("{} ", disclosure_glyph(*disclosure)), heading_style),
@@ -276,10 +272,7 @@ impl OperatorRailBodySection {
 
     fn heading_style(&self, theme: &Theme) -> Style {
         match self {
-            Self::Context { .. }
-            | Self::Mcp { .. }
-            | Self::Lsp { .. }
-            | Self::ModifiedFiles { .. } => Style::default()
+            Self::Mcp { .. } | Self::Lsp { .. } | Self::ModifiedFiles { .. } => Style::default()
                 .fg(theme.text.primary)
                 .add_modifier(Modifier::BOLD),
         }
@@ -287,7 +280,6 @@ impl OperatorRailBodySection {
 
     fn disclosure(&self) -> Option<OperatorRailSectionDisclosure> {
         match self {
-            Self::Context { .. } => None,
             Self::Mcp { disclosure, .. }
             | Self::Lsp { disclosure, .. }
             | Self::ModifiedFiles { disclosure, .. } => Some(*disclosure),
@@ -302,7 +294,6 @@ impl OperatorRailBodySection {
     #[cfg(test)]
     fn item_texts(&self) -> Vec<String> {
         match self {
-            Self::Context { items } => items.clone(),
             Self::Mcp { items, .. }
             | Self::Lsp { items, .. }
             | Self::ModifiedFiles { items, .. } => {
@@ -469,16 +460,11 @@ pub(crate) fn exact_test_operator_rail_section_model_builds_pinned_summary() {
     let model = build_operator_rail_model(&app);
 
     assert_eq!(model.title, None);
-    assert_eq!(model.body.sections[0].heading(), "Context");
-    assert_eq!(model.body.sections[1].heading(), "▼ MCP");
-    assert_eq!(model.body.sections[2].heading(), "▼ LSP");
-    assert_eq!(model.body.sections[3].heading(), "▼ Modified Files");
+    assert_eq!(model.body.sections[0].heading(), "▼ MCP");
+    assert_eq!(model.body.sections[1].heading(), "▼ LSP");
+    assert_eq!(model.body.sections[2].heading(), "▼ Modified Files");
     assert_eq!(
-        model.body.sections[0].item_texts(),
-        ["0 tokens".to_string()]
-    );
-    assert_eq!(
-        model.body.sections[3].item_texts(),
+        model.body.sections[2].item_texts(),
         ["src/ui_secondary.rs".to_string()]
     );
 }
@@ -511,12 +497,10 @@ pub(crate) fn exact_test_compaction_applied_updates_active_context_usage_estimat
         last_mono_ms: 20,
     });
     assert_eq!(
-        operator_sidebar_context_items(&app),
-        vec![
-            "active ctx 500 est".to_string(),
-            "spent 500 total".to_string(),
-        ]
+        app.active_context_usage(),
+        Some(ActiveContextUsage::estimate(500))
     );
+    assert_eq!(app.compaction_usage_metrics().completed_count, 0);
 
     app.ingest_event(operator_rail_test_event(
         3,
@@ -542,13 +526,13 @@ pub(crate) fn exact_test_compaction_applied_updates_active_context_usage_estimat
     ));
 
     assert_eq!(
-        operator_sidebar_context_items(&app),
-        vec![
-            "active ctx 120 est".to_string(),
-            "compaction applied · active ctx ~120".to_string(),
-            "spent 500 total".to_string(),
-        ]
+        app.active_context_usage(),
+        Some(ActiveContextUsage::estimate(120))
     );
+    let metrics = app.compaction_usage_metrics();
+    assert_eq!(metrics.completed_count, 1);
+    assert_eq!(metrics.summary_tokens_estimate, 80);
+    assert_eq!(metrics.reduction_tokens_estimate, 380);
 }
 
 #[cfg(test)]
@@ -608,16 +592,12 @@ pub(crate) fn exact_test_operator_rail_section_model_hides_empty_sources_but_pre
             .map(OperatorRailBodySection::heading)
             .collect::<Vec<_>>(),
         vec![
-            "Context".to_string(),
             "▼ MCP".to_string(),
             "▼ LSP".to_string(),
             "▶ Modified Files".to_string(),
         ]
     );
-    assert_eq!(
-        empty_model.body.sections[0].item_texts(),
-        ["0 tokens".to_string()]
-    );
+    assert_eq!(empty_model.body.sections[0].heading(), "▼ MCP");
 }
 
 #[cfg(test)]
@@ -726,17 +706,6 @@ pub(crate) fn exact_test_operator_rail_matches_sidebar_text_styles() {
     let theme = *app.theme();
     let lines = operator_sidebar_lines_for_test(&app);
 
-    let context_line = lines
-        .iter()
-        .find(|line| {
-            line.spans
-                .iter()
-                .any(|span| span.content.as_ref().contains("0 tokens"))
-        })
-        .expect("context sidebar line");
-    assert_eq!(context_line.spans.len(), 1);
-    assert_eq!(context_line.spans[0].style.fg, Some(theme.text.secondary));
-
     let mcp_connected = lines
         .iter()
         .find(|line| {
@@ -815,11 +784,7 @@ pub(crate) fn exact_test_operator_rail_matches_sidebar_text_styles() {
 pub(crate) fn exact_test_operator_rail_section_model_surfaces_pending_permissions_first() {
     let app = operator_rail_test_app();
     let model = build_operator_rail_model(&app);
-    assert_eq!(model.body.sections[0].heading(), "Context");
-    assert!(model.body.sections[0]
-        .item_texts()
-        .iter()
-        .any(|item| item == "0 tokens"));
+    assert_eq!(model.body.sections[0].heading(), "▼ MCP");
 }
 
 #[cfg(test)]
@@ -832,7 +797,7 @@ pub(crate) fn exact_test_operator_rail_section_model_separates_mcp_from_native_t
 
     let app = operator_rail_activity_test_app();
     let model = build_operator_rail_model(&app);
-    assert_eq!(model.body.sections[1].heading(), "▼ MCP");
+    assert_eq!(model.body.sections[0].heading(), "▼ MCP");
     assert_eq!(
         operator_sidebar_mcp_items(&app)
             .into_iter()
@@ -854,7 +819,7 @@ pub(crate) fn exact_test_operator_rail_section_model_uses_runtime_mcp_activity_w
     let _guard = operator_sidebar_config_test_guard();
     let app = operator_rail_activity_test_app();
     let model = build_operator_rail_model(&app);
-    assert_eq!(model.body.sections[1].heading(), "▼ MCP");
+    assert_eq!(model.body.sections[0].heading(), "▼ MCP");
     assert_eq!(
         operator_sidebar_mcp_items(&app)
             .into_iter()
@@ -924,13 +889,12 @@ pub(crate) fn exact_test_operator_rail_section_model_keeps_native_prefix_tools_o
             .map(OperatorRailBodySection::heading)
             .collect::<Vec<_>>(),
         vec![
-            "Context".to_string(),
             "▼ MCP".to_string(),
             "▼ LSP".to_string(),
             "▼ Modified Files".to_string(),
         ]
     );
-    let mcp_items = model.body.sections[1].item_texts();
+    let mcp_items = model.body.sections[0].item_texts();
     assert!(
         mcp_items == ["websearch Disconnected".to_string()]
             || mcp_items == ["No MCP servers configured".to_string()],
@@ -968,10 +932,6 @@ pub(crate) fn exact_test_operator_rail_low_activity_presentation_prefers_primary
     let narrow = render_text(build_operator_rail_body_text(&rail.body, app.theme(), 32));
 
     for rendered in [&wide, &narrow] {
-        assert!(
-            rendered.contains("Context"),
-            "missing context section\n{rendered}"
-        );
         assert!(
             rendered.contains("▼ MCP"),
             "missing MCP section\n{rendered}"
@@ -1076,7 +1036,7 @@ pub(crate) fn exact_test_operator_rail_section_model_counts_generic_mcp_activity
 
     let model = build_operator_rail_model(&app);
 
-    assert_eq!(model.body.sections[1].heading(), "▼ MCP");
+    assert_eq!(model.body.sections[0].heading(), "▼ MCP");
     assert_eq!(
         operator_sidebar_mcp_items(&app)
             .into_iter()
@@ -1607,9 +1567,6 @@ fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
         title: operator_sidebar_session_title(app),
         body: OperatorRailBody {
             sections: vec![
-                OperatorRailBodySection::Context {
-                    items: operator_sidebar_context_items(app),
-                },
                 OperatorRailBodySection::Mcp {
                     items: operator_sidebar_mcp_items(app),
                     disclosure: OperatorRailSectionDisclosure {
@@ -1694,11 +1651,6 @@ fn build_operator_rail_section_lines(
     }
 
     let items = match section {
-        OperatorRailBodySection::Context { items } => items
-            .iter()
-            .cloned()
-            .map(OperatorRailItem::Plain)
-            .collect::<Vec<_>>(),
         OperatorRailBodySection::Mcp { items, .. }
         | OperatorRailBodySection::Lsp { items, .. }
         | OperatorRailBodySection::ModifiedFiles { items, .. } => items.clone(),
@@ -1839,11 +1791,7 @@ fn append_operator_rail_item(
     section: &OperatorRailBodySection,
     item: &OperatorRailItem,
 ) {
-    let bullet_prefix = if matches!(section, OperatorRailBodySection::Context { .. }) {
-        "  "
-    } else {
-        "• "
-    };
+    let bullet_prefix = "• ";
     let continuation_prefix = if bullet_prefix == "• " {
         "  "
     } else {
@@ -1921,60 +1869,6 @@ fn operator_sidebar_session_title(app: &AppState) -> Option<String> {
         .find_map(|activity| activity.user_message.as_ref())
         .map(|message| sanitize_operator_sidebar_line(&message.text))
         .filter(|text| !text.is_empty())
-}
-
-fn operator_sidebar_context_window_tokens(app: &AppState) -> Option<u32> {
-    let model_id = app.activities.back().and_then(|activity| {
-        (!activity.model_id.trim().is_empty()).then_some(activity.model_id.clone())
-    });
-    let metadata =
-        crate::app::LaunchMetadata::new(app.active_profile(), app.active_provider(), model_id);
-    metadata.context_window_tokens()
-}
-
-fn format_token_count(value: u64) -> String {
-    let digits = value.to_string();
-    let mut out = String::with_capacity(digits.len() + (digits.len() / 3));
-    for (index, character) in digits.chars().enumerate() {
-        if index > 0 && (digits.len() - index).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(character);
-    }
-    out
-}
-
-fn operator_sidebar_context_items(app: &AppState) -> Vec<String> {
-    let active_context = app.active_context_usage();
-    let Some(active_context) = active_context else {
-        return vec!["0 tokens".to_string()];
-    };
-    let mut items = if active_context.compacted_pending_refresh {
-        vec!["active ctx compacted · updates next request".to_string()]
-    } else {
-        let active_tokens = active_context.tokens.map(u64::from).unwrap_or(0);
-        vec![format!(
-            "active ctx {} est",
-            format_token_count(active_tokens)
-        )]
-    };
-    if let Some(context_window_tokens) =
-        operator_sidebar_context_window_tokens(app).filter(|value| *value > 0)
-    {
-        if let Some(active_tokens) = active_context.tokens {
-            let percent =
-                ((f64::from(active_tokens) / f64::from(context_window_tokens)) * 100.0).round();
-            items.push(format!("{}% active", percent.clamp(0.0, 999.0) as u64));
-        }
-    }
-    if let Some(status) = app.compaction_status() {
-        items.push(status.message.clone());
-    }
-    items.push(format!(
-        "spent {} total",
-        format_token_count(app.cumulative_token_spend())
-    ));
-    items
 }
 
 fn operator_sidebar_mcp_items(app: &AppState) -> Vec<OperatorRailItem> {

@@ -364,9 +364,7 @@ fn operator_sidebar_compact_empty_mode_preserves_anchor_copy_with_fixed_width() 
             sidebar.contains("No active LSP servers") || sidebar.contains("LSP disabled");
 
         assert!(
-            sidebar.contains("Context")
-                && sidebar.contains("0 tokens")
-                && sidebar.contains("▼ MCP")
+            sidebar.contains("▼ MCP")
                 && has_mcp_state
                 && sidebar.contains("▼ LSP")
                 && has_lsp_state
@@ -436,6 +434,7 @@ delegate_test!(replay_prompt_pane_is_visibly_read_only => ui::exact_test_replay_
 delegate_test!(live_control_dock_renders_shared_surface => ui::exact_test_live_control_dock_renders_shared_surface);
 delegate_test!(live_control_dock_collapses_disclosure_before_status => ui::exact_test_live_control_dock_collapses_disclosure_before_status);
 delegate_test!(live_composer_reserves_right_gap => ui::exact_test_live_composer_reserves_right_gap);
+delegate_test!(live_composer_disclosure_summarizes_compaction_metrics => ui::exact_test_live_composer_disclosure_summarizes_compaction_metrics);
 delegate_test!(tool_status_summary_uses_effective_tool_identity => ui::exact_test_tool_status_summary_uses_effective_tool_identity);
 delegate_test!(unified_bottom_dock_uses_single_layout_entrypoint => ui::exact_test_unified_bottom_dock_uses_single_layout_entrypoint);
 delegate_test!(wheel_target_hits_transcript_when_hovered => ui::exact_test_wheel_target_hits_transcript_when_hovered);
@@ -867,7 +866,6 @@ fn replay_read_only_copy_matches_operator_shell_contract() {
 
     assert!(rendered.contains("Replay · read-only"));
     assert!(rendered.contains("Replay is read-only"));
-    assert!(rendered.contains("Context"));
     assert!(rendered.contains("▼ MCP"));
     assert!(rendered.contains("▶ Modified Files"));
     assert!(rendered.contains("r reload"));
@@ -7929,7 +7927,7 @@ fn live_shell_orchestration_status_strip_snapshot() {
 
     insta::assert_snapshot!(
         status_row,
-        @"0  Ctrl+p commands"
+        @"live 0  Ctrl+p commands"
     );
 }
 
@@ -8561,7 +8559,6 @@ fn assert_operator_sidebar_expanded(
         "persistent operator rail width should stay fixed"
     );
     assert_eq!(plan.wheel_hit_areas.overlay, Some(sidebar));
-    assert!(sidebar_text.contains("Context"));
     assert!(sidebar_text.contains("▼ MCP"));
     assert!(sidebar_text.contains("▼ LSP"));
     assert!(sidebar_text.contains(modified_files_heading));
@@ -8606,7 +8603,6 @@ fn live_shell_details_drawer_orchestration_primary_snapshot() {
     let rendered = render_live_lines(&app, 100, 30);
     println!("{rendered}");
     assert!(rendered.contains("Explain the refactor"));
-    assert!(rendered.contains("Context"));
     assert!(rendered.contains("▼ MCP"));
     assert!(rendered.contains("▼ LSP"));
     assert!(rendered.contains("▶ Modified Files"));
@@ -8778,7 +8774,6 @@ fn replay_shell_uses_read_only_operator_layout() {
     assert!(plan.details_overlay.is_none());
     assert!(!rendered.contains("Tabs"));
     assert!(rendered.contains("Replay · read-only"));
-    assert!(rendered.contains("Context"));
     assert!(rendered.contains("▼ MCP"));
     assert!(rendered.contains("▶ Modified Files"));
 }
@@ -9451,15 +9446,8 @@ fn operator_sidebar_matches_parity_information_architecture() {
 
     assert_markers_in_order(
         &sidebar,
-        &[
-            "Explain the refactor",
-            "Context",
-            "▼ MCP",
-            "▼ LSP",
-            "▶ Modified Files",
-        ],
+        &["Explain the refactor", "▼ MCP", "▼ LSP", "▶ Modified Files"],
     );
-    assert!(sidebar.contains("0 tokens"));
     assert!(
         sidebar.contains("No MCP integrations configured")
             || sidebar.contains("No MCP servers configured")
@@ -9505,8 +9493,6 @@ fn operator_sidebar_uses_explicit_empty_states() {
     let app = app::AppState::new_live(None, false, None);
     let sidebar = operator_sidebar_text(&app);
 
-    assert!(sidebar.contains("Context"));
-    assert!(sidebar.contains("0 tokens"));
     assert!(sidebar.contains("▼ MCP"));
     assert!(
         sidebar.contains("No MCP integrations configured")
@@ -9524,7 +9510,6 @@ fn operator_sidebar_uses_explicit_empty_states() {
 fn operator_sidebar_recovery_section_surfaces_artifacts_and_navigation_hints() {
     let sidebar = operator_sidebar_text(&operator_sidebar_child_navigation_replay_app());
 
-    assert!(sidebar.contains("Context"));
     assert!(sidebar.contains("▼ MCP"));
     assert!(sidebar.contains("▼ LSP"));
     assert!(sidebar.contains("▶ Modified Files"));
@@ -9552,18 +9537,10 @@ fn operator_sidebar_preserves_section_order_and_copy() {
 
     assert_markers_in_order(
         &sidebar,
-        &[
-            "Explain the refactor",
-            "Context",
-            "▼ MCP",
-            "▼ LSP",
-            "▶ Modified Files",
-        ],
+        &["Explain the refactor", "▼ MCP", "▼ LSP", "▶ Modified Files"],
     );
 
     let empty = operator_sidebar_text(&app::AppState::new_live(None, false, None));
-    assert!(empty.contains("Context"));
-    assert!(empty.contains("0 tokens"));
     assert!(empty.contains("▼ MCP"));
     assert!(empty.contains("▼ LSP"));
     assert!(empty.contains("▶ Modified Files"));

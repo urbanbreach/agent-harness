@@ -67,6 +67,7 @@ pub(crate) use ui_transcript::{TranscriptMouseTarget, TranscriptScrollbarHit};
 
 #[cfg(test)]
 pub(crate) use ui_chrome::{
+    exact_test_live_composer_disclosure_summarizes_compaction_metrics,
     exact_test_live_composer_reserves_right_gap,
     exact_test_live_control_dock_collapses_disclosure_before_status,
     exact_test_live_control_dock_renders_shared_surface,
@@ -150,7 +151,6 @@ pub(crate) fn exact_test_replay_prompt_pane_is_visibly_read_only() {
         .expect("draw frame");
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(debug.contains("Replay · read-only"));
-    assert!(debug.contains("Context"));
     assert!(debug.contains("▼ MCP"));
     assert!(debug.contains("▼ LSP"));
     assert!(debug.contains("▶ Modified Files"));
@@ -1505,8 +1505,6 @@ mod tests {
 
         let sidebar_text = super::ui_secondary::operator_sidebar_text_for_test(&app).join("\n");
         assert!(sidebar_text.contains("Read the file"));
-        assert!(sidebar_text.contains("Context"));
-        assert!(sidebar_text.contains("0 tokens"));
         assert!(sidebar_text.contains("▼ MCP"));
         assert!(sidebar_text.contains("▼ LSP"));
         assert!(sidebar_text.contains("▶ Modified Files"));
@@ -1569,8 +1567,6 @@ mod tests {
         app.handle_key(key(KeyCode::Char('i')));
 
         let sidebar_text = super::ui_secondary::operator_sidebar_text_for_test(&app).join("\n");
-        assert!(sidebar_text.contains("Context"));
-        assert!(sidebar_text.contains("0 tokens"));
         assert!(sidebar_text.contains("▼ MCP"));
         assert!(sidebar_text.contains("▼ LSP"));
         assert!(sidebar_text.contains("▶ Modified Files"));
