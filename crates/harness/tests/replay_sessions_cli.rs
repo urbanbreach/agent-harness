@@ -1556,6 +1556,117 @@ fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
 }
 
 #[test]
+fn sessions_surfaces_checkpoint_artifacts_in_catalog_and_recovery_views() {
+    let session_dir = tempdir().expect("tempdir");
+    let run_dir = session_dir.path().join("run_checkpoint_artifacts");
+    std::fs::create_dir_all(&run_dir).expect("create run dir");
+
+    write_events_jsonl(
+        &run_dir,
+        &[
+            envelope(
+                "run_checkpoint_artifacts",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                "run_checkpoint_artifacts",
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_000001".to_string(),
+                    profile: "worker".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                "run_checkpoint_artifacts",
+                3,
+                EventV1::ArtifactWritten(ArtifactWrittenEvent {
+                    path: "artifacts/compactions/agent_000001/checkpoint_000003.json".to_string(),
+                    digest: "digest-checkpoint".to_string(),
+                    bytes: 84,
+                    tool_call_id: None,
+                    tool_metadata: None,
+                    metadata: BTreeMap::from([
+                        (
+                            "artifact_kind".to_string(),
+                            "provider_context_checkpoint".to_string(),
+                        ),
+                        ("checkpoint_id".to_string(), "checkpoint_000003".to_string()),
+                        ("agent_id".to_string(), "agent_000001".to_string()),
+                    ]),
+                }),
+            ),
+            envelope(
+                "run_checkpoint_artifacts",
+                4,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let list_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "list",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions list json");
+
+    assert!(
+        list_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&list_output.stderr)
+    );
+    let rows: serde_json::Value =
+        serde_json::from_slice(&list_output.stdout).expect("sessions json output should parse");
+    assert_eq!(rows.as_array().map(Vec::len), Some(1));
+    assert_eq!(rows[0]["run_id"], "run_checkpoint_artifacts");
+    assert_eq!(rows[0]["artifact_count"], 1);
+
+    let reopen_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "reopen",
+            "--session",
+            "run_checkpoint_artifacts",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions reopen json");
+
+    assert!(
+        reopen_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&reopen_output.stderr)
+    );
+    let summary: serde_json::Value =
+        serde_json::from_slice(&reopen_output.stdout).expect("reopen json should parse");
+    assert_eq!(
+        summary["artifacts"][0]["path"],
+        "artifacts/compactions/agent_000001/checkpoint_000003.json"
+    );
+    assert_eq!(
+        summary["artifacts"][0]["kind"],
+        "provider_context_checkpoint"
+    );
+    assert_eq!(
+        summary["artifacts"][0]["tool_call_id"],
+        serde_json::Value::Null
+    );
+}
+
+#[test]
 fn sessions_list_cli_filters_machine_readable_selectors() {
     let session_dir = tempdir().expect("tempdir");
     let resumable_dir = session_dir.path().join("run_resumable");

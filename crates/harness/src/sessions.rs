@@ -739,9 +739,10 @@ fn print_recovery_summary(summary: &SessionRecoverySummary) {
         println!("artifacts:");
         for artifact in &summary.artifacts {
             println!(
-                "  - tool_call={} tool={} path={} digest={}",
-                artifact.tool_call_id,
+                "  - tool_call={} tool={} kind={} path={} digest={}",
+                artifact.tool_call_id.as_deref().unwrap_or("<none>"),
                 artifact.tool_id.as_deref().unwrap_or("<unavailable>"),
+                artifact.kind.as_deref().unwrap_or("<unavailable>"),
                 artifact.path,
                 artifact.digest.as_deref().unwrap_or("<unavailable>")
             );

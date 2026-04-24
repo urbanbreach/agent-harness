@@ -19,6 +19,7 @@ use harness_core::config::{
 };
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle,
+    ManualCompactionOutcome,
 };
 use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1, ToolCallStatus};
 use harness_core::perm::PermissionDecision;
@@ -34,7 +35,8 @@ use harness_tui::app::{
 };
 use harness_tui::{
     close_preserved_terminal_session, load_events_from_run_dir, run_tui_with_options,
-    set_pending_replay_launch_metadata, LiveUpdate, TuiMode, TuiOptions, UiIntent,
+    set_pending_replay_launch_metadata, LiveUpdate, OperatorNoticeLevel, TuiMode, TuiOptions,
+    UiIntent,
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -252,6 +254,7 @@ fn recover_mutex_lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 struct LiveAgentTarget {
     agent_id: Option<String>,
     profile: String,
+    last_request_id: Option<String>,
 }
 
 enum ResolvedTuiMode {
@@ -926,6 +929,7 @@ async fn run_startup_launcher(
                 | UiIntent::ReplaySession { .. }
                 | UiIntent::ContinueSession { .. }
                 | UiIntent::SubmitPrompt { .. }
+                | UiIntent::CompactSession
                 | UiIntent::QuitRequested
         ) {
             return;
@@ -975,6 +979,7 @@ fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> InteractiveWorkfl
         Some(UiIntent::QuitRequested)
         | None
         | Some(UiIntent::ResolvePermission { .. })
+        | Some(UiIntent::CompactSession)
         | Some(UiIntent::SwitchModel { .. }) => InteractiveWorkflow::Quit,
     }
 }
@@ -1076,6 +1081,7 @@ async fn run_continue_session_bootstrap(
     );
     let (live_update_tx, live_update_rx) = std_mpsc::channel::<LiveUpdate>();
     let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
+    let intent_live_update_tx = live_update_tx.clone();
 
     let event_forwarder_task = tokio::spawn(async move {
         forward_events_to_tui(store, live_update_tx, preloaded_last_seq.saturating_add(1)).await
@@ -1085,6 +1091,7 @@ async fn run_continue_session_bootstrap(
     let live_agent_target = Arc::new(Mutex::new(LiveAgentTarget {
         agent_id: Some(resume_agent_id.clone()),
         profile: continue_metadata.profile().to_string(),
+        last_request_id: latest_request_id_for_agent(&historical_events, &resume_agent_id),
     }));
     let intent_live_agent_target = Arc::clone(&live_agent_target);
     let ui_intent_task = tokio::spawn(async move {
@@ -1093,6 +1100,7 @@ async fn run_continue_session_bootstrap(
             intent_rx,
             user_actor(),
             Some(intent_live_agent_target),
+            intent_live_update_tx,
         )
         .await
     });
@@ -1110,6 +1118,7 @@ async fn run_continue_session_bootstrap(
             live_update_rx,
             exit_on_finish,
             ui_intent_sender,
+            true,
         ))
     })
     .await
@@ -1142,12 +1151,14 @@ fn continue_live_tui_options(
     update_rx: std_mpsc::Receiver<LiveUpdate>,
     exit_on_finish: bool,
     ui_intent_sender: UiIntentSink,
+    compact_session_supported: bool,
 ) -> TuiOptions {
     TuiOptions {
         mode: TuiMode::Live {
             run_dir,
             historical_events,
             update_rx,
+            compact_session_supported,
         },
         exit_on_finish,
         on_ui_intent: Some(ui_intent_sender),
@@ -1161,12 +1172,14 @@ fn new_live_tui_options(
     update_rx: std_mpsc::Receiver<LiveUpdate>,
     exit_on_finish: bool,
     ui_intent_sender: UiIntentSink,
+    compact_session_supported: bool,
 ) -> TuiOptions {
     TuiOptions {
         mode: TuiMode::Live {
             run_dir,
             historical_events: Vec::new(),
             update_rx,
+            compact_session_supported,
         },
         exit_on_finish,
         on_ui_intent: Some(ui_intent_sender),
@@ -1294,6 +1307,7 @@ fn live_workflow_from_intent(intent: &UiIntent) -> Option<InteractiveWorkflow> {
         UiIntent::QuitRequested => Some(InteractiveWorkflow::Quit),
         UiIntent::ResolvePermission { .. }
         | UiIntent::SubmitPrompt { .. }
+        | UiIntent::CompactSession
         | UiIntent::SwitchModel { .. } => None,
     }
 }
@@ -1303,6 +1317,7 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
         intent,
         UiIntent::ResolvePermission { .. }
             | UiIntent::SubmitPrompt { .. }
+            | UiIntent::CompactSession
             | UiIntent::SwitchModel { .. }
             | UiIntent::QuitRequested
     )
@@ -1392,6 +1407,17 @@ fn most_recent_known_agent_spawn_id(
         known_agents
             .contains_key(&data.agent_id)
             .then(|| data.agent_id.clone())
+    })
+}
+
+fn latest_request_id_for_agent(
+    historical_events: &[EventEnvelopeV1],
+    agent_id: &str,
+) -> Option<String> {
+    historical_events.iter().rev().find_map(|event| {
+        (event.actor.kind == ActorKind::Worker && event.actor.agent_id.as_deref() == Some(agent_id))
+            .then(|| event.correlation_id.clone())
+            .flatten()
     })
 }
 
@@ -1520,6 +1546,7 @@ async fn run_new_live_session(
 
     let (live_update_tx, live_update_rx) = std_mpsc::channel::<LiveUpdate>();
     let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
+    let intent_live_update_tx = live_update_tx.clone();
 
     let event_forwarder_task =
         tokio::spawn(async move { forward_events_to_tui(store, live_update_tx, 1).await });
@@ -1528,6 +1555,7 @@ async fn run_new_live_session(
     let live_agent_target = Arc::new(Mutex::new(LiveAgentTarget {
         agent_id: Some(agent_id),
         profile: launch_metadata.profile().to_string(),
+        last_request_id: None,
     }));
     let intent_live_agent_target = Arc::clone(&live_agent_target);
     let ui_intent_task = tokio::spawn(async move {
@@ -1536,6 +1564,7 @@ async fn run_new_live_session(
             intent_rx,
             user_actor(),
             Some(intent_live_agent_target),
+            intent_live_update_tx,
         )
         .await
     });
@@ -1553,6 +1582,7 @@ async fn run_new_live_session(
             live_update_rx,
             exit_on_finish,
             ui_intent_sender,
+            true,
         ))
     })
     .await
@@ -1633,6 +1663,7 @@ async fn run_live_mode(
     let (bootstrap_tx, bootstrap_rx) = oneshot::channel::<LiveBootstrap>();
     let (live_update_tx, live_update_rx) = std_mpsc::channel::<LiveUpdate>();
     let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
+    let intent_live_update_tx = live_update_tx.clone();
 
     let scenario_coordinator = coordinator.clone();
     let scenario_task = tokio::spawn(async move {
@@ -1653,7 +1684,14 @@ async fn run_live_mode(
 
     let intent_coordinator = coordinator.clone();
     let ui_intent_task = tokio::spawn(async move {
-        handle_ui_intents(intent_coordinator, intent_rx, user_actor(), None).await
+        handle_ui_intents(
+            intent_coordinator,
+            intent_rx,
+            user_actor(),
+            None,
+            intent_live_update_tx,
+        )
+        .await
     });
 
     let ui_intent_sender = {
@@ -1673,6 +1711,7 @@ async fn run_live_mode(
             live_update_rx,
             exit_on_finish,
             ui_intent_sender,
+            false,
         ))
     })
     .await
@@ -1854,11 +1893,39 @@ async fn forward_events_to_tui(
     Ok(())
 }
 
+fn manual_compaction_success_message(
+    checkpoint_id: &str,
+    tokens_before_estimate: Option<u32>,
+    tokens_after_estimate: Option<u32>,
+) -> String {
+    let prefix = format!("manual compaction checkpoint written: {checkpoint_id}");
+    match (tokens_before_estimate, tokens_after_estimate) {
+        (Some(before), Some(after)) if before != after => format!(
+            "{prefix} · active ctx {} → {} est",
+            compact_token_estimate(before),
+            compact_token_estimate(after)
+        ),
+        (Some(_), Some(_)) => format!("{prefix} · active ctx estimate unchanged"),
+        _ => prefix,
+    }
+}
+
+fn compact_token_estimate(value: u32) -> String {
+    if value >= 1_000_000 {
+        return format!("{:.1}M", f64::from(value) / 1_000_000.0);
+    }
+    if value >= 1_000 {
+        return format!("{:.1}K", f64::from(value) / 1_000.0);
+    }
+    value.to_string()
+}
+
 async fn handle_ui_intents(
     coordinator: CoordinatorHandle,
     mut intent_rx: mpsc::UnboundedReceiver<UiIntent>,
     user_actor: EventActor,
     live_agent_target: Option<LiveAgentTargetState>,
+    live_update_tx: std_mpsc::Sender<LiveUpdate>,
 ) -> Result<(), String> {
     while let Some(intent) = intent_rx.recv().await {
         match intent {
@@ -1884,7 +1951,7 @@ async fn handle_ui_intents(
                 });
 
                 if let Some(agent_id) = agent_id {
-                    coordinator
+                    let request_id = coordinator
                         .request_agent_turn_with_model(
                             user_actor.clone(),
                             agent_id,
@@ -1894,7 +1961,62 @@ async fn handle_ui_intents(
                         )
                         .await
                         .map_err(|err| err.to_string())?;
+                    if let Some(live_agent_target) = live_agent_target.as_ref() {
+                        let mut target = live_agent_target
+                            .lock()
+                            .map_err(|_| "live agent target lock poisoned".to_string())?;
+                        target.last_request_id = Some(request_id);
+                    }
                 }
+            }
+            UiIntent::CompactSession => {
+                let Some(live_agent_target) = live_agent_target.as_ref() else {
+                    let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                        message: "manual compaction unavailable: no live agent target".to_string(),
+                        level: OperatorNoticeLevel::Error,
+                    });
+                    continue;
+                };
+
+                let (agent_id, through_request_id) = live_agent_target
+                    .lock()
+                    .map_err(|_| "live agent target lock poisoned".to_string())
+                    .map(|target| (target.agent_id.clone(), target.last_request_id.clone()))?;
+
+                let Some(agent_id) = agent_id else {
+                    let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                        message: "manual compaction unavailable: no active live agent".to_string(),
+                        level: OperatorNoticeLevel::Error,
+                    });
+                    continue;
+                };
+
+                let (message, level) = match coordinator
+                    .compact_agent_context(agent_id, through_request_id, "manual")
+                    .await
+                {
+                    Ok(ManualCompactionOutcome::CheckpointWritten {
+                        checkpoint_id,
+                        tokens_before_estimate,
+                        tokens_after_estimate,
+                    }) => (
+                        manual_compaction_success_message(
+                            &checkpoint_id,
+                            tokens_before_estimate,
+                            tokens_after_estimate,
+                        ),
+                        OperatorNoticeLevel::Info,
+                    ),
+                    Ok(ManualCompactionOutcome::NoOp) => (
+                        "manual compaction skipped: need at least two completed turns".to_string(),
+                        OperatorNoticeLevel::Info,
+                    ),
+                    Err(err) => (
+                        format!("manual compaction failed: {err}"),
+                        OperatorNoticeLevel::Error,
+                    ),
+                };
+                let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
             UiIntent::SwitchModel { profile, .. } => {
                 let Some(live_agent_target) = live_agent_target.as_ref() else {
@@ -1919,6 +2041,7 @@ async fn handle_ui_intents(
                     .map_err(|_| "live agent target lock poisoned".to_string())?;
                 target.agent_id = Some(agent_id);
                 target.profile = profile;
+                target.last_request_id = None;
             }
             UiIntent::NewSession
             | UiIntent::ReplaySession { .. }
@@ -2115,6 +2238,8 @@ pub(crate) fn assert_startup_command_workflow_maps_model_and_session_intents_cor
         profile: "ops".to_string(),
         launch_metadata: switched_metadata,
     }));
+    assert!(forward_intent_to_live_run(&UiIntent::CompactSession));
+    assert_eq!(live_workflow_from_intent(&UiIntent::CompactSession), None);
 }
 
 #[cfg(test)]
@@ -2172,9 +2297,21 @@ mod tests {
         let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
         let sink: UiIntentSink = Arc::new(|_| {});
 
-        let fresh =
-            new_live_tui_options(PathBuf::from("/tmp/run-new"), rx, false, Arc::clone(&sink));
+        let fresh = new_live_tui_options(
+            PathBuf::from("/tmp/run-new"),
+            rx,
+            false,
+            Arc::clone(&sink),
+            true,
+        );
         assert!(fresh.preserve_terminal_on_exit);
+        assert!(matches!(
+            fresh.mode,
+            TuiMode::Live {
+                compact_session_supported: true,
+                ..
+            }
+        ));
 
         let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
         let resumed = continue_live_tui_options(
@@ -2183,8 +2320,148 @@ mod tests {
             rx,
             false,
             sink,
+            true,
         );
         assert!(resumed.preserve_terminal_on_exit);
+        assert!(matches!(
+            resumed.mode,
+            TuiMode::Live {
+                compact_session_supported: true,
+                ..
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn compact_intent_reports_noop_status_for_idle_live_agent() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
+        config.deterministic_store = true;
+        config.agent_profiles = golden_path_profiles();
+
+        let coordinator = spawn_coordinator(
+            config,
+            Arc::new(FakeClock::new()),
+            Arc::new(DefaultRedactor::default()),
+        );
+        coordinator
+            .start_run("compact_status", temp_dir.path())
+            .await
+            .expect("start run");
+        let agent_id = coordinator
+            .spawn_agent_idle(supervisor_actor(), "planner", None)
+            .await
+            .expect("spawn agent");
+
+        let live_agent_target = Arc::new(Mutex::new(LiveAgentTarget {
+            agent_id: Some(agent_id),
+            profile: "planner".to_string(),
+            last_request_id: None,
+        }));
+        let (intent_tx, intent_rx) = mpsc::unbounded_channel();
+        let (status_tx, status_rx) = std_mpsc::channel();
+
+        let handle = tokio::spawn(handle_ui_intents(
+            coordinator.clone(),
+            intent_rx,
+            user_actor(),
+            Some(live_agent_target),
+            status_tx,
+        ));
+
+        intent_tx
+            .send(UiIntent::CompactSession)
+            .expect("send compact intent");
+        drop(intent_tx);
+
+        handle
+            .await
+            .expect("ui intent task join")
+            .expect("ui intent task ok");
+        let status = status_rx.recv().expect("status update");
+        assert!(matches!(
+            status,
+            LiveUpdate::OperatorNotice {
+                message,
+                level: OperatorNoticeLevel::Info,
+            } if message == "manual compaction skipped: need at least two completed turns"
+        ));
+
+        coordinator.stop_run().await.expect("stop run");
+    }
+
+    #[test]
+    fn manual_compaction_success_message_reports_active_context_delta() {
+        assert_eq!(
+            manual_compaction_success_message("checkpoint_000123", Some(18_200), Some(4_100)),
+            "manual compaction checkpoint written: checkpoint_000123 · active ctx 18.2K → 4.1K est"
+        );
+        assert_eq!(
+            manual_compaction_success_message("checkpoint_000124", Some(4_100), Some(4_100)),
+            "manual compaction checkpoint written: checkpoint_000124 · active ctx estimate unchanged"
+        );
+    }
+
+    #[tokio::test]
+    async fn compact_intent_reports_unavailable_when_no_live_agent_target_exists() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
+        config.deterministic_store = true;
+        config.agent_profiles = golden_path_profiles();
+
+        let coordinator = spawn_coordinator(
+            config,
+            Arc::new(FakeClock::new()),
+            Arc::new(DefaultRedactor::default()),
+        );
+        coordinator
+            .start_run("compact_status", temp_dir.path())
+            .await
+            .expect("start run");
+
+        let (intent_tx, intent_rx) = mpsc::unbounded_channel();
+        let (status_tx, status_rx) = std_mpsc::channel();
+
+        let handle = tokio::spawn(handle_ui_intents(
+            coordinator.clone(),
+            intent_rx,
+            user_actor(),
+            None,
+            status_tx,
+        ));
+
+        intent_tx
+            .send(UiIntent::CompactSession)
+            .expect("send compact intent");
+        drop(intent_tx);
+
+        handle
+            .await
+            .expect("ui intent task join")
+            .expect("ui intent task ok");
+        let status = status_rx.recv().expect("status update");
+        assert!(matches!(
+            status,
+            LiveUpdate::OperatorNotice {
+                message,
+                level: OperatorNoticeLevel::Error,
+            } if message == "manual compaction unavailable: no live agent target"
+        ));
+
+        coordinator.stop_run().await.expect("stop run");
+    }
+
+    #[test]
+    fn live_ui_router_forwards_compact_intent_without_switching_workflow() {
+        let (intent_tx, mut intent_rx) = mpsc::unbounded_channel::<UiIntent>();
+        let launch_selection = Arc::new(Mutex::new(LaunchMetadata::default()));
+        let (selected_workflow, sink) =
+            build_live_ui_intent_router(intent_tx, Arc::clone(&launch_selection));
+
+        sink(UiIntent::CompactSession);
+
+        assert!(recover_mutex_lock(&selected_workflow).is_none());
+        assert_eq!(intent_rx.try_recv().ok(), Some(UiIntent::CompactSession));
     }
 
     #[test]

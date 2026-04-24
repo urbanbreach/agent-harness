@@ -5,8 +5,7 @@ use std::path::{Path, PathBuf};
 
 use harness_core::event::{ActorKind, EventEnvelopeV1, EventV1};
 use harness_core::proj::{
-    inspect_resume_plan, project_run_summary, ResumePlan, ResumeToolCallSnapshot, RunStatus,
-    SessionModeSource,
+    inspect_resume_plan, project_run_summary, ResumePlan, RunStatus, SessionModeSource,
 };
 use harness_tui::load_events_from_run_dir;
 use serde::Serialize;
@@ -52,9 +51,12 @@ pub struct RecoveryChildSessionEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RecoveryArtifactEntry {
-    pub tool_call_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
     pub path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub digest: Option<String>,
@@ -179,7 +181,7 @@ pub fn inspect_session_recovery(run_dir: &Path) -> Result<SessionRecoverySummary
         tasks_in_flight: run_summary.tasks_in_flight.into_iter().collect(),
         prompt_context: collect_prompt_context(&events),
         child_sessions: collect_child_sessions(&resume_plan),
-        artifacts: collect_artifacts(&resume_plan.tool_calls),
+        artifacts: collect_artifacts(&resume_plan),
         continue_hint: resume_agent_id.map(|_| {
             format!(
                 "harness prompt --resume {} --text \"<next prompt>\"",
@@ -316,43 +318,20 @@ fn collect_child_sessions(resume_plan: &ResumePlan) -> Vec<RecoveryChildSessionE
     entries
 }
 
-fn collect_artifacts(
-    tool_calls: &BTreeMap<String, ResumeToolCallSnapshot>,
-) -> Vec<RecoveryArtifactEntry> {
-    let mut entries = tool_calls
-        .iter()
-        .flat_map(|(tool_call_id, snapshot)| {
-            snapshot
-                .metadata
-                .as_ref()
-                .into_iter()
-                .flat_map(move |metadata| {
-                    metadata
-                        .artifact_refs
-                        .iter()
-                        .map(move |artifact| RecoveryArtifactEntry {
-                            tool_call_id: tool_call_id.clone(),
-                            tool_id: snapshot.tool_id.clone(),
-                            path: artifact.path.clone(),
-                            digest: artifact.digest.clone(),
-                            parent_tool_call_id: metadata
-                                .lineage
-                                .as_ref()
-                                .and_then(|lineage| lineage.parent_tool_call_id.clone()),
-                            parent_task_id: metadata
-                                .lineage
-                                .as_ref()
-                                .and_then(|lineage| lineage.parent_task_id.clone()),
-                            parent_request_id: metadata
-                                .lineage
-                                .as_ref()
-                                .and_then(|lineage| lineage.parent_request_id.clone()),
-                            child_session_id: metadata
-                                .lineage
-                                .as_ref()
-                                .and_then(|lineage| lineage.child_session_id.clone()),
-                        })
-                })
+fn collect_artifacts(resume_plan: &ResumePlan) -> Vec<RecoveryArtifactEntry> {
+    let mut entries = resume_plan
+        .session_artifacts
+        .values()
+        .map(|artifact| RecoveryArtifactEntry {
+            tool_call_id: artifact.tool_call_id.clone(),
+            tool_id: artifact.tool_id.clone(),
+            kind: artifact.artifact_kind.clone(),
+            path: artifact.path.clone(),
+            digest: artifact.digest.clone(),
+            parent_tool_call_id: artifact.parent_tool_call_id.clone(),
+            parent_task_id: artifact.parent_task_id.clone(),
+            parent_request_id: artifact.parent_request_id.clone(),
+            child_session_id: artifact.child_session_id.clone(),
         })
         .collect::<Vec<_>>();
     entries.sort_by(|left, right| {

@@ -329,6 +329,31 @@ fn config_validate_cli_merges_xdg_defaults_with_local_project_override() {
 }
 
 #[test]
+fn load_config_allows_public_agents_without_explicit_description() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    let mut config = canonical_runtime_config();
+    config["agent"] = serde_json::json!({
+        "plan": {
+            "use_small_model": true,
+            "tools": []
+        }
+    });
+    config["default_agent"] = serde_json::json!("plan");
+    write_config(&config_path, &config);
+
+    let parsed = load_config_from_file(&config_path)
+        .expect("public agent without explicit description should still load");
+    let plan = parsed
+        .agents
+        .get("plan")
+        .expect("plan profile should be translated from public config");
+
+    assert_eq!(plan.description, "The Plan agent");
+    assert_eq!(plan.model_ref, "default/gpt-4o-mini");
+}
+
+#[test]
 fn config_validate_cli_accepts_legacy_harness_native_shape() {
     let temp = tempdir().expect("tempdir");
     let config_path = temp.path().join("harness.jsonc");
