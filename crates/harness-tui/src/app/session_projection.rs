@@ -7,10 +7,11 @@ use super::permissions::PendingPermission;
 use super::{
     json_string_field, mark_activity_event, merge_orchestration_task_completion_metadata,
     merge_orchestration_task_event, merge_resolved_tool_identity, merge_tool_call_metadata,
-    new_streaming_activity_entry, task_completed_updates_assistant_transcript, ActivityEntry,
-    ActivityStatus, ActivityUsage, AppState, Focus, MemoryCaps, NewStreamingActivityEntryArgs,
-    OrchestrationOwnerLabels, OrchestrationSummary, OrchestrationTaskRow, OrchestrationTaskState,
-    ToolCallDisplayStatus, ToolCallEntry, TOOL_OUTPUT_DISPLAY_MAX_CHARS,
+    new_streaming_activity_entry, task_completed_updates_assistant_transcript, ActiveContextUsage,
+    ActivityEntry, ActivityStatus, ActivityUsage, AppState, CompactionState, CompactionStatus,
+    Focus, MemoryCaps, NewStreamingActivityEntryArgs, OrchestrationOwnerLabels,
+    OrchestrationSummary, OrchestrationTaskRow, OrchestrationTaskState, ToolCallDisplayStatus,
+    ToolCallEntry, TOOL_OUTPUT_DISPLAY_MAX_CHARS,
 };
 use crate::view_model;
 
@@ -18,6 +19,8 @@ use crate::view_model;
 pub struct SessionProjection {
     pub(crate) events: Vec<EventEnvelopeV1>,
     pub(crate) activities: VecDeque<ActivityEntry>,
+    pub(crate) active_context_usage: Option<ActiveContextUsage>,
+    pub(crate) compaction_status: Option<CompactionStatus>,
     pub(crate) memory_caps: MemoryCaps,
     pub(crate) events_trimmed_count: usize,
     pub(crate) transcript_trimmed_count: usize,
@@ -32,6 +35,8 @@ impl SessionProjection {
     pub(crate) fn reset(&mut self) {
         self.events.clear();
         self.activities.clear();
+        self.active_context_usage = None;
+        self.compaction_status = None;
         self.orchestration_tasks.clear();
         self.agent_profiles.clear();
         self.seen_seqs.clear();
@@ -603,10 +608,62 @@ impl SessionProjection {
                             completion_tokens: usage.completion_tokens,
                             total_tokens: usage.total_tokens,
                         });
+                        if let Some(usage) = data.usage.as_ref() {
+                            self.active_context_usage = Some(ActiveContextUsage::estimate(
+                                usage.prompt_tokens.saturating_add(usage.completion_tokens),
+                            ));
+                        }
                         entry.last_seq = event.seq;
                         entry.last_mono_ms = event.mono_ms;
                     }
                 }
+            }
+            EventV1::CompactionApplied(data) => {
+                self.active_context_usage = Some(
+                    data.tokens_after_estimate
+                        .map(ActiveContextUsage::estimate)
+                        .unwrap_or_else(ActiveContextUsage::compacted_pending_refresh),
+                );
+                self.compaction_status = Some(CompactionStatus {
+                    agent_id: data.agent_id.clone(),
+                    checkpoint_id: Some(data.checkpoint_id.clone()),
+                    trigger_reason: "applied".to_string(),
+                    state: CompactionState::Applied,
+                    message: data
+                        .tokens_after_estimate
+                        .map(|tokens| format!("compaction applied · active ctx ~{tokens}"))
+                        .unwrap_or_else(|| "compaction applied · refresh pending".to_string()),
+                });
+            }
+            EventV1::CompactionRequested(data) => {
+                self.compaction_status = Some(CompactionStatus {
+                    agent_id: data.agent_id.clone(),
+                    checkpoint_id: Some(data.checkpoint_id.clone()),
+                    trigger_reason: data.trigger_reason.clone(),
+                    state: CompactionState::Requested,
+                    message: format!("compaction requested · {}", data.trigger_reason),
+                });
+            }
+            EventV1::CompactionWritten(data) => {
+                self.compaction_status = Some(CompactionStatus {
+                    agent_id: data.agent_id.clone(),
+                    checkpoint_id: Some(data.checkpoint_id.clone()),
+                    trigger_reason: data.trigger_reason.clone(),
+                    state: CompactionState::Written,
+                    message: format!(
+                        "compaction checkpoint written · {} bytes",
+                        data.artifact_bytes
+                    ),
+                });
+            }
+            EventV1::CompactionFailed(data) => {
+                self.compaction_status = Some(CompactionStatus {
+                    agent_id: data.agent_id.clone(),
+                    checkpoint_id: data.checkpoint_id.clone(),
+                    trigger_reason: data.trigger_reason.clone(),
+                    state: CompactionState::Failed,
+                    message: format!("compaction failed · {}", data.reason),
+                });
             }
             EventV1::TaskCompleted(data) => {
                 let should_mark_done = self.is_turn_level_task_completion(&data.task_id, data);

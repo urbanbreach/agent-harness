@@ -58,7 +58,7 @@ pub use session_navigation::{LaunchMetadata, ModelOption, SessionHistoryEntry};
 const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS: usize = 72;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS: usize = 3;
-pub(crate) const SLASH_COMMANDS: [(&str, &str); 8] = [
+pub(crate) const SLASH_COMMANDS: [(&str, &str); 9] = [
     ("new", "Return to the home shell"),
     ("resume", "Continue a saved session"),
     ("replay", "Replay a saved session"),
@@ -66,6 +66,7 @@ pub(crate) const SLASH_COMMANDS: [(&str, &str); 8] = [
     ("events", "Open the event log review"),
     ("shell", "Return to the session shell"),
     ("follow", "Toggle follow mode"),
+    ("compact", "Write a manual context checkpoint"),
     ("exit", "Quit Harness"),
 ];
 
@@ -529,6 +530,45 @@ pub struct ActivityUsage {
     pub total_tokens: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActiveContextUsage {
+    pub tokens: Option<u32>,
+    pub compacted_pending_refresh: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactionStatus {
+    pub agent_id: String,
+    pub checkpoint_id: Option<String>,
+    pub trigger_reason: String,
+    pub state: CompactionState,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompactionState {
+    Requested,
+    Written,
+    Applied,
+    Failed,
+}
+
+impl ActiveContextUsage {
+    pub const fn estimate(tokens: u32) -> Self {
+        Self {
+            tokens: Some(tokens),
+            compacted_pending_refresh: false,
+        }
+    }
+
+    pub const fn compacted_pending_refresh() -> Self {
+        Self {
+            tokens: None,
+            compacted_pending_refresh: true,
+        }
+    }
+}
+
 struct NewStreamingActivityEntryArgs {
     request_id: String,
     model_id: String,
@@ -944,6 +984,7 @@ pub enum UiIntent {
         text: String,
         launch_metadata: LaunchMetadata,
     },
+    CompactSession,
     QuitRequested,
 }
 
@@ -1104,6 +1145,7 @@ pub struct AppState {
     question_answer_cursor: usize,
     question_answer_error: Option<String>,
     reload_requested: bool,
+    compact_session_supported: bool,
     on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
 }
 
@@ -1196,6 +1238,7 @@ impl Default for AppState {
             question_answer_cursor: 0,
             question_answer_error: None,
             reload_requested: false,
+            compact_session_supported: false,
             on_ui_intent: None,
         }
     }
@@ -1223,6 +1266,22 @@ impl AppState {
 
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn active_context_usage(&self) -> Option<ActiveContextUsage> {
+        self.projection.active_context_usage
+    }
+
+    pub(crate) fn compaction_status(&self) -> Option<&CompactionStatus> {
+        self.projection.compaction_status.as_ref()
+    }
+
+    pub(crate) fn cumulative_token_spend(&self) -> u64 {
+        self.activities
+            .iter()
+            .filter_map(|activity| activity.usage)
+            .map(|usage| u64::from(usage.total_tokens))
+            .sum()
     }
 
     pub fn new_live(
@@ -1411,6 +1470,10 @@ impl AppState {
 
     pub fn set_status_banner(&mut self, status: Option<String>) {
         self.status_banner = status;
+    }
+
+    pub(crate) fn set_compact_session_supported(&mut self, supported: bool) {
+        self.compact_session_supported = supported;
     }
 
     pub fn runtime_state(&self) -> RuntimeState {
@@ -2231,7 +2294,7 @@ impl AppState {
         self.transcript_selection_dragging = false;
     }
 
-    fn show_toast(&mut self, message: impl Into<String>, variant: ToastVariant) {
+    pub(crate) fn show_toast(&mut self, message: impl Into<String>, variant: ToastVariant) {
         self.toast = Some(ToastState {
             message: message.into(),
             variant,
@@ -3509,6 +3572,74 @@ pub(crate) fn exact_test_slash_follow_toggles_follow_mode() {
     assert_eq!(app.transcript_scroll, 0);
     assert_eq!(app.prompt_buffer, "follow draft");
     assert!(!app.slash_visible);
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_live_slash_compact_emits_ui_intent() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
+    app.set_compact_session_supported(true);
+    app.prompt_buffer = "/compact".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.slash_draft_snapshot = Some("compact draft".to_string());
+    app.sync_slash_overlay();
+
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert_eq!(app.prompt_buffer, "compact draft");
+    assert!(!app.slash_visible);
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::CompactSession]
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_live_slash_compact_appears_when_supported() {
+    let mut app = AppState::new_live(
+        Some(PathBuf::from("/tmp/session")),
+        false,
+        Some(Arc::new(|_| {})),
+    );
+    app.set_compact_session_supported(true);
+    app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+
+    assert!(app
+        .slash_filtered
+        .iter()
+        .any(|command| command == "compact"));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_live_without_compact_support_hides_slash_compact() {
+    let mut app = AppState::new_live(
+        Some(PathBuf::from("/tmp/session")),
+        false,
+        Some(Arc::new(|_| {})),
+    );
+    app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+
+    assert!(!app
+        .slash_filtered
+        .iter()
+        .any(|command| command == "compact"));
+
+    app.clear_prompt_input();
+    for ch in "/compact".chars() {
+        app.handle_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
+    }
+
+    assert!(app.typed_slash_command().is_none());
+    assert!(!app
+        .slash_filtered
+        .iter()
+        .any(|command| command == "compact"));
 }
 
 #[cfg(test)]

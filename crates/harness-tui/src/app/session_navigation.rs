@@ -1107,6 +1107,7 @@ impl AppState {
             "events" => !self.startup_mode,
             "shell" => self.active_review_surface.is_some(),
             "follow" => !self.replay_mode && !self.startup_mode,
+            "compact" => self.compact_session_supported,
             _ => false,
         }
     }
@@ -1197,6 +1198,10 @@ impl AppState {
             "follow" => {
                 self.restore_slash_draft(preserved_draft);
                 self.execute_action(Action::ToggleFollow);
+            }
+            "compact" => {
+                self.restore_slash_draft(preserved_draft);
+                self.emit_ui_intent(UiIntent::CompactSession);
             }
             "exit" => self.execute_action(Action::Quit),
             _ => {}
