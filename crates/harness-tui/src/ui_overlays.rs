@@ -1,7 +1,5 @@
 use super::*;
 
-use ratatui::symbols::border;
-
 pub(super) fn render_overlays(
     frame: &mut Frame,
     app: &AppState,
@@ -72,16 +70,8 @@ fn render_slash_commands_overlay(
         return;
     }
 
-    let surface = ui_chrome::slash_command_surface(theme);
     frame.render_widget(Clear, overlay);
-    frame.render_widget(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_set(border::ROUNDED)
-            .border_style(Style::default().fg(theme.border.subtle).bg(surface))
-            .style(Style::default().bg(surface)),
-        overlay,
-    );
+    frame.render_widget(ui_chrome::slash_command_block(theme), overlay);
 
     let inner = crate::layout::slash_command_overlay_content_area(overlay);
     render_slash_commands_list(frame, app, theme, inner);

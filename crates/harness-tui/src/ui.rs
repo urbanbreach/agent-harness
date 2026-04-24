@@ -207,6 +207,7 @@ pub(crate) use ui_secondary::operator_sidebar_text_for_test;
 pub(crate) use ui_secondary::orchestration_card_text_for_test;
 #[cfg(test)]
 pub(crate) use ui_secondary::{
+    exact_test_compaction_applied_updates_active_context_usage_estimate,
     exact_test_operator_rail_collapses_modified_files_section_body,
     exact_test_operator_rail_low_activity_presentation_prefers_primary_stack,
     exact_test_operator_rail_matches_sidebar_text_styles,
@@ -837,6 +838,23 @@ mod tests {
         assert!(
             debug.contains("Copied to clipboard"),
             "toast should render in frame\n{debug}"
+        );
+    }
+
+    #[test]
+    fn manual_compaction_toast_remains_visible_in_dense_live_shell() {
+        let mut app = AppState::new_live(None, false, None);
+        app.prompt_buffer = "draft".to_string();
+        app.prompt_cursor = app.prompt_buffer.chars().count();
+        app.set_toast_for_test(
+            "manual compaction skipped: need at least two completed turns",
+            crate::app::ToastVariant::Info,
+        );
+
+        let debug = render_debug(&app, 60, 18);
+        assert!(
+            debug.contains("manual compaction skipped"),
+            "manual compaction toast should stay visible in dense live layouts\n{debug}"
         );
     }
 

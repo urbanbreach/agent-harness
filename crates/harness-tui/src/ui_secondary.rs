@@ -18,7 +18,7 @@ use super::*;
 
 use crate::app::OperatorSidebarSection;
 #[cfg(test)]
-use crate::app::{OrchestrationTaskRow, OrchestrationTaskState};
+use crate::app::{ActiveContextUsage, ActivityUsage, OrchestrationTaskRow, OrchestrationTaskState};
 use crate::theme::DIFF_SIDE_BY_SIDE_MIN_WIDTH;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -480,6 +480,74 @@ pub(crate) fn exact_test_operator_rail_section_model_builds_pinned_summary() {
     assert_eq!(
         model.body.sections[3].item_texts(),
         ["src/ui_secondary.rs".to_string()]
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_compaction_applied_updates_active_context_usage_estimate() {
+    let mut app = AppState::new_live(None, false, None);
+    app.active_context_usage = Some(ActiveContextUsage::estimate(500));
+    app.activities.push_back(ActivityEntry {
+        request_id: "req_000001".to_string(),
+        model_id: "model-1".to_string(),
+        provider_id: "default".to_string(),
+        status: ActivityStatus::Done,
+        user_message: None,
+        user_timestamp: None,
+        request_data: None,
+        thinking_text: String::new(),
+        transcript_text: String::new(),
+        usage: Some(ActivityUsage {
+            prompt_tokens: 400,
+            completion_tokens: 100,
+            total_tokens: 500,
+        }),
+        error_message: None,
+        permissions: Vec::new(),
+        tool_calls: Vec::new(),
+        first_seq: 1,
+        last_seq: 2,
+        first_mono_ms: 10,
+        last_mono_ms: 20,
+    });
+    assert_eq!(
+        operator_sidebar_context_items(&app),
+        vec![
+            "active ctx 500 est".to_string(),
+            "spent 500 total".to_string(),
+        ]
+    );
+
+    app.ingest_event(operator_rail_test_event(
+        3,
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::System,
+            Some("coordinator".to_string()),
+        ),
+        harness_core::event::EventV1::CompactionApplied(
+            harness_core::event::CompactionAppliedEvent {
+                checkpoint_id: "checkpoint_000003".to_string(),
+                agent_id: "agent_000001".to_string(),
+                through_seq: 2,
+                through_request_id: Some("req_000001".to_string()),
+                tokens_before_estimate: Some(500),
+                tokens_after_estimate: Some(120),
+                summary_tokens_estimate: Some(80),
+                compacted_turns: Some(1),
+                preserved_turns: Some(1),
+                reduction_tokens_estimate: Some(380),
+                reduction_percent_estimate: Some(76),
+            },
+        ),
+    ));
+
+    assert_eq!(
+        operator_sidebar_context_items(&app),
+        vec![
+            "active ctx 120 est".to_string(),
+            "compaction applied · active ctx ~120".to_string(),
+            "spent 500 total".to_string(),
+        ]
     );
 }
 
@@ -1855,14 +1923,6 @@ fn operator_sidebar_session_title(app: &AppState) -> Option<String> {
         .filter(|text| !text.is_empty())
 }
 
-fn operator_sidebar_total_tokens(app: &AppState) -> u64 {
-    app.activities
-        .iter()
-        .filter_map(|activity| activity.usage)
-        .map(|usage| u64::from(usage.total_tokens))
-        .sum()
-}
-
 fn operator_sidebar_context_window_tokens(app: &AppState) -> Option<u32> {
     let model_id = app.activities.back().and_then(|activity| {
         (!activity.model_id.trim().is_empty()).then_some(activity.model_id.clone())
@@ -1885,14 +1945,35 @@ fn format_token_count(value: u64) -> String {
 }
 
 fn operator_sidebar_context_items(app: &AppState) -> Vec<String> {
-    let total_tokens = operator_sidebar_total_tokens(app);
-    let mut items = vec![format!("{} tokens", format_token_count(total_tokens))];
+    let active_context = app.active_context_usage();
+    let Some(active_context) = active_context else {
+        return vec!["0 tokens".to_string()];
+    };
+    let mut items = if active_context.compacted_pending_refresh {
+        vec!["active ctx compacted · updates next request".to_string()]
+    } else {
+        let active_tokens = active_context.tokens.map(u64::from).unwrap_or(0);
+        vec![format!(
+            "active ctx {} est",
+            format_token_count(active_tokens)
+        )]
+    };
     if let Some(context_window_tokens) =
         operator_sidebar_context_window_tokens(app).filter(|value| *value > 0)
     {
-        let percent = ((total_tokens as f64 / f64::from(context_window_tokens)) * 100.0).round();
-        items.push(format!("{}% used", percent.clamp(0.0, 999.0) as u64));
+        if let Some(active_tokens) = active_context.tokens {
+            let percent =
+                ((f64::from(active_tokens) / f64::from(context_window_tokens)) * 100.0).round();
+            items.push(format!("{}% active", percent.clamp(0.0, 999.0) as u64));
+        }
     }
+    if let Some(status) = app.compaction_status() {
+        items.push(status.message.clone());
+    }
+    items.push(format!(
+        "spent {} total",
+        format_token_count(app.cumulative_token_spend())
+    ));
     items
 }
 

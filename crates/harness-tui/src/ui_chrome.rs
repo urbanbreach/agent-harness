@@ -1,5 +1,6 @@
 use super::*;
 
+use ratatui::symbols::border;
 use ratatui::widgets::Padding;
 
 use crate::app::permissions::{
@@ -62,6 +63,15 @@ pub(super) const fn command_palette_surface(theme: &Theme) -> Color {
 
 pub(super) const fn slash_command_surface(theme: &Theme) -> Color {
     theme.surface.panel
+}
+
+pub(super) fn slash_command_block(theme: &Theme) -> Block<'static> {
+    let surface = slash_command_surface(theme);
+    Block::default()
+        .borders(Borders::ALL)
+        .border_set(border::ROUNDED)
+        .border_style(Style::default().fg(theme.border.subtle).bg(surface))
+        .style(Style::default().bg(surface))
 }
 
 pub(super) const fn slash_command_selection_bg(theme: &Theme) -> Color {
@@ -2033,23 +2043,27 @@ fn compact_usage_count(value: u64) -> String {
 }
 
 fn composer_context_usage(app: &AppState) -> (String, Option<String>) {
-    let total = app
-        .activities
-        .iter()
-        .filter_map(|activity| activity.usage)
-        .map(|usage| u64::from(usage.total_tokens))
-        .sum::<u64>();
+    let Some(active_context) = app.active_context_usage() else {
+        return ("0".to_string(), None);
+    };
+    if active_context.compacted_pending_refresh {
+        return ("ctx compacted".to_string(), None);
+    }
+    let total = active_context.tokens.unwrap_or(0);
     let percent = app.current_context_window_tokens().and_then(|limit| {
         (limit > 0).then(|| {
             format!(
                 "{}%",
-                ((total as f64 / f64::from(limit)) * 100.0)
+                ((f64::from(total) / f64::from(limit)) * 100.0)
                     .round()
                     .clamp(0.0, 999.0) as u64
             )
         })
     });
-    (compact_usage_count(total), percent)
+    (
+        format!("ctx {} est", compact_usage_count(u64::from(total))),
+        percent,
+    )
 }
 
 fn composer_context_summary_candidates(
