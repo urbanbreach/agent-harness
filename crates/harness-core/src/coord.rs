@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -10,20 +10,24 @@ use serde_json::{json, Value};
 use thiserror::Error;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::MissedTickBehavior;
+use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::{
-    default_model_settings_for_profile, default_provider, run_multi_turn_streaming, AgentModelRef,
-    AgentModelSettings, AgentProfile, AgentRequest, AgentRuntimeEvent, AgentTurnOutcome,
-    MultiTurnStreamingRequest, ProviderCompactionFacts, ProviderCompactionSummarySource,
-    ProviderCompactionTailBoundary, ProviderCompactionTimelineEntry, ProviderCompactionTurnFact,
-    ProviderContext, ProviderContextCheckpoint, ProviderContextCheckpointMetadata,
-    ProviderConversationTurn,
+    build_provider_context_messages, build_provider_tool_defs, default_model_settings_for_profile,
+    default_provider, stream_assistant_response_once, tool_result_to_message_content,
+    AgentModelRef, AgentModelSettings, AgentProfile, AgentRequest, AgentRuntimeEvent,
+    AgentTurnOutcome, AssistantResponse, AssistantToolIntent, ProviderBoundaryContext,
+    ProviderCompactionFacts, ProviderCompactionSummarySource, ProviderCompactionTailBoundary,
+    ProviderCompactionTimelineEntry, ProviderCompactionTurnFact, ProviderContext,
+    ProviderContextCheckpoint, ProviderContextCheckpointMetadata, ProviderConversationTurn,
+    StreamAssistantResponseOnceRequest, MAX_TOOL_CALLS_TOTAL,
 };
 use crate::clock::Clock;
 use crate::config::{
-    registered_hook_runtime_config, registered_mcp_server_first_class_tool_id, HookLifecycleEvent,
-    HookRuntimeConfig, LifecycleHookConfig, ShellAllowlist,
+    registered_hook_runtime_config, registered_mcp_server_first_class_tool_id,
+    CompactionRuntimeConfig, HookLifecycleEvent, HookRuntimeConfig, LifecycleHookConfig,
+    ShellAllowlist, ToolFailureMode,
 };
 use crate::edit::hashline::HashlinePatch;
 use crate::event::{
@@ -32,16 +36,18 @@ use crate::event::{
     EditProposedEvent, EditRejectedEvent, EventActor, EventArtifactRef, EventBuildError,
     EventBuilder, EventContext, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
     HookExecutionMetadata, HookExecutionStatus, PermissionDecision as EventPermissionDecision,
-    PermissionRequestedArgs, PermissionResolvedEvent, PolicyViolationDetectedEvent,
-    ProviderReasoningDeltaEvent, RunFinishedEvent, RunStartedEvent, StaleDetectedEvent,
-    TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata, TaskLineageMetadata,
-    TaskResultLateEvent, TaskScheduleState, TaskScheduledEvent, TaskTerminalScope,
-    ToolCallFinishedEvent, ToolCallMetadata, ToolCallStartedEvent, ToolCallStatus,
-    ToolIdentityMetadata, UserMessageSubmittedEvent,
+    PermissionGrantRecordedEvent, PermissionRequestedArgs, PermissionResolvedEvent,
+    PolicyViolationDetectedEvent, ProviderAssistantMessageMetadata, ProviderReasoningDeltaEvent,
+    ProviderRequestFinishedMetadata, ProviderRequestStartedMetadata, RunFinishedEvent,
+    RunStartedEvent, StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent,
+    TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState,
+    TaskScheduledEvent, TaskTerminalScope, ToolCallFinishedEvent, ToolCallMetadata,
+    ToolCallStartedEvent, ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent,
 };
 use crate::perm::{
-    permission_kind_for_tool, permission_kind_for_tool_call, PermissionDecision, PermissionKind,
-    PermissionPolicy, PolicyDecision,
+    permission_kind_for_tool, permission_kind_for_tool_call, PermissionDecision, PermissionGrant,
+    PermissionGrantMatcher, PermissionGrantRequest, PermissionGrantScope, PermissionGrantSet,
+    PermissionKind, PermissionPolicy, PermissionToolSelector, PolicyDecision,
 };
 use crate::proj::{inspect_resume_plan, RecordedRuntimeContext, RunMetadata};
 use crate::redact::Redactor;
@@ -52,7 +58,10 @@ use crate::store::{EventEnvelopeWithoutSeqV1, EventStore, EventStoreError, Jsonl
 use crate::tool::{
     canonical_tool_id_for, sanitize_tool_function_name, ToolContext, ToolRegistry, ToolResult,
 };
-use harness_providers::Provider;
+use harness_providers::{
+    AssistantToolCall, CompletionMessage, CompletionRequest, MessageRole, Provider,
+    ProviderStreamEvent, ToolDef,
+};
 
 const DEFAULT_COMMAND_BUFFER: usize = 64;
 const DEFAULT_TOOL_CONCURRENCY: usize = 1;
@@ -103,6 +112,7 @@ pub struct CoordinatorConfig {
     pub provider: Arc<dyn Provider>,
     pub agent_profiles: BTreeMap<String, AgentProfile>,
     pub hook_runtime_config: HookRuntimeConfig,
+    pub compaction: CompactionRuntimeConfig,
     pub config_digest: String,
     pub harness_version: String,
 }
@@ -124,6 +134,7 @@ impl CoordinatorConfig {
             provider: default_provider(),
             agent_profiles: BTreeMap::new(),
             hook_runtime_config: registered_hook_runtime_config(),
+            compaction: CompactionRuntimeConfig::default(),
             config_digest: "none".to_string(),
             harness_version: env!("CARGO_PKG_VERSION").to_string(),
         }
@@ -232,6 +243,7 @@ pub enum Command {
         permission_id: String,
         decision: PermissionDecision,
         reason: Option<String>,
+        grant_scope: Option<PermissionGrantScope>,
         respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
     },
     PermissionTimedOut {
@@ -258,6 +270,7 @@ pub enum Command {
         model_id: String,
         prompt_summary: String,
         request_digest: String,
+        metadata: Option<ProviderRequestStartedMetadata>,
     },
     AgentProviderStreamDelta {
         task_id: String,
@@ -272,6 +285,24 @@ pub enum Command {
         finish_reason: String,
         output_digest: Option<String>,
         usage: Option<harness_providers::CompletionUsage>,
+        metadata: Option<ProviderRequestFinishedMetadata>,
+        respond_to: Option<oneshot::Sender<Result<(), CoordinatorError>>>,
+    },
+    AgentAssistantMessageFinished {
+        task_id: String,
+        agent_id: String,
+        request_id: String,
+        tool_call_count: usize,
+        assistant_message: Option<ProviderAssistantMessageMetadata>,
+        respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
+    },
+    AllocateProviderRequestId {
+        respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
+    },
+    DrainAgentTurnSteering {
+        task_id: String,
+        agent_id: String,
+        respond_to: oneshot::Sender<Result<Vec<String>, CoordinatorError>>,
     },
     CompactAgentContext {
         task_id: String,
@@ -589,12 +620,24 @@ impl CoordinatorHandle {
         decision: PermissionDecision,
         reason: Option<String>,
     ) -> Result<(), CoordinatorError> {
+        self.resolve_permission_with_grant_scope(permission_id, decision, reason, None)
+            .await
+    }
+
+    pub async fn resolve_permission_with_grant_scope(
+        &self,
+        permission_id: impl Into<String>,
+        decision: PermissionDecision,
+        reason: Option<String>,
+        grant_scope: Option<PermissionGrantScope>,
+    ) -> Result<(), CoordinatorError> {
         let (respond_to, response_rx) = oneshot::channel();
         self.tx
             .send(Command::ResolvePermission {
                 permission_id: permission_id.into(),
                 decision,
                 reason,
+                grant_scope,
                 respond_to,
             })
             .await
@@ -883,10 +926,11 @@ impl Coordinator {
                 permission_id,
                 decision,
                 reason,
+                grant_scope,
                 respond_to,
             } => {
                 let result = self
-                    .resolve_permission_internal(permission_id, decision, reason)
+                    .resolve_permission_internal(permission_id, decision, reason, grant_scope)
                     .await;
                 warn_oneshot_send_failure(respond_to.send(result), "resolve_permission");
             }
@@ -916,6 +960,7 @@ impl Coordinator {
                 model_id,
                 prompt_summary,
                 request_digest,
+                metadata,
             } => {
                 let _ = self
                     .agent_provider_request_started_internal(AgentProviderRequestStartedArgs {
@@ -926,6 +971,7 @@ impl Coordinator {
                         model_id,
                         prompt_summary,
                         request_digest,
+                        metadata,
                     })
                     .await;
             }
@@ -954,17 +1000,58 @@ impl Coordinator {
                 finish_reason,
                 output_digest,
                 usage,
+                metadata,
+                respond_to,
             } => {
-                let _ = self
-                    .agent_provider_request_finished_internal(
+                let result = self
+                    .agent_provider_request_finished_internal(AgentProviderRequestFinishedArgs {
                         task_id,
                         agent_id,
                         request_id,
                         finish_reason,
                         output_digest,
                         usage,
-                    )
+                        metadata,
+                    })
                     .await;
+                if let Some(respond_to) = respond_to {
+                    warn_oneshot_send_failure(
+                        respond_to.send(result),
+                        "agent_provider_request_finished",
+                    );
+                }
+            }
+            Command::AgentAssistantMessageFinished {
+                task_id,
+                agent_id,
+                request_id,
+                tool_call_count,
+                assistant_message,
+                respond_to,
+            } => {
+                let result = self.agent_assistant_message_finished_internal(
+                    task_id,
+                    agent_id,
+                    request_id,
+                    tool_call_count,
+                    assistant_message,
+                );
+                warn_oneshot_send_failure(
+                    respond_to.send(result),
+                    "agent_assistant_message_finished",
+                );
+            }
+            Command::AllocateProviderRequestId { respond_to } => {
+                let result = self.allocate_provider_request_id_internal();
+                warn_oneshot_send_failure(respond_to.send(result), "allocate_provider_request_id");
+            }
+            Command::DrainAgentTurnSteering {
+                task_id,
+                agent_id,
+                respond_to,
+            } => {
+                let result = self.drain_agent_turn_steering_internal(task_id, agent_id);
+                warn_oneshot_send_failure(respond_to.send(result), "drain_agent_turn_steering");
             }
             Command::CompactAgentContext {
                 task_id,
@@ -1085,7 +1172,9 @@ impl Coordinator {
             agent_hook_state: BTreeMap::new(),
             subagent_parent_by_id: BTreeMap::new(),
             pending_permissions: BTreeMap::new(),
+            active_permission_grants: PermissionGrantSet::default(),
             cancelled_running_tasks: BTreeSet::new(),
+            pending_agent_turn_messages: BTreeMap::new(),
             queued_agent_turns: BTreeMap::new(),
             running_agent_turns: BTreeMap::new(),
             scheduler: Scheduler::new(SchedulerLimits {
@@ -1297,7 +1386,9 @@ impl Coordinator {
             agent_hook_state: BTreeMap::new(),
             subagent_parent_by_id: restored_subagent_parent_by_id,
             pending_permissions: BTreeMap::new(),
+            active_permission_grants: resume_plan.active_permission_grants,
             cancelled_running_tasks: BTreeSet::new(),
+            pending_agent_turn_messages: BTreeMap::new(),
             queued_agent_turns: BTreeMap::new(),
             running_agent_turns: BTreeMap::new(),
             scheduler: Scheduler::new(SchedulerLimits {
@@ -1525,8 +1616,7 @@ impl Coordinator {
         }
 
         if auto_start_turn {
-            let request_id = format!("req_{:06}", run_state.next_provider_request_id);
-            run_state.next_provider_request_id += 1;
+            let request_id = allocate_provider_request_id(run_state);
 
             let request = AgentRequest {
                 agent_id: agent_id.clone(),
@@ -1545,6 +1635,7 @@ impl Coordinator {
                 self.job_tx.clone(),
                 run_state,
                 self.config.hook_runtime_config.clone(),
+                self.config.compaction.clone(),
                 ScheduleAgentTurnArgs {
                     provider: self.config.provider.clone(),
                     tool_registry: self.config.tool_registry.clone(),
@@ -1595,8 +1686,7 @@ impl Coordinator {
             .cloned()
             .ok_or_else(|| CoordinatorError::UnknownAgent(agent_id.clone()))?;
 
-        let request_id = format!("req_{:06}", run_state.next_provider_request_id);
-        run_state.next_provider_request_id += 1;
+        let request_id = allocate_provider_request_id(run_state);
 
         let request = AgentRequest {
             agent_id,
@@ -1619,12 +1709,26 @@ impl Coordinator {
             }),
         )?;
 
+        if has_running_agent_turn(run_state, &request.agent_id) {
+            run_state
+                .pending_agent_turn_messages
+                .entry(request.agent_id.clone())
+                .or_default()
+                .push_back(PendingAgentTurnMessage {
+                    profile,
+                    request,
+                    request_id: request_id.clone(),
+                });
+            return Ok(request_id);
+        }
+
         schedule_agent_turn(
             self.clock.as_ref(),
             self.redactor.as_ref(),
             self.job_tx.clone(),
             run_state,
             self.config.hook_runtime_config.clone(),
+            self.config.compaction.clone(),
             ScheduleAgentTurnArgs {
                 provider: self.config.provider.clone(),
                 tool_registry: self.config.tool_registry.clone(),
@@ -1636,6 +1740,49 @@ impl Coordinator {
         .await?;
 
         Ok(request_id)
+    }
+
+    fn allocate_provider_request_id_internal(&mut self) -> Result<String, CoordinatorError> {
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        Ok(allocate_provider_request_id(run_state))
+    }
+
+    fn drain_agent_turn_steering_internal(
+        &mut self,
+        task_id: String,
+        agent_id: String,
+    ) -> Result<Vec<String>, CoordinatorError> {
+        let Some(run_state) = self.run_state.as_mut() else {
+            return Ok(Vec::new());
+        };
+
+        if run_state.cancelled_running_tasks.contains(&task_id) {
+            return Ok(Vec::new());
+        }
+
+        let Some(running) = run_state.running_agent_turns.get(&task_id) else {
+            return Ok(Vec::new());
+        };
+        if running.agent_id != agent_id {
+            return Ok(Vec::new());
+        }
+
+        let Some(pending) = run_state.pending_agent_turn_messages.remove(&agent_id) else {
+            return Ok(Vec::new());
+        };
+        let prompts = pending
+            .into_iter()
+            .map(|message| message.request.prompt)
+            .collect::<Vec<_>>();
+
+        if let Some(running) = run_state.running_agent_turns.get_mut(&task_id) {
+            running.injected_prompts.extend(prompts.iter().cloned());
+        }
+
+        Ok(prompts)
     }
 
     async fn request_tool_call_internal(
@@ -1837,6 +1984,39 @@ impl Coordinator {
                     .clone()
                     .or_else(|| Some(tool_call_id.clone()));
                 let kind = maybe_kind.expect("permission kind exists when policy decision exists");
+                let grant_request = permission_grant_request(
+                    &run_state.info.workspace_root,
+                    kind,
+                    &tool_id,
+                    &args_json,
+                    &digest,
+                );
+
+                if run_state
+                    .active_permission_grants
+                    .authorizes(&grant_request)
+                {
+                    start_tool_call_execution(
+                        clock.as_ref(),
+                        redactor.as_ref(),
+                        job_tx,
+                        run_state,
+                        self.config.hook_runtime_config.clone(),
+                        ToolCallExecutionArgs {
+                            tool_call_id: tool_call_id.clone(),
+                            tool_id,
+                            args_json,
+                            actor,
+                            category: effective_category.clone(),
+                            hook_executions: Vec::new(),
+                            tool_registry: self.config.tool_registry.clone(),
+                            request_correlation_id,
+                            respond_to,
+                        },
+                    )
+                    .await?;
+                    return Ok(tool_call_id);
+                }
 
                 append_permission_requested_event(
                     self.clock.as_ref(),
@@ -1884,6 +2064,7 @@ impl Coordinator {
                     tool_call_id: tool_call_id.clone(),
                     request_correlation_id,
                     hook_executions: requested_hook_batch.hook_executions.clone(),
+                    grant_request: Some(grant_request),
                     resolution: PendingPermissionResolution::ToolCall {
                         tool_id,
                         args_json,
@@ -2021,6 +2202,7 @@ impl Coordinator {
         permission_id: String,
         decision: PermissionDecision,
         reason: Option<String>,
+        grant_scope: Option<PermissionGrantScope>,
     ) -> Result<(), CoordinatorError> {
         let clock = self.clock.clone();
         let redactor = self.redactor.clone();
@@ -2099,7 +2281,7 @@ impl Coordinator {
                 actor: Some(hook_actor),
                 agent_id: hook_agent_id,
                 request_id: hook_request_id,
-                permission_id: Some(permission_id),
+                permission_id: Some(permission_id.clone()),
                 task_id: None,
                 tool_call_id: Some(hook_tool_call_id),
                 tool_id: hook_tool_id,
@@ -2120,6 +2302,7 @@ impl Coordinator {
             PendingPermissionState {
                 tool_call_id,
                 request_correlation_id,
+                grant_request,
                 resolution:
                     PendingPermissionResolution::ToolCall {
                         tool_id,
@@ -2130,7 +2313,32 @@ impl Coordinator {
                     },
                 ..
             } => {
-                if decision == PermissionDecision::Allow && permission_hook_failure.is_none() {
+                let caller_cancelled = respond_to.as_ref().is_some_and(|sender| sender.is_closed());
+                if decision == PermissionDecision::Allow
+                    && permission_hook_failure.is_none()
+                    && !caller_cancelled
+                {
+                    if let (Some(scope), Some(grant_request)) = (grant_scope, grant_request) {
+                        let grant = PermissionGrant {
+                            grant_id: format!("grant_{permission_id}"),
+                            permission_id: permission_id.clone(),
+                            scope,
+                            expires_at: None,
+                            kind: grant_request.kind,
+                            tool: grant_request.tool,
+                            matcher: grant_request.matcher,
+                        };
+                        append_permission_grant_recorded_event(
+                            clock.as_ref(),
+                            redactor.as_ref(),
+                            run_state,
+                            &permission_id,
+                            request_correlation_id.as_deref(),
+                            grant.clone(),
+                        )?;
+                        run_state.active_permission_grants.record(grant);
+                    }
+
                     start_tool_call_execution(
                         clock.as_ref(),
                         redactor.as_ref(),
@@ -2159,6 +2367,11 @@ impl Coordinator {
                                 "tool call denied: critical lifecycle hook failed: {hook_reason}"
                             ),
                             )
+                        } else if caller_cancelled {
+                            (
+                                "tool caller cancelled before permission resolution".to_string(),
+                                "tool call cancelled before permission resolution".to_string(),
+                            )
                         } else {
                             (
                                 "permission denied".to_string(),
@@ -2175,6 +2388,7 @@ impl Coordinator {
                             tool_call_id,
                             request_correlation_id,
                             hook_executions: permission_hook_executions.clone(),
+                            grant_request,
                             resolution: PendingPermissionResolution::ToolCall {
                                 tool_id,
                                 args_json,
@@ -2291,6 +2505,7 @@ impl Coordinator {
             PendingPermissionState {
                 tool_call_id,
                 request_correlation_id,
+                grant_request,
                 resolution:
                     PendingPermissionResolution::ToolCall {
                         tool_id,
@@ -2325,6 +2540,7 @@ impl Coordinator {
                         tool_call_id,
                         request_correlation_id,
                         hook_executions: permission_hook_executions.clone(),
+                        grant_request,
                         resolution: PendingPermissionResolution::ToolCall {
                             tool_id,
                             args_json,
@@ -2425,6 +2641,7 @@ impl Coordinator {
                 tool_call_id,
                 request_correlation_id,
                 hook_executions: requested_hook_batch.hook_executions.clone(),
+                grant_request: None,
                 resolution: PendingPermissionResolution::Question {
                     actor: actor.clone(),
                     prompts,
@@ -2552,9 +2769,27 @@ impl Coordinator {
             return Ok(());
         }
 
-        if let Some(running) = run_state.running_agent_turns.get(&task_id) {
+        if let Some(running) = run_state.running_agent_turns.get(&task_id).cloned() {
             running.cancellation_token.cancel();
             run_state.cancelled_running_tasks.insert(task_id.clone());
+            run_state
+                .pending_agent_turn_messages
+                .remove(&running.agent_id);
+            let child_tool_task_ids = run_state
+                .tasks
+                .iter()
+                .filter(|(_, child_task)| {
+                    child_task.request_correlation_id.as_deref()
+                        == Some(running.request_id.as_str())
+                })
+                .map(|(child_task_id, _)| child_task_id.clone())
+                .collect::<Vec<_>>();
+            for child_task_id in child_tool_task_ids {
+                if let Some(child_task) = run_state.tasks.get(&child_task_id) {
+                    child_task.cancellation_token.cancel();
+                }
+                run_state.cancelled_running_tasks.insert(child_task_id);
+            }
             append_payload_event_with_correlation(
                 self.clock.as_ref(),
                 self.redactor.as_ref(),
@@ -2693,6 +2928,7 @@ impl Coordinator {
             });
 
         if run_state.cancelled_running_tasks.remove(&task_id) {
+            let _ = run_state.scheduler.complete(&task.queue_key);
             append_payload_event_with_correlation(
                 self.clock.as_ref(),
                 self.redactor.as_ref(),
@@ -3071,6 +3307,7 @@ impl Coordinator {
             model_id,
             prompt_summary,
             request_digest,
+            metadata,
         } = args;
         let Some(run_state) = self.run_state.as_mut() else {
             return Ok(());
@@ -3079,11 +3316,13 @@ impl Coordinator {
         let Some(running) = run_state.running_agent_turns.get(&task_id) else {
             return Ok(());
         };
+        let turn_request_id = running.request_id.clone();
         let category = running.category.clone();
         let cancellation_token = running.cancellation_token.clone();
         let parent_agent_id = run_state.subagent_parent_by_id.get(&agent_id).cloned();
         let provider_id_for_state = provider_id.clone();
         let model_id_for_state = model_id.clone();
+        let metadata = provider_request_started_metadata(metadata, &turn_request_id, &request_id);
 
         append_payload_event_with_correlation(
             self.clock.as_ref(),
@@ -3091,13 +3330,14 @@ impl Coordinator {
             run_state,
             agent_actor(&agent_id),
             Some(format!("agent:{agent_id}")),
-            Some(request_id.clone()),
+            Some(turn_request_id.clone()),
             EventV1::ProviderRequestStarted(crate::event::ProviderRequestStartedEvent {
                 request_id: request_id.clone(),
                 provider_id: provider_id.clone(),
                 model_id: model_id.clone(),
                 prompt_summary: prompt_summary.clone(),
                 request_digest,
+                metadata,
             }),
         )?;
 
@@ -3111,7 +3351,7 @@ impl Coordinator {
                 artifacts_dir: run_state.info.artifacts_dir.clone(),
                 actor: Some(agent_actor(&agent_id)),
                 agent_id: Some(agent_id.clone()),
-                request_id: Some(request_id.clone()),
+                request_id: Some(turn_request_id.clone()),
                 permission_id: None,
                 task_id: Some(task_id.clone()),
                 tool_call_id: None,
@@ -3142,7 +3382,7 @@ impl Coordinator {
                     run_state,
                     agent_actor(&agent_id),
                     Some(format!("task:{task_id}")),
-                    Some(request_id),
+                    Some(turn_request_id),
                     EventV1::TaskCancelled(TaskCancelledEvent {
                         task_id,
                         reason,
@@ -3166,9 +3406,13 @@ impl Coordinator {
             return Ok(());
         };
 
-        if !run_state.running_agent_turns.contains_key(&task_id) {
+        let Some(turn_request_id) = run_state
+            .running_agent_turns
+            .get(&task_id)
+            .map(|running| running.request_id.clone())
+        else {
             return Ok(());
-        }
+        };
 
         append_payload_event_with_correlation(
             self.clock.as_ref(),
@@ -3176,7 +3420,7 @@ impl Coordinator {
             run_state,
             agent_actor(&agent_id),
             Some(format!("agent:{agent_id}")),
-            Some(request_id.clone()),
+            Some(turn_request_id),
             EventV1::ProviderStreamDelta(crate::event::ProviderStreamDeltaEvent {
                 request_id,
                 delta,
@@ -3197,9 +3441,13 @@ impl Coordinator {
             return Ok(());
         };
 
-        if !run_state.running_agent_turns.contains_key(&task_id) {
+        let Some(turn_request_id) = run_state
+            .running_agent_turns
+            .get(&task_id)
+            .map(|running| running.request_id.clone())
+        else {
             return Ok(());
-        }
+        };
 
         append_payload_event_with_correlation(
             self.clock.as_ref(),
@@ -3207,7 +3455,7 @@ impl Coordinator {
             run_state,
             agent_actor(&agent_id),
             Some(format!("agent:{agent_id}")),
-            Some(request_id.clone()),
+            Some(turn_request_id),
             EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent { request_id, delta }),
         )?;
 
@@ -3216,13 +3464,18 @@ impl Coordinator {
 
     async fn agent_provider_request_finished_internal(
         &mut self,
-        task_id: String,
-        agent_id: String,
-        request_id: String,
-        finish_reason: String,
-        output_digest: Option<String>,
-        usage: Option<harness_providers::CompletionUsage>,
+        args: AgentProviderRequestFinishedArgs,
     ) -> Result<(), CoordinatorError> {
+        let AgentProviderRequestFinishedArgs {
+            task_id,
+            agent_id,
+            request_id,
+            finish_reason,
+            output_digest,
+            usage,
+            metadata,
+        } = args;
+
         let Some(run_state) = self.run_state.as_mut() else {
             return Ok(());
         };
@@ -3230,10 +3483,12 @@ impl Coordinator {
         let Some(running) = run_state.running_agent_turns.get(&task_id) else {
             return Ok(());
         };
+        let turn_request_id = running.request_id.clone();
         let category = running.category.clone();
         let cancellation_token = running.cancellation_token.clone();
         let parent_agent_id = run_state.subagent_parent_by_id.get(&agent_id).cloned();
         let usage_for_state = usage.clone();
+        let metadata = provider_request_finished_metadata(metadata, &turn_request_id, &request_id);
 
         append_payload_event_with_correlation(
             self.clock.as_ref(),
@@ -3241,12 +3496,13 @@ impl Coordinator {
             run_state,
             agent_actor(&agent_id),
             Some(format!("agent:{agent_id}")),
-            Some(request_id.clone()),
+            Some(turn_request_id.clone()),
             EventV1::ProviderRequestFinished(crate::event::ProviderRequestFinishedEvent {
                 request_id: request_id.clone(),
                 finish_reason: finish_reason.clone(),
                 output_digest: output_digest.clone(),
                 usage: usage.clone(),
+                metadata,
             }),
         )?;
 
@@ -3260,7 +3516,7 @@ impl Coordinator {
                 artifacts_dir: run_state.info.artifacts_dir.clone(),
                 actor: Some(agent_actor(&agent_id)),
                 agent_id: Some(agent_id.clone()),
-                request_id: Some(request_id.clone()),
+                request_id: Some(turn_request_id.clone()),
                 permission_id: None,
                 task_id: Some(task_id.clone()),
                 tool_call_id: None,
@@ -3290,7 +3546,7 @@ impl Coordinator {
                     run_state,
                     agent_actor(&agent_id),
                     Some(format!("task:{task_id}")),
-                    Some(request_id),
+                    Some(turn_request_id),
                     EventV1::TaskCancelled(TaskCancelledEvent {
                         task_id,
                         reason,
@@ -3299,6 +3555,43 @@ impl Coordinator {
                 )?;
             }
         }
+
+        Ok(())
+    }
+
+    fn agent_assistant_message_finished_internal(
+        &mut self,
+        task_id: String,
+        agent_id: String,
+        request_id: String,
+        tool_call_count: usize,
+        assistant_message: Option<ProviderAssistantMessageMetadata>,
+    ) -> Result<(), CoordinatorError> {
+        let Some(run_state) = self.run_state.as_mut() else {
+            return Ok(());
+        };
+
+        let Some(turn_request_id) = run_state
+            .running_agent_turns
+            .get(&task_id)
+            .map(|running| running.request_id.clone())
+        else {
+            return Ok(());
+        };
+
+        append_payload_event_with_correlation(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            agent_actor(&agent_id),
+            Some(format!("agent:{agent_id}")),
+            Some(turn_request_id),
+            EventV1::AssistantMessageFinished(crate::event::AssistantMessageFinishedEvent {
+                request_id,
+                tool_call_count,
+                assistant_message,
+            }),
+        )?;
 
         Ok(())
     }
@@ -3401,11 +3694,10 @@ impl Coordinator {
         )
         .await;
 
-        let Some(run_state) = self.run_state.as_mut() else {
-            return Err(CoordinatorError::RunNotStarted);
-        };
-
         if let Some(reason) = requested_hook_batch.critical_failure {
+            let Some(run_state) = self.run_state.as_mut() else {
+                return Err(CoordinatorError::RunNotStarted);
+            };
             append_compaction_failed_event(
                 self.clock.as_ref(),
                 self.redactor.as_ref(),
@@ -3418,13 +3710,39 @@ impl Coordinator {
             return Err(CoordinatorError::LifecycleHookFailed(reason));
         }
         let summary_override = compaction_summary_override_from_hooks(&requested_hook_batch);
+        let summary_decision = if let Some(summary) = summary_override {
+            CompactionSummaryDecision::hook(summary)
+        } else if self.config.compaction.model_backed {
+            match self.model_backed_compaction_summary(&trigger).await {
+                Ok(summary) => CompactionSummaryDecision::model(
+                    compaction_summary_model_ref(&self.config.compaction, &trigger),
+                    summary,
+                    false,
+                ),
+                Err(reason) => {
+                    tracing::warn!(%reason, agent_id = %trigger.agent_id, "model-backed compaction summary fell back to deterministic summary");
+                    CompactionSummaryDecision::model(
+                        compaction_summary_model_ref(&self.config.compaction, &trigger),
+                        String::new(),
+                        true,
+                    )
+                }
+            }
+        } else {
+            CompactionSummaryDecision::deterministic(&trigger)
+        };
+
+        let Some(run_state) = self.run_state.as_mut() else {
+            return Err(CoordinatorError::RunNotStarted);
+        };
 
         let updated_context = match compact_provider_context(
             self.clock.as_ref(),
             self.redactor.as_ref(),
             run_state,
             &trigger,
-            summary_override.as_deref(),
+            &self.config.compaction,
+            &summary_decision,
         ) {
             Ok(Some(compaction)) => compaction,
             Ok(None) if trigger.trigger_reason == "overflow_retry" => {
@@ -3469,6 +3787,23 @@ impl Coordinator {
         })
     }
 
+    async fn model_backed_compaction_summary(
+        &self,
+        trigger: &ProviderCompactionTrigger,
+    ) -> Result<String, String> {
+        let run_state = self
+            .run_state
+            .as_ref()
+            .ok_or_else(|| "run is not started".to_string())?;
+        model_backed_compaction_summary_for(
+            self.config.provider.clone(),
+            &self.config.compaction,
+            run_state,
+            trigger,
+        )
+        .await
+    }
+
     async fn agent_turn_finished_internal(
         &mut self,
         task_id: String,
@@ -3486,6 +3821,17 @@ impl Coordinator {
 
         let was_cancelled = run_state.cancelled_running_tasks.remove(&task_id);
         let dequeued = run_state.scheduler.complete(&running.queue_key);
+        let pending_follow_ups = if was_cancelled {
+            run_state
+                .pending_agent_turn_messages
+                .remove(&running.agent_id);
+            VecDeque::new()
+        } else {
+            run_state
+                .pending_agent_turn_messages
+                .remove(&running.agent_id)
+                .unwrap_or_default()
+        };
         let finished_mono_ms = self.clock.mono_ms();
         let subagent_parent_id = run_state
             .subagent_parent_by_id
@@ -3566,12 +3912,17 @@ impl Coordinator {
         if !was_cancelled {
             match outcome {
                 AgentTurnTaskOutcome::Succeeded { output } => {
+                    let mut user_prompt = running.request_prompt.clone();
+                    for prompt in &running.injected_prompts {
+                        user_prompt.push_str("\n\n");
+                        user_prompt.push_str(prompt);
+                    }
                     run_state
                         .provider_context_by_agent
                         .entry(running.agent_id.clone())
                         .or_default()
                         .push_turn(ProviderConversationTurn {
-                            user_prompt: running.request_prompt,
+                            user_prompt,
                             assistant_response: output.clone(),
                             request_id: Some(request_id.clone()),
                             first_seq: None,
@@ -3629,12 +3980,45 @@ impl Coordinator {
                                 .as_ref()
                                 .map(|usage| usage.prompt_tokens),
                         };
+                        let summary_decision = if self.config.compaction.model_backed {
+                            match model_backed_compaction_summary_for(
+                                self.config.provider.clone(),
+                                &self.config.compaction,
+                                run_state,
+                                &proactive_trigger,
+                            )
+                            .await
+                            {
+                                Ok(summary) => CompactionSummaryDecision::model(
+                                    compaction_summary_model_ref(
+                                        &self.config.compaction,
+                                        &proactive_trigger,
+                                    ),
+                                    summary,
+                                    false,
+                                ),
+                                Err(reason) => {
+                                    tracing::warn!(%reason, agent_id = %running.agent_id, "model-backed proactive compaction summary fell back to deterministic summary");
+                                    CompactionSummaryDecision::model(
+                                        compaction_summary_model_ref(
+                                            &self.config.compaction,
+                                            &proactive_trigger,
+                                        ),
+                                        String::new(),
+                                        true,
+                                    )
+                                }
+                            }
+                        } else {
+                            CompactionSummaryDecision::deterministic(&proactive_trigger)
+                        };
                         if let Err(err) = compact_provider_context(
                             self.clock.as_ref(),
                             self.redactor.as_ref(),
                             run_state,
                             &proactive_trigger,
-                            None,
+                            &self.config.compaction,
+                            &summary_decision,
                         ) {
                             tracing::warn!(
                                 agent_id = %running.agent_id,
@@ -3692,12 +4076,32 @@ impl Coordinator {
                     self.job_tx.clone(),
                     run_state,
                     self.config.hook_runtime_config.clone(),
+                    self.config.compaction.clone(),
                     self.config.provider.clone(),
                     self.config.tool_registry.clone(),
                     queued,
                 )
                 .await?;
             }
+        }
+
+        for pending in pending_follow_ups {
+            schedule_agent_turn(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                self.job_tx.clone(),
+                run_state,
+                self.config.hook_runtime_config.clone(),
+                self.config.compaction.clone(),
+                ScheduleAgentTurnArgs {
+                    provider: self.config.provider.clone(),
+                    tool_registry: self.config.tool_registry.clone(),
+                    profile: pending.profile,
+                    request: pending.request,
+                    request_id: pending.request_id,
+                },
+            )
+            .await?;
         }
 
         Ok(())
@@ -3720,7 +4124,9 @@ struct RunState {
     agent_hook_state: BTreeMap<String, Vec<HookExecutionMetadata>>,
     subagent_parent_by_id: BTreeMap<String, String>,
     pending_permissions: BTreeMap<String, PendingPermissionState>,
+    active_permission_grants: PermissionGrantSet,
     cancelled_running_tasks: BTreeSet<String>,
+    pending_agent_turn_messages: BTreeMap<String, VecDeque<PendingAgentTurnMessage>>,
     queued_agent_turns: BTreeMap<String, QueuedAgentTurn>,
     running_agent_turns: BTreeMap<String, RunningAgentTurn>,
     scheduler: Scheduler,
@@ -3736,8 +4142,14 @@ struct QueuedAgentTurn {
     request_id: String,
     profile: AgentProfile,
     request: AgentRequest,
-    prior_context: ProviderContext,
     queue_key: ConcurrencyKey,
+}
+
+#[derive(Debug, Clone)]
+struct PendingAgentTurnMessage {
+    profile: AgentProfile,
+    request: AgentRequest,
+    request_id: String,
 }
 
 #[derive(Debug, Clone)]
@@ -3752,6 +4164,7 @@ struct RunningAgentTurn {
     cancellation_token: CancellationToken,
     started_mono_ms: u64,
     hook_executions: Vec<HookExecutionMetadata>,
+    injected_prompts: Vec<String>,
     latest_provider_usage: Option<harness_providers::CompletionUsage>,
     latest_provider_id: Option<String>,
     latest_model_id: Option<String>,
@@ -3861,6 +4274,7 @@ struct PendingPermissionState {
     tool_call_id: String,
     request_correlation_id: Option<String>,
     hook_executions: Vec<HookExecutionMetadata>,
+    grant_request: Option<PermissionGrantRequest>,
     resolution: PendingPermissionResolution,
 }
 
@@ -3966,6 +4380,17 @@ struct AgentProviderRequestStartedArgs {
     model_id: String,
     prompt_summary: String,
     request_digest: String,
+    metadata: Option<ProviderRequestStartedMetadata>,
+}
+
+struct AgentProviderRequestFinishedArgs {
+    task_id: String,
+    agent_id: String,
+    request_id: String,
+    finish_reason: String,
+    output_digest: Option<String>,
+    usage: Option<harness_providers::CompletionUsage>,
+    metadata: Option<ProviderRequestFinishedMetadata>,
 }
 
 struct ToolCallExecutionArgs {
@@ -4015,6 +4440,11 @@ struct ScheduleAgentTurnArgs {
     profile: AgentProfile,
     request: AgentRequest,
     request_id: String,
+}
+
+struct TurnStartPhaseResult {
+    cancellation_token: CancellationToken,
+    critical_failure: Option<String>,
 }
 
 #[cfg(test)]
@@ -4644,6 +5074,7 @@ async fn schedule_agent_turn<C, R>(
     job_tx: mpsc::Sender<Command>,
     run_state: &mut RunState,
     hook_runtime_config: HookRuntimeConfig,
+    compaction_config: CompactionRuntimeConfig,
     args: ScheduleAgentTurnArgs,
 ) -> Result<(), CoordinatorError>
 where
@@ -4659,11 +5090,6 @@ where
     } = args;
     let model = crate::agent::AgentModelRef::parse(&request.model_ref);
     let agent_id = request.agent_id.clone();
-    let prior_context = run_state
-        .provider_context_by_agent
-        .get(&agent_id)
-        .cloned()
-        .unwrap_or_default();
     let task_id = format!("task_{:06}", run_state.next_task_id);
     run_state.next_task_id += 1;
 
@@ -4696,6 +5122,7 @@ where
                 job_tx,
                 run_state,
                 hook_runtime_config,
+                compaction_config,
                 provider,
                 tool_registry,
                 QueuedAgentTurn {
@@ -4704,7 +5131,6 @@ where
                     request_id,
                     profile,
                     request,
-                    prior_context,
                     queue_key,
                 },
             )
@@ -4732,7 +5158,6 @@ where
                     request_id,
                     profile,
                     request,
-                    prior_context,
                     queue_key,
                 },
             );
@@ -4775,34 +5200,70 @@ where
     )
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "coordinator launch wiring intentionally passes explicit runtime dependencies"
-)]
-async fn start_agent_turn_execution<C, R>(
+fn recompute_provider_context_for_agent(run_state: &RunState, agent_id: &str) -> ProviderContext {
+    run_state
+        .provider_context_by_agent
+        .get(agent_id)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn has_running_agent_turn(run_state: &RunState, agent_id: &str) -> bool {
+    run_state
+        .running_agent_turns
+        .values()
+        .any(|turn| turn.agent_id == agent_id)
+}
+
+fn provider_request_started_metadata(
+    metadata: Option<ProviderRequestStartedMetadata>,
+    turn_request_id: &str,
+    provider_request_id: &str,
+) -> Option<ProviderRequestStartedMetadata> {
+    let mut metadata = metadata.unwrap_or_default();
+    metadata
+        .turn_id
+        .get_or_insert_with(|| turn_request_id.to_string());
+    metadata
+        .provider_call_id
+        .get_or_insert_with(|| provider_request_id.to_string());
+    Some(metadata)
+}
+
+fn provider_request_finished_metadata(
+    metadata: Option<ProviderRequestFinishedMetadata>,
+    turn_request_id: &str,
+    provider_request_id: &str,
+) -> Option<ProviderRequestFinishedMetadata> {
+    let mut metadata = metadata.unwrap_or_default();
+    metadata
+        .turn_id
+        .get_or_insert_with(|| turn_request_id.to_string());
+    metadata
+        .provider_call_id
+        .get_or_insert_with(|| provider_request_id.to_string());
+    Some(metadata)
+}
+
+async fn run_turn_start_phase<C>(
     clock: &C,
-    _redactor: &R,
-    job_tx: mpsc::Sender<Command>,
     run_state: &mut RunState,
-    hook_runtime_config: HookRuntimeConfig,
-    provider: Arc<dyn Provider>,
-    tool_registry: Arc<ToolRegistry>,
-    task: QueuedAgentTurn,
-) -> Result<(), CoordinatorError>
+    hook_runtime_config: &HookRuntimeConfig,
+    task: &QueuedAgentTurn,
+) -> TurnStartPhaseResult
 where
     C: Clock + ?Sized,
-    R: Redactor + ?Sized,
 {
     let cancellation_token = run_state.shutdown_token.child_token();
-
     let category = Some(task.profile.category.clone());
     let mut hook_executions = run_state
         .agent_hook_state
         .remove(&task.agent_id)
         .unwrap_or_default();
+
     let started_hook_batch = run_lifecycle_hooks(
         clock,
-        &hook_runtime_config,
+        hook_runtime_config,
         HookInvocationContext {
             event: HookLifecycleEvent::AgentTurnStarted,
             run_id: run_state.info.run_id.clone(),
@@ -4835,18 +5296,47 @@ where
             request_prompt: task.request.prompt.clone(),
             profile_name: task.profile.name.clone(),
             model_ref: task.request.model_ref.clone(),
-            category: category.clone(),
+            category,
             queue_key: task.queue_key.clone(),
             cancellation_token: cancellation_token.clone(),
             started_mono_ms: clock.mono_ms(),
             hook_executions,
+            injected_prompts: Vec::new(),
             latest_provider_usage: None,
             latest_provider_id: None,
             latest_model_id: None,
         },
     );
 
-    if let Some(reason) = started_hook_batch.critical_failure {
+    TurnStartPhaseResult {
+        cancellation_token,
+        critical_failure: started_hook_batch.critical_failure,
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "coordinator launch wiring intentionally passes explicit runtime dependencies"
+)]
+async fn start_agent_turn_execution<C, R>(
+    clock: &C,
+    _redactor: &R,
+    job_tx: mpsc::Sender<Command>,
+    run_state: &mut RunState,
+    hook_runtime_config: HookRuntimeConfig,
+    compaction_config: CompactionRuntimeConfig,
+    provider: Arc<dyn Provider>,
+    tool_registry: Arc<ToolRegistry>,
+    task: QueuedAgentTurn,
+) -> Result<(), CoordinatorError>
+where
+    C: Clock + ?Sized,
+    R: Redactor + ?Sized,
+{
+    let turn_start = run_turn_start_phase(clock, run_state, &hook_runtime_config, &task).await;
+    let cancellation_token = turn_start.cancellation_token;
+
+    if let Some(reason) = turn_start.critical_failure {
         warn_command_send_failure(
             job_tx
                 .send(Command::AgentTurnFinished {
@@ -4860,6 +5350,8 @@ where
         );
         return Ok(());
     }
+
+    let provider_context = recompute_provider_context_for_agent(run_state, &task.agent_id);
 
     tokio::spawn(async move {
         let task_id = task.task_id.clone();
@@ -4878,96 +5370,24 @@ where
                 }).await, "agent_turn_finished_from_cancellation");
             }
             outcome = async {
-                let mut prior_context = task.prior_context.clone();
+                let mut prior_context = provider_context;
                 let mut overflow_retry_attempted = false;
 
                 loop {
-                    let outcome = run_multi_turn_streaming(
-                        MultiTurnStreamingRequest {
-                            provider: provider.clone(),
-                            tool_registry: tool_registry.clone(),
-                            profile: &task.profile,
-                            request_id: task.request_id.clone(),
-                            request: task.request.clone(),
-                            prior_context: &prior_context,
-                        },
-                        {
-                            let job_tx = job_tx.clone();
-                            let agent_id = task.agent_id.clone();
-                            let category = Some(task.profile.category.clone());
-                            move |tool_id, args_json| {
-                                let job_tx = job_tx.clone();
-                                let agent_id = agent_id.clone();
-                                let category = category.clone();
-                                async move {
-                                    let (respond_to, response_rx) = oneshot::channel();
-                                    job_tx
-                                        .send(Command::ExecuteAgentToolCall {
-                                            actor: EventActor::new(ActorKind::Worker, Some(agent_id)),
-                                            category,
-                                            tool_id,
-                                            args_json,
-                                            respond_to,
-                                        })
-                                        .await
-                                        .map_err(|_| "tool call channel closed".to_string())?;
-                                    response_rx
-                                        .await
-                                        .map_err(|_| "tool call response channel closed".to_string())?
-                                }
-                            }
-                        },
-                        |event| {
-                            let job_tx = job_tx.clone();
-                            let task_id = task.task_id.clone();
-                            let agent_id = task.agent_id.clone();
-                            async move {
-                                match event {
-                                    AgentRuntimeEvent::ProviderRequestStarted(started) => {
-                                        warn_command_send_failure(job_tx.send(Command::AgentProviderRequestStarted {
-                                            task_id,
-                                            agent_id,
-                                            request_id: started.request_id,
-                                            provider_id: started.provider_id,
-                                            model_id: started.model_id,
-                                            prompt_summary: started.prompt_summary,
-                                            request_digest: started.request_digest,
-                                        }).await, "agent_provider_request_started");
-                                    }
-                                    AgentRuntimeEvent::ProviderStreamDelta { request_id, delta } => {
-                                        warn_command_send_failure(job_tx.send(Command::AgentProviderStreamDelta {
-                                            task_id,
-                                            agent_id,
-                                            request_id,
-                                            delta,
-                                        }).await, "agent_provider_stream_delta");
-                                    }
-                                    AgentRuntimeEvent::ProviderReasoningDelta { request_id, delta } => {
-                                        warn_command_send_failure(job_tx.send(Command::AgentProviderReasoningDelta {
-                                            task_id,
-                                            agent_id,
-                                            request_id,
-                                            delta,
-                                        }).await, "agent_provider_reasoning_delta");
-                                    }
-                                    AgentRuntimeEvent::ProviderRequestFinished(finished) => {
-                                        warn_command_send_failure(job_tx.send(Command::AgentProviderRequestFinished {
-                                            task_id,
-                                            agent_id,
-                                            request_id: finished.request_id,
-                                            finish_reason: finished.finish_reason,
-                                            output_digest: finished.output_digest,
-                                            usage: finished.usage,
-                                        }).await, "agent_provider_request_finished");
-                                    }
-                                }
-                            }
-                        }
-                    ).await;
+                    let outcome = run_agent_turn_phase_loop(AgentTurnPhaseLoopRequest {
+                        provider: provider.clone(),
+                        tool_registry: tool_registry.clone(),
+                        task: &task,
+                        prior_context: &prior_context,
+                        job_tx: job_tx.clone(),
+                        cancellation_token: cancellation_token.clone(),
+                    })
+                    .await;
 
                     match &outcome {
                         AgentTurnOutcome::Failed { reason }
-                            if !overflow_retry_attempted
+                            if compaction_config.auto_retry_overflow
+                                && !overflow_retry_attempted
                                 && is_provider_context_overflow_reason(reason) =>
                         {
                             let (respond_to, response_rx) = oneshot::channel();
@@ -5040,6 +5460,526 @@ where
     });
 
     Ok(())
+}
+
+struct AgentTurnPhaseLoopRequest<'a> {
+    provider: Arc<dyn Provider>,
+    tool_registry: Arc<ToolRegistry>,
+    task: &'a QueuedAgentTurn,
+    prior_context: &'a ProviderContext,
+    job_tx: mpsc::Sender<Command>,
+    cancellation_token: CancellationToken,
+}
+
+struct AgentProviderTurnState {
+    model: AgentModelRef,
+    tool_defs: Vec<ToolDef>,
+    messages: Vec<CompletionMessage>,
+    total_tool_calls: usize,
+}
+
+enum AgentToolPhaseDecision {
+    RunTools(Vec<AssistantToolIntent>),
+    TurnEnd { output: String },
+}
+
+struct ProviderStreamPhaseRequest<'a> {
+    provider: Arc<dyn Provider>,
+    profile: &'a AgentProfile,
+    request: &'a AgentRequest,
+    turn_request_id: &'a str,
+    provider_request_id: String,
+    model: AgentModelRef,
+    messages: &'a [CompletionMessage],
+    tool_defs: &'a [ToolDef],
+    job_tx: mpsc::Sender<Command>,
+    task_id: &'a str,
+    agent_id: &'a str,
+}
+
+async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> AgentTurnOutcome {
+    let AgentTurnPhaseLoopRequest {
+        provider,
+        tool_registry,
+        task,
+        prior_context,
+        job_tx,
+        cancellation_token,
+    } = request;
+
+    let mut turn_state = match prepare_provider_transform_phase(
+        &task.profile,
+        &task.request,
+        prior_context,
+        tool_registry.as_ref(),
+    ) {
+        Ok(turn_state) => turn_state,
+        Err(reason) => return AgentTurnOutcome::Failed { reason },
+    };
+
+    for _phase_iter in 1..=task.profile.max_iters {
+        if let Err(reason) = drain_steering_messages_phase(
+            &job_tx,
+            &task.task_id,
+            &task.agent_id,
+            &mut turn_state.messages,
+        )
+        .await
+        {
+            return AgentTurnOutcome::Failed { reason };
+        }
+
+        if cancellation_token.is_cancelled() {
+            return AgentTurnOutcome::Failed {
+                reason: "job cancelled".to_string(),
+            };
+        }
+
+        let provider_request_id = match allocate_provider_request_id_phase(&job_tx).await {
+            Ok(request_id) => request_id,
+            Err(reason) => return AgentTurnOutcome::Failed { reason },
+        };
+
+        let assistant_response = match run_provider_stream_phase(ProviderStreamPhaseRequest {
+            provider: provider.clone(),
+            profile: &task.profile,
+            request: &task.request,
+            turn_request_id: &task.request_id,
+            provider_request_id,
+            model: turn_state.model.clone(),
+            messages: &turn_state.messages,
+            tool_defs: &turn_state.tool_defs,
+            job_tx: job_tx.clone(),
+            task_id: &task.task_id,
+            agent_id: &task.agent_id,
+        })
+        .await
+        {
+            Ok(response) => response,
+            Err(reason) => {
+                return AgentTurnOutcome::Failed {
+                    reason: normalize_provider_phase_error(reason),
+                }
+            }
+        };
+
+        if let Err(reason) = append_assistant_message_end_phase(
+            &job_tx,
+            &task.task_id,
+            &task.agent_id,
+            &mut turn_state.messages,
+            &assistant_response,
+        )
+        .await
+        {
+            return AgentTurnOutcome::Failed { reason };
+        }
+        if cancellation_token.is_cancelled() {
+            return AgentTurnOutcome::Failed {
+                reason: "job cancelled".to_string(),
+            };
+        }
+
+        match decide_tool_phase(&assistant_response, &mut turn_state.total_tool_calls) {
+            Ok(AgentToolPhaseDecision::TurnEnd { output }) => {
+                return AgentTurnOutcome::Succeeded { output };
+            }
+            Ok(AgentToolPhaseDecision::RunTools(tool_intents)) => {
+                if let Err(reason) = run_tool_phase(
+                    &job_tx,
+                    &task.agent_id,
+                    Some(task.profile.category.clone()),
+                    &task.profile,
+                    &mut turn_state.messages,
+                    tool_intents,
+                )
+                .await
+                {
+                    return AgentTurnOutcome::Failed { reason };
+                }
+            }
+            Err(reason) => return AgentTurnOutcome::Failed { reason },
+        }
+
+        if cancellation_token.is_cancelled() {
+            return AgentTurnOutcome::Failed {
+                reason: "job cancelled".to_string(),
+            };
+        }
+    }
+
+    AgentTurnOutcome::Failed {
+        reason: format!(
+            "agent turn exceeded profile max_iters={}",
+            task.profile.max_iters
+        ),
+    }
+}
+
+async fn drain_steering_messages_phase(
+    job_tx: &mpsc::Sender<Command>,
+    task_id: &str,
+    agent_id: &str,
+    messages: &mut Vec<CompletionMessage>,
+) -> Result<(), String> {
+    let (respond_to, response_rx) = oneshot::channel();
+    job_tx
+        .send(Command::DrainAgentTurnSteering {
+            task_id: task_id.to_string(),
+            agent_id: agent_id.to_string(),
+            respond_to,
+        })
+        .await
+        .map_err(|_| "steering drain channel closed".to_string())?;
+
+    let prompts = response_rx
+        .await
+        .map_err(|_| "steering drain response channel closed".to_string())?
+        .map_err(|err| err.to_string())?;
+
+    for prompt in prompts {
+        messages.push(CompletionMessage {
+            role: MessageRole::User,
+            content: prompt,
+            name: None,
+            tool_call_id: None,
+            assistant_tool_calls: None,
+        });
+    }
+
+    Ok(())
+}
+
+fn normalize_provider_phase_error(reason: String) -> String {
+    if reason.contains("empty tool_call_id") && !reason.contains("invalid") {
+        format!("invalid provider tool_call_id: {reason}")
+    } else {
+        reason
+    }
+}
+
+fn prepare_provider_transform_phase(
+    profile: &AgentProfile,
+    request: &AgentRequest,
+    prior_context: &ProviderContext,
+    tool_registry: &ToolRegistry,
+) -> Result<AgentProviderTurnState, String> {
+    let model = AgentModelRef::parse(&request.model_ref);
+    let tool_defs = build_provider_tool_defs(profile, tool_registry)?;
+    let messages = build_provider_context_messages(profile, prior_context, &request.prompt);
+
+    Ok(AgentProviderTurnState {
+        model,
+        tool_defs,
+        messages,
+        total_tool_calls: 0,
+    })
+}
+
+async fn allocate_provider_request_id_phase(
+    job_tx: &mpsc::Sender<Command>,
+) -> Result<String, String> {
+    let (respond_to, response_rx) = oneshot::channel();
+    job_tx
+        .send(Command::AllocateProviderRequestId { respond_to })
+        .await
+        .map_err(|_| "provider request id channel closed".to_string())?;
+    response_rx
+        .await
+        .map_err(|_| "provider request id response channel closed".to_string())?
+        .map_err(|err| err.to_string())
+}
+
+async fn run_provider_stream_phase(
+    request: ProviderStreamPhaseRequest<'_>,
+) -> Result<AssistantResponse, String> {
+    let ProviderStreamPhaseRequest {
+        provider,
+        profile,
+        request,
+        turn_request_id,
+        provider_request_id,
+        model,
+        messages,
+        tool_defs,
+        job_tx,
+        task_id,
+        agent_id,
+    } = request;
+    let task_id = task_id.to_string();
+    let agent_id = agent_id.to_string();
+
+    stream_assistant_response_once(
+        StreamAssistantResponseOnceRequest {
+            provider,
+            profile,
+            model,
+            model_settings: request.model_settings.clone(),
+            turn_request_id: turn_request_id.to_string(),
+            provider_request_id,
+            prompt_summary: &request.prompt,
+            context: ProviderBoundaryContext::ProviderMessages { messages },
+            tool_defs,
+        },
+        |event| {
+            let job_tx = job_tx.clone();
+            let task_id = task_id.clone();
+            let agent_id = agent_id.clone();
+            async move {
+                if let Err(reason) =
+                    emit_agent_runtime_event_phase(job_tx, task_id, agent_id, event).await
+                {
+                    tracing::warn!(reason, "failed to emit agent runtime phase event");
+                }
+            }
+        },
+    )
+    .await
+}
+
+async fn emit_agent_runtime_event_phase(
+    job_tx: mpsc::Sender<Command>,
+    task_id: String,
+    agent_id: String,
+    event: AgentRuntimeEvent,
+) -> Result<(), String> {
+    match event {
+        AgentRuntimeEvent::ProviderRequestStarted(started) => job_tx
+            .send(Command::AgentProviderRequestStarted {
+                task_id,
+                agent_id,
+                request_id: started.request_id,
+                provider_id: started.provider_id,
+                model_id: started.model_id,
+                prompt_summary: started.prompt_summary,
+                request_digest: started.request_digest,
+                metadata: started.metadata,
+            })
+            .await
+            .map_err(|_| "provider request start channel closed".to_string()),
+        AgentRuntimeEvent::ProviderStreamDelta { request_id, delta } => job_tx
+            .send(Command::AgentProviderStreamDelta {
+                task_id,
+                agent_id,
+                request_id,
+                delta,
+            })
+            .await
+            .map_err(|_| "provider stream delta channel closed".to_string()),
+        AgentRuntimeEvent::ProviderReasoningDelta { request_id, delta } => job_tx
+            .send(Command::AgentProviderReasoningDelta {
+                task_id,
+                agent_id,
+                request_id,
+                delta,
+            })
+            .await
+            .map_err(|_| "provider reasoning delta channel closed".to_string()),
+        AgentRuntimeEvent::ProviderRequestFinished(finished) => {
+            let (respond_to, response_rx) = oneshot::channel();
+            job_tx
+                .send(Command::AgentProviderRequestFinished {
+                    task_id,
+                    agent_id,
+                    request_id: finished.request_id,
+                    finish_reason: finished.finish_reason,
+                    output_digest: finished.output_digest,
+                    usage: finished.usage,
+                    metadata: finished.metadata,
+                    respond_to: Some(respond_to),
+                })
+                .await
+                .map_err(|_| "provider request finish channel closed".to_string())?;
+            response_rx
+                .await
+                .map_err(|_| "provider request finish response channel closed".to_string())?
+                .map_err(|err| err.to_string())
+        }
+    }
+}
+
+async fn append_assistant_message_end_phase(
+    job_tx: &mpsc::Sender<Command>,
+    task_id: &str,
+    agent_id: &str,
+    messages: &mut Vec<CompletionMessage>,
+    response: &AssistantResponse,
+) -> Result<(), String> {
+    let assistant_tool_calls = (!response.tool_intents.is_empty()).then(|| {
+        response
+            .tool_intents
+            .iter()
+            .map(|tool_call| AssistantToolCall {
+                tool_call_id: tool_call.tool_call_id.clone(),
+                function_name: tool_call.function_name.clone(),
+                arguments_json: tool_call.arguments_json.clone(),
+            })
+            .collect::<Vec<_>>()
+    });
+
+    messages.push(CompletionMessage {
+        role: MessageRole::Assistant,
+        content: response.text.clone(),
+        name: None,
+        tool_call_id: None,
+        assistant_tool_calls,
+    });
+
+    let (respond_to, response_rx) = oneshot::channel();
+    job_tx
+        .send(Command::AgentAssistantMessageFinished {
+            task_id: task_id.to_string(),
+            agent_id: agent_id.to_string(),
+            request_id: response.request_id.clone(),
+            tool_call_count: response.tool_intents.len(),
+            assistant_message: response.finished_metadata.assistant_message.clone(),
+            respond_to,
+        })
+        .await
+        .map_err(|_| "assistant message finish channel closed".to_string())?;
+    response_rx
+        .await
+        .map_err(|_| "assistant message finish response channel closed".to_string())?
+        .map_err(|err| err.to_string())
+}
+
+fn decide_tool_phase(
+    response: &AssistantResponse,
+    total_tool_calls: &mut usize,
+) -> Result<AgentToolPhaseDecision, String> {
+    if response.tool_intents.is_empty() {
+        return Ok(AgentToolPhaseDecision::TurnEnd {
+            output: response.text.clone(),
+        });
+    }
+
+    *total_tool_calls += response.tool_intents.len();
+    if *total_tool_calls > MAX_TOOL_CALLS_TOTAL {
+        return Err(format!(
+            "agent turn exceeded MAX_TOOL_CALLS_TOTAL={MAX_TOOL_CALLS_TOTAL}"
+        ));
+    }
+
+    Ok(AgentToolPhaseDecision::RunTools(
+        response.tool_intents.clone(),
+    ))
+}
+
+async fn run_tool_phase(
+    job_tx: &mpsc::Sender<Command>,
+    agent_id: &str,
+    category: Option<String>,
+    profile: &AgentProfile,
+    messages: &mut Vec<CompletionMessage>,
+    tool_intents: Vec<AssistantToolIntent>,
+) -> Result<(), String> {
+    let mut tool_phase_tasks = tokio::task::JoinSet::new();
+    let tool_count = tool_intents.len();
+
+    for (source_index, tool_call) in tool_intents.into_iter().enumerate() {
+        let job_tx = job_tx.clone();
+        let agent_id = agent_id.to_string();
+        let category = category.clone();
+        let tool_id = tool_call.tool_id.clone();
+        let args_json = tool_call.arguments.clone();
+
+        tool_phase_tasks.spawn(async move {
+            let result =
+                execute_agent_tool_phase(&job_tx, &agent_id, category, tool_id, args_json).await;
+            AgentToolPhaseResult {
+                source_index,
+                tool_call,
+                result,
+            }
+        });
+    }
+
+    let mut source_ordered_results = (0..tool_count).map(|_| None).collect::<Vec<_>>();
+    while let Some(joined) = tool_phase_tasks.join_next().await {
+        let phase_result = joined.map_err(|err| format!("tool phase task failed: {err}"))?;
+        let source_index = phase_result.source_index;
+        source_ordered_results[source_index] = Some(phase_result);
+    }
+
+    for phase_result in source_ordered_results {
+        let AgentToolPhaseResult {
+            tool_call, result, ..
+        } = phase_result.expect("tool phase result exists for every source index");
+        let tool_result = match result {
+            Ok(result) => result,
+            Err(reason)
+                if matches!(
+                    profile.tool_failure_mode,
+                    ToolFailureMode::ContinueAsToolMessage
+                ) =>
+            {
+                ToolResult {
+                    display_text: format!(
+                        "tool call `{}` failed: {reason}",
+                        tool_call.function_name
+                    ),
+                    structured_json: Some(json!({
+                        "error": reason,
+                        "status": "failed"
+                    })),
+                    artifacts: Vec::new(),
+                }
+            }
+            Err(reason) => {
+                return Err(format!(
+                    "tool call `{}` failed closed: {reason}",
+                    tool_call.function_name
+                ));
+            }
+        };
+
+        append_tool_result_message_phase(messages, &tool_call, &tool_result);
+    }
+
+    Ok(())
+}
+
+struct AgentToolPhaseResult {
+    source_index: usize,
+    tool_call: AssistantToolIntent,
+    result: Result<ToolResult, String>,
+}
+
+async fn execute_agent_tool_phase(
+    job_tx: &mpsc::Sender<Command>,
+    agent_id: &str,
+    category: Option<String>,
+    tool_id: String,
+    args_json: Value,
+) -> Result<ToolResult, String> {
+    let (respond_to, response_rx) = oneshot::channel();
+    job_tx
+        .send(Command::ExecuteAgentToolCall {
+            actor: EventActor::new(ActorKind::Worker, Some(agent_id.to_string())),
+            category,
+            tool_id,
+            args_json,
+            respond_to,
+        })
+        .await
+        .map_err(|_| "tool call channel closed".to_string())?;
+    response_rx
+        .await
+        .map_err(|_| "tool call response channel closed".to_string())?
+}
+
+fn append_tool_result_message_phase(
+    messages: &mut Vec<CompletionMessage>,
+    tool_call: &AssistantToolIntent,
+    tool_result: &ToolResult,
+) {
+    messages.push(CompletionMessage {
+        role: MessageRole::Tool,
+        content: tool_result_to_message_content(tool_result),
+        name: Some(tool_call.function_name.clone()),
+        tool_call_id: Some(tool_call.tool_call_id.clone()),
+        assistant_tool_calls: None,
+    });
 }
 
 async fn finalize_permission_denied<C, R>(
@@ -5477,6 +6417,31 @@ where
     append_built_event(run_state, envelope)
 }
 
+fn append_permission_grant_recorded_event<C, R>(
+    clock: &C,
+    redactor: &R,
+    run_state: &mut RunState,
+    permission_id: &str,
+    request_correlation_id: Option<&str>,
+    grant: PermissionGrant,
+) -> Result<EventEnvelopeV1, CoordinatorError>
+where
+    C: Clock + ?Sized,
+    R: Redactor + ?Sized,
+{
+    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
+    let mut context = EventContext::new(run_state.next_event_seq, system_actor());
+    context.correlation_id = request_correlation_id
+        .map(ToOwned::to_owned)
+        .or_else(|| Some(permission_id.to_string()));
+    context.stream_key = Some(format!("permission:{permission_id}"));
+    let envelope = builder.build(
+        context,
+        EventV1::PermissionGrantRecorded(PermissionGrantRecordedEvent { grant }),
+    )?;
+    append_built_event(run_state, envelope)
+}
+
 fn append_tool_call_started_event<C, R>(
     clock: &C,
     redactor: &R,
@@ -5763,12 +6728,69 @@ fn write_run_metadata(
     Ok(())
 }
 
+#[derive(Debug, Clone)]
+struct CompactionSummaryDecision {
+    summary: Option<String>,
+    source: SummarySourceRequest,
+}
+
+impl CompactionSummaryDecision {
+    fn deterministic(trigger: &ProviderCompactionTrigger) -> Self {
+        Self {
+            summary: None,
+            source: SummarySourceRequest::DeterministicForModelRef {
+                model_ref: trigger.model_ref.clone(),
+            },
+        }
+    }
+
+    fn hook(summary: String) -> Self {
+        Self {
+            summary: Some(summary),
+            source: SummarySourceRequest::Hook,
+        }
+    }
+
+    fn model(model_ref: String, summary: String, deterministic_fallback: bool) -> Self {
+        Self {
+            summary: (!summary.trim().is_empty()).then_some(summary),
+            source: SummarySourceRequest::Model {
+                model_ref,
+                deterministic_fallback,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum SummarySourceRequest {
+    Hook,
+    Model {
+        model_ref: String,
+        deterministic_fallback: bool,
+    },
+    Deterministic,
+    DeterministicForModelRef {
+        model_ref: String,
+    },
+}
+
+#[derive(Debug, Clone)]
+struct ProviderContextCompactionPlan {
+    older_turns: Vec<ProviderConversationTurn>,
+    recent_turns: Vec<ProviderConversationTurn>,
+    pruned_tool_artifacts: Vec<EventArtifactRef>,
+    facts: ProviderCompactionFacts,
+    tail_boundary: ProviderCompactionTailBoundary,
+}
+
 fn compact_provider_context<C, R>(
     clock: &C,
     redactor: &R,
     run_state: &mut RunState,
     trigger: &ProviderCompactionTrigger,
-    summary_override: Option<&str>,
+    compaction_config: &CompactionRuntimeConfig,
+    summary_decision: &CompactionSummaryDecision,
 ) -> Result<Option<AppliedCompaction>, CoordinatorError>
 where
     C: Clock + ?Sized,
@@ -5793,7 +6815,8 @@ where
         &current_context,
         keep_recent_budget,
         current_tokens,
-        summary_override,
+        compaction_config,
+        summary_decision,
     ) else {
         return Ok(None);
     };
@@ -5964,53 +6987,36 @@ fn build_provider_context_checkpoint(
     context: &ProviderContext,
     keep_recent_budget: u32,
     tokens_before_estimate: u32,
-    summary_override: Option<&str>,
+    compaction_config: &CompactionRuntimeConfig,
+    summary_decision: &CompactionSummaryDecision,
 ) -> Option<ProviderContextCheckpoint> {
-    let (older_turns, recent_turns) = if let Some(split_index) =
-        provider_context_split_index(&context.preserved_turns, keep_recent_budget)
-    {
-        (
-            &context.preserved_turns[..split_index],
-            context.preserved_turns[split_index..].to_vec(),
-        )
-    } else if trigger.trigger_reason == "manual" && context.preserved_turns.len() >= 2 {
-        let split_index = context.preserved_turns.len() - 1;
-        (
-            &context.preserved_turns[..split_index],
-            context.preserved_turns[split_index..].to_vec(),
-        )
-    } else if trigger.trigger_reason == "overflow_retry" && !context.preserved_turns.is_empty() {
-        (&context.preserved_turns[..], Vec::new())
-    } else {
-        return None;
-    };
-    let pruned_tool_artifacts =
-        collect_pruned_tool_artifacts(run_state, trigger, context, older_turns);
-    let facts = build_provider_compaction_facts(context, older_turns, &pruned_tool_artifacts);
-    let tail_boundary = build_provider_compaction_tail_boundary(
-        &recent_turns,
-        preserved_tokens_estimate(&recent_turns),
-        keep_recent_budget,
+    let plan = build_provider_context_compaction_plan(
+        run_state,
         trigger,
-    );
+        context,
+        keep_recent_budget,
+        compaction_config,
+    )?;
     let metadata = recorded_runtime_context_for_compaction(run_state, trigger);
     let summary_source = build_provider_compaction_summary_source(
         &metadata,
         trigger,
         context.compacted_summary.as_deref(),
-        summary_override.is_some(),
+        summary_decision.source.clone(),
     );
-    let summary = summary_override
+    let summary = summary_decision
+        .summary
+        .as_deref()
         .map(str::trim)
         .filter(|summary| !summary.is_empty())
         .map(|summary| truncate_chars(summary, PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS))
         .unwrap_or_else(|| {
             build_provider_context_summary(
                 context.compacted_summary.as_deref(),
-                older_turns,
-                &pruned_tool_artifacts,
-                &facts,
-                &tail_boundary,
+                &plan.older_turns,
+                &plan.pruned_tool_artifacts,
+                &plan.facts,
+                &plan.tail_boundary,
                 &summary_source,
             )
         });
@@ -6018,14 +7024,15 @@ fn build_provider_context_checkpoint(
         return None;
     }
     let summary_tokens_estimate = approximate_text_tokens(&summary);
-    let preserved_tokens_estimate = preserved_tokens_estimate(&recent_turns);
+    let preserved_tokens_estimate = preserved_tokens_estimate(&plan.recent_turns);
     let tokens_after_estimate = summary_tokens_estimate.saturating_add(preserved_tokens_estimate);
     let reduction_tokens_estimate = tokens_before_estimate.saturating_sub(tokens_after_estimate);
     let reduction_percent_estimate = (tokens_before_estimate > 0).then(|| {
         ((u64::from(reduction_tokens_estimate) * 100) / u64::from(tokens_before_estimate)) as u32
     });
 
-    let first_kept_request_id = recent_turns
+    let first_kept_request_id = plan
+        .recent_turns
         .first()
         .and_then(|turn| turn.request_id.clone());
     let timeline_entry = ProviderCompactionTimelineEntry {
@@ -6038,8 +7045,8 @@ fn build_provider_context_checkpoint(
         },
         summary: summarize_compaction_text(&summary),
         first_kept_request_id,
-        compacted_turns: older_turns.len() as u32,
-        preserved_turns: recent_turns.len() as u32,
+        compacted_turns: plan.older_turns.len() as u32,
+        preserved_turns: plan.recent_turns.len() as u32,
         tokens_before_estimate: Some(tokens_before_estimate),
         tokens_after_estimate: Some(tokens_after_estimate),
     };
@@ -6057,19 +7064,98 @@ fn build_provider_context_checkpoint(
             tokens_before_estimate: Some(tokens_before_estimate),
             tokens_after_estimate: Some(tokens_after_estimate),
             summary_tokens_estimate: Some(summary_tokens_estimate),
-            compacted_turns: Some(older_turns.len() as u32),
-            preserved_turns: Some(recent_turns.len() as u32),
+            compacted_turns: Some(plan.older_turns.len() as u32),
+            preserved_turns: Some(plan.recent_turns.len() as u32),
             reduction_tokens_estimate: Some(reduction_tokens_estimate),
             reduction_percent_estimate,
             trigger_reason: Some(trigger.trigger_reason.clone()),
         },
         summary,
+        recent_turns: plan.recent_turns,
+        pruned_tool_artifacts: plan.pruned_tool_artifacts,
+        facts: plan.facts,
+        tail_boundary: Some(plan.tail_boundary),
+        summary_source: Some(summary_source),
+        timeline_entry: Some(timeline_entry),
+    })
+}
+
+fn build_provider_context_compaction_plan(
+    run_state: &RunState,
+    trigger: &ProviderCompactionTrigger,
+    context: &ProviderContext,
+    keep_recent_budget: u32,
+    compaction_config: &CompactionRuntimeConfig,
+) -> Option<ProviderContextCompactionPlan> {
+    let (older_turns, recent_turns, split_tail) = if compaction_config.split_oversized_turns {
+        if let Some((older_latest_turn, recent_latest_turn)) = split_latest_oversized_turn(
+            &context.preserved_turns,
+            keep_recent_budget,
+            trigger.trigger_reason.as_str(),
+        ) {
+            let mut older_turns =
+                context.preserved_turns[..context.preserved_turns.len() - 1].to_vec();
+            older_turns.push(older_latest_turn);
+            (older_turns, vec![recent_latest_turn], true)
+        } else if let Some(split_index) =
+            provider_context_split_index(&context.preserved_turns, keep_recent_budget)
+        {
+            (
+                context.preserved_turns[..split_index].to_vec(),
+                context.preserved_turns[split_index..].to_vec(),
+                false,
+            )
+        } else if trigger.trigger_reason == "manual" && context.preserved_turns.len() >= 2 {
+            let split_index = context.preserved_turns.len() - 1;
+            (
+                context.preserved_turns[..split_index].to_vec(),
+                context.preserved_turns[split_index..].to_vec(),
+                false,
+            )
+        } else if trigger.trigger_reason == "overflow_retry" && !context.preserved_turns.is_empty()
+        {
+            (context.preserved_turns.clone(), Vec::new(), false)
+        } else {
+            return None;
+        }
+    } else if let Some(split_index) =
+        provider_context_split_index(&context.preserved_turns, keep_recent_budget)
+    {
+        (
+            context.preserved_turns[..split_index].to_vec(),
+            context.preserved_turns[split_index..].to_vec(),
+            false,
+        )
+    } else if trigger.trigger_reason == "manual" && context.preserved_turns.len() >= 2 {
+        let split_index = context.preserved_turns.len() - 1;
+        (
+            context.preserved_turns[..split_index].to_vec(),
+            context.preserved_turns[split_index..].to_vec(),
+            false,
+        )
+    } else if trigger.trigger_reason == "overflow_retry" && !context.preserved_turns.is_empty() {
+        (context.preserved_turns.clone(), Vec::new(), false)
+    } else {
+        return None;
+    };
+
+    let pruned_tool_artifacts =
+        collect_pruned_tool_artifacts(run_state, trigger, context, &older_turns);
+    let facts = build_provider_compaction_facts(context, &older_turns, &pruned_tool_artifacts);
+    let tail_boundary = build_provider_compaction_tail_boundary(
+        &recent_turns,
+        preserved_tokens_estimate(&recent_turns),
+        keep_recent_budget,
+        trigger,
+        split_tail,
+    );
+
+    Some(ProviderContextCompactionPlan {
+        older_turns,
         recent_turns,
         pruned_tool_artifacts,
         facts,
-        tail_boundary: Some(tail_boundary),
-        summary_source: Some(summary_source),
-        timeline_entry: Some(timeline_entry),
+        tail_boundary,
     })
 }
 
@@ -6114,6 +7200,58 @@ fn provider_context_split_index(
     }
 
     (keep_from > 0).then_some(keep_from)
+}
+
+fn split_latest_oversized_turn(
+    turns: &[ProviderConversationTurn],
+    keep_recent_budget: u32,
+    trigger_reason: &str,
+) -> Option<(ProviderConversationTurn, ProviderConversationTurn)> {
+    if turns.is_empty() || !matches!(trigger_reason, "manual" | "overflow_retry") {
+        return None;
+    }
+
+    let latest = turns.last()?;
+    let latest_tokens = approximate_turn_tokens(latest);
+    if latest_tokens <= keep_recent_budget || latest.assistant_response.chars().count() < 2 {
+        return None;
+    }
+
+    let suffix_chars = (keep_recent_budget.saturating_mul(4) as usize)
+        .max(PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS)
+        .min(latest.assistant_response.chars().count().saturating_sub(1));
+    let split_at = latest
+        .assistant_response
+        .chars()
+        .count()
+        .saturating_sub(suffix_chars);
+    let assistant_prefix = latest
+        .assistant_response
+        .chars()
+        .take(split_at)
+        .collect::<String>();
+    let assistant_suffix = latest
+        .assistant_response
+        .chars()
+        .skip(split_at)
+        .collect::<String>();
+    if assistant_prefix.trim().is_empty() || assistant_suffix.trim().is_empty() {
+        return None;
+    }
+
+    let mut older_turn = latest.clone();
+    older_turn.user_prompt = format!(
+        "{}\n\n[Harness compaction note: earlier portion of an oversized latest turn]",
+        latest.user_prompt
+    );
+    older_turn.assistant_response = assistant_prefix;
+    let mut recent_turn = latest.clone();
+    recent_turn.user_prompt = format!(
+        "{}\n\n[Harness compaction note: preserved suffix of an oversized latest turn]",
+        latest.user_prompt
+    );
+    recent_turn.assistant_response = assistant_suffix;
+    Some((older_turn, recent_turn))
 }
 
 fn preserved_tokens_estimate(turns: &[ProviderConversationTurn]) -> u32 {
@@ -6174,16 +7312,21 @@ fn build_provider_compaction_tail_boundary(
     preserved_tokens_estimate: u32,
     keep_recent_budget: u32,
     trigger: &ProviderCompactionTrigger,
+    split_tail: bool,
 ) -> ProviderCompactionTailBoundary {
     let first_preserved = recent_turns.first();
-    let mode = if recent_turns.is_empty() {
+    let mode = if split_tail {
+        "split_oversized_turn_tail".to_string()
+    } else if recent_turns.is_empty() {
         "summary_only".to_string()
     } else if preserved_tokens_estimate > keep_recent_budget {
         "oversized_whole_turn_tail".to_string()
     } else {
         "whole_turn_tail".to_string()
     };
-    let note = if mode == "oversized_whole_turn_tail" {
+    let note = if mode == "split_oversized_turn_tail" {
+        Some("The latest oversized turn was split inside the checkpoint artifact: the earlier portion was compacted and a suffix remains provider-visible as recent context.".to_string())
+    } else if mode == "oversized_whole_turn_tail" {
         Some("Latest preserved turn exceeds the keep-recent budget; the harness records this tail boundary but does not split provider/tool turns yet.".to_string())
     } else if trigger.trigger_reason == "overflow_retry" && recent_turns.is_empty() {
         Some("Overflow retry compacted to summary-only context because preserving a recent turn would still exceed the provider window.".to_string())
@@ -6205,15 +7348,44 @@ fn build_provider_compaction_summary_source(
     metadata: &RecordedRuntimeContext,
     trigger: &ProviderCompactionTrigger,
     existing_summary: Option<&str>,
-    hook_supplied_summary: bool,
+    request: SummarySourceRequest,
 ) -> ProviderCompactionSummarySource {
+    let (strategy, model_ref, model_backed, deterministic_fallback) = match request {
+        SummarySourceRequest::Hook => (
+            "hook_supplied_summary".to_string(),
+            trigger.model_ref.clone(),
+            false,
+            false,
+        ),
+        SummarySourceRequest::Model {
+            model_ref,
+            deterministic_fallback,
+        } => (
+            if deterministic_fallback {
+                "model_backed_deterministic_fallback".to_string()
+            } else {
+                "model_backed_summary".to_string()
+            },
+            model_ref,
+            true,
+            deterministic_fallback,
+        ),
+        SummarySourceRequest::Deterministic => (
+            "deterministic_rolling_summary".to_string(),
+            trigger.model_ref.clone(),
+            false,
+            true,
+        ),
+        SummarySourceRequest::DeterministicForModelRef { model_ref } => (
+            "deterministic_rolling_summary".to_string(),
+            model_ref,
+            false,
+            true,
+        ),
+    };
     ProviderCompactionSummarySource {
-        strategy: if hook_supplied_summary {
-            "hook_supplied_summary".to_string()
-        } else {
-            "deterministic_rolling_summary".to_string()
-        },
-        model_ref: trigger.model_ref.clone(),
+        strategy,
+        model_ref,
         provider_id: trigger
             .provider_id
             .clone()
@@ -6227,8 +7399,8 @@ fn build_provider_compaction_summary_source(
         previous_summary_used: existing_summary
             .map(str::trim)
             .is_some_and(|summary| !summary.is_empty()),
-        model_backed: false,
-        deterministic_fallback: true,
+        model_backed,
+        deterministic_fallback,
     }
 }
 
@@ -6244,6 +7416,188 @@ fn compaction_summary_override_from_hooks(batch: &HookExecutionBatch) -> Option<
             .filter(|value| !value.is_empty())
             .map(ToOwned::to_owned)
     })
+}
+
+fn compaction_summary_model_ref(
+    config: &CompactionRuntimeConfig,
+    trigger: &ProviderCompactionTrigger,
+) -> String {
+    config
+        .model_ref
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(trigger.model_ref.as_str())
+        .to_string()
+}
+
+async fn model_backed_compaction_summary_for(
+    provider: Arc<dyn Provider>,
+    compaction_config: &CompactionRuntimeConfig,
+    run_state: &RunState,
+    trigger: &ProviderCompactionTrigger,
+) -> Result<String, String> {
+    let context = run_state
+        .provider_context_by_agent
+        .get(&trigger.agent_id)
+        .cloned()
+        .unwrap_or_default();
+    let metadata = recorded_runtime_context_for_compaction(run_state, trigger);
+    if !should_compact_provider_context(&context, &metadata, trigger) {
+        return Err("compaction would be a no-op".to_string());
+    }
+
+    let keep_recent_budget = provider_context_keep_recent_tokens(&metadata);
+    let tokens_before = approximate_provider_context_tokens(&context);
+    let Some(plan) = build_provider_context_compaction_plan(
+        run_state,
+        trigger,
+        &context,
+        keep_recent_budget,
+        compaction_config,
+    ) else {
+        return Err("no compactable provider turns were available".to_string());
+    };
+    let draft_source = build_provider_compaction_summary_source(
+        &metadata,
+        trigger,
+        context.compacted_summary.as_deref(),
+        SummarySourceRequest::Deterministic,
+    );
+    let deterministic_draft = build_provider_context_summary(
+        context.compacted_summary.as_deref(),
+        &plan.older_turns,
+        &plan.pruned_tool_artifacts,
+        &plan.facts,
+        &plan.tail_boundary,
+        &draft_source,
+    );
+    let model_ref = compaction_summary_model_ref(compaction_config, trigger);
+    let model = AgentModelRef::parse(&model_ref);
+    let request = CompletionRequest {
+        provider_id: Some(model.provider_id),
+        model_id: model.model_id,
+        messages: vec![
+            CompletionMessage {
+                role: MessageRole::System,
+                content: "You create Harness provider-context checkpoint summaries. Return only the updated structured checkpoint summary, preserving the requested markdown headings and rolling forward prior summary content instead of appending a raw previous-summary blob.".to_string(),
+                name: None,
+                tool_call_id: None,
+                assistant_tool_calls: None,
+            },
+            CompletionMessage {
+                role: MessageRole::User,
+                content: build_model_compaction_prompt(
+                    context.compacted_summary.as_deref(),
+                    &plan,
+                    &deterministic_draft,
+                ),
+                name: None,
+                tool_call_id: None,
+                assistant_tool_calls: None,
+            },
+        ],
+        temperature: None,
+        max_tokens: Some(PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS as u32 / 3),
+        variant: None,
+        reasoning_effort: None,
+        text_verbosity: None,
+        reasoning_summary: None,
+        tools: None,
+        tool_choice: None,
+        stream: true,
+    };
+
+    let mut stream = provider.stream_completion(request).await;
+    let mut output = String::new();
+    while let Some(event) = stream.next().await {
+        match event {
+            ProviderStreamEvent::TextDelta(delta) => output.push_str(&delta),
+            ProviderStreamEvent::Error { message } => return Err(message),
+            ProviderStreamEvent::Done { .. } | ProviderStreamEvent::DoneWithMetadata { .. } => {
+                break
+            }
+            ProviderStreamEvent::Start
+            | ProviderStreamEvent::Started { .. }
+            | ProviderStreamEvent::ReasoningDelta(_)
+            | ProviderStreamEvent::ToolCallDelta { .. }
+            | ProviderStreamEvent::ToolCallComplete { .. } => {}
+        }
+    }
+
+    validate_model_compaction_summary(&output, tokens_before, &plan)
+}
+
+fn build_model_compaction_prompt(
+    existing_summary: Option<&str>,
+    plan: &ProviderContextCompactionPlan,
+    deterministic_draft: &str,
+) -> String {
+    let compacted_facts = plan
+        .facts
+        .compacted_turns
+        .iter()
+        .enumerate()
+        .map(|(index, fact)| {
+            format!(
+                "{}. user={} assistant={}",
+                index + 1,
+                fact.user_excerpt,
+                fact.assistant_excerpt
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let prior = existing_summary
+        .map(str::trim)
+        .filter(|summary| !summary.is_empty())
+        .unwrap_or("(none)");
+
+    format!(
+        "Update the Harness checkpoint summary for compacted provider context.\n\nRequired output rules:\n- Return markdown only.\n- Keep these headings exactly: ## Goal, ## Constraints & Preferences, ## Progress, ### Done, ### In Progress, ### Blocked, ## Key Decisions, ## Next Steps, ## Critical Context, ## Source Facts, ## Relevant Files / Artifacts.\n- Roll forward any still-relevant previous summary content into the structured sections. Do not append or label a raw previous-summary blob.\n- Keep under {max_chars} characters.\n\nPrevious checkpoint summary:\n{prior}\n\nNew compacted turn facts:\n{compacted_facts}\n\nTail boundary: {mode}; preserved turns: {preserved_turns}; note: {note}\n\nDeterministic Harness draft to improve:\n{deterministic_draft}",
+        max_chars = PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS,
+        mode = plan.tail_boundary.mode,
+        preserved_turns = plan.tail_boundary.preserved_turns,
+        note = plan.tail_boundary.note.as_deref().unwrap_or("none"),
+    )
+}
+
+fn validate_model_compaction_summary(
+    summary: &str,
+    tokens_before: u32,
+    plan: &ProviderContextCompactionPlan,
+) -> Result<String, String> {
+    let trimmed = summary.trim();
+    if trimmed.is_empty() {
+        return Err("model summary was empty".to_string());
+    }
+    if trimmed.chars().count() > PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS {
+        return Err("model summary exceeded the checkpoint summary character budget".to_string());
+    }
+    for heading in [
+        "## Goal",
+        "## Constraints & Preferences",
+        "## Progress",
+        "### Done",
+        "### In Progress",
+        "### Blocked",
+        "## Key Decisions",
+        "## Next Steps",
+        "## Critical Context",
+        "## Source Facts",
+        "## Relevant Files / Artifacts",
+    ] {
+        if !trimmed.contains(heading) {
+            return Err(format!("model summary missed required heading `{heading}`"));
+        }
+    }
+    let tokens_after = approximate_text_tokens(trimmed)
+        .saturating_add(preserved_tokens_estimate(&plan.recent_turns));
+    if tokens_after >= tokens_before {
+        return Err("model summary would not reduce active provider context".to_string());
+    }
+
+    Ok(trimmed.to_string())
 }
 
 fn build_provider_context_summary(
@@ -6268,10 +7622,9 @@ fn build_provider_context_summary(
         .filter(|summary| !summary.is_empty())
     {
         lines.push("- Preserve still-relevant constraints, decisions, files, and next steps from the previous checkpoint summary.".to_string());
-        lines.push("- Previous Summary:".to_string());
-        lines.push(truncate_chars(
-            existing_summary,
-            PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS / 2,
+        lines.push(format!(
+            "- Prior checkpoint constraints/context carried forward: {}",
+            summarize_compaction_text(existing_summary)
         ));
     } else {
         lines.push("- (none recorded explicitly)".to_string());
@@ -6302,6 +7655,15 @@ fn build_provider_context_summary(
 
     lines.push("## Key Decisions".to_string());
     lines.push("- Older provider-visible turns were compacted into this checkpoint; preserved recent turns and the current user message take precedence over this lossy summary.".to_string());
+    if let Some(existing_summary) = existing_summary
+        .map(str::trim)
+        .filter(|summary| !summary.is_empty())
+    {
+        lines.push(format!(
+            "- Prior checkpoint decisions/context were rolled into this structured summary: {}",
+            summarize_compaction_text(existing_summary)
+        ));
+    }
     lines.push(String::new());
 
     lines.push("## Next Steps".to_string());
@@ -6800,6 +8162,114 @@ fn permission_request_digest(tool_id: &str, args_json: &Value) -> String {
     digest12(&bytes)
 }
 
+fn permission_grant_request(
+    workspace_root: &Path,
+    kind: PermissionKind,
+    tool_id: &str,
+    args_json: &Value,
+    request_digest: &str,
+) -> PermissionGrantRequest {
+    PermissionGrantRequest {
+        kind,
+        tool: permission_tool_selector(tool_id, args_json),
+        matcher: permission_grant_matcher(workspace_root, kind, args_json, request_digest),
+    }
+}
+
+fn permission_tool_selector(tool_id: &str, args_json: &Value) -> PermissionToolSelector {
+    let effective_tool_id = effective_mcp_tool_id(tool_id, args_json).unwrap_or_else(|| {
+        canonical_tool_id_for(tool_id)
+            .unwrap_or(tool_id)
+            .to_string()
+    });
+    let canonical_tool_id = canonical_tool_id_for(tool_id).map(str::to_string);
+
+    PermissionToolSelector {
+        effective_tool_id,
+        canonical_tool_id,
+    }
+}
+
+fn permission_grant_matcher(
+    workspace_root: &Path,
+    kind: PermissionKind,
+    args_json: &Value,
+    request_digest: &str,
+) -> PermissionGrantMatcher {
+    match kind {
+        PermissionKind::Shell => shell_command_selector(args_json, request_digest)
+            .unwrap_or_else(|| request_digest_selector(request_digest)),
+        PermissionKind::EditFs => {
+            workspace_path_selector(workspace_root, args_json, request_digest)
+                .unwrap_or_else(|| request_digest_selector(request_digest))
+        }
+        _ => request_digest_selector(request_digest),
+    }
+}
+
+fn request_digest_selector(request_digest: &str) -> PermissionGrantMatcher {
+    PermissionGrantMatcher::RequestDigest {
+        request_digest: request_digest.to_string(),
+    }
+}
+
+fn shell_command_selector(
+    args_json: &Value,
+    request_digest: &str,
+) -> Option<PermissionGrantMatcher> {
+    let command = args_json
+        .get("command")
+        .or_else(|| args_json.get("cmd"))
+        .and_then(Value::as_str)?;
+    let mut command_identity = Vec::new();
+    command_identity.extend_from_slice(command.as_bytes());
+    if let Some(args) = args_json.get("args").and_then(Value::as_array) {
+        command_identity.push(0x1f);
+        command_identity.extend_from_slice(&serde_json::to_vec(args).ok()?);
+    }
+    Some(PermissionGrantMatcher::ShellCommand {
+        command_digest: digest12(&command_identity),
+        request_digest: request_digest.to_string(),
+    })
+}
+
+fn workspace_path_selector(
+    workspace_root: &Path,
+    args_json: &Value,
+    request_digest: &str,
+) -> Option<PermissionGrantMatcher> {
+    let raw_path = args_json
+        .get("path")
+        .or_else(|| args_json.get("filePath"))
+        .and_then(Value::as_str)?;
+    let path = workspace_relative_selector_path(workspace_root, Path::new(raw_path))?;
+    Some(PermissionGrantMatcher::WorkspacePath {
+        path,
+        request_digest: request_digest.to_string(),
+    })
+}
+
+fn workspace_relative_selector_path(workspace_root: &Path, path: &Path) -> Option<String> {
+    let relative = if path.is_absolute() {
+        path.strip_prefix(workspace_root).ok()?
+    } else {
+        path
+    };
+
+    let mut parts = Vec::new();
+    for component in relative.components() {
+        match component {
+            std::path::Component::Normal(value) => parts.push(value.to_string_lossy().to_string()),
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => return None,
+        }
+    }
+
+    (!parts.is_empty()).then(|| parts.join("/"))
+}
+
 fn tool_request_correlation_id(run_state: &RunState, actor: &EventActor) -> Option<String> {
     if actor.kind != ActorKind::Worker {
         return None;
@@ -6811,6 +8281,12 @@ fn tool_request_correlation_id(run_state: &RunState, actor: &EventActor) -> Opti
         .values()
         .find(|turn| turn.agent_id == agent_id)
         .map(|turn| turn.request_id.clone())
+}
+
+fn allocate_provider_request_id(run_state: &mut RunState) -> String {
+    let request_id = format!("req_{:06}", run_state.next_provider_request_id);
+    run_state.next_provider_request_id += 1;
+    request_id
 }
 
 fn hashline_edit_metadata(
@@ -7319,6 +8795,13 @@ fn restore_historical_user_prompt(
     Ok(prompt_summary.to_string())
 }
 
+fn agent_id_from_agent_stream_key(stream_key: Option<&str>) -> Option<&str> {
+    stream_key?
+        .strip_prefix("agent:")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
 fn restore_provider_context_from_history(
     session_dir: &Path,
     run_id: &str,
@@ -7445,6 +8928,9 @@ fn restore_provider_context_from_history(
     let mut request_turn_task_ids: BTreeMap<String, String> = BTreeMap::new();
     let mut historical_task_scopes: BTreeMap<String, TaskTerminalScope> = BTreeMap::new();
     let mut request_artifacts: BTreeMap<String, Vec<EventArtifactRef>> = BTreeMap::new();
+    let mut active_turn_by_agent: BTreeMap<String, String> = BTreeMap::new();
+    let mut agent_turn_agent_by_task: BTreeMap<String, String> = BTreeMap::new();
+    let mut steering_prompts_by_request: BTreeMap<String, Vec<String>> = BTreeMap::new();
 
     for event in &historical_events {
         let replay_agent_event = should_replay_agent_scoped_event(
@@ -7458,12 +8944,30 @@ fn restore_provider_context_from_history(
                 let request = requests.entry(payload.request_id.clone()).or_default();
                 request.first_seq.get_or_insert(event.seq);
                 request.user_text = Some(payload.text.clone());
+
+                if let Some(agent_id) = agent_id_from_agent_stream_key(event.stream_key.as_deref())
+                {
+                    if let Some(active_request_id) = active_turn_by_agent.get(agent_id) {
+                        if active_request_id != &payload.request_id {
+                            steering_prompts_by_request
+                                .entry(active_request_id.clone())
+                                .or_default()
+                                .push(payload.text.clone());
+                        }
+                    }
+                }
             }
             EventV1::ProviderRequestStarted(payload) => {
                 if !replay_agent_event {
                     continue;
                 }
-                let request = requests.entry(payload.request_id.clone()).or_default();
+                let request_id = event
+                    .correlation_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|request_id| !request_id.is_empty())
+                    .unwrap_or(&payload.request_id);
+                let request = requests.entry(request_id.to_string()).or_default();
                 request.first_seq.get_or_insert(event.seq);
                 request.prompt_summary = Some(payload.prompt_summary.clone());
                 if let Some(agent_id) = event
@@ -7473,14 +8977,21 @@ fn restore_provider_context_from_history(
                     .filter(|value| !value.trim().is_empty())
                 {
                     request.agent_id = Some(agent_id.to_string());
+                    active_turn_by_agent.insert(agent_id.to_string(), request_id.to_string());
                 }
             }
             EventV1::ProviderStreamDelta(payload) => {
                 if !replay_agent_event {
                     continue;
                 }
+                let request_id = event
+                    .correlation_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|request_id| !request_id.is_empty())
+                    .unwrap_or(&payload.request_id);
                 requests
-                    .entry(payload.request_id.clone())
+                    .entry(request_id.to_string())
                     .or_default()
                     .assistant_output
                     .push_str(&payload.delta);
@@ -7507,6 +9018,12 @@ fn restore_provider_context_from_history(
                         if let Some(request_id) = event.correlation_id.as_deref() {
                             request_turn_task_ids
                                 .insert(request_id.to_string(), payload.task_id.clone());
+                            if let Some(agent_id) = event.actor.agent_id.as_deref() {
+                                active_turn_by_agent
+                                    .insert(agent_id.to_string(), request_id.to_string());
+                                agent_turn_agent_by_task
+                                    .insert(payload.task_id.clone(), agent_id.to_string());
+                            }
                         }
                     }
                 }
@@ -7524,6 +9041,14 @@ fn restore_provider_context_from_history(
                     });
             }
             EventV1::TaskCompleted(payload) => {
+                if matches!(
+                    historical_task_scopes.get(&payload.task_id),
+                    Some(TaskTerminalScope::AgentTurn)
+                ) {
+                    if let Some(agent_id) = agent_turn_agent_by_task.remove(&payload.task_id) {
+                        active_turn_by_agent.remove(&agent_id);
+                    }
+                }
                 if !replay_agent_event {
                     continue;
                 }
@@ -7554,6 +9079,7 @@ fn restore_provider_context_from_history(
                         ),
                     });
                 };
+                active_turn_by_agent.remove(&agent_id);
 
                 let request_state = requests.remove(request_id).ok_or_else(|| {
                     CoordinatorError::ResumeRestoreFailed {
@@ -7564,12 +9090,19 @@ fn restore_provider_context_from_history(
                     }
                 })?;
 
-                let user_prompt = restore_historical_user_prompt(
+                let mut user_prompt = restore_historical_user_prompt(
                     run_id,
                     request_id,
                     request_state.user_text,
                     request_state.prompt_summary,
                 )?;
+                for steering_prompt in steering_prompts_by_request
+                    .remove(request_id)
+                    .unwrap_or_default()
+                {
+                    user_prompt.push_str("\n\n");
+                    user_prompt.push_str(&steering_prompt);
+                }
 
                 let assistant_response = if payload.result_summary.is_empty() {
                     request_state.assistant_output

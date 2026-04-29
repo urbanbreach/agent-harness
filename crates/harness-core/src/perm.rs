@@ -1,11 +1,14 @@
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::config::{CategoryPermissions, HarnessConfig, PermissionMode};
 use crate::tool::{canonical_tool_id_for, ToolCapability};
 
 const DEFAULT_ASK_TIMEOUT_MS: u64 = 0;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PermissionKind {
     EditFs,
     Shell,
@@ -16,6 +19,149 @@ pub enum PermissionKind {
     WebSearch,
     CodeSearch,
     Lsp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionGrantScope {
+    #[default]
+    Run,
+    Session,
+    Workspace,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PermissionToolSelector {
+    pub effective_tool_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_tool_id: Option<String>,
+}
+
+impl PermissionToolSelector {
+    pub fn matches(&self, request: &Self) -> bool {
+        match (&self.canonical_tool_id, &request.canonical_tool_id) {
+            (Some(left), Some(right)) => left == right,
+            _ => self.effective_tool_id == request.effective_tool_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "selector", rename_all = "snake_case")]
+pub enum PermissionGrantMatcher {
+    RequestDigest {
+        request_digest: String,
+    },
+    ShellCommand {
+        command_digest: String,
+        request_digest: String,
+    },
+    WorkspacePath {
+        path: String,
+        request_digest: String,
+    },
+}
+
+impl PermissionGrantMatcher {
+    pub fn matches(&self, request: &Self) -> bool {
+        match (self, request) {
+            (
+                Self::ShellCommand {
+                    command_digest: granted,
+                    request_digest: granted_request,
+                },
+                Self::ShellCommand {
+                    command_digest: requested,
+                    request_digest,
+                },
+            ) => granted == requested || granted_request == request_digest,
+            (
+                Self::WorkspacePath {
+                    path: granted,
+                    request_digest: granted_request,
+                },
+                Self::WorkspacePath {
+                    path: requested,
+                    request_digest,
+                },
+            ) => granted == requested || granted_request == request_digest,
+            (
+                Self::RequestDigest {
+                    request_digest: granted,
+                },
+                candidate,
+            ) => granted == candidate.request_digest(),
+            (candidate, Self::RequestDigest { request_digest }) => {
+                candidate.request_digest() == request_digest
+            }
+            _ => self.request_digest() == request.request_digest(),
+        }
+    }
+
+    pub fn request_digest(&self) -> &str {
+        match self {
+            Self::RequestDigest { request_digest }
+            | Self::ShellCommand { request_digest, .. }
+            | Self::WorkspacePath { request_digest, .. } => request_digest,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PermissionGrantRequest {
+    pub kind: PermissionKind,
+    pub tool: PermissionToolSelector,
+    pub matcher: PermissionGrantMatcher,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PermissionGrant {
+    pub grant_id: String,
+    pub permission_id: String,
+    pub scope: PermissionGrantScope,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+    pub kind: PermissionKind,
+    pub tool: PermissionToolSelector,
+    pub matcher: PermissionGrantMatcher,
+}
+
+impl PermissionGrant {
+    pub fn matches(&self, request: &PermissionGrantRequest) -> bool {
+        self.expires_at.is_none()
+            && self.kind == request.kind
+            && self.tool.matches(&request.tool)
+            && self.matcher.matches(&request.matcher)
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PermissionGrantSet {
+    grants: Vec<PermissionGrant>,
+}
+
+impl PermissionGrantSet {
+    pub fn from_grants(grants: impl IntoIterator<Item = PermissionGrant>) -> Self {
+        let mut set = Self::default();
+        for grant in grants {
+            set.record(grant);
+        }
+        set
+    }
+
+    pub fn record(&mut self, grant: PermissionGrant) {
+        self.grants
+            .retain(|existing| existing.grant_id != grant.grant_id);
+        self.grants.push(grant);
+    }
+
+    pub fn authorizes(&self, request: &PermissionGrantRequest) -> bool {
+        self.grants.iter().any(|grant| grant.matches(request))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.grants.is_empty()
+    }
 }
 
 impl PermissionKind {

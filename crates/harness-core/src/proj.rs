@@ -10,9 +10,12 @@ use crate::agent::AgentModelRef;
 use crate::config::{registered_profile_model_metadata, ResolvedProfileModelMetadata};
 use crate::event::{
     EventArtifactRef, EventEnvelopeV1, EventV1, ExecutionTimingMetadata, HookExecutionMetadata,
-    ResolvedToolIdentity, TaskCompletionMetadata, TaskLineageMetadata, TaskScheduleState,
-    ToolCallLifecycleState, ToolCallMetadata, ToolCallStatus,
+    ProviderAssistantMessageMetadata, ProviderRequestFinishedMetadata,
+    ProviderRequestStartedMetadata, ResolvedToolIdentity, TaskCompletionMetadata,
+    TaskLineageMetadata, TaskScheduleState, ToolCallLifecycleState, ToolCallMetadata,
+    ToolCallStatus,
 };
+use crate::perm::PermissionGrantSet;
 
 const EVENTS_FILE_NAME: &str = "events.jsonl";
 const REQUEST_ID_PREFIX: &str = "req_";
@@ -229,6 +232,16 @@ pub struct ResumeTaskSnapshot {
     pub metadata: Option<TaskCompletionMetadata>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ResumeProviderLifecycleMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_started: Option<ProviderRequestStartedMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_finished: Option<ProviderRequestFinishedMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_assistant_message_finished: Option<ProviderAssistantMessageMetadata>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResumeArtifactSnapshot {
     pub path: String,
@@ -279,6 +292,8 @@ pub struct ResumeChildSessionSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_lifecycle: Option<ResumeProviderLifecycleMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_state: Option<ChildSessionTerminalState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_reason: Option<String>,
@@ -297,6 +312,8 @@ pub struct ResumePlan {
     pub known_agents: BTreeMap<String, String>,
     pub known_profiles: BTreeSet<String>,
     pub pending_permissions: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "PermissionGrantSet::is_empty")]
+    pub active_permission_grants: PermissionGrantSet,
     pub tasks_in_flight: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub tool_calls: BTreeMap<String, ResumeToolCallSnapshot>,
@@ -326,6 +343,7 @@ impl ResumePlan {
             known_agents: BTreeMap::new(),
             known_profiles: BTreeSet::new(),
             pending_permissions: BTreeSet::new(),
+            active_permission_grants: PermissionGrantSet::default(),
             tasks_in_flight: BTreeSet::new(),
             tool_calls: BTreeMap::new(),
             completed_tasks: BTreeMap::new(),
@@ -521,6 +539,7 @@ pub fn project_resume_plan<'a>(
     let mut known_agents = BTreeMap::new();
     let mut known_profiles = BTreeSet::new();
     let mut pending_permissions = BTreeSet::new();
+    let mut active_permission_grants = PermissionGrantSet::default();
     let mut tasks_in_flight = BTreeSet::new();
     let mut tool_calls = BTreeMap::new();
     let mut completed_tasks = BTreeMap::new();
@@ -760,6 +779,12 @@ pub fn project_resume_plan<'a>(
                     child.latest_child_request_id = Some(payload.request_id.clone());
                     child.provider_id = Some(payload.provider_id.clone());
                     child.model_id = Some(payload.model_id.clone());
+                    if let Some(metadata) = payload.metadata.clone() {
+                        child
+                            .provider_lifecycle
+                            .get_or_insert_with(ResumeProviderLifecycleMetadata::default)
+                            .latest_started = Some(metadata);
+                    }
                 }
             }
             EventV1::ProviderStreamDelta(payload) => {
@@ -785,6 +810,37 @@ pub fn project_resume_plan<'a>(
                     REQUEST_ID_PREFIX,
                     "request",
                 )?;
+                if let (Some(agent_id), Some(metadata)) =
+                    (event.actor.agent_id.as_ref(), payload.metadata.clone())
+                {
+                    let child = child_sessions
+                        .entry(agent_id.clone())
+                        .or_insert_with(ResumeChildSessionSnapshot::default);
+                    child
+                        .provider_lifecycle
+                        .get_or_insert_with(ResumeProviderLifecycleMetadata::default)
+                        .latest_finished = Some(metadata);
+                }
+            }
+            EventV1::AssistantMessageFinished(payload) => {
+                update_id_watermark(
+                    &mut id_watermarks.max_request_id,
+                    &payload.request_id,
+                    REQUEST_ID_PREFIX,
+                    "request",
+                )?;
+                if let (Some(agent_id), Some(metadata)) = (
+                    event.actor.agent_id.as_ref(),
+                    payload.assistant_message.clone(),
+                ) {
+                    let child = child_sessions
+                        .entry(agent_id.clone())
+                        .or_insert_with(ResumeChildSessionSnapshot::default);
+                    child
+                        .provider_lifecycle
+                        .get_or_insert_with(ResumeProviderLifecycleMetadata::default)
+                        .latest_assistant_message_finished = Some(metadata);
+                }
             }
             EventV1::ToolCallRequested(payload) => {
                 update_id_watermark(
@@ -929,6 +985,9 @@ pub fn project_resume_plan<'a>(
                 )?;
                 pending_permissions.remove(&payload.permission_id);
             }
+            EventV1::PermissionGrantRecorded(payload) => {
+                active_permission_grants.record(payload.grant.clone());
+            }
             EventV1::UserMessageSubmitted(payload) => {
                 update_id_watermark(
                     &mut id_watermarks.max_request_id,
@@ -960,6 +1019,7 @@ pub fn project_resume_plan<'a>(
         known_agents,
         known_profiles,
         pending_permissions,
+        active_permission_grants,
         tasks_in_flight,
         tool_calls,
         completed_tasks,
@@ -1561,6 +1621,7 @@ fn event_type_name(event: &EventV1) -> String {
         EventV1::ProviderStreamDelta(_) => "provider_stream_delta",
         EventV1::ProviderReasoningDelta(_) => "provider_reasoning_delta",
         EventV1::ProviderRequestFinished(_) => "provider_request_finished",
+        EventV1::AssistantMessageFinished(_) => "assistant_message_finished",
         EventV1::CompactionRequested(_) => "compaction_requested",
         EventV1::CompactionWritten(_) => "compaction_written",
         EventV1::CompactionApplied(_) => "compaction_applied",
@@ -1569,6 +1630,7 @@ fn event_type_name(event: &EventV1) -> String {
         EventV1::ToolCallStarted(_) => "tool_call_started",
         EventV1::ToolCallFinished(_) => "tool_call_finished",
         EventV1::PermissionRequested(_) => "permission_requested",
+        EventV1::PermissionGrantRecorded(_) => "permission_grant_recorded",
         EventV1::PermissionResolved(_) => "permission_resolved",
         EventV1::EditProposed(_) => "edit_proposed",
         EventV1::EditApplied(_) => "edit_applied",

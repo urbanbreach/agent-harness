@@ -26,7 +26,8 @@ Core runtime and domain logic:
 - **perm/** - Permission engine (allow/deny/ask)
 - **tool/** - Tool framework and capability gating
 - **edit/** - Hashline edit engine
-- **proj/** - Pure projections for UI and replay
+- **proj/** - Pure projections for run summary, resume planning, and session catalog state
+- **transcript_projection** - Pure replay-derived transcript/session/message/part projection for resume, export, TUI, and debugging surfaces
 - **agent/** - Minimal agent runtime
 - **config** - Configuration parsing and validation
 - **clock** - Clock abstraction (real and fake for determinism)
@@ -126,8 +127,44 @@ Events are the source of truth. All state is derived from events.
 - `ProviderStreamDelta` - Text chunk
 - `ProviderReasoningDelta` - Reasoning/thinking chunk
 - `ProviderRequestFinished`
+- `AssistantMessageFinished` - Assistant message committed before tool preflight/execution
 - Provider tool-call deltas/completions are normalized before coordinator execution
 - `CompactionRequested` / `CompactionWritten` / `CompactionApplied` / `CompactionFailed` - provider-context checkpoint lifecycle; written/applied events carry additive active-context estimate metadata so projections can separate active context from cumulative token spend.
+
+### Provider lifecycle metadata contract
+
+The durable provider lifecycle barriers are `ProviderRequestStarted` and `ProviderRequestFinished`.
+Replay, resume, and audits may rely on their ordered presence, shared `request_id`, provider/model
+ids, redacted prompt summary, request digest, finish reason, output digest, and aggregate usage.
+`AssistantMessageFinished` is the separate durable assistant-message boundary: it is appended after
+the coordinator commits the completed assistant response to provider-visible message state and before
+tool preflight or execution begins. These barriers also accept optional metadata objects. Metadata
+fields are additive, serde-defaulted for old logs, and ignored for semantic replay decisions except
+where projections surface them as optional inspection data.
+
+The following state is derived from the event stream, not stored as separate semantic barriers:
+
+- reasoning display boundaries, from provider start/finish plus accumulated reasoning deltas,
+- tool-call readiness, from normalized provider tool-call events before coordinator execution,
+- loop continuation, from finished provider request, executed tool results, and guardrail state,
+- provider stream chunk grouping, from adjacent delta events with the same `request_id`.
+
+Provider metadata is optional and non-semantic for old logs. Missing metadata must not change replay
+equivalence. When implementation needs provider metadata, add it to `ProviderRequestStarted` or
+`ProviderRequestFinished` as optional redacted fields before adding any new event variant.
+
+Field decisions:
+
+| Metadata | Durable location | Contract |
+|----------|------------------|----------|
+| Provider call or response id | Optional start/finish `metadata.provider_call_id` or `metadata.provider_response_id` | Store only redacted ids useful for audit correlation. Never treat provider ids as coordinator scheduling keys. |
+| Stable turn/request correlation | Existing envelope `correlation_id`, provider `request_id`, and optional `metadata.turn_id` | Durable. Use harness-owned ids for replay and resume. Provider ids are advisory only. |
+| Provider session or cache key | Optional start/finish `metadata.provider_session_id` / `metadata.provider_cache_id` | Store redacted summaries or digests only when needed for cache inspection. Missing values are normal. |
+| Stop reason | Existing `finish_reason`; optional finish `metadata.provider_stop_reason` | Durable as a summary string. Provider-specific raw finish payloads are omitted. |
+| Usage and cache read/write counts | Existing `usage`; optional finish `metadata.cache_read_tokens` / `metadata.cache_write_tokens` | Durable aggregate accounting. Counts are advisory and must be safe to omit from old logs. |
+| Assistant message barrier ids/digests | `assistant_message` on `AssistantMessageFinished`; compatibility-only mirror in optional finish `metadata.assistant_message` | Carries redacted message ids or text/reasoning digests for audit boundaries. New logs should use `AssistantMessageFinished` as the explicit assistant boundary; old logs may only have the provider-finish metadata mirror. |
+| Thinking or reasoning signatures | Optional finish `metadata.thinking` | Store only summaries, digests, or signature ids. Never store raw hidden thinking text. |
+| Provider payloads and secrets | Never durable | Raw requests, raw responses, auth headers, and unredacted reasoning are excluded from event logs. |
 
 **Tool Execution**
 - `ToolCallRequested`
@@ -136,6 +173,7 @@ Events are the source of truth. All state is derived from events.
 
 **Permissions**
 - `PermissionRequested` - User intervention required
+- `PermissionGrantRecorded` - Durable allow-always grant recorded for matching future requests in the event log
 - `PermissionResolved` - Allow or deny decision recorded
 
 **Editing**
@@ -216,7 +254,9 @@ should use the canonical public names above.
 3. Apply decision:
    - `allow` - Proceed immediately
    - `deny` - Emit `PermissionResolved(deny)` and fail
-   - `ask` - Emit `PermissionRequested`, pause until `ResolvePermission` command
+   - `ask` - Check active coordinator-owned durable grants rebuilt from `PermissionGrantRecorded`; if none match, emit `PermissionRequested` and pause until a resolve command
+
+Static configured `deny` is final and is checked before durable grants, so a replayed allow-always grant can satisfy future `ask` decisions but never overrides policy denial. Allow-always decisions record run-scoped grants by default, with explicit scope and optional expiry fields for future extension. Grant matchers persist only redacted-safe selectors: canonical/effective tool id, permission kind, a semantic shell command digest or workspace-relative edit path when available, and request-digest fallback for exact matching.
 
 ### Headless Mode
 
@@ -226,16 +266,49 @@ In headless scenarios, `ask` defaults to `deny` unless the scenario script expli
 
 Workers cannot call direct coordinator spawn APIs. Only `ActorKind::Supervisor` may call `SpawnAgent`. Violations emit `PolicyViolationDetected`.
 
-## Multi-turn Tool Loop
+## Coordinator-owned Agent Turn Loop
 
-Agent turns can iterate across provider output and tool execution:
+Agent turns are coordinator-owned state machines. Provider helpers may transform context and stream
+one assistant response, but they do not decide task scheduling, append events directly, or execute
+tools on the production coordinator path. The turn loop runs through explicit phases:
 
-1. Provider stream starts and emits text and/or structured tool calls.
-2. Structured tool calls are mapped back to canonical tool ids for the current request.
-3. The coordinator executes allowed tools, waits for completion, and reinjects tool results as tool-role messages.
-4. The agent loop continues until a provider turn completes with no tool calls or a guardrail fails closed.
+1. **Turn start** - the coordinator records the running turn, lifecycle hook state, cancellation
+   token, scheduler slot, and stable turn/request correlation id.
+2. **Context projection and provider transform** - provider-visible messages are recomputed at
+   provider-start time from event-derived context plus any applied checkpoint. Queued turns do not
+   carry stale scheduled-time provider input.
+3. **Provider stream** - the coordinator allocates a fresh provider-call id, invokes the single-call
+   provider primitive, and receives provider lifecycle/text/reasoning/tool-intent events through
+   coordinator commands.
+4. **Assistant-message barrier** - `ProviderRequestFinished` closes provider streaming, then
+   `AssistantMessageFinished` is appended and acknowledged after the assistant response is committed
+   to coordinator message state. Its optional metadata carries non-semantic assistant-message digests
+   for audit/debugging.
+5. **Tool preflight and execution** - parsed tool intents are mapped back to canonical tool ids and
+   re-enter the coordinator through `ExecuteAgentToolCall`, so permission checks, scheduler slots,
+   artifacts, redaction, cancellation, and late-result handling stay on the same path as native tool
+   calls.
+6. **Tool-result projection** - completed tool results are appended to the next provider request as
+   tool-role messages in assistant source order.
+7. **Steering/follow-up and turn end** - queued same-agent steering is drained only at safe provider
+   barriers; otherwise pending messages become follow-up turns after the current turn reaches a
+   terminal task lifecycle event.
 
-Guardrails bound the loop by iteration count and total tool calls per turn.
+JSONL lifecycle events remain chronological append-time records. A parallel tool batch can therefore
+emit `ToolCallFinished` events in completion order while the next provider request receives the
+model-visible tool-result messages in the assistant's original source order. Replay and audits should
+treat chronological JSONL order as the source of truth for what happened, and the pure conversation
+projection as the source of truth for provider model context.
+
+Prompt-mode completion follows the same lifecycle contract: a provider finish is only the assistant
+message barrier, while the CLI waits for the correlated agent-turn `TaskCompleted` or `TaskCancelled`
+terminal event before reporting completion. The `task` and `batch` tools also preserve coordinator
+re-entry: child turns are requested or resumed through coordinator scheduling, never through a direct
+agent/provider loop bypass.
+
+Guardrails bound the loop by profile iteration count and total tool calls per turn. Overflow-style
+provider failures may trigger one coordinator compaction retry; the retry recomputes provider context
+from the checkpoint without rewriting `events.jsonl`.
 
 ## Tool Surface Policy
 
@@ -321,12 +394,12 @@ Checkpoint payloads carry:
 - advisory `pruned_tool_artifacts` metadata for artifacts associated with compacted turns,
 - structured source facts for compacted turns, relevant artifacts, touched files, and previous-checkpoint lineage,
 - tail-boundary metadata describing whether the preserved suffix is whole-turn, oversized whole-turn, or summary-only,
-- summary-source metadata recording deterministic fallback versus hook-supplied summaries,
+- summary-source metadata recording hook overrides, optional model-backed summaries, and deterministic fallback,
 - a first-class timeline entry that UIs/replay views can render without parsing prose.
 
 The checkpoint recap injected back into provider requests is historical background only. It is intentionally not treated as a system instruction; preserved recent turns and the live user prompt take precedence.
 
-Lifecycle hooks can observe `compaction_requested`. Critical hook failure cancels the checkpoint and records `CompactionFailed`. A successful hook may supply a custom summary by writing output beginning with `compaction_summary:`; otherwise the deterministic rolling summary remains the default.
+Lifecycle hooks can observe `compaction_requested`. Critical hook failure cancels the checkpoint and records `CompactionFailed`. A successful hook may supply a custom summary by writing output beginning with `compaction_summary:`; hook summaries take precedence over optional model-backed summaries. Model-backed summary calls are disabled by default, run through the provider abstraction without emitting provider request/stream events, and must return the Harness structured checkpoint headings within budget. Empty, failing, overflowing, or invalid model summaries fall back to the deterministic rolling summary and record `summary_source.deterministic_fallback=true`.
 
 ### Manual `/compact`
 
@@ -334,7 +407,7 @@ Manual `/compact` means "write a checkpoint now, preserving the latest completed
 
 ### Overflow retry behavior
 
-After an overflow-style provider failure, the coordinator may compact and retry once. Normal proactive compaction keeps recent turns verbatim and summarizes older turns. Overflow retry can also fall back to a summary-only checkpoint when a single preserved turn is itself too large, but only when the resulting checkpoint is strictly smaller than the active provider context.
+After an overflow-style provider failure, the coordinator may compact and retry once. This behavior is enabled by default and can be disabled with `runtime.compaction.autoRetryOverflow=false`. Normal proactive compaction keeps recent turns verbatim and summarizes older turns. Overflow retry can also fall back to a summary-only checkpoint when a single preserved turn is itself too large, but only when the resulting checkpoint is strictly smaller than the active provider context. When `runtime.compaction.splitOversizedTurns=true`, an oversized latest turn can instead be split inside the checkpoint artifact: the earlier portion is summarized and a suffix remains provider-visible as recent context, without adding event variants or rewriting history.
 
 ### Session artifacts vs UI memory caps
 
@@ -345,7 +418,7 @@ Compaction is a provider-context persistence feature. It is separate from TUI/se
 Replay is side-effect free. It:
 
 1. Reads events from JSONL in `seq` order
-2. Applies pure projections to rebuild state
+2. Applies pure projections to rebuild run, resume, catalog, provider-context, and transcript/message/part state
 3. Does not execute tools or make network calls
 4. Produces the same final state as the live run
 

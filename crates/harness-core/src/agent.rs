@@ -1,18 +1,26 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use harness_providers::{
-    AssistantToolCall, CompletionMessage, CompletionRequest, CompletionUsage, MessageRole,
-    Provider, ProviderEventStream, ProviderStreamEvent, ToolChoice, ToolDef,
+    CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
+    ProviderEventStream, ProviderStreamEvent, ProviderStreamFinishedMetadata,
+    ProviderStreamStartMetadata, ProviderStreamThinkingMetadata, ToolChoice, ToolDef,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio_stream::StreamExt;
 
 use crate::config::{registered_profile_model_metadata, ToolFailureMode};
-use crate::event::EventArtifactRef;
+use crate::conversation::{
+    ConversationAssistantMessage, ConversationCheckpointMessage, ConversationMessage,
+    ConversationToolResultMessage, ConversationUserMessage,
+};
+use crate::event::{
+    EventArtifactRef, ProviderAssistantMessageMetadata, ProviderRequestFinishedMetadata,
+    ProviderRequestStartedMetadata, ProviderThinkingMetadata,
+};
 use crate::tool::{build_tool_function_name_mapping, ToolRegistry, ToolResult};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -296,6 +304,7 @@ pub struct ProviderRequestStarted {
     pub model_id: String,
     pub prompt_summary: String,
     pub request_digest: String,
+    pub metadata: Option<ProviderRequestStartedMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -304,6 +313,7 @@ pub struct ProviderRequestFinished {
     pub finish_reason: String,
     pub output_digest: Option<String>,
     pub usage: Option<CompletionUsage>,
+    pub metadata: Option<ProviderRequestFinishedMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -324,7 +334,7 @@ pub fn default_provider() -> Arc<dyn Provider> {
     Arc::new(NullProvider)
 }
 
-const MAX_TOOL_CALLS_TOTAL: usize = 1000;
+pub(crate) const MAX_TOOL_CALLS_TOTAL: usize = 1000;
 
 pub struct MultiTurnStreamingRequest<'a> {
     pub provider: Arc<dyn Provider>,
@@ -333,6 +343,75 @@ pub struct MultiTurnStreamingRequest<'a> {
     pub request_id: String,
     pub request: AgentRequest,
     pub prior_context: &'a ProviderContext,
+}
+
+pub struct StreamAssistantResponseOnceRequest<'a> {
+    pub provider: Arc<dyn Provider>,
+    pub profile: &'a AgentProfile,
+    pub model: AgentModelRef,
+    pub model_settings: AgentModelSettings,
+    pub turn_request_id: String,
+    pub provider_request_id: String,
+    pub prompt_summary: &'a str,
+    pub context: ProviderBoundaryContext<'a>,
+    pub tool_defs: &'a [ToolDef],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssistantResponse {
+    pub request_id: String,
+    pub text: String,
+    pub reasoning: String,
+    pub reasoning_deltas: Vec<String>,
+    pub tool_call_deltas: Vec<AssistantToolCallDelta>,
+    pub tool_intents: Vec<AssistantToolIntent>,
+    pub stop_reason: String,
+    pub usage: Option<CompletionUsage>,
+    pub started_metadata: ProviderRequestStartedMetadata,
+    pub finished_metadata: ProviderRequestFinishedMetadata,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssistantToolCallDelta {
+    pub tool_call_id: String,
+    pub function_name: Option<String>,
+    pub arguments_delta: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssistantToolIntent {
+    pub tool_call_id: String,
+    pub function_name: String,
+    pub tool_id: String,
+    pub arguments_json: String,
+    pub arguments: Value,
+}
+
+#[derive(Debug, Clone)]
+pub enum ProviderBoundaryContext<'a> {
+    ProjectedHarness {
+        messages: &'a [ConversationMessage],
+        checkpoint: Option<&'a ProviderContextCheckpointMetadata>,
+    },
+    ProviderMessages {
+        messages: &'a [CompletionMessage],
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct ProviderBoundaryInput<'a> {
+    pub profile: &'a AgentProfile,
+    pub model: AgentModelRef,
+    pub model_settings: AgentModelSettings,
+    pub context: ProviderBoundaryContext<'a>,
+    pub tools: Option<Vec<ToolDef>>,
+    pub tool_choice: Option<ToolChoice>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProviderBoundaryOutput {
+    pub messages: Vec<CompletionMessage>,
+    pub request: CompletionRequest,
 }
 
 pub async fn run_single_turn_streaming<F, Fut>(
@@ -348,34 +427,47 @@ where
     Fut: Future<Output = ()>,
 {
     let model = AgentModelRef::parse(&request.model_ref);
-    let messages = build_provider_context_messages(profile, prior_context, &request.prompt);
-    let completion_request = build_completion_request(
-        Some(model.provider_id.clone()),
-        model.model_id.clone(),
-        messages,
-        profile.temperature,
-        request.model_settings.clone(),
-        None,
-        None,
-    );
+    let projected_context = project_provider_context_for_prompt(prior_context, &request.prompt);
+    let provider_boundary = transform_context_for_provider(ProviderBoundaryInput {
+        profile,
+        model: model.clone(),
+        model_settings: request.model_settings.clone(),
+        context: ProviderBoundaryContext::ProjectedHarness {
+            messages: &projected_context,
+            checkpoint: prior_context.checkpoint.as_ref(),
+        },
+        tools: None,
+        tool_choice: None,
+    });
+    let completion_request = provider_boundary.request;
+    let request_digest = digest12_completion_request(&completion_request);
 
+    let mut stream = provider.stream_completion(completion_request).await;
+    let (provider_start_metadata, mut pending_event) =
+        consume_provider_start_event(&mut stream).await;
     emit(AgentRuntimeEvent::ProviderRequestStarted(
         ProviderRequestStarted {
             request_id: request_id.clone(),
             provider_id: model.provider_id,
             model_id: model.model_id,
             prompt_summary: truncate_summary(&request.prompt, 256),
-            request_digest: digest12_completion_request(&completion_request),
+            request_digest,
+            metadata: Some(provider_request_started_metadata(
+                &request_id,
+                &request_id,
+                provider_start_metadata.as_ref(),
+            )),
         },
     ))
     .await;
-
-    let mut stream = provider.stream_completion(completion_request).await;
     let mut output = String::new();
 
-    while let Some(event) = stream.next().await {
+    loop {
+        let Some(event) = next_provider_event(&mut pending_event, &mut stream).await else {
+            break;
+        };
         match event {
-            ProviderStreamEvent::Start => {}
+            ProviderStreamEvent::Start | ProviderStreamEvent::Started { .. } => {}
             ProviderStreamEvent::TextDelta(delta) => {
                 output.push_str(&delta);
                 emit(AgentRuntimeEvent::ProviderStreamDelta {
@@ -400,6 +492,38 @@ where
                         finish_reason: "done".to_string(),
                         output_digest: Some(digest12(output.as_bytes())),
                         usage: Some(usage),
+                        metadata: Some(provider_finished_metadata(
+                            &request_id,
+                            &request_id,
+                            "done",
+                            &output,
+                            "",
+                            None,
+                        )),
+                    },
+                ))
+                .await;
+
+                return AgentTurnOutcome::Succeeded { output };
+            }
+            ProviderStreamEvent::DoneWithMetadata {
+                usage,
+                metadata: provider_metadata,
+            } => {
+                emit(AgentRuntimeEvent::ProviderRequestFinished(
+                    ProviderRequestFinished {
+                        request_id: request_id.clone(),
+                        finish_reason: "done".to_string(),
+                        output_digest: Some(digest12(output.as_bytes())),
+                        usage: Some(usage),
+                        metadata: Some(provider_finished_metadata(
+                            &request_id,
+                            &request_id,
+                            "done",
+                            &output,
+                            "",
+                            provider_metadata.as_ref(),
+                        )),
                     },
                 ))
                 .await;
@@ -413,6 +537,14 @@ where
                         finish_reason: "error".to_string(),
                         output_digest: None,
                         usage: None,
+                        metadata: Some(provider_finished_metadata(
+                            &request_id,
+                            &request_id,
+                            "error",
+                            &output,
+                            "",
+                            None,
+                        )),
                     },
                 ))
                 .await;
@@ -424,10 +556,18 @@ where
 
     emit(AgentRuntimeEvent::ProviderRequestFinished(
         ProviderRequestFinished {
-            request_id,
+            request_id: request_id.clone(),
             finish_reason: "stream_ended".to_string(),
             output_digest: Some(digest12(output.as_bytes())),
             usage: None,
+            metadata: Some(provider_finished_metadata(
+                &request_id,
+                &request_id,
+                "stream_ended",
+                &output,
+                "",
+                None,
+            )),
         },
     ))
     .await;
@@ -435,9 +575,197 @@ where
     AgentTurnOutcome::Succeeded { output }
 }
 
-pub async fn run_multi_turn_streaming<F, Fut, T, TFut>(
+pub async fn stream_assistant_response_once<F, Fut>(
+    request: StreamAssistantResponseOnceRequest<'_>,
+    mut emit: F,
+) -> Result<AssistantResponse, String>
+where
+    F: FnMut(AgentRuntimeEvent) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    let StreamAssistantResponseOnceRequest {
+        provider,
+        profile,
+        model,
+        model_settings,
+        turn_request_id,
+        provider_request_id,
+        prompt_summary,
+        context,
+        tool_defs,
+    } = request;
+
+    let function_to_tool_id = tool_defs
+        .iter()
+        .map(|tool| (tool.function_name.clone(), tool.tool_id.clone()))
+        .collect::<BTreeMap<_, _>>();
+
+    let provider_boundary = transform_context_for_provider(ProviderBoundaryInput {
+        profile,
+        model: model.clone(),
+        model_settings,
+        context,
+        tools: (!tool_defs.is_empty()).then(|| tool_defs.to_vec()),
+        tool_choice: (!tool_defs.is_empty()).then_some(ToolChoice::Auto),
+    });
+    let completion_request = provider_boundary.request;
+    let request_digest = digest12_completion_request(&completion_request);
+
+    let mut stream = provider.stream_completion(completion_request).await;
+    let (provider_start_metadata, mut pending_event) =
+        consume_provider_start_event(&mut stream).await;
+    let started_metadata = provider_request_started_metadata(
+        &turn_request_id,
+        &provider_request_id,
+        provider_start_metadata.as_ref(),
+    );
+
+    emit(AgentRuntimeEvent::ProviderRequestStarted(
+        ProviderRequestStarted {
+            request_id: provider_request_id.clone(),
+            provider_id: model.provider_id.clone(),
+            model_id: model.model_id.clone(),
+            prompt_summary: truncate_summary(prompt_summary, 256),
+            request_digest,
+            metadata: Some(started_metadata.clone()),
+        },
+    ))
+    .await;
+
+    let mut output = String::new();
+    let mut reasoning = String::new();
+    let mut reasoning_deltas = Vec::new();
+    let mut tool_call_deltas = Vec::new();
+    let mut tool_calls = Vec::new();
+    let mut stop_reason = "stream_ended".to_string();
+    let mut usage = None;
+    let mut provider_error = None;
+    let mut finished_provider_metadata = None;
+
+    loop {
+        let Some(event) = next_provider_event(&mut pending_event, &mut stream).await else {
+            break;
+        };
+        match event {
+            ProviderStreamEvent::Start | ProviderStreamEvent::Started { .. } => {}
+            ProviderStreamEvent::TextDelta(delta) => {
+                output.push_str(&delta);
+                emit(AgentRuntimeEvent::ProviderStreamDelta {
+                    request_id: provider_request_id.clone(),
+                    delta,
+                })
+                .await;
+            }
+            ProviderStreamEvent::ReasoningDelta(delta) => {
+                reasoning.push_str(&delta);
+                reasoning_deltas.push(delta.clone());
+                emit(AgentRuntimeEvent::ProviderReasoningDelta {
+                    request_id: provider_request_id.clone(),
+                    delta,
+                })
+                .await;
+            }
+            ProviderStreamEvent::ToolCallDelta {
+                tool_call_id,
+                function_name,
+                arguments_delta,
+            } => {
+                tool_call_deltas.push(AssistantToolCallDelta {
+                    tool_call_id,
+                    function_name,
+                    arguments_delta,
+                });
+            }
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id,
+                function_name,
+                arguments_json,
+            } => {
+                tool_calls.push(CollectedToolCall {
+                    tool_call_id,
+                    function_name,
+                    arguments_json,
+                });
+            }
+            ProviderStreamEvent::Done {
+                usage: finished_usage,
+            } => {
+                stop_reason = "done".to_string();
+                usage = Some(finished_usage);
+                break;
+            }
+            ProviderStreamEvent::DoneWithMetadata {
+                usage: finished_usage,
+                metadata,
+            } => {
+                stop_reason = "done".to_string();
+                usage = Some(finished_usage);
+                finished_provider_metadata = metadata;
+                break;
+            }
+            ProviderStreamEvent::Error { message } => {
+                stop_reason = "error".to_string();
+                provider_error = Some(message);
+                break;
+            }
+        }
+    }
+
+    let finished_metadata = provider_finished_metadata(
+        &turn_request_id,
+        &provider_request_id,
+        &stop_reason,
+        &output,
+        &reasoning,
+        finished_provider_metadata.as_ref(),
+    );
+    let output_digest = if stop_reason == "error" {
+        None
+    } else {
+        Some(digest12(output.as_bytes()))
+    };
+    emit(AgentRuntimeEvent::ProviderRequestFinished(
+        ProviderRequestFinished {
+            request_id: provider_request_id.clone(),
+            finish_reason: stop_reason.clone(),
+            output_digest,
+            usage: usage.clone(),
+            metadata: Some(finished_metadata.clone()),
+        },
+    ))
+    .await;
+
+    if let Some(reason) = provider_error {
+        return Err(reason);
+    }
+
+    let tool_intents = parse_tool_intents(tool_calls, &function_to_tool_id)?;
+    Ok(AssistantResponse {
+        request_id: provider_request_id,
+        text: output,
+        reasoning,
+        reasoning_deltas,
+        tool_call_deltas,
+        tool_intents,
+        stop_reason,
+        usage,
+        started_metadata,
+        finished_metadata,
+    })
+}
+
+/// Compatibility runner for tests and legacy callers that still need a provider
+/// response through the old entry point.
+///
+/// Production coordinator turns use the explicit phase loop in `coord.rs` and
+/// call [`stream_assistant_response_once`] for provider streaming. New runtime
+/// paths must not use this wrapper. Tool execution is coordinator-owned; if the
+/// provider emits tool intents here, this wrapper fails without invoking the
+/// compatibility tool callback.
+pub async fn run_multi_turn_streaming<F, Fut, T, TFut, P, PFut>(
     request: MultiTurnStreamingRequest<'_>,
-    mut call_tool_and_wait: T,
+    mut next_provider_request_id: P,
+    _call_tool_and_wait: T,
     mut emit: F,
 ) -> AgentTurnOutcome
 where
@@ -445,6 +773,8 @@ where
     Fut: Future<Output = ()>,
     T: FnMut(String, Value) -> TFut,
     TFut: Future<Output = Result<ToolResult, String>>,
+    P: FnMut() -> PFut,
+    PFut: Future<Output = Result<String, String>>,
 {
     let MultiTurnStreamingRequest {
         provider,
@@ -460,219 +790,46 @@ where
         Ok(tool_defs) => tool_defs,
         Err(reason) => return AgentTurnOutcome::Failed { reason },
     };
-    let function_to_tool_id = tool_defs
-        .iter()
-        .map(|tool| (tool.function_name.clone(), tool.tool_id.clone()))
-        .collect::<BTreeMap<_, _>>();
 
-    let mut messages = build_provider_context_messages(profile, prior_context, &request.prompt);
+    let projected_context = project_provider_context_for_prompt(prior_context, &request.prompt);
+    let provider_request_id = match next_provider_request_id().await {
+        Ok(request_id) => request_id,
+        Err(reason) => return AgentTurnOutcome::Failed { reason },
+    };
 
-    let mut total_tool_calls = 0usize;
-
-    for _iter in 1..=profile.max_iters {
-        let turn_request_id = request_id.clone();
-
-        let completion_request = build_completion_request(
-            Some(model.provider_id.clone()),
-            model.model_id.clone(),
-            messages.clone(),
-            profile.temperature,
-            request.model_settings.clone(),
-            (!tool_defs.is_empty()).then(|| tool_defs.clone()),
-            (!tool_defs.is_empty()).then_some(ToolChoice::Auto),
-        );
-
-        emit(AgentRuntimeEvent::ProviderRequestStarted(
-            ProviderRequestStarted {
-                request_id: turn_request_id.clone(),
-                provider_id: model.provider_id.clone(),
-                model_id: model.model_id.clone(),
-                prompt_summary: truncate_summary(&request.prompt, 256),
-                request_digest: digest12_completion_request(&completion_request),
+    let assistant_response = match stream_assistant_response_once(
+        StreamAssistantResponseOnceRequest {
+            provider,
+            profile,
+            model,
+            model_settings: request.model_settings.clone(),
+            turn_request_id: request_id,
+            provider_request_id,
+            prompt_summary: &request.prompt,
+            context: ProviderBoundaryContext::ProjectedHarness {
+                messages: &projected_context,
+                checkpoint: prior_context.checkpoint.as_ref(),
             },
-        ))
-        .await;
+            tool_defs: &tool_defs,
+        },
+        &mut emit,
+    )
+    .await
+    {
+        Ok(assistant_response) => assistant_response,
+        Err(reason) => return AgentTurnOutcome::Failed { reason },
+    };
 
-        let mut stream = provider.stream_completion(completion_request).await;
-        let mut output = String::new();
-        let mut tool_calls = Vec::new();
-        let mut finished = false;
-
-        while let Some(event) = stream.next().await {
-            match event {
-                ProviderStreamEvent::Start => {}
-                ProviderStreamEvent::TextDelta(delta) => {
-                    output.push_str(&delta);
-                    emit(AgentRuntimeEvent::ProviderStreamDelta {
-                        request_id: turn_request_id.clone(),
-                        delta,
-                    })
-                    .await;
-                }
-                ProviderStreamEvent::ReasoningDelta(delta) => {
-                    emit(AgentRuntimeEvent::ProviderReasoningDelta {
-                        request_id: turn_request_id.clone(),
-                        delta,
-                    })
-                    .await;
-                }
-                ProviderStreamEvent::ToolCallDelta { .. } => {}
-                ProviderStreamEvent::ToolCallComplete {
-                    tool_call_id,
-                    function_name,
-                    arguments_json,
-                } => {
-                    tool_calls.push(CollectedToolCall {
-                        tool_call_id,
-                        function_name,
-                        arguments_json,
-                    });
-                }
-                ProviderStreamEvent::Done { usage } => {
-                    finished = true;
-                    let usage = Some(usage);
-                    emit(AgentRuntimeEvent::ProviderRequestFinished(
-                        ProviderRequestFinished {
-                            request_id: turn_request_id.clone(),
-                            finish_reason: "done".to_string(),
-                            output_digest: Some(digest12(output.as_bytes())),
-                            usage,
-                        },
-                    ))
-                    .await;
-                    break;
-                }
-                ProviderStreamEvent::Error { message } => {
-                    emit(AgentRuntimeEvent::ProviderRequestFinished(
-                        ProviderRequestFinished {
-                            request_id: turn_request_id,
-                            finish_reason: "error".to_string(),
-                            output_digest: None,
-                            usage: None,
-                        },
-                    ))
-                    .await;
-                    return AgentTurnOutcome::Failed { reason: message };
-                }
-            }
-        }
-
-        if !finished {
-            emit(AgentRuntimeEvent::ProviderRequestFinished(
-                ProviderRequestFinished {
-                    request_id: turn_request_id,
-                    finish_reason: "stream_ended".to_string(),
-                    output_digest: Some(digest12(output.as_bytes())),
-                    usage: None,
-                },
-            ))
-            .await;
-        }
-
-        let assistant_tool_calls = (!tool_calls.is_empty()).then(|| {
-            tool_calls
-                .iter()
-                .map(|tool_call| AssistantToolCall {
-                    tool_call_id: tool_call.tool_call_id.clone(),
-                    function_name: tool_call.function_name.clone(),
-                    arguments_json: tool_call.arguments_json.clone(),
-                })
-                .collect::<Vec<_>>()
-        });
-
-        messages.push(CompletionMessage {
-            role: MessageRole::Assistant,
-            content: output.clone(),
-            name: None,
-            tool_call_id: None,
-            assistant_tool_calls,
-        });
-
-        if tool_calls.is_empty() {
-            return AgentTurnOutcome::Succeeded { output };
-        }
-
-        total_tool_calls += tool_calls.len();
-        if total_tool_calls > MAX_TOOL_CALLS_TOTAL {
-            return AgentTurnOutcome::Failed {
-                reason: format!("agent turn exceeded MAX_TOOL_CALLS_TOTAL={MAX_TOOL_CALLS_TOTAL}"),
-            };
-        }
-
-        for tool_call in tool_calls {
-            let Some(tool_id) = function_to_tool_id.get(&tool_call.function_name) else {
-                return AgentTurnOutcome::Failed {
-                    reason: format!(
-                        "provider emitted unmapped tool function `{}`",
-                        tool_call.function_name
-                    ),
-                };
-            };
-
-            let args_json: Value = match serde_json::from_str(&tool_call.arguments_json) {
-                Ok(args_json) => args_json,
-                Err(err) => {
-                    return AgentTurnOutcome::Failed {
-                        reason: format!(
-                            "provider emitted malformed tool args for `{}`: {err}",
-                            tool_call.function_name
-                        ),
-                    };
-                }
-            };
-
-            let tool_result = match call_tool_and_wait(tool_id.clone(), args_json).await {
-                Ok(result) => result,
-                Err(reason) => {
-                    if matches!(
-                        profile.tool_failure_mode,
-                        ToolFailureMode::ContinueAsToolMessage
-                    ) {
-                        let tool_error_result = ToolResult {
-                            display_text: format!(
-                                "tool call `{}` failed: {reason}",
-                                tool_call.function_name
-                            ),
-                            structured_json: Some(serde_json::json!({
-                                "error": reason,
-                                "status": "failed"
-                            })),
-                            artifacts: Vec::new(),
-                        };
-                        messages.push(CompletionMessage {
-                            role: MessageRole::Tool,
-                            content: tool_result_to_message_content(&tool_error_result),
-                            name: Some(tool_call.function_name),
-                            tool_call_id: Some(tool_call.tool_call_id),
-                            assistant_tool_calls: None,
-                        });
-                        continue;
-                    }
-
-                    return AgentTurnOutcome::Failed {
-                        reason: format!(
-                            "tool call `{}` failed closed: {reason}",
-                            tool_call.function_name
-                        ),
-                    };
-                }
-            };
-
-            messages.push(CompletionMessage {
-                role: MessageRole::Tool,
-                content: tool_result_to_message_content(&tool_result),
-                name: Some(tool_call.function_name),
-                tool_call_id: Some(tool_call.tool_call_id),
-                assistant_tool_calls: None,
-            });
-        }
+    if !assistant_response.tool_intents.is_empty() {
+        return AgentTurnOutcome::Failed {
+            reason:
+                "direct tool execution is unsupported on compatibility path; use coordinator loop"
+                    .to_string(),
+        };
     }
 
-    AgentTurnOutcome::Failed {
-        reason: format!(
-            "agent turn exceeded profile max_iters={}",
-            profile.max_iters
-        ),
+    AgentTurnOutcome::Succeeded {
+        output: assistant_response.text,
     }
 }
 
@@ -681,16 +838,64 @@ pub fn build_provider_context_messages(
     prior_context: &ProviderContext,
     prompt: &str,
 ) -> Vec<CompletionMessage> {
-    let summary_message_count = usize::from(
-        prior_context
-            .compacted_summary
-            .as_deref()
-            .map(str::trim)
-            .is_some_and(|summary| !summary.is_empty()),
+    let projected_context = project_provider_context_for_prompt(prior_context, prompt);
+    transform_context_for_provider(ProviderBoundaryInput {
+        profile,
+        model: AgentModelRef::parse(&profile.model_ref),
+        model_settings: AgentModelSettings::default(),
+        context: ProviderBoundaryContext::ProjectedHarness {
+            messages: &projected_context,
+            checkpoint: prior_context.checkpoint.as_ref(),
+        },
+        tools: None,
+        tool_choice: None,
+    })
+    .messages
+}
+
+/// Harness provider boundary: transform projected harness-native conversation state
+/// into provider SDK messages and the provider request payload.
+///
+/// `ConversationMessage` remains the event-derived, side-effect-free source shape.
+/// This boundary is the only production path that attaches provider roles, tool
+/// definitions, cache/thinking/session request options, and profile/model settings
+/// before calling a provider. The `ProviderMessages` variant lets the coordinator
+/// pass its transient, source-ordered provider context between explicit phases.
+pub fn transform_context_for_provider(input: ProviderBoundaryInput<'_>) -> ProviderBoundaryOutput {
+    let ProviderBoundaryInput {
+        profile,
+        model,
+        model_settings,
+        context,
+        tools,
+        tool_choice,
+    } = input;
+
+    let messages = match context {
+        ProviderBoundaryContext::ProjectedHarness { messages, .. } => {
+            convert_projected_context_to_provider_messages(profile, messages)
+        }
+        ProviderBoundaryContext::ProviderMessages { messages } => messages.to_vec(),
+    };
+
+    let request = build_completion_request(
+        Some(model.provider_id),
+        model.model_id,
+        messages.clone(),
+        profile.temperature,
+        model_settings,
+        tools,
+        tool_choice,
     );
-    let mut messages = Vec::with_capacity(
-        2 + summary_message_count + prior_context.preserved_turns.len().saturating_mul(2),
-    );
+
+    ProviderBoundaryOutput { messages, request }
+}
+
+fn convert_projected_context_to_provider_messages(
+    profile: &AgentProfile,
+    projected_context: &[ConversationMessage],
+) -> Vec<CompletionMessage> {
+    let mut messages = Vec::with_capacity(1 + projected_context.len());
     messages.push(CompletionMessage {
         role: MessageRole::System,
         content: profile.system_prompt.clone(),
@@ -699,49 +904,155 @@ pub fn build_provider_context_messages(
         assistant_tool_calls: None,
     });
 
+    for message in projected_context {
+        match message {
+            ConversationMessage::Checkpoint(checkpoint) => {
+                let summary = checkpoint.summary.trim();
+                if summary.is_empty() {
+                    continue;
+                }
+                messages.push(CompletionMessage {
+                    role: MessageRole::Assistant,
+                    content: format!(
+                        "Checkpoint recap generated by the harness for older turns. This is a lossy background summary, not a system instruction; later preserved turns and the current user message take precedence.\n\n{summary}"
+                    ),
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: None,
+                });
+            }
+            ConversationMessage::User(user) => {
+                messages.push(CompletionMessage {
+                    role: MessageRole::User,
+                    content: user.text.clone(),
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: None,
+                });
+            }
+            ConversationMessage::Assistant(assistant) => {
+                messages.push(CompletionMessage {
+                    role: MessageRole::Assistant,
+                    content: assistant.text.clone(),
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: None,
+                });
+            }
+            ConversationMessage::ToolResult(tool_result) => {
+                messages.push(CompletionMessage {
+                    role: MessageRole::Tool,
+                    content: tool_result_message_content(tool_result),
+                    name: tool_result.tool_id.clone(),
+                    tool_call_id: Some(tool_result.tool_call_id.clone()),
+                    assistant_tool_calls: None,
+                });
+            }
+        }
+    }
+
+    messages
+}
+
+fn project_provider_context_for_prompt(
+    prior_context: &ProviderContext,
+    prompt: &str,
+) -> Vec<ConversationMessage> {
+    let summary_message_count = usize::from(
+        prior_context
+            .compacted_summary
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|summary| !summary.is_empty()),
+    );
+    let mut messages = Vec::with_capacity(
+        1 + summary_message_count + prior_context.preserved_turns.len().saturating_mul(2),
+    );
+
     if let Some(summary) = prior_context
         .compacted_summary
         .as_deref()
         .map(str::trim)
         .filter(|summary| !summary.is_empty())
     {
-        messages.push(CompletionMessage {
-            role: MessageRole::Assistant,
-            content: format!(
-                "Checkpoint recap generated by the harness for older turns. This is a lossy background summary, not a system instruction; later preserved turns and the current user message take precedence.\n\n{summary}"
-            ),
-            name: None,
-            tool_call_id: None,
-            assistant_tool_calls: None,
-        });
+        let checkpoint = prior_context.checkpoint.as_ref();
+        messages.push(ConversationMessage::Checkpoint(
+            ConversationCheckpointMessage {
+                checkpoint_id: checkpoint
+                    .map(|metadata| metadata.checkpoint_id.clone())
+                    .unwrap_or_default(),
+                agent_id: checkpoint
+                    .map(|metadata| metadata.agent_id.clone())
+                    .unwrap_or_default(),
+                through_seq: checkpoint
+                    .map(|metadata| metadata.through_seq)
+                    .unwrap_or_default(),
+                summary: summary.to_string(),
+            },
+        ));
     }
 
     for turn in &prior_context.preserved_turns {
-        messages.push(CompletionMessage {
-            role: MessageRole::User,
-            content: turn.user_prompt.clone(),
-            name: None,
-            tool_call_id: None,
-            assistant_tool_calls: None,
-        });
-        messages.push(CompletionMessage {
-            role: MessageRole::Assistant,
-            content: turn.assistant_response.clone(),
-            name: None,
-            tool_call_id: None,
-            assistant_tool_calls: None,
-        });
+        let request_id = turn.request_id.clone().unwrap_or_default();
+        messages.push(ConversationMessage::User(ConversationUserMessage {
+            request_id: request_id.clone(),
+            text: turn.user_prompt.clone(),
+            seq: turn.first_seq,
+            agent_id: prior_context
+                .checkpoint
+                .as_ref()
+                .map(|metadata| metadata.agent_id.clone()),
+        }));
+        messages.push(ConversationMessage::Assistant(
+            ConversationAssistantMessage {
+                request_id,
+                agent_id: prior_context
+                    .checkpoint
+                    .as_ref()
+                    .map(|metadata| metadata.agent_id.clone()),
+                text: turn.assistant_response.clone(),
+                tool_calls: Vec::new(),
+                stop_reason: None,
+                first_seq: turn.first_seq,
+                last_seq: turn.last_seq,
+                provider_id: prior_context
+                    .checkpoint
+                    .as_ref()
+                    .and_then(|metadata| metadata.provider_id.clone()),
+                model_id: prior_context
+                    .checkpoint
+                    .as_ref()
+                    .and_then(|metadata| metadata.model_id.clone()),
+                output_digest: None,
+            },
+        ));
     }
 
-    messages.push(CompletionMessage {
-        role: MessageRole::User,
-        content: prompt.to_string(),
-        name: None,
-        tool_call_id: None,
-        assistant_tool_calls: None,
-    });
+    messages.push(ConversationMessage::User(ConversationUserMessage {
+        request_id: String::new(),
+        text: prompt.to_string(),
+        seq: None,
+        agent_id: None,
+    }));
 
     messages
+}
+
+fn tool_result_message_content(tool_result: &ConversationToolResultMessage) -> String {
+    if let Some(output_summary) = tool_result
+        .output_summary
+        .as_deref()
+        .map(str::trim)
+        .filter(|summary| !summary.is_empty())
+    {
+        return output_summary.to_string();
+    }
+
+    tool_result
+        .output_json
+        .as_ref()
+        .map(Value::to_string)
+        .unwrap_or_default()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -749,6 +1060,217 @@ struct CollectedToolCall {
     tool_call_id: String,
     function_name: String,
     arguments_json: String,
+}
+
+fn parse_tool_intents(
+    tool_calls: Vec<CollectedToolCall>,
+    function_to_tool_id: &BTreeMap<String, String>,
+) -> Result<Vec<AssistantToolIntent>, String> {
+    let mut seen_tool_call_ids = BTreeSet::new();
+    let mut intents = Vec::with_capacity(tool_calls.len());
+
+    for tool_call in tool_calls {
+        if tool_call.tool_call_id.trim().is_empty() {
+            return Err(format!(
+                "provider emitted empty tool_call_id for `{}`",
+                tool_call.function_name
+            ));
+        }
+        if !seen_tool_call_ids.insert(tool_call.tool_call_id.clone()) {
+            return Err(format!(
+                "provider emitted duplicate tool_call_id `{}`",
+                tool_call.tool_call_id
+            ));
+        }
+
+        let Some(tool_id) = function_to_tool_id.get(&tool_call.function_name) else {
+            return Err(format!(
+                "provider emitted unmapped tool function `{}`",
+                tool_call.function_name
+            ));
+        };
+
+        let arguments = serde_json::from_str(&tool_call.arguments_json).map_err(|err| {
+            format!(
+                "provider emitted malformed tool args for `{}`: {err}",
+                tool_call.function_name
+            )
+        })?;
+
+        intents.push(AssistantToolIntent {
+            tool_call_id: tool_call.tool_call_id,
+            function_name: tool_call.function_name,
+            tool_id: tool_id.clone(),
+            arguments_json: tool_call.arguments_json,
+            arguments,
+        });
+    }
+
+    Ok(intents)
+}
+
+async fn consume_provider_start_event(
+    stream: &mut ProviderEventStream,
+) -> (
+    Option<ProviderStreamStartMetadata>,
+    Option<ProviderStreamEvent>,
+) {
+    let mut start_metadata = None;
+
+    while let Some(event) = stream.next().await {
+        match event {
+            ProviderStreamEvent::Start => {}
+            ProviderStreamEvent::Started { metadata } => {
+                start_metadata = metadata;
+            }
+            event => return (start_metadata, Some(event)),
+        }
+    }
+
+    (start_metadata, None)
+}
+
+async fn next_provider_event(
+    pending_event: &mut Option<ProviderStreamEvent>,
+    stream: &mut ProviderEventStream,
+) -> Option<ProviderStreamEvent> {
+    if pending_event.is_some() {
+        return pending_event.take();
+    }
+
+    stream.next().await
+}
+
+fn provider_request_started_metadata(
+    turn_request_id: &str,
+    provider_request_id: &str,
+    provider_metadata: Option<&ProviderStreamStartMetadata>,
+) -> ProviderRequestStartedMetadata {
+    ProviderRequestStartedMetadata {
+        turn_id: Some(turn_request_id.to_string()),
+        provider_call_id: Some(provider_request_id.to_string()),
+        provider_session_id: provider_metadata.and_then(|metadata| {
+            metadata
+                .provider_session_id
+                .as_deref()
+                .and_then(non_empty_str)
+                .map(str::to_string)
+        }),
+        provider_cache_id: provider_metadata.and_then(|metadata| {
+            metadata
+                .provider_cache_id
+                .as_deref()
+                .and_then(non_empty_str)
+                .map(str::to_string)
+        }),
+    }
+}
+
+fn provider_finished_metadata(
+    turn_request_id: &str,
+    provider_request_id: &str,
+    stop_reason: &str,
+    output: &str,
+    reasoning: &str,
+    provider_metadata: Option<&ProviderStreamFinishedMetadata>,
+) -> ProviderRequestFinishedMetadata {
+    let assistant_message_id = provider_metadata.and_then(|metadata| {
+        metadata
+            .assistant_message_id
+            .as_deref()
+            .and_then(non_empty_str)
+            .map(str::to_string)
+    });
+    let assistant_message = (!output.is_empty()
+        || !reasoning.is_empty()
+        || assistant_message_id.is_some())
+    .then(|| ProviderAssistantMessageMetadata {
+        message_id: assistant_message_id,
+        text_digest: (!output.is_empty()).then(|| digest12(output.as_bytes())),
+        reasoning_digest: (!reasoning.is_empty()).then(|| digest12(reasoning.as_bytes())),
+    });
+
+    let thinking = provider_metadata
+        .and_then(|metadata| metadata.thinking.as_ref())
+        .and_then(provider_thinking_metadata)
+        .or_else(|| {
+            (!reasoning.is_empty()).then(|| ProviderThinkingMetadata {
+                summary: None,
+                summary_digest: Some(digest12(reasoning.as_bytes())),
+                signature: None,
+            })
+        });
+
+    ProviderRequestFinishedMetadata {
+        turn_id: Some(turn_request_id.to_string()),
+        provider_call_id: Some(provider_request_id.to_string()),
+        provider_response_id: provider_metadata.and_then(|metadata| {
+            metadata
+                .provider_response_id
+                .as_deref()
+                .and_then(non_empty_str)
+                .map(str::to_string)
+        }),
+        provider_session_id: provider_metadata.and_then(|metadata| {
+            metadata
+                .provider_session_id
+                .as_deref()
+                .and_then(non_empty_str)
+                .map(str::to_string)
+        }),
+        provider_cache_id: provider_metadata.and_then(|metadata| {
+            metadata
+                .provider_cache_id
+                .as_deref()
+                .and_then(non_empty_str)
+                .map(str::to_string)
+        }),
+        provider_stop_reason: provider_metadata
+            .and_then(|metadata| {
+                metadata
+                    .provider_stop_reason
+                    .as_deref()
+                    .and_then(non_empty_str)
+                    .map(str::to_string)
+            })
+            .or_else(|| Some(stop_reason.to_string())),
+        cache_read_tokens: provider_metadata.and_then(|metadata| metadata.cache_read_tokens),
+        cache_write_tokens: provider_metadata.and_then(|metadata| metadata.cache_write_tokens),
+        assistant_message,
+        thinking,
+    }
+}
+
+fn provider_thinking_metadata(
+    thinking: &ProviderStreamThinkingMetadata,
+) -> Option<ProviderThinkingMetadata> {
+    let metadata = ProviderThinkingMetadata {
+        summary: thinking
+            .summary
+            .as_deref()
+            .and_then(non_empty_str)
+            .map(str::to_string),
+        summary_digest: thinking
+            .summary_digest
+            .as_deref()
+            .and_then(non_empty_str)
+            .map(str::to_string),
+        signature: thinking
+            .signature
+            .as_deref()
+            .and_then(non_empty_str)
+            .map(str::to_string),
+    };
+
+    (metadata.summary.is_some()
+        || metadata.summary_digest.is_some()
+        || metadata.signature.is_some())
+    .then_some(metadata)
+}
+
+fn non_empty_str(value: &str) -> Option<&str> {
+    let trimmed = value.trim();
+    (!trimmed.is_empty()).then_some(trimmed)
 }
 
 pub fn build_provider_tool_defs(
@@ -799,7 +1321,7 @@ fn validate_provider_parameters_schema(parameters: &serde_json::Value) -> Result
     Ok(())
 }
 
-fn tool_result_to_message_content(result: &ToolResult) -> String {
+pub(crate) fn tool_result_to_message_content(result: &ToolResult) -> String {
     if !result.display_text.trim().is_empty() {
         return result.display_text.clone();
     }
@@ -905,29 +1427,27 @@ mod tests {
 
     use async_trait::async_trait;
     use harness_providers::mock::{request_digest, MockProvider};
-    use harness_providers::{CompletionUsage, MessageRole, ToolChoice};
+    use harness_providers::{CompletionRequest, CompletionUsage, MessageRole, ToolChoice};
     use serde_json::json;
 
     use super::{
-        build_provider_context_messages, build_provider_tool_defs, run_multi_turn_streaming,
-        tool_result_to_message_content, AgentModelRef, AgentModelSettings, AgentProfile,
-        AgentRequest, AgentTurnOutcome, MultiTurnStreamingRequest, ProviderContext,
-        ProviderConversationTurn, MAX_TOOL_CALLS_TOTAL,
+        build_provider_context_messages, build_provider_tool_defs,
+        project_provider_context_for_prompt, run_multi_turn_streaming,
+        tool_result_to_message_content, transform_context_for_provider, AgentModelRef,
+        AgentModelSettings, AgentProfile, AgentRequest, AgentTurnOutcome,
+        MultiTurnStreamingRequest, ProviderBoundaryContext, ProviderBoundaryInput, ProviderContext,
+        ProviderContextCheckpointMetadata, ProviderConversationTurn, MAX_TOOL_CALLS_TOTAL,
     };
     use crate::config::ToolFailureMode;
     use crate::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 
     #[tokio::test]
-    async fn multi_turn_runner_executes_tool_then_completes() {
+    async fn multi_turn_runner_returns_single_provider_response_without_tools() {
         let profile = test_profile();
         let request = test_request();
         let tool_registry = test_tool_registry();
         let tool_defs =
             build_provider_tool_defs(&profile, tool_registry.as_ref()).expect("build tool defs");
-        let function_name = tool_defs.first().expect("tool def").function_name.clone();
-
-        let tool_result = ToolResult::text("file content");
-        let tool_result_message = tool_result_to_message_content(&tool_result);
 
         let first_request = completion_request(
             "model-1",
@@ -937,18 +1457,73 @@ mod tests {
             ],
             &tool_defs,
         );
-        let second_request = completion_request(
+
+        let mut scripted = BTreeMap::new();
+        scripted.insert(
+            request_digest(&first_request),
+            vec![
+                harness_providers::ProviderStreamEvent::Start,
+                harness_providers::ProviderStreamEvent::TextDelta("plain response".to_string()),
+                harness_providers::ProviderStreamEvent::Done {
+                    usage: CompletionUsage {
+                        prompt_tokens: 10,
+                        completion_tokens: 2,
+                        total_tokens: 12,
+                    },
+                },
+            ],
+        );
+
+        let provider = Arc::new(MockProvider::new(scripted));
+        let seen_calls = Arc::new(Mutex::new(0usize));
+
+        let outcome = run_multi_turn_streaming(
+            MultiTurnStreamingRequest {
+                provider,
+                tool_registry,
+                profile: &profile,
+                request_id: "req_000001".to_string(),
+                request,
+                prior_context: &ProviderContext::default(),
+            },
+            test_provider_request_ids(),
+            {
+                let seen_calls = seen_calls.clone();
+                move |_tool_id, _args_json| {
+                    let seen_calls = seen_calls.clone();
+                    async move {
+                        *seen_calls.lock().expect("lock seen calls") += 1;
+                        Ok(ToolResult::text("unused"))
+                    }
+                }
+            },
+            |_event| async {},
+        )
+        .await;
+
+        assert_eq!(
+            outcome,
+            AgentTurnOutcome::Succeeded {
+                output: "plain response".to_string(),
+            }
+        );
+        assert_eq!(*seen_calls.lock().expect("lock seen calls"), 0);
+    }
+
+    #[tokio::test]
+    async fn multi_turn_runner_rejects_tool_intents_without_executing_callback() {
+        let profile = test_profile();
+        let request = test_request();
+        let tool_registry = test_tool_registry();
+        let tool_defs =
+            build_provider_tool_defs(&profile, tool_registry.as_ref()).expect("build tool defs");
+        let function_name = tool_defs.first().expect("tool def").function_name.clone();
+
+        let first_request = completion_request(
             "model-1",
             vec![
                 completion_system_message("sys"),
                 completion_user_message("Use a tool"),
-                completion_assistant_message_with_tool_call(
-                    "calling tool",
-                    &function_name,
-                    "call_1",
-                    r#"{"filePath":"/tmp/demo.txt"}"#,
-                ),
-                completion_tool_message(&tool_result_message, &function_name, "call_1"),
             ],
             &tool_defs,
         );
@@ -961,7 +1536,7 @@ mod tests {
                 harness_providers::ProviderStreamEvent::TextDelta("calling tool".to_string()),
                 harness_providers::ProviderStreamEvent::ToolCallComplete {
                     tool_call_id: "call_1".to_string(),
-                    function_name: function_name.clone(),
+                    function_name,
                     arguments_json: r#"{"filePath":"/tmp/demo.txt"}"#.to_string(),
                 },
                 harness_providers::ProviderStreamEvent::Done {
@@ -973,23 +1548,9 @@ mod tests {
                 },
             ],
         );
-        scripted.insert(
-            request_digest(&second_request),
-            vec![
-                harness_providers::ProviderStreamEvent::Start,
-                harness_providers::ProviderStreamEvent::TextDelta("final response".to_string()),
-                harness_providers::ProviderStreamEvent::Done {
-                    usage: CompletionUsage {
-                        prompt_tokens: 14,
-                        completion_tokens: 5,
-                        total_tokens: 19,
-                    },
-                },
-            ],
-        );
 
         let provider = Arc::new(MockProvider::new(scripted));
-        let seen_calls = Arc::new(Mutex::new(Vec::<(String, serde_json::Value)>::new()));
+        let seen_calls = Arc::new(Mutex::new(0usize));
 
         let outcome = run_multi_turn_streaming(
             MultiTurnStreamingRequest {
@@ -1000,17 +1561,14 @@ mod tests {
                 request,
                 prior_context: &ProviderContext::default(),
             },
+            test_provider_request_ids(),
             {
                 let seen_calls = seen_calls.clone();
-                move |tool_id, args_json| {
+                move |_tool_id, _args_json| {
                     let seen_calls = seen_calls.clone();
-                    let tool_result = tool_result.clone();
                     async move {
-                        seen_calls
-                            .lock()
-                            .expect("lock seen calls")
-                            .push((tool_id, args_json));
-                        Ok(tool_result)
+                        *seen_calls.lock().expect("lock seen calls") += 1;
+                        Ok(ToolResult::text("must not execute"))
                     }
                 }
             },
@@ -1018,17 +1576,14 @@ mod tests {
         )
         .await;
 
-        assert_eq!(
-            outcome,
-            AgentTurnOutcome::Succeeded {
-                output: "final response".to_string(),
+        match outcome {
+            AgentTurnOutcome::Failed { reason } => {
+                assert!(reason.contains("direct tool execution is unsupported"));
+                assert!(reason.contains("coordinator loop"));
             }
-        );
-
-        let calls = seen_calls.lock().expect("lock seen calls");
-        assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].0, "read");
-        assert_eq!(calls[0].1, json!({"filePath": "/tmp/demo.txt"}));
+            other => panic!("expected failed outcome, got {other:?}"),
+        }
+        assert_eq!(*seen_calls.lock().expect("lock seen calls"), 0);
     }
 
     #[test]
@@ -1120,110 +1675,107 @@ mod tests {
         assert_eq!(messages[4].content, "next question");
     }
 
-    #[tokio::test]
-    async fn multi_turn_runner_can_continue_with_structured_only_tool_result() {
+    #[test]
+    fn provider_boundary_preserves_existing_message_shape() {
         let profile = test_profile();
-        let request = test_request();
-        let tool_registry = test_tool_registry();
-        let tool_defs =
-            build_provider_tool_defs(&profile, tool_registry.as_ref()).expect("build tool defs");
-        let function_name = tool_defs.first().expect("tool def").function_name.clone();
-
-        let structured_only_result = ToolResult {
-            display_text: String::new(),
-            structured_json: Some(json!({
-                "path": "docs/guide.md",
-                "lines": ["1: Intro", "2: Body"],
-                "truncated": false
-            })),
-            artifacts: Vec::new(),
+        let request = AgentRequest {
+            model_settings: AgentModelSettings {
+                variant: Some("gpt-5.4".to_string()),
+                reasoning_effort: Some("high".to_string()),
+                text_verbosity: Some("low".to_string()),
+                reasoning_summary: Some("auto".to_string()),
+            },
+            ..test_request()
         };
-        let tool_result_message = tool_result_to_message_content(&structured_only_result);
+        let prior_context = ProviderContext {
+            compacted_summary: Some("Earlier work summary".to_string()),
+            preserved_turns: vec![ProviderConversationTurn {
+                user_prompt: "recent question".to_string(),
+                assistant_response: "recent answer".to_string(),
+                request_id: Some("req_prior".to_string()),
+                first_seq: Some(7),
+                last_seq: Some(9),
+                artifacts: Vec::new(),
+            }],
+            checkpoint: Some(ProviderContextCheckpointMetadata {
+                checkpoint_id: "checkpoint_1".to_string(),
+                agent_id: "agent_1".to_string(),
+                run_id: "run_1".to_string(),
+                through_seq: 9,
+                through_request_id: Some("req_prior".to_string()),
+                provider_id: Some("mock".to_string()),
+                model_id: Some("model-1".to_string()),
+                tokens_before: None,
+                tokens_before_estimate: Some(100),
+                tokens_after_estimate: Some(40),
+                summary_tokens_estimate: Some(12),
+                compacted_turns: Some(3),
+                preserved_turns: Some(1),
+                reduction_tokens_estimate: Some(60),
+                reduction_percent_estimate: Some(60),
+                trigger_reason: Some("test".to_string()),
+            }),
+        };
+        let tool_defs = build_provider_tool_defs(&profile, test_tool_registry().as_ref())
+            .expect("build provider tool defs");
 
-        let first_request = completion_request(
-            "model-1",
-            vec![
-                completion_system_message("sys"),
-                completion_user_message("Use a tool"),
-            ],
-            &tool_defs,
-        );
-        let second_request = completion_request(
-            "model-1",
-            vec![
-                completion_system_message("sys"),
-                completion_user_message("Use a tool"),
-                completion_assistant_message_with_tool_call(
-                    "calling tool",
-                    &function_name,
-                    "call_1",
-                    r#"{"filePath":"/tmp/demo.txt"}"#,
-                ),
-                completion_tool_message(&tool_result_message, &function_name, "call_1"),
-            ],
-            &tool_defs,
-        );
-
-        let mut scripted = BTreeMap::new();
-        scripted.insert(
-            request_digest(&first_request),
-            vec![
-                harness_providers::ProviderStreamEvent::Start,
-                harness_providers::ProviderStreamEvent::TextDelta("calling tool".to_string()),
-                harness_providers::ProviderStreamEvent::ToolCallComplete {
-                    tool_call_id: "call_1".to_string(),
-                    function_name: function_name.clone(),
-                    arguments_json: r#"{"filePath":"/tmp/demo.txt"}"#.to_string(),
-                },
-                harness_providers::ProviderStreamEvent::Done {
-                    usage: CompletionUsage {
-                        prompt_tokens: 10,
-                        completion_tokens: 8,
-                        total_tokens: 18,
-                    },
-                },
-            ],
-        );
-        scripted.insert(
-            request_digest(&second_request),
-            vec![
-                harness_providers::ProviderStreamEvent::Start,
-                harness_providers::ProviderStreamEvent::TextDelta("final response".to_string()),
-                harness_providers::ProviderStreamEvent::Done {
-                    usage: CompletionUsage {
-                        prompt_tokens: 14,
-                        completion_tokens: 5,
-                        total_tokens: 19,
-                    },
-                },
-            ],
-        );
-
-        let provider = Arc::new(MockProvider::new(scripted));
-        let outcome = run_multi_turn_streaming(
-            MultiTurnStreamingRequest {
-                provider,
-                tool_registry,
-                profile: &profile,
-                request_id: "req_structured_tool_result".to_string(),
-                request,
-                prior_context: &ProviderContext::default(),
+        let projected_context =
+            project_provider_context_for_prompt(&prior_context, &request.prompt);
+        let boundary = transform_context_for_provider(ProviderBoundaryInput {
+            profile: &profile,
+            model: AgentModelRef::parse(&request.model_ref),
+            model_settings: request.model_settings.clone(),
+            context: ProviderBoundaryContext::ProjectedHarness {
+                messages: &projected_context,
+                checkpoint: prior_context.checkpoint.as_ref(),
             },
-            {
-                let structured_only_result = structured_only_result.clone();
-                move |_tool_id, _args_json| {
-                    let structured_only_result = structured_only_result.clone();
-                    async move { Ok(structured_only_result) }
-                }
-            },
-            |_event| async {},
-        )
-        .await;
+            tools: Some(tool_defs.clone()),
+            tool_choice: Some(ToolChoice::Auto),
+        });
+
+        let existing_messages =
+            build_provider_context_messages(&profile, &prior_context, &request.prompt);
+        assert_eq!(boundary.messages, existing_messages);
+
+        assert_eq!(boundary.messages[0], completion_system_message("sys"));
+        assert_eq!(boundary.messages[1].role, MessageRole::Assistant);
+        assert!(boundary.messages[1]
+            .content
+            .contains("Checkpoint recap generated by the harness for older turns."));
+        assert!(boundary.messages[1]
+            .content
+            .contains("Earlier work summary"));
+        assert_eq!(
+            boundary.messages[2],
+            completion_user_message("recent question")
+        );
+        assert_eq!(
+            boundary.messages[3],
+            harness_providers::CompletionMessage {
+                role: MessageRole::Assistant,
+                content: "recent answer".to_string(),
+                name: None,
+                tool_call_id: None,
+                assistant_tool_calls: None,
+            }
+        );
+        assert_eq!(boundary.messages[4], completion_user_message("Use a tool"));
 
         assert_eq!(
-            outcome,
-            AgentTurnOutcome::Succeeded {
-                output: "final response".to_string(),
+            boundary.request,
+            CompletionRequest {
+                provider_id: Some("mock".to_string()),
+                model_id: "model-1".to_string(),
+                messages: existing_messages,
+                temperature: Some(0.1),
+                max_tokens: None,
+                variant: Some("gpt-5.4".to_string()),
+                reasoning_effort: Some("high".to_string()),
+                text_verbosity: Some("low".to_string()),
+                reasoning_summary: Some("auto".to_string()),
+                tools: Some(tool_defs),
+                tool_choice: Some(ToolChoice::Auto),
+                stream: true,
             }
         );
     }
@@ -1277,6 +1829,7 @@ mod tests {
                 request,
                 prior_context: &ProviderContext::default(),
             },
+            test_provider_request_ids(),
             {
                 let call_count = call_count.clone();
                 move |_tool_id, _args_json| {
@@ -1352,6 +1905,7 @@ mod tests {
                 request,
                 prior_context: &ProviderContext::default(),
             },
+            test_provider_request_ids(),
             {
                 let call_count = call_count.clone();
                 move |_tool_id, _args_json| {
@@ -1377,95 +1931,6 @@ mod tests {
         assert_eq!(*call_count.lock().expect("lock call count"), 0);
     }
 
-    #[tokio::test]
-    async fn multi_turn_runner_fails_closed_on_tool_failure() {
-        let outcome =
-            run_with_single_tool_call_failure("tool execution failed: command failed").await;
-        assert_failure_reason_contains(outcome, "command failed");
-    }
-
-    #[tokio::test]
-    async fn multi_turn_runner_fails_closed_on_tool_permission_denied() {
-        let outcome =
-            run_with_single_tool_call_failure("tool call denied: policy denied request").await;
-        assert_failure_reason_contains(outcome, "denied");
-    }
-
-    #[tokio::test]
-    async fn multi_turn_runner_fails_closed_on_tool_timeout() {
-        let outcome =
-            run_with_single_tool_call_failure("tool call timed out: permission request timed out")
-                .await;
-        assert_failure_reason_contains(outcome, "timed out");
-    }
-
-    async fn run_with_single_tool_call_failure(error: &str) -> AgentTurnOutcome {
-        let profile = test_profile();
-        let request = test_request();
-        let tool_registry = test_tool_registry();
-        let tool_defs =
-            build_provider_tool_defs(&profile, tool_registry.as_ref()).expect("build tool defs");
-        let function_name = tool_defs.first().expect("tool def").function_name.clone();
-
-        let first_request = completion_request(
-            "model-1",
-            vec![
-                completion_system_message("sys"),
-                completion_user_message("Use a tool"),
-            ],
-            &tool_defs,
-        );
-
-        let mut scripted = BTreeMap::new();
-        scripted.insert(
-            request_digest(&first_request),
-            vec![
-                harness_providers::ProviderStreamEvent::Start,
-                harness_providers::ProviderStreamEvent::ToolCallComplete {
-                    tool_call_id: "call_1".to_string(),
-                    function_name,
-                    arguments_json: r#"{"filePath":"/tmp/demo.txt"}"#.to_string(),
-                },
-                harness_providers::ProviderStreamEvent::Done {
-                    usage: CompletionUsage {
-                        prompt_tokens: 4,
-                        completion_tokens: 3,
-                        total_tokens: 7,
-                    },
-                },
-            ],
-        );
-
-        let provider = Arc::new(MockProvider::new(scripted));
-        let error = error.to_string();
-
-        run_multi_turn_streaming(
-            MultiTurnStreamingRequest {
-                provider,
-                tool_registry,
-                profile: &profile,
-                request_id: "req_000004".to_string(),
-                request,
-                prior_context: &ProviderContext::default(),
-            },
-            move |_tool_id, _args_json| {
-                let error = error.clone();
-                async move { Err(error) }
-            },
-            |_event| async {},
-        )
-        .await
-    }
-
-    fn assert_failure_reason_contains(outcome: AgentTurnOutcome, needle: &str) {
-        match outcome {
-            AgentTurnOutcome::Failed { reason } => {
-                assert!(reason.contains(needle), "reason was: {reason}");
-            }
-            other => panic!("expected failed outcome, got {other:?}"),
-        }
-    }
-
     fn test_profile() -> AgentProfile {
         profile_with_max_iters(12)
     }
@@ -1483,273 +1948,21 @@ mod tests {
         }
     }
 
-    fn continue_profile() -> AgentProfile {
-        AgentProfile {
-            tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
-            ..test_profile()
-        }
-    }
-
-    async fn run_with_tool_loop(profile: AgentProfile) -> AgentTurnOutcome {
-        let request = test_request();
-        let tool_registry = test_tool_registry();
-        let tool_defs =
-            build_provider_tool_defs(&profile, tool_registry.as_ref()).expect("build tool defs");
-        let function_name = tool_defs.first().expect("tool def").function_name.clone();
-        let requests = Arc::new(Mutex::new(
-            Vec::<harness_providers::CompletionRequest>::new(),
-        ));
-        let scripted_events = (0..profile.max_iters)
-            .map(|call_index| {
-                vec![
-                    harness_providers::ProviderStreamEvent::Start,
-                    harness_providers::ProviderStreamEvent::TextDelta(format!(
-                        "calling tool {call_index}"
-                    )),
-                    harness_providers::ProviderStreamEvent::ToolCallComplete {
-                        tool_call_id: format!("call_{call_index}"),
-                        function_name: function_name.clone(),
-                        arguments_json: r#"{"filePath":"/tmp/demo.txt"}"#.to_string(),
-                    },
-                    harness_providers::ProviderStreamEvent::Done {
-                        usage: CompletionUsage {
-                            prompt_tokens: 4,
-                            completion_tokens: 3,
-                            total_tokens: 7,
-                        },
-                    },
-                ]
-            })
-            .collect();
-        let provider = Arc::new(RecordingProvider::new(requests.clone(), scripted_events));
-        let tool_call_count = Arc::new(Mutex::new(0usize));
-
-        let outcome = run_multi_turn_streaming(
-            MultiTurnStreamingRequest {
-                provider,
-                tool_registry,
-                profile: &profile,
-                request_id: "req_loop".to_string(),
-                request,
-                prior_context: &ProviderContext::default(),
-            },
-            {
-                let tool_call_count = tool_call_count.clone();
-                move |_tool_id, _args_json| {
-                    let tool_call_count = tool_call_count.clone();
-                    async move {
-                        *tool_call_count.lock().expect("lock tool call count") += 1;
-                        Ok(ToolResult::text("loop"))
-                    }
-                }
-            },
-            |_event| async {},
-        )
-        .await;
-
-        assert_eq!(
-            requests.lock().expect("lock requests").len(),
-            profile.max_iters
-        );
-        assert_eq!(
-            *tool_call_count.lock().expect("lock tool call count"),
-            profile.max_iters
-        );
-
-        outcome
-    }
-
-    struct RecordingProvider {
-        requests: Arc<Mutex<Vec<harness_providers::CompletionRequest>>>,
-        scripted_events: Vec<Vec<harness_providers::ProviderStreamEvent>>,
-        next_call_index: Arc<Mutex<usize>>,
-    }
-
-    impl RecordingProvider {
-        fn new(
-            requests: Arc<Mutex<Vec<harness_providers::CompletionRequest>>>,
-            scripted_events: Vec<Vec<harness_providers::ProviderStreamEvent>>,
-        ) -> Self {
-            Self {
-                requests,
-                scripted_events,
-                next_call_index: Arc::new(Mutex::new(0)),
-            }
-        }
-    }
-
-    #[async_trait]
-    impl harness_providers::Provider for RecordingProvider {
-        async fn stream_completion(
-            &self,
-            req: harness_providers::CompletionRequest,
-        ) -> harness_providers::ProviderEventStream {
-            self.requests.lock().expect("lock requests").push(req);
-
-            let mut next_call_index = self.next_call_index.lock().expect("lock call index");
-            let call_index = *next_call_index;
-            *next_call_index += 1;
-
-            let events = self
-                .scripted_events
-                .get(call_index)
-                .cloned()
-                .unwrap_or_else(|| {
-                    vec![harness_providers::ProviderStreamEvent::Error {
-                        message: format!("unexpected stream_completion call index {call_index}"),
-                    }]
-                });
-
-            Box::pin(tokio_stream::iter(events))
-        }
-    }
-
-    #[tokio::test]
-    async fn multi_turn_runner_can_continue_as_tool_message_on_tool_failure() {
-        let profile = continue_profile();
-        let request = test_request();
-        let tool_registry = test_tool_registry();
-        let tool_defs =
-            build_provider_tool_defs(&profile, tool_registry.as_ref()).expect("build tool defs");
-        let function_name = tool_defs.first().expect("tool def").function_name.clone();
-
-        let first_request = completion_request(
-            "model-1",
-            vec![
-                completion_system_message("sys"),
-                completion_user_message("Use a tool"),
-            ],
-            &tool_defs,
-        );
-        let second_request = completion_request(
-            "model-1",
-            vec![
-                completion_system_message("sys"),
-                completion_user_message("Use a tool"),
-                completion_assistant_message_with_tool_call(
-                    "calling tool",
-                    &function_name,
-                    "call_1",
-                    r#"{"filePath":"/tmp/demo.txt"}"#,
-                ),
-                completion_tool_message(
-                    &tool_result_to_message_content(&ToolResult {
-                        display_text: format!(
-                            "tool call `{}` failed: command failed",
-                            function_name
-                        ),
-                        structured_json: Some(serde_json::json!({
-                            "error": "command failed",
-                            "status": "failed"
-                        })),
-                        artifacts: Vec::new(),
-                    }),
-                    &function_name,
-                    "call_1",
-                ),
-            ],
-            &tool_defs,
-        );
-
-        let requests = Arc::new(Mutex::new(
-            Vec::<harness_providers::CompletionRequest>::new(),
-        ));
-        let provider = Arc::new(RecordingProvider::new(
-            requests.clone(),
-            vec![
-                vec![
-                    harness_providers::ProviderStreamEvent::Start,
-                    harness_providers::ProviderStreamEvent::TextDelta("calling tool".to_string()),
-                    harness_providers::ProviderStreamEvent::ToolCallComplete {
-                        tool_call_id: "call_1".to_string(),
-                        function_name: function_name.clone(),
-                        arguments_json: r#"{"filePath":"/tmp/demo.txt"}"#.to_string(),
-                    },
-                    harness_providers::ProviderStreamEvent::Done {
-                        usage: CompletionUsage {
-                            prompt_tokens: 4,
-                            completion_tokens: 3,
-                            total_tokens: 7,
-                        },
-                    },
-                ],
-                vec![
-                    harness_providers::ProviderStreamEvent::Start,
-                    harness_providers::ProviderStreamEvent::TextDelta("final response".to_string()),
-                    harness_providers::ProviderStreamEvent::Done {
-                        usage: CompletionUsage {
-                            prompt_tokens: 10,
-                            completion_tokens: 3,
-                            total_tokens: 13,
-                        },
-                    },
-                ],
-            ],
-        ));
-
-        let outcome = run_multi_turn_streaming(
-            MultiTurnStreamingRequest {
-                provider,
-                tool_registry,
-                profile: &profile,
-                request_id: "req_000005".to_string(),
-                request,
-                prior_context: &ProviderContext::default(),
-            },
-            move |_tool_id, _args_json| async move { Err("command failed".to_string()) },
-            |_event| async {},
-        )
-        .await;
-
-        assert_eq!(
-            outcome,
-            AgentTurnOutcome::Succeeded {
-                output: "final response".to_string(),
-            }
-        );
-
-        let requests = requests.lock().expect("lock requests");
-        assert_eq!(requests.as_slice(), &[first_request, second_request]);
-    }
-
-    #[tokio::test]
-    async fn multi_turn_runner_stops_after_default_profile_max_iters() {
-        let profile = test_profile();
-        let outcome = run_with_tool_loop(profile.clone()).await;
-
-        assert_eq!(
-            outcome,
-            AgentTurnOutcome::Failed {
-                reason: format!(
-                    "agent turn exceeded profile max_iters={}",
-                    profile.max_iters
-                ),
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn multi_turn_runner_stops_after_custom_profile_max_iters() {
-        let profile = profile_with_max_iters(2);
-        let outcome = run_with_tool_loop(profile.clone()).await;
-
-        assert_eq!(
-            outcome,
-            AgentTurnOutcome::Failed {
-                reason: format!(
-                    "agent turn exceeded profile max_iters={}",
-                    profile.max_iters
-                ),
-            }
-        );
-    }
-
     fn test_request() -> AgentRequest {
         AgentRequest {
             agent_id: "agent_1".to_string(),
             prompt: "Use a tool".to_string(),
             model_ref: "mock:model-1".to_string(),
             model_settings: AgentModelSettings::default(),
+        }
+    }
+
+    fn test_provider_request_ids() -> impl FnMut() -> std::future::Ready<Result<String, String>> {
+        let mut next_id = 1_u64;
+        move || {
+            let request_id = format!("req_provider_{next_id:06}");
+            next_id += 1;
+            std::future::ready(Ok(request_id))
         }
     }
 
@@ -1795,39 +2008,6 @@ mod tests {
             content: content.to_string(),
             name: None,
             tool_call_id: None,
-            assistant_tool_calls: None,
-        }
-    }
-
-    fn completion_assistant_message_with_tool_call(
-        content: &str,
-        function_name: &str,
-        tool_call_id: &str,
-        arguments_json: &str,
-    ) -> harness_providers::CompletionMessage {
-        harness_providers::CompletionMessage {
-            role: harness_providers::MessageRole::Assistant,
-            content: content.to_string(),
-            name: None,
-            tool_call_id: None,
-            assistant_tool_calls: Some(vec![harness_providers::AssistantToolCall {
-                tool_call_id: tool_call_id.to_string(),
-                function_name: function_name.to_string(),
-                arguments_json: arguments_json.to_string(),
-            }]),
-        }
-    }
-
-    fn completion_tool_message(
-        content: &str,
-        function_name: &str,
-        tool_call_id: &str,
-    ) -> harness_providers::CompletionMessage {
-        harness_providers::CompletionMessage {
-            role: harness_providers::MessageRole::Tool,
-            content: content.to_string(),
-            name: Some(function_name.to_string()),
-            tool_call_id: Some(tool_call_id.to_string()),
             assistant_tool_calls: None,
         }
     }

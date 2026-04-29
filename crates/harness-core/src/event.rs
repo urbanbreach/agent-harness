@@ -7,6 +7,7 @@ use thiserror::Error;
 use harness_providers::CompletionUsage;
 
 use crate::clock::Clock;
+use crate::perm::PermissionGrant;
 use crate::redact::{redact_value, Redactor};
 
 pub const SCHEMA_VERSION: u16 = 1;
@@ -95,6 +96,7 @@ pub enum EventV1 {
     ProviderStreamDelta(ProviderStreamDeltaEvent),
     ProviderReasoningDelta(ProviderReasoningDeltaEvent),
     ProviderRequestFinished(ProviderRequestFinishedEvent),
+    AssistantMessageFinished(AssistantMessageFinishedEvent),
     CompactionRequested(CompactionRequestedEvent),
     CompactionWritten(CompactionWrittenEvent),
     CompactionApplied(CompactionAppliedEvent),
@@ -103,6 +105,7 @@ pub enum EventV1 {
     ToolCallStarted(ToolCallStartedEvent),
     ToolCallFinished(ToolCallFinishedEvent),
     PermissionRequested(PermissionRequestedEvent),
+    PermissionGrantRecorded(PermissionGrantRecordedEvent),
     PermissionResolved(PermissionResolvedEvent),
     EditProposed(EditProposedEvent),
     EditApplied(EditAppliedEvent),
@@ -310,6 +313,70 @@ pub struct UserMessageSubmittedEvent {
     pub text: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ProviderRequestStartedMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_call_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_cache_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ProviderAssistantMessageMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_digest: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ProviderThinkingMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ProviderRequestFinishedMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_call_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_response_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_cache_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_stop_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assistant_message: Option<ProviderAssistantMessageMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<ProviderThinkingMetadata>,
+}
+
+/// Durable provider request start barrier.
+///
+/// `request_id`, `provider_id`, `model_id`, `prompt_summary`, and `request_digest` are the stable
+/// replay-visible contract. `metadata` carries only optional, redacted, non-semantic provider
+/// correlation hints: stable turn/request correlation, provider-call identity, and provider
+/// session/cache ids. Raw provider payloads, unredacted thinking text, secrets, and
+/// provider-specific control hints must not be persisted in this event. Provider stream chunk
+/// boundaries remain presentation details derived from following delta events.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderRequestStartedEvent {
     pub request_id: String,
@@ -317,6 +384,8 @@ pub struct ProviderRequestStartedEvent {
     pub model_id: String,
     pub prompt_summary: String,
     pub request_digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ProviderRequestStartedMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -331,6 +400,15 @@ pub struct ProviderReasoningDeltaEvent {
     pub delta: String,
 }
 
+/// Durable provider request finish barrier.
+///
+/// `request_id`, `finish_reason`, `output_digest`, and redacted aggregate `usage` are the stable
+/// replay-visible contract. `metadata` describes the completed provider exchange without changing
+/// replay semantics: provider stop reason, cache read/write token counts, compatibility
+/// assistant-message ids/digests, summarized or signed thinking metadata, and optional provider ids
+/// mirrored from the started event for easier inspection. `AssistantMessageFinished` is the explicit
+/// assistant-message barrier for new logs. Tool-call readiness and loop continuation state are
+/// derived by the coordinator from the ordered event stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderRequestFinishedEvent {
     pub request_id: String,
@@ -339,6 +417,22 @@ pub struct ProviderRequestFinishedEvent {
     pub output_digest: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<CompletionUsage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ProviderRequestFinishedMetadata>,
+}
+
+/// Durable assistant message finish barrier.
+///
+/// This event is appended after the coordinator has committed the completed assistant response to
+/// its provider-visible message state, and before tool preflight or execution begins. It separates
+/// provider transport completion (`ProviderRequestFinished`) from the assistant-message boundary
+/// that replay/debugging tools can observe deterministically in JSONL order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssistantMessageFinishedEvent {
+    pub request_id: String,
+    pub tool_call_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assistant_message: Option<ProviderAssistantMessageMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -584,6 +678,11 @@ pub struct PermissionResolvedEvent {
     pub decision: PermissionDecision,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PermissionGrantRecordedEvent {
+    pub grant: PermissionGrant,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

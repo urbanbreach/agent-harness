@@ -1,11 +1,15 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use harness_core::agent::AgentProfile;
+use harness_core::agent::{
+    AgentProfile, ProviderCompactionFacts, ProviderContextCheckpoint,
+    ProviderContextCheckpointMetadata, ProviderConversationTurn,
+};
 use harness_core::clock::FakeClock;
 use harness_core::config::PermissionMode;
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle};
@@ -23,6 +27,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 struct DelegatingAliasTaskTool;
+struct ReplayGuardTool;
+
+static REPLAY_GUARD_TOOL_CALLS: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -66,6 +73,22 @@ impl Tool for DelegatingAliasTaskTool {
             })),
             artifacts: vec![artifact],
         })
+    }
+}
+
+#[async_trait]
+impl Tool for ReplayGuardTool {
+    fn id(&self) -> &str {
+        "replay.guard"
+    }
+
+    fn capability(&self) -> ToolCapability {
+        ToolCapability::Shell
+    }
+
+    async fn call(&self, _ctx: ToolContext, _args_json: Value) -> Result<ToolResult, ToolError> {
+        REPLAY_GUARD_TOOL_CALLS.fetch_add(1, Ordering::SeqCst);
+        Ok(ToolResult::text("guard invoked"))
     }
 }
 
@@ -319,6 +342,7 @@ async fn legacy_sessions_remain_loadable_after_native_metadata_extension() {
                     model_id: "model-1".to_string(),
                     prompt_summary: "legacy prompt".to_string(),
                     request_digest: "digest-legacy".to_string(),
+                    metadata: None,
                 }),
             ),
             envelope(
@@ -416,6 +440,136 @@ async fn legacy_sessions_remain_loadable_after_native_metadata_extension() {
     );
 }
 
+#[tokio::test]
+async fn resume_projection_handles_checkpoint_between_turn_and_provider_restart() {
+    REPLAY_GUARD_TOOL_CALLS.store(0, Ordering::SeqCst);
+
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let run_id = "run_resume_checkpoint_between_turn_and_provider_restart";
+    let run_dir = temp_dir.path().join(run_id);
+    fs::create_dir_all(run_dir.join("artifacts/compactions/agent_000001"))
+        .expect("create checkpoint dirs");
+    fs::write(
+        run_dir.join("artifacts/compactions/agent_000001/checkpoint_000002.json"),
+        serde_json::to_string(&ProviderContextCheckpoint {
+            metadata: ProviderContextCheckpointMetadata {
+                checkpoint_id: "checkpoint_000002".to_string(),
+                agent_id: "agent_000001".to_string(),
+                run_id: run_id.to_string(),
+                through_seq: 3,
+                through_request_id: Some("req_000001".to_string()),
+                provider_id: Some("default".to_string()),
+                model_id: Some("model-1".to_string()),
+                tokens_before: Some(4_000),
+                tokens_before_estimate: None,
+                tokens_after_estimate: None,
+                summary_tokens_estimate: None,
+                compacted_turns: None,
+                preserved_turns: None,
+                reduction_tokens_estimate: None,
+                reduction_percent_estimate: None,
+                trigger_reason: Some("manual".to_string()),
+            },
+            summary: "checkpointed turn summary".to_string(),
+            recent_turns: vec![ProviderConversationTurn {
+                user_prompt: "turn before checkpoint".to_string(),
+                assistant_response: "assistant before checkpoint".to_string(),
+                ..Default::default()
+            }],
+            pruned_tool_artifacts: Vec::new(),
+            facts: ProviderCompactionFacts::default(),
+            tail_boundary: None,
+            summary_source: None,
+            timeline_entry: None,
+        })
+        .expect("serialize checkpoint"),
+    )
+    .expect("write checkpoint");
+
+    write_events(
+        &run_dir,
+        &[
+            envelope(
+                run_id,
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/workspace/project".to_string(),
+                }),
+            ),
+            envelope(
+                run_id,
+                2,
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_000001".to_string(),
+                    provider_id: "default".to_string(),
+                    model_id: "model-1".to_string(),
+                    prompt_summary: "turn before checkpoint".to_string(),
+                    request_digest: "digest-before".to_string(),
+                    metadata: None,
+                }),
+            ),
+            envelope(
+                run_id,
+                3,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "checkpointed segment ended".to_string(),
+                }),
+            ),
+            envelope(
+                run_id,
+                4,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/workspace/project".to_string(),
+                }),
+            ),
+            envelope(
+                run_id,
+                5,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_000001".to_string(),
+                    profile: "alpha".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                run_id,
+                6,
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_000002".to_string(),
+                    provider_id: "default".to_string(),
+                    model_id: "model-1".to_string(),
+                    prompt_summary: "turn after restart".to_string(),
+                    request_digest: "digest-after".to_string(),
+                    metadata: None,
+                }),
+            ),
+            envelope(
+                run_id,
+                7,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "resumed segment finished".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let plan = inspect_resume_plan(&run_dir);
+    assert_eq!(plan.provider_model.as_deref(), Some("default/model-1"));
+    assert!(plan.is_resumable);
+
+    let coordinator = test_coordinator(temp_dir.path(), tool_registry_with_guard());
+    let resumed = coordinator
+        .resume_run(run_id, "interactive")
+        .await
+        .expect("resume run with checkpointed history");
+    coordinator.stop_run().await.expect("stop resumed run");
+
+    assert_eq!(REPLAY_GUARD_TOOL_CALLS.load(Ordering::SeqCst), 0);
+    assert!(load_events(&resumed.events_path).len() > 6);
+}
+
 fn supervisor_actor() -> EventActor {
     EventActor::new(ActorKind::Supervisor, Some("agent_supervisor".to_string()))
 }
@@ -423,6 +577,12 @@ fn supervisor_actor() -> EventActor {
 fn task_alias_registry() -> Arc<ToolRegistry> {
     let mut registry = ToolRegistry::new();
     registry.register(Arc::new(DelegatingAliasTaskTool));
+    Arc::new(registry)
+}
+
+fn tool_registry_with_guard() -> Arc<ToolRegistry> {
+    let mut registry = ToolRegistry::new();
+    registry.register(Arc::new(ReplayGuardTool));
     Arc::new(registry)
 }
 

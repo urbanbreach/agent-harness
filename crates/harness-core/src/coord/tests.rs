@@ -16,7 +16,8 @@ use crate::agent::{
 use crate::clock::{FakeClock, RealClock};
 use crate::config::{
     clear_registered_mcp_server_first_class_tool_ids, load_config_from_str,
-    resolve_profile_model_metadata, set_registered_mcp_server_first_class_tool_ids, PermissionMode,
+    resolve_profile_model_metadata, set_registered_mcp_server_first_class_tool_ids,
+    CategoryPermissions, CompactionRuntimeConfig, PermissionMode,
 };
 use crate::event::{
     ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, CompactionAppliedEvent,
@@ -24,7 +25,7 @@ use crate::event::{
     HookExecutionStatus, ProviderRequestStartedEvent, RunFinishedEvent, RunStartedEvent,
     TaskCompletedEvent, ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
-use crate::perm::{PermissionDecision, PermissionPolicy};
+use crate::perm::{PermissionDecision, PermissionGrantScope, PermissionPolicy};
 use crate::proj::{inspect_resume_plan, RecordedRuntimeContext};
 use crate::redact::DefaultRedactor;
 use crate::sched::{ConcurrencyKey, ScheduleDecision, Scheduler, SchedulerLimits};
@@ -342,6 +343,339 @@ async fn perm_ask_path_blocks_until_resolved() {
 
     assert!(requested_idx < resolved_idx);
     assert!(resolved_idx < started_idx);
+}
+
+#[tokio::test]
+async fn allow_always_records_grant_and_authorizes_matching_future_shell_call() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let mut config = test_config(temp_dir.path());
+    config.permission_policy = PermissionPolicy::new(
+        PermissionMode::Deny,
+        PermissionMode::Ask,
+        PermissionMode::Deny,
+    )
+    .with_ask_timeout_ms(1_000);
+
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+
+    let run = handle
+        .start_run("perm_allow_always", temp_dir.path())
+        .await
+        .expect("start run");
+
+    let actor = EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string()));
+    let first_tool_call_id = handle
+        .request_tool_call(
+            actor.clone(),
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "echo durable"}),
+        )
+        .await
+        .expect("request first tool call");
+
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    let before_resolve = read_events(&run.events_path);
+    let permission_id = before_resolve
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::PermissionRequested(data)
+                if data.tool_call_id.as_deref() == Some(first_tool_call_id.as_str()) =>
+            {
+                Some(data.permission_id.clone())
+            }
+            _ => None,
+        })
+        .expect("permission requested");
+
+    handle
+        .resolve_permission_with_grant_scope(
+            permission_id,
+            PermissionDecision::Allow,
+            None,
+            Some(PermissionGrantScope::Run),
+        )
+        .await
+        .expect("resolve with durable grant");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+
+    let second_tool_call_id = handle
+        .request_tool_call(
+            actor,
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "echo durable", "note": "different digest"}),
+        )
+        .await
+        .expect("matching grant starts without ask");
+
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    handle.stop_run().await.expect("stop run");
+
+    let events = read_events(&run.events_path);
+    let requested_count = events
+        .iter()
+        .filter(|event| matches!(event.payload, EventV1::PermissionRequested(_)))
+        .count();
+    assert_eq!(requested_count, 1, "second matching call should not ask");
+    assert!(events
+        .iter()
+        .any(|event| matches!(event.payload, EventV1::PermissionGrantRecorded(_))));
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ToolCallStarted(data) if data.tool_call_id == first_tool_call_id
+        )
+    }));
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ToolCallStarted(data) if data.tool_call_id == second_tool_call_id
+        )
+    }));
+}
+
+#[tokio::test]
+async fn allow_always_shell_run_grant_does_not_authorize_changed_args() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let mut config = test_config(temp_dir.path());
+    config.permission_policy = PermissionPolicy::new(
+        PermissionMode::Deny,
+        PermissionMode::Ask,
+        PermissionMode::Deny,
+    )
+    .with_ask_timeout_ms(1_000);
+
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+
+    let run = handle
+        .start_run("perm_allow_always_args", temp_dir.path())
+        .await
+        .expect("start run");
+
+    let actor = EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string()));
+    let first_tool_call_id = handle
+        .request_tool_call(
+            actor.clone(),
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "bash", "args": ["-lc", "echo durable"]}),
+        )
+        .await
+        .expect("request first tool call");
+
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    let permission_id = read_events(&run.events_path)
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::PermissionRequested(data)
+                if data.tool_call_id.as_deref() == Some(first_tool_call_id.as_str()) =>
+            {
+                Some(data.permission_id.clone())
+            }
+            _ => None,
+        })
+        .expect("permission requested");
+
+    handle
+        .resolve_permission_with_grant_scope(
+            permission_id,
+            PermissionDecision::Allow,
+            None,
+            Some(PermissionGrantScope::Run),
+        )
+        .await
+        .expect("resolve with durable grant");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+
+    let second_tool_call_id = handle
+        .request_tool_call(
+            actor,
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "bash", "args": ["-lc", "echo changed"]}),
+        )
+        .await
+        .expect("request changed args tool call");
+
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    handle.stop_run().await.expect("stop run");
+
+    let events = read_events(&run.events_path);
+    let requested_count = events
+        .iter()
+        .filter(|event| matches!(event.payload, EventV1::PermissionRequested(_)))
+        .count();
+    assert_eq!(requested_count, 2, "changed args should ask again");
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ToolCallStarted(data) if data.tool_call_id == second_tool_call_id
+        )
+    }));
+}
+
+#[tokio::test]
+async fn static_deny_overrides_permission_grant() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let mut config = test_config(temp_dir.path());
+    config.permission_policy = PermissionPolicy::new(
+        PermissionMode::Deny,
+        PermissionMode::Ask,
+        PermissionMode::Deny,
+    )
+    .with_category_override(
+        "locked",
+        CategoryPermissions {
+            shell: Some(PermissionMode::Deny),
+            ..CategoryPermissions::default()
+        },
+    )
+    .with_ask_timeout_ms(1_000);
+
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("static_deny", temp_dir.path())
+        .await
+        .expect("start run");
+
+    let actor = EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string()));
+    let granted_tool_call_id = handle
+        .request_tool_call(
+            actor.clone(),
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "echo durable"}),
+        )
+        .await
+        .expect("request grantable call");
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    let permission_id = read_events(&run.events_path)
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::PermissionRequested(data)
+                if data.tool_call_id.as_deref() == Some(granted_tool_call_id.as_str()) =>
+            {
+                Some(data.permission_id.clone())
+            }
+            _ => None,
+        })
+        .expect("permission requested");
+    handle
+        .resolve_permission_with_grant_scope(
+            permission_id,
+            PermissionDecision::Allow,
+            None,
+            Some(PermissionGrantScope::Run),
+        )
+        .await
+        .expect("record durable grant");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+
+    let denied = handle
+        .request_tool_call(
+            actor,
+            Some("locked".to_string()),
+            "shell.run",
+            json!({"cmd": "echo durable"}),
+        )
+        .await
+        .expect_err("static deny must override durable grant");
+    assert!(matches!(denied, CoordinatorError::PermissionDenied(_)));
+
+    handle.stop_run().await.expect("stop run");
+    let events = read_events(&run.events_path);
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::PermissionResolved(data)
+                if data.decision == crate::event::PermissionDecision::Deny
+        )
+    }));
+    let denied_tool_started = events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ToolCallStarted(data) if data.tool_call_id == "toolcall_000002"
+        )
+    });
+    assert!(!denied_tool_started);
+}
+
+#[tokio::test]
+async fn permission_grant_event_does_not_persist_raw_shell_command_secret() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let mut config = test_config(temp_dir.path());
+    config.permission_policy = PermissionPolicy::new(
+        PermissionMode::Deny,
+        PermissionMode::Ask,
+        PermissionMode::Deny,
+    )
+    .with_ask_timeout_ms(1_000);
+
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("perm_grant_redaction", temp_dir.path())
+        .await
+        .expect("start run");
+
+    let tool_call_id = handle
+        .request_tool_call(
+            EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string())),
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "curl -H 'Authorization: Bearer secret.value' https://example.invalid"}),
+        )
+        .await
+        .expect("request shell call");
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    let permission_id = read_events(&run.events_path)
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::PermissionRequested(data)
+                if data.tool_call_id.as_deref() == Some(tool_call_id.as_str()) =>
+            {
+                Some(data.permission_id.clone())
+            }
+            _ => None,
+        })
+        .expect("permission requested");
+
+    handle
+        .resolve_permission_with_grant_scope(
+            permission_id,
+            PermissionDecision::Allow,
+            None,
+            Some(PermissionGrantScope::Run),
+        )
+        .await
+        .expect("resolve durable grant");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    handle.stop_run().await.expect("stop run");
+
+    let events_body = fs::read_to_string(&run.events_path).expect("read events body");
+    let grant_line = events_body
+        .lines()
+        .find(|line| line.contains("permission_grant_recorded"))
+        .expect("grant event line");
+    assert!(!grant_line.contains("secret.value"));
+    assert!(!grant_line.contains("Authorization"));
+    assert!(!grant_line.contains("Bearer"));
 }
 
 #[tokio::test]
@@ -847,6 +1181,7 @@ fn restore_provider_context_uses_task_completed_summary_for_iterative_history() 
                     model_id: "model-1".to_string(),
                     prompt_summary: "first question".to_string(),
                     request_digest: "digest-1".to_string(),
+                    metadata: None,
                 }),
             ),
             restore_fixture_event(
@@ -870,6 +1205,7 @@ fn restore_provider_context_uses_task_completed_summary_for_iterative_history() 
                     model_id: "model-1".to_string(),
                     prompt_summary: "tool result follow-up".to_string(),
                     request_digest: "digest-2".to_string(),
+                    metadata: None,
                 }),
             ),
             restore_fixture_event(
@@ -945,7 +1281,17 @@ fn proactive_compaction_writes_checkpoint_artifact_and_updates_provider_context(
             trigger_reason: "proactive".to_string(),
             tokens_before: Some(3_900),
         },
-        None,
+        &CompactionRuntimeConfig::default(),
+        &super::CompactionSummaryDecision::deterministic(&ProviderCompactionTrigger {
+            agent_id: "agent_000001".to_string(),
+            profile_name: "alpha".to_string(),
+            model_ref: "default:model-1".to_string(),
+            provider_id: Some("default".to_string()),
+            model_id: Some("model-1".to_string()),
+            through_request_id: Some("req_000002".to_string()),
+            trigger_reason: "proactive".to_string(),
+            tokens_before: Some(3_900),
+        }),
     )
     .expect("proactive compaction should succeed")
     .expect("proactive compaction should write a checkpoint");
@@ -1085,6 +1431,7 @@ fn proactive_compaction_records_pruned_tool_artifacts_for_compacted_turns() {
                     model_id: "model-1".to_string(),
                     prompt_summary: "first question".to_string(),
                     request_digest: "digest-1".to_string(),
+                    metadata: None,
                 }),
             ),
             restore_fixture_event(
@@ -1134,6 +1481,7 @@ fn proactive_compaction_records_pruned_tool_artifacts_for_compacted_turns() {
                     model_id: "model-1".to_string(),
                     prompt_summary: "second question".to_string(),
                     request_digest: "digest-2".to_string(),
+                    metadata: None,
                 }),
             ),
             restore_fixture_event(
@@ -1183,7 +1531,17 @@ fn proactive_compaction_records_pruned_tool_artifacts_for_compacted_turns() {
             trigger_reason: "proactive".to_string(),
             tokens_before: Some(3_900),
         },
-        None,
+        &CompactionRuntimeConfig::default(),
+        &super::CompactionSummaryDecision::deterministic(&ProviderCompactionTrigger {
+            agent_id: "agent_000001".to_string(),
+            profile_name: "alpha".to_string(),
+            model_ref: "default:model-1".to_string(),
+            provider_id: Some("default".to_string()),
+            model_id: Some("model-1".to_string()),
+            through_request_id: Some("req_000002".to_string()),
+            trigger_reason: "proactive".to_string(),
+            tokens_before: Some(3_900),
+        }),
     )
     .expect("proactive compaction should succeed")
     .expect("proactive compaction should write a checkpoint");
@@ -1274,7 +1632,7 @@ fn repeated_compaction_updates_existing_summary_without_legacy_append_format() {
     );
 
     assert!(summary.contains("## Goal"));
-    assert!(summary.contains("Previous Summary"));
+    assert!(!summary.contains("Previous Summary"));
     assert!(summary.contains("Keep existing constraints"));
     assert!(summary.contains("new compacted question"));
     assert!(!summary.contains("Earlier checkpoint summary:"));
@@ -1383,6 +1741,7 @@ fn restore_provider_context_from_history_uses_checkpoint_then_replays_post_check
                     model_id: "model-1".to_string(),
                     prompt_summary: "first question".to_string(),
                     request_digest: "digest-1".to_string(),
+                    metadata: None,
                 }),
             ),
             restore_fixture_event(
@@ -1428,6 +1787,7 @@ fn restore_provider_context_from_history_uses_checkpoint_then_replays_post_check
                     model_id: "model-1".to_string(),
                     prompt_summary: "second question".to_string(),
                     request_digest: "digest-2".to_string(),
+                    metadata: None,
                 }),
             ),
             restore_fixture_event(
@@ -1518,6 +1878,7 @@ fn restore_provider_context_from_history_uses_checkpoint_then_replays_post_check
                     model_id: "model-1".to_string(),
                     prompt_summary: "third question".to_string(),
                     request_digest: "digest-3".to_string(),
+                    metadata: None,
                 }),
             ),
             restore_fixture_event(
@@ -1763,7 +2124,9 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
         agent_hook_state: std::collections::BTreeMap::new(),
         subagent_parent_by_id: std::collections::BTreeMap::new(),
         pending_permissions: std::collections::BTreeMap::new(),
+        active_permission_grants: crate::perm::PermissionGrantSet::default(),
         cancelled_running_tasks: std::collections::BTreeSet::new(),
+        pending_agent_turn_messages: std::collections::BTreeMap::new(),
         queued_agent_turns: std::collections::BTreeMap::new(),
         running_agent_turns: std::collections::BTreeMap::new(),
         scheduler: Scheduler::new(SchedulerLimits {

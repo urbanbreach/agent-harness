@@ -109,12 +109,25 @@ impl ToolContext {
 
 fn normalize_workspace_target_path(workspace: &Path, input: &Path) -> Result<PathBuf, ToolError> {
     let relative = if input.is_absolute() {
-        input
-            .strip_prefix(workspace)
-            .map_err(|_| ToolError::PathEscapesWorkspace {
-                workspace_root: workspace.display().to_string(),
-                path: input.display().to_string(),
-            })?
+        match input.strip_prefix(workspace) {
+            Ok(relative) => relative,
+            Err(_) => {
+                let canonical_input =
+                    input
+                        .canonicalize()
+                        .map_err(|_| ToolError::PathEscapesWorkspace {
+                            workspace_root: workspace.display().to_string(),
+                            path: input.display().to_string(),
+                        })?;
+                if !canonical_input.starts_with(workspace) {
+                    return Err(ToolError::PathEscapesWorkspace {
+                        workspace_root: workspace.display().to_string(),
+                        path: canonical_input.display().to_string(),
+                    });
+                }
+                return Ok(canonical_input);
+            }
+        }
     } else {
         input
     };
@@ -557,6 +570,28 @@ mod tests {
             .expect_err("parent traversal must be blocked");
 
         assert!(matches!(err, ToolError::PathEscapesWorkspace { .. }));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn resolve_workspace_path_accepts_absolute_symlink_alias_inside_workspace() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let workspace = temp_dir.path().join("workspace");
+        let nested = workspace.join("nested");
+        let alias = temp_dir.path().join("workspace-alias");
+        fs::create_dir_all(&nested).expect("nested dir");
+        std::os::unix::fs::symlink(
+            workspace.canonicalize().expect("canonical workspace"),
+            &alias,
+        )
+        .expect("workspace symlink");
+        let ctx = tool_context(&workspace, "tool-call-symlink");
+
+        let resolved = ctx
+            .resolve_workspace_path(&alias.join("nested"))
+            .expect("symlink alias should resolve inside workspace");
+
+        assert_eq!(resolved, nested.canonicalize().expect("canonical nested"));
     }
 
     #[test]

@@ -1,19 +1,25 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use harness_core::agent::{AgentProfile, ProviderContextCheckpoint};
+use harness_core::agent::{
+    build_provider_context_messages, build_provider_tool_defs, stream_assistant_response_once,
+    AgentModelRef, AgentModelSettings, AgentProfile, AgentRequest, AgentRuntimeEvent,
+    ProviderBoundaryContext, ProviderContext, ProviderContextCheckpoint,
+    StreamAssistantResponseOnceRequest,
+};
 use harness_core::clock::FakeClock;
 use harness_core::config::{
-    HookLifecycleEvent, HookRuntimeConfig, HooksConfig, LifecycleHookConfig, PermissionMode,
-    ShellAllowlist,
+    CompactionRuntimeConfig, HookLifecycleEvent, HookRuntimeConfig, HooksConfig,
+    LifecycleHookConfig, PermissionMode, ShellAllowlist,
 };
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle, JobOutcome,
-    JobProgressKind, ManualCompactionOutcome,
+    JobProgressKind, ManualCompactionOutcome, RunInfo,
 };
 use harness_core::event::{
     ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
@@ -32,7 +38,8 @@ use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegis
 use harness_providers::mock::{request_digest, MockProvider};
 use harness_providers::{
     CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
-    ProviderEventStream, ProviderStreamEvent,
+    ProviderEventStream, ProviderStreamEvent, ProviderStreamFinishedMetadata,
+    ProviderStreamStartMetadata, ProviderStreamThinkingMetadata,
 };
 use serde_json::json;
 use tokio::sync::Notify;
@@ -56,6 +63,30 @@ impl Tool for TestShellTool {
         args_json: serde_json::Value,
     ) -> Result<ToolResult, ToolError> {
         Ok(ToolResult::text(format!("ok {args_json}")))
+    }
+}
+
+struct CountingShellTool {
+    calls: Arc<AtomicUsize>,
+}
+
+#[async_trait]
+impl Tool for CountingShellTool {
+    fn id(&self) -> &str {
+        "shell.run"
+    }
+
+    fn capability(&self) -> ToolCapability {
+        ToolCapability::Shell
+    }
+
+    async fn call(
+        &self,
+        _ctx: ToolContext,
+        args_json: serde_json::Value,
+    ) -> Result<ToolResult, ToolError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Ok(ToolResult::text(format!("counted {args_json}")))
     }
 }
 
@@ -101,6 +132,38 @@ impl Tool for BlockingShellTool {
     ) -> Result<ToolResult, ToolError> {
         self.release.notified().await;
         Ok(ToolResult::text("unblocked"))
+    }
+}
+
+struct NamedShellTool {
+    id: &'static str,
+    output: &'static str,
+    started: Option<Arc<Notify>>,
+    release: Option<Arc<Notify>>,
+}
+
+#[async_trait]
+impl Tool for NamedShellTool {
+    fn id(&self) -> &str {
+        self.id
+    }
+
+    fn capability(&self) -> ToolCapability {
+        ToolCapability::Shell
+    }
+
+    async fn call(
+        &self,
+        _ctx: ToolContext,
+        _args_json: serde_json::Value,
+    ) -> Result<ToolResult, ToolError> {
+        if let Some(started) = &self.started {
+            started.notify_one();
+        }
+        if let Some(release) = &self.release {
+            release.notified().await;
+        }
+        Ok(ToolResult::text(self.output))
     }
 }
 
@@ -154,6 +217,41 @@ impl Provider for CapturingProvider {
                 },
             },
         ]))
+    }
+}
+
+#[derive(Clone)]
+struct DelayedCapturingProvider {
+    inner: CapturingProvider,
+    delay: Duration,
+}
+
+impl DelayedCapturingProvider {
+    fn new(responses: Vec<&str>, delay: Duration) -> Self {
+        Self {
+            inner: CapturingProvider::new(responses),
+            delay,
+        }
+    }
+
+    fn requests(&self) -> Vec<CompletionRequest> {
+        self.inner.requests()
+    }
+}
+
+#[async_trait]
+impl Provider for DelayedCapturingProvider {
+    async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
+        let delay = self.delay;
+        let stream = self
+            .inner
+            .stream_completion(req)
+            .await
+            .then(move |event| async move {
+                tokio::time::sleep(delay).await;
+                event
+            });
+        Box::pin(stream)
     }
 }
 
@@ -740,7 +838,7 @@ async fn immediate_agent_turn_emits_single_started_event() {
         .position(|event| {
             matches!(
                 &event.payload,
-                EventV1::ProviderRequestStarted(data) if data.request_id == request_id
+                EventV1::ProviderRequestStarted(_) if event.correlation_id.as_deref() == Some(request_id.as_str())
             )
         })
         .expect("provider request started event");
@@ -826,7 +924,7 @@ async fn queued_agent_turn_emits_started_when_dequeued() {
         .position(|event| {
             matches!(
                 &event.payload,
-                EventV1::ProviderRequestStarted(data) if data.request_id == queued_request_id
+                EventV1::ProviderRequestStarted(_) if event.correlation_id.as_deref() == Some(queued_request_id.as_str())
             )
         })
         .expect("provider request started event");
@@ -1043,29 +1141,29 @@ async fn coord_agent_turn_provider_events_have_isolated_correlation_ids() {
     coordinator.stop_run().await.expect("stop run");
 
     let events = load_events(&run.events_path);
-    let mut request_ids = Vec::new();
+    let mut provider_request_ids = Vec::new();
 
     for event in &events {
         if let EventV1::ProviderRequestStarted(ref data) = event.payload {
-            request_ids.push(data.request_id.clone());
+            provider_request_ids.push(data.request_id.clone());
         }
     }
 
-    request_ids.sort();
-    request_ids.dedup();
+    provider_request_ids.sort();
+    provider_request_ids.dedup();
     assert_eq!(
-        request_ids.len(),
+        provider_request_ids.len(),
         2,
-        "expected one request_id per spawned agent"
+        "expected one provider request_id per spawned agent"
     );
 
-    for request_id in request_ids {
+    for provider_request_id in provider_request_ids {
         let related: Vec<_> = events
             .iter()
             .filter(|event| match &event.payload {
-                EventV1::ProviderRequestStarted(data) => data.request_id == request_id,
-                EventV1::ProviderStreamDelta(data) => data.request_id == request_id,
-                EventV1::ProviderRequestFinished(data) => data.request_id == request_id,
+                EventV1::ProviderRequestStarted(data) => data.request_id == provider_request_id,
+                EventV1::ProviderStreamDelta(data) => data.request_id == provider_request_id,
+                EventV1::ProviderRequestFinished(data) => data.request_id == provider_request_id,
                 _ => false,
             })
             .collect();
@@ -1073,12 +1171,2404 @@ async fn coord_agent_turn_provider_events_have_isolated_correlation_ids() {
         assert!(
             !related.is_empty(),
             "request {} should have related provider events",
-            request_id
+            provider_request_id
         );
+        let turn_id = related[0]
+            .correlation_id
+            .as_deref()
+            .expect("provider event correlation should be stable turn id");
         assert!(related
             .iter()
-            .all(|event| event.correlation_id.as_deref() == Some(request_id.as_str())));
+            .all(|event| event.correlation_id.as_deref() == Some(turn_id)));
+        assert_ne!(
+            turn_id, provider_request_id,
+            "provider request id should be distinct from stable turn correlation id"
+        );
     }
+}
+
+#[tokio::test]
+async fn provider_single_call_returns_tool_intents_without_executing_tools() {
+    let tool_call_count = Arc::new(AtomicUsize::new(0));
+    let mut registry = ToolRegistry::new();
+    registry.register(Arc::new(CountingShellTool {
+        calls: tool_call_count.clone(),
+    }));
+    let tool_registry = Arc::new(registry);
+
+    let profile = AgentProfile {
+        name: "alpha".to_string(),
+        category: "deep".to_string(),
+        model_ref: "mock:model-1".to_string(),
+        system_prompt: "single-call-system".to_string(),
+        temperature: Some(0.0),
+        max_iters: 12,
+        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+        toolset: vec!["shell.run".to_string()],
+    };
+    let request = AgentRequest {
+        agent_id: "agent_1".to_string(),
+        prompt: "single provider call".to_string(),
+        model_ref: "mock:model-1".to_string(),
+        model_settings: AgentModelSettings::default(),
+    };
+    let tool_defs = build_provider_tool_defs(&profile, tool_registry.as_ref())
+        .expect("build provider tool defs");
+    let function_name = tool_defs.first().expect("tool def").function_name.clone();
+    let messages =
+        build_provider_context_messages(&profile, &ProviderContext::default(), &request.prompt);
+    let expected_request = CompletionRequest {
+        provider_id: Some("mock".to_string()),
+        model_id: "model-1".to_string(),
+        messages: messages.clone(),
+        temperature: Some(0.0),
+        max_tokens: None,
+        variant: None,
+        reasoning_effort: None,
+        text_verbosity: None,
+        reasoning_summary: None,
+        tools: Some(tool_defs.clone()),
+        tool_choice: Some(harness_providers::ToolChoice::Auto),
+        stream: true,
+    };
+    let mut scripted = BTreeMap::new();
+    scripted.insert(
+        request_digest(&expected_request),
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::ReasoningDelta("thinking".to_string()),
+            ProviderStreamEvent::TextDelta("I will call tools".to_string()),
+            ProviderStreamEvent::ToolCallDelta {
+                tool_call_id: "first_call".to_string(),
+                function_name: Some(function_name.clone()),
+                arguments_delta: "{".to_string(),
+            },
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id: "first_call".to_string(),
+                function_name: function_name.clone(),
+                arguments_json: r#"{"cmd":"one"}"#.to_string(),
+            },
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id: "second_call".to_string(),
+                function_name: function_name.clone(),
+                arguments_json: r#"{"cmd":"two"}"#.to_string(),
+            },
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 2,
+                    completion_tokens: 3,
+                    total_tokens: 5,
+                },
+            },
+        ],
+    );
+    let provider = Arc::new(MockProvider::new(scripted));
+    let events = Arc::new(Mutex::new(Vec::<AgentRuntimeEvent>::new()));
+
+    let response = stream_assistant_response_once(
+        StreamAssistantResponseOnceRequest {
+            provider,
+            profile: &profile,
+            model: AgentModelRef::parse(&request.model_ref),
+            model_settings: request.model_settings.clone(),
+            turn_request_id: "turn_1".to_string(),
+            provider_request_id: "provider_call_1".to_string(),
+            prompt_summary: &request.prompt,
+            context: ProviderBoundaryContext::ProviderMessages {
+                messages: &messages,
+            },
+            tool_defs: &tool_defs,
+        },
+        {
+            let events = events.clone();
+            move |event| {
+                let events = events.clone();
+                async move {
+                    events.lock().expect("lock events").push(event);
+                }
+            }
+        },
+    )
+    .await
+    .expect("single provider call succeeds");
+
+    assert_eq!(tool_call_count.load(Ordering::SeqCst), 0);
+    assert_eq!(response.text, "I will call tools");
+    assert_eq!(response.reasoning, "thinking");
+    assert_eq!(response.stop_reason, "done");
+    assert_eq!(response.tool_call_deltas.len(), 1);
+    assert_eq!(
+        response
+            .tool_intents
+            .iter()
+            .map(|intent| (
+                intent.tool_call_id.as_str(),
+                intent.function_name.as_str(),
+                intent.tool_id.as_str(),
+                intent.arguments.clone(),
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                "first_call",
+                function_name.as_str(),
+                "shell.run",
+                json!({"cmd": "one"}),
+            ),
+            (
+                "second_call",
+                function_name.as_str(),
+                "shell.run",
+                json!({"cmd": "two"}),
+            ),
+        ]
+    );
+
+    let events = events.lock().expect("lock events");
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AgentRuntimeEvent::ProviderRequestStarted(started)
+            if started.request_id == "provider_call_1"
+    )));
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AgentRuntimeEvent::ProviderReasoningDelta { request_id, delta }
+            if request_id == "provider_call_1" && delta == "thinking"
+    )));
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AgentRuntimeEvent::ProviderRequestFinished(finished)
+            if finished.request_id == "provider_call_1" && finished.finish_reason == "done"
+    )));
+}
+
+#[tokio::test]
+async fn provider_calls_in_one_turn_have_unique_request_ids() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id: "provider_call_1".to_string(),
+                function_name: "shell_run".to_string(),
+                arguments_json: "{}".to_string(),
+            },
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 2,
+                    completion_tokens: 1,
+                    total_tokens: 3,
+                },
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("final answer".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 3,
+                    completion_tokens: 2,
+                    total_tokens: 5,
+                },
+            },
+        ],
+    ]);
+    let coordinator = test_agent_tool_coordinator(
+        temp_dir.path(),
+        Arc::new(provider.clone()),
+        test_tool_registry(),
+        PermissionPolicy::new(
+            PermissionMode::Deny,
+            PermissionMode::Allow,
+            PermissionMode::Deny,
+        ),
+        vec!["shell.run".to_string()],
+        12,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_provider_unique_request_ids_in_turn",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let turn_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "needs a tool")
+        .await
+        .expect("request agent turn");
+
+    wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data)
+                    if event.correlation_id.as_deref() == Some(turn_request_id.as_str())
+                        && data.result_summary == "final answer"
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    let provider_started = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::ProviderRequestStarted(data)
+                if event.correlation_id.as_deref() == Some(turn_request_id.as_str()) =>
+            {
+                Some(data.request_id.clone())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        provider_started.len(),
+        2,
+        "one logical agent turn with one tool result should make two provider calls"
+    );
+    let unique_provider_request_ids = provider_started.iter().collect::<BTreeSet<_>>();
+    assert_eq!(
+        unique_provider_request_ids.len(),
+        provider_started.len(),
+        "each provider call should have its own provider request id while event correlation remains on the stable agent turn request id"
+    );
+    for event in events.iter().filter(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ProviderRequestStarted(data)
+                if event.correlation_id.as_deref() == Some(turn_request_id.as_str())
+                    && provider_started.contains(&data.request_id)
+        )
+    }) {
+        let EventV1::ProviderRequestStarted(data) = &event.payload else {
+            unreachable!("filtered provider start events")
+        };
+        let metadata = data.metadata.as_ref().expect("provider start metadata");
+        assert_eq!(metadata.turn_id.as_deref(), Some(turn_request_id.as_str()));
+        assert_eq!(
+            metadata.provider_call_id.as_deref(),
+            Some(data.request_id.as_str())
+        );
+    }
+    assert!(events.iter().all(|event| {
+        let provider_request_id = match &event.payload {
+            EventV1::ProviderRequestStarted(data) => Some(&data.request_id),
+            EventV1::ProviderStreamDelta(data) => Some(&data.request_id),
+            EventV1::ProviderRequestFinished(data) => Some(&data.request_id),
+            _ => None,
+        };
+
+        provider_request_id.is_none_or(|request_id| {
+            !provider_started.contains(request_id)
+                || event.correlation_id.as_deref() == Some(turn_request_id.as_str())
+        })
+    }));
+}
+
+#[tokio::test]
+async fn provider_stream_metadata_persists_to_jsonl_events() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![vec![
+        ProviderStreamEvent::Started {
+            metadata: Some(ProviderStreamStartMetadata {
+                provider_session_id: Some("session-observed-1".to_string()),
+                provider_cache_id: Some("cache-observed-1".to_string()),
+            }),
+        },
+        ProviderStreamEvent::ReasoningDelta("provider reasoning summary".to_string()),
+        ProviderStreamEvent::TextDelta("metadata visible".to_string()),
+        ProviderStreamEvent::DoneWithMetadata {
+            usage: CompletionUsage {
+                prompt_tokens: 12,
+                completion_tokens: 4,
+                total_tokens: 16,
+            },
+            metadata: Some(ProviderStreamFinishedMetadata {
+                provider_response_id: Some("resp-observed-1".to_string()),
+                provider_session_id: Some("session-observed-1".to_string()),
+                provider_cache_id: Some("cache-observed-1".to_string()),
+                provider_stop_reason: Some("stop".to_string()),
+                cache_read_tokens: Some(7),
+                cache_write_tokens: Some(3),
+                assistant_message_id: Some("msg-observed-1".to_string()),
+                thinking: Some(ProviderStreamThinkingMetadata {
+                    summary: Some("provider supplied thinking summary".to_string()),
+                    summary_digest: Some("thinking-digest-provider".to_string()),
+                    signature: Some("thinking-signature-provider".to_string()),
+                }),
+            }),
+        },
+    ]]);
+    let coordinator = test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider), 1);
+
+    let run = coordinator
+        .start_run(
+            "coord_provider_metadata_jsonl",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let turn_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "inspect provider metadata")
+        .await
+        .expect("request agent turn");
+
+    wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data)
+                    if event.correlation_id.as_deref() == Some(turn_request_id.as_str())
+                        && data.result_summary == "metadata visible"
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    let started = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::ProviderRequestStarted(data)
+                if event.correlation_id.as_deref() == Some(turn_request_id.as_str()) =>
+            {
+                Some(data)
+            }
+            _ => None,
+        })
+        .expect("provider request started event");
+    let started_metadata = started.metadata.as_ref().expect("started metadata");
+    assert_eq!(
+        started_metadata.turn_id.as_deref(),
+        Some(turn_request_id.as_str())
+    );
+    assert_eq!(
+        started_metadata.provider_call_id.as_deref(),
+        Some(started.request_id.as_str())
+    );
+    assert_eq!(
+        started_metadata.provider_session_id.as_deref(),
+        Some("session-observed-1")
+    );
+    assert_eq!(
+        started_metadata.provider_cache_id.as_deref(),
+        Some("cache-observed-1")
+    );
+
+    let finished = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::ProviderRequestFinished(data)
+                if event.correlation_id.as_deref() == Some(turn_request_id.as_str()) =>
+            {
+                Some(data)
+            }
+            _ => None,
+        })
+        .expect("provider request finished event");
+    let finished_metadata = finished.metadata.as_ref().expect("finished metadata");
+    assert_eq!(
+        finished_metadata.turn_id.as_deref(),
+        Some(turn_request_id.as_str())
+    );
+    assert_eq!(
+        finished_metadata.provider_call_id.as_deref(),
+        Some(started.request_id.as_str())
+    );
+    assert_eq!(
+        finished_metadata.provider_response_id.as_deref(),
+        Some("resp-observed-1")
+    );
+    assert_eq!(
+        finished_metadata.provider_session_id.as_deref(),
+        Some("session-observed-1")
+    );
+    assert_eq!(
+        finished_metadata.provider_cache_id.as_deref(),
+        Some("cache-observed-1")
+    );
+    assert_eq!(
+        finished_metadata.provider_stop_reason.as_deref(),
+        Some("stop")
+    );
+    assert_eq!(finished_metadata.cache_read_tokens, Some(7));
+    assert_eq!(finished_metadata.cache_write_tokens, Some(3));
+    let assistant_message = finished_metadata
+        .assistant_message
+        .as_ref()
+        .expect("assistant message metadata");
+    assert_eq!(
+        assistant_message.message_id.as_deref(),
+        Some("msg-observed-1")
+    );
+    assert!(assistant_message.text_digest.is_some());
+    assert!(assistant_message.reasoning_digest.is_some());
+    let thinking = finished_metadata
+        .thinking
+        .as_ref()
+        .expect("thinking metadata");
+    assert_eq!(
+        thinking.summary.as_deref(),
+        Some("provider supplied thinking summary")
+    );
+    assert_eq!(
+        thinking.summary_digest.as_deref(),
+        Some("thinking-digest-provider")
+    );
+    assert_eq!(
+        thinking.signature.as_deref(),
+        Some("thinking-signature-provider")
+    );
+}
+
+#[tokio::test]
+async fn provider_reasoning_metadata_persists_digest_without_raw_summary_fallback() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![vec![
+        ProviderStreamEvent::Start,
+        ProviderStreamEvent::ReasoningDelta("private reasoning text".to_string()),
+        ProviderStreamEvent::TextDelta("visible answer".to_string()),
+        ProviderStreamEvent::Done {
+            usage: CompletionUsage {
+                prompt_tokens: 2,
+                completion_tokens: 2,
+                total_tokens: 4,
+            },
+        },
+    ]]);
+    let coordinator = test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider), 1);
+
+    let run = coordinator
+        .start_run(
+            "coord_provider_reasoning_digest_only",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let turn_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "inspect reasoning metadata")
+        .await
+        .expect("request agent turn");
+
+    wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data)
+                    if event.correlation_id.as_deref() == Some(turn_request_id.as_str())
+                        && data.result_summary == "visible answer"
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    let thinking = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::ProviderRequestFinished(data)
+                if event.correlation_id.as_deref() == Some(turn_request_id.as_str()) =>
+            {
+                data.metadata.as_ref()?.thinking.as_ref()
+            }
+            _ => None,
+        })
+        .expect("thinking metadata");
+
+    assert_eq!(thinking.summary, None);
+    assert!(thinking.summary_digest.is_some());
+    assert_eq!(thinking.signature, None);
+}
+
+#[tokio::test]
+async fn no_tool_turn_appends_explicit_phase_barriers_in_order() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let coordinator = test_agent_coordinator_with_provider(
+        temp_dir.path(),
+        Arc::new(CapturingProvider::new(vec!["phase complete"])),
+        1,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_no_tool_explicit_phase_order",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "phase order prompt")
+        .await
+        .expect("request agent turn");
+
+    wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+                        && data.result_summary == "phase complete"
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    let scheduled_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskScheduled(data)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+                        && data.state == TaskScheduleState::Started
+                        && data
+                            .queue_key
+                            .as_deref()
+                            .is_some_and(|queue_key| queue_key.starts_with("provider_model:"))
+            )
+        })
+        .expect("agent turn scheduled barrier");
+    let provider_started_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ProviderRequestStarted(_)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+            )
+        })
+        .expect("provider start barrier");
+    let provider_delta_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ProviderStreamDelta(data)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+                        && data.delta == "phase complete"
+            )
+        })
+        .expect("provider text delta");
+    let provider_finished_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ProviderRequestFinished(data)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+                        && data.finish_reason == "done"
+            )
+        })
+        .expect("provider finish barrier");
+    let assistant_message_finished_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::AssistantMessageFinished(data)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+                        && data.tool_call_count == 0
+            )
+        })
+        .expect("assistant message end barrier");
+    let turn_completed_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+                        && data.result_summary == "phase complete"
+            )
+        })
+        .expect("turn end barrier");
+
+    assert!(scheduled_idx < provider_started_idx);
+    assert!(provider_started_idx < provider_delta_idx);
+    assert!(provider_delta_idx < provider_finished_idx);
+    assert!(provider_finished_idx < assistant_message_finished_idx);
+    assert!(assistant_message_finished_idx < turn_completed_idx);
+    assert!(!events.iter().any(|event| {
+        event.correlation_id.as_deref() == Some(request_id.as_str())
+            && matches!(event.payload, EventV1::ToolCallStarted(_))
+    }));
+}
+
+#[tokio::test]
+async fn tool_turn_does_not_preflight_until_assistant_message_end_is_durable() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("calling tool".to_string()),
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id: "phase_tool".to_string(),
+                function_name: "shell_run".to_string(),
+                arguments_json: "{}".to_string(),
+            },
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 2,
+                    completion_tokens: 1,
+                    total_tokens: 3,
+                },
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("tool phase done".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 3,
+                    completion_tokens: 2,
+                    total_tokens: 5,
+                },
+            },
+        ],
+    ]);
+    let coordinator = test_agent_tool_coordinator(
+        temp_dir.path(),
+        Arc::new(provider),
+        test_tool_registry(),
+        PermissionPolicy::new(
+            PermissionMode::Deny,
+            PermissionMode::Allow,
+            PermissionMode::Deny,
+        ),
+        vec!["shell.run".to_string()],
+        12,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_tool_waits_for_assistant_barrier",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "tool phase barrier")
+        .await
+        .expect("request agent turn");
+
+    wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+                        && data.result_summary == "tool phase done"
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    let provider_started = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::ProviderRequestStarted(data)
+                if event.correlation_id.as_deref() == Some(request_id.as_str()) =>
+            {
+                Some(data.request_id.clone())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(provider_started.len(), 2, "tool turn should continue once");
+
+    let first_provider_finished_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ProviderRequestFinished(data)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+                        && data.request_id == provider_started[0]
+            )
+        })
+        .expect("provider finish barrier for first provider call");
+    let assistant_message_finished_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::AssistantMessageFinished(data)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+                        && data.request_id == provider_started[0]
+                        && data.tool_call_count == 1
+            )
+        })
+        .expect("assistant message end barrier for first provider call");
+    let tool_requested_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ToolCallRequested(data)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+                        && data.tool_id == "shell.run"
+            )
+        })
+        .expect("tool preflight requested");
+    let tool_started_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ToolCallStarted(data)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+                        && !data.tool_call_id.is_empty()
+            )
+        })
+        .expect("tool started");
+    let tool_finished_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ToolCallFinished(data)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+                        && data.status == ToolCallStatus::Succeeded
+            )
+        })
+        .expect("tool result barrier");
+    let second_provider_started_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ProviderRequestStarted(data)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+                        && data.request_id == provider_started[1]
+            )
+        })
+        .expect("follow-up provider start");
+
+    assert!(first_provider_finished_idx < assistant_message_finished_idx);
+    assert!(assistant_message_finished_idx < tool_requested_idx);
+    assert!(assistant_message_finished_idx < tool_started_idx);
+    assert!(tool_finished_idx < second_provider_started_idx);
+}
+
+#[tokio::test]
+async fn queued_turn_recomputes_context_at_provider_start() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = DelayedCapturingProvider::new(
+        vec!["first answer", "beta answer", "second answer"],
+        Duration::from_millis(50),
+    );
+    let coordinator =
+        test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider.clone()), 1);
+
+    let run = coordinator
+        .start_run(
+            "coord_queued_turn_recomputes_context",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let beta_agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "beta", None)
+        .await
+        .expect("spawn idle beta");
+
+    let first_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
+        .await
+        .expect("first turn");
+    wait_for_events(&run.events_path, Duration::from_secs(1), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data)
+                    if event.correlation_id.as_deref() == Some(first_request_id.as_str())
+                        && data.result_summary == "first answer"
+            )
+        })
+    })
+    .await;
+
+    let beta_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), beta_agent_id, "beta question")
+        .await
+        .expect("beta turn holding provider slot");
+    wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ProviderRequestStarted(_)
+                    if event.correlation_id.as_deref() == Some(beta_request_id.as_str())
+            )
+        })
+    })
+    .await;
+
+    let second_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "second question")
+        .await
+        .expect("queued second turn");
+
+    wait_for_events(&run.events_path, Duration::from_secs(1), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data)
+                    if event.correlation_id.as_deref() == Some(second_request_id.as_str())
+                        && data.result_summary == "second answer"
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 3, "expected all provider turns to run");
+    let second_shape = requests[2]
+        .messages
+        .iter()
+        .map(|message| (message.role.clone(), message.content.clone()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        second_shape,
+        vec![
+            (MessageRole::System, "alpha-prompt".to_string()),
+            (MessageRole::User, "first question".to_string()),
+            (MessageRole::Assistant, "first answer".to_string()),
+            (MessageRole::User, "second question".to_string()),
+        ],
+        "queued turn should use provider context recomputed after the earlier turn completed"
+    );
+
+    let events = load_events(&run.events_path);
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskScheduled(data)
+                if event.correlation_id.as_deref() == Some(second_request_id.as_str())
+                    && data.state == TaskScheduleState::Queued
+        )
+    }));
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCompleted(data)
+                if event.correlation_id.as_deref() == Some(first_request_id.as_str())
+                    && data.result_summary == "first answer"
+        )
+    }));
+}
+
+#[tokio::test]
+async fn steering_message_injects_before_next_provider_call() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let tool_started = Arc::new(Notify::new());
+    let tool_release = Arc::new(Notify::new());
+    let provider = SequentialScriptedProvider::new(vec![
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id: "blocking_tool".to_string(),
+                function_name: "shell_block".to_string(),
+                arguments_json: "{}".to_string(),
+            },
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 2,
+                    completion_tokens: 1,
+                    total_tokens: 3,
+                },
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("steered final".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 4,
+                    completion_tokens: 2,
+                    total_tokens: 6,
+                },
+            },
+        ],
+    ]);
+    let coordinator = test_agent_tool_coordinator(
+        temp_dir.path(),
+        Arc::new(provider.clone()),
+        named_tool_registry(vec![NamedShellTool {
+            id: "shell.block",
+            output: "blocking output",
+            started: Some(tool_started.clone()),
+            release: Some(tool_release.clone()),
+        }]),
+        PermissionPolicy::new(
+            PermissionMode::Deny,
+            PermissionMode::Allow,
+            PermissionMode::Deny,
+        ),
+        vec!["shell.block".to_string()],
+        12,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_steering_before_next_provider",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let turn_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "initial question")
+        .await
+        .expect("request initial turn");
+
+    tokio::time::timeout(Duration::from_millis(500), tool_started.notified())
+        .await
+        .expect("blocking tool should start");
+    let steering_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "steer before next provider")
+        .await
+        .expect("request steering message");
+    tool_release.notify_waiters();
+
+    wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data)
+                    if event.correlation_id.as_deref() == Some(turn_request_id.as_str())
+                        && data.result_summary == "steered final"
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let requests = provider.requests();
+    assert_eq!(
+        requests.len(),
+        2,
+        "steering should not recurse provider directly"
+    );
+    let second_messages = requests[1]
+        .messages
+        .iter()
+        .map(|message| (message.role.clone(), message.content.clone()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        second_messages.last(),
+        Some(&(MessageRole::User, "steer before next provider".to_string())),
+        "pending steering should drain at the provider barrier before the second call"
+    );
+
+    let events = load_events(&run.events_path);
+    let steering_user_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::UserMessageSubmitted(data)
+                    if data.request_id == steering_request_id
+                        && data.text == "steer before next provider"
+            )
+        })
+        .expect("steering user message event");
+    let second_provider_idx = events
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, event)| {
+            matches!(
+                &event.payload,
+                EventV1::ProviderRequestStarted(data)
+                    if event.correlation_id.as_deref() == Some(turn_request_id.as_str())
+                        && data.request_id != turn_request_id
+            )
+            .then_some(idx)
+        })
+        .nth(1)
+        .expect("second provider call");
+    assert!(steering_user_idx < second_provider_idx);
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskScheduled(data)
+                if event.correlation_id.as_deref() == Some(steering_request_id.as_str())
+                    && data.queue_key.as_deref().is_some_and(|queue_key| queue_key.starts_with("provider_model:"))
+        )
+    }));
+
+    let resumed_provider = CapturingProvider::new(vec!["after resume answer"]);
+    let resumed =
+        test_resume_coordinator_with_provider(temp_dir.path(), Arc::new(resumed_provider.clone()));
+    resumed
+        .resume_run(run.run_id.clone(), "coord_steering_resume")
+        .await
+        .expect("resume run");
+    let resumed_request_id = resumed
+        .request_agent_turn(supervisor_actor(), "agent_000001", "after resume")
+        .await
+        .expect("request resumed turn");
+    wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data)
+                    if event.correlation_id.as_deref() == Some(resumed_request_id.as_str())
+                        && data.result_summary == "after resume answer"
+            )
+        })
+    })
+    .await;
+    resumed.stop_run().await.expect("stop resumed run");
+
+    let resumed_requests = resumed_provider.requests();
+    let resumed_context_text = resumed_requests[0]
+        .messages
+        .iter()
+        .map(|message| message.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n---\n");
+    assert!(resumed_context_text.contains("initial question"));
+    assert!(resumed_context_text.contains("steer before next provider"));
+}
+
+#[tokio::test]
+async fn follow_up_message_schedules_after_turn_stop() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = DelayedCapturingProvider::new(
+        vec!["first answer", "follow-up answer"],
+        Duration::from_millis(50),
+    );
+    let coordinator =
+        test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider.clone()), 1);
+
+    let run = coordinator
+        .start_run(
+            "coord_follow_up_after_turn_stop",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let first_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
+        .await
+        .expect("first turn");
+
+    wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ProviderRequestStarted(_)
+                    if event.correlation_id.as_deref() == Some(first_request_id.as_str())
+            )
+        })
+    })
+    .await;
+    let follow_up_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "follow-up question")
+        .await
+        .expect("follow-up request while first turn runs");
+
+    wait_for_events(&run.events_path, Duration::from_secs(1), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data)
+                    if event.correlation_id.as_deref() == Some(follow_up_request_id.as_str())
+                        && data.result_summary == "follow-up answer"
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    let first_completed_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(_)
+                    if event.correlation_id.as_deref() == Some(first_request_id.as_str())
+            )
+        })
+        .expect("first turn completion");
+    let follow_up_scheduled_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskScheduled(data)
+                    if event.correlation_id.as_deref() == Some(follow_up_request_id.as_str())
+                        && data.queue_key.as_deref().is_some_and(|queue_key| queue_key.starts_with("provider_model:"))
+            )
+        })
+        .expect("follow-up task scheduled");
+    assert!(
+        first_completed_idx < follow_up_scheduled_idx,
+        "follow-up turn must be scheduled only after the current turn stops"
+    );
+
+    let requests = provider.requests();
+    assert_eq!(
+        requests.len(),
+        2,
+        "follow-up should run as a separate provider turn"
+    );
+    let follow_up_shape = requests[1]
+        .messages
+        .iter()
+        .map(|message| (message.role.clone(), message.content.clone()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        follow_up_shape,
+        vec![
+            (MessageRole::System, "alpha-prompt".to_string()),
+            (MessageRole::User, "first question".to_string()),
+            (MessageRole::Assistant, "first answer".to_string()),
+            (MessageRole::User, "follow-up question".to_string()),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn cancelled_turn_clears_pending_steering_without_provider_call() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let tool_started = Arc::new(Notify::new());
+    let tool_release = Arc::new(Notify::new());
+    let provider = SequentialScriptedProvider::new(vec![
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id: "blocking_tool".to_string(),
+                function_name: "shell_block".to_string(),
+                arguments_json: "{}".to_string(),
+            },
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 2,
+                    completion_tokens: 1,
+                    total_tokens: 3,
+                },
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("should not run".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 4,
+                    completion_tokens: 2,
+                    total_tokens: 6,
+                },
+            },
+        ],
+    ]);
+    let coordinator = test_agent_tool_coordinator(
+        temp_dir.path(),
+        Arc::new(provider.clone()),
+        named_tool_registry(vec![NamedShellTool {
+            id: "shell.block",
+            output: "blocking output",
+            started: Some(tool_started.clone()),
+            release: Some(tool_release.clone()),
+        }]),
+        PermissionPolicy::new(
+            PermissionMode::Deny,
+            PermissionMode::Allow,
+            PermissionMode::Deny,
+        ),
+        vec!["shell.block".to_string()],
+        12,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_cancel_clears_pending_steering",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let turn_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "initial question")
+        .await
+        .expect("request initial turn");
+
+    tokio::time::timeout(Duration::from_millis(500), tool_started.notified())
+        .await
+        .expect("blocking tool should start");
+    let events = load_events(&run.events_path);
+    let agent_task_id = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::TaskScheduled(data)
+                if event.correlation_id.as_deref() == Some(turn_request_id.as_str())
+                    && data
+                        .queue_key
+                        .as_deref()
+                        .is_some_and(|queue_key| queue_key.starts_with("provider_model:")) =>
+            {
+                Some(data.task_id.clone())
+            }
+            _ => None,
+        })
+        .expect("agent task id");
+    let steering_request_id = coordinator
+        .request_agent_turn(
+            supervisor_actor(),
+            agent_id,
+            "steering that will be cancelled",
+        )
+        .await
+        .expect("request pending steering");
+    coordinator
+        .cancel_task(agent_task_id.clone(), "cancel pending steering turn")
+        .await
+        .expect("cancel agent turn");
+    tool_release.notify_waiters();
+
+    wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCancelled(data)
+                    if data.task_id == agent_task_id
+                        && data.reason == "cancel pending steering turn"
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let requests = provider.requests();
+    assert_eq!(
+        requests.len(),
+        1,
+        "cancelling the turn should clear pending steering before another provider call"
+    );
+    let events = load_events(&run.events_path);
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::UserMessageSubmitted(data)
+                if data.request_id == steering_request_id
+                    && data.text == "steering that will be cancelled"
+        )
+    }));
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskScheduled(data)
+                if event.correlation_id.as_deref() == Some(steering_request_id.as_str())
+                    && data.queue_key.as_deref().is_some_and(|queue_key| queue_key.starts_with("provider_model:"))
+        )
+    }));
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ProviderRequestStarted(_)
+                if event.correlation_id.as_deref() == Some(steering_request_id.as_str())
+        )
+    }));
+}
+
+#[tokio::test]
+async fn tool_results_project_in_assistant_source_order_after_out_of_order_completion() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let slow_started = Arc::new(Notify::new());
+    let slow_release = Arc::new(Notify::new());
+    let provider = SequentialScriptedProvider::new(vec![
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id: "slow_call".to_string(),
+                function_name: "shell_slow".to_string(),
+                arguments_json: "{}".to_string(),
+            },
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id: "fast_call".to_string(),
+                function_name: "shell_fast".to_string(),
+                arguments_json: "{}".to_string(),
+            },
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 2,
+                    completion_tokens: 1,
+                    total_tokens: 3,
+                },
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("ordered final".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 4,
+                    completion_tokens: 2,
+                    total_tokens: 6,
+                },
+            },
+        ],
+    ]);
+    let coordinator = test_agent_tool_coordinator(
+        temp_dir.path(),
+        Arc::new(provider.clone()),
+        named_tool_registry(vec![
+            NamedShellTool {
+                id: "shell.slow",
+                output: "slow output",
+                started: Some(slow_started.clone()),
+                release: Some(slow_release.clone()),
+            },
+            NamedShellTool {
+                id: "shell.fast",
+                output: "fast output",
+                started: None,
+                release: None,
+            },
+        ]),
+        PermissionPolicy::new(
+            PermissionMode::Deny,
+            PermissionMode::Allow,
+            PermissionMode::Deny,
+        ),
+        vec!["shell.slow".to_string(), "shell.fast".to_string()],
+        12,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_source_order_after_out_of_order_tools",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "call slow then fast")
+        .await
+        .expect("request agent turn");
+
+    tokio::time::timeout(Duration::from_millis(500), slow_started.notified())
+        .await
+        .expect("slow tool should start");
+    let fast_completed_before_slow_release =
+        tokio::time::timeout(Duration::from_millis(150), async {
+            loop {
+                let events = load_events(&run.events_path);
+                if events.iter().any(|event| {
+                    matches!(
+                        &event.payload,
+                        EventV1::TaskCompleted(data) if data.result_summary == "fast output"
+                    )
+                }) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .is_ok();
+
+    slow_release.notify_waiters();
+    wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data) if data.result_summary == "ordered final"
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    assert!(
+        fast_completed_before_slow_release,
+        "fast tool should be allowed to complete before the earlier slow tool is released"
+    );
+
+    let events = load_events(&run.events_path);
+    let chronological_tool_finishes = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::ToolCallFinished(data)
+                if matches!(
+                    data.output_summary.as_deref(),
+                    Some("fast output" | "slow output")
+                ) =>
+            {
+                data.output_summary.clone()
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        chronological_tool_finishes,
+        vec!["fast output".to_string(), "slow output".to_string()],
+        "JSONL lifecycle events should remain chronological by tool completion order"
+    );
+
+    let requests = provider.requests();
+    assert_eq!(
+        requests.len(),
+        2,
+        "tool turn should continue once with tool outputs"
+    );
+    let tool_messages = requests[1]
+        .messages
+        .iter()
+        .filter(|message| message.role == MessageRole::Tool)
+        .map(|message| (message.tool_call_id.clone(), message.content.clone()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        tool_messages,
+        vec![
+            (Some("slow_call".to_string()), "slow output".to_string()),
+            (Some("fast_call".to_string()), "fast output".to_string()),
+        ],
+        "provider context must preserve model source order, not tool completion order"
+    );
+}
+
+#[tokio::test]
+async fn duplicate_provider_tool_call_ids_fail_before_tool_start() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![vec![
+        ProviderStreamEvent::Start,
+        ProviderStreamEvent::ToolCallComplete {
+            tool_call_id: "dup_call".to_string(),
+            function_name: "shell_run".to_string(),
+            arguments_json: "{}".to_string(),
+        },
+        ProviderStreamEvent::ToolCallComplete {
+            tool_call_id: "dup_call".to_string(),
+            function_name: "shell_run".to_string(),
+            arguments_json: "{}".to_string(),
+        },
+        ProviderStreamEvent::Done {
+            usage: CompletionUsage {
+                prompt_tokens: 2,
+                completion_tokens: 1,
+                total_tokens: 3,
+            },
+        },
+    ]]);
+    let coordinator = test_agent_tool_coordinator(
+        temp_dir.path(),
+        Arc::new(provider),
+        test_tool_registry(),
+        PermissionPolicy::new(
+            PermissionMode::Deny,
+            PermissionMode::Allow,
+            PermissionMode::Deny,
+        ),
+        vec!["shell.run".to_string()],
+        12,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_duplicate_provider_tool_call_ids",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "duplicate tools")
+        .await
+        .expect("request agent turn");
+
+    let events = wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            event.correlation_id.as_deref() == Some(request_id.as_str())
+                && matches!(
+                    &event.payload,
+                    EventV1::TaskCancelled(_) | EventV1::TaskCompleted(_)
+                )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCancelled(data)
+                if event.correlation_id.as_deref() == Some(request_id.as_str())
+                    && data.reason.contains("duplicate")
+                    && data.reason.contains("tool_call_id")
+        )
+    }));
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event.payload, EventV1::ToolCallStarted(_))),
+        "duplicate provider tool ids must be rejected before any tool starts"
+    );
+}
+
+#[tokio::test]
+async fn empty_provider_tool_call_id_fails_before_tool_start() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![vec![
+        ProviderStreamEvent::Start,
+        ProviderStreamEvent::ToolCallComplete {
+            tool_call_id: String::new(),
+            function_name: "shell_run".to_string(),
+            arguments_json: "{}".to_string(),
+        },
+        ProviderStreamEvent::Done {
+            usage: CompletionUsage {
+                prompt_tokens: 2,
+                completion_tokens: 1,
+                total_tokens: 3,
+            },
+        },
+    ]]);
+    let coordinator = test_agent_tool_coordinator(
+        temp_dir.path(),
+        Arc::new(provider),
+        test_tool_registry(),
+        PermissionPolicy::new(
+            PermissionMode::Deny,
+            PermissionMode::Allow,
+            PermissionMode::Deny,
+        ),
+        vec!["shell.run".to_string()],
+        12,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_empty_provider_tool_call_id",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "empty tool id")
+        .await
+        .expect("request agent turn");
+
+    let events = wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            event.correlation_id.as_deref() == Some(request_id.as_str())
+                && matches!(
+                    &event.payload,
+                    EventV1::TaskCancelled(_) | EventV1::TaskCompleted(_)
+                )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCancelled(data)
+                if event.correlation_id.as_deref() == Some(request_id.as_str())
+                    && data.reason.contains("invalid")
+                    && data.reason.contains("tool_call_id")
+        )
+    }));
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event.payload, EventV1::ToolCallStarted(_))),
+        "empty provider tool ids must be rejected before any tool starts"
+    );
+}
+
+#[tokio::test]
+async fn denied_or_pending_tool_never_starts_before_permission_resolution() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let coordinator = test_agent_tool_coordinator(
+        temp_dir.path(),
+        Arc::new(test_mock_provider()),
+        test_tool_registry(),
+        PermissionPolicy::new(
+            PermissionMode::Deny,
+            PermissionMode::Deny,
+            PermissionMode::Deny,
+        ),
+        vec!["shell.run".to_string()],
+        12,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_denied_tool_no_start",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let error = coordinator
+        .request_tool_call(
+            supervisor_actor(),
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "true"}),
+        )
+        .await
+        .expect_err("denied request should fail");
+    let CoordinatorError::PermissionDenied(tool_call_id) = error else {
+        panic!("expected permission denial");
+    };
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ToolCallFinished(data)
+                if data.tool_call_id == tool_call_id && data.status == ToolCallStatus::Failed
+        )
+    }));
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ToolCallStarted(data) if data.tool_call_id == tool_call_id
+        )
+    }));
+
+    let pending_temp_dir = tempfile::tempdir().expect("pending tempdir");
+    let pending_coordinator = test_agent_tool_coordinator(
+        pending_temp_dir.path(),
+        Arc::new(test_mock_provider()),
+        test_tool_registry(),
+        PermissionPolicy::new(
+            PermissionMode::Deny,
+            PermissionMode::Ask,
+            PermissionMode::Deny,
+        )
+        .with_ask_timeout_ms(5_000),
+        vec!["shell.run".to_string()],
+        12,
+    );
+
+    let pending_run = pending_coordinator
+        .start_run(
+            "coord_ask_pending_tool_no_start",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start pending run");
+    let pending_tool_call_id = pending_coordinator
+        .request_tool_call(
+            supervisor_actor(),
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "true"}),
+        )
+        .await
+        .expect("ask request should be pending");
+
+    let pending_events = wait_for_events(
+        &pending_run.events_path,
+        Duration::from_millis(500),
+        |events| {
+            events.iter().any(|event| {
+                matches!(
+                    &event.payload,
+                    EventV1::PermissionRequested(data)
+                        if data.tool_call_id.as_deref() == Some(pending_tool_call_id.as_str())
+                )
+            })
+        },
+    )
+    .await;
+    assert!(!pending_events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ToolCallStarted(data) if data.tool_call_id == pending_tool_call_id
+        )
+    }));
+
+    let pending_permission_id = pending_events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::PermissionRequested(data)
+                if data.tool_call_id.as_deref() == Some(pending_tool_call_id.as_str()) =>
+            {
+                Some(data.permission_id.clone())
+            }
+            _ => None,
+        })
+        .expect("pending permission id");
+    pending_coordinator
+        .resolve_permission(
+            pending_permission_id,
+            RuntimePermissionDecision::Deny,
+            Some("test cleanup".to_string()),
+        )
+        .await
+        .expect("resolve pending permission");
+    pending_coordinator
+        .stop_run()
+        .await
+        .expect("stop pending run");
+}
+
+#[tokio::test]
+async fn ask_pending_tool_call_never_emits_started_before_approval() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let coordinator = test_agent_tool_coordinator(
+        temp_dir.path(),
+        Arc::new(test_mock_provider()),
+        test_tool_registry(),
+        PermissionPolicy::new(
+            PermissionMode::Deny,
+            PermissionMode::Ask,
+            PermissionMode::Deny,
+        )
+        .with_ask_timeout_ms(5_000),
+        vec!["shell.run".to_string()],
+        12,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_ask_pending_tool_no_start",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let tool_call_id = coordinator
+        .request_tool_call(
+            supervisor_actor(),
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "true"}),
+        )
+        .await
+        .expect("ask request should be pending");
+
+    let events = wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::PermissionRequested(data)
+                    if data.tool_call_id.as_deref() == Some(tool_call_id.as_str())
+            )
+        })
+    })
+    .await;
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ToolCallStarted(data) if data.tool_call_id == tool_call_id
+        )
+    }));
+
+    let permission_id = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::PermissionRequested(data)
+                if data.tool_call_id.as_deref() == Some(tool_call_id.as_str()) =>
+            {
+                Some(data.permission_id.clone())
+            }
+            _ => None,
+        })
+        .expect("permission id");
+    coordinator
+        .resolve_permission(
+            permission_id,
+            RuntimePermissionDecision::Deny,
+            Some("test cleanup".to_string()),
+        )
+        .await
+        .expect("resolve pending permission");
+    coordinator.stop_run().await.expect("stop run");
+}
+
+#[tokio::test]
+async fn cancelling_turn_waiting_for_permission_emits_turn_end_without_tool_start() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![vec![
+        ProviderStreamEvent::Start,
+        ProviderStreamEvent::ToolCallComplete {
+            tool_call_id: "needs_permission".to_string(),
+            function_name: "shell_run".to_string(),
+            arguments_json: "{}".to_string(),
+        },
+        ProviderStreamEvent::Done {
+            usage: CompletionUsage {
+                prompt_tokens: 2,
+                completion_tokens: 1,
+                total_tokens: 3,
+            },
+        },
+    ]]);
+    let coordinator = test_agent_tool_coordinator(
+        temp_dir.path(),
+        Arc::new(provider),
+        test_tool_registry(),
+        PermissionPolicy::new(
+            PermissionMode::Deny,
+            PermissionMode::Ask,
+            PermissionMode::Deny,
+        )
+        .with_ask_timeout_ms(5_000),
+        vec!["shell.run".to_string()],
+        12,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_cancel_turn_waiting_permission",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "permission gated tool")
+        .await
+        .expect("request agent turn");
+
+    let events = wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events
+            .iter()
+            .any(|event| matches!(event.payload, EventV1::PermissionRequested(_)))
+    })
+    .await;
+    let agent_task_id = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::TaskScheduled(data)
+                if event.correlation_id.as_deref() == Some(request_id.as_str())
+                    && data
+                        .queue_key
+                        .as_deref()
+                        .is_some_and(|queue_key| queue_key.starts_with("provider_model:")) =>
+            {
+                Some(data.task_id.clone())
+            }
+            _ => None,
+        })
+        .expect("agent task id");
+    let (permission_id, provider_tool_call_id) = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::PermissionRequested(data) => Some((
+                data.permission_id.clone(),
+                data.tool_call_id.clone().expect("tool permission call id"),
+            )),
+            _ => None,
+        })
+        .expect("pending permission");
+
+    coordinator
+        .cancel_task(agent_task_id.clone(), "cancel while permission pending")
+        .await
+        .expect("cancel waiting turn");
+    coordinator
+        .resolve_permission(
+            permission_id,
+            RuntimePermissionDecision::Allow,
+            Some("late approval".to_string()),
+        )
+        .await
+        .expect("late resolve should be accepted without starting tool");
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCancelled(data)
+                if data.task_id == agent_task_id
+                    && data.reason == "cancel while permission pending"
+        )
+    }));
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ToolCallStarted(data) if data.tool_call_id == provider_tool_call_id
+        )
+    }));
+}
+
+#[tokio::test]
+async fn late_tool_result_after_turn_cancellation_is_task_result_late() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let release = Arc::new(Notify::new());
+    let provider = SequentialScriptedProvider::new(vec![
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id: "blocking_tool".to_string(),
+                function_name: "shell_block".to_string(),
+                arguments_json: "{}".to_string(),
+            },
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 2,
+                    completion_tokens: 1,
+                    total_tokens: 3,
+                },
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta(
+                "should not be requested after cancellation".to_string(),
+            ),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 3,
+                    completion_tokens: 2,
+                    total_tokens: 5,
+                },
+            },
+        ],
+    ]);
+    let coordinator = test_agent_tool_coordinator(
+        temp_dir.path(),
+        Arc::new(provider),
+        lifecycle_tool_registry(release.clone()),
+        PermissionPolicy::new(
+            PermissionMode::Deny,
+            PermissionMode::Allow,
+            PermissionMode::Deny,
+        ),
+        vec!["shell.block".to_string()],
+        12,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_late_tool_after_turn_cancel",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "run blocking tool")
+        .await
+        .expect("request agent turn");
+
+    let events = wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskScheduled(data)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+                        && data.queue_key.as_deref() == Some("tool:shell.block")
+            )
+        })
+    })
+    .await;
+    let agent_task_id = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::TaskScheduled(data)
+                if event.correlation_id.as_deref() == Some(request_id.as_str())
+                    && data
+                        .queue_key
+                        .as_deref()
+                        .is_some_and(|queue_key| queue_key.starts_with("provider_model:")) =>
+            {
+                Some(data.task_id.clone())
+            }
+            _ => None,
+        })
+        .expect("agent task id");
+    let tool_task_id = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::TaskScheduled(data)
+                if event.correlation_id.as_deref() == Some(request_id.as_str())
+                    && data.queue_key.as_deref() == Some("tool:shell.block") =>
+            {
+                Some(data.task_id.clone())
+            }
+            _ => None,
+        })
+        .expect("tool task id");
+
+    coordinator
+        .cancel_task(agent_task_id.clone(), "cancel turn during tool execution")
+        .await
+        .expect("cancel agent turn");
+    let events = wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskResultLate(data) if data.task_id == tool_task_id
+            )
+        })
+    })
+    .await;
+    release.notify_waiters();
+    coordinator.stop_run().await.expect("stop run");
+
+    let turn_terminal_events = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCancelled(data) if data.task_id == agent_task_id
+            ) || matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data) if data.task_id == agent_task_id
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        turn_terminal_events.len(),
+        1,
+        "cancelled turn should have exactly one terminal event"
+    );
+    assert!(matches!(
+        &turn_terminal_events[0].payload,
+        EventV1::TaskCancelled(data)
+            if data.reason == "cancel turn during tool execution"
+    ));
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskResultLate(data) if data.task_id == tool_task_id
+        )
+    }));
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCompleted(data) if data.task_id == tool_task_id
+        )
+    }));
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ProviderStreamDelta(data)
+                if data.delta == "should not be requested after cancellation"
+        )
+    }));
+}
+
+#[tokio::test]
+async fn cancelled_tool_task_records_late_result_without_completion() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let release = Arc::new(Notify::new());
+    let clock = Arc::new(FakeClock::new());
+    let coordinator = test_tool_lifecycle_coordinator(
+        temp_dir.path(),
+        clock,
+        lifecycle_tool_registry(release.clone()),
+        Duration::from_millis(50),
+        15_000,
+        5,
+        1,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_cancel_tool_late_result",
+            temp_dir.path().to_path_buf(),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle agent");
+    let request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "alpha-prompt")
+        .await
+        .expect("request agent turn");
+    let owner_actor = EventActor::new(ActorKind::Worker, Some(agent_id));
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    coordinator
+        .request_tool_call(
+            owner_actor.clone(),
+            Some("deep".to_string()),
+            "shell.block",
+            json!({"cmd": "wait"}),
+        )
+        .await
+        .expect("request blocking tool");
+
+    let events = wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskScheduled(data)
+                    if data.queue_key.as_deref() == Some("tool:shell.block")
+            )
+        })
+    })
+    .await;
+    let task_id = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::TaskScheduled(data)
+                if data.queue_key.as_deref() == Some("tool:shell.block") =>
+            {
+                Some(data.task_id.clone())
+            }
+            _ => None,
+        })
+        .expect("tool task id");
+    coordinator
+        .cancel_task(task_id.clone(), "manual cancellation")
+        .await
+        .expect("cancel tool task");
+    release.notify_waiters();
+    wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskResultLate(data) if data.task_id == task_id
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    let late = events
+        .iter()
+        .find(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskResultLate(data) if data.task_id == task_id
+            )
+        })
+        .expect("late result");
+    assert_task_event_context(late, &owner_actor, &request_id);
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCompleted(data) if data.task_id == task_id
+        )
+    }));
+}
+
+#[tokio::test]
+async fn provider_partial_output_then_error_is_not_successful_assistant_message() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![vec![
+        ProviderStreamEvent::Start,
+        ProviderStreamEvent::TextDelta("partial answer".to_string()),
+        ProviderStreamEvent::Error {
+            message: "provider exploded".to_string(),
+        },
+    ]]);
+    let coordinator = test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider), 1);
+
+    let run = coordinator
+        .start_run(
+            "coord_provider_partial_output_error",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "partial then error")
+        .await
+        .expect("request agent turn");
+
+    let events = wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCancelled(data)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+                        && data.reason == "provider exploded"
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let delta_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ProviderStreamDelta(data)
+                    if data.delta == "partial answer"
+                        && event.correlation_id.as_deref() == Some(request_id.as_str())
+            )
+        })
+        .expect("partial delta event");
+    let finished_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ProviderRequestFinished(data)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+                        && data.finish_reason == "error"
+                        && data.output_digest.is_none()
+            )
+        })
+        .expect("provider error finish event");
+    assert!(delta_idx < finished_idx);
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCompleted(data)
+                if event.correlation_id.as_deref() == Some(request_id.as_str())
+                    && data.result_summary.contains("partial answer")
+        )
+    }));
+}
+
+#[tokio::test]
+async fn loop_cap_exhaustion_records_deterministic_stop_reason() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id: "loop_call_1".to_string(),
+                function_name: "shell_run".to_string(),
+                arguments_json: "{}".to_string(),
+            },
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 2,
+                    completion_tokens: 1,
+                    total_tokens: 3,
+                },
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id: "loop_call_2".to_string(),
+                function_name: "shell_run".to_string(),
+                arguments_json: "{}".to_string(),
+            },
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 2,
+                    completion_tokens: 1,
+                    total_tokens: 3,
+                },
+            },
+        ],
+    ]);
+    let coordinator = test_agent_tool_coordinator(
+        temp_dir.path(),
+        Arc::new(provider),
+        test_tool_registry(),
+        PermissionPolicy::new(
+            PermissionMode::Deny,
+            PermissionMode::Allow,
+            PermissionMode::Deny,
+        ),
+        vec!["shell.run".to_string()],
+        2,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_tool_loop_cap_stop_reason",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "loop until capped")
+        .await
+        .expect("request agent turn");
+
+    let events = wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCancelled(data)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+                        && data.reason == "agent turn exceeded profile max_iters=2"
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let started_tools = events
+        .iter()
+        .filter(|event| matches!(event.payload, EventV1::ToolCallStarted(_)))
+        .count();
+    assert_eq!(
+        started_tools, 2,
+        "max_iters=2 should execute exactly two tool loops"
+    );
 }
 
 #[tokio::test]
@@ -1115,6 +3605,7 @@ async fn resume_existing_run_restores_sequence_and_ids() {
                     model_id: "model-1".to_string(),
                     prompt_summary: "existing prompt".to_string(),
                     request_digest: "digest-existing".to_string(),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event(
@@ -1293,6 +3784,7 @@ async fn resume_existing_run_reuses_same_run_id_and_directory() {
                     model_id: "model-1".to_string(),
                     prompt_summary: "existing prompt".to_string(),
                     request_digest: "digest-existing".to_string(),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event(
@@ -1350,7 +3842,7 @@ async fn resume_existing_run_restores_subagent_parent_lineage_for_hooks_and_repl
                     "-lc".to_string(),
                     hook_command.to_string(),
                 ],
-                cwd: Some(".".to_string()),
+                cwd: None,
                 timeout_ms: 4_000,
                 critical: false,
                 env: hook_env,
@@ -1402,6 +3894,7 @@ async fn resume_existing_run_restores_subagent_parent_lineage_for_hooks_and_repl
                     model_id: "model-1".to_string(),
                     prompt_summary: "existing prompt".to_string(),
                     request_digest: "digest-existing".to_string(),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event(
@@ -1489,6 +3982,7 @@ async fn resume_existing_run_restores_agent_profile_bindings() {
                     model_id: "model-1".to_string(),
                     prompt_summary: "existing prompt".to_string(),
                     request_digest: "digest-existing".to_string(),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event(
@@ -1550,6 +4044,7 @@ async fn resume_existing_run_persists_bindings_for_future_reresume() {
                     model_id: "model-1".to_string(),
                     prompt_summary: "existing prompt".to_string(),
                     request_digest: "digest-existing".to_string(),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event(
@@ -1600,7 +4095,7 @@ async fn resume_existing_run_persists_bindings_for_future_reresume() {
         .request_agent_turn(supervisor_actor(), "agent_000001", "second resume turn")
         .await
         .expect("restored agent should be present after second resume");
-    assert_eq!(second_request_id, "req_000003");
+    assert_eq!(second_request_id, "req_000004");
     second
         .stop_run()
         .await
@@ -1641,6 +4136,7 @@ async fn resume_existing_run_remains_resumable_after_open_and_quit_without_promp
                     model_id: "model-1".to_string(),
                     prompt_summary: "existing prompt".to_string(),
                     request_digest: "digest-existing".to_string(),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event(
@@ -1727,6 +4223,7 @@ async fn resume_existing_run_rejects_missing_historical_profile_binding() {
                     model_id: "model-1".to_string(),
                     prompt_summary: "existing prompt".to_string(),
                     request_digest: "digest-existing".to_string(),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event(
@@ -1822,6 +4319,7 @@ async fn resume_existing_run_does_not_append_on_restore_failure() {
                     model_id: "model-1".to_string(),
                     prompt_summary: "existing prompt".to_string(),
                     request_digest: "digest-existing".to_string(),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event(
@@ -2113,8 +4611,8 @@ async fn overflow_retry_compacts_context_and_retries_with_summary() {
         .filter(|event| {
             matches!(
                 &event.payload,
-                EventV1::ProviderRequestFinished(payload)
-                    if payload.request_id == third_request_id
+                EventV1::ProviderRequestFinished(_)
+                    if event.correlation_id.as_deref() == Some(third_request_id.as_str())
             )
         })
         .count();
@@ -2232,8 +4730,8 @@ async fn overflow_retry_can_compact_a_single_large_preserved_turn() {
         .filter(|event| {
             matches!(
                 &event.payload,
-                EventV1::ProviderRequestFinished(payload)
-                    if payload.request_id == second_request_id
+                EventV1::ProviderRequestFinished(_)
+                    if event.correlation_id.as_deref() == Some(second_request_id.as_str())
             )
         })
         .count();
@@ -2631,6 +5129,369 @@ async fn manual_compaction_after_two_turns_summarizes_first_and_preserves_latest
 }
 
 #[tokio::test]
+async fn manual_compaction_uses_optional_model_backed_summary_without_provider_events() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let model_summary = structured_model_summary("model kept the goal", "model next step");
+    let provider = SequentialScriptedProvider::new(vec![
+        provider_text_events(&"A".repeat(12_000)),
+        provider_text_events(&"B".repeat(12_000)),
+        provider_text_events(&model_summary),
+    ]);
+    let coordinator = test_agent_coordinator_with_provider_and_compaction(
+        temp_dir.path(),
+        Arc::new(provider.clone()),
+        1,
+        CompactionRuntimeConfig {
+            model_backed: true,
+            model_ref: Some("mock:model-1".to_string()),
+            ..CompactionRuntimeConfig::default()
+        },
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_manual_model_backed_compaction",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    for question in ["first question", "second question"] {
+        coordinator
+            .request_agent_turn(supervisor_actor(), agent_id.clone(), question)
+            .await
+            .expect("turn request");
+        tokio::time::sleep(Duration::from_millis(80)).await;
+    }
+
+    coordinator
+        .compact_agent_context(agent_id, Some("req_000002".to_string()), "manual")
+        .await
+        .expect("manual compaction succeeds");
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    let provider_started_count = events
+        .iter()
+        .filter(|event| matches!(event.payload, EventV1::ProviderRequestStarted(_)))
+        .count();
+    assert_eq!(
+        provider_started_count, 2,
+        "compaction model calls stay out of events"
+    );
+    assert_eq!(
+        provider.requests().len(),
+        3,
+        "two turns plus one summary model call"
+    );
+    let checkpoint = manual_checkpoint(&run, &events);
+    assert_eq!(checkpoint.summary.trim(), model_summary.trim());
+    let source = checkpoint.summary_source.expect("summary source metadata");
+    assert_eq!(source.strategy, "model_backed_summary");
+    assert!(source.model_backed);
+    assert!(!source.deterministic_fallback);
+}
+
+#[tokio::test]
+async fn model_backed_compaction_falls_back_for_invalid_summary_and_records_metadata() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![
+        provider_text_events(&"A".repeat(12_000)),
+        provider_text_events(&"B".repeat(12_000)),
+        provider_text_events("not a structured checkpoint"),
+    ]);
+    let coordinator = test_agent_coordinator_with_provider_and_compaction(
+        temp_dir.path(),
+        Arc::new(provider.clone()),
+        1,
+        CompactionRuntimeConfig {
+            model_backed: true,
+            model_ref: Some("mock:model-1".to_string()),
+            ..CompactionRuntimeConfig::default()
+        },
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_model_compaction_fallback",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    for question in ["first question", "second question"] {
+        coordinator
+            .request_agent_turn(supervisor_actor(), agent_id.clone(), question)
+            .await
+            .expect("turn request");
+        tokio::time::sleep(Duration::from_millis(80)).await;
+    }
+
+    coordinator
+        .compact_agent_context(agent_id, Some("req_000002".to_string()), "manual")
+        .await
+        .expect("manual compaction succeeds");
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    let checkpoint = manual_checkpoint(&run, &events);
+    let source = checkpoint.summary_source.expect("summary source metadata");
+    assert_eq!(source.strategy, "model_backed_deterministic_fallback");
+    assert!(source.model_backed);
+    assert!(source.deterministic_fallback);
+    assert!(checkpoint.summary.contains("## Goal"));
+    assert!(checkpoint.summary.contains("first question"));
+    assert!(!checkpoint.summary.contains("not a structured checkpoint"));
+}
+
+#[tokio::test]
+async fn hook_summary_override_takes_precedence_over_model_backed_compaction() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![
+        provider_text_events(&"A".repeat(12_000)),
+        provider_text_events(&"B".repeat(12_000)),
+    ]);
+    let hook_runtime_config = HookRuntimeConfig {
+        hooks: HooksConfig {
+            lifecycle: vec![LifecycleHookConfig {
+                id: Some("compaction-summary".to_string()),
+                event: HookLifecycleEvent::CompactionRequested,
+                command: vec![
+                    "bash".to_string(),
+                    "-lc".to_string(),
+                    "printf 'compaction_summary: hook supplied checkpoint recap'".to_string(),
+                ],
+                cwd: Some(".".to_string()),
+                timeout_ms: 4_000,
+                critical: false,
+                env: BTreeMap::new(),
+            }],
+        },
+        shell_allowlist: ShellAllowlist {
+            executables: vec!["bash".to_string()],
+            cwd_roots: vec![".".to_string()],
+        },
+        suppress_execution: false,
+    };
+    let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
+    config.deterministic_store = true;
+    config.command_buffer = 64;
+    config.provider_model_concurrency = 1;
+    config.provider = Arc::new(provider.clone());
+    config.agent_profiles = agent_profiles();
+    config.hook_runtime_config = hook_runtime_config;
+    config.compaction = CompactionRuntimeConfig {
+        model_backed: true,
+        model_ref: Some("mock:model-1".to_string()),
+        ..CompactionRuntimeConfig::default()
+    };
+    let coordinator = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_hook_compaction_summary_precedence",
+            temp_dir.path().to_path_buf(),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    for question in ["first question", "second question"] {
+        coordinator
+            .request_agent_turn(supervisor_actor(), agent_id.clone(), question)
+            .await
+            .expect("turn request");
+        tokio::time::sleep(Duration::from_millis(80)).await;
+    }
+
+    coordinator
+        .compact_agent_context(agent_id, Some("req_000002".to_string()), "manual")
+        .await
+        .expect("manual compaction succeeds");
+    coordinator.stop_run().await.expect("stop run");
+
+    assert_eq!(
+        provider.requests().len(),
+        2,
+        "hook override prevents model summary call"
+    );
+    let events = load_events(&run.events_path);
+    let checkpoint = manual_checkpoint(&run, &events);
+    assert_eq!(checkpoint.summary, "hook supplied checkpoint recap");
+    let source = checkpoint.summary_source.expect("summary source metadata");
+    assert_eq!(source.strategy, "hook_supplied_summary");
+    assert!(!source.model_backed);
+    assert!(!source.deterministic_fallback);
+}
+
+#[tokio::test]
+async fn overflow_retry_split_oversized_latest_turn_preserves_suffix_context() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let oversized_answer = "B".repeat(12_000);
+    let provider = SequentialScriptedProvider::new(vec![
+        provider_text_events("first compacted answer"),
+        provider_text_events(&oversized_answer),
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::Error {
+                message: "prompt token count of 128713 exceeds the limit of 128000".to_string(),
+            },
+        ],
+        provider_text_events("recovered answer"),
+    ]);
+    let coordinator = test_agent_coordinator_with_provider_and_compaction(
+        temp_dir.path(),
+        Arc::new(provider.clone()),
+        1,
+        CompactionRuntimeConfig {
+            split_oversized_turns: true,
+            ..CompactionRuntimeConfig::default()
+        },
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_overflow_retry_split_tail",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
+        .await
+        .expect("first turn");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "second question")
+        .await
+        .expect("second turn");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "third question")
+        .await
+        .expect("third turn triggers overflow retry");
+    tokio::time::sleep(Duration::from_millis(180)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let retried_messages = provider
+        .requests()
+        .last()
+        .expect("retried request")
+        .messages
+        .clone();
+    assert!(retried_messages.iter().any(|message| {
+        message.role == MessageRole::User
+            && message
+                .content
+                .contains("preserved suffix of an oversized latest turn")
+    }));
+    assert!(retried_messages.iter().any(|message| {
+        message.role == MessageRole::Assistant && message.content.len() < 12_000
+    }));
+
+    let events = load_events(&run.events_path);
+    let checkpoint = overflow_checkpoint(&run, &events);
+    assert_eq!(checkpoint.recent_turns.len(), 1);
+    assert!(checkpoint
+        .summary
+        .contains("earlier portion of an oversized latest turn"));
+    assert!(checkpoint
+        .facts
+        .compacted_turns
+        .iter()
+        .any(|fact| fact.user_excerpt.contains("first question")));
+    assert!(checkpoint.facts.compacted_turns.iter().any(|fact| fact
+        .user_excerpt
+        .contains("earlier portion of an oversized latest turn")));
+    assert!(checkpoint.recent_turns[0]
+        .user_prompt
+        .contains("preserved suffix of an oversized latest turn"));
+    assert_eq!(
+        checkpoint
+            .tail_boundary
+            .as_ref()
+            .map(|boundary| boundary.mode.as_str()),
+        Some("split_oversized_turn_tail")
+    );
+}
+
+#[tokio::test]
+async fn overflow_auto_retry_can_be_disabled_by_compaction_config() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![
+        provider_text_events("first answer"),
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::Error {
+                message: "prompt token count of 128713 exceeds the limit of 128000".to_string(),
+            },
+        ],
+    ]);
+    let coordinator = test_agent_coordinator_with_provider_and_compaction(
+        temp_dir.path(),
+        Arc::new(provider.clone()),
+        1,
+        CompactionRuntimeConfig {
+            auto_retry_overflow: false,
+            ..CompactionRuntimeConfig::default()
+        },
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_overflow_retry_disabled",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
+        .await
+        .expect("first turn");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    let second_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "second question")
+        .await
+        .expect("second turn");
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    assert_eq!(provider.requests().len(), 2);
+    let events = load_events(&run.events_path);
+    assert!(events
+        .iter()
+        .all(|event| !matches!(event.payload, EventV1::CompactionRequested(_))));
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCancelled(payload)
+                if event.correlation_id.as_deref() == Some(second_request_id.as_str())
+                    && payload.reason.contains("prompt token count")
+        )
+    }));
+}
+
+#[tokio::test]
 async fn manual_compaction_returns_noop_when_context_has_single_turn() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let provider = SequentialScriptedProvider::new(vec![vec![
@@ -2720,6 +5581,7 @@ async fn resume_rejects_missing_user_message_when_prompt_summary_is_truncated() 
                     model_id: "model-1".to_string(),
                     prompt_summary: "truncated historical prompt…".to_string(),
                     request_digest: "digest-req-1".to_string(),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event_with_actor_and_correlation(
@@ -3654,6 +6516,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                     model_id: "model-a".to_string(),
                     prompt_summary: "child a prompt".to_string(),
                     request_digest: "digest-child-a".to_string(),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event_with_actor_and_correlation(
@@ -3699,6 +6562,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                     model_id: "model-b".to_string(),
                     prompt_summary: "child b prompt".to_string(),
                     request_digest: "digest-child-b".to_string(),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event_with_actor_and_correlation(
@@ -4091,6 +6955,53 @@ fn test_coordinator(session_dir: &Path) -> CoordinatorHandle {
     spawn_coordinator(config, clock, redactor)
 }
 
+fn provider_text_events(text: &str) -> Vec<ProviderStreamEvent> {
+    vec![
+        ProviderStreamEvent::Start,
+        ProviderStreamEvent::TextDelta(text.to_string()),
+        ProviderStreamEvent::Done {
+            usage: CompletionUsage {
+                prompt_tokens: 100,
+                completion_tokens: 100,
+                total_tokens: 200,
+            },
+        },
+    ]
+}
+
+fn structured_model_summary(goal: &str, next_step: &str) -> String {
+    format!(
+        "## Goal\n- {goal}\n\n## Constraints & Preferences\n- Preserve Harness checkpoint structure.\n\n## Progress\n### Done\n- Older turns were summarized by the configured compaction model.\n### In Progress\n- Continue from preserved recent context.\n### Blocked\n- (none)\n\n## Key Decisions\n- Use the model summary because it passed Harness validation.\n\n## Next Steps\n1. {next_step}\n\n## Critical Context\n- This is a structured checkpoint update.\n\n## Source Facts\n- Model summary retained compacted turn facts.\n\n## Relevant Files / Artifacts\n- (none)"
+    )
+}
+
+fn manual_checkpoint(run: &RunInfo, events: &[EventEnvelopeV1]) -> ProviderContextCheckpoint {
+    checkpoint_for_trigger(run, events, "manual")
+}
+
+fn overflow_checkpoint(run: &RunInfo, events: &[EventEnvelopeV1]) -> ProviderContextCheckpoint {
+    checkpoint_for_trigger(run, events, "overflow_retry")
+}
+
+fn checkpoint_for_trigger(
+    run: &RunInfo,
+    events: &[EventEnvelopeV1],
+    trigger_reason: &str,
+) -> ProviderContextCheckpoint {
+    let written = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::CompactionWritten(payload) if payload.trigger_reason == trigger_reason => {
+                Some(payload.clone())
+            }
+            _ => None,
+        })
+        .expect("compaction written event");
+    let checkpoint_path = run.run_dir.join(&written.artifact_path);
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact")
+}
+
 fn test_agent_coordinator(session_dir: &Path, delay: Duration) -> CoordinatorHandle {
     test_agent_coordinator_with_provider(
         session_dir,
@@ -4107,11 +7018,26 @@ fn test_agent_coordinator_with_provider(
     provider: Arc<dyn Provider>,
     provider_model_concurrency: usize,
 ) -> CoordinatorHandle {
+    test_agent_coordinator_with_provider_and_compaction(
+        session_dir,
+        provider,
+        provider_model_concurrency,
+        CompactionRuntimeConfig::default(),
+    )
+}
+
+fn test_agent_coordinator_with_provider_and_compaction(
+    session_dir: &Path,
+    provider: Arc<dyn Provider>,
+    provider_model_concurrency: usize,
+    compaction: CompactionRuntimeConfig,
+) -> CoordinatorHandle {
     let mut config = CoordinatorConfig::new(session_dir.to_path_buf());
     config.deterministic_store = true;
     config.command_buffer = 64;
     config.provider_model_concurrency = provider_model_concurrency;
     config.provider = provider;
+    config.compaction = compaction;
     config.agent_profiles = agent_profiles();
 
     let clock = Arc::new(FakeClock::new());
@@ -4149,6 +7075,40 @@ fn test_tool_registry() -> Arc<ToolRegistry> {
     let mut registry = ToolRegistry::new();
     registry.register(Arc::new(TestShellTool));
     Arc::new(registry)
+}
+
+fn named_tool_registry(tools: Vec<NamedShellTool>) -> Arc<ToolRegistry> {
+    let mut registry = ToolRegistry::new();
+    for tool in tools {
+        registry.register(Arc::new(tool));
+    }
+    Arc::new(registry)
+}
+
+fn test_agent_tool_coordinator(
+    session_dir: &Path,
+    provider: Arc<dyn Provider>,
+    tool_registry: Arc<ToolRegistry>,
+    permission_policy: PermissionPolicy,
+    alpha_toolset: Vec<String>,
+    alpha_max_iters: usize,
+) -> CoordinatorHandle {
+    let mut config = CoordinatorConfig::new(session_dir.to_path_buf());
+    config.deterministic_store = true;
+    config.command_buffer = 64;
+    config.provider_model_concurrency = 1;
+    config.provider = provider;
+    config.tool_registry = tool_registry;
+    config.permission_policy = permission_policy;
+    config.agent_profiles = agent_profiles();
+    if let Some(profile) = config.agent_profiles.get_mut("alpha") {
+        profile.toolset = alpha_toolset;
+        profile.max_iters = alpha_max_iters;
+    }
+
+    let clock = Arc::new(FakeClock::new());
+    let redactor = Arc::new(DefaultRedactor::default());
+    spawn_coordinator(config, clock, redactor)
 }
 
 fn lifecycle_tool_registry(blocking_release: Arc<Notify>) -> Arc<ToolRegistry> {
@@ -4274,6 +7234,27 @@ fn assert_task_event_context(
     );
 }
 
+async fn wait_for_events<F>(
+    events_path: &Path,
+    timeout: Duration,
+    mut predicate: F,
+) -> Vec<EventEnvelopeV1>
+where
+    F: FnMut(&[EventEnvelopeV1]) -> bool,
+{
+    tokio::time::timeout(timeout, async {
+        loop {
+            let events = load_events(events_path);
+            if predicate(&events) {
+                return events;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("timed out waiting for expected events")
+}
+
 fn write_resumable_history_fixture(session_dir: &Path, run_id: &str) {
     let events = vec![
         resume_fixture_event(
@@ -4304,6 +7285,7 @@ fn write_resumable_history_fixture(session_dir: &Path, run_id: &str) {
                 model_id: "model-1".to_string(),
                 prompt_summary: "first question".to_string(),
                 request_digest: "digest-req-1".to_string(),
+                metadata: None,
             }),
         ),
         resume_fixture_event_with_actor_and_correlation(
@@ -4326,6 +7308,7 @@ fn write_resumable_history_fixture(session_dir: &Path, run_id: &str) {
                 finish_reason: "done".to_string(),
                 output_digest: Some("digest-out-1".to_string()),
                 usage: None,
+                metadata: None,
             }),
         ),
         resume_fixture_event_with_actor_and_correlation(
@@ -4392,6 +7375,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
                 model_id: "model-1".to_string(),
                 prompt_summary: "first question".to_string(),
                 request_digest: "digest-req-1".to_string(),
+                metadata: None,
             }),
         ),
         resume_fixture_event_with_actor_and_correlation(
@@ -4414,6 +7398,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
                 finish_reason: "done".to_string(),
                 output_digest: Some("digest-out-1".to_string()),
                 usage: None,
+                metadata: None,
             }),
         ),
         resume_fixture_event_with_actor_and_correlation(
@@ -4450,6 +7435,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
                 model_id: "model-1".to_string(),
                 prompt_summary: "tool result + continue".to_string(),
                 request_digest: "digest-req-2".to_string(),
+                metadata: None,
             }),
         ),
         resume_fixture_event_with_actor_and_correlation(
@@ -4472,6 +7458,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
                 finish_reason: "done".to_string(),
                 output_digest: Some("digest-out-2".to_string()),
                 usage: None,
+                metadata: None,
             }),
         ),
         resume_fixture_event_with_actor_and_correlation(
