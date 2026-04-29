@@ -788,7 +788,8 @@ fn native_tool_parity_pty_lane() {
         ),
         &[
             "webfetch https://example.test/report.pdf [format=markdown]",
-            "bash Run harness-tui tests [command=cargo test -p harness-tui] [workdir=/workspace]",
+            "# Run harness-tui tests",
+            "$ cargo test -p harness-tui",
             "exit code: 1",
             "stderr: snapshot mismatch",
         ],
@@ -816,9 +817,8 @@ fn native_tool_parity_pty_lane() {
     assert!(screen.contains("docs-rs_search_in_crate Layout [crate_name=ratatui]"));
     assert!(!screen.contains("struct Layout"));
     assert!(!screen.contains("module layout"));
-    assert!(screen.contains(
-        "bash Run harness-tui tests [command=cargo test -p harness-tui] [workdir=/workspace]"
-    ));
+    assert!(screen.contains("# Run harness-tui tests"));
+    assert!(screen.contains("$ cargo test -p harness-tui"));
     assert!(screen.contains("exit code: 1"));
     assert!(screen.contains("stderr: snapshot mismatch"));
     assert!(screen.contains(REPLAY_DENSE_READY_MARKER));
@@ -861,7 +861,8 @@ fn native_tool_parity_pty_lane() {
             &screen,
             &[
                 "webfetch https://example.test/report.pdf [format=markdown]",
-                "bash Run harness-tui tests [command=cargo test -p harness-tui] [workdir=/workspace]",
+                "# Run harness-tui tests",
+                "$ cargo test -p harness-tui",
                 "exit code: 1",
                 "stderr: snapshot mismatch",
             ],

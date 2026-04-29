@@ -5,7 +5,7 @@ expression: "checkpoint_visual_snapshot(&prompt_checkpoint,\nLIVE_STATE_FIXTURES
 Hello world: true
 Ctrl+p commands: true
 focus_marker: Hello world
-focus_render_state_blake3: 966e90445af204e8e8de09c9aa6127d311eb5288c3b2f3c83c5a735ac0f2b40d
+focus_render_state_blake3: 8bc3c9adbbe03db930dc63eaf5bbf4fbe9ed39ff468d1e89b169038ab45cd80a
 focus_region_cells: row=3, col=5, height=6, width=28
 image: pty_interactive_prompt_stream.png
 manifest_json: pty-manifests/live_shell/manifest.json

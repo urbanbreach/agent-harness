@@ -5,7 +5,7 @@ expression: "checkpoint_visual_snapshot(&screen,\n&[STARTUP_HOME_DENSE_VALUE_PRO
 open a fresh session in this directory: true
 Ask anything... "inspect src/ui.rs": true
 focus_marker: open a fresh session in this directory
-focus_render_state_blake3: f8847623594a2d68fe2f33622de4ef318506edf13d859c6efc3a6cad073a22c0
+focus_render_state_blake3: 311b80d331603cafd76ad6ca7e0866ed1754d0806bc9652b1fa07ef900b3227e
 focus_region_cells: row=9, col=11, height=6, width=32
 image: pty_startup_home_dense.png
 manifest_json: pty-manifests/startup_shell/manifest.json

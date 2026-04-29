@@ -17,7 +17,7 @@ Most Rust projects are organized as crates and built with Cargo, Rust's build to
 
 ### Ownership
 
-Rust uses ownership to manage memory without a garbage collector. Every value has one owner, and values are cleaned up automatically when they go out of scope.
+Rust uses ownership to manage memory without a garbage collector. Each value has a single owner, and it is dropped automatically when it leaves scope.
 
 ### Borrowing
 
@@ -28,7 +28,7 @@ Instead of copying data, Rust often lets you borrow references:
 
 ### Lifetimes
 
-Lifetimes describe how long references are valid, and the compiler checks them so borrowed data is used safely.
+Lifetimes describe how long references are valid. The compiler checks them so borrowed data stays safe.
 
 ### String types
 
@@ -45,7 +45,7 @@ The `?` operator keeps propagation concise in functions that return `Result` or 
 
 ## Example
 
-This example shows borrowing and explicit error handling together:
+This example combines borrowing with `Result`-based error handling:
 
 ```rust
 fn main() {
@@ -70,24 +70,24 @@ fn greet(name: &str) -> Result<(), &'static str> {
 
 `cargo` — build, test, package, and manage Rust projects
 `cargo check` — quickly validate code without producing a binary
+`cargo fmt` — format code consistently
+`cargo clippy` — lint for common mistakes
+`cargo test` — run tests
 `rustc` — Rust compiler
-`rustfmt` — code formatting
-`clippy` — linting
 
 ## Editions and ecosystem
 
-Rust uses editions to introduce language changes without breaking older code. Common editions include 2015, 2018, and 2021.
-
-Most reusable Rust code is published as a crate on [crates.io](https://crates.io/), and dependencies are typically managed through `Cargo.toml`.
+Rust uses editions to introduce language changes without breaking older code. Common editions include 2018, 2021, and 2024.
+Most reusable Rust code is published as a crate on [crates.io](https://crates.io/), and dependencies are usually managed through `Cargo.toml`.
 
 ## Practical tips
 
-- Prefer `cargo fmt` before sharing code
-- Run `cargo check` for fast feedback while iterating
-- Run `cargo clippy` to catch common mistakes early
-- Use `cargo test` often while iterating
-Read compiler errors carefully; they are usually specific and actionable
-Start with small, focused functions and let the compiler guide refactoring
+- Run `cargo fmt` before sharing code
+- Use `cargo check` for fast feedback while iterating
+- Use `cargo clippy` to catch common mistakes early
+- Run `cargo test` often while iterating
+- Read compiler errors carefully; they are usually specific and actionable
+- Start with small, focused functions and let the compiler guide refactoring
 
 ## First commands to try
 

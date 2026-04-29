@@ -1,6 +1,5 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-assertion_line: 1101
 expression: "checkpoint_visual_snapshot(&palette_screen,\n&[STARTUP_COMMAND_PALETTE_MARKER, \"New session\",\nSTARTUP_CONTINUE_HISTORY_MARKER, STARTUP_REPLAY_HISTORY_MARKER,],\n&palette_visual,)"
 ---
 Commands: true
@@ -8,7 +7,7 @@ New session: true
 Continue session: true
 Replay session: true
 focus_marker: Commands
-focus_render_state_blake3: 72b1a04287a6879dcd23a2e2d2a8fa72283a733b752bd34225c4b04a770a25fc
+focus_render_state_blake3: 53b2508de0922b346d7a6bbf1e0df042da02c90028e53c0db6a912fdb75e5d89
 focus_region_cells: row=13, col=54, height=9, width=56
 image: pty_startup_command_palette.png
 manifest_json: pty-manifests/startup_command_palette/manifest.json

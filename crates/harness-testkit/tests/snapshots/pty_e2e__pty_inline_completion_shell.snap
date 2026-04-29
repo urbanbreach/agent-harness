@@ -4,7 +4,7 @@ expression: "checkpoint_visual_snapshot(&inline_completion_checkpoint,\nRUN_FINI
 ---
 Ctrl+p commands: true
 focus_marker: Ctrl+p commands
-focus_render_state_blake3: ad10972fcfe8de728d5137721cc1ec78808633b5577d76516884edf8fd9c8ce7
+focus_render_state_blake3: a49fd52e4c44afb34cb0272bb4559c1d808ba47026fdce04b649b9571550471e
 focus_region_cells: row=23, col=52, height=1, width=20
 image: pty_inline_completion_shell.png
 manifest_json: pty-manifests/live_shell/manifest.json

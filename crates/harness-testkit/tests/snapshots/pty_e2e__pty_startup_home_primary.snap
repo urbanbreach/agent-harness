@@ -6,7 +6,7 @@ Ctrl+p open: true
 open a fresh session in this directory: true
 Ask anything... "inspect src/ui.rs": true
 focus_marker: open a fresh session in this directory
-focus_render_state_blake3: 9cdc376a6dd9e7e174906c7ac34cf829d8808f0c5b70f214bd85dce6f9471a4b
+focus_render_state_blake3: 080fa62d7927c63deb308b88c3aef774d2dcbc3c4077843ff820043de56a49c1
 focus_region_cells: row=24, col=61, height=8, width=48
 image: pty_startup_home_primary.png
 manifest_json: pty-manifests/startup_shell/manifest.json

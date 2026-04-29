@@ -5,10 +5,10 @@ expression: "checkpoint_visual_snapshot(&replay_screen,\n&[REPLAY_DENSE_READY_MA
 Replay · read-only: true
 shell parity task: true
 Modified Files: true
-Context: true
+▼ MCP: true
 Replay is read-only.: true
 focus_marker: Replay · read-only
-focus_render_state_blake3: 18c2f1219c0d8c0a6d3d965214df39b634b4ceb42edd97ac6bba8c960aea22c3
+focus_render_state_blake3: cc7f8b9e99a4e88f8e37982b9a4649c4484304efb1a0b89c1c56369f7c1920fd
 focus_region_cells: row=0, col=0, height=2, width=20
 image: pty_session_shell_primary_replay.png
 manifest_json: pty-manifests/replay_shell/manifest.json
