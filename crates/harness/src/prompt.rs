@@ -696,6 +696,8 @@ struct PromptStreamPrinter {
     show_thinking: bool,
     active_section: Option<PromptStreamSection>,
     wrote_output: bool,
+    assistant_buffer: String,
+    saw_thinking: bool,
 }
 
 impl PromptStreamPrinter {
@@ -704,17 +706,22 @@ impl PromptStreamPrinter {
             show_thinking,
             active_section: None,
             wrote_output: false,
+            assistant_buffer: String::new(),
+            saw_thinking: false,
         }
     }
 
     fn observe(&mut self, event: &EventEnvelopeV1, request_id: &str) {
         match &event.payload {
             EventV1::ProviderReasoningDelta(data)
-                if self.show_thinking && data.request_id == request_id =>
+                if self.show_thinking
+                    && provider_event_matches_prompt(event, &data.request_id, request_id) =>
             {
                 self.write_thinking(&data.delta);
             }
-            EventV1::ProviderStreamDelta(data) if data.request_id == request_id => {
+            EventV1::ProviderStreamDelta(data)
+                if provider_event_matches_prompt(event, &data.request_id, request_id) =>
+            {
                 self.write_assistant(&data.delta);
             }
             _ => {}
@@ -722,6 +729,7 @@ impl PromptStreamPrinter {
     }
 
     fn finish(&mut self) {
+        self.flush_assistant_buffer();
         if self.wrote_output {
             println!();
         }
@@ -740,6 +748,7 @@ impl PromptStreamPrinter {
             print!("Thinking: ");
             self.active_section = Some(PromptStreamSection::Thinking);
         }
+        self.saw_thinking = true;
         self.wrote_output = true;
         print!("{delta}");
         let _ = std::io::stdout().flush();
@@ -747,6 +756,10 @@ impl PromptStreamPrinter {
 
     fn write_assistant(&mut self, delta: &str) {
         if delta.is_empty() {
+            return;
+        }
+        if self.show_thinking {
+            self.buffer_assistant_delta(delta);
             return;
         }
         if self.active_section == Some(PromptStreamSection::Thinking) {
@@ -757,6 +770,57 @@ impl PromptStreamPrinter {
         print!("{delta}");
         let _ = std::io::stdout().flush();
     }
+
+    fn buffer_assistant_delta(&mut self, delta: &str) {
+        if self.assistant_buffer.is_empty() || !self.saw_thinking {
+            self.assistant_buffer.push_str(delta);
+            return;
+        }
+
+        if assistant_delta_replays_buffer(delta, &self.assistant_buffer) {
+            return;
+        }
+
+        if let Some(remainder) = delta.strip_prefix(&self.assistant_buffer) {
+            self.assistant_buffer.push_str(remainder);
+        } else {
+            self.assistant_buffer.push_str(delta);
+        }
+    }
+
+    fn flush_assistant_buffer(&mut self) {
+        if self.assistant_buffer.is_empty() {
+            return;
+        }
+        if self.wrote_output {
+            println!();
+        }
+        print!("{}", self.assistant_buffer);
+        let _ = std::io::stdout().flush();
+        self.assistant_buffer.clear();
+        self.active_section = Some(PromptStreamSection::Assistant);
+        self.wrote_output = true;
+    }
+}
+
+fn assistant_delta_replays_buffer(delta: &str, assistant_buffer: &str) -> bool {
+    if delta == assistant_buffer || delta.trim_end() == assistant_buffer.trim_end() {
+        return true;
+    }
+
+    let delta_trimmed = delta.trim();
+    let buffer_trimmed = assistant_buffer.trim();
+    if buffer_trimmed.chars().count() < 12 {
+        return false;
+    }
+
+    delta_trimmed == buffer_trimmed
+        || normalize_stream_text_for_replay_check(delta_trimmed)
+            == normalize_stream_text_for_replay_check(buffer_trimmed)
+}
+
+fn normalize_stream_text_for_replay_check(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Prompt mode waits on the coordinator event stream once, then processes replayed
@@ -765,7 +829,7 @@ impl PromptStreamPrinter {
 #[derive(Debug)]
 struct PromptCompletionTracker<'a> {
     request_id: &'a str,
-    prompt_task_id: Option<String>,
+    agent_turn_task_id: Option<String>,
     provider_error_seen_at: Option<Instant>,
 }
 
@@ -773,7 +837,7 @@ impl<'a> PromptCompletionTracker<'a> {
     fn new(request_id: &'a str) -> Self {
         Self {
             request_id,
-            prompt_task_id: None,
+            agent_turn_task_id: None,
             provider_error_seen_at: None,
         }
     }
@@ -788,15 +852,12 @@ impl<'a> PromptCompletionTracker<'a> {
             }
             EventV1::TaskScheduled(data)
                 if event_matches_request(event, self.request_id)
-                    && data
-                        .queue_key
-                        .as_deref()
-                        .is_some_and(|queue_key| queue_key.starts_with("provider_model:")) =>
+                    && task_schedule_marks_agent_turn(data) =>
             {
-                self.prompt_task_id = Some(data.task_id.clone());
+                self.agent_turn_task_id = Some(data.task_id.clone());
             }
             EventV1::ProviderRequestFinished(data)
-                if data.request_id == self.request_id
+                if provider_finish_matches_prompt(event, data, self.request_id)
                     && data.finish_reason.eq_ignore_ascii_case("error")
                     && self.provider_error_seen_at.is_none() =>
             {
@@ -808,7 +869,7 @@ impl<'a> PromptCompletionTracker<'a> {
                     self.request_id, data.reason
                 ));
             }
-            EventV1::TaskCompleted(data) if self.matches_prompt_task(data) => {
+            EventV1::TaskCompleted(data) if self.matches_completed_agent_turn(event, data) => {
                 return PromptCompletionStatus::Completed;
             }
             _ => {}
@@ -836,9 +897,24 @@ impl<'a> PromptCompletionTracker<'a> {
         })
     }
 
-    fn matches_prompt_task(&self, data: &TaskCompletedEvent) -> bool {
-        self.prompt_task_id.as_deref() == Some(data.task_id.as_str())
-            || task_completed_marks_agent_turn(data)
+    fn matches_completed_agent_turn(
+        &self,
+        event: &EventEnvelopeV1,
+        data: &TaskCompletedEvent,
+    ) -> bool {
+        if !event_matches_request(event, self.request_id) {
+            return task_completed_marks_agent_turn(data) && data.task_id == self.request_id;
+        }
+
+        if task_completed_marks_agent_turn(data) {
+            return true;
+        }
+
+        if task_completed_marks_child_tool(data) {
+            return false;
+        }
+
+        self.agent_turn_task_id.as_deref() == Some(data.task_id.as_str())
             || data.task_id == self.request_id
     }
 
@@ -847,11 +923,27 @@ impl<'a> PromptCompletionTracker<'a> {
         event: &EventEnvelopeV1,
         data: &TaskCancelledEvent,
     ) -> bool {
-        event_matches_request(event, self.request_id)
-            && (self.prompt_task_id.as_deref() == Some(data.task_id.as_str())
-                || task_cancelled_marks_agent_turn(data)
-                || (self.prompt_task_id.is_none() && data.task_id == self.request_id))
+        if !event_matches_request(event, self.request_id) {
+            return task_cancelled_marks_agent_turn(data) && data.task_id == self.request_id;
+        }
+
+        if task_cancelled_marks_agent_turn(data) {
+            return true;
+        }
+
+        if task_cancelled_marks_child_tool(data) {
+            return false;
+        }
+
+        self.agent_turn_task_id.as_deref() == Some(data.task_id.as_str())
+            || data.task_id == self.request_id
     }
+}
+
+fn task_schedule_marks_agent_turn(data: &harness_core::event::TaskScheduledEvent) -> bool {
+    data.queue_key
+        .as_deref()
+        .is_some_and(|queue_key| queue_key.starts_with("provider_model:"))
 }
 
 fn task_completed_marks_agent_turn(data: &TaskCompletedEvent) -> bool {
@@ -861,9 +953,27 @@ fn task_completed_marks_agent_turn(data: &TaskCompletedEvent) -> bool {
         .is_some_and(|scope| matches!(scope, harness_core::event::TaskTerminalScope::AgentTurn))
 }
 
+fn task_completed_marks_child_tool(data: &TaskCompletedEvent) -> bool {
+    data.metadata
+        .as_ref()
+        .and_then(|metadata| metadata.task_scope)
+        .is_some_and(|scope| matches!(scope, harness_core::event::TaskTerminalScope::ToolCall))
+        || data
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.lineage.as_ref())
+            .and_then(|lineage| lineage.parent_tool_call_id.as_deref())
+            .is_some()
+}
+
 fn task_cancelled_marks_agent_turn(data: &TaskCancelledEvent) -> bool {
     data.task_scope
         .is_some_and(|scope| matches!(scope, harness_core::event::TaskTerminalScope::AgentTurn))
+}
+
+fn task_cancelled_marks_child_tool(data: &TaskCancelledEvent) -> bool {
+    data.task_scope
+        .is_some_and(|scope| matches!(scope, harness_core::event::TaskTerminalScope::ToolCall))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -878,7 +988,7 @@ fn evaluate_prompt_completion(
     events: &[EventEnvelopeV1],
     request_id: &str,
 ) -> PromptCompletionStatus {
-    let prompt_task_id = prompt_task_id(events, request_id);
+    let agent_turn_task_id = agent_turn_task_id(events, request_id);
 
     if let Some(run_error) = events.iter().find_map(|event| match &event.payload {
         EventV1::RunFailed(data) => Some(data.error.clone()),
@@ -892,9 +1002,11 @@ fn evaluate_prompt_completion(
     if let Some(cancel_reason) = events.iter().find_map(|event| match &event.payload {
         EventV1::TaskCancelled(data)
             if event_matches_request(event, request_id)
-                && (prompt_task_id.is_some_and(|task_id| data.task_id == task_id)
-                    || task_cancelled_marks_agent_turn(data)
-                    || (prompt_task_id.is_none() && data.task_id == request_id)) =>
+                && (task_cancelled_marks_agent_turn(data)
+                    || (!task_cancelled_marks_child_tool(data)
+                        && (agent_turn_task_id
+                            .is_some_and(|task_id| data.task_id == task_id)
+                            || data.task_id == request_id))) =>
         {
             Some(data.reason.clone())
         }
@@ -907,9 +1019,11 @@ fn evaluate_prompt_completion(
 
     if events.iter().any(|event| match &event.payload {
         EventV1::TaskCompleted(data) => {
-            prompt_task_id.is_some_and(|task_id| data.task_id == task_id)
-                || task_completed_marks_agent_turn(data)
-                || data.task_id == request_id
+            event_matches_request(event, request_id)
+                && (task_completed_marks_agent_turn(data)
+                    || (!task_completed_marks_child_tool(data)
+                        && (agent_turn_task_id.is_some_and(|task_id| data.task_id == task_id)
+                            || data.task_id == request_id)))
         }
         _ => false,
     }) {
@@ -920,14 +1034,10 @@ fn evaluate_prompt_completion(
 }
 
 #[cfg(test)]
-fn prompt_task_id<'a>(events: &'a [EventEnvelopeV1], request_id: &str) -> Option<&'a str> {
+fn agent_turn_task_id<'a>(events: &'a [EventEnvelopeV1], request_id: &str) -> Option<&'a str> {
     events.iter().find_map(|event| match &event.payload {
         EventV1::TaskScheduled(data)
-            if event_matches_request(event, request_id)
-                && data
-                    .queue_key
-                    .as_deref()
-                    .is_some_and(|queue_key| queue_key.starts_with("provider_model:")) =>
+            if event_matches_request(event, request_id) && task_schedule_marks_agent_turn(data) =>
         {
             Some(data.task_id.as_str())
         }
@@ -939,11 +1049,33 @@ fn event_matches_request(event: &EventEnvelopeV1, request_id: &str) -> bool {
     event.correlation_id.as_deref() == Some(request_id)
 }
 
+fn provider_event_matches_prompt(
+    event: &EventEnvelopeV1,
+    provider_request_id: &str,
+    request_id: &str,
+) -> bool {
+    provider_request_id == request_id || event_matches_request(event, request_id)
+}
+
+fn provider_finish_matches_prompt(
+    event: &EventEnvelopeV1,
+    data: &harness_core::event::ProviderRequestFinishedEvent,
+    request_id: &str,
+) -> bool {
+    provider_event_matches_prompt(event, &data.request_id, request_id)
+        || data
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.turn_id.as_deref())
+            == Some(request_id)
+}
+
 #[cfg(test)]
 fn has_provider_error_finish(events: &[EventEnvelopeV1], request_id: &str) -> bool {
     events.iter().any(|event| match &event.payload {
         EventV1::ProviderRequestFinished(data) => {
-            data.request_id == request_id && data.finish_reason.eq_ignore_ascii_case("error")
+            provider_finish_matches_prompt(event, data, request_id)
+                && data.finish_reason.eq_ignore_ascii_case("error")
         }
         _ => false,
     })
@@ -1066,6 +1198,7 @@ mod tests {
                 finish_reason: "error".to_string(),
                 output_digest: None,
                 usage: None,
+                metadata: None,
             },
         ))];
 
@@ -1083,12 +1216,61 @@ mod tests {
                     finish_reason: "done".to_string(),
                     output_digest: Some("abc123".to_string()),
                     usage: None,
+                    metadata: None,
                 },
             )),
         ];
 
         let status = evaluate_prompt_completion(&events, "req_000001");
         assert_eq!(status, PromptCompletionStatus::Continue);
+    }
+
+    #[tokio::test]
+    async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
+        let store = Arc::new(CountingEventStore::new());
+        let wait_store: Arc<dyn EventStore> = store.clone();
+        let waiter = tokio::spawn(async move {
+            wait_for_prompt_completion(wait_store, "req_000001", Duration::from_secs(1)).await
+        });
+
+        tokio::task::yield_now().await;
+        store
+            .append(draft_event(
+                EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                    request_id: "provider_call_000001".to_string(),
+                    finish_reason: "done".to_string(),
+                    output_digest: Some("abc123".to_string()),
+                    usage: None,
+                    metadata: None,
+                }),
+                Some("req_000001"),
+            ))
+            .expect("append provider finish");
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(
+            !waiter.is_finished(),
+            "provider finish alone must not complete prompt wait"
+        );
+
+        store
+            .append(draft_event(
+                EventV1::TaskCompleted(TaskCompletedEvent {
+                    task_id: "task_000001".to_string(),
+                    result_summary: "ok".to_string(),
+                    result_digest: "def456".to_string(),
+                    metadata: Some(TaskCompletionMetadata {
+                        lineage: None,
+                        task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
+                        timing: None,
+                        hook_executions: Vec::new(),
+                    }),
+                }),
+                Some("req_000001"),
+            ))
+            .expect("append agent turn completion");
+
+        assert_eq!(waiter.await.expect("join waiter"), Ok(()));
     }
 
     #[test]
@@ -1113,6 +1295,30 @@ mod tests {
                 Some("req_000001"),
             ),
         ];
+
+        let status = evaluate_prompt_completion(&events, "req_000001");
+        assert_eq!(status, PromptCompletionStatus::Continue);
+    }
+
+    #[test]
+    fn evaluate_prompt_completion_ignores_tool_task_without_agent_turn_schedule() {
+        let events = vec![event_with_correlation(
+            EventV1::TaskCompleted(TaskCompletedEvent {
+                task_id: "task_000002".to_string(),
+                result_summary: "tool ok".to_string(),
+                result_digest: "def456".to_string(),
+                metadata: Some(TaskCompletionMetadata {
+                    lineage: Some(TaskLineageMetadata {
+                        parent_tool_call_id: Some("tool_call_000001".to_string()),
+                        ..TaskLineageMetadata::default()
+                    }),
+                    task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
+                    timing: None,
+                    hook_executions: Vec::new(),
+                }),
+            }),
+            Some("req_000001"),
+        )];
 
         let status = evaluate_prompt_completion(&events, "req_000001");
         assert_eq!(status, PromptCompletionStatus::Continue);
@@ -1207,30 +1413,56 @@ mod tests {
 
     #[test]
     fn has_provider_error_finish_detects_error_finish_reason() {
-        let events = vec![event(EventV1::ProviderRequestFinished(
-            ProviderRequestFinishedEvent {
-                request_id: "req_000007".to_string(),
+        let events = vec![event_with_correlation(
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: "provider_call_000007".to_string(),
                 finish_reason: "error".to_string(),
                 output_digest: None,
                 usage: None,
-            },
-        ))];
+                metadata: None,
+            }),
+            Some("req_000007"),
+        )];
 
         assert!(has_provider_error_finish(&events, "req_000007"));
         assert!(!has_provider_error_finish(&events, "req_000008"));
     }
 
     #[test]
-    fn evaluate_prompt_completion_still_supports_task_id_equals_request_id_fallback() {
-        let events = vec![event(EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "req_000123".to_string(),
-            result_summary: "ok".to_string(),
-            result_digest: "abc123".to_string(),
-            metadata: None,
-        }))];
+    fn evaluate_prompt_completion_supports_correlated_task_id_equals_request_id_fallback() {
+        let events = vec![event_with_correlation(
+            EventV1::TaskCompleted(TaskCompletedEvent {
+                task_id: "req_000123".to_string(),
+                result_summary: "ok".to_string(),
+                result_digest: "abc123".to_string(),
+                metadata: None,
+            }),
+            Some("req_000123"),
+        )];
 
         let status = evaluate_prompt_completion(&events, "req_000123");
         assert_eq!(status, PromptCompletionStatus::Completed);
+    }
+
+    #[test]
+    fn evaluate_prompt_completion_ignores_uncorrelated_agent_turn_completion() {
+        let events = vec![event_with_correlation(
+            EventV1::TaskCompleted(TaskCompletedEvent {
+                task_id: "task_000999".to_string(),
+                result_summary: "other turn".to_string(),
+                result_digest: "abc123".to_string(),
+                metadata: Some(TaskCompletionMetadata {
+                    lineage: None,
+                    task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
+                    timing: None,
+                    hook_executions: Vec::new(),
+                }),
+            }),
+            Some("req_other"),
+        )];
+
+        let status = evaluate_prompt_completion(&events, "req_000123");
+        assert_eq!(status, PromptCompletionStatus::Continue);
     }
 
     #[tokio::test]

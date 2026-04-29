@@ -388,6 +388,7 @@ fn replay_cli_surfaces_recovery_context_in_json_summary() {
                     model_id: "gpt-5.4-mini".to_string(),
                     prompt_summary: "resume safely".to_string(),
                     request_digest: "digest-replay-context".to_string(),
+                    metadata: None,
                 }),
             ),
             envelope(
@@ -487,6 +488,7 @@ fn replay_cli_merges_on_disk_artifact_discovery_with_recovery_metadata() {
                     model_id: "gpt-5.4-mini".to_string(),
                     prompt_summary: "delegate".to_string(),
                     request_digest: "digest-1".to_string(),
+                    metadata: None,
                 }),
             ),
             envelope(
@@ -779,6 +781,7 @@ fn sessions_inspect_cli_surfaces_recovery_details() {
                     model_id: "gpt-5.4-mini".to_string(),
                     prompt_summary: "delegate".to_string(),
                     request_digest: "digest-1".to_string(),
+                    metadata: None,
                 }),
             ),
             envelope(
@@ -1145,6 +1148,7 @@ fn session_history_exposes_profile_and_model_labels() {
                     model_id: "gpt-5.4-mini".to_string(),
                     prompt_summary: "hello".to_string(),
                     request_digest: "digest-1".to_string(),
+                    metadata: None,
                 }),
             ),
             envelope(
@@ -1363,6 +1367,7 @@ fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
                 model_id: "gpt-4o-mini".to_string(),
                 prompt_summary: "Recover this session headlessly".to_string(),
                 request_digest: "digest-user".to_string(),
+                metadata: None,
             }),
         ),
     ];
@@ -1706,6 +1711,7 @@ fn sessions_list_cli_filters_machine_readable_selectors() {
                     model_id: "gpt-5.4-mini".to_string(),
                     prompt_summary: "hello".to_string(),
                     request_digest: "digest-1".to_string(),
+                    metadata: None,
                 }),
             ),
             envelope(

@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 use harness_core::event::{
     ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1,
     ProviderRequestFinishedEvent, ProviderRequestStartedEvent, RunFinishedEvent, RunStartedEvent,
-    UserMessageSubmittedEvent, SCHEMA_VERSION,
+    TaskTerminalScope, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use tempfile::tempdir;
 use wiremock::matchers::{body_string_contains, method, path};
@@ -291,6 +291,115 @@ async fn prompt_cli_calls_responses_endpoint() {
 }
 
 #[tokio::test]
+async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    deterministic_responses_sse_transcript(),
+                    "text/event-stream",
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.prompt-tracker.jsonc");
+    let session_dir = temp.path().join("sessions");
+    let out_path = temp.path().join("events.jsonl");
+
+    fs::write(
+        &config_path,
+        prompt_cli_config(&format!("{}/v1", server.uri()), &session_dir, &[]),
+    )
+    .expect("write config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "prompt",
+            "--text",
+            "Hello",
+            "--out",
+            out_path.to_str().expect("out path utf-8"),
+        ])
+        .output()
+        .expect("run harness prompt");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("Hello"),
+        "prompt output should still print provider text deltas after provider-call ids diverge from turn ids:\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+
+    let events_body = fs::read_to_string(&out_path).expect("read prompt events");
+    let events = events_body
+        .lines()
+        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).expect("parse prompt event"))
+        .collect::<Vec<_>>();
+
+    let turn_request_id = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::UserMessageSubmitted(payload) => Some(payload.request_id.as_str()),
+            _ => None,
+        })
+        .expect("turn request id");
+
+    let provider_finished_seq = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::ProviderRequestFinished(payload)
+                if payload.finish_reason.eq_ignore_ascii_case("done") =>
+            {
+                assert_eq!(
+                    event.correlation_id.as_deref(),
+                    Some(turn_request_id),
+                    "provider finish should be correlated to the stable agent turn id"
+                );
+                assert_ne!(
+                    payload.request_id, turn_request_id,
+                    "provider finish payload id is the provider-call id, not the prompt completion id"
+                );
+                Some(event.seq)
+            }
+            _ => None,
+        })
+        .expect("provider finish event");
+    let agent_turn_completed_seq = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::TaskCompleted(payload)
+                if payload
+                    .metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.task_scope)
+                    .is_some_and(|scope| matches!(scope, TaskTerminalScope::AgentTurn)) =>
+            {
+                Some(event.seq)
+            }
+            _ => None,
+        })
+        .expect("agent turn task completion event");
+
+    assert!(
+        provider_finished_seq < agent_turn_completed_seq,
+        "provider finish alone must not be treated as prompt completion; events:\n{events_body}"
+    );
+}
+
+#[tokio::test]
 async fn prompt_cli_accepts_public_slash_style_model_refs() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -474,6 +583,115 @@ async fn prompt_cli_model_variant_and_thinking_flags_stream_reasoning_output() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Thinking: Drafting a careful answer."));
     assert!(stdout.contains("Hello world"));
+}
+
+#[tokio::test]
+async fn prompt_cli_thinking_prints_late_reasoning_before_one_assistant_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    late_reasoning_duplicate_body_responses_sse_transcript(),
+                    "text/event-stream",
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.late-reasoning.jsonc");
+    let session_dir = temp.path().join("sessions");
+
+    fs::write(
+        &config_path,
+        prompt_cli_config(&format!("{}/v1", server.uri()), &session_dir, &[]),
+    )
+    .expect("write config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "prompt",
+            "--text",
+            "hi",
+            "--thinking",
+        ])
+        .output()
+        .expect("run harness prompt with late thinking");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let thinking = "Thinking: Responding to greetings";
+    let body = "Hi! How can I help?";
+    let thinking_index = stdout.find(thinking).expect("thinking output");
+    let body_index = stdout.find(body).expect("assistant output");
+    assert!(
+        thinking_index < body_index,
+        "thinking should print before assistant body:\n{stdout}"
+    );
+    assert_eq!(stdout.matches(body).count(), 1, "{stdout}");
+}
+
+#[tokio::test]
+async fn prompt_cli_thinking_preserves_repeated_body_chunks_before_reasoning() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    repeated_body_chunks_before_reasoning_responses_sse_transcript(),
+                    "text/event-stream",
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.repeated-chunks.jsonc");
+    let session_dir = temp.path().join("sessions");
+
+    fs::write(
+        &config_path,
+        prompt_cli_config(&format!("{}/v1", server.uri()), &session_dir, &[]),
+    )
+    .expect("write config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "prompt",
+            "--text",
+            "repeat",
+            "--thinking",
+        ])
+        .output()
+        .expect("run harness prompt with repeated chunks");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Thinking: Done planning."), "{stdout}");
+    assert!(stdout.contains("ha ha"), "{stdout}");
 }
 
 #[test]
@@ -1020,6 +1238,155 @@ async fn prompt_cli_executes_tool_call_and_completes_turn() {
 }
 
 #[tokio::test]
+async fn prompt_cli_exits_nonzero_on_provider_error_finish() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(provider_error_sse_transcript(), "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.provider-error.jsonc");
+    let session_dir = temp.path().join("sessions");
+    fs::write(
+        &config_path,
+        prompt_cli_config(&format!("{}/v1", server.uri()), &session_dir, &[]),
+    )
+    .expect("write config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "prompt",
+            "--text",
+            "Trigger a provider error.",
+        ])
+        .output()
+        .expect("run harness prompt with provider error");
+
+    assert!(
+        !output.status.success(),
+        "provider error finish must exit nonzero\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("prompt failed"),
+        "stderr should report prompt failure:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let run_dirs = fs::read_dir(&session_dir)
+        .expect("read session dir")
+        .map(|entry| entry.expect("session dir entry").path())
+        .filter(|path| path.is_dir())
+        .collect::<Vec<_>>();
+    assert_eq!(run_dirs.len(), 1, "expected one prompt run dir");
+    let events_body =
+        fs::read_to_string(run_dirs[0].join("events.jsonl")).expect("read provider error events");
+    assert!(events_body.contains("\"event_type\":\"provider_request_finished\""));
+    assert!(events_body.contains("\"finish_reason\":\"error\""));
+    assert!(events_body.contains("\"event_type\":\"task_cancelled\""));
+}
+
+#[tokio::test]
+async fn prompt_cli_continues_after_tool_failure_as_tool_message() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .and(body_string_contains("\"type\":\"function_call_output\""))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    tool_followup_text_sse_transcript("Recovered after the failed read tool call."),
+                    "text/event-stream",
+                ),
+        )
+        .with_priority(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .and(body_string_contains(
+            "Read missing-tool-target.txt and recover.",
+        ))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(tool_call_missing_read_sse_transcript(), "text/event-stream"),
+        )
+        .with_priority(2)
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().expect("tempdir");
+    let output = run_prompt_with_single_tool(
+        temp.path(),
+        &server,
+        &["read"],
+        "Read missing-tool-target.txt and recover.",
+    )
+    .await;
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout)
+        .contains("Recovered after the failed read tool call."));
+
+    let events_body = fs::read_to_string(temp.path().join("events.jsonl")).expect("read events");
+    assert!(events_body.contains("\"event_type\":\"tool_call_finished\""));
+    assert!(events_body.contains("\"status\":\"failed\""));
+    assert!(events_body.contains("missing-tool-target.txt"));
+
+    let requests = server
+        .received_requests()
+        .await
+        .expect("request recording must be enabled");
+    assert_eq!(
+        requests.len(),
+        2,
+        "tool failure should be returned as a tool message and followed by a second provider request"
+    );
+    let second_body: serde_json::Value = requests[1]
+        .body_json()
+        .expect("second request body must be JSON");
+    let input = second_body
+        .get("input")
+        .and_then(serde_json::Value::as_array)
+        .expect("responses request should contain input array");
+    let tool_output = input
+        .iter()
+        .find(|item| item.get("type") == Some(&serde_json::json!("function_call_output")))
+        .expect("follow-up request includes failed function_call_output");
+    assert_eq!(
+        tool_output.get("call_id"),
+        Some(&serde_json::json!("call_missing"))
+    );
+    assert!(
+        tool_output
+            .get("output")
+            .and_then(serde_json::Value::as_str)
+            .expect("function call output text")
+            .contains("tool call `read` failed"),
+        "failed tool result should be sent back to the provider: {second_body}"
+    );
+}
+
+#[tokio::test]
 async fn prompt_cli_executes_fs_glob_and_completes_turn() {
     let server = MockServer::start().await;
 
@@ -1323,6 +1690,36 @@ fn reasoning_responses_sse_transcript() -> String {
     .concat()
 }
 
+fn late_reasoning_duplicate_body_responses_sse_transcript() -> String {
+    [
+        "event: response.output_text.delta\n",
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hi! How can I help?\"}\n\n",
+        "event: response.reasoning_summary_text.delta\n",
+        "data: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"Responding to greetings\"}\n\n",
+        "event: response.output_text.delta\n",
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\"\\nHi! How can I help? \"}\n\n",
+        "event: response.completed\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2,\"total_tokens\":7}}}\n\n",
+        "data: [DONE]\n\n",
+    ]
+    .concat()
+}
+
+fn repeated_body_chunks_before_reasoning_responses_sse_transcript() -> String {
+    [
+        "event: response.output_text.delta\n",
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\"ha\"}\n\n",
+        "event: response.output_text.delta\n",
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\" ha\"}\n\n",
+        "event: response.reasoning_summary_text.delta\n",
+        "data: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"Done planning.\"}\n\n",
+        "event: response.completed\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2,\"total_tokens\":7}}}\n\n",
+        "data: [DONE]\n\n",
+    ]
+    .concat()
+}
+
 fn tool_call_responses_sse_transcript() -> String {
     [
         "event: response.output_item.added\n",
@@ -1331,6 +1728,30 @@ fn tool_call_responses_sse_transcript() -> String {
         "data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"item_1\",\"delta\":\",\\\"limit\\\":20}\"}\n\n",
         "event: response.output_item.done\n",
         "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"item_1\",\"call_id\":\"call_1\",\"name\":\"read\",\"arguments\":\"{\\\"path\\\":\\\"tool-target.txt\\\",\\\"offset\\\":1,\\\"limit\\\":20}\"}}\n\n",
+        "event: response.completed\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":12,\"output_tokens\":3,\"total_tokens\":15}}}\n\n",
+        "data: [DONE]\n\n",
+    ]
+    .concat()
+}
+
+fn provider_error_sse_transcript() -> String {
+    [
+        "event: response.error\n",
+        "data: {\"type\":\"response.error\",\"error\":{\"message\":\"fixture provider failure\"}}\n\n",
+        "data: [DONE]\n\n",
+    ]
+    .concat()
+}
+
+fn tool_call_missing_read_sse_transcript() -> String {
+    [
+        "event: response.output_item.added\n",
+        "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"item_missing\",\"call_id\":\"call_missing\",\"name\":\"read\",\"arguments\":\"{\\\"path\\\":\\\"missing-tool-target.txt\\\"\"}}\n\n",
+        "event: response.function_call_arguments.delta\n",
+        "data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"item_missing\",\"delta\":\"}\"}\n\n",
+        "event: response.output_item.done\n",
+        "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"item_missing\",\"call_id\":\"call_missing\",\"name\":\"read\",\"arguments\":\"{\\\"path\\\":\\\"missing-tool-target.txt\\\"}\"}}\n\n",
         "event: response.completed\n",
         "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":12,\"output_tokens\":3,\"total_tokens\":15}}}\n\n",
         "data: [DONE]\n\n",
@@ -1486,6 +1907,7 @@ fn write_resume_fixture_events(run_dir: &std::path::Path) {
                 model_id: "gpt-4o-mini".to_string(),
                 prompt_summary: "Original prompt".to_string(),
                 request_digest: "digest-original".to_string(),
+                metadata: None,
             }),
         ),
         resume_envelope(
@@ -1496,6 +1918,7 @@ fn write_resume_fixture_events(run_dir: &std::path::Path) {
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-output".to_string()),
                 usage: None,
+                metadata: None,
             }),
         ),
         resume_envelope(

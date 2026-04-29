@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use harness_core::agent::AgentProfile;
 use harness_core::config::{
-    refresh_profile_model_metadata_registry, HarnessConfig, OpenAiApiMode as CoreOpenAiApiMode,
-    ProviderConfig,
+    refresh_profile_model_metadata_registry, resolve_model_selection, HarnessConfig,
+    OpenAiApiMode as CoreOpenAiApiMode, ProviderConfig,
 };
 use harness_core::coord::CoordinatorConfig;
 use harness_core::perm::PermissionPolicy;
@@ -49,6 +49,7 @@ pub fn build_interactive_coordinator_config(
     coordinator_config.tool_concurrency = cfg.background_task.default_concurrency;
     coordinator_config.provider_model_concurrency = cfg.background_task.model_concurrency;
     coordinator_config.stale_timeout_ms = cfg.background_task.stale_timeout_ms;
+    coordinator_config.compaction = cfg.runtime.compaction.clone();
     coordinator_config.provider = Arc::new(build_provider_router(cfg)?);
     coordinator_config.agent_profiles =
         interactive_agent_profiles_with_extra_tools(cfg, &auto_tool_ids)?;
@@ -140,12 +141,21 @@ fn interactive_agent_profiles_with_extra_tools(
     };
 
     for (profile_name, profile_cfg) in &cfg.agents {
+        let model_selection =
+            resolve_model_selection(cfg, &profile_cfg.model_ref, profile_cfg.variant.as_deref())
+                .map_err(|err| {
+                    format!(
+                        "agent `{profile_name}` has invalid model selection `{}`: {err}",
+                        profile_cfg.model_ref
+                    )
+                })?;
+
         profiles.insert(
             profile_name.clone(),
             AgentProfile {
                 name: profile_name.clone(),
                 category: profile_name.clone(),
-                model_ref: profile_cfg.model_ref.clone(),
+                model_ref: model_selection.primary.model_ref,
                 system_prompt: compose_interactive_system_prompt(cfg, profile_name, profile_cfg)?,
                 max_iters: profile_cfg.max_iters,
                 temperature: profile_cfg.temperature,
@@ -242,7 +252,21 @@ mod tests {
                     "gpt-5.4-mini": {{
                       display_name: "GPT-5.4 mini",
                     }},
+                    "gpt-5.4": {{
+                      display_name: "GPT-5.4",
+                      variants: {{
+                        mini: {{
+                          display_name: "Mini",
+                        }},
+                      }},
+                    }},
                   }},
+                }},
+              }},
+              model_profile: {{
+                fast: {{
+                  model: "default:gpt-5.4",
+                  variant: "mini",
                 }},
               }},
               agents: {{
@@ -351,6 +375,23 @@ mod tests {
             coordinator_config.agent_profiles["review"].system_prompt,
             configured_prompt
         );
+    }
+
+    #[test]
+    fn interactive_agent_profiles_apply_model_profile_selection_to_runtime_model_ref() {
+        let cfg = config_fixture(
+            r#"
+            build: {
+              description: "Build lane",
+              system_prompt: "Build prompt",
+              model_ref: "fast",
+              tools: ["read"],
+            },
+            "#,
+        );
+
+        let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles");
+        assert_eq!(profiles["build"].model_ref, "default:gpt-5.4");
     }
 
     #[test]

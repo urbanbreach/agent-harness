@@ -533,34 +533,43 @@ fn configured_profile_model_options(
     agent_profiles: &BTreeMap<String, AgentProfile>,
 ) -> Vec<ModelOption> {
     let catalog_entries = configured_model_catalog(config);
-    let mut options = agent_profiles
-        .keys()
-        .flat_map(|profile| {
-            catalog_entries.iter().map(|entry| ModelOption {
-                profile: profile.clone(),
-                provider: entry.provider.clone(),
-                provider_display_label: Some(entry.provider_display_label.clone()),
-                provider_backend_label: entry.provider_backend_label.clone(),
-                model: entry.model.clone(),
-                model_display_label: Some(entry.model_display_label.clone()),
-                variant: entry.variant.clone(),
-                variant_display_label: entry.variant_display_label.clone(),
-                display_label: Some(entry.display_label.clone()),
-                token_window_label: entry.token_window_label.clone(),
-                context_window_tokens: entry.context_window_tokens,
-                max_input_tokens: entry.max_input_tokens,
-                max_output_tokens: entry.max_output_tokens,
-                description: entry.description.clone(),
-                profile_description: None,
-                reasoning_effort: entry.reasoning_effort.clone(),
-                text_verbosity: entry.text_verbosity.clone(),
-                recommended_for: entry.recommended_for.clone(),
-            })
-        })
-        .collect::<Vec<_>>();
+    let mut options = Vec::new();
 
     for profile in agent_profiles.keys() {
         if let Ok(metadata) = resolve_profile_model_metadata(config, profile) {
+            let configured_provider = metadata.provider.clone();
+            let configured_model = metadata.model.clone();
+            let profile_description = metadata.profile_description.clone();
+
+            for entry in catalog_entries.iter().filter(|entry| {
+                entry.provider == configured_provider && entry.model == configured_model
+            }) {
+                let option = ModelOption {
+                    profile: profile.clone(),
+                    provider: entry.provider.clone(),
+                    provider_display_label: Some(entry.provider_display_label.clone()),
+                    provider_backend_label: entry.provider_backend_label.clone(),
+                    model: entry.model.clone(),
+                    model_display_label: Some(entry.model_display_label.clone()),
+                    variant: entry.variant.clone(),
+                    variant_display_label: entry.variant_display_label.clone(),
+                    display_label: Some(entry.display_label.clone()),
+                    token_window_label: entry.token_window_label.clone(),
+                    context_window_tokens: entry.context_window_tokens,
+                    max_input_tokens: entry.max_input_tokens,
+                    max_output_tokens: entry.max_output_tokens,
+                    description: entry.description.clone(),
+                    profile_description: profile_description.clone(),
+                    reasoning_effort: entry.reasoning_effort.clone(),
+                    text_verbosity: entry.text_verbosity.clone(),
+                    recommended_for: entry.recommended_for.clone(),
+                };
+
+                if !options.iter().any(|existing| existing == &option) {
+                    options.push(option);
+                }
+            }
+
             let preferred = ModelOption {
                 profile: profile.clone(),
                 provider: metadata.provider,
@@ -1132,17 +1141,14 @@ async fn run_continue_session_bootstrap(
 
     drop(intent_tx);
 
-    let stop_result = coordinator.stop_run().await;
+    let selected_workflow = take_selected_workflow(&selected_workflow)?;
+    let stop_result = stop_live_source_run(&coordinator).await;
     event_forwarder_task.abort();
     ui_intent_task.abort();
 
-    if let Err(err) = stop_result {
-        if !matches!(err, CoordinatorError::RunNotStarted) {
-            return Err(err.to_string());
-        }
-    }
+    stop_result?;
 
-    take_selected_workflow(&selected_workflow)
+    Ok(selected_workflow)
 }
 
 fn continue_live_tui_options(
@@ -1340,6 +1346,16 @@ fn take_selected_workflow(
         .map(|mut slot| slot.take().unwrap_or(InteractiveWorkflow::Quit))
 }
 
+async fn stop_live_source_run(coordinator: &CoordinatorHandle) -> Result<(), String> {
+    let stop_result = coordinator.stop_run().await;
+    if let Err(err) = stop_result {
+        if !matches!(err, CoordinatorError::RunNotStarted) {
+            return Err(err.to_string());
+        }
+    }
+    Ok(())
+}
+
 fn latest_run_name(events: &[EventEnvelopeV1]) -> Option<String> {
     events.iter().rev().find_map(|event| {
         if let EventV1::RunStarted(data) = &event.payload {
@@ -1380,6 +1396,7 @@ fn most_recent_conversational_agent_id(
             EventV1::ProviderRequestStarted(_)
                 | EventV1::ProviderStreamDelta(_)
                 | EventV1::ProviderRequestFinished(_)
+                | EventV1::AssistantMessageFinished(_)
                 | EventV1::TaskCompleted(_)
                 | EventV1::TaskCancelled(_)
         );
@@ -1597,17 +1614,14 @@ async fn run_new_live_session(
 
     drop(intent_tx);
 
-    let stop_result = coordinator.stop_run().await;
+    let selected_workflow = take_selected_workflow(&selected_workflow)?;
+    let stop_result = stop_live_source_run(&coordinator).await;
     event_forwarder_task.abort();
     ui_intent_task.abort();
 
-    if let Err(err) = stop_result {
-        if !matches!(err, CoordinatorError::RunNotStarted) {
-            return Err(err.to_string());
-        }
-    }
+    stop_result?;
 
-    take_selected_workflow(&selected_workflow)
+    Ok(selected_workflow)
 }
 
 async fn run_live_mode(
@@ -1933,9 +1947,15 @@ async fn handle_ui_intents(
                 permission_id,
                 decision,
                 reason,
+                grant_scope,
             } => {
                 coordinator
-                    .resolve_permission(permission_id, decision, reason)
+                    .resolve_permission_with_grant_scope(
+                        permission_id,
+                        decision,
+                        reason,
+                        grant_scope,
+                    )
                     .await
                     .map_err(|err| err.to_string())?;
             }
@@ -2701,6 +2721,7 @@ mod tests {
                     model_id: "model-a".to_string(),
                     prompt_summary: "first".to_string(),
                     request_digest: "digest-a".to_string(),
+                    metadata: None,
                 }),
             },
             EventEnvelopeV1 {
@@ -2720,6 +2741,7 @@ mod tests {
                     model_id: "model-b".to_string(),
                     prompt_summary: "second".to_string(),
                     request_digest: "digest-b".to_string(),
+                    metadata: None,
                 }),
             },
         ];
@@ -2782,6 +2804,7 @@ mod tests {
                     model_id: "model-alpha".to_string(),
                     prompt_summary: "alpha turn".to_string(),
                     request_digest: "digest-alpha".to_string(),
+                    metadata: None,
                 }),
             },
             EventEnvelopeV1 {
@@ -2801,6 +2824,7 @@ mod tests {
                     model_id: "model-beta".to_string(),
                     prompt_summary: "beta turn".to_string(),
                     request_digest: "digest-beta".to_string(),
+                    metadata: None,
                 }),
             },
         ];
@@ -2839,6 +2863,9 @@ mod tests {
                           display_name: "Low"
                         }
                       }
+                    },
+                    "gpt-5.4": {
+                      display_name: "GPT-5.4"
                     }
                   }
                 }
@@ -2855,6 +2882,12 @@ mod tests {
                   system_prompt: "Plan carefully.",
                   model_ref: "default:gpt-5.4-mini",
                   variant: "low",
+                  tools: []
+                },
+                ops: {
+                  description: "Operations",
+                  system_prompt: "Operate carefully.",
+                  model_ref: "default:gpt-5.4",
                   tools: []
                 }
               },
@@ -2895,6 +2928,14 @@ mod tests {
             .available_models()
             .iter()
             .any(|option| option.profile == "build"));
+        assert!(metadata
+            .available_models()
+            .iter()
+            .any(|option| option.profile == "ops" && option.model == "gpt-5.4"));
+        assert!(!metadata
+            .available_models()
+            .iter()
+            .any(|option| option.profile == "build" && option.model == "gpt-5.4"));
     }
 
     #[test]
@@ -3045,6 +3086,7 @@ mod tests {
                 model_id: "heuristic-model".to_string(),
                 prompt_summary: "turn".to_string(),
                 request_digest: "digest".to_string(),
+                metadata: None,
             }),
         }];
         let recorded_runtime_context = RecordedRuntimeContext {
@@ -3103,6 +3145,7 @@ mod tests {
                 model_id: "heuristic-model".to_string(),
                 prompt_summary: "turn".to_string(),
                 request_digest: "digest".to_string(),
+                metadata: None,
             }),
         }];
         let recorded_runtime_context = RecordedRuntimeContext {
@@ -3172,6 +3215,7 @@ mod tests {
                     model_id: "legacy-model".to_string(),
                     prompt_summary: "hello".to_string(),
                     request_digest: "digest-1".to_string(),
+                    metadata: None,
                 }),
             },
         ];

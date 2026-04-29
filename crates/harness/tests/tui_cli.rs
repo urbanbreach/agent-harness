@@ -132,6 +132,25 @@ fn deterministic_responses_sse_transcript() -> String {
     .concat()
 }
 
+#[test]
+fn tui_cli_help_does_not_expose_headless_output_flags() {
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args(["tui", "--help"])
+        .output()
+        .expect("run harness tui help");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains("--output"));
+    assert!(!stdout.contains("--quiet"));
+}
+
 fn write_events_jsonl(run_dir: &std::path::Path, events: &[EventEnvelopeV1]) {
     let body = events
         .iter()
@@ -286,12 +305,23 @@ async fn tui_new_live_bootstrap_stays_idle_until_first_user_prompt() {
     let first_started = after
         .iter()
         .find_map(|event| match &event.payload {
-            EventV1::ProviderRequestStarted(payload) => Some(payload),
+            EventV1::ProviderRequestStarted(payload) => Some((event, payload)),
             _ => None,
         })
         .expect("provider request should start after first user prompt");
-    assert_eq!(first_started.request_id, request_id);
-    assert_eq!(first_started.prompt_summary, "first real prompt");
+    assert_eq!(
+        first_started.0.correlation_id.as_deref(),
+        Some(request_id.as_str())
+    );
+    assert_eq!(
+        first_started
+            .1
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.turn_id.as_deref()),
+        Some(request_id.as_str())
+    );
+    assert_eq!(first_started.1.prompt_summary, "first real prompt");
     assert_eq!(
         after.iter()
             .filter(|event| matches!(&event.payload, EventV1::ProviderRequestStarted(_)))
@@ -404,7 +434,11 @@ async fn interactive_runtime_routes_non_default_profile_to_matching_provider() {
     let provider_started = events
         .iter()
         .find_map(|event| match &event.payload {
-            EventV1::ProviderRequestStarted(data) if data.request_id == request_id => Some(data),
+            EventV1::ProviderRequestStarted(data)
+                if event.correlation_id.as_deref() == Some(request_id.as_str()) =>
+            {
+                Some(data)
+            }
             _ => None,
         })
         .expect("provider request should be recorded");
@@ -534,6 +568,7 @@ fn tui_continue_session_bootstraps_live_with_preloaded_history() {
                 model_id: "model-1".to_string(),
                 prompt_summary: "first question".to_string(),
                 request_digest: "digest-1".to_string(),
+                metadata: None,
             }),
         ),
         envelope_with_correlation(
@@ -621,6 +656,7 @@ fn replay_bootstrap_falls_back_when_recorded_runtime_context_missing() {
                     model_id: "legacy-model".to_string(),
                     prompt_summary: "hello".to_string(),
                     request_digest: "digest-1".to_string(),
+                    metadata: None,
                 }),
             ),
             envelope(
@@ -683,6 +719,7 @@ fn replay_bootstrap_prefers_recorded_runtime_context_from_meta() {
                     model_id: "legacy-model".to_string(),
                     prompt_summary: "hello".to_string(),
                     request_digest: "digest-1".to_string(),
+                    metadata: None,
                 }),
             ),
         ],

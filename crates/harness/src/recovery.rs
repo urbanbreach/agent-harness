@@ -352,6 +352,7 @@ fn most_recent_conversational_agent_id(
             EventV1::ProviderRequestStarted(_)
                 | EventV1::ProviderStreamDelta(_)
                 | EventV1::ProviderRequestFinished(_)
+                | EventV1::AssistantMessageFinished(_)
                 | EventV1::TaskCompleted(_)
                 | EventV1::TaskCancelled(_)
         );
