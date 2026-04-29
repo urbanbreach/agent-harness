@@ -130,6 +130,7 @@ pub fn coordinator_registry_with_mcp_and_editing(
     registry.register(Arc::new(FsWriteTool::new(workspace_edit_executor.clone())));
     registry.register(Arc::new(HashlineEditTool));
     registry.register(Arc::new(WriteTool::new(workspace_edit_executor.clone())));
+    registry.register(Arc::new(ShellRunTool::new(shell_allowlist.clone())));
     registry.register(Arc::new(BashTool::new(shell_allowlist)));
     registry.register(Arc::new(WebFetchTool::new(network_executor.clone())));
     registry.register(Arc::new(WebSearchTool::new(network_executor.clone())));
@@ -831,8 +832,22 @@ impl Tool for ShellRunTool {
         let args: ShellRunArgs = serde_json::from_value(args_json)
             .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
 
-        let direct_exec_requested = args.cmd.is_some();
-        let shell_command_requested = args.command.is_some();
+        let cmd = args
+            .cmd
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let command = args
+            .command
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let duplicate_wrapper_command =
+            matches!((&cmd, &command), (Some(cmd), Some(command)) if cmd == command);
+        let direct_exec_requested = cmd.is_some();
+        let shell_command_requested = command.is_some() && !duplicate_wrapper_command;
         if direct_exec_requested == shell_command_requested {
             return Err(ToolError::InvalidArguments(
                 "provide exactly one of cmd or command".to_string(),
@@ -840,14 +855,15 @@ impl Tool for ShellRunTool {
         }
 
         let timeout_ms = args.timeout.unwrap_or(120_000);
-        if let Some(cmd) = args.cmd {
+        if let Some(cmd) = cmd {
             if !self.is_executable_allowed(&cmd) {
                 return Err(ToolError::CommandBlocked(blocked_shell_command_message(
                     &cmd,
                 )));
             }
 
-            let cwd = self.resolve_cwd(&ctx, args.cwd.as_deref())?;
+            let workdir = args.cwd.or(args.workdir);
+            let cwd = self.resolve_cwd(&ctx, workdir.as_deref())?;
             let output = tokio::time::timeout(
                 Duration::from_millis(timeout_ms),
                 tokio::process::Command::new(&cmd)
@@ -865,7 +881,7 @@ impl Tool for ShellRunTool {
             let structured_json = json!({
                 "cmd": cmd,
                 "args": args.args,
-                "cwd": args.cwd,
+                "cwd": workdir,
                 "status": status,
                 "success": output.status.success(),
             })
@@ -875,7 +891,7 @@ impl Tool for ShellRunTool {
 
             build_shell_run_result(&ctx, structured_json, stdout, stderr)
         } else {
-            let command = args.command.expect("validated shell command presence");
+            let command = command.expect("validated shell command presence");
             let workdir = args.workdir.or(args.cwd);
             let cwd = self.resolve_cwd(&ctx, workdir.as_deref())?;
             crate::native_tools::validate_bash_command(
@@ -1504,5 +1520,34 @@ mod tests {
             }
             other => panic!("unexpected error variant: {other}"),
         }
+    }
+
+    #[tokio::test]
+    async fn shell_run_accepts_duplicate_wrapper_command_when_it_matches_cmd() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let shell = super::ShellRunTool::new(ShellAllowlist {
+            executables: vec!["bash".to_string()],
+            cwd_roots: Vec::new(),
+        });
+
+        let result = shell
+            .call(
+                fs_read_context(temp.path(), "toolcall-shell-run-duplicate"),
+                json!({
+                    "cmd": "bash",
+                    "command": "bash",
+                    "args": ["-lc", "printf shell-ok"],
+                    "cwd": ".",
+                    "workdir": ".",
+                }),
+            )
+            .await
+            .expect("matching duplicate cmd/command should run as direct exec");
+
+        assert_eq!(result.display_text, "shell-ok");
+        let structured = result.structured_json.expect("structured shell output");
+        assert_eq!(structured.get("cmd"), Some(&json!("bash")));
+        assert_eq!(structured.get("stdout"), Some(&json!("shell-ok")));
+        assert_eq!(structured.get("success"), Some(&json!(true)));
     }
 }

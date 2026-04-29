@@ -62,6 +62,27 @@ async fn wait_for_tool_call_finish(path: &Path, tool_call_id: &str) {
     }
 }
 
+async fn wait_for_request_terminal(path: &Path, request_id: &str) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if read_events(path).iter().any(|event| {
+            event.correlation_id.as_deref() == Some(request_id)
+                && matches!(
+                    &event.payload,
+                    EventV1::TaskCompleted(_) | EventV1::TaskCancelled(_)
+                )
+        }) {
+            return;
+        }
+
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for request {request_id} terminal event"
+        );
+        sleep(Duration::from_millis(20)).await;
+    }
+}
+
 fn find_finished(events: &[EventEnvelopeV1], tool_call_id: &str) -> ToolCallFinishedEvent {
     events
         .iter()
@@ -112,7 +133,11 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let workspace = temp_dir.path().join("workspace");
     fs::create_dir_all(&workspace).expect("workspace");
-    fs::write(workspace.join("fixture.txt"), "alpha\nbeta\n").expect("fixture file");
+    let fixture_body = (1..=30)
+        .map(|index| format!("line-{index:02}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(workspace.join("fixture.txt"), format!("{fixture_body}\n")).expect("fixture file");
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 
@@ -395,12 +420,12 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
         .get("summary")
         .and_then(Value::as_str)
         .expect("first compat summary")
-        .contains("|beta"));
+        .contains("|line-02"));
     assert!(compat_details[1]
         .get("summary")
         .and_then(Value::as_str)
         .expect("second compat summary")
-        .contains("|alpha"));
+        .contains("|line-01"));
 }
 
 #[tokio::test]
@@ -408,7 +433,11 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let workspace = temp_dir.path().join("workspace");
     fs::create_dir_all(&workspace).expect("workspace");
-    fs::write(workspace.join("fixture.txt"), "alpha\nbeta\n").expect("fixture file");
+    let fixture_body = (1..=30)
+        .map(|index| format!("line-{index:02}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(workspace.join("fixture.txt"), format!("{fixture_body}\n")).expect("fixture file");
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 
@@ -547,7 +576,7 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
         .get("summary")
         .and_then(Value::as_str)
         .expect("first compat summary")
-        .contains("|beta"));
+        .contains("|line-02"));
     assert_eq!(compat_details[1].get("index"), Some(&json!(1)));
     assert_eq!(compat_details[1].get("tool_id"), Some(&json!("batch")));
     assert_eq!(
@@ -571,7 +600,7 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
         .get("summary")
         .and_then(Value::as_str)
         .expect("second compat summary")
-        .contains("|alpha"));
+        .contains("|line-01"));
 }
 
 #[tokio::test]
@@ -710,4 +739,279 @@ async fn batch_tool_accepts_wrapper_calls_inside_tool_calls_on_real_path() {
         .and_then(Value::as_str)
         .expect("second summary")
         .contains("|alpha"));
+}
+
+#[tokio::test]
+async fn task_tool_reenters_existing_child_session_by_session_id() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+
+    let (handle, run, worker_id) = spawn_run(&workspace).await;
+
+    let first_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "category": "deep",
+                "description": "Initial child",
+                "prompt": "First child turn",
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect("request initial task");
+    wait_for_tool_call_finish(&run.events_path, &first_tool_call_id).await;
+
+    let first_events = read_events(&run.events_path);
+    let first_finished = find_finished(&first_events, &first_tool_call_id);
+    let first_output = first_finished
+        .output_json
+        .as_ref()
+        .expect("initial task output json");
+    let child_session_id = first_output
+        .get("child_session_id")
+        .and_then(Value::as_str)
+        .expect("child session id")
+        .to_string();
+    let first_request_id = first_output
+        .get("child_request_id")
+        .and_then(Value::as_str)
+        .expect("child request id")
+        .to_string();
+    wait_for_request_terminal(&run.events_path, &first_request_id).await;
+
+    let reentry_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "category": "deep",
+                "description": "Resume child by session id",
+                "prompt": "Second child turn by session_id",
+                "session_id": child_session_id,
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect("request task reentry by session_id");
+    wait_for_tool_call_finish(&run.events_path, &reentry_tool_call_id).await;
+
+    let reentry_events = read_events(&run.events_path);
+    let reentry_finished = find_finished(&reentry_events, &reentry_tool_call_id);
+    assert_eq!(reentry_finished.status, ToolCallStatus::Succeeded);
+    let reentry_output = reentry_finished
+        .output_json
+        .as_ref()
+        .expect("reentry task output json");
+    assert_eq!(
+        reentry_output
+            .get("child_session_id")
+            .and_then(Value::as_str),
+        Some(child_session_id.as_str())
+    );
+    assert_eq!(
+        reentry_output.get("resumed_existing_session"),
+        Some(&json!(true))
+    );
+    assert_eq!(
+        reentry_output.pointer("/child_session/resumed_existing_session"),
+        Some(&json!(true))
+    );
+    let second_request_id = reentry_output
+        .get("child_request_id")
+        .and_then(Value::as_str)
+        .expect("second child request id")
+        .to_string();
+    wait_for_request_terminal(&run.events_path, &second_request_id).await;
+
+    handle.stop_run().await.expect("stop run");
+    let events = read_events(&run.events_path);
+    let child_spawn_count = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                &event.payload,
+                EventV1::AgentSpawned(payload) if payload.agent_id == child_session_id
+            )
+        })
+        .count();
+    assert_eq!(child_spawn_count, 1, "reentry must not spawn a new child");
+}
+
+#[tokio::test]
+async fn task_tool_reenters_existing_child_session_by_task_id() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+
+    let (handle, run, worker_id) = spawn_run(&workspace).await;
+
+    let first_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "category": "deep",
+                "description": "Initial child",
+                "prompt": "First child turn",
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect("request initial task");
+    wait_for_tool_call_finish(&run.events_path, &first_tool_call_id).await;
+
+    let first_events = read_events(&run.events_path);
+    let first_finished = find_finished(&first_events, &first_tool_call_id);
+    let first_output = first_finished
+        .output_json
+        .as_ref()
+        .expect("initial task output json");
+    let child_task_id = first_output
+        .get("task_id")
+        .and_then(Value::as_str)
+        .expect("child task id")
+        .to_string();
+    let first_request_id = first_output
+        .get("child_request_id")
+        .and_then(Value::as_str)
+        .expect("child request id")
+        .to_string();
+    wait_for_request_terminal(&run.events_path, &first_request_id).await;
+
+    let reentry_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "category": "deep",
+                "description": "Resume child by task id",
+                "prompt": "Second child turn by task_id",
+                "task_id": child_task_id,
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect("request task reentry by task_id");
+    wait_for_tool_call_finish(&run.events_path, &reentry_tool_call_id).await;
+
+    let reentry_events = read_events(&run.events_path);
+    let reentry_finished = find_finished(&reentry_events, &reentry_tool_call_id);
+    assert_eq!(reentry_finished.status, ToolCallStatus::Succeeded);
+    let reentry_output = reentry_finished
+        .output_json
+        .as_ref()
+        .expect("reentry task output json");
+    assert_eq!(
+        reentry_output
+            .get("child_session_id")
+            .and_then(Value::as_str),
+        Some(child_task_id.as_str())
+    );
+    assert_eq!(
+        reentry_output.get("resumed_existing_session"),
+        Some(&json!(true))
+    );
+    assert_eq!(
+        reentry_output.pointer("/child_session/resumed_existing_session"),
+        Some(&json!(true))
+    );
+    let second_request_id = reentry_output
+        .get("child_request_id")
+        .and_then(Value::as_str)
+        .expect("second child request id")
+        .to_string();
+    wait_for_request_terminal(&run.events_path, &second_request_id).await;
+
+    handle.stop_run().await.expect("stop run");
+    let events = read_events(&run.events_path);
+    let child_spawn_count = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                &event.payload,
+                EventV1::AgentSpawned(payload) if payload.agent_id == child_task_id
+            )
+        })
+        .count();
+    assert_eq!(child_spawn_count, 1, "reentry must not spawn a new child");
+}
+
+#[tokio::test]
+async fn batch_rejects_more_than_25_calls_preserving_input_order() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+    fs::write(workspace.join("fixture.txt"), "alpha\nbeta\n").expect("fixture file");
+
+    let (handle, run, worker_id) = spawn_run(&workspace).await;
+    let tool_calls = (0..26)
+        .map(|index| {
+            json!({
+                "tool": "read",
+                "parameters": {
+                    "filePath": "fixture.txt",
+                    "offset": index + 1,
+                    "limit": 1
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let batch_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "batch",
+            json!({ "tool_calls": tool_calls }),
+        )
+        .await
+        .expect("request over-limit batch");
+    wait_for_tool_call_finish(&run.events_path, &batch_tool_call_id).await;
+
+    handle.stop_run().await.expect("stop run");
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &batch_tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Succeeded);
+    let output = finished.output_json.as_ref().expect("batch output json");
+    assert_eq!(output.get("requested_call_count"), Some(&json!(26)));
+    assert_eq!(output.get("max_calls"), Some(&json!(25)));
+    assert_eq!(output.pointer("/audit/successful"), Some(&json!(25)));
+    assert_eq!(output.pointer("/audit/failed"), Some(&json!(1)));
+    assert_eq!(
+        output.pointer("/audit/discarded_call_count"),
+        Some(&json!(1))
+    );
+
+    let details = output
+        .get("details")
+        .and_then(Value::as_array)
+        .expect("batch details");
+    assert_eq!(details.len(), 26);
+    for (index, detail) in details.iter().enumerate() {
+        assert_eq!(detail.get("index"), Some(&json!(index)));
+        assert_eq!(
+            detail.pointer("/request/parameters/offset"),
+            Some(&json!(index + 1))
+        );
+    }
+    for detail in &details[..25] {
+        assert_eq!(detail.get("success"), Some(&json!(true)));
+    }
+    assert_eq!(details[25].get("success"), Some(&json!(false)));
+    assert!(details[25]
+        .get("error")
+        .and_then(Value::as_str)
+        .expect("over-limit batch error")
+        .contains("Maximum of 25 tools allowed in batch"));
 }

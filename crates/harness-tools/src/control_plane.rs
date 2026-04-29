@@ -282,6 +282,8 @@ struct TodoItemCompat {
     #[serde(default)]
     status: Option<String>,
     #[serde(default)]
+    state: Option<String>,
+    #[serde(default)]
     priority: Option<String>,
     #[serde(default)]
     done: Option<bool>,
@@ -303,6 +305,7 @@ impl<'de> Deserialize<'de> for TodoItem {
             .ok_or_else(|| D::Error::custom("missing field `content`"))?;
         let status = compat
             .status
+            .or(compat.state)
             .or_else(|| {
                 compat.done.map(|done| {
                     if done {
@@ -384,6 +387,10 @@ pub(crate) fn todo_write_parameters_json_schema() -> Value {
                         "text": { "type": "string" },
                         "title": { "type": "string" },
                         "status": {
+                            "type": "string",
+                            "enum": TODO_STATUSES
+                        },
+                        "state": {
                             "type": "string",
                             "enum": TODO_STATUSES
                         },

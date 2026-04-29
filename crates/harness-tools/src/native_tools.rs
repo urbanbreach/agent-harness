@@ -29,6 +29,11 @@ const DEFAULT_GREP_LIMIT: usize = 100;
 const DEFAULT_LIST_LIMIT: usize = 100;
 const SKIPPED_DIR_NAMES: &[&str] = &[".git", "target"];
 const SKIPPED_RELATIVE_DIRS: &[&str] = &[".agent-harness/sessions"];
+const TODO_WRITE_DESCRIPTION: &str = r#"Use this tool to create and manage a structured task list for your current coding session. This helps track progress on complex work and makes progress visible to the user.
+
+Use todowrite proactively for complex multi-step tasks, non-trivial work that requires planning, explicit user requests for a todo item/list/checklist/test todo, user requests with multiple tasks, and whenever new instructions change the current plan. If the user explicitly asks you to make/add/create/update a todo, call this tool even when the request is otherwise trivial; never reply only "Done". Skip it only for single straightforward tasks, trivial work that does not benefit from tracking, and purely informational answers that did not ask for todos.
+
+Task states are: pending, in_progress, completed, cancelled. Priority values are: high, medium, low. Keep at most one item in_progress, mark tasks completed immediately after finishing them, and update the list in real time as work progresses."#;
 
 pub(crate) struct ReadTool {
     default_hashline_anchors: bool,
@@ -752,7 +757,7 @@ impl Tool for TodoWriteTool {
     }
 
     fn description(&self) -> &str {
-        "Stores a per-run todo list."
+        TODO_WRITE_DESCRIPTION
     }
 
     fn parameters_json_schema(&self) -> Value {

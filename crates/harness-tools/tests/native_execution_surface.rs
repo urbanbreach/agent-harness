@@ -48,6 +48,12 @@ async fn native_execution_surface_tools_execute_through_native_ids() {
     let todo_write = registry.get("todowrite").expect("todowrite in registry");
     let todo_read = registry.get("todoread").expect("todoread in registry");
     let invalid = registry.get("invalid").expect("invalid in registry");
+    assert!(todo_write.description().contains("structured task list"));
+    assert!(todo_write.description().contains("test todo"));
+    assert!(todo_write
+        .description()
+        .contains("never reply only \"Done\""));
+    assert!(todo_write.description().contains("in_progress"));
 
     fs::write(workspace.join("surface.txt"), "before\n").expect("seed existing file");
 
@@ -168,6 +174,38 @@ async fn native_todowrite_accepts_legacy_text_shape_and_defaults_priority() {
     assert!(todo_read_result.display_text.contains("legacy text entry"));
     assert!(todo_read_result.display_text.contains("legacy title entry"));
     assert!(todo_read_result.display_text.contains("medium"));
+}
+
+#[tokio::test]
+async fn native_todowrite_accepts_state_alias_from_model_tool_call() {
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let registry = coordinator_registry(ShellAllowlist::default());
+
+    let todo_write = registry.get("todowrite").expect("todowrite in registry");
+    let schema = todo_write.parameters_json_schema();
+    assert!(schema.to_string().contains("\"state\""));
+
+    let todo_write_result = todo_write
+        .call(
+            test_context(&workspace, "todo-write-state-alias"),
+            json!({
+                "todos": [
+                    {"title": "Test functionality", "state": "pending", "priority": "medium"}
+                ]
+            }),
+        )
+        .await
+        .expect("state-alias todowrite");
+
+    assert_eq!(
+        todo_write_result.structured_json,
+        Some(json!({
+            "todos": [
+                {"content": "Test functionality", "status": "pending", "priority": "medium"}
+            ]
+        }))
+    );
 }
 
 #[tokio::test]
