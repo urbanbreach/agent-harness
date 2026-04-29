@@ -12,7 +12,8 @@ use tokio_stream::{self as stream, StreamExt};
 
 use crate::{
     CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
-    ProviderEventStream, ProviderStreamEvent, ToolChoice, ToolDef,
+    ProviderEventStream, ProviderStreamEvent, ProviderStreamFinishedMetadata,
+    ProviderStreamStartMetadata, ToolChoice, ToolDef,
 };
 
 #[derive(Debug, Clone)]
@@ -264,12 +265,16 @@ impl Provider for OpenAiCompatibleProvider {
             return Box::pin(stream::iter(vec![ProviderStreamEvent::Error { message }]));
         }
 
+        let start_metadata = provider_stream_start_metadata_from_headers(response.headers());
+
         let (tx, rx) = mpsc::channel(64);
         tokio::spawn(async move {
             match mode {
-                OpenAiApiMode::ChatCompletions => consume_chat_sse_stream(response, tx).await,
+                OpenAiApiMode::ChatCompletions => {
+                    consume_chat_sse_stream(response, tx, start_metadata).await
+                }
                 OpenAiApiMode::Responses | OpenAiApiMode::Auto => {
-                    consume_responses_sse_stream(response, tx).await
+                    consume_responses_sse_stream(response, tx, start_metadata).await
                 }
             }
         });
@@ -325,16 +330,94 @@ fn warn_stream_processing_failure(context: &str, message: &str) {
     );
 }
 
+fn provider_stream_start_metadata_from_headers(
+    headers: &HeaderMap,
+) -> Option<ProviderStreamStartMetadata> {
+    let metadata = ProviderStreamStartMetadata {
+        provider_session_id: first_header_value(
+            headers,
+            &[
+                "x-provider-session-id",
+                "x-session-id",
+                "openai-session-id",
+                "session-id",
+            ],
+        ),
+        provider_cache_id: first_header_value(
+            headers,
+            &[
+                "x-provider-cache-id",
+                "x-cache-id",
+                "openai-cache-id",
+                "cache-id",
+            ],
+        ),
+    };
+
+    (!metadata_is_empty(&metadata)).then_some(metadata)
+}
+
+fn first_header_value(headers: &HeaderMap, names: &[&'static str]) -> Option<String> {
+    names.iter().find_map(|name| {
+        headers
+            .get(*name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    })
+}
+
+fn metadata_is_empty(metadata: &ProviderStreamStartMetadata) -> bool {
+    metadata.provider_session_id.is_none() && metadata.provider_cache_id.is_none()
+}
+
+fn provider_stream_finished_metadata_from_start(
+    start_metadata: Option<ProviderStreamStartMetadata>,
+) -> ProviderStreamFinishedMetadata {
+    let Some(start_metadata) = start_metadata else {
+        return ProviderStreamFinishedMetadata::default();
+    };
+
+    ProviderStreamFinishedMetadata {
+        provider_session_id: start_metadata.provider_session_id,
+        provider_cache_id: start_metadata.provider_cache_id,
+        ..ProviderStreamFinishedMetadata::default()
+    }
+}
+
+fn non_empty_finished_metadata(
+    metadata: ProviderStreamFinishedMetadata,
+) -> Option<ProviderStreamFinishedMetadata> {
+    (metadata.provider_response_id.is_some()
+        || metadata.provider_session_id.is_some()
+        || metadata.provider_cache_id.is_some()
+        || metadata.provider_stop_reason.is_some()
+        || metadata.cache_read_tokens.is_some()
+        || metadata.cache_write_tokens.is_some()
+        || metadata.assistant_message_id.is_some()
+        || metadata.thinking.is_some())
+    .then_some(metadata)
+}
+
 async fn consume_chat_sse_stream(
     response: reqwest::Response,
     tx: mpsc::Sender<ProviderStreamEvent>,
+    start_metadata: Option<ProviderStreamStartMetadata>,
 ) {
-    if tx.send(ProviderStreamEvent::Start).await.is_err() {
+    if tx
+        .send(ProviderStreamEvent::Started {
+            metadata: start_metadata.clone(),
+        })
+        .await
+        .is_err()
+    {
         warn_stream_send_failure("chat.start");
         return;
     }
 
     let mut usage = zero_usage();
+    let mut finished_metadata = provider_stream_finished_metadata_from_start(start_metadata);
     let mut done_emitted = false;
     let mut tool_call_state = ChatToolCallState::default();
     let mut sse_stream = response.bytes_stream().eventsource();
@@ -362,7 +445,15 @@ async fn consume_chat_sse_stream(
                 return;
             }
 
-            if !done_emitted && tx.send(ProviderStreamEvent::Done { usage }).await.is_err() {
+            if !done_emitted
+                && tx
+                    .send(ProviderStreamEvent::DoneWithMetadata {
+                        usage,
+                        metadata: non_empty_finished_metadata(finished_metadata),
+                    })
+                    .await
+                    .is_err()
+            {
                 warn_stream_send_failure("chat.done");
             }
             return;
@@ -384,8 +475,15 @@ async fn consume_chat_sse_stream(
             }
         };
 
+        if let Some(id) = chunk.id.as_deref().filter(|id| !id.trim().is_empty()) {
+            finished_metadata
+                .provider_response_id
+                .get_or_insert_with(|| id.to_string());
+        }
+
         if let Some(chunk_usage) = chunk.usage {
-            usage = chunk_usage;
+            usage = chunk_usage.completion_usage();
+            chunk_usage.merge_finished_metadata(&mut finished_metadata);
         }
 
         let mut finish_seen = false;
@@ -423,7 +521,8 @@ async fn consume_chat_sse_stream(
                 return;
             }
 
-            if choice.finish_reason.is_some() {
+            if let Some(finish_reason) = choice.finish_reason.as_deref() {
+                finished_metadata.provider_stop_reason = Some(finish_reason.to_string());
                 finish_seen = true;
             }
         }
@@ -435,8 +534,9 @@ async fn consume_chat_sse_stream(
 
             done_emitted = true;
             if tx
-                .send(ProviderStreamEvent::Done {
+                .send(ProviderStreamEvent::DoneWithMetadata {
                     usage: usage.clone(),
+                    metadata: non_empty_finished_metadata(finished_metadata.clone()),
                 })
                 .await
                 .is_err()
@@ -451,7 +551,15 @@ async fn consume_chat_sse_stream(
         return;
     }
 
-    if !done_emitted && tx.send(ProviderStreamEvent::Done { usage }).await.is_err() {
+    if !done_emitted
+        && tx
+            .send(ProviderStreamEvent::DoneWithMetadata {
+                usage,
+                metadata: non_empty_finished_metadata(finished_metadata),
+            })
+            .await
+            .is_err()
+    {
         warn_stream_send_failure("chat.done_after_stream_end");
     }
 }
@@ -596,13 +704,21 @@ async fn emit_tool_call_completions(
 async fn consume_responses_sse_stream(
     response: reqwest::Response,
     tx: mpsc::Sender<ProviderStreamEvent>,
+    start_metadata: Option<ProviderStreamStartMetadata>,
 ) {
-    if tx.send(ProviderStreamEvent::Start).await.is_err() {
+    if tx
+        .send(ProviderStreamEvent::Started {
+            metadata: start_metadata.clone(),
+        })
+        .await
+        .is_err()
+    {
         warn_stream_send_failure("responses.start");
         return;
     }
 
     let mut usage = zero_usage();
+    let mut finished_metadata = provider_stream_finished_metadata_from_start(start_metadata);
     let mut done_emitted = false;
     let mut sse_stream = response.bytes_stream().eventsource();
     let mut tool_calls = BTreeMap::<String, ResponsesToolCallAccumulator>::new();
@@ -629,7 +745,15 @@ async fn consume_responses_sse_stream(
             continue;
         }
         if data == "[DONE]" {
-            if !done_emitted && tx.send(ProviderStreamEvent::Done { usage }).await.is_err() {
+            if !done_emitted
+                && tx
+                    .send(ProviderStreamEvent::DoneWithMetadata {
+                        usage,
+                        metadata: non_empty_finished_metadata(finished_metadata),
+                    })
+                    .await
+                    .is_err()
+            {
                 warn_stream_send_failure("responses.done");
             }
             return;
@@ -698,10 +822,11 @@ async fn consume_responses_sse_stream(
                 }
             }
             "response.completed" | "response.done" | "response.incomplete" => {
+                finished_metadata.provider_stop_reason = Some(parsed.event_type.clone());
                 if let Some(response) = parsed.response {
-                    if let Some(completion_usage) = response
-                        .usage
-                        .map(OpenAiResponsesUsage::into_completion_usage)
+                    response.merge_finished_metadata(&mut finished_metadata);
+                    if let Some(completion_usage) =
+                        response.usage.map(|usage| usage.completion_usage())
                     {
                         usage = completion_usage;
                     }
@@ -721,8 +846,9 @@ async fn consume_responses_sse_stream(
                 if !done_emitted {
                     done_emitted = true;
                     if tx
-                        .send(ProviderStreamEvent::Done {
+                        .send(ProviderStreamEvent::DoneWithMetadata {
                             usage: usage.clone(),
+                            metadata: non_empty_finished_metadata(finished_metadata.clone()),
                         })
                         .await
                         .is_err()
@@ -749,7 +875,15 @@ async fn consume_responses_sse_stream(
         }
     }
 
-    if !done_emitted && tx.send(ProviderStreamEvent::Done { usage }).await.is_err() {
+    if !done_emitted
+        && tx
+            .send(ProviderStreamEvent::DoneWithMetadata {
+                usage,
+                metadata: non_empty_finished_metadata(finished_metadata),
+            })
+            .await
+            .is_err()
+    {
         warn_stream_send_failure("responses.done_after_stream_end");
     }
 }
@@ -1354,10 +1488,42 @@ struct OpenAiResponsesOutputItem {
 #[derive(Debug, Deserialize)]
 struct OpenAiResponsesResponsePayload {
     #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default, alias = "session_id")]
+    provider_session_id: Option<String>,
+    #[serde(default, alias = "cache_id")]
+    provider_cache_id: Option<String>,
+    #[serde(default)]
     usage: Option<OpenAiResponsesUsage>,
 }
 
-#[derive(Debug, Deserialize)]
+impl OpenAiResponsesResponsePayload {
+    fn merge_finished_metadata(&self, metadata: &mut ProviderStreamFinishedMetadata) {
+        if let Some(id) = self.id.as_deref().and_then(non_empty_string) {
+            metadata.provider_response_id = Some(id.to_string());
+        }
+        if let Some(status) = self.status.as_deref().and_then(non_empty_string) {
+            metadata.provider_stop_reason = Some(status.to_string());
+        }
+        if let Some(session_id) = self
+            .provider_session_id
+            .as_deref()
+            .and_then(non_empty_string)
+        {
+            metadata.provider_session_id = Some(session_id.to_string());
+        }
+        if let Some(cache_id) = self.provider_cache_id.as_deref().and_then(non_empty_string) {
+            metadata.provider_cache_id = Some(cache_id.to_string());
+        }
+        if let Some(usage) = &self.usage {
+            usage.merge_finished_metadata(metadata);
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 struct OpenAiResponsesUsage {
     #[serde(default)]
     prompt_tokens: Option<u32>,
@@ -1369,10 +1535,18 @@ struct OpenAiResponsesUsage {
     output_tokens: Option<u32>,
     #[serde(default)]
     total_tokens: Option<u32>,
+    #[serde(default)]
+    prompt_tokens_details: Option<OpenAiTokenDetails>,
+    #[serde(default)]
+    input_tokens_details: Option<OpenAiTokenDetails>,
+    #[serde(default)]
+    cache_creation_input_tokens: Option<u32>,
+    #[serde(default)]
+    cache_write_input_tokens: Option<u32>,
 }
 
 impl OpenAiResponsesUsage {
-    fn into_completion_usage(self) -> CompletionUsage {
+    fn completion_usage(&self) -> CompletionUsage {
         let prompt_tokens = self.prompt_tokens.or(self.input_tokens).unwrap_or(0);
         let completion_tokens = self.completion_tokens.or(self.output_tokens).unwrap_or(0);
         let total_tokens = self
@@ -1385,6 +1559,56 @@ impl OpenAiResponsesUsage {
             total_tokens,
         }
     }
+
+    fn merge_finished_metadata(&self, metadata: &mut ProviderStreamFinishedMetadata) {
+        metadata.cache_read_tokens = self
+            .input_tokens_details
+            .as_ref()
+            .and_then(|details| details.cached_tokens)
+            .or_else(|| {
+                self.prompt_tokens_details
+                    .as_ref()
+                    .and_then(|details| details.cached_tokens)
+            })
+            .or(metadata.cache_read_tokens);
+        metadata.cache_write_tokens = self
+            .cache_write_input_tokens
+            .or(self.cache_creation_input_tokens)
+            .or_else(|| {
+                self.input_tokens_details.as_ref().and_then(|details| {
+                    details
+                        .cache_write_tokens
+                        .or(details.cache_creation_tokens)
+                        .or(details.cache_creation_input_tokens)
+                })
+            })
+            .or_else(|| {
+                self.prompt_tokens_details.as_ref().and_then(|details| {
+                    details
+                        .cache_write_tokens
+                        .or(details.cache_creation_tokens)
+                        .or(details.cache_creation_input_tokens)
+                })
+            })
+            .or(metadata.cache_write_tokens);
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct OpenAiTokenDetails {
+    #[serde(default)]
+    cached_tokens: Option<u32>,
+    #[serde(default)]
+    cache_write_tokens: Option<u32>,
+    #[serde(default)]
+    cache_creation_tokens: Option<u32>,
+    #[serde(default)]
+    cache_creation_input_tokens: Option<u32>,
+}
+
+fn non_empty_string(value: &str) -> Option<&str> {
+    let trimmed = value.trim();
+    (!trimmed.is_empty()).then_some(trimmed)
 }
 
 #[derive(Debug, Default)]
@@ -1406,9 +1630,11 @@ fn role_to_openai(role: &MessageRole) -> &'static str {
 #[derive(Debug, Deserialize)]
 struct OpenAiChatCompletionsChunk {
     #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
     choices: Vec<OpenAiChatChoiceChunk>,
     #[serde(default)]
-    usage: Option<CompletionUsage>,
+    usage: Option<OpenAiResponsesUsage>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1463,7 +1689,7 @@ mod tests {
     };
     use crate::{
         CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
-        ProviderStreamEvent, ToolChoice, ToolDef,
+        ProviderStreamEvent, ProviderStreamFinishedMetadata, ToolChoice, ToolDef,
     };
 
     #[tokio::test]
@@ -1486,15 +1712,20 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                ProviderStreamEvent::Start,
+                ProviderStreamEvent::Started { metadata: None },
                 ProviderStreamEvent::TextDelta("Hello".to_string()),
                 ProviderStreamEvent::TextDelta(" world".to_string()),
-                ProviderStreamEvent::Done {
+                ProviderStreamEvent::DoneWithMetadata {
                     usage: CompletionUsage {
                         prompt_tokens: 4,
                         completion_tokens: 2,
                         total_tokens: 6,
-                    }
+                    },
+                    metadata: Some(ProviderStreamFinishedMetadata {
+                        provider_response_id: Some("chatcmpl-1".to_string()),
+                        provider_stop_reason: Some("stop".to_string()),
+                        ..ProviderStreamFinishedMetadata::default()
+                    }),
                 },
             ]
         );
@@ -1547,7 +1778,7 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                ProviderStreamEvent::Start,
+                ProviderStreamEvent::Started { metadata: None },
                 ProviderStreamEvent::ToolCallDelta {
                     tool_call_id: "call_resp_1".to_string(),
                     function_name: Some("filesystem_read".to_string()),
@@ -1563,12 +1794,21 @@ mod tests {
                     function_name: "filesystem_read".to_string(),
                     arguments_json: "{\"filePath\":\"/tmp/demo.txt\"}".to_string(),
                 },
-                ProviderStreamEvent::Done {
+                ProviderStreamEvent::DoneWithMetadata {
                     usage: CompletionUsage {
                         prompt_tokens: 9,
                         completion_tokens: 3,
                         total_tokens: 12,
-                    }
+                    },
+                    metadata: Some(ProviderStreamFinishedMetadata {
+                        provider_response_id: Some("resp-tool-1".to_string()),
+                        provider_session_id: Some("session-tool-1".to_string()),
+                        provider_cache_id: Some("cache-tool-1".to_string()),
+                        provider_stop_reason: Some("completed".to_string()),
+                        cache_read_tokens: Some(5),
+                        cache_write_tokens: Some(2),
+                        ..ProviderStreamFinishedMetadata::default()
+                    }),
                 },
             ]
         );
@@ -1639,15 +1879,20 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                ProviderStreamEvent::Start,
+                ProviderStreamEvent::Started { metadata: None },
                 ProviderStreamEvent::TextDelta("Hello".to_string()),
                 ProviderStreamEvent::TextDelta(" world".to_string()),
-                ProviderStreamEvent::Done {
+                ProviderStreamEvent::DoneWithMetadata {
                     usage: CompletionUsage {
                         prompt_tokens: 4,
                         completion_tokens: 2,
                         total_tokens: 6,
-                    }
+                    },
+                    metadata: Some(ProviderStreamFinishedMetadata {
+                        provider_response_id: Some("chatcmpl-1".to_string()),
+                        provider_stop_reason: Some("stop".to_string()),
+                        ..ProviderStreamFinishedMetadata::default()
+                    }),
                 },
             ]
         );
@@ -2025,7 +2270,10 @@ mod tests {
         );
         let events = collect_events(&provider, request_with_single_tool("gpt-4o-mini")).await;
 
-        assert!(matches!(events.first(), Some(ProviderStreamEvent::Start)));
+        assert!(matches!(
+            events.first(),
+            Some(ProviderStreamEvent::Started { .. })
+        ));
         assert!(events
             .iter()
             .any(|event| matches!(event, ProviderStreamEvent::ToolCallDelta { .. })));
@@ -2037,7 +2285,7 @@ mod tests {
             .any(|event| matches!(event, ProviderStreamEvent::ToolCallComplete { .. })));
         assert!(!events
             .iter()
-            .any(|event| matches!(event, ProviderStreamEvent::Done { .. })));
+            .any(|event| matches!(event, ProviderStreamEvent::DoneWithMetadata { .. })));
     }
 
     #[tokio::test]
@@ -2060,7 +2308,7 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                ProviderStreamEvent::Start,
+                ProviderStreamEvent::Started { metadata: None },
                 ProviderStreamEvent::ToolCallDelta {
                     tool_call_id: "call_1".to_string(),
                     function_name: Some("filesystem_read".to_string()),
@@ -2076,12 +2324,17 @@ mod tests {
                     function_name: "filesystem_read".to_string(),
                     arguments_json: "{\"filePath\":\"/tmp/demo.txt\"}".to_string(),
                 },
-                ProviderStreamEvent::Done {
+                ProviderStreamEvent::DoneWithMetadata {
                     usage: CompletionUsage {
                         prompt_tokens: 12,
                         completion_tokens: 4,
                         total_tokens: 16,
-                    }
+                    },
+                    metadata: Some(ProviderStreamFinishedMetadata {
+                        provider_response_id: Some("chatcmpl-tool-1".to_string()),
+                        provider_stop_reason: Some("tool_calls".to_string()),
+                        ..ProviderStreamFinishedMetadata::default()
+                    }),
                 },
             ]
         );
@@ -2130,7 +2383,10 @@ mod tests {
         let provider = provider_for_base_url(format!("{}/v1", server.uri()), "test-secret-key");
         let events = collect_events(&provider, request_with_single_tool("gpt-4o-mini")).await;
 
-        assert!(matches!(events.first(), Some(ProviderStreamEvent::Start)));
+        assert!(matches!(
+            events.first(),
+            Some(ProviderStreamEvent::Started { .. })
+        ));
         assert!(events
             .iter()
             .any(|event| matches!(event, ProviderStreamEvent::ToolCallDelta { .. })));
@@ -2142,7 +2398,7 @@ mod tests {
             .any(|event| matches!(event, ProviderStreamEvent::ToolCallComplete { .. })));
         assert!(!events
             .iter()
-            .any(|event| matches!(event, ProviderStreamEvent::Done { .. })));
+            .any(|event| matches!(event, ProviderStreamEvent::DoneWithMetadata { .. })));
     }
 
     #[tokio::test]
@@ -2244,14 +2500,17 @@ mod tests {
         timeout(Duration::from_secs(45), async {
             while let Some(event) = stream.next().await {
                 match event {
-                    ProviderStreamEvent::Start => saw_start = true,
+                    ProviderStreamEvent::Start | ProviderStreamEvent::Started { .. } => {
+                        saw_start = true
+                    }
                     ProviderStreamEvent::ReasoningDelta(_) => {}
                     ProviderStreamEvent::TextDelta(delta) => {
                         delta_chars += delta.len();
                     }
                     ProviderStreamEvent::ToolCallDelta { .. }
                     | ProviderStreamEvent::ToolCallComplete { .. } => {}
-                    ProviderStreamEvent::Done { .. } => {
+                    ProviderStreamEvent::Done { .. }
+                    | ProviderStreamEvent::DoneWithMetadata { .. } => {
                         saw_done = true;
                         break;
                     }
@@ -2391,7 +2650,7 @@ mod tests {
             "event: response.output_item.done\n",
             "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"item_resp_1\",\"call_id\":\"call_resp_1\",\"name\":\"filesystem_read\",\"arguments\":\"{\\\"filePath\\\":\\\"/tmp/demo.txt\\\"}\"}}\n\n",
             "event: response.completed\n",
-            "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":9,\"output_tokens\":3,\"total_tokens\":12}}}\n\n",
+            "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-tool-1\",\"status\":\"completed\",\"provider_session_id\":\"session-tool-1\",\"provider_cache_id\":\"cache-tool-1\",\"usage\":{\"input_tokens\":9,\"output_tokens\":3,\"total_tokens\":12,\"input_tokens_details\":{\"cached_tokens\":5},\"cache_creation_input_tokens\":2}}}\n\n",
             "data: [DONE]\n\n"
         )
         .to_string()

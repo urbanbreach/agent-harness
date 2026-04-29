@@ -49,6 +49,13 @@
         "null"
       ]
     },
+    "model_profile": {
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/ModelProfileConfig"
+      }
+    },
     "permission": {
       "default": {
         "bash": null,
@@ -73,6 +80,21 @@
       "additionalProperties": {
         "$ref": "#/definitions/ProviderConfig"
       }
+    },
+    "runtime": {
+      "default": {
+        "compaction": {
+          "auto_retry_overflow": true,
+          "model_backed": false,
+          "model_ref": null,
+          "split_oversized_turns": false
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/PublicRuntimeSettingsConfig"
+        }
+      ]
     },
     "skills": {
       "default": {
@@ -106,6 +128,31 @@
   },
   "additionalProperties": false,
   "definitions": {
+    "CompactionRuntimeConfig": {
+      "type": "object",
+      "properties": {
+        "auto_retry_overflow": {
+          "default": true,
+          "type": "boolean"
+        },
+        "model_backed": {
+          "default": false,
+          "type": "boolean"
+        },
+        "model_ref": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "split_oversized_turns": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "InstructionList": {
       "anyOf": [
         {
@@ -303,6 +350,51 @@
       },
       "additionalProperties": false
     },
+    "ModelProfileConfig": {
+      "type": "object",
+      "required": [
+        "model"
+      ],
+      "properties": {
+        "fallback": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ModelProfileTargetConfig"
+          }
+        },
+        "model": {
+          "type": "string"
+        },
+        "variant": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ModelProfileTargetConfig": {
+      "type": "object",
+      "required": [
+        "model"
+      ],
+      "properties": {
+        "model": {
+          "type": "string"
+        },
+        "variant": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "ModelReleaseStage": {
       "type": "string",
       "enum": [
@@ -314,6 +406,15 @@
     "ModelVariantConfig": {
       "type": "object",
       "properties": {
+        "context_window_tokens": {
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
         "disabled": {
           "default": false,
           "type": "boolean"
@@ -438,6 +539,13 @@
             "null"
           ]
         },
+        "apiKeyEnv": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "apiMode": {
           "default": null,
           "anyOf": [
@@ -502,6 +610,13 @@
               "default": "",
               "type": "string"
             },
+            "apiKeyEnv": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "apiMode": {
               "default": "auto",
               "allOf": [
@@ -538,6 +653,7 @@
             "options": {
               "default": {
                 "apiKey": null,
+                "apiKeyEnv": [],
                 "apiMode": null,
                 "baseURL": null,
                 "headers": {},
@@ -837,6 +953,25 @@
             },
             {
               "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "PublicRuntimeSettingsConfig": {
+      "type": "object",
+      "properties": {
+        "compaction": {
+          "default": {
+            "auto_retry_overflow": true,
+            "model_backed": false,
+            "model_ref": null,
+            "split_oversized_turns": false
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/CompactionRuntimeConfig"
             }
           ]
         }

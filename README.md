@@ -33,7 +33,7 @@ The current blessed default path is:
 - provider: `default` (`openai_compatible`) via the local CLIProxy-compatible loopback endpoint
 - default agent: `build`
 - default model: `default/gpt-5.4`
-- interactive model: `default/gpt-5.4-mini`
+- interactive model: `default/gpt-5.4-mini` (`high` reasoning preset)
 
 Primary shipped agents are discovered from `.agent-harness/agents/*.md` and
 filled in from the runtime config's `model` default:
@@ -109,9 +109,9 @@ deterministic and provider-free. `--mode live` and `--mode all` exercise the too
 path against the configured provider, including best-effort LSP diagnostics, fail-open unsupported
 LSP probes, and absolute-path workspace reads.
 
-The shipped `default` provider points at the local CLIProxy-compatible bridge (`http://127.0.0.1:8317/v1`) and uses an explicit local placeholder bearer token so the default flow stays aligned between docs, config, and live signoff lanes without depending on `OPENAI_API_KEY`.
+The shipped `default` provider points at the local CLIProxy-compatible bridge (`http://127.0.0.1:8317/v1`) and uses an explicit local placeholder bearer token so the default flow stays aligned between docs, config, and live signoff lanes without depending on `OPENAI_API_KEY`. Its catalog mirrors the configured CLIProxyAPI GPT family, including GPT 5.5, GPT 5.4, GPT 5.4 Mini, GPT 5.4 extended-context presets, GPT 5.3 Codex, GPT 5.2, and GPT 5.1/Codex variants.
 
-Model switching is not exposed in the TUI yet; the unfinished `/model` slash command and `switch_model` palette entry are intentionally hidden until that surface is fully implemented.
+The TUI exposes workflow slash commands for `/model`, `/resume`, and `/new`. `/model` switches the agent/model used for subsequent turns, `/resume` opens the saved-session picker, and `/new` starts a clean live run.
 
 ## Shipped workflow surfaces
 

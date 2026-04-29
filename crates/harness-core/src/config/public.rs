@@ -9,6 +9,9 @@ const ALLOWED_PUBLIC_TOP_LEVEL_CONFIG_KEYS: &[&str] = &[
     "model",
     "small_model",
     "smallModel",
+    "model_profile",
+    "modelProfile",
+    "model_profiles",
     "agents",
     "agent",
     "categories",
@@ -44,6 +47,13 @@ pub struct PublicRuntimeConfig {
     pub model: Option<String>,
     #[serde(default, alias = "smallModel")]
     pub small_model: Option<String>,
+    #[serde(
+        rename = "model_profile",
+        default,
+        alias = "modelProfile",
+        alias = "model_profiles"
+    )]
+    pub model_profiles: BTreeMap<String, ModelProfileConfig>,
     #[serde(default)]
     pub agent: BTreeMap<String, PublicAgentConfig>,
     #[serde(default, alias = "defaultAgent")]
@@ -53,9 +63,18 @@ pub struct PublicRuntimeConfig {
     #[serde(default)]
     pub mcp: BTreeMap<String, McpServerConfig>,
     #[serde(default)]
+    pub runtime: PublicRuntimeSettingsConfig,
+    #[serde(default)]
     pub skills: SkillsConfig,
     #[serde(default)]
     pub instructions: Option<InstructionList>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PublicRuntimeSettingsConfig {
+    #[serde(default)]
+    pub compaction: CompactionRuntimeConfig,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -265,6 +284,22 @@ fn canonicalize_runtime_aliases(runtime: &mut serde_json::Value) {
         .and_then(serde_json::Value::as_object_mut)
     {
         canonicalize_object_aliases(prompt, &[("waitTimeoutMs", "wait_timeout_ms")]);
+    }
+
+    if let Some(compaction) = runtime_object
+        .get_mut("compaction")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        canonicalize_object_aliases(
+            compaction,
+            &[
+                ("modelBacked", "model_backed"),
+                ("modelRef", "model_ref"),
+                ("model", "model_ref"),
+                ("splitOversizedTurns", "split_oversized_turns"),
+                ("autoRetryOverflow", "auto_retry_overflow"),
+            ],
+        );
     }
 }
 
@@ -488,6 +523,14 @@ pub(super) fn translate_public_runtime_root(
         .and_then(serde_json::Value::as_str)
         .map(str::to_string);
 
+    let mut model_profiles = serde_json::json!({});
+    for key in ["model_profile", "modelProfile", "model_profiles"] {
+        if let Some(value) = object.get(key) {
+            merge_config_value(&mut model_profiles, value.clone());
+        }
+    }
+    translated.insert("model_profile".to_string(), model_profiles);
+
     let mut agents = BTreeMap::new();
     if let Some(value) = object.get("agents") {
         let legacy: BTreeMap<String, ProfileConfig> = serde_json::from_value(value.clone())
@@ -571,6 +614,11 @@ pub(super) fn translate_public_runtime_root(
         "deterministic": {
             "enabled": false,
             "seed": 42,
+        },
+        "compaction": {
+            "model_backed": false,
+            "split_oversized_turns": false,
+            "auto_retry_overflow": true,
         },
     });
     if let Some(value) = object.get("runtime") {

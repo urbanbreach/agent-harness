@@ -81,6 +81,13 @@ pub struct HarnessConfig {
     #[serde(rename = "$schema", default)]
     pub schema: Option<String>,
     pub providers: BTreeMap<String, ProviderConfig>,
+    #[serde(
+        rename = "model_profile",
+        default,
+        alias = "modelProfile",
+        alias = "model_profiles"
+    )]
+    pub model_profiles: BTreeMap<String, ModelProfileConfig>,
     #[serde(default)]
     pub agents: BTreeMap<String, ProfileConfig>,
     pub permissions: PermissionsConfig,
@@ -278,47 +285,18 @@ impl HarnessConfig {
             return Err(ConfigError::MissingRequiredSections("agents".to_string()));
         }
 
-        for (agent_name, agent) in &self.agents {
-            let Some((provider_name, model_name)) = parse_model_ref(&agent.model_ref) else {
-                return Err(ConfigError::InvalidReference(format!(
-                    "agent `{agent_name}` has invalid `model_ref` `{}`; use `<provider>:<model>`",
-                    agent.model_ref
-                )));
-            };
-
-            let Some(provider) = self.providers.get(provider_name) else {
-                return Err(ConfigError::InvalidReference(format!(
-                    "agent `{agent_name}` references unknown provider `{provider_name}` in `model_ref` `{}`; available providers: {}",
-                    agent.model_ref,
-                    format_name_list(self.providers.keys().map(|name| name.as_str()))
-                )));
-            };
-
-            let models = provider.models();
-            let Some(model) = models.get(model_name) else {
-                return Err(ConfigError::InvalidReference(format!(
-                    "agent `{agent_name}` references unknown model `{model_name}` in `model_ref` `{}`; available models for provider `{provider_name}`: {}",
-                    agent.model_ref,
-                    format_name_list(models.keys().map(|name| name.as_str()))
-                )));
-            };
-
-            if let Some(variant_name) = agent.variant.as_deref() {
-                let Some(variant) = model.variants.get(variant_name) else {
-                    return Err(ConfigError::InvalidReference(format!(
-                        "agent `{agent_name}` references unknown variant `{variant_name}` for model `{}`; available variants: {}",
-                        agent.model_ref,
-                        format_name_list(model.variants.keys().map(|name| name.as_str()))
-                    )));
-                };
-
-                if variant.disabled {
-                    return Err(ConfigError::InvalidReference(format!(
-                        "agent `{agent_name}` references disabled variant `{variant_name}` for model `{}`; choose an enabled variant",
-                        agent.model_ref
-                    )));
-                }
+        for profile_name in self.model_profiles.keys() {
+            if profile_name.trim().is_empty() {
+                return Err(ConfigError::InvalidReference(
+                    "model_profile contains an empty profile name; use explicit names like `fast` or `reasoning`"
+                        .to_string(),
+                ));
             }
+            resolve_named_model_profile(self, profile_name, None)?;
+        }
+
+        for (agent_name, agent) in &self.agents {
+            resolve_agent_model_selection(self, agent_name, agent)?;
         }
 
         if let Some(default_profile) = self.ui.default_profile.as_deref() {
@@ -648,6 +626,35 @@ pub struct RuntimeConfig {
     pub prompt: PromptRuntimeConfig,
     #[serde(default)]
     pub deterministic: DeterministicConfig,
+    #[serde(default)]
+    pub compaction: CompactionRuntimeConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CompactionRuntimeConfig {
+    #[serde(default, alias = "modelBacked")]
+    pub model_backed: bool,
+    #[serde(default, alias = "modelRef", alias = "model")]
+    pub model_ref: Option<String>,
+    #[serde(default, alias = "splitOversizedTurns")]
+    pub split_oversized_turns: bool,
+    #[serde(
+        default = "default_compaction_auto_retry_overflow",
+        alias = "autoRetryOverflow"
+    )]
+    pub auto_retry_overflow: bool,
+}
+
+impl Default for CompactionRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            model_backed: false,
+            model_ref: None,
+            split_oversized_turns: false,
+            auto_retry_overflow: default_compaction_auto_retry_overflow(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -852,6 +859,13 @@ pub struct OpenAiCompatibleProviderConfig {
     #[serde(rename = "apiKey", default, alias = "api_key")]
     pub api_key: String,
     #[serde(
+        rename = "apiKeyEnv",
+        default,
+        alias = "api_key_env",
+        alias = "apiKeyEnvironment"
+    )]
+    pub api_key_env: Vec<String>,
+    #[serde(
         rename = "timeoutMs",
         default = "default_provider_timeout_ms",
         alias = "timeout_ms"
@@ -880,6 +894,12 @@ impl OpenAiCompatibleProviderConfig {
             self.options.api_key.take(),
             "provider openai_compatible.api_key",
             "provider openai_compatible.options.apiKey",
+        )?;
+        merge_vec_alias(
+            &mut self.api_key_env,
+            std::mem::take(&mut self.options.api_key_env),
+            "provider openai_compatible.api_key_env",
+            "provider openai_compatible.options.apiKeyEnv",
         )?;
         merge_string_alias(
             &mut self.name,
@@ -927,6 +947,13 @@ pub struct OpenAiCompatibleProviderOptions {
     pub base_url: Option<String>,
     #[serde(rename = "apiKey", default, alias = "api_key")]
     pub api_key: Option<String>,
+    #[serde(
+        rename = "apiKeyEnv",
+        default,
+        alias = "api_key_env",
+        alias = "apiKeyEnvironment"
+    )]
+    pub api_key_env: Vec<String>,
     #[serde(rename = "apiMode", default, alias = "api_mode")]
     pub api_mode: Option<OpenAiApiMode>,
     #[serde(rename = "timeoutMs", default, alias = "timeout_ms")]
@@ -961,6 +988,24 @@ pub struct ModelConfig {
     pub variants: BTreeMap<String, ModelVariantConfig>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ModelProfileConfig {
+    pub model: String,
+    #[serde(default)]
+    pub variant: Option<String>,
+    #[serde(default)]
+    pub fallback: Vec<ModelProfileTargetConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ModelProfileTargetConfig {
+    pub model: String,
+    #[serde(default)]
+    pub variant: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ModelVariantConfig {
@@ -975,6 +1020,8 @@ pub struct ModelVariantConfig {
     pub metadata: ModelVariantMetadataConfig,
     #[serde(default)]
     pub disabled: bool,
+    #[serde(default, alias = "contextWindowTokens")]
+    pub context_window_tokens: Option<u32>,
     #[serde(default, alias = "maxInputTokens")]
     pub max_input_tokens: Option<u32>,
     #[serde(default, alias = "maxOutputTokens")]
@@ -1022,6 +1069,32 @@ pub struct ResolvedModelCatalogEntry {
     pub text_verbosity: Option<String>,
     pub recommended_for: Option<String>,
     pub supports_reasoning_summaries: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedModelTarget {
+    pub model_ref: String,
+    pub provider: String,
+    pub model: String,
+    pub variant: Option<String>,
+    pub reasoning_effort: Option<String>,
+    pub text_verbosity: Option<String>,
+    pub reasoning_summary: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedModelSelection {
+    pub selector: String,
+    pub profile: Option<String>,
+    pub primary: ResolvedModelTarget,
+    pub fallback: Vec<ResolvedModelTarget>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedModelProfileCatalogEntry {
+    pub name: String,
+    pub primary: ResolvedModelTarget,
+    pub fallback: Vec<ResolvedModelTarget>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
@@ -1450,6 +1523,10 @@ fn default_prompt_wait_timeout_ms() -> u64 {
     30_000
 }
 
+fn default_compaction_auto_retry_overflow() -> bool {
+    true
+}
+
 fn default_hook_timeout_ms() -> u64 {
     5_000
 }
@@ -1533,6 +1610,156 @@ fn parse_model_ref(model_ref: &str) -> Option<(&str, &str)> {
         return None;
     }
     Some((provider_name, model_name))
+}
+
+fn is_direct_model_ref(model_ref: &str) -> bool {
+    model_ref.contains(':') || model_ref.contains('/')
+}
+
+fn normalize_model_ref(provider: &str, model: &str) -> String {
+    format!("{provider}:{model}")
+}
+
+pub fn resolve_model_selection(
+    cfg: &HarnessConfig,
+    selector: &str,
+    variant_override: Option<&str>,
+) -> Result<ResolvedModelSelection, ConfigError> {
+    let selector = selector.trim();
+    if selector.is_empty() {
+        return Err(ConfigError::InvalidReference(
+            "model selector must not be empty; use `<provider>:<model>` or a configured `model_profile` name"
+                .to_string(),
+        ));
+    }
+
+    if is_direct_model_ref(selector) {
+        return resolve_direct_model_target(cfg, selector, variant_override, "model selector").map(
+            |primary| ResolvedModelSelection {
+                selector: selector.to_string(),
+                profile: None,
+                primary,
+                fallback: Vec::new(),
+            },
+        );
+    }
+
+    if cfg.model_profiles.contains_key(selector) {
+        return resolve_named_model_profile(cfg, selector, variant_override);
+    }
+
+    Err(ConfigError::InvalidReference(format!(
+        "unknown model profile `{selector}`; unqualified model selectors must match `model_profile` names; available profiles: {}",
+        format_name_list(cfg.model_profiles.keys().map(|name| name.as_str()))
+    )))
+}
+
+fn resolve_agent_model_selection(
+    cfg: &HarnessConfig,
+    agent_name: &str,
+    agent: &ProfileConfig,
+) -> Result<ResolvedModelSelection, ConfigError> {
+    resolve_model_selection(cfg, &agent.model_ref, agent.variant.as_deref()).map_err(|err| {
+        ConfigError::InvalidReference(format!(
+            "agent `{agent_name}` has invalid model selection `{}`: {err}",
+            agent.model_ref
+        ))
+    })
+}
+
+fn resolve_named_model_profile(
+    cfg: &HarnessConfig,
+    profile_name: &str,
+    variant_override: Option<&str>,
+) -> Result<ResolvedModelSelection, ConfigError> {
+    let profile = cfg.model_profiles.get(profile_name).ok_or_else(|| {
+        ConfigError::InvalidReference(format!(
+            "unknown model profile `{profile_name}`; available profiles: {}",
+            format_name_list(cfg.model_profiles.keys().map(|name| name.as_str()))
+        ))
+    })?;
+
+    let primary = resolve_model_profile_target(
+        cfg,
+        &ModelProfileTargetConfig {
+            model: profile.model.clone(),
+            variant: profile.variant.clone(),
+        },
+        variant_override,
+        &format!("model_profile `{profile_name}`"),
+    )?;
+    let fallback = profile
+        .fallback
+        .iter()
+        .enumerate()
+        .map(|(index, target)| {
+            resolve_model_profile_target(
+                cfg,
+                target,
+                None,
+                &format!("model_profile `{profile_name}` fallback[{index}]"),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(ResolvedModelSelection {
+        selector: profile_name.to_string(),
+        profile: Some(profile_name.to_string()),
+        primary,
+        fallback,
+    })
+}
+
+fn resolve_model_profile_target(
+    cfg: &HarnessConfig,
+    target: &ModelProfileTargetConfig,
+    variant_override: Option<&str>,
+    context: &str,
+) -> Result<ResolvedModelTarget, ConfigError> {
+    if !is_direct_model_ref(&target.model) {
+        return Err(ConfigError::InvalidReference(format!(
+            "{context} references `{}`; model profile targets must use direct refs like `<provider>:<model>` or `<provider>/<model>`",
+            target.model
+        )));
+    }
+
+    resolve_direct_model_target(
+        cfg,
+        &target.model,
+        variant_override.or(target.variant.as_deref()),
+        context,
+    )
+}
+
+fn resolve_direct_model_target(
+    cfg: &HarnessConfig,
+    model_ref: &str,
+    variant_name: Option<&str>,
+    context: &str,
+) -> Result<ResolvedModelTarget, ConfigError> {
+    let Some((provider_name, model_name)) = parse_model_ref(model_ref) else {
+        return Err(ConfigError::InvalidReference(format!(
+            "{context} has invalid model ref `{model_ref}`; use `<provider>:<model>` or `<provider>/<model>`"
+        )));
+    };
+
+    let resolved = resolve_configured_model_metadata(cfg, provider_name, model_name, variant_name)
+        .map_err(|err| ConfigError::InvalidReference(format!("{context}: {err}")))?;
+    Ok(ResolvedModelTarget {
+        model_ref: normalize_model_ref(&resolved.provider, &resolved.model),
+        provider: resolved.provider,
+        model: resolved.model,
+        variant: resolved.variant,
+        reasoning_effort: resolved.reasoning_effort.clone(),
+        text_verbosity: resolved.text_verbosity,
+        reasoning_summary: if resolved.supports_reasoning_summaries
+            && resolved.reasoning_effort.is_some()
+        {
+            Some("auto".to_string())
+        } else {
+            None
+        },
+    })
 }
 
 fn validate_skill_root(root: &Path, location: &str) -> Result<(), ConfigError> {
@@ -1822,16 +2049,13 @@ pub fn resolve_profile_model_metadata(
         ))
     })?;
 
-    let Some((provider_name, model_name)) = parse_model_ref(&profile.model_ref) else {
-        return Err(ConfigError::InvalidReference(format!(
-            "agent `{profile_name}` has invalid `model_ref` `{}`; use `<provider>:<model>`",
-            profile.model_ref
-        )));
-    };
+    let selection = resolve_agent_model_selection(cfg, profile_name, profile)?;
+    let provider_name = selection.primary.provider.as_str();
+    let model_name = selection.primary.model.as_str();
 
     let provider = cfg.providers.get(provider_name).ok_or_else(|| {
         ConfigError::InvalidReference(format!(
-            "agent `{profile_name}` references unknown provider `{provider_name}` in `model_ref` `{}`; available providers: {}",
+            "agent `{profile_name}` references unknown provider `{provider_name}` in model selection `{}`; available providers: {}",
             profile.model_ref,
             format_name_list(cfg.providers.keys().map(|name| name.as_str()))
         ))
@@ -1839,18 +2063,18 @@ pub fn resolve_profile_model_metadata(
 
     let models = provider.models();
     let model = models.get(model_name).ok_or_else(|| {
-        ConfigError::InvalidReference(format!(
-            "agent `{profile_name}` references unknown model `{model_name}` in `model_ref` `{}`; available models for provider `{provider_name}`: {}",
-            profile.model_ref,
-            format_name_list(models.keys().map(|name| name.as_str()))
-        ))
-    })?;
+            ConfigError::InvalidReference(format!(
+                "agent `{profile_name}` references unknown model `{model_name}` in model selection `{}`; available models for provider `{provider_name}`: {}",
+                profile.model_ref,
+                format_name_list(models.keys().map(|name| name.as_str()))
+            ))
+        })?;
 
-    let variant = profile.variant.as_deref().map(|variant_name| {
+    let variant = selection.primary.variant.as_deref().map(|variant_name| {
         let variant = model.variants.get(variant_name).ok_or_else(|| {
             ConfigError::InvalidReference(format!(
                 "agent `{profile_name}` references unknown variant `{variant_name}` for model `{}`; available variants: {}",
-                profile.model_ref,
+                selection.primary.model_ref,
                 format_name_list(model.variants.keys().map(|name| name.as_str()))
             ))
         })?;
@@ -1858,7 +2082,7 @@ pub fn resolve_profile_model_metadata(
         if variant.disabled {
             return Err(ConfigError::InvalidReference(format!(
                 "agent `{profile_name}` references disabled variant `{variant_name}` for model `{}`; choose an enabled variant",
-                profile.model_ref
+                selection.primary.model_ref
             )));
         }
 
@@ -1873,6 +2097,9 @@ pub fn resolve_profile_model_metadata(
             .clone()
             .unwrap_or_else(|| variant_name.to_string())
     });
+    let context_window_tokens = variant
+        .and_then(|(_, variant_cfg)| variant_cfg.context_window_tokens)
+        .or(model.metadata.context_window_tokens);
     let max_input_tokens = variant
         .and_then(|(_, variant_cfg)| variant_cfg.max_input_tokens)
         .or(model.max_input_tokens);
@@ -1892,11 +2119,11 @@ pub fn resolve_profile_model_metadata(
         variant_display_label,
         display_label,
         token_window_label: build_token_window_label(
-            model.metadata.context_window_tokens,
+            context_window_tokens,
             max_input_tokens,
             max_output_tokens,
         ),
-        context_window_tokens: model.metadata.context_window_tokens,
+        context_window_tokens,
         max_input_tokens,
         max_output_tokens,
         description: variant.and_then(|(_, variant_cfg)| variant_cfg.metadata.description.clone()),
@@ -1998,6 +2225,23 @@ pub fn configured_model_catalog(cfg: &HarnessConfig) -> Vec<ResolvedModelCatalog
     entries
 }
 
+pub fn configured_model_profile_catalog(
+    cfg: &HarnessConfig,
+) -> Result<Vec<ResolvedModelProfileCatalogEntry>, ConfigError> {
+    cfg.model_profiles
+        .keys()
+        .map(|name| {
+            resolve_named_model_profile(cfg, name, None).map(|selection| {
+                ResolvedModelProfileCatalogEntry {
+                    name: name.clone(),
+                    primary: selection.primary,
+                    fallback: selection.fallback,
+                }
+            })
+        })
+        .collect()
+}
+
 fn build_resolved_model_catalog_entry(
     provider_name: &str,
     model_name: &str,
@@ -2005,6 +2249,9 @@ fn build_resolved_model_catalog_entry(
     provider: &ProviderConfig,
     variant: Option<(&str, &ModelVariantConfig)>,
 ) -> ResolvedModelCatalogEntry {
+    let context_window_tokens = variant
+        .and_then(|(_, variant_cfg)| variant_cfg.context_window_tokens)
+        .or(model.metadata.context_window_tokens);
     let max_input_tokens = variant
         .and_then(|(_, variant_cfg)| variant_cfg.max_input_tokens)
         .or(model.max_input_tokens);
@@ -2027,11 +2274,11 @@ fn build_resolved_model_catalog_entry(
         }),
         display_label: build_model_display_label(model, variant),
         token_window_label: build_token_window_label(
-            model.metadata.context_window_tokens,
+            context_window_tokens,
             max_input_tokens,
             max_output_tokens,
         ),
-        context_window_tokens: model.metadata.context_window_tokens,
+        context_window_tokens,
         max_input_tokens,
         max_output_tokens,
         description: variant.and_then(|(_, variant_cfg)| variant_cfg.metadata.description.clone()),
@@ -2089,6 +2336,28 @@ fn merge_string_alias(
 fn merge_map_alias(
     target: &mut BTreeMap<String, String>,
     alias: BTreeMap<String, String>,
+    target_path: &str,
+    alias_path: &str,
+) -> Result<(), ConfigError> {
+    if alias.is_empty() {
+        return Ok(());
+    }
+    if target.is_empty() {
+        *target = alias;
+        return Ok(());
+    }
+    if *target == alias {
+        return Ok(());
+    }
+
+    Err(ConfigError::InvalidReference(format!(
+        "{target_path} conflicts with {alias_path}; use one value"
+    )))
+}
+
+fn merge_vec_alias(
+    target: &mut Vec<String>,
+    alias: Vec<String>,
     target_path: &str,
     alias_path: &str,
 ) -> Result<(), ConfigError> {
@@ -2964,7 +3233,7 @@ mod tests {
         let err = load_config_from_str(&cfg).expect_err("unknown provider must fail");
         assert_eq!(
             err.to_string(),
-            "agent `deep` references unknown provider `missing` in `model_ref` `missing:gpt-4o-mini`; available providers: default"
+            "agent `deep` has invalid model selection `missing:gpt-4o-mini`: model selector: unknown provider `missing`; available providers: default"
         );
     }
 
@@ -3424,7 +3693,19 @@ mod tests {
         assert!(properties.contains_key("instructions"));
         assert!(!properties.contains_key("categories"));
         assert!(!properties.contains_key("profiles"));
-        assert!(!properties.contains_key("runtime"));
+        let runtime = properties
+            .get("runtime")
+            .and_then(|value| value.get("allOf"))
+            .and_then(serde_json::Value::as_array)
+            .expect("public runtime schema should expose the narrow runtime settings surface");
+        let runtime_ref = runtime
+            .first()
+            .and_then(|value| value.get("$ref"))
+            .and_then(serde_json::Value::as_str);
+        assert_eq!(
+            runtime_ref,
+            Some("#/definitions/PublicRuntimeSettingsConfig")
+        );
         assert!(!properties.contains_key("integrations"));
     }
 

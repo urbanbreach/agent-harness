@@ -96,9 +96,51 @@ pub struct CompletionUsage {
     pub total_tokens: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ProviderStreamStartMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_cache_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ProviderStreamThinkingMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ProviderStreamFinishedMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_response_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_cache_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_stop_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assistant_message_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<ProviderStreamThinkingMetadata>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProviderStreamEvent {
     Start,
+    Started {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        metadata: Option<ProviderStreamStartMetadata>,
+    },
     TextDelta(String),
     ReasoningDelta(String),
     ToolCallDelta {
@@ -114,6 +156,11 @@ pub enum ProviderStreamEvent {
     },
     Done {
         usage: CompletionUsage,
+    },
+    DoneWithMetadata {
+        usage: CompletionUsage,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        metadata: Option<ProviderStreamFinishedMetadata>,
     },
     Error {
         message: String,

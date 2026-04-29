@@ -168,16 +168,20 @@ fn schema_cli_prints_runtime_json_schema() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let body = String::from_utf8_lossy(&output.stdout);
-    assert!(body.contains("\"provider\""));
-    assert!(body.contains("\"model\""));
-    assert!(body.contains("\"small_model\""));
-    assert!(body.contains("\"permission\""));
-    assert!(body.contains("\"mcp\""));
-    assert!(!body.contains("\"integrations\""));
-    assert!(!body.contains("\"runtime\""));
-
     let schema: Value = serde_json::from_slice(&output.stdout).expect("schema json");
+    let root_properties = schema
+        .get("properties")
+        .and_then(Value::as_object)
+        .expect("runtime schema properties");
+    assert!(root_properties.contains_key("provider"));
+    assert!(root_properties.contains_key("model"));
+    assert!(root_properties.contains_key("small_model"));
+    assert!(root_properties.contains_key("model_profile"));
+    assert!(root_properties.contains_key("permission"));
+    assert!(root_properties.contains_key("mcp"));
+    assert!(root_properties.contains_key("runtime"));
+    assert!(!root_properties.contains_key("integrations"));
+
     let definitions = schema
         .get("definitions")
         .and_then(Value::as_object)
@@ -203,6 +207,7 @@ fn schema_cli_prints_runtime_json_schema() {
         .expect("ProviderConfig properties");
     assert!(provider_properties.contains_key("baseURL"));
     assert!(provider_properties.contains_key("apiKey"));
+    assert!(provider_properties.contains_key("apiKeyEnv"));
     assert!(provider_properties.contains_key("apiMode"));
     assert!(provider_properties.contains_key("timeoutMs"));
     assert!(!provider_properties.contains_key("base_url"));
@@ -214,6 +219,7 @@ fn schema_cli_prints_runtime_json_schema() {
         .expect("OpenAiCompatibleProviderOptions properties");
     assert!(options_properties.contains_key("baseURL"));
     assert!(options_properties.contains_key("apiKey"));
+    assert!(options_properties.contains_key("apiKeyEnv"));
     assert!(options_properties.contains_key("apiMode"));
     assert!(options_properties.contains_key("timeoutMs"));
     assert!(!options_properties.contains_key("base_url"));
@@ -241,10 +247,14 @@ fn schema_cli_prints_tui_json_schema() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let body = String::from_utf8_lossy(&output.stdout);
-    assert!(body.contains("\"keybinds\""));
-    assert!(!body.contains("\"parity\""));
-    assert!(!body.contains("\"default_profile\""));
+    let schema: Value = serde_json::from_slice(&output.stdout).expect("tui schema json");
+    let properties = schema
+        .get("properties")
+        .and_then(Value::as_object)
+        .expect("tui schema properties");
+    assert!(properties.contains_key("keybinds"));
+    assert!(!properties.contains_key("parity"));
+    assert!(!properties.contains_key("default_profile"));
 }
 
 #[test]
@@ -573,7 +583,8 @@ fn config_validate_cli_rejects_unknown_provider_reference() {
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("agent `deep` references unknown provider `missing`"));
+    assert!(stderr.contains("agent `deep` has invalid model selection `missing/gpt-4o-mini`"));
+    assert!(stderr.contains("unknown provider `missing`"));
 }
 
 #[test]
@@ -691,6 +702,12 @@ fn shipped_runtime_example_parses_as_public_runtime_config() {
     assert!(!shipped.contains("\"api_key\""));
     assert!(!shipped.contains("\"api_mode\""));
     assert!(!shipped.contains("\"timeout_ms\""));
+    assert!(shipped.contains("\"model_backed\""));
+    assert!(shipped.contains("\"split_oversized_turns\""));
+    assert!(shipped.contains("\"auto_retry_overflow\""));
+    assert!(!shipped.contains("\"modelBacked\""));
+    assert!(!shipped.contains("\"splitOversizedTurns\""));
+    assert!(!shipped.contains("\"autoRetryOverflow\""));
 }
 
 #[test]
@@ -714,6 +731,33 @@ fn public_runtime_config_accepts_top_level_skills() {
         parsed.skills.permissions.get("*"),
         Some(&PermissionMode::Allow)
     );
+}
+
+#[test]
+fn public_runtime_config_accepts_compaction_settings() {
+    let parsed: PublicRuntimeConfig = json5::from_str(
+        r#"
+        {
+          runtime: {
+            compaction: {
+              modelBacked: true,
+              model: "default/gpt-5.4-mini",
+              splitOversizedTurns: true,
+              autoRetryOverflow: false,
+            }
+          }
+        }
+        "#,
+    )
+    .expect("parse runtime compaction config");
+
+    assert!(parsed.runtime.compaction.model_backed);
+    assert_eq!(
+        parsed.runtime.compaction.model_ref.as_deref(),
+        Some("default/gpt-5.4-mini")
+    );
+    assert!(parsed.runtime.compaction.split_oversized_turns);
+    assert!(!parsed.runtime.compaction.auto_retry_overflow);
 }
 
 #[test]

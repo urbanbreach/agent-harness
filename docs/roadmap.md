@@ -18,7 +18,7 @@ Before widening the roadmap, the current shell contract should stay explicit:
 
 - blessed provider: the shipped `default` `openai_compatible` provider in `configs/harness.example.jsonc`
 - blessed transport path: local CLIProxy-compatible loopback endpoint at `http://127.0.0.1:8317/v1`
-- blessed default model: `gpt-5.4-mini` with low reasoning
+- blessed default model: `gpt-5.4`, with `gpt-5.4-mini` high reasoning for interactive work
 
 Primary agents for roadmap work:
 
@@ -36,7 +36,7 @@ Secondary/supporting agents:
 - Keep the canonical journey signoff map in `docs/testing.md` current, including explicit CLI/TUI expectations and any live-coverage gaps.
 - Treat PTY PNG/snapshot evidence and live transcript/manifest artifacts as acceptance criteria for parity-critical changes.
 - Reach tool parity with other harnesses named in this document and make sure tests verify actual tool functionality against live providers.
-- Flesh out tests to run against live providers via CLIProxyAPI using `gpt-5.4-mini` with low reasoning.
+- Flesh out tests to run against live providers via CLIProxyAPI using the documented default model plus the `gpt-5.4-mini` signoff variants.
 - Expand live verification so parity-critical flows are tested through both CLI and TUI paths.
 - Track provider-specific behavior differences in tests instead of assuming one provider's behavior generalizes cleanly.
 

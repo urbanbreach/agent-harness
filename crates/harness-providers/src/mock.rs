@@ -10,7 +10,7 @@ use tokio_stream::{self as stream, StreamExt};
 
 use crate::{
     CompletionRequest, CompletionUsage, Provider, ProviderEventStream, ProviderStreamEvent,
-    ToolChoice, ToolDef,
+    ProviderStreamFinishedMetadata, ProviderStreamStartMetadata, ToolChoice, ToolDef,
 };
 
 #[derive(Debug, Error)]
@@ -187,6 +187,10 @@ impl From<FixtureCompletionRequest> for CompletionRequest {
 #[serde(tag = "type", rename_all = "snake_case")]
 enum FixtureStreamEvent {
     Start,
+    Started {
+        #[serde(default)]
+        metadata: Option<ProviderStreamStartMetadata>,
+    },
     ReasoningDelta {
         text: String,
     },
@@ -207,6 +211,11 @@ enum FixtureStreamEvent {
     Done {
         usage: CompletionUsage,
     },
+    DoneWithMetadata {
+        usage: CompletionUsage,
+        #[serde(default)]
+        metadata: Option<ProviderStreamFinishedMetadata>,
+    },
     Error {
         message: String,
     },
@@ -216,6 +225,7 @@ impl From<FixtureStreamEvent> for ProviderStreamEvent {
     fn from(value: FixtureStreamEvent) -> Self {
         match value {
             FixtureStreamEvent::Start => Self::Start,
+            FixtureStreamEvent::Started { metadata } => Self::Started { metadata },
             FixtureStreamEvent::ReasoningDelta { text } => Self::ReasoningDelta(text),
             FixtureStreamEvent::TextDelta { text } => Self::TextDelta(text),
             FixtureStreamEvent::ToolCallDelta {
@@ -237,6 +247,9 @@ impl From<FixtureStreamEvent> for ProviderStreamEvent {
                 arguments_json,
             },
             FixtureStreamEvent::Done { usage } => Self::Done { usage },
+            FixtureStreamEvent::DoneWithMetadata { usage, metadata } => {
+                Self::DoneWithMetadata { usage, metadata }
+            }
             FixtureStreamEvent::Error { message } => Self::Error { message },
         }
     }

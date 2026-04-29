@@ -10,7 +10,7 @@ use super::*;
 const REQUIRED_INTERNAL_CONFIG_SECTIONS: [&str; 4] =
     ["integrations", "permissions", "providers", "runtime"];
 
-const ALLOWED_INTERNAL_TOP_LEVEL_CONFIG_KEYS: [&str; 15] = [
+const ALLOWED_INTERNAL_TOP_LEVEL_CONFIG_KEYS: [&str; 18] = [
     "$schema",
     "agents",
     "defaultAgent",
@@ -21,6 +21,9 @@ const ALLOWED_INTERNAL_TOP_LEVEL_CONFIG_KEYS: [&str; 15] = [
     "integrations",
     "lsp",
     "logging",
+    "modelProfile",
+    "model_profile",
+    "model_profiles",
     "permissions",
     "providers",
     "runtime",

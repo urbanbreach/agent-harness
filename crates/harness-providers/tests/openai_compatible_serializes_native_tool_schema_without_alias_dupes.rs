@@ -5,7 +5,7 @@ use harness_providers::openai::{
 };
 use harness_providers::{
     CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
-    ProviderStreamEvent, ToolChoice, ToolDef,
+    ProviderStreamEvent, ProviderStreamFinishedMetadata, ToolChoice, ToolDef,
 };
 use serde_json::json;
 use tokio_stream::StreamExt;
@@ -43,13 +43,17 @@ async fn openai_compatible_serializes_native_tool_schema_without_alias_dupes() {
     assert_eq!(
         events,
         vec![
-            ProviderStreamEvent::Start,
-            ProviderStreamEvent::Done {
+            ProviderStreamEvent::Started { metadata: None },
+            ProviderStreamEvent::DoneWithMetadata {
                 usage: CompletionUsage {
                     prompt_tokens: 1,
                     completion_tokens: 1,
                     total_tokens: 2,
                 },
+                metadata: Some(ProviderStreamFinishedMetadata {
+                    provider_stop_reason: Some("response.completed".to_string()),
+                    ..ProviderStreamFinishedMetadata::default()
+                }),
             },
         ]
     );
