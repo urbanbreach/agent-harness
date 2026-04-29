@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use syntect::easy::HighlightLines;
@@ -36,6 +36,20 @@ struct TranscriptToolCardShell {
 struct TranscriptQuestionAnswerItem {
     question: String,
     answer: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TranscriptTodoItem {
+    content: String,
+    status: TranscriptTodoStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TranscriptTodoStatus {
+    Pending,
+    InProgress,
+    Completed,
+    Cancelled,
 }
 
 const THINKING_TRACE_LABEL: &str = "Thinking:";
@@ -414,7 +428,6 @@ struct TranscriptTurnHeader {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum TranscriptBodyBlock {
     RichText(String),
-    WaitingResponse,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -450,8 +463,14 @@ enum TranscriptToolCallDetailBlock {
         text: String,
         tone: TranscriptToolCallDetailTone,
     },
-    PanelMessage {
-        text: String,
+    TodoList {
+        items: Vec<TranscriptTodoItem>,
+    },
+    BashPanel {
+        command: String,
+        output: String,
+        description: Option<String>,
+        expand_hint: Option<String>,
         tone: TranscriptToolCallDetailTone,
     },
     StructuredDiff {
@@ -534,6 +553,15 @@ const TRANSCRIPT_OPCODE_EDIT_INDENT: &str = "    ";
 const TRANSCRIPT_RAIL_GLYPH: &str = "┃";
 const TRANSCRIPT_SCROLLBAR_THUMB_GLYPH: &str = "█";
 const TRANSCRIPT_SECTION_GAP_HEIGHT: usize = 1;
+const HARNESS_BASH_OUTPUT_LINE_CLAMP: usize = 10;
+const HARNESS_BLOCK_TOOL_MARGIN_TOP: usize = 1;
+const HARNESS_BLOCK_TOOL_PADDING_TOP: usize = 1;
+const HARNESS_BLOCK_TOOL_PADDING_BOTTOM: usize = 1;
+const HARNESS_BLOCK_TOOL_PADDING_LEFT: usize = 2;
+const HARNESS_BLOCK_TOOL_TITLE_PADDING_LEFT: usize = 3;
+const HARNESS_BLOCK_TOOL_GAP: usize = 1;
+const HARNESS_SPLIT_RAIL_GLYPH: &str = "┃";
+const HARNESS_SPLIT_RAIL_WIDTH: usize = 1;
 const TRANSCRIPT_BRAILLE_SPINNER_FRAMES: [&str; 10] =
     ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -1446,8 +1474,6 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         body_blocks.push(TranscriptBodyBlock::RichText(
             activity.transcript_text.clone(),
         ));
-    } else if activity.status == ActivityStatus::Streaming {
-        body_blocks.push(TranscriptBodyBlock::WaitingResponse);
     }
 
     let ordered_tool_calls = activity
@@ -1619,14 +1645,27 @@ fn turn_event_matches_activity(
     request_id: &str,
 ) -> bool {
     match &event.payload {
-        harness_core::event::EventV1::ProviderReasoningDelta(data) => data.request_id == request_id,
-        harness_core::event::EventV1::ProviderStreamDelta(data) => data.request_id == request_id,
+        harness_core::event::EventV1::ProviderReasoningDelta(data) => {
+            provider_event_matches_activity(event, &data.request_id, request_id)
+        }
+        harness_core::event::EventV1::ProviderStreamDelta(data) => {
+            provider_event_matches_activity(event, &data.request_id, request_id)
+        }
         harness_core::event::EventV1::TaskCompleted(_)
         | harness_core::event::EventV1::ToolCallRequested(_) => {
             event.correlation_id.as_deref() == Some(request_id)
         }
         _ => false,
     }
+}
+
+fn provider_event_matches_activity(
+    event: &harness_core::event::EventEnvelopeV1,
+    provider_request_id: &str,
+    activity_request_id: &str,
+) -> bool {
+    provider_request_id == activity_request_id
+        || event.correlation_id.as_deref() == Some(activity_request_id)
 }
 
 #[derive(Debug, Clone)]
@@ -1662,7 +1701,11 @@ fn build_ordered_assistant_parts_from_events(
     }) {
         match &event.payload {
             harness_core::event::EventV1::ProviderReasoningDelta(data)
-                if data.request_id == activity.request_id =>
+                if provider_event_matches_activity(
+                    event,
+                    &data.request_id,
+                    &activity.request_id,
+                ) =>
             {
                 saw_turn_event = true;
                 if thinking_visible {
@@ -1677,7 +1720,11 @@ fn build_ordered_assistant_parts_from_events(
                 }
             }
             harness_core::event::EventV1::ProviderStreamDelta(data)
-                if data.request_id == activity.request_id =>
+                if provider_event_matches_activity(
+                    event,
+                    &data.request_id,
+                    &activity.request_id,
+                ) =>
             {
                 saw_turn_event = true;
                 if saw_tool_call {
@@ -1775,24 +1822,15 @@ fn build_ordered_assistant_parts_from_events(
         next_index += 1;
     }
 
-    if !saw_body_event {
-        if !activity.transcript_text.is_empty() {
-            parts.push(SequencedTranscriptAssistantPart {
-                seq: activity.last_seq,
-                index: next_index,
-                part: TranscriptAssistantPart::Body(TranscriptBodyBlock::RichText(
-                    activity.transcript_text.clone(),
-                )),
-            });
-            next_index += 1;
-        } else if activity.status == ActivityStatus::Streaming {
-            parts.push(SequencedTranscriptAssistantPart {
-                seq: activity.last_seq.saturating_add(1),
-                index: next_index,
-                part: TranscriptAssistantPart::Body(TranscriptBodyBlock::WaitingResponse),
-            });
-            next_index += 1;
-        }
+    if !saw_body_event && !activity.transcript_text.is_empty() {
+        parts.push(SequencedTranscriptAssistantPart {
+            seq: activity.last_seq,
+            index: next_index,
+            part: TranscriptAssistantPart::Body(TranscriptBodyBlock::RichText(
+                activity.transcript_text.clone(),
+            )),
+        });
+        next_index += 1;
     }
 
     for tool_call in pending_tool_calls.into_values() {
@@ -1967,6 +2005,7 @@ fn build_transcript_tool_call_section(
     let error_subtitle = tool_error_subtitle(tool_call);
     let error_body = tool_error_text(tool_call);
     let question_answers = resolved_question_answer_items(tool_call);
+    let todo_items = todo_items_from_tool_call(tool_call, session_path);
     let mut header_path_metadata = None;
 
     let (title, icon, visual_style, uses_generic_output_visibility) = match display_tool_id {
@@ -2014,22 +2053,21 @@ fn build_transcript_tool_call_section(
             TranscriptToolCallVisualStyle::Inline,
             false,
         ),
-        "shell.run" => {
-            let cmd = tool_summary_string(&tool_call.args_summary, &["cmd", "command"])
-                .unwrap_or_else(|| "Shell".to_string());
-            let shell_output = if tool_call.status == ToolCallDisplayStatus::Failed {
-                error_body
-                    .as_deref()
-                    .or(tool_call.output_summary.as_deref())
-            } else {
-                tool_call.output_summary.as_deref()
-            };
+        "shell.run" | "bash" => {
+            let cmd = shell_tool_command(tool_call).unwrap_or_else(|| "Shell".to_string());
+            let shell_output = shell_tool_output(tool_call).or_else(|| {
+                (tool_call.status == ToolCallDisplayStatus::Failed)
+                    .then(|| error_body.clone())
+                    .flatten()
+            });
             if shell_output.is_some() {
                 if let Some(output) = shell_output {
-                    push_collapsible_panel_block(
+                    push_collapsible_bash_panel_block(
                         &mut detail_blocks,
-                        &format!("$ {cmd}\n{}", format_detail_payload(output)),
-                        10,
+                        &cmd,
+                        &output,
+                        shell_tool_title_description(tool_call, session_path),
+                        HARNESS_BASH_OUTPUT_LINE_CLAMP,
                         expanded,
                         if tool_call.status == ToolCallDisplayStatus::Failed {
                             TranscriptToolCallDetailTone::Error
@@ -2189,12 +2227,21 @@ fn build_transcript_tool_call_section(
             TranscriptToolCallVisualStyle::Inline,
             true,
         ),
-        "todo.write" | "todo.read" => (
-            if display_tool_id == "todo.write" {
-                "Update todos".to_string()
-            } else {
-                "Read todos".to_string()
-            },
+        "todo.write" | "todowrite" => {
+            if !todo_items.is_empty() {
+                detail_blocks.push(TranscriptToolCallDetailBlock::TodoList {
+                    items: todo_items.clone(),
+                });
+            }
+            (
+                todo_tool_title(&todo_items),
+                None,
+                TranscriptToolCallVisualStyle::Block,
+                false,
+            )
+        }
+        "todo.read" | "todoread" => (
+            "Read todos".to_string(),
             Some("☑"),
             TranscriptToolCallVisualStyle::Inline,
             false,
@@ -2346,7 +2393,7 @@ fn build_transcript_tool_call_section(
         tool_disclosure_state(tool_call, tool_output_expanded)
     };
     let default_subtitle = match display_tool_id {
-        "shell.run" => shell_tool_subtitle(&tool_call.args_summary),
+        "shell.run" | "bash" => shell_tool_subtitle(&tool_call.args_summary),
         "edit.hashline_apply" => tool_call_path_metadata(tool_call.edit_path_display().as_deref())
             .map(|metadata| {
                 header_path_metadata = metadata.parent.clone();
@@ -2369,9 +2416,15 @@ fn build_transcript_tool_call_section(
     TranscriptToolCallSection {
         tool_call_id: tool_call.tool_call_id.clone(),
         header: TranscriptToolCallHeader {
-            tool_id: tool_call.tool_id.clone(),
+            tool_id: if matches!(display_tool_id, "shell.run" | "bash") {
+                display_tool_id.to_string()
+            } else {
+                tool_call.tool_id.clone()
+            },
             title,
-            subtitle: if display_tool_id == "shell.run" && !tool_call_denied(tool_call) {
+            subtitle: if matches!(display_tool_id, "shell.run" | "bash")
+                && !tool_call_denied(tool_call)
+            {
                 default_subtitle
             } else if tool_call.status == ToolCallDisplayStatus::Failed {
                 join_tool_subtitles(default_subtitle, error_subtitle)
@@ -2402,6 +2455,139 @@ fn question_tool_subtitle(question_answers: &[TranscriptQuestionAnswerItem]) -> 
     } else {
         format!("answered {count} questions")
     })
+}
+
+fn todo_tool_title(items: &[TranscriptTodoItem]) -> String {
+    if items.is_empty() {
+        return "Todos".to_string();
+    }
+    let done = items
+        .iter()
+        .filter(|item| item.status == TranscriptTodoStatus::Completed)
+        .count();
+    format!("{done} of {} todos completed", items.len())
+}
+
+fn todo_items_from_tool_call(
+    tool_call: &crate::app::ToolCallEntry,
+    session_path: Option<&Path>,
+) -> Vec<TranscriptTodoItem> {
+    todo_items_from_value(tool_call.output_json.as_ref())
+        .or_else(|| todo_items_from_artifacts(tool_call, session_path))
+        .or_else(|| {
+            serde_json::from_str::<serde_json::Value>(&tool_call.args_summary)
+                .ok()
+                .and_then(|value| todo_items_from_value(Some(&value)))
+        })
+        .unwrap_or_default()
+}
+
+fn todo_items_from_artifacts(
+    tool_call: &crate::app::ToolCallEntry,
+    session_path: Option<&Path>,
+) -> Option<Vec<TranscriptTodoItem>> {
+    let session_path = session_path?;
+    tool_call.artifact_refs.iter().find_map(|artifact| {
+        if !(artifact.path.ends_with(".json") || artifact.path.ends_with(".txt")) {
+            return None;
+        }
+        let path = Path::new(&artifact.path);
+        if path.is_absolute()
+            || path
+                .components()
+                .any(|component| component == std::path::Component::ParentDir)
+        {
+            return None;
+        }
+        std::fs::read_to_string(session_path.join(path))
+            .ok()
+            .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+            .and_then(|value| todo_items_from_value(Some(&value)))
+    })
+}
+
+fn todo_items_from_value(value: Option<&serde_json::Value>) -> Option<Vec<TranscriptTodoItem>> {
+    let todos = todo_array_from_value(value?)?;
+    let items = todos
+        .iter()
+        .filter_map(|todo| {
+            let content = todo
+                .get("content")
+                .or_else(|| todo.get("text"))
+                .or_else(|| todo.get("title"))
+                .and_then(serde_json::Value::as_str)
+                .map(collapse_inline_whitespace)
+                .filter(|content| !content.is_empty())?;
+            let status = todo
+                .get("status")
+                .or_else(|| todo.get("state"))
+                .and_then(serde_json::Value::as_str)
+                .map(TranscriptTodoStatus::from_value)
+                .or_else(|| {
+                    todo.get("done")
+                        .and_then(serde_json::Value::as_bool)
+                        .map(|done| {
+                            if done {
+                                TranscriptTodoStatus::Completed
+                            } else {
+                                TranscriptTodoStatus::Pending
+                            }
+                        })
+                })
+                .unwrap_or(TranscriptTodoStatus::Pending);
+            Some(TranscriptTodoItem { content, status })
+        })
+        .collect::<Vec<_>>();
+    (!items.is_empty()).then_some(items)
+}
+
+fn todo_array_from_value(value: &serde_json::Value) -> Option<&Vec<serde_json::Value>> {
+    value
+        .get("todos")
+        .and_then(serde_json::Value::as_array)
+        .or_else(|| value.as_array())
+        .or_else(|| {
+            value
+                .get("structured_output")
+                .and_then(todo_array_from_value)
+        })
+}
+
+impl TranscriptTodoStatus {
+    fn from_value(value: &str) -> Self {
+        match value {
+            "in_progress" => Self::InProgress,
+            "completed" => Self::Completed,
+            "cancelled" => Self::Cancelled,
+            _ => Self::Pending,
+        }
+    }
+
+    fn checkbox_glyph(self) -> &'static str {
+        match self {
+            Self::Completed | Self::Cancelled => "[✓]",
+            Self::InProgress => "[•]",
+            Self::Pending => "[ ]",
+        }
+    }
+
+    fn style(self, theme: &Theme) -> Style {
+        match self {
+            Self::InProgress => Style::default().fg(theme.status.warning),
+            Self::Completed | Self::Cancelled | Self::Pending => {
+                Style::default().fg(theme.text.secondary)
+            }
+        }
+    }
+
+    fn content_style(self, theme: &Theme) -> Style {
+        let style = self.style(theme);
+        if matches!(self, Self::Completed | Self::Cancelled) {
+            style.add_modifier(Modifier::CROSSED_OUT)
+        } else {
+            style
+        }
+    }
 }
 
 fn push_question_answer_blocks(
@@ -2526,6 +2712,10 @@ fn push_applied_edit_fallback_block(
 fn tool_call_should_remain_visible_without_tool_details(
     tool_call: &crate::app::ToolCallEntry,
 ) -> bool {
+    if todo_write_tool_id(tool_call.effective_tool_id()) || todo_write_tool_id(&tool_call.tool_id) {
+        return true;
+    }
+
     matches!(
         tool_call.effective_tool_id(),
         "edit.hashline_apply" | "fs.write" | "edit" | "apply_patch"
@@ -3013,10 +3203,12 @@ fn generic_tool_title(tool_call: &crate::app::ToolCallEntry, tool_id: &str) -> S
 }
 
 fn tool_hidden_from_transcript(tool_call: &crate::app::ToolCallEntry) -> bool {
-    matches!(
-        tool_call.effective_tool_id(),
-        "todo.write" | "todo.read" | "todowrite" | "todoread"
-    ) || matches!(tool_call.tool_id.as_str(), "todowrite" | "todoread")
+    matches!(tool_call.effective_tool_id(), "todo.read" | "todoread")
+        || matches!(tool_call.tool_id.as_str(), "todoread")
+}
+
+fn todo_write_tool_id(tool_id: &str) -> bool {
+    matches!(tool_id, "todo.write" | "todowrite")
 }
 
 fn generic_tool_visual_style(
@@ -3376,11 +3568,15 @@ fn tool_call_has_transcript_disclosure(tool_call: &crate::app::ToolCallEntry) ->
         return true;
     }
 
+    let shell_output = shell_tool_output(tool_call);
     let output = tool_call.output_summary.as_deref().unwrap_or_default();
     let output_line_count = output.lines().count();
     !tool_call.artifact_refs.is_empty()
         || match tool_call.effective_tool_id() {
-            "shell.run" => !output.trim().is_empty(),
+            "shell.run" | "bash" => shell_output
+                .as_deref()
+                .or(tool_call.output_summary.as_deref())
+                .is_some_and(|output| !output.trim().is_empty()),
             "edit.hashline_apply" | "fs.write" | "edit" => tool_call_has_preview_content(tool_call),
             "agent.spawn" => true,
             _ => !output.trim().is_empty() && output_line_count > 3,
@@ -3412,6 +3608,206 @@ fn tool_in_path_suffix(tool_call: &crate::app::ToolCallEntry) -> String {
 fn shell_tool_subtitle(args_summary: &str) -> Option<String> {
     tool_summary_string(args_summary, &["description"])
         .filter(|value| !value.is_empty() && value != "Shell")
+}
+
+fn shell_tool_command(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
+    tool_json_string_preserve_whitespace(tool_call.output_json.as_ref(), &["command"])
+        .or_else(|| shell_tool_command_from_value(tool_call.output_json.as_ref()))
+        .or_else(|| {
+            serde_json::from_str::<serde_json::Value>(&tool_call.args_summary)
+                .ok()
+                .and_then(|value| {
+                    tool_json_string_preserve_whitespace(Some(&value), &["command"])
+                        .or_else(|| shell_tool_command_from_value(Some(&value)))
+                })
+        })
+}
+
+fn shell_tool_command_from_value(value: Option<&serde_json::Value>) -> Option<String> {
+    let cmd = tool_json_string_preserve_whitespace(value, &["cmd"])?;
+    let args = value
+        .and_then(|value| value.get("args"))
+        .and_then(serde_json::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .filter(|item| !item.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if args.is_empty() {
+        Some(cmd)
+    } else {
+        Some(format!("{cmd} {}", args.join(" ")))
+    }
+}
+
+fn shell_tool_title_description(
+    tool_call: &crate::app::ToolCallEntry,
+    session_path: Option<&Path>,
+) -> Option<String> {
+    let explicit_description = shell_tool_subtitle(&tool_call.args_summary);
+    let description = explicit_description
+        .clone()
+        .unwrap_or_else(|| "Shell".to_string());
+    let Some(workdir) = shell_tool_workdir_display(tool_call, session_path) else {
+        return explicit_description;
+    };
+    if description.contains(&workdir) {
+        Some(description)
+    } else {
+        Some(format!("{description} in {workdir}"))
+    }
+}
+
+fn shell_tool_workdir_display(
+    tool_call: &crate::app::ToolCallEntry,
+    session_path: Option<&Path>,
+) -> Option<String> {
+    let workdir =
+        tool_json_string_preserve_whitespace(tool_call.output_json.as_ref(), &["workdir", "cwd"])
+            .or_else(|| {
+            serde_json::from_str::<serde_json::Value>(&tool_call.args_summary)
+                .ok()
+                .and_then(|value| {
+                    tool_json_string_preserve_whitespace(Some(&value), &["workdir", "cwd"])
+                })
+        })?;
+    if workdir == "." {
+        return None;
+    }
+
+    let base = session_path?;
+    let absolute = if Path::new(&workdir).is_absolute() {
+        PathBuf::from(&workdir)
+    } else {
+        base.join(&workdir)
+    };
+    if absolute == base {
+        return None;
+    }
+
+    Some(home_collapsed_path_display(&absolute))
+}
+
+fn home_collapsed_path_display(path: &Path) -> String {
+    let Some(home) = std::env::var_os("HOME").filter(|home| !home.is_empty()) else {
+        return path.display().to_string();
+    };
+    let home = PathBuf::from(home);
+    if path == home {
+        return "~".to_string();
+    }
+    path.strip_prefix(&home)
+        .ok()
+        .map(|relative| format!("~/{}", relative.display()))
+        .unwrap_or_else(|| path.display().to_string())
+}
+
+fn shell_tool_output(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
+    let structured = shell_tool_structured_output(tool_call.output_json.as_ref());
+    structured.or_else(|| {
+        tool_call
+            .output_summary
+            .as_deref()
+            .map(strip_ansi_escapes)
+            .map(|output| output.trim().to_string())
+    })
+}
+
+fn shell_tool_structured_output(output_json: Option<&serde_json::Value>) -> Option<String> {
+    let value = output_json?;
+    let stdout = value.get("stdout").and_then(serde_json::Value::as_str);
+    let stderr = value.get("stderr").and_then(serde_json::Value::as_str);
+    let output = match (stdout, stderr) {
+        (Some(stdout), Some(stderr)) if !stdout.is_empty() && !stderr.is_empty() => {
+            format!("{stdout}\n{stderr}")
+        }
+        (Some(stdout), _) => stdout.to_string(),
+        (_, Some(stderr)) => stderr.to_string(),
+        _ => return None,
+    };
+    let stripped = strip_ansi_escapes(&output);
+    Some(stripped.trim().to_string())
+}
+
+fn tool_json_string_preserve_whitespace(
+    output_json: Option<&serde_json::Value>,
+    keys: &[&str],
+) -> Option<String> {
+    let object = output_json?.as_object()?;
+    keys.iter().find_map(|key| {
+        object
+            .get(*key)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AnsiStripState {
+    Text,
+    Escape,
+    Csi,
+    Osc,
+    OscEscape,
+    StringControl,
+    StringControlEscape,
+}
+
+fn strip_ansi_escapes(text: &str) -> String {
+    let mut output = String::with_capacity(text.len());
+    let mut state = AnsiStripState::Text;
+    for character in text.chars() {
+        match state {
+            AnsiStripState::Text => {
+                if character == '\u{1b}' {
+                    state = AnsiStripState::Escape;
+                } else {
+                    output.push(character);
+                }
+            }
+            AnsiStripState::Escape => match character {
+                '[' => state = AnsiStripState::Csi,
+                ']' => state = AnsiStripState::Osc,
+                'P' | '^' | '_' => state = AnsiStripState::StringControl,
+                _ => state = AnsiStripState::Text,
+            },
+            AnsiStripState::Csi => {
+                if ('@'..='~').contains(&character) {
+                    state = AnsiStripState::Text;
+                }
+            }
+            AnsiStripState::Osc => match character {
+                '\u{7}' => state = AnsiStripState::Text,
+                '\u{1b}' => state = AnsiStripState::OscEscape,
+                _ => {}
+            },
+            AnsiStripState::OscEscape => {
+                state = if character == '\\' {
+                    AnsiStripState::Text
+                } else {
+                    AnsiStripState::Osc
+                };
+            }
+            AnsiStripState::StringControl => {
+                if character == '\u{1b}' {
+                    state = AnsiStripState::StringControlEscape;
+                }
+            }
+            AnsiStripState::StringControlEscape => {
+                state = if character == '\\' {
+                    AnsiStripState::Text
+                } else {
+                    AnsiStripState::StringControl
+                };
+            }
+        }
+    }
+    output
 }
 
 fn tool_summary_string(args_summary: &str, keys: &[&str]) -> Option<String> {
@@ -3713,36 +4109,36 @@ fn push_collapsible_output_block(
     }
 }
 
-fn push_collapsible_panel_block(
+fn push_collapsible_bash_panel_block(
     detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
+    command: &str,
     output: &str,
+    description: Option<String>,
     max_lines: usize,
     expanded: bool,
     tone: TranscriptToolCallDetailTone,
 ) {
     let output_lines = output.lines().collect::<Vec<_>>();
     let overflow = output_lines.len() > max_lines;
-    if overflow && !expanded {
-        detail_blocks.push(TranscriptToolCallDetailBlock::PanelMessage {
-            text: format!("{}\n…", output_lines[..max_lines].join("\n")),
-            tone,
-        });
-        detail_blocks.push(TranscriptToolCallDetailBlock::Message {
-            text: "Click to expand".to_string(),
-            tone: TranscriptToolCallDetailTone::Secondary,
-        });
+    let rendered_output = if overflow && !expanded {
+        format!("{}\n…", output_lines[..max_lines].join("\n"))
     } else {
-        detail_blocks.push(TranscriptToolCallDetailBlock::PanelMessage {
-            text: output.to_string(),
-            tone,
-        });
-        if overflow {
-            detail_blocks.push(TranscriptToolCallDetailBlock::Message {
-                text: "Click to collapse".to_string(),
-                tone: TranscriptToolCallDetailTone::Secondary,
-            });
-        }
-    }
+        output.to_string()
+    };
+
+    detail_blocks.push(TranscriptToolCallDetailBlock::BashPanel {
+        command: command.to_string(),
+        output: rendered_output,
+        description,
+        expand_hint: overflow.then(|| {
+            if expanded {
+                "Click to collapse".to_string()
+            } else {
+                "Click to expand".to_string()
+            }
+        }),
+        tone,
+    });
 }
 
 fn search_result_count_suffix(
@@ -4640,19 +5036,20 @@ fn build_assistant_render_surfaces(
 }
 
 fn assistant_footer_target_index(turn: &TranscriptTurnSection) -> Option<usize> {
-    if !turn.show_footer || (turn.assistant_parts.is_empty() && turn.user_message.is_none()) {
+    if !turn.show_footer {
         return None;
     }
+    if turn.assistant_parts.is_empty() {
+        return (turn.user_message.is_some() || turn.header.status == ActivityStatus::Streaming)
+            .then_some(0);
+    }
 
-    turn.assistant_parts
-        .iter()
-        .rposition(|part| matches!(part, TranscriptAssistantPart::Body(_)))
-        .or_else(|| (!turn.assistant_parts.is_empty()).then_some(turn.assistant_parts.len() - 1))
-        .or_else(|| {
-            turn.user_message
-                .as_ref()
-                .map(|_| turn.assistant_parts.len())
-        })
+    Some(
+        turn.assistant_parts
+            .iter()
+            .rposition(|part| matches!(part, TranscriptAssistantPart::Body(_)))
+            .unwrap_or_else(|| turn.assistant_parts.len() - 1),
+    )
 }
 
 fn assistant_part_needs_leading_gap(
@@ -4745,22 +5142,15 @@ fn build_assistant_part_render_surface(
                 }
                 _ => None,
             };
-            match block {
-                TranscriptBodyBlock::RichText(text) => append_rich_text_block(
-                    &mut lines,
-                    text,
-                    theme.text.primary,
-                    TRANSCRIPT_ASSISTANT_BODY_PREFIX,
-                    theme,
-                    transcript_surface_content_width(width, false),
-                ),
-                TranscriptBodyBlock::WaitingResponse => append_text_block(
-                    &mut lines,
-                    "Waiting for response…",
-                    theme.text.secondary,
-                    TRANSCRIPT_ASSISTANT_BODY_PREFIX,
-                ),
-            }
+            let TranscriptBodyBlock::RichText(text) = block;
+            append_rich_text_block(
+                &mut lines,
+                text,
+                theme.text.primary,
+                TRANSCRIPT_ASSISTANT_BODY_PREFIX,
+                theme,
+                transcript_surface_content_width(width, false),
+            );
             (
                 TranscriptRenderSurfaceKind::AssistantBody,
                 false,
@@ -5137,6 +5527,11 @@ fn append_block_tool_section_lines(
     width: u16,
     base_surface: Color,
 ) {
+    if shell_tool_uses_harness_bash_card(tool_call) {
+        append_shell_tool_harness_card(render, tool_call, theme, width);
+        return;
+    }
+
     let surface = transcript_flat_surface(base_surface);
     let card_shell = (tool_call.header.status == ToolCallDisplayStatus::Failed).then_some(
         TranscriptToolCardShell {
@@ -5213,6 +5608,80 @@ fn append_block_tool_section_lines(
     append_tool_call_detail_blocks(render, tool_call, theme, width, base_surface, card_shell);
 }
 
+fn shell_tool_uses_harness_bash_card(tool_call: &TranscriptToolCallSection) -> bool {
+    matches!(tool_call.header.tool_id.as_str(), "shell.run" | "bash")
+        && tool_call.detail_blocks.iter().any(|detail_block| {
+            matches!(
+                detail_block,
+                TranscriptToolCallDetailBlock::BashPanel { .. }
+            )
+        })
+}
+
+fn append_shell_tool_harness_card(
+    render: &mut ToolSectionRender,
+    tool_call: &TranscriptToolCallSection,
+    theme: &Theme,
+    width: u16,
+) {
+    for detail_block in &tool_call.detail_blocks {
+        let start = render.lines.len();
+        match detail_block {
+            TranscriptToolCallDetailBlock::BashPanel {
+                command,
+                output,
+                description,
+                expand_hint,
+                tone,
+            } => {
+                append_harness_bash_panel(
+                    &mut render.lines,
+                    HarnessBashPanel {
+                        command,
+                        output,
+                        description: description.as_deref(),
+                        expand_hint: expand_hint.as_deref(),
+                        tone: *tone,
+                    },
+                    theme,
+                    width,
+                );
+                let added = render.lines.len().saturating_sub(start);
+                render
+                    .interaction_rows
+                    .extend(std::iter::repeat_n(tool_header_target(tool_call), added));
+            }
+            TranscriptToolCallDetailBlock::Message { text, tone } => {
+                append_tool_call_message_block(
+                    &mut render.lines,
+                    text,
+                    *tone,
+                    theme,
+                    width,
+                    theme.surface.panel,
+                    None,
+                );
+                append_noninteractive_rows(render, start);
+            }
+            _ => {
+                append_tool_call_detail_blocks(
+                    render,
+                    &TranscriptToolCallSection {
+                        tool_call_id: tool_call.tool_call_id.clone(),
+                        header: tool_call.header.clone(),
+                        detail_blocks: vec![detail_block.clone()],
+                        expanded: tool_call.expanded,
+                    },
+                    theme,
+                    width,
+                    theme.surface.panel,
+                    None,
+                );
+            }
+        }
+    }
+}
+
 fn append_tool_call_detail_blocks(
     render: &mut ToolSectionRender,
     tool_call: &TranscriptToolCallSection,
@@ -5236,14 +5705,35 @@ fn append_tool_call_detail_blocks(
                 );
                 append_noninteractive_rows(render, start);
             }
-            TranscriptToolCallDetailBlock::PanelMessage { text, tone } => {
-                append_tool_call_panel_block(
+            TranscriptToolCallDetailBlock::TodoList { items } => {
+                append_tool_call_todo_list(
                     &mut render.lines,
-                    text,
-                    *tone,
+                    items,
                     theme,
                     width,
+                    base_surface,
                     card_shell,
+                );
+                append_noninteractive_rows(render, start);
+            }
+            TranscriptToolCallDetailBlock::BashPanel {
+                command,
+                output,
+                description,
+                expand_hint,
+                tone,
+            } => {
+                append_harness_bash_panel(
+                    &mut render.lines,
+                    HarnessBashPanel {
+                        command,
+                        output,
+                        description: description.as_deref(),
+                        expand_hint: expand_hint.as_deref(),
+                        tone: *tone,
+                    },
+                    theme,
+                    width,
                 );
                 append_noninteractive_rows(render, start);
             }
@@ -5462,37 +5952,303 @@ fn append_tool_call_message_block(
     }
 }
 
-fn append_tool_call_panel_block(
+fn append_harness_bash_panel(
     lines: &mut Vec<Line<'static>>,
-    text: &str,
-    tone: TranscriptToolCallDetailTone,
+    panel: HarnessBashPanel<'_>,
     theme: &Theme,
     width: u16,
-    _card_shell: Option<TranscriptToolCardShell>,
 ) {
-    let style = match tone {
-        TranscriptToolCallDetailTone::Primary => Style::default().fg(theme.text.primary),
-        TranscriptToolCallDetailTone::Secondary => subdued_payload_style(theme),
-        TranscriptToolCallDetailTone::Error => Style::default().fg(theme.status.error),
-    };
-    let prebuilt = text
-        .split('\n')
-        .map(|row| {
-            if row.is_empty() {
-                Line::default()
-            } else {
-                Line::from(Span::styled(row.to_string(), style))
-            }
-        })
-        .collect::<Vec<_>>();
-    append_prebuilt_nested_surface_lines(
+    let available_width = transcript_surface_content_width(width, false);
+    let prefix_width = surface_prefix_width(TRANSCRIPT_OPCODE_EDIT_INDENT);
+    let panel_width = usize::from(available_width)
+        .saturating_sub(prefix_width)
+        .max(HARNESS_SPLIT_RAIL_WIDTH + HARNESS_BLOCK_TOOL_PADDING_LEFT + 1);
+    for _ in 0..HARNESS_BLOCK_TOOL_MARGIN_TOP {
+        lines.push(Line::default());
+    }
+    let card_lines = harness_bash_card_lines(
+        panel.command,
+        panel.output,
+        panel.description,
+        panel.expand_hint,
+        panel.tone,
+        theme,
+        panel_width,
+    );
+    append_prebuilt_surface_lines(
         lines,
         TRANSCRIPT_OPCODE_EDIT_INDENT,
-        theme.border.subtle,
-        theme.surface.panel_elevated,
-        prebuilt,
-        transcript_surface_content_width(width, false),
+        theme.surface.panel,
+        card_lines,
+        available_width,
     );
+}
+
+struct HarnessBashPanel<'a> {
+    command: &'a str,
+    output: &'a str,
+    description: Option<&'a str>,
+    expand_hint: Option<&'a str>,
+    tone: TranscriptToolCallDetailTone,
+}
+
+fn harness_bash_card_lines(
+    command: &str,
+    output: &str,
+    description: Option<&str>,
+    expand_hint: Option<&str>,
+    tone: TranscriptToolCallDetailTone,
+    theme: &Theme,
+    panel_width: usize,
+) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    for _ in 0..HARNESS_BLOCK_TOOL_PADDING_TOP {
+        lines.push(harness_bash_padding_line(theme));
+    }
+
+    let title = harness_bash_title(description);
+    append_harness_bash_rows(
+        &mut lines,
+        &title,
+        Style::default().fg(theme.text.secondary),
+        theme,
+        panel_width,
+        HARNESS_BLOCK_TOOL_PADDING_LEFT + HARNESS_BLOCK_TOOL_TITLE_PADDING_LEFT,
+    );
+
+    for _ in 0..HARNESS_BLOCK_TOOL_GAP {
+        lines.push(harness_bash_padding_line(theme));
+    }
+
+    let command_style = Style::default().fg(theme.text.primary);
+    append_harness_bash_rows(
+        &mut lines,
+        &format!("$ {command}"),
+        command_style,
+        theme,
+        panel_width,
+        HARNESS_BLOCK_TOOL_PADDING_LEFT,
+    );
+
+    let output = output.trim();
+    if !output.is_empty() {
+        for _ in 0..HARNESS_BLOCK_TOOL_GAP {
+            lines.push(harness_bash_padding_line(theme));
+        }
+        append_harness_bash_rows(
+            &mut lines,
+            output,
+            harness_bash_output_style(tone, theme),
+            theme,
+            panel_width,
+            HARNESS_BLOCK_TOOL_PADDING_LEFT,
+        );
+    }
+
+    if let Some(expand_hint) = expand_hint.filter(|hint| !hint.trim().is_empty()) {
+        for _ in 0..HARNESS_BLOCK_TOOL_GAP {
+            lines.push(harness_bash_padding_line(theme));
+        }
+        append_harness_bash_rows(
+            &mut lines,
+            expand_hint.trim(),
+            Style::default().fg(theme.text.secondary),
+            theme,
+            panel_width,
+            HARNESS_BLOCK_TOOL_PADDING_LEFT,
+        );
+    }
+
+    for _ in 0..HARNESS_BLOCK_TOOL_PADDING_BOTTOM {
+        lines.push(harness_bash_padding_line(theme));
+    }
+    lines
+}
+
+fn harness_bash_title(description: Option<&str>) -> String {
+    let description = description
+        .map(collapse_inline_whitespace)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "Shell".to_string());
+    if description.starts_with("# ") {
+        description
+    } else {
+        format!("# {description}")
+    }
+}
+
+fn harness_bash_output_style(_tone: TranscriptToolCallDetailTone, theme: &Theme) -> Style {
+    Style::default().fg(theme.text.primary)
+}
+
+fn append_harness_bash_rows(
+    lines: &mut Vec<Line<'static>>,
+    text: &str,
+    style: Style,
+    theme: &Theme,
+    panel_width: usize,
+    padding_left: usize,
+) {
+    let content_width = panel_width
+        .saturating_sub(HARNESS_SPLIT_RAIL_WIDTH)
+        .saturating_sub(padding_left)
+        .max(1);
+    let rows = if text.is_empty() {
+        vec![String::new()]
+    } else {
+        text.split('\n')
+            .flat_map(|row| wrap_plain_terminal_row(row, content_width))
+            .collect::<Vec<_>>()
+    };
+
+    for row in rows {
+        lines.push(harness_bash_content_line(
+            &row,
+            style,
+            theme,
+            padding_left,
+            content_width,
+        ));
+    }
+}
+
+fn harness_bash_content_line(
+    text: &str,
+    style: Style,
+    theme: &Theme,
+    padding_left: usize,
+    content_width: usize,
+) -> Line<'static> {
+    let content = sanitize_harness_bash_text(text);
+    let remaining = content_width.saturating_sub(display_width(&content));
+    harness_bash_line(
+        vec![
+            harness_split_rail_span(theme),
+            Span::styled(" ".repeat(padding_left), Style::default()),
+            Span::styled(content, style),
+            Span::styled(" ".repeat(remaining), Style::default()),
+        ],
+        theme.surface.panel,
+    )
+}
+
+fn harness_bash_padding_line(theme: &Theme) -> Line<'static> {
+    harness_bash_line(vec![harness_split_rail_span(theme)], theme.surface.panel)
+}
+
+fn harness_split_rail_span(theme: &Theme) -> Span<'static> {
+    Span::styled(
+        HARNESS_SPLIT_RAIL_GLYPH.to_string(),
+        Style::default().fg(theme.surface.shell),
+    )
+}
+
+fn harness_bash_line(spans: Vec<Span<'static>>, surface: Color) -> Line<'static> {
+    Line::from(
+        spans
+            .into_iter()
+            .map(|span| surface_span(span.content.into_owned(), span.style, surface))
+            .collect::<Vec<_>>(),
+    )
+}
+
+fn wrap_plain_terminal_row(text: &str, width: usize) -> Vec<String> {
+    if text.is_empty() {
+        return vec![String::new()];
+    }
+    let mut rows = Vec::new();
+    let mut remaining = text;
+    while !remaining.is_empty() {
+        let mut chunk = take_width_prefix(remaining, width);
+        if chunk.is_empty() {
+            chunk = remaining
+                .char_indices()
+                .nth(1)
+                .map(|(index, _)| &remaining[..index])
+                .unwrap_or(remaining);
+        }
+        rows.push(chunk.to_string());
+        remaining = &remaining[chunk.len()..];
+    }
+    rows
+}
+
+fn sanitize_harness_bash_text(text: &str) -> String {
+    text.chars()
+        .map(|character| {
+            if character.is_control() && character != '\t' {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect()
+}
+
+fn append_tool_call_todo_list(
+    lines: &mut Vec<Line<'static>>,
+    items: &[TranscriptTodoItem],
+    theme: &Theme,
+    width: u16,
+    base_surface: Color,
+    card_shell: Option<TranscriptToolCardShell>,
+) {
+    let surface = card_shell
+        .map(|shell| shell.surface)
+        .unwrap_or_else(|| transcript_flat_surface(base_surface));
+    let render_width = transcript_surface_content_width(width, false);
+    let ordered = ordered_todo_items(items);
+    for item in ordered {
+        let marker_style = item.status.style(theme);
+        let content_style = item.status.content_style(theme);
+        let spans = vec![
+            Span::styled(format!("{} ", item.status.checkbox_glyph()), marker_style),
+            Span::styled(item.content.clone(), content_style),
+        ];
+        if let Some(shell) = card_shell {
+            append_nested_surface_row(
+                lines,
+                shell.indent,
+                shell.rail_color,
+                shell.surface,
+                spans,
+                render_width,
+            );
+        } else {
+            append_surface_row(
+                lines,
+                TRANSCRIPT_OPCODE_EDIT_INDENT,
+                surface,
+                spans,
+                render_width,
+            );
+        }
+    }
+}
+
+fn ordered_todo_items(items: &[TranscriptTodoItem]) -> Vec<&TranscriptTodoItem> {
+    let active_index = items
+        .iter()
+        .position(|item| item.status == TranscriptTodoStatus::InProgress)
+        .or_else(|| {
+            items
+                .iter()
+                .position(|item| item.status == TranscriptTodoStatus::Pending)
+        })
+        .or_else(|| {
+            items
+                .iter()
+                .rposition(|item| item.status == TranscriptTodoStatus::Completed)
+        })
+        .unwrap_or(0);
+    std::iter::once(&items[active_index])
+        .chain(
+            items
+                .iter()
+                .enumerate()
+                .filter_map(|(index, item)| (index != active_index).then_some(item)),
+        )
+        .collect()
 }
 
 fn inline_tool_color(tool_call: &TranscriptToolCallSection, theme: &Theme) -> Color {
@@ -5723,6 +6479,7 @@ fn build_pending_permission_render_surface(
     width: u16,
     base_surface: Color,
 ) -> TranscriptRenderSurface {
+    let surface = transcript_emphasized_surface(theme, base_surface);
     let mut lines = vec![Line::from(vec![
         Span::raw(TRANSCRIPT_SURFACE_BODY_PREFIX.to_string()),
         Span::styled(
@@ -5754,7 +6511,7 @@ fn build_pending_permission_render_surface(
         kind: TranscriptRenderSurfaceKind::PendingPermission,
         show_outer_rail: true,
         rail_color: theme.status.warning,
-        surface: transcript_emphasized_surface(theme, base_surface),
+        surface,
         lines,
         interaction_rows: None,
         selection_rows: None,
@@ -5773,29 +6530,6 @@ fn render_transcript_surface_lines(surfaces: &[TranscriptRenderSurface]) -> Vec<
         }
     }
     lines
-}
-
-pub(super) fn append_text_block(
-    lines: &mut Vec<Line<'static>>,
-    text: &str,
-    color: ratatui::style::Color,
-    prefix: &str,
-) {
-    for line in text.lines() {
-        let body = if line.is_empty() {
-            prefix.to_string()
-        } else {
-            format!("{prefix}{line}")
-        };
-        lines.push(Line::from(Span::styled(body, Style::default().fg(color))));
-    }
-
-    if text.is_empty() {
-        lines.push(Line::from(Span::styled(
-            prefix.to_string(),
-            Style::default().fg(color),
-        )));
-    }
 }
 
 fn append_user_surface_text_block(
@@ -6248,17 +6982,21 @@ fn append_rich_text_block(
                 if !lines.is_empty() && !lines.last().is_some_and(|line| line.spans.is_empty()) {
                     lines.push(Line::default());
                 }
-                append_prebuilt_nested_surface_lines(
-                    lines,
-                    prefix,
-                    theme.border.subtle,
-                    theme.surface.panel_elevated,
-                    highlighted,
-                    width,
-                );
+                append_prebuilt_plain_lines(lines, prefix, highlighted, width);
                 lines.push(Line::default());
             }
         }
+    }
+}
+
+fn append_prebuilt_plain_lines(
+    lines: &mut Vec<Line<'static>>,
+    prefix: &str,
+    prebuilt: Vec<Line<'static>>,
+    width: u16,
+) {
+    for line in prebuilt {
+        append_prefixed_wrapped_spans_line(lines, prefix, Style::default(), line.spans, width);
     }
 }
 
@@ -6386,9 +7124,7 @@ fn syntax_highlight_assets() -> &'static SyntaxHighlightAssets {
 }
 
 fn syntect_style_to_ratatui(style: syntect::highlighting::Style) -> Style {
-    let mut rendered = Style::default()
-        .fg(syntect_color_to_ratatui(style.foreground))
-        .bg(syntect_color_to_ratatui(style.background));
+    let mut rendered = Style::default().fg(syntect_color_to_ratatui(style.foreground));
 
     if style.font_style.contains(SyntectFontStyle::BOLD) {
         rendered = rendered.add_modifier(Modifier::BOLD);
@@ -6443,6 +7179,12 @@ pub fn hovered_wheel_target(
         .is_some_and(|area| rect_contains(area, column, row))
     {
         return None;
+    }
+    if hit_areas
+        .terminal_panel
+        .is_some_and(|area| rect_contains(area, column, row))
+    {
+        return Some(WheelTarget::Terminal);
     }
     hit_areas
         .transcript
@@ -7068,8 +7810,11 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
                 struck_out: false,
                 disclosure_state: Some(TranscriptToolCallDisclosureState::Collapsed),
             },
-            detail_blocks: vec![TranscriptToolCallDetailBlock::PanelMessage {
-                text: "$ false\ncommand failed".to_string(),
+            detail_blocks: vec![TranscriptToolCallDetailBlock::BashPanel {
+                command: "false".to_string(),
+                output: "command failed".to_string(),
+                description: None,
+                expand_hint: None,
                 tone: TranscriptToolCallDetailTone::Error,
             }],
             expanded: false,
@@ -7192,6 +7937,7 @@ pub(crate) fn exact_test_transcript_tool_rows_follow_chronological_turn_order() 
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: "Check transcript parity".to_string(),
                 request_digest: "digest-turn-order".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -7258,6 +8004,7 @@ pub(crate) fn exact_test_transcript_tool_rows_follow_chronological_turn_order() 
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-turn-order-output".to_string()),
                 usage: None,
+                metadata: None,
             },
         ),
     ));
@@ -7341,6 +8088,7 @@ fn reasoning_after_tool_renders_in_new_block_below_tool() {
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: "Inspect tokio docs".to_string(),
                 request_digest: "digest-reasoning-after-tool".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -7413,6 +8161,7 @@ fn reasoning_after_tool_renders_in_new_block_below_tool() {
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-reasoning-after-tool-output".to_string()),
                 usage: None,
+                metadata: None,
             },
         ),
     ));
@@ -7512,6 +8261,7 @@ fn task_completion_summary_does_not_duplicate_streamed_assistant_text() {
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: "Say hello".to_string(),
                 request_digest: "digest-duplicate-body".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -7534,6 +8284,7 @@ fn task_completion_summary_does_not_duplicate_streamed_assistant_text() {
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-duplicate-body-output".to_string()),
                 usage: None,
+                metadata: None,
             },
         ),
     ));
@@ -7614,6 +8365,7 @@ fn tool_task_completion_summary_does_not_render_as_assistant_body() {
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: "Inspect tokio docs".to_string(),
                 request_digest: "digest-tool-task-body".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -9149,13 +9901,21 @@ pub(crate) fn exact_test_lsp_tool_successful_output_stays_hidden_until_generic_o
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_todo_tool_rows_stay_hidden_by_default() {
+pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
     let app = AppState::new_live(None, false, None);
+    let theme = Theme::default();
 
     let mut write_call = transcript_section_model_test_tool_call("tc-todo-write", "todo.write");
     write_call.status = ToolCallDisplayStatus::Succeeded;
     write_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
-    write_call.output_summary = Some("[]".to_string());
+    write_call.output_summary = Some("todo list updated".to_string());
+    write_call.output_json = Some(serde_json::json!({
+        "todos": [
+            {"content": "Plan work", "status": "completed", "priority": "high"},
+            {"content": "Implement UI", "status": "in_progress", "priority": "high"},
+            {"content": "Verify tests", "status": "pending", "priority": "medium"}
+        ]
+    }));
 
     let mut read_call = transcript_section_model_test_tool_call("tc-todo-read", "todo.read");
     read_call.status = ToolCallDisplayStatus::Succeeded;
@@ -9167,12 +9927,112 @@ pub(crate) fn exact_test_todo_tool_rows_stay_hidden_by_default() {
     compat_read_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
     compat_read_call.output_summary = Some("[]".to_string());
 
-    assert!(
-        build_tool_call_section(&write_call, &app, true, false, false, false, false, None)
-            .is_none()
+    let write_section =
+        build_tool_call_section(&write_call, &app, false, false, false, false, false, None)
+            .expect("todo write should render in transcript");
+    assert_eq!(
+        write_section.header.visual_style,
+        TranscriptToolCallVisualStyle::Block
     );
+    assert_eq!(write_section.header.title, "1 of 3 todos completed");
+    assert_eq!(write_section.header.disclosure_state, None);
+
+    let rendered = transcript_test_line_texts({
+        let render =
+            append_tool_call_section_lines(&write_section, &theme, 96, theme.surface.panel);
+        render.lines
+    })
+    .join("\n");
+    assert!(rendered.contains("1 of 3 todos completed"));
+    assert!(rendered.contains("[•] Implement UI"));
+    assert!(rendered.contains("[✓] Plan work"));
+    assert!(rendered.contains("[ ] Verify tests"));
+    let active = rendered.find("[•] Implement UI").expect("active todo row");
+    let completed = rendered.find("[✓] Plan work").expect("completed todo row");
     assert!(
-        build_tool_call_section(&read_call, &app, true, false, false, false, false, None).is_none()
+        active < completed,
+        "active todo should be pinned first\n{rendered}"
+    );
+
+    let mut cancelled_then_pending =
+        transcript_section_model_test_tool_call("tc-todo-cancelled-pending", "todowrite");
+    cancelled_then_pending.status = ToolCallDisplayStatus::Succeeded;
+    cancelled_then_pending.lifecycle_state =
+        Some(harness_core::event::ToolCallLifecycleState::Completed);
+    cancelled_then_pending.output_json = Some(serde_json::json!([
+        {"content": "Skip stale path", "status": "cancelled", "priority": "low"},
+        {"content": "Pick next path", "status": "pending", "priority": "high"}
+    ]));
+    let cancelled_then_pending_section = build_tool_call_section(
+        &cancelled_then_pending,
+        &app,
+        false,
+        false,
+        false,
+        false,
+        false,
+        None,
+    )
+    .expect("compat todo write should render bare-array output");
+    let cancelled_then_pending_rendered = transcript_test_line_texts({
+        let render = append_tool_call_section_lines(
+            &cancelled_then_pending_section,
+            &theme,
+            96,
+            theme.surface.panel,
+        );
+        render.lines
+    })
+    .join("\n");
+    let pending = cancelled_then_pending_rendered
+        .find("[ ] Pick next path")
+        .expect("pending todo row");
+    let cancelled = cancelled_then_pending_rendered
+        .find("[✓] Skip stale path")
+        .expect("cancelled todo row");
+    assert!(
+        pending < cancelled,
+        "pending todo should outrank cancelled fallback\n{cancelled_then_pending_rendered}"
+    );
+
+    let mut structured_output =
+        transcript_section_model_test_tool_call("tc-todo-structured-output", "todo.write");
+    structured_output.status = ToolCallDisplayStatus::Succeeded;
+    structured_output.lifecycle_state =
+        Some(harness_core::event::ToolCallLifecycleState::Completed);
+    structured_output.output_json = Some(serde_json::json!({
+        "structured_output": {
+            "todos": [
+                {"content": "Render nested todos", "status": "pending", "priority": "medium"}
+            ]
+        }
+    }));
+    let structured_output_section = build_tool_call_section(
+        &structured_output,
+        &app,
+        false,
+        false,
+        false,
+        false,
+        false,
+        None,
+    )
+    .expect("todo write should render structured_output todos");
+    let structured_output_rendered = transcript_test_line_texts({
+        let render = append_tool_call_section_lines(
+            &structured_output_section,
+            &theme,
+            96,
+            theme.surface.panel,
+        );
+        render.lines
+    })
+    .join("\n");
+    assert!(structured_output_rendered.contains("[ ] Render nested todos"));
+
+    assert!(
+        build_tool_call_section(&read_call, &app, true, false, false, false, false, None).is_none(),
+        "todo reads should stay hidden because they do not update visible state"
     );
     assert!(build_tool_call_section(
         &compat_read_call,
@@ -9242,6 +10102,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
                 model_id: "model-1".to_string(),
                 prompt_summary: "Audit transcript parity".to_string(),
                 request_digest: "digest-parent".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -9482,13 +10343,13 @@ pub(crate) fn exact_test_block_tool_cards_skip_empty_subtitle_rows() {
     }
     let text_lines = transcript_test_line_texts(lines);
 
-    let title_row = text_lines
+    let header_row = text_lines
         .iter()
-        .position(|line| line.contains("Shell"))
-        .expect("shell card title");
+        .position(|line| line.contains("# Shell"))
+        .expect("shell block title");
     let command_row = text_lines
         .iter()
-        .position(|line| line.contains("$ cargo test -p harness-tui"))
+        .position(|line| line.contains("cargo test -p harness-tui"))
         .expect("shell card command");
     let exit_row = text_lines
         .iter()
@@ -9499,10 +10360,16 @@ pub(crate) fn exact_test_block_tool_cards_skip_empty_subtitle_rows() {
         .position(|line| line.contains("stderr: snapshot mismatch"))
         .expect("shell card stderr");
 
-    assert!(title_row < command_row && command_row < exit_row && exit_row < stderr_row);
+    assert!(header_row < command_row && command_row < exit_row && exit_row < stderr_row);
     assert!(
-        !text_lines.iter().any(|line| line.trim() == "┃"),
-        "block tool rows should not render padded blank card-shell rows\n{text_lines:#?}"
+        !text_lines.iter().any(|line| line.contains("● ● ●")),
+        "block tool rows should not render the removed fake terminal header icon\n{text_lines:#?}"
+    );
+    assert!(
+        !text_lines
+            .iter()
+            .any(|line| line.contains('╭') || line.contains('╰') || line.contains('│')),
+        "block tool rows should not render a rounded window frame\n{text_lines:#?}"
     );
 }
 
@@ -9598,9 +10465,9 @@ fn denied_tool_cards_use_denied_subtitle() {
     assert!(section.detail_blocks.iter().any(|block| {
         matches!(
             block,
-            TranscriptToolCallDetailBlock::PanelMessage { text, tone }
+            TranscriptToolCallDetailBlock::BashPanel { output, tone, .. }
                 if *tone == TranscriptToolCallDetailTone::Error
-                    && text.contains("Policy denied shell execution")
+                    && output.contains("Policy denied shell execution")
         )
     }));
 }
@@ -9638,9 +10505,9 @@ fn denied_tool_cards_keep_denied_subtitle_when_reason_contains_colon() {
     assert!(section.detail_blocks.iter().any(|block| {
         matches!(
             block,
-            TranscriptToolCallDetailBlock::PanelMessage { text, tone }
+            TranscriptToolCallDetailBlock::BashPanel { output, tone, .. }
                 if *tone == TranscriptToolCallDetailTone::Error
-                    && text.contains("shell execution blocked")
+                    && output.contains("shell execution blocked")
         )
     }));
 }
@@ -9876,6 +10743,309 @@ fn block_tool_cards_render_subtitle_inline_with_title() {
             .any(|(index, line)| index != title_row && line.contains("14:36 · 1.6s")),
         "block tool cards should not dedicate a separate subtitle row\n{text_lines:#?}"
     );
+}
+
+#[test]
+fn shell_tool_cards_use_harness_bash_styling_values() {
+    let theme = Theme::default();
+    let mut tool_call = transcript_section_model_test_tool_call("tc-shell-harness", "shell.run");
+    tool_call.args_summary = r#"{"command":"echo hi","description":"list files"}"#.to_string();
+    tool_call.status = ToolCallDisplayStatus::Succeeded;
+    tool_call.output_summary = Some(
+        (1..=11)
+            .map(|line| format!("line {line}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
+
+    let section = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(
+        section.detail_blocks[0],
+        TranscriptToolCallDetailBlock::BashPanel {
+            command: "echo hi".to_string(),
+            output:
+                "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n…"
+                    .to_string(),
+            description: Some("list files".to_string()),
+            expand_hint: Some("Click to expand".to_string()),
+            tone: TranscriptToolCallDetailTone::Primary,
+        }
+    );
+
+    let text_lines = transcript_test_line_texts({
+        let mut lines = Vec::new();
+        let render = append_tool_call_section_lines(&section, &theme, 96, theme.surface.panel);
+        lines.extend(render.lines);
+        lines
+    });
+    let rendered = text_lines.join("\n");
+
+    assert!(rendered.contains('┃'));
+    assert!(!rendered.contains("● ● ●"));
+    assert!(rendered.contains("# list files"));
+    assert!(!rendered.contains('╭'));
+    assert!(!rendered.contains('├'));
+    assert!(rendered.contains("$ echo hi"));
+    assert!(!rendered.contains("stdout>"));
+    assert!(rendered.contains("line 10"));
+    assert!(!rendered.contains("line 11"));
+    assert!(rendered.contains("Click to expand"));
+    assert!(!rendered.contains('╰'));
+}
+
+#[test]
+fn shell_tool_cards_render_workdir_in_harness_title() {
+    let mut tool_call = transcript_section_model_test_tool_call("tc-shell-workdir", "bash");
+    tool_call.args_summary =
+        r#"{"command":"pwd","description":"show cwd","workdir":"crates/harness-tui"}"#.to_string();
+    tool_call.status = ToolCallDisplayStatus::Succeeded;
+    tool_call.output_summary = Some("/workspace/crates/harness-tui".to_string());
+
+    let section = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        Some(Path::new("/workspace")),
+    );
+
+    assert!(matches!(
+        &section.detail_blocks[0],
+        TranscriptToolCallDetailBlock::BashPanel { description, .. }
+            if description.as_deref() == Some("show cwd in /workspace/crates/harness-tui")
+    ));
+    let rendered = transcript_test_line_texts({
+        let render = append_tool_call_section_lines(
+            &section,
+            &Theme::default(),
+            96,
+            Theme::default().surface.panel,
+        );
+        render.lines
+    })
+    .join("\n");
+    assert!(rendered.contains("# show cwd in /workspace/crates/harness-tui"));
+}
+
+#[test]
+fn shell_tool_cards_render_cmd_with_args_and_structured_output() {
+    let mut tool_call = transcript_section_model_test_tool_call("tc-shell-cmd-args", "shell.run");
+    tool_call.args_summary =
+        r#"{"cmd":"bash","args":["-lc","printf shell-run"],"cwd":"."}"#.to_string();
+    tool_call.status = ToolCallDisplayStatus::Succeeded;
+    tool_call.output_summary = None;
+    tool_call.output_json = Some(serde_json::json!({
+        "stdout": "shell-run\n",
+        "stderr": "",
+        "status": 0,
+        "success": true,
+        "truncated": false
+    }));
+
+    let section = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        Some(Path::new("/workspace")),
+    );
+
+    assert_eq!(
+        section.header.visual_style,
+        TranscriptToolCallVisualStyle::Block
+    );
+    assert!(matches!(
+        &section.detail_blocks[0],
+        TranscriptToolCallDetailBlock::BashPanel { command, output, .. }
+            if command == "bash -lc printf shell-run" && output == "shell-run"
+    ));
+}
+
+#[test]
+fn shell_tool_cards_strip_ansi_from_output() {
+    let mut tool_call = transcript_section_model_test_tool_call("tc-shell-ansi", "bash");
+    tool_call.args_summary = r#"{"command":"printf color"}"#.to_string();
+    tool_call.status = ToolCallDisplayStatus::Succeeded;
+    tool_call.output_summary = Some("\u{1b}[31mred\u{1b}[0m\nplain".to_string());
+
+    let section = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        None,
+    );
+
+    assert!(matches!(
+        &section.detail_blocks[0],
+        TranscriptToolCallDetailBlock::BashPanel { output, .. }
+            if output == "red\nplain"
+    ));
+}
+
+#[test]
+fn shell_tool_aliases_use_canonical_bash_card_path() {
+    let mut tool_call =
+        transcript_section_model_test_tool_call("tc-shell-alias", "shell.run.wrapper");
+    tool_call.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {
+        invoked_tool_id: Some("shell.run.wrapper".to_string()),
+        effective_tool_id: Some("bash".to_string()),
+        canonical_tool_id: Some("bash".to_string()),
+        alias_source_tool_id: Some("shell.run".to_string()),
+    });
+    tool_call.args_summary = r#"{"command":"echo alias"}"#.to_string();
+    tool_call.status = ToolCallDisplayStatus::Succeeded;
+    tool_call.output_summary = Some("alias".to_string());
+
+    let section = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(section.header.tool_id, "bash");
+    assert_eq!(
+        section.header.visual_style,
+        TranscriptToolCallVisualStyle::Block
+    );
+    assert!(matches!(
+        section.detail_blocks.first(),
+        Some(TranscriptToolCallDetailBlock::BashPanel { .. })
+    ));
+}
+
+#[test]
+fn completed_empty_shell_output_keeps_block_card() {
+    let mut tool_call = transcript_section_model_test_tool_call("tc-shell-empty", "bash");
+    tool_call.args_summary = r#"{"command":"true"}"#.to_string();
+    tool_call.status = ToolCallDisplayStatus::Succeeded;
+    tool_call.output_json = Some(serde_json::json!({
+        "stdout": "",
+        "stderr": "",
+        "status": 0,
+        "success": true,
+        "truncated": false
+    }));
+
+    let section = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        None,
+    );
+
+    assert_eq!(
+        section.header.visual_style,
+        TranscriptToolCallVisualStyle::Block
+    );
+    assert!(matches!(
+        &section.detail_blocks[0],
+        TranscriptToolCallDetailBlock::BashPanel { command, output, expand_hint, .. }
+            if command == "true" && output.is_empty() && expand_hint.is_none()
+    ));
+}
+
+#[test]
+fn running_shell_without_output_metadata_uses_inline_fallback_until_output_event() {
+    let mut tool_call = transcript_section_model_test_tool_call("tc-shell-running-empty", "bash");
+    tool_call.args_summary = r#"{"command":"sleep 1"}"#.to_string();
+    tool_call.status = ToolCallDisplayStatus::Running;
+
+    let section = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        None,
+    );
+
+    // The harness transcript model has no running-output presence bit while a
+    // shell call is running without output. Until a result event carries
+    // `output_summary` or structured stdout/stderr, the closest deterministic
+    // equivalent is the harness inline shell row.
+    assert_eq!(
+        section.header.visual_style,
+        TranscriptToolCallVisualStyle::Inline
+    );
+    assert_eq!(section.header.icon, Some("$"));
+    assert!(section.detail_blocks.is_empty());
+}
+
+#[test]
+fn shell_tool_cards_toggle_overflow_expand_and_collapse_hints() {
+    let mut tool_call = transcript_section_model_test_tool_call("tc-shell-overflow", "bash");
+    tool_call.args_summary = r#"{"command":"seq 12"}"#.to_string();
+    tool_call.status = ToolCallDisplayStatus::Succeeded;
+    tool_call.output_summary = Some(
+        (1..=12)
+            .map(|line| format!("line {line}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
+
+    let collapsed = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        None,
+    );
+    let expanded = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        true,
+        false,
+        None,
+    );
+
+    assert!(matches!(
+        &collapsed.detail_blocks[0],
+        TranscriptToolCallDetailBlock::BashPanel { output, expand_hint, .. }
+            if output.ends_with("line 10\n…")
+                && !output.contains("line 11")
+                && expand_hint.as_deref() == Some("Click to expand")
+    ));
+    assert!(matches!(
+        &expanded.detail_blocks[0],
+        TranscriptToolCallDetailBlock::BashPanel { output, expand_hint, .. }
+            if output.contains("line 12")
+                && expand_hint.as_deref() == Some("Click to collapse")
+    ));
 }
 
 #[cfg(test)]
@@ -10223,13 +11393,11 @@ mod tests {
             80,
         ));
 
-        assert_eq!(lines[0], "   Waiting for response…");
         let footer_row = lines
             .iter()
             .position(|line| line.contains("Assistant · gpt-5.4-mini · active"))
             .expect("streaming assistant footer row");
-        assert_eq!(lines[1], "");
-        assert_eq!(footer_row, 2);
+        assert_eq!(footer_row, 0);
         assert_eq!(lines[footer_row], "   ⠋ Assistant · gpt-5.4-mini · active");
     }
 
@@ -10453,6 +11621,7 @@ mod tests {
                     model_id: "gpt-5.4-mini".to_string(),
                     prompt_summary: "Keep footer visible".to_string(),
                     request_digest: "digest-footer-rendered-parts".to_string(),
+                    metadata: None,
                 },
             ),
         ));
@@ -10475,6 +11644,7 @@ mod tests {
                     finish_reason: "stop".to_string(),
                     output_digest: Some("digest-footer-rendered-parts-out".to_string()),
                     usage: None,
+                    metadata: None,
                 },
             ),
         ));
@@ -10579,7 +11749,7 @@ mod tests {
     }
 
     #[test]
-    fn fenced_code_blocks_render_as_inset_panels() {
+    fn fenced_code_blocks_render_frameless_with_highlighting() {
         let mut app = AppState::default();
         app.activities =
             std::collections::VecDeque::from(vec![transcript_section_model_test_activity(
@@ -10595,13 +11765,20 @@ mod tests {
             100,
         ));
 
+        let function_row = lines
+            .iter()
+            .find(|line| line.contains("fn main()"))
+            .expect("function row");
+        let println_row = lines
+            .iter()
+            .find(|line| line.contains("println!(\"hi\")"))
+            .expect("println row");
+
         assert!(lines.iter().any(|line| line.contains("Before")));
-        assert!(lines
-            .iter()
-            .any(|line| line.contains("┃") && line.contains("fn main()")));
-        assert!(lines
-            .iter()
-            .any(|line| line.contains("┃") && line.contains("println!(\"hi\")")));
+        assert!(
+            !function_row.contains('┃') && !println_row.contains('┃'),
+            "fenced code should keep syntax-highlighted content in flow without a nested frame\n{lines:#?}"
+        );
         assert!(lines.iter().any(|line| line.contains("After")));
     }
 
@@ -10743,10 +11920,8 @@ mod tests {
             80,
         ));
 
-        assert_eq!(first[1], "");
-        assert_eq!(second[1], "");
-        assert_eq!(first[2], "   ⠋ Assistant · gpt-5.4-mini · active");
-        assert_eq!(second[2], "   ⠙ Assistant · gpt-5.4-mini · active");
+        assert_eq!(first[0], "   ⠋ Assistant · gpt-5.4-mini · active");
+        assert_eq!(second[0], "   ⠙ Assistant · gpt-5.4-mini · active");
     }
 
     #[test]

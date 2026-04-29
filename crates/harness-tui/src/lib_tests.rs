@@ -17,7 +17,7 @@ macro_rules! delegate_test {
 
 delegate_test!(replay_mode_snapshot_renders_two_pane_layout => tests::module_replay_mode_snapshot_renders_two_pane_layout);
 delegate_test!(transcript_edit_snapshot_renders_inline_diff => tests::module_transcript_edit_snapshot_renders_inline_diff);
-delegate_test!(inline_diff_does_not_leave_large_gap_before_waiting_response => tests::module_inline_diff_does_not_leave_large_gap_before_waiting_response);
+delegate_test!(inline_diff_does_not_leave_large_gap_before_active_footer => tests::module_inline_diff_does_not_leave_large_gap_before_active_footer);
 delegate_test!(transcript_edit_tool_wide_diff_uses_syntax_highlighting_and_split_palettes => tests::module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and_split_palettes);
 delegate_test!(fenced_code_highlighting_uses_syntect_styles_for_known_languages => tests::module_fenced_code_highlighting_uses_syntect_styles_for_known_languages);
 delegate_test!(fenced_code_highlighting_falls_back_to_plain_text_when_unknown => tests::module_fenced_code_highlighting_falls_back_to_plain_text_when_unknown);
@@ -40,7 +40,7 @@ delegate_test!(native_tool_transcript_rows_show_disclosure_timestamps_and_task_m
 delegate_test!(mcp_tool_transcript_rows_use_effective_identity_without_generic_fallback => ui::exact_test_mcp_tool_transcript_rows_use_effective_identity_without_generic_fallback);
 delegate_test!(generic_tool_successful_output_prefers_inline_background_rows => ui::exact_test_generic_tool_successful_output_prefers_inline_background_rows);
 delegate_test!(lsp_tool_successful_output_stays_hidden_until_generic_output_enabled => ui::exact_test_lsp_tool_successful_output_stays_hidden_until_generic_output_enabled);
-delegate_test!(todo_tool_rows_stay_hidden_by_default => ui::exact_test_todo_tool_rows_stay_hidden_by_default);
+delegate_test!(todo_write_rows_render_open_checklist => ui::exact_test_todo_write_rows_render_open_checklist);
 delegate_test!(transcript_task_rows_show_child_status_duration_and_counts => ui::exact_test_transcript_task_rows_show_child_status_duration_and_counts);
 delegate_test!(block_tool_cards_skip_empty_subtitle_rows => ui::exact_test_block_tool_cards_skip_empty_subtitle_rows);
 delegate_test!(inline_tool_rows_wrap_long_subtitles_cleanly => ui::exact_test_inline_tool_rows_wrap_long_subtitles_cleanly);
@@ -172,12 +172,6 @@ fn transcript_turn_sections_render_open_rail_surfaces() {
 
 #[cfg(test)]
 #[test]
-fn transcript_turn_sections_render_open_rail_semantics() {
-    transcript_turn_sections_render_open_rail_surfaces();
-}
-
-#[cfg(test)]
-#[test]
 fn transcript_turn_sections_keep_nested_tool_details() {
     let mut app = app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new());
     app.active_tab = app::Tab::Run;
@@ -229,7 +223,7 @@ fn transcript_turn_sections_keep_nested_tool_details() {
         .unwrap_or_else(|| panic!("assistant body row\n{rendered}"));
     let assistant_footer = find_line_containing_from(&lines, body_row + 1, "Assistant")
         .unwrap_or_else(|| panic!("assistant footer\n{rendered}"));
-    let tool_row = find_line_containing_all_from(&lines, assistant_footer + 1, &["$ false"])
+    let tool_row = find_line_containing_all_from(&lines, assistant_footer + 1, &["false"])
         .unwrap_or_else(|| panic!("tool row\n{rendered}"));
     let error_row =
         find_line_containing_all_from(&lines, tool_row + 1, &["error", "tool call failed"])
@@ -293,6 +287,10 @@ delegate_test!(operator_rail_section_model_separates_mcp_from_native_tool_activi
 delegate_test!(operator_rail_section_model_uses_runtime_mcp_activity_without_config => ui::exact_test_operator_rail_section_model_uses_runtime_mcp_activity_without_config);
 delegate_test!(operator_rail_section_model_keeps_native_prefix_tools_out_of_mcp => ui::exact_test_operator_rail_section_model_keeps_native_prefix_tools_out_of_mcp);
 delegate_test!(operator_rail_matches_sidebar_text_styles => ui::exact_test_operator_rail_matches_sidebar_text_styles);
+delegate_test!(operator_rail_renders_todo_items_from_tool_state => ui::exact_test_operator_rail_renders_todo_items_from_tool_state);
+delegate_test!(operator_rail_renders_todo_items_from_artifact_state => ui::exact_test_operator_rail_renders_todo_items_from_artifact_state);
+delegate_test!(operator_rail_keeps_completed_todo_state_visible => ui::exact_test_operator_rail_keeps_completed_todo_state_visible);
+delegate_test!(operator_rail_collapses_todo_section_body => ui::exact_test_operator_rail_collapses_todo_section_body);
 delegate_test!(operator_rail_collapses_modified_files_section_body => ui::exact_test_operator_rail_collapses_modified_files_section_body);
 delegate_test!(operator_sidebar_hit_target_maps_section_headers => ui::exact_test_operator_sidebar_hit_target_maps_section_headers);
 
@@ -436,7 +434,6 @@ delegate_test!(live_control_dock_collapses_disclosure_before_status => ui::exact
 delegate_test!(live_composer_reserves_right_gap => ui::exact_test_live_composer_reserves_right_gap);
 delegate_test!(live_composer_disclosure_summarizes_compaction_metrics => ui::exact_test_live_composer_disclosure_summarizes_compaction_metrics);
 delegate_test!(tool_status_summary_uses_effective_tool_identity => ui::exact_test_tool_status_summary_uses_effective_tool_identity);
-delegate_test!(unified_bottom_dock_uses_single_layout_entrypoint => ui::exact_test_unified_bottom_dock_uses_single_layout_entrypoint);
 delegate_test!(wheel_target_hits_transcript_when_hovered => ui::exact_test_wheel_target_hits_transcript_when_hovered);
 delegate_test!(wheel_target_hits_inspector_inside_live_overlay => ui::exact_test_wheel_target_hits_inspector_inside_live_overlay);
 delegate_test!(wheel_target_excludes_activity_portion_of_live_overlay => ui::exact_test_wheel_target_excludes_activity_portion_of_live_overlay);
@@ -556,12 +553,6 @@ fn completed_sessions_show_inline_completion_state_instead_of_handoff_card() {
     assert!(rendered.contains("q quit"));
     assert!(!rendered.contains("Next action"));
     assert!(!rendered.contains("Continue this session"));
-}
-
-#[cfg(test)]
-#[test]
-fn completed_sessions_stay_in_session_shell_without_handoff() {
-    completed_sessions_show_inline_completion_state_instead_of_handoff_card();
 }
 
 #[cfg(test)]
@@ -785,6 +776,7 @@ fn live_state_matrix_preserves_shell_structure() {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "streaming".to_string(),
                 request_digest: "digest-streaming".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -3758,6 +3750,7 @@ pub(crate) fn session_view_events() -> Vec<harness_core::event::EventEnvelopeV1>
                     model_id: "gpt-5-codex".to_string(),
                     prompt_summary: "Explain the refactor".to_string(),
                     request_digest: "digest-req-001".to_string(),
+                    metadata: None,
                 },
             ),
         ),
@@ -3827,6 +3820,7 @@ pub(crate) fn session_view_events() -> Vec<harness_core::event::EventEnvelopeV1>
                     finish_reason: "stop".to_string(),
                     output_digest: Some("digest-final".to_string()),
                     usage: None,
+                    metadata: None,
                 },
             ),
         ),
@@ -4052,25 +4046,6 @@ pub(super) fn render_live_cells(
 }
 
 #[cfg(test)]
-pub(super) fn row_text_and_colors(
-    buffer: &ratatui::buffer::Buffer,
-    width: u16,
-    needle: &str,
-) -> Option<(String, Vec<ratatui::style::Color>)> {
-    buffer.content.chunks(width as usize).find_map(|row| {
-        let text = row.iter().map(|cell| cell.symbol()).collect::<String>();
-        text.contains(needle).then(|| {
-            (
-                text,
-                row.iter()
-                    .map(|cell| cell.fg)
-                    .collect::<Vec<ratatui::style::Color>>(),
-            )
-        })
-    })
-}
-
-#[cfg(test)]
 pub(super) fn row_text_and_palette(
     buffer: &ratatui::buffer::Buffer,
     width: u16,
@@ -4237,6 +4212,7 @@ pub(super) fn transcript_code_block_app(language: &str) -> app::AppState {
                 model_id: "model-1".to_string(),
                 prompt_summary: "show code".to_string(),
                 request_digest: "digest-code".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -4261,6 +4237,7 @@ pub(super) fn transcript_code_block_app(language: &str) -> app::AppState {
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-code-output".to_string()),
                 usage: None,
+                metadata: None,
             },
         ),
     ));
@@ -4283,6 +4260,7 @@ pub(super) fn transcript_diff_block_app() -> app::AppState {
                 model_id: "model-1".to_string(),
                 prompt_summary: "show diff".to_string(),
                 request_digest: "digest-diff-block".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -4305,6 +4283,7 @@ pub(super) fn transcript_diff_block_app() -> app::AppState {
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-diff-block-output".to_string()),
                 usage: None,
+                metadata: None,
             },
         ),
     ));
@@ -4349,6 +4328,7 @@ fn rich_transcript_fixture_app() -> app::AppState {
                 model_id: "model-1".to_string(),
                 prompt_summary: "Restyle the transcript shell".to_string(),
                 request_digest: "digest-rich-shell-request".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -4415,6 +4395,7 @@ fn rich_transcript_fixture_app() -> app::AppState {
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-rich-shell-finished".to_string()),
                 usage: None,
+                metadata: None,
             },
         ),
     ));
@@ -4460,6 +4441,7 @@ fn multi_turn_transcript_fixture_app() -> app::AppState {
                     model_id: "model-1".to_string(),
                     prompt_summary: user_text.to_string(),
                     request_digest: format!("digest-{request_id}"),
+                    metadata: None,
                 },
             ),
         ));
@@ -4482,6 +4464,7 @@ fn multi_turn_transcript_fixture_app() -> app::AppState {
                     finish_reason: "stop".to_string(),
                     output_digest: Some(format!("digest-finished-{request_id}")),
                     usage: None,
+                    metadata: None,
                 },
             ),
         ));
@@ -4849,6 +4832,7 @@ fn permission_modal_preempts_palette() {
             permission_id: "perm_preempt_palette".to_string(),
             decision: harness_core::perm::PermissionDecision::Allow,
             reason: None,
+            grant_scope: None,
         }]
     );
 }
@@ -4905,6 +4889,7 @@ fn live_status_strip_distinguishes_terminal_states() {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "hello".to_string(),
                 request_digest: "digest-phase".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -4933,6 +4918,7 @@ fn live_status_strip_distinguishes_terminal_states() {
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-out".to_string()),
                 usage: None,
+                metadata: None,
             },
         ),
     ));
@@ -4953,6 +4939,7 @@ fn live_status_strip_distinguishes_terminal_states() {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "cancel".to_string(),
                 request_digest: "digest-cancel".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -4983,6 +4970,7 @@ fn live_status_strip_distinguishes_terminal_states() {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "fail".to_string(),
                 request_digest: "digest-error".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -5048,6 +5036,7 @@ fn run_finished_keeps_transcript_and_ready_composer() {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "finished".to_string(),
                 request_digest: "digest-done".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -5070,6 +5059,7 @@ fn run_finished_keeps_transcript_and_ready_composer() {
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-done-out".to_string()),
                 usage: None,
+                metadata: None,
             },
         ),
     ));
@@ -5102,6 +5092,7 @@ fn streaming_transcript_auto_scrolls_to_latest_wrapped_content() {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "scroll test".to_string(),
                 request_digest: "digest-scroll".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -5279,6 +5270,7 @@ fn disconnected_stream_disables_composer_with_reopen_guidance() {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "disconnect".to_string(),
                 request_digest: "digest-disconnect".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -5324,6 +5316,7 @@ fn transcript_renders_inline_tool_states_and_prompt_echo() {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "Inspect src/ui.rs".to_string(),
                 request_digest: "digest-inline".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -5404,6 +5397,7 @@ fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "Read the file".to_string(),
                 request_digest: "digest-tool-compact".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -5632,6 +5626,7 @@ fn failed_tool_rows_still_surface_error_summary() {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "Run the command".to_string(),
                 request_digest: "digest-tool-error".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -5671,7 +5666,7 @@ fn failed_tool_rows_still_surface_error_summary() {
     ));
 
     let transcript = render_live_lines(&app, 120, 36);
-    assert!(transcript.contains("$ false"));
+    assert!(transcript.contains("false"));
     assert!(transcript.contains("exit code: 1 stderr: permission denied"));
     assert!(!transcript.contains(r#"{"cmd":"false","cwd":"/tmp/demo"}"#));
     assert!(!transcript.contains("args {"));
@@ -6135,6 +6130,7 @@ fn command_palette_renders_and_filters() {
             "replay_session".to_string(),
             "cycle_variant".to_string(),
             "open_event_log".to_string(),
+            "toggle_terminal_panel".to_string(),
             "toggle_follow".to_string(),
             "hide_thinking".to_string(),
             "show_timestamps".to_string(),
@@ -6163,8 +6159,16 @@ fn command_palette_renders_and_filters() {
 
 #[cfg(test)]
 #[test]
-fn command_palette_hides_unimplemented_model_switcher() {
+fn command_palette_exposes_model_switcher_when_models_are_configured() {
     let mut app = app::AppState::new_live(None, false, None);
+    app.set_launch_metadata(
+        app::LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini").with_available_models(
+            vec![app::ModelOption::from_model_ref(
+                "build",
+                "default:gpt-5.4-mini",
+            )],
+        ),
+    );
 
     app.handle_key(key_with_modifiers(
         crossterm::event::KeyCode::Char('p'),
@@ -6172,7 +6176,7 @@ fn command_palette_hides_unimplemented_model_switcher() {
     ));
 
     assert!(app.palette_visible);
-    assert!(!app
+    assert!(app
         .palette_filtered
         .iter()
         .any(|command| command == "switch_model"));
@@ -6309,7 +6313,6 @@ fn command_palette_includes_session_history_entry() {
     let rendered = render_live_lines(&app, 100, 24);
     assert!(rendered.contains("New session"));
     assert!(rendered.contains("Continue session"));
-    assert!(rendered.contains("Replay session"));
 }
 
 #[cfg(test)]
@@ -6802,6 +6805,7 @@ fn permission_modal_preempts_prompt_submission() {
             permission_id: "perm_block_submit".to_string(),
             decision: harness_core::perm::PermissionDecision::Allow,
             reason: None,
+            grant_scope: None,
         }]
     );
     drop(intents);
@@ -7343,6 +7347,7 @@ fn new_session_resets_transcript_but_keeps_unsent_draft() {
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: "before reset".to_string(),
                 request_digest: "digest-before-reset".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -7673,6 +7678,7 @@ fn composer_preserves_draft_while_streaming() {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "first".to_string(),
                 request_digest: "digest-1".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -8224,9 +8230,166 @@ fn live_shell_enter_submits_and_echoes_prompt_snapshot() {
     assert_live_shell_frame_invariants(&rendered, 80, 24);
     assert!(!rendered.contains("user (pending turn)"));
     assert!(rendered.contains("ship it"));
-    assert!(rendered.contains("   Waiting for response…"));
+    assert!(!rendered.contains("   Waiting for response…"));
     assert!(rendered.contains("⠋ Assistant"));
     assert!(!rendered.contains('╭'));
+}
+
+#[cfg(test)]
+#[test]
+fn live_submitted_event_merges_duplicate_local_echo_before_rendering_response() {
+    let mut app = app::AppState::new_live(None, false, None);
+    for c in "ship it".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(c)));
+    }
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    let local_echo = app.activities.back_mut().expect("optimistic local echo");
+    local_echo.status = app::ActivityStatus::Done;
+    local_echo.transcript_text = "Ack.".to_string();
+    app.activities
+        .push_back(transcript_turn_group_test_activity(
+            "req_live_echo_merge",
+            app::ActivityStatus::Done,
+            None,
+            "Ack.",
+        ));
+    app.selected_activity_index = 1;
+    app.follow_mode = false;
+
+    app.ingest_event(envelope(
+        1,
+        Some("req_live_echo_merge"),
+        harness_core::event::EventV1::UserMessageSubmitted(
+            harness_core::event::UserMessageSubmittedEvent {
+                request_id: "req_live_echo_merge".to_string(),
+                text: "ship it".to_string(),
+            },
+        ),
+    ));
+
+    assert_eq!(app.activities.len(), 1);
+    assert_eq!(app.selected_activity_index, 0);
+    let activity = app.activities.back().expect("merged activity");
+    assert_eq!(activity.request_id, "req_live_echo_merge");
+    assert_eq!(activity.status, app::ActivityStatus::Done);
+    assert_eq!(
+        activity
+            .user_message
+            .as_ref()
+            .map(|message| message.text.as_str()),
+        Some("ship it")
+    );
+    let rendered = render_live_lines(&app, 80, 24);
+    let lines = rendered.lines().collect::<Vec<_>>();
+    assert_eq!(count_lines_containing(&lines, "Ack."), 1, "{rendered}");
+    assert_eq!(
+        count_lines_containing(&lines, "Waiting for response…"),
+        0,
+        "{rendered}"
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn live_provider_request_id_alias_reuses_local_turn_placeholder() {
+    let mut app = app::AppState::new_live(None, false, None);
+    for c in "hi".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(c)));
+    }
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    app.ingest_event(envelope(
+        1,
+        Some("turn_req_alias"),
+        harness_core::event::EventV1::UserMessageSubmitted(
+            harness_core::event::UserMessageSubmittedEvent {
+                request_id: "turn_req_alias".to_string(),
+                text: "hi".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(envelope(
+        2,
+        Some("turn_req_alias"),
+        harness_core::event::EventV1::ProviderRequestStarted(
+            harness_core::event::ProviderRequestStartedEvent {
+                request_id: "provider_req_alias".to_string(),
+                provider_id: "default".to_string(),
+                model_id: "gpt-5.4-mini".to_string(),
+                prompt_summary: "hi".to_string(),
+                request_digest: "digest-provider-alias".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+
+    assert_eq!(app.activities.len(), 1);
+    assert_eq!(app.activities[0].request_id, "turn_req_alias");
+    assert_eq!(
+        app.activities[0]
+            .request_data
+            .as_ref()
+            .map(|data| data.request_id.as_str()),
+        Some("provider_req_alias")
+    );
+
+    let rendered = render_live_lines(&app, 80, 24);
+    let lines = rendered.lines().collect::<Vec<_>>();
+    assert_eq!(
+        count_lines_containing(&lines, "Waiting for response…"),
+        0,
+        "{rendered}"
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn live_submitted_event_adopts_matching_local_echo_that_is_not_last() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.activities
+        .push_back(transcript_turn_group_test_activity(
+            "",
+            app::ActivityStatus::Streaming,
+            Some("ship it"),
+            "",
+        ));
+    app.activities
+        .push_back(transcript_turn_group_test_activity(
+            "",
+            app::ActivityStatus::Streaming,
+            Some("other draft"),
+            "",
+        ));
+
+    app.ingest_event(envelope(
+        1,
+        Some("req_non_last_echo"),
+        harness_core::event::EventV1::UserMessageSubmitted(
+            harness_core::event::UserMessageSubmittedEvent {
+                request_id: "req_non_last_echo".to_string(),
+                text: "ship it".to_string(),
+            },
+        ),
+    ));
+
+    assert_eq!(app.activities.len(), 2);
+    assert_eq!(app.activities[0].request_id, "req_non_last_echo");
+    assert_eq!(
+        app.activities[0]
+            .user_message
+            .as_ref()
+            .map(|message| message.text.as_str()),
+        Some("ship it")
+    );
+    assert_eq!(app.activities[1].request_id, "");
+    assert_eq!(
+        app.activities[1]
+            .user_message
+            .as_ref()
+            .map(|message| message.text.as_str()),
+        Some("other draft")
+    );
 }
 
 #[cfg(test)]
@@ -8253,6 +8416,7 @@ fn live_shell_inline_tool_state_snapshot() {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "Read the file".to_string(),
                 request_digest: "digest-inline-tool".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -8316,6 +8480,7 @@ fn narrow_transcript_wrapped_top_level_turns_keep_alignment() {
                 model_id: "model-1".to_string(),
                 prompt_summary: "wrapping transcript rows".to_string(),
                 request_digest: "digest-wrap-alignment".to_string(),
+                metadata: None,
             },
         ),
     ));

@@ -35,6 +35,8 @@ fn render_command_palette_overlay(
 
     let title = if app.session_history_visible {
         session_history_overlay_title(app)
+    } else if app.model_switcher_visible {
+        model_switcher_overlay_title(app)
     } else {
         "Commands".to_string()
     };
@@ -44,6 +46,11 @@ fn render_command_palette_overlay(
             return;
         };
         render_session_history_overlay(frame, app, theme, inner, &title);
+    } else if app.model_switcher_visible {
+        let Some(inner) = render_command_palette_surface(frame, theme, overlay) else {
+            return;
+        };
+        render_model_switcher_overlay(frame, app, theme, inner, &title);
     } else {
         if !paint_command_palette_panel(frame, theme, overlay) {
             return;
@@ -334,6 +341,8 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
     let line = if app.palette_input.is_empty() {
         let placeholder = if app.session_history_visible {
             "Filter saved runs"
+        } else if app.model_switcher_visible {
+            "Filter models, agents, providers"
         } else {
             "Search"
         };
@@ -382,6 +391,220 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
         ])
     };
     frame.render_widget(Paragraph::new(line), area);
+}
+
+fn render_model_switcher_overlay(
+    frame: &mut Frame,
+    app: &AppState,
+    theme: &Theme,
+    area: Rect,
+    title: &str,
+) {
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+        ])
+        .split(area);
+    let surface = ui_chrome::command_palette_surface(theme);
+
+    render_command_palette_header(frame, theme, sections[0], title);
+    render_command_palette_input(frame, app, theme, sections[1]);
+    frame.render_widget(
+        Paragraph::new(model_switcher_scope_line(app))
+            .style(Style::default().fg(theme.text.secondary).bg(surface)),
+        sections[2],
+    );
+    render_model_switcher_list(frame, app, theme, sections[3]);
+}
+
+fn render_model_switcher_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    if app.model_filtered.is_empty() {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                "No configured models match this filter.",
+                Style::default().fg(theme.text.secondary),
+            ))),
+            area,
+        );
+        return;
+    }
+
+    let visible_rows = usize::from(area.height).max(1);
+    let selected = app
+        .model_selected
+        .min(app.model_filtered.len().saturating_sub(1));
+    let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
+
+    for (visible_index, option_index) in app
+        .model_filtered
+        .iter()
+        .enumerate()
+        .skip(scroll)
+        .take(visible_rows)
+    {
+        let option = &app.model_options[*option_index];
+        let row_y = area
+            .y
+            .saturating_add(u16::try_from(visible_index - scroll).unwrap_or(u16::MAX));
+        let row_area = Rect::new(area.x, row_y, area.width, 1);
+        let is_selected = visible_index == selected;
+        if is_selected {
+            frame.render_widget(
+                Block::default().style(ui_chrome::overlay_focus_row_style(theme)),
+                row_area,
+            );
+        }
+
+        frame.render_widget(
+            Paragraph::new(model_switcher_row(
+                option,
+                app,
+                is_selected,
+                theme,
+                row_area.width,
+            )),
+            row_area,
+        );
+    }
+}
+
+fn model_switcher_overlay_title(app: &AppState) -> String {
+    let total = app.model_filtered.len();
+    format!(
+        "Switch model · {total} match{}",
+        if total == 1 { "" } else { "es" }
+    )
+}
+
+fn model_switcher_scope_line(app: &AppState) -> String {
+    let active = app.current_model_label();
+    format!("Next turns use the selected agent/model · current {active}")
+}
+
+fn model_switcher_row(
+    option: &crate::app::ModelOption,
+    app: &AppState,
+    is_selected: bool,
+    theme: &Theme,
+    width: u16,
+) -> Line<'static> {
+    let row_style = if is_selected {
+        ui_chrome::overlay_focus_row_style(theme)
+    } else {
+        Style::default()
+    };
+    let title_style = if is_selected {
+        row_style.add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(theme.text.primary)
+            .add_modifier(Modifier::BOLD)
+    };
+    let meta_style = if is_selected {
+        row_style
+    } else {
+        Style::default().fg(theme.text.secondary)
+    };
+    let action_style = if is_selected {
+        row_style.add_modifier(Modifier::BOLD)
+    } else if app.is_current_model_option(option) {
+        Style::default()
+            .fg(theme.status.success)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(theme.status.info)
+    };
+
+    let prefix = if app.is_current_model_option(option) {
+        "✓ current "
+    } else {
+        "  switch "
+    };
+    let title = option
+        .display_label()
+        .or_else(|| option.model_display_label())
+        .unwrap_or(option.model.as_str());
+    let source = model_option_source_label(option);
+    let reasoning = option
+        .reasoning_effort()
+        .or_else(|| option.variant_display_label())
+        .or_else(|| option.variant())
+        .unwrap_or("default");
+    let tokens = option.token_window_label().unwrap_or("tokens n/a");
+
+    let row_width = usize::from(width);
+    let mut spans = Vec::new();
+    spans.push(Span::styled(prefix.to_string(), action_style));
+    let mut used_width = prefix.chars().count();
+
+    let title_budget = row_width.saturating_sub(used_width).clamp(12, 44);
+    let title = truncate_plain_text(title, title_budget);
+    used_width = used_width.saturating_add(title.chars().count());
+    spans.push(Span::styled(title, title_style));
+
+    append_session_history_segment(
+        &mut spans,
+        &mut used_width,
+        row_width,
+        &source,
+        meta_style,
+        meta_style,
+        8,
+    );
+    append_session_history_segment(
+        &mut spans,
+        &mut used_width,
+        row_width,
+        reasoning,
+        meta_style,
+        meta_style,
+        4,
+    );
+    append_session_history_segment(
+        &mut spans,
+        &mut used_width,
+        row_width,
+        tokens,
+        meta_style,
+        meta_style,
+        8,
+    );
+
+    if let Some(recommended_for) = option.recommended_for() {
+        append_session_history_segment(
+            &mut spans,
+            &mut used_width,
+            row_width,
+            recommended_for,
+            meta_style,
+            meta_style,
+            6,
+        );
+    }
+
+    if is_selected && used_width < row_width {
+        spans.push(Span::styled(" ".repeat(row_width - used_width), row_style));
+    }
+
+    Line::from(spans)
+}
+
+fn model_option_source_label(option: &crate::app::ModelOption) -> String {
+    let provider = option
+        .provider_display_label()
+        .unwrap_or(option.provider.as_str());
+    match option.provider_backend_label() {
+        Some(backend) => format!("{} · {} ({backend})", option.profile, provider),
+        None => format!("{} · {provider}", option.profile),
+    }
 }
 
 fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {

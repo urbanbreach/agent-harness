@@ -18,6 +18,9 @@ const LIVE_PERMISSION_PROMPT_MIN_HEIGHT: u16 = 11;
 const LIVE_QUESTION_PROMPT_MIN_HEIGHT: u16 = 9;
 const LIVE_EMPTY_STATE_MIN_HEIGHT: u16 = 9;
 const LIVE_DETAILS_MIN_TRANSCRIPT_WIDTH: u16 = 48;
+const TERMINAL_PANEL_MIN_TRANSCRIPT_HEIGHT: u16 = 7;
+const TERMINAL_PANEL_MIN_HEIGHT: u16 = 5;
+const TERMINAL_PANEL_MAX_HEIGHT: u16 = 12;
 const SECONDARY_STACK_MAX_WIDTH: u16 = 72;
 const SECONDARY_STACK_MIN_HEIGHT: u16 = 18;
 pub(crate) const REVIEW_SURFACE_SPLIT_PERCENT: u16 = 34;
@@ -75,6 +78,7 @@ pub(crate) struct SessionGeometryContract {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WheelHitAreas {
     pub transcript: Option<Rect>,
+    pub terminal_panel: Option<Rect>,
     pub overlay: Option<Rect>,
     pub inspector: Option<Rect>,
 }
@@ -135,6 +139,7 @@ pub(crate) struct PermissionDockLayout {
 pub(crate) struct SessionShellLayout {
     pub live_anchor: Option<Rect>,
     pub transcript: Rect,
+    pub terminal_panel: Option<Rect>,
     pub operator_sidebar: Option<Rect>,
     pub operator_sidebar_compact_empty: bool,
     pub operator_overlay: Option<Rect>,
@@ -152,6 +157,7 @@ pub struct FrameLayoutPlan {
     pub content: Rect,
     pub live_anchor: Option<Rect>,
     pub transcript: Option<Rect>,
+    pub terminal_panel: Option<Rect>,
     pub operator_sidebar: Option<Rect>,
     pub dock: Option<ControlDockLayout>,
     pub status: Option<Rect>,
@@ -237,6 +243,7 @@ impl FrameLayoutPlan {
             content,
             live_anchor: None,
             transcript: None,
+            terminal_panel: None,
             operator_sidebar: None,
             dock: None,
             status: None,
@@ -254,6 +261,7 @@ impl FrameLayoutPlan {
         let session = session_shell_layout(app, plan.shell, theme, shell_layout, session_contract);
         plan.live_anchor = session.live_anchor;
         plan.transcript = Some(session.transcript);
+        plan.terminal_panel = session.terminal_panel;
         plan.operator_sidebar = session.operator_sidebar;
         plan.dock = Some(session.dock);
         plan.status = session.dock.status;
@@ -267,6 +275,7 @@ impl FrameLayoutPlan {
             .flatten();
         plan.wheel_hit_areas = WheelHitAreas {
             transcript: Some(session.transcript),
+            terminal_panel: session.terminal_panel,
             overlay: (!session.operator_sidebar_compact_empty)
                 .then_some(session.operator_sidebar.or(session.operator_overlay))
                 .flatten(),
@@ -276,6 +285,7 @@ impl FrameLayoutPlan {
         if app.replay_mode {
             plan.wheel_hit_areas = WheelHitAreas {
                 transcript: Some(session.transcript),
+                terminal_panel: session.terminal_panel,
                 overlay: (!session.operator_sidebar_compact_empty)
                     .then_some(session.operator_sidebar.or(session.operator_overlay))
                     .flatten(),
@@ -469,6 +479,7 @@ pub(crate) fn session_shell_layout(
         return SessionShellLayout {
             live_anchor: None,
             transcript: body,
+            terminal_panel: None,
             operator_sidebar: None,
             operator_sidebar_compact_empty: false,
             operator_overlay: None,
@@ -480,7 +491,7 @@ pub(crate) fn session_shell_layout(
 
     let operator_sidebar_compact_empty =
         operator_sidebar.is_some() && !app.operator_rail_has_sections();
-    let transcript = body;
+    let (transcript, terminal_panel) = terminal_panel_split(app, body, gap);
     let operator_overlay = if operator_sidebar.is_some() {
         None
     } else if app.replay_mode || app.details_drawer_open() {
@@ -498,6 +509,7 @@ pub(crate) fn session_shell_layout(
     SessionShellLayout {
         live_anchor: None,
         transcript,
+        terminal_panel,
         operator_sidebar,
         operator_sidebar_compact_empty,
         operator_overlay,
@@ -505,6 +517,45 @@ pub(crate) fn session_shell_layout(
         inspector,
         dock,
     }
+}
+
+fn terminal_panel_split(app: &AppState, body: Rect, gap: u16) -> (Rect, Option<Rect>) {
+    if !app.terminal_panel_visible() || app.startup_shell_visible() || body.width == 0 {
+        return (body, None);
+    }
+
+    let actual_gap = gap.min(body.height.saturating_sub(2));
+    let required_height = TERMINAL_PANEL_MIN_TRANSCRIPT_HEIGHT
+        .saturating_add(actual_gap)
+        .saturating_add(TERMINAL_PANEL_MIN_HEIGHT);
+    if body.height < required_height {
+        return (body, None);
+    }
+
+    let available_terminal_height = body
+        .height
+        .saturating_sub(actual_gap)
+        .saturating_sub(TERMINAL_PANEL_MIN_TRANSCRIPT_HEIGHT);
+    let terminal_height = body
+        .height
+        .saturating_div(3)
+        .clamp(TERMINAL_PANEL_MIN_HEIGHT, TERMINAL_PANEL_MAX_HEIGHT)
+        .min(available_terminal_height);
+    let transcript_height = body
+        .height
+        .saturating_sub(actual_gap)
+        .saturating_sub(terminal_height);
+    let transcript = Rect::new(body.x, body.y, body.width, transcript_height);
+    let terminal = Rect::new(
+        body.x,
+        body.y
+            .saturating_add(transcript_height)
+            .saturating_add(actual_gap),
+        body.width,
+        terminal_height,
+    );
+
+    (transcript, Some(terminal))
 }
 
 pub(crate) fn composer_input_height(text: &str, width: u16) -> u16 {
@@ -877,12 +928,19 @@ fn control_dock_layout(
 }
 
 fn dock_with_sidebar_gap(dock: ControlDockLayout, gap_width: u16) -> ControlDockLayout {
-    let gap = gap_width.min(dock.composer.width);
+    fn reserve_gap(area: Rect, gap_width: u16) -> Rect {
+        Rect {
+            width: area.width.saturating_sub(gap_width.min(area.width)),
+            ..area
+        }
+    }
+
     ControlDockLayout {
-        composer: Rect {
-            width: dock.composer.width.saturating_sub(gap),
-            ..dock.composer
-        },
+        status: dock.status.map(|status| reserve_gap(status, gap_width)),
+        composer: reserve_gap(dock.composer, gap_width),
+        disclosure: dock
+            .disclosure
+            .map(|disclosure| reserve_gap(disclosure, gap_width)),
         ..dock
     }
 }
@@ -1008,7 +1066,7 @@ fn command_palette_overlay_area(
     contract: SessionGeometryContract,
     app: &AppState,
 ) -> Option<Rect> {
-    if !app.session_history_visible {
+    if !app.session_history_visible && !app.model_switcher_visible {
         let popup_width = COMMAND_PALETTE_WIDTH.min(area.width.saturating_sub(2));
         let popup_height = command_palette_overlay_height(app, area.height)
             .min(area.height.saturating_sub(area.height / 4));
@@ -1046,7 +1104,7 @@ fn command_palette_overlay_area(
 }
 
 fn command_palette_overlay_width(shell: LiveShellLayout, app: &AppState) -> u16 {
-    if app.session_history_visible {
+    if app.session_history_visible || app.model_switcher_visible {
         shell.centered_content_width
     } else {
         COMMAND_PALETTE_WIDTH
@@ -1056,6 +1114,7 @@ fn command_palette_overlay_width(shell: LiveShellLayout, app: &AppState) -> u16 
 fn command_palette_overlay_height(app: &AppState, terminal_height: u16) -> u16 {
     const COMMAND_OVERLAY_ROWS: u16 = 6;
     const SESSION_HISTORY_OVERLAY_ROWS: u16 = 5;
+    const MODEL_SWITCHER_OVERLAY_ROWS: u16 = 4;
     const MAX_LIST_ROWS: usize = 7;
 
     if app.session_history_visible {
@@ -1064,6 +1123,10 @@ fn command_palette_overlay_height(app: &AppState, terminal_height: u16) -> u16 {
         SESSION_HISTORY_OVERLAY_ROWS
             .saturating_add(u16::from(app.continue_disabled_banner.is_some()))
             .saturating_add(history_rows)
+    } else if app.model_switcher_visible {
+        let model_rows = app.model_filtered.len().clamp(1, MAX_LIST_ROWS + 2);
+        let model_rows = u16::try_from(model_rows).unwrap_or(u16::MAX);
+        MODEL_SWITCHER_OVERLAY_ROWS.saturating_add(model_rows)
     } else {
         let max_height_rows = usize::from(terminal_height.saturating_div(2).saturating_sub(6));
         let command_rows = command_palette_visible_rows(app)

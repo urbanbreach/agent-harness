@@ -87,6 +87,7 @@ fn provider_started(seq: u64, request_id: &str, provider: &str, model: &str) -> 
             model_id: model.to_string(),
             prompt_summary: "prompt summary".to_string(),
             request_digest: format!("digest-{request_id}"),
+            metadata: None,
         }),
     )
 }

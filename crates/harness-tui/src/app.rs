@@ -16,7 +16,7 @@ use harness_core::event::{
     ProviderRequestStartedEvent, ResolvedToolIdentity, TaskCompletionMetadata, TaskLineageMetadata,
     ToolCallLifecycleState, ToolCallMetadata, ToolCallStatus, UserMessageSubmittedEvent,
 };
-use harness_core::perm::PermissionDecision;
+use harness_core::perm::{PermissionDecision, PermissionGrantScope};
 use ratatui::layout::Rect;
 
 use crate::keybindings::{Action, KeyMap};
@@ -33,6 +33,7 @@ mod pending_live;
 pub(crate) mod permissions;
 pub(crate) mod session_navigation;
 mod session_projection;
+mod terminal_panel;
 #[cfg(test)]
 mod tests;
 
@@ -41,6 +42,8 @@ use self::permissions::{
 };
 use self::session_navigation::SessionNavigationSnapshot;
 use self::session_projection::SessionProjection;
+use self::terminal_panel::terminal_panel_event_is_shell;
+pub use self::terminal_panel::{TerminalPanelEntry, TerminalPanelStatus};
 pub use pending_live::{
     set_pending_live_launch_metadata, set_pending_live_prompt_auto_submit,
     set_pending_live_prompt_draft,
@@ -95,6 +98,7 @@ pub enum ToolCallDisplayStatus {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum OperatorSidebarSection {
+    Todo,
     Mcp,
     Lsp,
     ModifiedFiles,
@@ -967,6 +971,7 @@ pub enum Focus {
     #[default]
     List,
     Details,
+    Terminal,
     Prompt,
 }
 
@@ -976,6 +981,7 @@ pub enum UiIntent {
         permission_id: String,
         decision: PermissionDecision,
         reason: Option<String>,
+        grant_scope: Option<PermissionGrantScope>,
     },
     SwitchModel {
         profile: String,
@@ -1086,7 +1092,10 @@ pub struct AppState {
     toast: Option<ToastState>,
     pub details_scroll: u16,
     pub transcript_scroll: usize,
+    pub terminal_panel_scroll: usize,
+    pub terminal_panel_follow: bool,
     pub(crate) last_transcript_max_scroll: Cell<usize>,
+    pub(crate) last_terminal_panel_max_scroll: Cell<usize>,
     last_frame_area: Option<Rect>,
     transcript_scrollbar_drag: Option<TranscriptScrollbarDragState>,
     transcript_selection: Option<TranscriptSelection>,
@@ -1111,6 +1120,7 @@ pub struct AppState {
     show_transcript_timestamps: bool,
     show_tool_details: bool,
     show_generic_tool_output: bool,
+    terminal_panel_visible: bool,
     stacked_transcript_diffs: bool,
     expanded_tool_outputs: BTreeSet<String>,
     expanded_patch_file_outputs: BTreeSet<String>,
@@ -1139,7 +1149,6 @@ pub struct AppState {
     runtime_context_metadata: Option<LaunchMetadata>,
     session_navigation_stack: Vec<SessionNavigationSnapshot>,
     dismissed_permissions: BTreeSet<String>,
-    always_allowed_permission_digests: BTreeSet<String>,
     submitted_permission_id: Option<String>,
     permission_modal_permission_id: Option<String>,
     permission_modal_stage: PermissionModalStage,
@@ -1176,7 +1185,10 @@ impl Default for AppState {
             toast: None,
             details_scroll: 0,
             transcript_scroll: 0,
+            terminal_panel_scroll: 0,
+            terminal_panel_follow: true,
             last_transcript_max_scroll: Cell::new(0),
+            last_terminal_panel_max_scroll: Cell::new(0),
             last_frame_area: None,
             transcript_scrollbar_drag: None,
             transcript_selection: None,
@@ -1202,6 +1214,7 @@ impl Default for AppState {
             show_transcript_timestamps: false,
             show_tool_details: true,
             show_generic_tool_output: false,
+            terminal_panel_visible: false,
             stacked_transcript_diffs: false,
             expanded_tool_outputs: BTreeSet::new(),
             expanded_patch_file_outputs: BTreeSet::new(),
@@ -1232,7 +1245,6 @@ impl Default for AppState {
             runtime_context_metadata: None,
             session_navigation_stack: Vec::new(),
             dismissed_permissions: BTreeSet::new(),
-            always_allowed_permission_digests: BTreeSet::new(),
             submitted_permission_id: None,
             permission_modal_permission_id: None,
             permission_modal_stage: PermissionModalStage::default(),
@@ -1386,6 +1398,8 @@ impl AppState {
         }
         self.details_scroll = 0;
         self.transcript_scroll = 0;
+        self.terminal_panel_scroll = 0;
+        self.terminal_panel_follow = true;
         self.maybe_auto_exit();
     }
 
@@ -1414,21 +1428,12 @@ impl AppState {
                 .remove(&OperatorSidebarSection::ModifiedFiles);
         }
 
+        let terminal_panel_follow_event = terminal_panel_event_is_shell(&event.payload);
+
         let terminal_event = matches!(
             &event.payload,
             EventV1::RunFinished(_) | EventV1::RunFailed(_)
         );
-        let auto_allow_permission = match &event.payload {
-            EventV1::PermissionRequested(data)
-                if !historical
-                    && self
-                        .always_allowed_permission_digests
-                        .contains(&data.request_digest) =>
-            {
-                Some(data.permission_id.clone())
-            }
-            _ => None,
-        };
         if !historical {
             self.continued_live_reopen_surface_active = false;
         }
@@ -1440,14 +1445,12 @@ impl AppState {
         };
         self.update_transient_state_for_event(&event);
         let trimmed_events = self.projection.ingest_event(event, historical);
+        self.selected_activity_index = self
+            .selected_activity_index
+            .min(self.projection.activities.len().saturating_sub(1));
         if let Some(tool_call_id) = completed_tool_call_id.as_deref() {
             self.seed_apply_patch_file_outputs_for_tool_call(tool_call_id);
         }
-        if let Some(permission_id) = auto_allow_permission {
-            self.dismissed_permissions.insert(permission_id.clone());
-            self.send_permission_intent(permission_id, PermissionDecision::Allow, None);
-        }
-
         if trimmed_events > 0 {
             if self.selected_event_index >= trimmed_events {
                 self.selected_event_index -= trimmed_events;
@@ -1461,6 +1464,10 @@ impl AppState {
             self.selected_activity_index = self.projection.activities.len().saturating_sub(1);
             self.details_scroll = 0;
             self.transcript_scroll = 0;
+        }
+
+        if terminal_panel_follow_event && self.terminal_panel_follow {
+            self.terminal_panel_scroll = 0;
         }
 
         if terminal_event && !historical {
@@ -2063,6 +2070,7 @@ impl AppState {
             slash_visible: self.slash_overlay_should_render(),
             palette_visible: self.palette_visible,
             session_history_visible: self.session_history_visible,
+            model_switcher_visible: self.model_switcher_visible,
             permission_pending: self.active_permission().is_some(),
         })
     }
@@ -2448,6 +2456,7 @@ impl AppState {
             }
             MouseEventKind::ScrollUp => match hovered_wheel_target {
                 Some(WheelTarget::Transcript) => self.scroll_transcript_up(3),
+                Some(WheelTarget::Terminal) => self.scroll_terminal_panel_up(3),
                 Some(WheelTarget::Inspector) => {
                     self.details_scroll = self.details_scroll.saturating_sub(3);
                 }
@@ -2455,6 +2464,7 @@ impl AppState {
             },
             MouseEventKind::ScrollDown => match hovered_wheel_target {
                 Some(WheelTarget::Transcript) => self.scroll_transcript_down(3),
+                Some(WheelTarget::Terminal) => self.scroll_terminal_panel_down(3),
                 Some(WheelTarget::Inspector) => {
                     self.details_scroll = self.details_scroll.saturating_add(3);
                 }
@@ -2743,9 +2753,10 @@ impl AppState {
                 } else {
                     Focus::Details
                 };
-            } else if self.active_review_surface.is_none()
-                && !self.session_shell_operator_rail_interactive()
-                && self.focus == Focus::List
+            } else if (self.focus == Focus::Terminal && !self.terminal_panel_visible())
+                || (self.active_review_surface.is_none()
+                    && !self.session_shell_operator_rail_interactive()
+                    && self.focus == Focus::List)
             {
                 self.focus = Focus::Details;
             }
@@ -2753,7 +2764,8 @@ impl AppState {
         }
 
         if self.post_run_handoff_visible() {
-            if self.focus == Focus::Prompt || self.active_tab == Tab::Run {
+            if matches!(self.focus, Focus::Prompt | Focus::Terminal) || self.active_tab == Tab::Run
+            {
                 self.focus = Focus::List;
             }
             return;
@@ -2761,10 +2773,11 @@ impl AppState {
 
         if self.active_review_surface.is_some() && self.focus == Focus::Prompt {
             self.focus = Focus::List;
-        } else if self.active_review_surface.is_none()
-            && !self.startup_shell_visible()
-            && !self.session_shell_operator_rail_interactive()
-            && self.focus == Focus::List
+        } else if (self.active_review_surface.is_some() && self.focus == Focus::Terminal)
+            || (self.active_review_surface.is_none()
+                && !self.startup_shell_visible()
+                && !self.session_shell_operator_rail_interactive()
+                && self.focus == Focus::List)
         {
             self.focus = Focus::Details;
         }
@@ -2773,13 +2786,18 @@ impl AppState {
     fn cycle_focus_forward(&mut self) {
         if self.replay_mode {
             if !self.session_shell_operator_rail_interactive() {
-                self.focus = Focus::Details;
+                self.focus = if self.focus == Focus::Details && self.terminal_panel_visible() {
+                    Focus::Terminal
+                } else {
+                    Focus::Details
+                };
                 return;
             }
 
             self.focus = match self.focus {
                 Focus::List => Focus::Details,
-                Focus::Details | Focus::Prompt => Focus::List,
+                Focus::Details if self.terminal_panel_visible() => Focus::Terminal,
+                Focus::Terminal | Focus::Details | Focus::Prompt => Focus::List,
             };
             return;
         }
@@ -2789,7 +2807,7 @@ impl AppState {
                 Focus::List
             } else {
                 match self.focus {
-                    Focus::List | Focus::Prompt => Focus::Details,
+                    Focus::List | Focus::Prompt | Focus::Terminal => Focus::Details,
                     Focus::Details => Focus::List,
                 }
             };
@@ -2802,7 +2820,8 @@ impl AppState {
         {
             self.focus = match self.focus {
                 Focus::Prompt => Focus::Details,
-                Focus::Details | Focus::List => Focus::Prompt,
+                Focus::Details if self.terminal_panel_visible() => Focus::Terminal,
+                Focus::Terminal | Focus::Details | Focus::List => Focus::Prompt,
             };
             self.live_details_drawer_open = false;
             return;
@@ -2812,12 +2831,13 @@ impl AppState {
             match self.focus {
                 Focus::Details => Focus::List,
                 Focus::List => Focus::Prompt,
+                Focus::Terminal => Focus::Prompt,
                 Focus::Prompt => Focus::Details,
             }
         } else {
             match self.focus {
                 Focus::List => Focus::Details,
-                Focus::Details => Focus::Prompt,
+                Focus::Details | Focus::Terminal => Focus::Prompt,
                 Focus::Prompt => Focus::List,
             }
         };
@@ -2830,12 +2850,25 @@ impl AppState {
     fn cycle_focus_backward(&mut self) {
         if self.replay_mode {
             if !self.session_shell_operator_rail_interactive() {
-                self.focus = Focus::Details;
+                self.focus = if self.focus == Focus::Terminal {
+                    Focus::Details
+                } else if self.terminal_panel_visible() {
+                    Focus::Terminal
+                } else {
+                    Focus::Details
+                };
                 return;
             }
 
             self.focus = match self.focus {
-                Focus::List | Focus::Prompt => Focus::Details,
+                Focus::List | Focus::Prompt => {
+                    if self.terminal_panel_visible() {
+                        Focus::Terminal
+                    } else {
+                        Focus::Details
+                    }
+                }
+                Focus::Terminal => Focus::Details,
                 Focus::Details => Focus::List,
             };
             return;
@@ -2846,7 +2879,7 @@ impl AppState {
                 Focus::List
             } else {
                 match self.focus {
-                    Focus::List | Focus::Prompt => Focus::Details,
+                    Focus::List | Focus::Prompt | Focus::Terminal => Focus::Details,
                     Focus::Details => Focus::List,
                 }
             };
@@ -2858,7 +2891,9 @@ impl AppState {
             && !self.session_shell_operator_rail_interactive()
         {
             self.focus = match self.focus {
+                Focus::Prompt if self.terminal_panel_visible() => Focus::Terminal,
                 Focus::Prompt => Focus::Details,
+                Focus::Terminal => Focus::Details,
                 Focus::Details => Focus::Prompt,
                 Focus::List => Focus::Details,
             };
@@ -2868,14 +2903,16 @@ impl AppState {
 
         self.focus = if self.active_review_surface.is_none() {
             match self.focus {
+                Focus::Details if self.terminal_panel_visible() => Focus::Terminal,
                 Focus::Details => Focus::Prompt,
+                Focus::Terminal => Focus::Prompt,
                 Focus::List => Focus::Details,
                 Focus::Prompt => Focus::List,
             }
         } else {
             match self.focus {
                 Focus::List => Focus::Prompt,
-                Focus::Details => Focus::List,
+                Focus::Details | Focus::Terminal => Focus::List,
                 Focus::Prompt => Focus::Details,
             }
         };
@@ -2924,6 +2961,11 @@ impl AppState {
                 }
                 _ => {}
             }
+        }
+
+        if matches!(action, Action::ToggleTerminalPanel) && !self.startup_shell_visible() {
+            self.toggle_terminal_panel();
+            return;
         }
 
         // Handle prompt-focused actions
@@ -3071,6 +3113,8 @@ impl AppState {
                     self.next_activity();
                 } else if self.focus == Focus::List {
                     self.next_event();
+                } else if self.focus == Focus::Terminal {
+                    self.scroll_terminal_panel_down(1);
                 } else {
                     if self.focus == Focus::Details {
                         if self.transcript_surface_active() {
@@ -3086,6 +3130,8 @@ impl AppState {
                     self.previous_activity();
                 } else if self.focus == Focus::List {
                     self.previous_event();
+                } else if self.focus == Focus::Terminal {
+                    self.scroll_terminal_panel_up(1);
                 } else {
                     if self.focus == Focus::Details {
                         if self.transcript_surface_active() {
@@ -3239,6 +3285,30 @@ impl AppState {
     }
 
     fn handle_transcript_navigation_key(&mut self, key: KeyEvent) -> bool {
+        if self.terminal_panel_surface_active() && key.modifiers == KeyModifiers::NONE {
+            return match key.code {
+                KeyCode::PageUp => {
+                    self.scroll_terminal_panel_up(10);
+                    true
+                }
+                KeyCode::PageDown => {
+                    self.scroll_terminal_panel_down(10);
+                    true
+                }
+                KeyCode::Home => {
+                    self.terminal_panel_follow = false;
+                    self.terminal_panel_scroll = self.last_terminal_panel_max_scroll.get();
+                    true
+                }
+                KeyCode::End => {
+                    self.terminal_panel_follow = true;
+                    self.terminal_panel_scroll = 0;
+                    true
+                }
+                _ => false,
+            };
+        }
+
         if !self.transcript_surface_active() || key.modifiers != KeyModifiers::NONE {
             return false;
         }
@@ -3335,7 +3405,7 @@ impl AppState {
 fn action_preempts_text_input(action: Action) -> bool {
     matches!(
         action,
-        Action::SessionChildCycle | Action::SessionChildCycleReverse
+        Action::SessionChildCycle | Action::SessionChildCycleReverse | Action::ToggleTerminalPanel
     )
 }
 
@@ -3359,10 +3429,8 @@ fn tool_call_has_expandable_output(tool_call: &ToolCallEntry) -> bool {
         return true;
     }
 
-    if matches!(tool_call.effective_tool_id(), "shell.run")
-        && tool_call
-            .output_summary
-            .as_deref()
+    if matches!(tool_call.effective_tool_id(), "shell.run" | "bash")
+        && shell_tool_output_for_expansion(tool_call)
             .is_some_and(|output| !output.trim().is_empty())
     {
         return true;
@@ -3435,11 +3503,27 @@ fn tool_call_has_expandable_output(tool_call: &ToolCallEntry) -> bool {
             .any(|artifact| artifact.path.ends_with(".diff"));
     !tool_call.artifact_refs.is_empty()
         || match tool_call.effective_tool_id() {
-            "shell.run" => line_count > 10,
+            "shell.run" | "bash" => line_count > 10,
             "edit.hashline_apply" | "fs.write" | "edit" | "apply_patch" => has_diff_preview,
             "agent.spawn" => true,
             _ => !output.trim().is_empty() && line_count > 3,
         }
+}
+
+fn shell_tool_output_for_expansion(tool_call: &ToolCallEntry) -> Option<&str> {
+    tool_call.output_summary.as_deref().or_else(|| {
+        let output_json = tool_call.output_json.as_ref()?;
+        output_json
+            .get("stdout")
+            .and_then(serde_json::Value::as_str)
+            .filter(|stdout| !stdout.trim().is_empty())
+            .or_else(|| {
+                output_json
+                    .get("stderr")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|stderr| !stderr.trim().is_empty())
+            })
+    })
 }
 
 #[cfg(test)]

@@ -199,7 +199,7 @@ fn config_backed_profile_model_options(profile: &str) -> Vec<ModelOption> {
 }
 
 #[test]
-fn model_switcher_ui_is_hidden_until_implemented() {
+fn model_switcher_ui_opens_from_slash_command() {
     let _config = load_config_from_str(rich_model_config()).expect("config should parse");
 
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
@@ -225,8 +225,8 @@ fn model_switcher_ui_is_hidden_until_implemented() {
     }
     app.handle_key(key(KeyCode::Enter));
 
-    assert!(!app.model_switcher_visible);
-    assert!(app.model_options.is_empty());
+    assert!(app.model_switcher_visible);
+    assert_eq!(app.model_options.len(), 2);
     assert!(intents.lock().expect("lock intents").is_empty());
 
     let mut replay = AppState::new_replay(PathBuf::from("/tmp/replay-models"), Vec::new());
@@ -238,7 +238,7 @@ fn model_switcher_ui_is_hidden_until_implemented() {
 }
 
 #[test]
-fn hidden_model_switcher_does_not_populate_options() {
+fn model_switcher_populates_options_from_launch_metadata() {
     let _config = load_config_from_str(rich_model_config()).expect("config should parse");
 
     let available_models = available_models();
@@ -256,12 +256,13 @@ fn hidden_model_switcher_does_not_populate_options() {
     }
     app.handle_key(key(KeyCode::Enter));
 
-    assert!(!app.model_switcher_visible);
-    assert!(app.model_options.is_empty());
+    assert!(app.model_switcher_visible);
+    assert_eq!(app.model_options.len(), 2);
+    assert_eq!(app.model_filtered.len(), 2);
 }
 
 #[test]
-fn hidden_model_switcher_does_not_emit_switch_intent() {
+fn model_switcher_enter_emits_switch_intent_for_selected_model() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink = {
         let intents = Arc::clone(&intents);
@@ -281,11 +282,22 @@ fn hidden_model_switcher_does_not_emit_switch_intent() {
         app.handle_key(key(KeyCode::Char(ch)));
     }
     app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key(KeyCode::Down));
+    app.handle_key(key(KeyCode::Enter));
 
     assert!(!app.model_switcher_visible);
-    assert_eq!(app.active_profile(), "build");
+    assert_eq!(app.active_profile(), "plan");
     assert_eq!(app.launch_mode_label(), Some("Live"));
-    assert!(intents.lock().expect("lock intents").is_empty());
+    let intents = intents.lock().expect("lock intents");
+    let UiIntent::SwitchModel {
+        profile,
+        launch_metadata,
+    } = intents.last().expect("switch intent should be emitted")
+    else {
+        panic!("expected switch model intent");
+    };
+    assert_eq!(profile, "plan");
+    assert_eq!(launch_metadata.variant(), Some("deterministic"));
 }
 
 #[test]

@@ -1,5 +1,6 @@
 ---
 source: crates/harness-tui/src/tests.rs
+assertion_line: 1943
 expression: normalized
 ---
 Buffer {

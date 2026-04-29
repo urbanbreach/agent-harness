@@ -9,12 +9,12 @@ use crate::view_model;
 use crossterm::event::{MouseButton, MouseEvent};
 use harness_core::event::{
     ActorKind, AgentSpawnedEvent, EditAppliedEvent, EventActor, EventEnvelopeV1, EventV1,
-    PermissionRequestedEvent, PermissionResolvedEvent, ProviderReasoningDeltaEvent,
-    ProviderRequestStartedEvent, ProviderStreamDeltaEvent, RunFailedEvent, RunFinishedEvent,
-    RunStartedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata,
-    TaskLineageMetadata, TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent,
-    ToolCallLifecycleState, ToolCallMetadata, ToolCallRequestedEvent, ToolCallStartedEvent,
-    ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
+    ExecutionTimingMetadata, PermissionRequestedEvent, PermissionResolvedEvent,
+    ProviderReasoningDeltaEvent, ProviderRequestStartedEvent, ProviderStreamDeltaEvent,
+    RunFailedEvent, RunFinishedEvent, RunStartedEvent, TaskCancelledEvent, TaskCompletedEvent,
+    TaskCompletionMetadata, TaskLineageMetadata, TaskScheduleState, TaskScheduledEvent,
+    ToolCallFinishedEvent, ToolCallLifecycleState, ToolCallMetadata, ToolCallRequestedEvent,
+    ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use ratatui::layout::Rect;
 use ratatui::{backend::TestBackend, Terminal};
@@ -62,6 +62,15 @@ fn key(code: KeyCode) -> KeyEvent {
 
 fn key_with_modifiers(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
     KeyEvent::new(code, modifiers)
+}
+
+fn render_debug(app: &AppState, width: u16, height: u16) -> String {
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| render_app(frame, app))
+        .expect("draw frame");
+    format!("{:?}", terminal.backend().buffer())
 }
 
 fn transcript_click_position(app: &AppState, needle: &str) -> (u16, u16) {
@@ -135,6 +144,7 @@ fn mouse_click_toggles_transcript_tool_disclosure() {
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Toggle shell tool".to_string(),
             request_digest: "digest-tool-toggle".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -161,7 +171,7 @@ fn mouse_click_toggles_transcript_tool_disclosure() {
         }),
     ));
 
-    let (column, row) = transcript_click_position(&app, "Shell");
+    let (column, row) = transcript_click_position(&app, "# Shell");
     app.handle_mouse(
         MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
@@ -212,6 +222,7 @@ fn mouse_click_toggles_apply_patch_file_disclosure() {
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Toggle patch file".to_string(),
             request_digest: "digest-patch-toggle".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -299,6 +310,7 @@ fn apply_patch_default_expansion_skips_deleted_files() {
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Seed patch defaults".to_string(),
             request_digest: "digest-patch-defaults".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -513,6 +525,7 @@ fn question_modal_submit_allows_unanswered_questions_on_confirm() {
             permission_id: "perm_question_partial_submit".to_string(),
             decision: PermissionDecision::Allow,
             reason: Some("[[\"A\"],[]]".to_string()),
+            grant_scope: None,
         }
     );
 }
@@ -673,8 +686,148 @@ fn provider_started(seq: u64, request_id: &str, provider: &str, model: &str) -> 
             model_id: model.to_string(),
             prompt_summary: "prompt summary".to_string(),
             request_digest: format!("digest-{request_id}"),
+            metadata: None,
         }),
     )
+}
+
+fn shell_requested(
+    seq: u64,
+    request_id: &str,
+    tool_call_id: &str,
+    args_summary: &str,
+) -> EventEnvelopeV1 {
+    envelope(
+        seq,
+        request_id,
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: tool_call_id.to_string(),
+            tool_id: "bash".to_string(),
+            args_summary: args_summary.to_string(),
+            args_digest: format!("digest-{tool_call_id}-args"),
+            metadata: Some(ToolCallMetadata {
+                canonical_tool_id: Some("bash".to_string()),
+                ..ToolCallMetadata::default()
+            }),
+        }),
+    )
+}
+
+fn shell_finished(
+    seq: u64,
+    request_id: &str,
+    tool_call_id: &str,
+    status: ToolCallStatus,
+    output_json: serde_json::Value,
+) -> EventEnvelopeV1 {
+    envelope(
+        seq,
+        request_id,
+        EventV1::ToolCallFinished(ToolCallFinishedEvent {
+            tool_call_id: tool_call_id.to_string(),
+            status,
+            output_summary: Some("shell output summary".to_string()),
+            output_digest: Some(format!("digest-{tool_call_id}-output")),
+            output_json: Some(output_json),
+            metadata: Some(ToolCallMetadata {
+                canonical_tool_id: Some("bash".to_string()),
+                timing: Some(ExecutionTimingMetadata {
+                    elapsed_ms: Some(250),
+                    ..ExecutionTimingMetadata::default()
+                }),
+                ..ToolCallMetadata::default()
+            }),
+        }),
+    )
+}
+
+fn shell_test_events(
+    status: ToolCallStatus,
+    output_json: serde_json::Value,
+) -> Vec<EventEnvelopeV1> {
+    vec![
+        envelope(
+            1,
+            "req_shell_panel",
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_shell_panel".to_string(),
+                text: "Run a shell command".to_string(),
+            }),
+        ),
+        provider_started(2, "req_shell_panel", "default", "model-1"),
+        shell_requested(
+            3,
+            "req_shell_panel",
+            "tc_shell_panel",
+            r#"{"command":"cargo test -p harness-tui","description":"run TUI tests"}"#,
+        ),
+        envelope(
+            4,
+            "req_shell_panel",
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tc_shell_panel".to_string(),
+            }),
+        ),
+        shell_finished(5, "req_shell_panel", "tc_shell_panel", status, output_json),
+    ]
+}
+
+fn shell_run_test_events(
+    status: ToolCallStatus,
+    output_json: serde_json::Value,
+) -> Vec<EventEnvelopeV1> {
+    vec![
+        envelope(
+            1,
+            "req_shell_run_panel",
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_shell_run_panel".to_string(),
+                text: "Run shell.run".to_string(),
+            }),
+        ),
+        provider_started(2, "req_shell_run_panel", "default", "model-1"),
+        envelope(
+            3,
+            "req_shell_run_panel",
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_shell_run_panel".to_string(),
+                tool_id: "shell.run".to_string(),
+                args_summary: r#"{"cmd":"bash","args":["-lc","printf shell-run"],"cwd":"."}"#
+                    .to_string(),
+                args_digest: "digest-tc-shell-run-args".to_string(),
+                metadata: Some(ToolCallMetadata {
+                    canonical_tool_id: Some("shell.run".to_string()),
+                    ..ToolCallMetadata::default()
+                }),
+            }),
+        ),
+        envelope(
+            4,
+            "req_shell_run_panel",
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tc_shell_run_panel".to_string(),
+            }),
+        ),
+        envelope(
+            5,
+            "req_shell_run_panel",
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_shell_run_panel".to_string(),
+                status,
+                output_summary: Some("shell-run".to_string()),
+                output_digest: Some("digest-tc-shell-run-output".to_string()),
+                output_json: Some(output_json),
+                metadata: Some(ToolCallMetadata {
+                    canonical_tool_id: Some("shell.run".to_string()),
+                    timing: Some(ExecutionTimingMetadata {
+                        elapsed_ms: Some(42),
+                        ..ExecutionTimingMetadata::default()
+                    }),
+                    ..ToolCallMetadata::default()
+                }),
+            }),
+        ),
+    ]
 }
 
 fn child_link_requested(
@@ -808,6 +961,229 @@ fn tool_call_entries_prefer_resolved_identity_and_lifecycle_contract() {
 }
 
 #[test]
+fn terminal_panel_is_hidden_by_default_and_toggles_from_keybinding() {
+    let mut app = AppState::new_live(None, false, None);
+    assert!(!app.terminal_panel_visible());
+    assert!(
+        crate::layout::FrameLayoutPlan::for_app(&app, TEST_FRAME_AREA)
+            .terminal_panel
+            .is_none()
+    );
+
+    app.handle_key(key(KeyCode::Char('4')));
+
+    assert!(app.terminal_panel_visible());
+    assert_eq!(
+        app.focus,
+        Focus::Prompt,
+        "toggle should not steal composer focus"
+    );
+    assert!(
+        crate::layout::FrameLayoutPlan::for_app(&app, TEST_FRAME_AREA)
+            .terminal_panel
+            .is_some()
+    );
+
+    app.handle_key(key(KeyCode::Char('4')));
+
+    assert!(!app.terminal_panel_visible());
+}
+
+#[test]
+fn terminal_panel_stays_hidden_for_live_bash_until_explicit_toggle() {
+    let mut app = AppState::new_live(None, false, None);
+    for event in shell_test_events(
+        ToolCallStatus::Succeeded,
+        serde_json::json!({
+            "command": "pwd",
+            "status": 0,
+            "success": true,
+            "stdout": "/home/urbanbreach/code/accela/agent-harness\n",
+            "stderr": "",
+            "truncated": false
+        }),
+    ) {
+        app.ingest_event(event);
+    }
+
+    assert!(!app.terminal_panel_visible());
+    assert_eq!(
+        app.focus,
+        Focus::Prompt,
+        "shell output should stay inline without stealing composer focus"
+    );
+    assert!(
+        crate::layout::FrameLayoutPlan::for_app(&app, TEST_FRAME_AREA)
+            .terminal_panel
+            .is_none(),
+        "live shell commands should not create a duplicate terminal panel above the composer"
+    );
+
+    app.handle_key(key(KeyCode::Char('4')));
+    assert!(app.terminal_panel_visible());
+
+    app.handle_key(key(KeyCode::Char('4')));
+    assert!(!app.terminal_panel_visible());
+
+    for event in shell_test_events(
+        ToolCallStatus::Succeeded,
+        serde_json::json!({
+            "command": "pwd",
+            "status": 0,
+            "success": true,
+            "stdout": "/srv/samba/code/accela/agent-harness\n",
+            "stderr": "",
+            "truncated": false
+        }),
+    ) {
+        let mut event = event;
+        event.seq += 10;
+        app.ingest_event(event);
+    }
+
+    assert!(
+        !app.terminal_panel_visible(),
+        "later shell commands should also remain inline unless the user toggles the panel"
+    );
+}
+
+#[test]
+fn terminal_panel_extracts_successful_bash_command_output() {
+    let mut app = AppState::new_live(None, false, None);
+    for event in shell_test_events(
+        ToolCallStatus::Succeeded,
+        serde_json::json!({
+            "command": "cargo test -p harness-tui",
+            "workdir": ".",
+            "status": 0,
+            "success": true,
+            "stdout": "ok\nall tests passed\n",
+            "stderr": "",
+            "truncated": false
+        }),
+    ) {
+        app.ingest_event(event);
+    }
+
+    let entries = app.terminal_panel_entries();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].command, "cargo test -p harness-tui");
+    assert_eq!(entries[0].stdout.as_deref(), Some("ok\nall tests passed\n"));
+    assert_eq!(entries[0].stderr, None);
+    assert_eq!(entries[0].exit_code, Some(0));
+    assert_eq!(entries[0].duration_ms, Some(250));
+
+    assert!(!app.terminal_panel_visible());
+    app.handle_key(key(KeyCode::Char('4')));
+    assert!(app.terminal_panel_visible());
+    let debug = render_debug(&app, 140, 40);
+    assert!(debug.contains("Terminal"));
+    assert!(debug.contains("$ cargo test -p harness-tui"));
+    assert!(debug.contains("stdout> ok"));
+    assert!(debug.contains("exit 0"));
+}
+
+#[test]
+fn terminal_panel_renders_failed_command_stderr_and_exit_status() {
+    let mut app = AppState::new_live(None, false, None);
+    for event in shell_test_events(
+        ToolCallStatus::Failed,
+        serde_json::json!({
+            "command": "cargo test -p harness-tui",
+            "status": 101,
+            "success": false,
+            "stdout": "",
+            "stderr": "test failed\nassertion failed\n",
+            "truncated": true,
+            "output_artifact": {"path": "artifacts/toolcalls/tc_shell_panel/shell.output.txt"}
+        }),
+    ) {
+        app.ingest_event(event);
+    }
+    assert!(!app.terminal_panel_visible());
+    app.handle_key(key(KeyCode::Char('4')));
+    assert!(app.terminal_panel_visible());
+
+    let debug = render_debug(&app, 140, 40);
+    assert!(debug.contains("failed"));
+    assert!(debug.contains("exit 101"));
+    assert!(debug.contains("stderr> test failed"));
+    assert!(debug.contains("output truncated"));
+}
+
+#[test]
+fn terminal_panel_extracts_shell_run_direct_command_schema() {
+    let mut app = AppState::new_live(None, false, None);
+    for event in shell_run_test_events(
+        ToolCallStatus::Succeeded,
+        serde_json::json!({
+            "cmd": "bash",
+            "args": ["-lc", "printf shell-run"],
+            "cwd": ".",
+            "status": 0,
+            "success": true,
+            "stdout": "shell-run",
+            "stderr": "",
+            "truncated": false
+        }),
+    ) {
+        app.ingest_event(event);
+    }
+
+    assert!(!app.terminal_panel_visible());
+    let entries = app.terminal_panel_entries();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].command, "bash -lc printf shell-run");
+    assert_eq!(entries[0].cwd.as_deref(), Some("."));
+    assert_eq!(entries[0].stdout.as_deref(), Some("shell-run"));
+    assert_eq!(entries[0].duration_ms, Some(42));
+}
+
+#[test]
+fn terminal_panel_replay_reconstructs_from_events_without_execution() {
+    let mut replay = AppState::new_replay(
+        PathBuf::from("/tmp/terminal-panel-replay"),
+        shell_test_events(
+            ToolCallStatus::Succeeded,
+            serde_json::json!({
+                "command": "printf replay",
+                "status": 0,
+                "success": true,
+                "stdout": "replay\n",
+                "stderr": "",
+                "truncated": false
+            }),
+        ),
+    );
+
+    assert_eq!(replay.terminal_panel_entries().len(), 1);
+    assert_eq!(replay.terminal_panel_entries()[0].command, "printf replay");
+    replay.handle_key(key(KeyCode::Char('4')));
+
+    let debug = render_debug(&replay, 140, 40);
+    assert!(debug.contains("Replay · read-only"));
+    assert!(debug.contains("$ printf replay"));
+    assert!(debug.contains("stdout> replay"));
+}
+
+#[test]
+fn terminal_panel_focus_scrolls_independently_from_transcript() {
+    let mut app = AppState::new_live(None, false, None);
+    app.handle_key(key(KeyCode::Char('4')));
+    app.focus = Focus::Terminal;
+    app.last_terminal_panel_max_scroll.set(20);
+
+    app.handle_key(key(KeyCode::PageUp));
+    assert_eq!(app.terminal_panel_scroll(), 10);
+    assert!(!app.terminal_panel_follow());
+    assert_eq!(app.transcript_scroll, 0);
+
+    app.handle_key(key(KeyCode::End));
+    assert_eq!(app.terminal_panel_scroll(), 0);
+    assert!(app.terminal_panel_follow());
+}
+
+#[test]
 fn overlay_stack_orders_details_palette_permission() {
     let mut app = AppState::new_live(None, false, None);
     app.live_details_drawer_open = true;
@@ -895,6 +1271,7 @@ fn permission_modal_preempts_palette() {
             permission_id: "perm_overlay_preempt".to_string(),
             decision: PermissionDecision::Allow,
             reason: None,
+            grant_scope: None,
         }]
     );
 }
@@ -968,6 +1345,7 @@ fn permission_modal_escape_rejects_without_hiding_pending_permission() {
             permission_id: "perm_modal_escape".to_string(),
             decision: PermissionDecision::Deny,
             reason: None,
+            grant_scope: None,
         }]
     );
     assert!(app.active_permission().is_some());
@@ -1017,6 +1395,7 @@ fn question_permission_modal_collects_answers_and_emits_reason_payload() {
             permission_id: "perm_question_modal".to_string(),
             decision: PermissionDecision::Allow,
             reason: Some("[[\"A\"]]".to_string()),
+            grant_scope: None,
         }]
     );
 }
@@ -1072,12 +1451,13 @@ fn question_permission_modal_multi_question_uses_tabs_before_submit() {
             permission_id: "perm_question_tabs".to_string(),
             decision: PermissionDecision::Allow,
             reason: Some("[[\"A\"],[\"B\"]]".to_string()),
+            grant_scope: None,
         }]
     );
 }
 
 #[test]
-fn permission_modal_allow_always_auto_approves_matching_future_requests() {
+fn permission_modal_allow_always_requests_durable_run_grant() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let intent_sink = {
         let intents = Arc::clone(&intents);
@@ -1121,48 +1501,9 @@ fn permission_modal_allow_always_auto_approves_matching_future_requests() {
             permission_id: "perm_modal_allow_always_1".to_string(),
             decision: PermissionDecision::Allow,
             reason: None,
+            grant_scope: Some(harness_core::perm::PermissionGrantScope::Run),
         }]
     );
-
-    app.ingest_event(envelope(
-        2,
-        "req_modal_allow_always_resolved",
-        EventV1::PermissionResolved(PermissionResolvedEvent {
-            permission_id: "perm_modal_allow_always_1".to_string(),
-            decision: harness_core::event::PermissionDecision::Allow,
-            reason: None,
-        }),
-    ));
-    app.ingest_event(envelope(
-        3,
-        "req_modal_allow_always_2",
-        EventV1::PermissionRequested(PermissionRequestedEvent {
-            permission_id: "perm_modal_allow_always_2".to_string(),
-            kind: "edit_fs".to_string(),
-            tool_call_id: Some("tc_modal_allow_always_2".to_string()),
-            summary: "permission summary".to_string(),
-            request_digest: "digest-modal-allow-always".to_string(),
-            timeout_ms: 30_000,
-            default_decision: harness_core::event::PermissionDecision::Deny,
-        }),
-    ));
-
-    assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
-        &[
-            UiIntent::ResolvePermission {
-                permission_id: "perm_modal_allow_always_1".to_string(),
-                decision: PermissionDecision::Allow,
-                reason: None,
-            },
-            UiIntent::ResolvePermission {
-                permission_id: "perm_modal_allow_always_2".to_string(),
-                decision: PermissionDecision::Allow,
-                reason: None,
-            },
-        ]
-    );
-    assert!(app.active_permission().is_none());
 }
 
 #[test]
@@ -1340,6 +1681,7 @@ fn details_drawer_toggles_without_stealing_transcript_state() {
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "First".to_string(),
             request_digest: "digest-a".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -1359,6 +1701,7 @@ fn details_drawer_toggles_without_stealing_transcript_state() {
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Second".to_string(),
             request_digest: "digest-b".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -2059,6 +2402,7 @@ fn historical_task_completed_marks_turn_done_and_unblocks_first_resumed_submit()
             model_id: "model-1".to_string(),
             prompt_summary: "previous question".to_string(),
             request_digest: "digest-resume-1".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -2285,18 +2629,19 @@ fn provider_request_finished_keeps_activity_streaming_until_turn_task_completes(
         2,
         "req_turn_task",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_turn_task".to_string(),
+            request_id: "provider_req_turn_task".to_string(),
             provider_id: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "Investigate the harness".to_string(),
             request_digest: "digest-turn-task".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
         3,
         "req_turn_task",
         EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-            request_id: "req_turn_task".to_string(),
+            request_id: "provider_req_turn_task".to_string(),
             delta: "Looking into the turn loop".to_string(),
         }),
     ));
@@ -2304,10 +2649,11 @@ fn provider_request_finished_keeps_activity_streaming_until_turn_task_completes(
         4,
         "req_turn_task",
         EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
-            request_id: "req_turn_task".to_string(),
+            request_id: "provider_req_turn_task".to_string(),
             finish_reason: "done".to_string(),
             output_digest: Some("digest-turn-task-finished".to_string()),
             usage: None,
+            metadata: None,
         }),
     ));
 
@@ -2358,6 +2704,7 @@ fn task_cancelled_marks_matching_activity_as_error() {
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "Edit the docs".to_string(),
             request_digest: "digest-cancelled-turn".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -2409,6 +2756,7 @@ fn child_tool_task_completed_does_not_finish_parent_turn_activity() {
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "Inspect a file".to_string(),
             request_digest: "digest-child-task-completed".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -2467,6 +2815,7 @@ fn child_tool_task_cancelled_does_not_mark_parent_turn_activity_error() {
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "Inspect a file".to_string(),
             request_digest: "digest-child-task-cancelled".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -2507,6 +2856,7 @@ fn terminal_only_turn_completion_scope_marks_activity_done_without_task_row() {
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "Explain the fix".to_string(),
             request_digest: "digest-terminal-only-done".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -2544,6 +2894,7 @@ fn terminal_only_turn_cancellation_scope_marks_activity_error_without_task_row()
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "Explain the fix".to_string(),
             request_digest: "digest-terminal-only-cancel".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -2579,6 +2930,7 @@ fn terminal_only_tool_cancellation_scope_does_not_fail_activity_or_runtime_state
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "Read the file".to_string(),
             request_digest: "digest-terminal-only-tool-cancel".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -2611,6 +2963,7 @@ fn replay_terminal_only_turn_completion_scope_marks_activity_done_without_task_r
                     model_id: "gpt-5.4-mini".to_string(),
                     prompt_summary: "Explain the fix".to_string(),
                     request_digest: "digest-replay-terminal-only-done".to_string(),
+                    metadata: None,
                 }),
             ),
             envelope(
@@ -2651,6 +3004,7 @@ fn replay_terminal_only_turn_cancellation_scope_marks_activity_error_without_tas
                     model_id: "gpt-5.4-mini".to_string(),
                     prompt_summary: "Explain the fix".to_string(),
                     request_digest: "digest-replay-terminal-only-cancel".to_string(),
+                    metadata: None,
                 }),
             ),
             envelope(
@@ -2688,6 +3042,7 @@ fn replay_terminal_only_tool_cancellation_scope_does_not_fail_activity_or_runtim
                     model_id: "gpt-5.4-mini".to_string(),
                     prompt_summary: "Read the file".to_string(),
                     request_digest: "digest-replay-terminal-only-tool-cancel".to_string(),
+                    metadata: None,
                 }),
             ),
             envelope(
@@ -3171,12 +3526,17 @@ fn slash_menu_supports_mouse_selection() {
 }
 
 #[test]
-fn slash_menu_hides_unimplemented_model_switcher() {
+fn slash_menu_exposes_model_switcher_when_models_are_configured() {
     let mut app = AppState::new_startup(Vec::new(), None);
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini").with_available_models(
+            vec![ModelOption::from_model_ref("build", "default:gpt-5.4-mini")],
+        ),
+    );
 
     app.handle_key(key(KeyCode::Char('/')));
 
-    assert!(!app.slash_filtered.iter().any(|command| command == "model"));
+    assert!(app.slash_filtered.iter().any(|command| command == "model"));
 }
 
 #[test]
@@ -3337,6 +3697,7 @@ fn post_run_handoff_ignores_completed_turns_without_terminal_event() {
             model_id: "model-1".to_string(),
             prompt_summary: "status?".to_string(),
             request_digest: "digest-completed-turn".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -3377,6 +3738,7 @@ fn tool_task_completion_does_not_copy_tool_output_into_activity_transcript() {
             model_id: "model-1".to_string(),
             prompt_summary: "Inspect tokio docs".to_string(),
             request_digest: "digest-tool-completion-transcript".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(

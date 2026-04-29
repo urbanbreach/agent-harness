@@ -1081,6 +1081,7 @@ fn streamed_response_events(text: &str) -> Vec<EventEnvelopeV1> {
                 model_id: "model-1".to_string(),
                 prompt_summary: text.to_string(),
                 request_digest: "digest-req-pty-001".to_string(),
+                metadata: None,
             }),
         ),
         envelope(
@@ -1107,6 +1108,7 @@ fn streamed_response_events(text: &str) -> Vec<EventEnvelopeV1> {
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-output-pty-001".to_string()),
                 usage: None,
+                metadata: None,
             }),
         ),
     ]
@@ -1132,6 +1134,7 @@ fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
                 model_id: "model-1".to_string(),
                 prompt_summary: "Inspect tool activity".to_string(),
                 request_digest: "digest-tool-lifecycle-request".to_string(),
+                metadata: None,
             }),
         ),
         envelope(
@@ -1333,6 +1336,7 @@ fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-tool-lifecycle-response".to_string()),
                 usage: None,
+                metadata: None,
             }),
         ),
     ]
@@ -1358,6 +1362,7 @@ fn inline_diff_parity_events() -> Vec<EventEnvelopeV1> {
                 model_id: "model-1".to_string(),
                 prompt_summary: "Make inline diffs match the harness shell".to_string(),
                 request_digest: "digest-inline-diff-parity-request".to_string(),
+                metadata: None,
             }),
         ),
         envelope(
@@ -1494,6 +1499,7 @@ fn inline_diff_parity_events() -> Vec<EventEnvelopeV1> {
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-inline-diff-parity-response".to_string()),
                 usage: None,
+                metadata: None,
             }),
         ),
     ]
@@ -1544,6 +1550,7 @@ fn details_drawer_events() -> Vec<EventEnvelopeV1> {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "Inspect the operator sidebar".to_string(),
                 request_digest: "digest-details-drawer".to_string(),
+                metadata: None,
             }),
         ),
     ]
@@ -1569,6 +1576,7 @@ fn sidebar_session_parity_events() -> Vec<EventEnvelopeV1> {
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: "Inspect sidebar parity".to_string(),
                 request_digest: "digest-sidebar-parity".to_string(),
+                metadata: None,
             }),
         ),
         envelope(
@@ -1763,6 +1771,7 @@ fn orchestration_base_events() -> Vec<EventEnvelopeV1> {
                 model_id: "m1".to_string(),
                 prompt_summary: "Inspect live orchestration".to_string(),
                 request_digest: "digest-orch-request".to_string(),
+                metadata: None,
             }),
         ),
         envelope(
@@ -1781,6 +1790,7 @@ fn orchestration_base_events() -> Vec<EventEnvelopeV1> {
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-orch-output".to_string()),
                 usage: None,
+                metadata: None,
             }),
         ),
     ]

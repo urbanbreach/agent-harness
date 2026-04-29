@@ -105,6 +105,10 @@ struct OperatorRailModel {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum OperatorRailItem {
     Plain(String),
+    Todo {
+        content: String,
+        status: TodoRailStatus,
+    },
     Status {
         label: String,
         suffix: Option<String>,
@@ -121,6 +125,14 @@ enum OperatorRailItem {
 enum RuntimeHealthState {
     Healthy,
     Unhealthy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TodoRailStatus {
+    Pending,
+    InProgress,
+    Completed,
+    Cancelled,
 }
 
 #[cfg(test)]
@@ -140,6 +152,7 @@ impl OperatorRailItem {
     fn text(&self) -> &str {
         match self {
             Self::Plain(text) => text,
+            Self::Todo { content, .. } => content,
             Self::Status { label, .. } => label,
             Self::ModifiedFile { path, .. } => path,
         }
@@ -149,6 +162,9 @@ impl OperatorRailItem {
     fn display_text(&self) -> String {
         match self {
             Self::Plain(text) => text.clone(),
+            Self::Todo { content, status } => {
+                format!("{} {content}", status.checkbox_glyph())
+            }
             Self::Status { label, suffix, .. } => suffix
                 .as_ref()
                 .map(|suffix| format!("{label} {suffix}"))
@@ -161,6 +177,34 @@ impl OperatorRailItem {
                 (Some(additions), Some(removals)) => format!("{path} · +{additions} -{removals}"),
                 _ => path.clone(),
             },
+        }
+    }
+}
+
+impl TodoRailStatus {
+    fn from_value(value: &str) -> Self {
+        match value {
+            "in_progress" => Self::InProgress,
+            "completed" => Self::Completed,
+            "cancelled" => Self::Cancelled,
+            _ => Self::Pending,
+        }
+    }
+
+    fn checkbox_glyph(self) -> &'static str {
+        match self {
+            Self::Completed => "[✓]",
+            Self::InProgress => "[•]",
+            Self::Pending | Self::Cancelled => "[ ]",
+        }
+    }
+
+    fn style(self, theme: &Theme) -> Style {
+        match self {
+            Self::InProgress => Style::default().fg(theme.status.warning),
+            Self::Pending | Self::Completed | Self::Cancelled => {
+                Style::default().fg(theme.text.secondary)
+            }
         }
     }
 }
@@ -206,6 +250,10 @@ struct OperatorRailBodyLayout {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum OperatorRailBodySection {
+    Todo {
+        items: Vec<OperatorRailItem>,
+        disclosure: Option<OperatorRailSectionDisclosure>,
+    },
     Mcp {
         items: Vec<OperatorRailItem>,
         disclosure: OperatorRailSectionDisclosure,
@@ -229,6 +277,9 @@ impl OperatorRailBodySection {
     #[cfg(test)]
     fn heading(&self) -> String {
         match self {
+            Self::Todo { disclosure, .. } => disclosure
+                .map(|disclosure| format!("{} Todo", disclosure_glyph(disclosure)))
+                .unwrap_or_else(|| "Todo".to_string()),
             Self::Mcp { disclosure, .. } => {
                 format!("{} MCP", disclosure_glyph(*disclosure))
             }
@@ -244,6 +295,13 @@ impl OperatorRailBodySection {
     fn heading_line(&self, theme: &Theme) -> Line<'static> {
         let heading_style = self.heading_style(theme);
         match self {
+            Self::Todo { disclosure, .. } => match disclosure {
+                Some(disclosure) => Line::from(vec![
+                    Span::styled(format!("{} ", disclosure_glyph(*disclosure)), heading_style),
+                    Span::styled("Todo".to_string(), heading_style),
+                ]),
+                None => Line::from(Span::styled("Todo".to_string(), heading_style)),
+            },
             Self::Mcp { items, disclosure } => {
                 let mut spans = vec![
                     Span::styled(format!("{} ", disclosure_glyph(*disclosure)), heading_style),
@@ -272,7 +330,10 @@ impl OperatorRailBodySection {
 
     fn heading_style(&self, theme: &Theme) -> Style {
         match self {
-            Self::Mcp { .. } | Self::Lsp { .. } | Self::ModifiedFiles { .. } => Style::default()
+            Self::Todo { .. }
+            | Self::Mcp { .. }
+            | Self::Lsp { .. }
+            | Self::ModifiedFiles { .. } => Style::default()
                 .fg(theme.text.primary)
                 .add_modifier(Modifier::BOLD),
         }
@@ -280,6 +341,7 @@ impl OperatorRailBodySection {
 
     fn disclosure(&self) -> Option<OperatorRailSectionDisclosure> {
         match self {
+            Self::Todo { disclosure, .. } => *disclosure,
             Self::Mcp { disclosure, .. }
             | Self::Lsp { disclosure, .. }
             | Self::ModifiedFiles { disclosure, .. } => Some(*disclosure),
@@ -294,7 +356,8 @@ impl OperatorRailBodySection {
     #[cfg(test)]
     fn item_texts(&self) -> Vec<String> {
         match self {
-            Self::Mcp { items, .. }
+            Self::Todo { items, .. }
+            | Self::Mcp { items, .. }
             | Self::Lsp { items, .. }
             | Self::ModifiedFiles { items, .. } => {
                 items.iter().map(OperatorRailItem::display_text).collect()
@@ -788,6 +851,302 @@ pub(crate) fn exact_test_operator_rail_section_model_surfaces_pending_permission
 }
 
 #[cfg(test)]
+pub(crate) fn exact_test_operator_rail_renders_todo_items_from_tool_state() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        1,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::User, None),
+        "req-todo",
+        harness_core::event::EventV1::UserMessageSubmitted(
+            harness_core::event::UserMessageSubmittedEvent {
+                request_id: "req-todo".to_string(),
+                text: "Track the implementation".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        2,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req-todo",
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_todo".to_string(),
+                tool_id: "todowrite".to_string(),
+                args_summary:
+                    r#"{"todos":[{"content":"Plan work","status":"pending","priority":"high"}]}"#
+                        .to_string(),
+                args_digest: "digest-todo".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        3,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req-todo",
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tool_call_todo".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("todo list updated".to_string()),
+                output_digest: Some("digest-todo-output".to_string()),
+                output_json: Some(serde_json::json!({
+                    "todos": [
+                        {"content": "Plan work", "status": "completed", "priority": "high"},
+                        {"content": "Implement UI", "status": "in_progress", "priority": "high"},
+                        {"content": "Verify tests", "status": "pending", "priority": "medium"}
+                    ]
+                })),
+                metadata: None,
+            },
+        ),
+    ));
+
+    let model = build_operator_rail_model(&app);
+    assert_eq!(model.body.sections[0].heading(), "▼ Todo");
+    assert_eq!(model.body.sections[1].heading(), "▼ MCP");
+
+    let sidebar = operator_sidebar_text_for_test(&app).join("\n");
+    assert!(sidebar.contains("▼ Todo"));
+    assert!(sidebar.contains("[✓] Plan work"));
+    assert!(sidebar.contains("[•] Implement UI"));
+    assert!(sidebar.contains("[ ] Verify tests"));
+
+    let theme = *app.theme();
+    let lines = operator_sidebar_lines_for_test(&app);
+    let in_progress = lines
+        .iter()
+        .find(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+                .contains("[•] Implement UI")
+        })
+        .expect("in-progress todo line");
+    assert_eq!(in_progress.spans[0].style.fg, Some(theme.status.warning));
+    assert_eq!(in_progress.spans[1].style.fg, Some(theme.status.warning));
+
+    let pending = lines
+        .iter()
+        .find(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+                .contains("[ ] Verify tests")
+        })
+        .expect("pending todo line");
+    assert_eq!(pending.spans[0].style.fg, Some(theme.text.secondary));
+    assert_eq!(pending.spans[1].style.fg, Some(theme.text.secondary));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_operator_rail_keeps_completed_todo_state_visible() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        1,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::User, None),
+        "req-todo-completed",
+        harness_core::event::EventV1::UserMessageSubmitted(
+            harness_core::event::UserMessageSubmittedEvent {
+                request_id: "req-todo-completed".to_string(),
+                text: "Finish the checklist".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        2,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req-todo-completed",
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_todo_completed".to_string(),
+                tool_id: "todowrite".to_string(),
+                args_summary: r#"{"todos":[{"content":"Ship todo panel","status":"completed","priority":"high"}]}"#
+                    .to_string(),
+                args_digest: "digest-todo-completed".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        3,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req-todo-completed",
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tool_call_todo_completed".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("todo list completed".to_string()),
+                output_digest: Some("digest-todo-completed-output".to_string()),
+                output_json: Some(serde_json::json!({
+                    "todos": [
+                        {"content": "Ship todo panel", "status": "completed", "priority": "high"}
+                    ]
+                })),
+                metadata: None,
+            },
+        ),
+    ));
+
+    let sidebar = operator_sidebar_text_for_test(&app).join("\n");
+    assert!(sidebar.contains("Todo"));
+    assert!(sidebar.contains("[✓] Ship todo panel"));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_operator_rail_renders_todo_items_from_artifact_state() {
+    let temp_dir = tempfile::tempdir().expect("todo artifact session dir");
+    let artifact_path = temp_dir
+        .path()
+        .join("artifacts")
+        .join("toolcalls")
+        .join("tool_call_todo_artifact")
+        .join("result.json");
+    std::fs::create_dir_all(artifact_path.parent().expect("artifact parent"))
+        .expect("create todo artifact dir");
+    std::fs::write(
+        &artifact_path,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "todos": [
+                {"content": "Persisted todo", "status": "in_progress", "priority": "high"}
+            ]
+        }))
+        .expect("serialize todo artifact"),
+    )
+    .expect("write todo artifact");
+
+    let mut app = AppState::new_live(Some(temp_dir.path().to_path_buf()), false, None);
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        1,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::User, None),
+        "req-todo-artifact",
+        harness_core::event::EventV1::UserMessageSubmitted(
+            harness_core::event::UserMessageSubmittedEvent {
+                request_id: "req-todo-artifact".to_string(),
+                text: "Render persisted todo state".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        2,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req-todo-artifact",
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_todo_artifact".to_string(),
+                tool_id: "todowrite".to_string(),
+                args_summary: r#"{"todos":[{"content":"Persisted todo","status":"in_progress","priority":"high"}]}"#
+                    .to_string(),
+                args_digest: "digest-todo-artifact".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        3,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req-todo-artifact",
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tool_call_todo_artifact".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("todo list updated".to_string()),
+                output_digest: Some("digest-todo-artifact-output".to_string()),
+                output_json: None,
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    artifact_refs: vec![harness_core::event::EventArtifactRef {
+                        path: "artifacts/toolcalls/tool_call_todo_artifact/result.json".to_string(),
+                        digest: None,
+                    }],
+                    ..Default::default()
+                }),
+            },
+        ),
+    ));
+
+    let sidebar = operator_sidebar_text_for_test(&app).join("\n");
+    assert!(sidebar.contains("Todo"));
+    assert!(sidebar.contains("[•] Persisted todo"));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_operator_rail_collapses_todo_section_body() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        1,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::User, None),
+        "req-todo-collapse",
+        harness_core::event::EventV1::UserMessageSubmitted(
+            harness_core::event::UserMessageSubmittedEvent {
+                request_id: "req-todo-collapse".to_string(),
+                text: "Track several tasks".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        2,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req-todo-collapse",
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_todo_collapse".to_string(),
+                tool_id: "todowrite".to_string(),
+                args_summary: r#"{"todos":[{"content":"One","status":"completed","priority":"high"},{"content":"Two","status":"in_progress","priority":"high"},{"content":"Three","status":"pending","priority":"medium"}]}"#
+                    .to_string(),
+                args_digest: "digest-todo-collapse".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        3,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req-todo-collapse",
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tool_call_todo_collapse".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("todo list updated".to_string()),
+                output_digest: Some("digest-todo-collapse-output".to_string()),
+                output_json: Some(serde_json::json!({
+                    "todos": [
+                        {"content": "One", "status": "completed", "priority": "high"},
+                        {"content": "Two", "status": "in_progress", "priority": "high"},
+                        {"content": "Three", "status": "pending", "priority": "medium"}
+                    ]
+                })),
+                metadata: None,
+            },
+        ),
+    ));
+
+    let open_sidebar = operator_sidebar_text_for_test(&app).join("\n");
+    assert!(open_sidebar.contains("▼ Todo"));
+    assert!(open_sidebar.contains("[•] Two"));
+
+    app.handle_mouse(
+        crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            column: 0,
+            row: 0,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        },
+        Rect::new(0, 0, 140, 40),
+        None,
+        Some(OperatorSidebarSection::Todo),
+        None,
+    );
+
+    let collapsed_sidebar = operator_sidebar_text_for_test(&app).join("\n");
+    assert!(collapsed_sidebar.contains("▶ Todo"));
+    assert!(!collapsed_sidebar.contains("[✓] One"));
+    assert!(!collapsed_sidebar.contains("[•] Two"));
+    assert!(!collapsed_sidebar.contains("[ ] Three"));
+}
+
+#[cfg(test)]
 pub(crate) fn exact_test_operator_rail_section_model_separates_mcp_from_native_tool_activity() {
     let _guard = operator_sidebar_config_test_guard();
     let mut integrations = harness_core::config::IntegrationsConfig::default();
@@ -849,6 +1208,7 @@ pub(crate) fn exact_test_operator_rail_section_model_keeps_native_prefix_tools_o
                 model_id: "gpt-5.4".to_string(),
                 prompt_summary: "Apply the sidebar patch".to_string(),
                 request_digest: "digest-native-prefix-tool".to_string(),
+                metadata: None,
             },
         ),
     ));
@@ -1444,6 +1804,7 @@ fn help_text(app: &AppState) -> String {
             String::new(),
             "Live shell:".to_string(),
             help_row(app, Action::CloseReviewSurface, "Return to session shell"),
+            help_row(app, Action::ToggleTerminalPanel, "Toggle terminal panel"),
             String::new(),
             "Prompt (when focused):".to_string(),
             help_row(app, Action::SubmitPrompt, "Submit prompt"),
@@ -1563,37 +1924,43 @@ fn build_operator_rail_body_text(
 }
 
 fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
+    let todo_items = operator_sidebar_todo_items(app);
+    let mut sections = Vec::new();
+    if let Some(items) = todo_items {
+        let disclosure = (items.len() > 2).then(|| OperatorRailSectionDisclosure {
+            section: OperatorSidebarSection::Todo,
+            collapsed: app.operator_sidebar_section_collapsed(OperatorSidebarSection::Todo),
+        });
+        sections.push(OperatorRailBodySection::Todo { items, disclosure });
+    }
+    sections.extend([
+        OperatorRailBodySection::Mcp {
+            items: operator_sidebar_mcp_items(app),
+            disclosure: OperatorRailSectionDisclosure {
+                section: OperatorSidebarSection::Mcp,
+                collapsed: app.operator_sidebar_section_collapsed(OperatorSidebarSection::Mcp),
+            },
+        },
+        OperatorRailBodySection::Lsp {
+            items: operator_sidebar_lsp_items(app),
+            disclosure: OperatorRailSectionDisclosure {
+                section: OperatorSidebarSection::Lsp,
+                collapsed: app.operator_sidebar_section_collapsed(OperatorSidebarSection::Lsp),
+            },
+        },
+        OperatorRailBodySection::ModifiedFiles {
+            items: operator_sidebar_modified_file_rows(app),
+            disclosure: OperatorRailSectionDisclosure {
+                section: OperatorSidebarSection::ModifiedFiles,
+                collapsed: app
+                    .operator_sidebar_section_collapsed(OperatorSidebarSection::ModifiedFiles),
+            },
+        },
+    ]);
+
     OperatorRailModel {
         title: operator_sidebar_session_title(app),
-        body: OperatorRailBody {
-            sections: vec![
-                OperatorRailBodySection::Mcp {
-                    items: operator_sidebar_mcp_items(app),
-                    disclosure: OperatorRailSectionDisclosure {
-                        section: OperatorSidebarSection::Mcp,
-                        collapsed: app
-                            .operator_sidebar_section_collapsed(OperatorSidebarSection::Mcp),
-                    },
-                },
-                OperatorRailBodySection::Lsp {
-                    items: operator_sidebar_lsp_items(app),
-                    disclosure: OperatorRailSectionDisclosure {
-                        section: OperatorSidebarSection::Lsp,
-                        collapsed: app
-                            .operator_sidebar_section_collapsed(OperatorSidebarSection::Lsp),
-                    },
-                },
-                OperatorRailBodySection::ModifiedFiles {
-                    items: operator_sidebar_modified_file_rows(app),
-                    disclosure: OperatorRailSectionDisclosure {
-                        section: OperatorSidebarSection::ModifiedFiles,
-                        collapsed: app.operator_sidebar_section_collapsed(
-                            OperatorSidebarSection::ModifiedFiles,
-                        ),
-                    },
-                },
-            ],
-        },
+        body: OperatorRailBody { sections },
     }
 }
 
@@ -1651,7 +2018,8 @@ fn build_operator_rail_section_lines(
     }
 
     let items = match section {
-        OperatorRailBodySection::Mcp { items, .. }
+        OperatorRailBodySection::Todo { items, .. }
+        | OperatorRailBodySection::Mcp { items, .. }
         | OperatorRailBodySection::Lsp { items, .. }
         | OperatorRailBodySection::ModifiedFiles { items, .. } => items.clone(),
     };
@@ -1811,6 +2179,13 @@ fn append_operator_rail_item(
             format!("{bullet_prefix}{first_line}"),
             secondary_style,
         ))),
+        OperatorRailItem::Todo { status, .. } => {
+            let style = status.style(theme);
+            lines.push(Line::from(vec![
+                Span::styled(format!("{} ", status.checkbox_glyph()), style),
+                Span::styled(first_line.to_string(), style),
+            ]));
+        }
         OperatorRailItem::Status { suffix, state, .. } => {
             let dot_color = match state {
                 RuntimeHealthState::Healthy => theme.status.success,
@@ -1869,6 +2244,93 @@ fn operator_sidebar_session_title(app: &AppState) -> Option<String> {
         .find_map(|activity| activity.user_message.as_ref())
         .map(|message| sanitize_operator_sidebar_line(&message.text))
         .filter(|text| !text.is_empty())
+}
+
+fn operator_sidebar_todo_items(app: &AppState) -> Option<Vec<OperatorRailItem>> {
+    let todos = app
+        .activities
+        .iter()
+        .flat_map(|activity| activity.tool_calls.iter())
+        .rev()
+        .find_map(|tool_call| todo_items_from_tool_call(tool_call, app.session_path.as_deref()))?;
+
+    (!todos.is_empty()).then_some(todos)
+}
+
+fn todo_items_from_tool_call(
+    tool_call: &crate::app::ToolCallEntry,
+    session_path: Option<&Path>,
+) -> Option<Vec<OperatorRailItem>> {
+    if !matches!(
+        tool_call.effective_tool_id(),
+        "todo.write" | "todo.read" | "todowrite" | "todoread"
+    ) && !matches!(tool_call.tool_id.as_str(), "todowrite" | "todoread")
+    {
+        return None;
+    }
+    if tool_call.status != crate::app::ToolCallDisplayStatus::Succeeded {
+        return None;
+    }
+
+    let artifact_json = || todo_json_from_artifacts(tool_call, session_path);
+    let todos = tool_call
+        .output_json
+        .as_ref()
+        .and_then(todo_array_from_json)
+        .cloned()
+        .or_else(artifact_json)?;
+    Some(
+        todos
+            .iter()
+            .filter_map(|todo| {
+                let content = todo.get("content")?.as_str()?;
+                let content = sanitize_operator_sidebar_line(content);
+                (!content.is_empty()).then(|| OperatorRailItem::Todo {
+                    content,
+                    status: todo
+                        .get("status")
+                        .and_then(serde_json::Value::as_str)
+                        .map(TodoRailStatus::from_value)
+                        .unwrap_or(TodoRailStatus::Pending),
+                })
+            })
+            .collect(),
+    )
+}
+
+fn todo_array_from_json(value: &serde_json::Value) -> Option<&Vec<serde_json::Value>> {
+    value
+        .get("todos")
+        .and_then(serde_json::Value::as_array)
+        .or_else(|| value.as_array())
+        .or_else(|| {
+            value
+                .get("structured_output")
+                .and_then(todo_array_from_json)
+        })
+}
+
+fn todo_json_from_artifacts(
+    tool_call: &crate::app::ToolCallEntry,
+    session_path: Option<&Path>,
+) -> Option<Vec<serde_json::Value>> {
+    let session_path = session_path?;
+    tool_call.artifact_refs.iter().find_map(|artifact| {
+        if !(artifact.path.ends_with(".json") || artifact.path.ends_with(".txt")) {
+            return None;
+        }
+        let path = Path::new(&artifact.path);
+        if path.is_absolute()
+            || path
+                .components()
+                .any(|component| component == std::path::Component::ParentDir)
+        {
+            return None;
+        }
+        let contents = std::fs::read_to_string(session_path.join(path)).ok()?;
+        let json = serde_json::from_str::<serde_json::Value>(&contents).ok()?;
+        todo_array_from_json(&json).cloned()
+    })
 }
 
 fn operator_sidebar_mcp_items(app: &AppState) -> Vec<OperatorRailItem> {

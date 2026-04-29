@@ -7,8 +7,7 @@ use std::sync::Arc;
 use super::app::{ActivityEntry, ActivityStatus, AppState, ToolCallDisplayStatus};
 use super::lib_tests::{
     key_with_modifiers, render_live_buffer, render_live_cells, render_live_lines,
-    row_text_and_colors, row_text_and_palette, transcript_code_block_app,
-    transcript_diff_block_app,
+    row_text_and_palette, transcript_code_block_app, transcript_diff_block_app,
 };
 
 use super::*;
@@ -375,6 +374,7 @@ fn permission_modal_ctrl_y_emits_resolve_intent_and_closes_on_resolved() {
             permission_id: "perm_1".to_string(),
             decision: PermissionDecision::Allow,
             reason: None,
+            grant_scope: None,
         }
     );
     drop(intents);
@@ -412,7 +412,7 @@ pub(super) fn module_transcript_edit_snapshot_renders_inline_diff() {
 }
 
 #[test]
-pub(super) fn module_inline_diff_does_not_leave_large_gap_before_waiting_response() {
+pub(super) fn module_inline_diff_does_not_leave_large_gap_before_active_footer() {
     harness_core::config::clear_registered_integrations_config();
     harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
 
@@ -430,24 +430,35 @@ pub(super) fn module_inline_diff_does_not_leave_large_gap_before_waiting_respons
         .iter()
         .rposition(|line| line.contains("gamma") || line.contains("BETA") || line.contains("beta"))
         .expect("inline diff row");
-    let waiting_row = lines
+    let footer_row = lines
         .iter()
-        .position(|line| line.contains("Waiting for response…"))
-        .expect("waiting response row");
+        .position(|line| line.contains("Assistant") && line.contains("active"))
+        .expect("active assistant footer row");
 
     assert_eq!(
-        waiting_row,
+        footer_row,
         diff_last_row + 2,
-        "inline diff should hand off to the waiting-response row with only one blank separator\n{lines:#?}"
+        "inline diff should hand off to the active footer row with only one blank separator\n{lines:#?}"
     );
 }
 
 pub(super) fn module_fenced_code_highlighting_uses_syntect_styles_for_known_languages() {
     let app = transcript_code_block_app("rust");
+    let rendered = render_live_lines(&app, 120, 30);
     let buffer = render_live_cells(&app, 120, 30);
     let theme = Theme::default();
-    let (row, colors) =
-        row_text_and_colors(&buffer, 120, "let answer = 42;").expect("highlighted code row");
+    let (_, _, prose_backgrounds) =
+        row_text_and_palette(&buffer, 120, "Here is a sample:").expect("prose row");
+    let rendered_code_row = rendered
+        .lines()
+        .find(|row| row.contains("let answer = 42;"))
+        .expect("rendered code row");
+    assert!(
+        !rendered_code_row.contains('┃'),
+        "assistant code should render without a nested frame rail\n{rendered}"
+    );
+    let (row, colors, backgrounds) =
+        row_text_and_palette(&buffer, 120, "let answer = 42;").expect("highlighted code row");
     let start = row.find("let answer = 42;").expect("code starts");
     let end = start + "let answer = 42;".chars().count();
     let unique = colors[start..end]
@@ -467,14 +478,23 @@ pub(super) fn module_fenced_code_highlighting_uses_syntect_styles_for_known_lang
             .any(|color| *color != format!("{:?}", theme.text.primary)),
         "known-language highlighting should not fall back to plain transcript color: {row}"
     );
+    assert!(
+        backgrounds[start..end]
+            .iter()
+            .zip(&prose_backgrounds[start..end])
+            .all(|(code_background, prose_background)| code_background == prose_background),
+        "highlighted code should use the same background as surrounding prose: {row}"
+    );
 }
 
 pub(super) fn module_fenced_code_highlighting_falls_back_to_plain_text_when_unknown() {
     let app = transcript_code_block_app("totally-unknown-lang");
     let buffer = render_live_cells(&app, 120, 30);
     let theme = Theme::default();
-    let (row, colors) =
-        row_text_and_colors(&buffer, 120, "let answer = 42;").expect("plain code row");
+    let (_, _, prose_backgrounds) =
+        row_text_and_palette(&buffer, 120, "Here is a sample:").expect("prose row");
+    let (row, colors, backgrounds) =
+        row_text_and_palette(&buffer, 120, "let answer = 42;").expect("plain code row");
     let start = row.find("let answer = 42;").expect("code starts");
     let end = start + "let answer = 42;".chars().count();
     let unique = colors[start..end]
@@ -487,6 +507,13 @@ pub(super) fn module_fenced_code_highlighting_falls_back_to_plain_text_when_unkn
     assert_eq!(
         unique,
         std::collections::HashSet::from([format!("{:?}", theme.text.primary)])
+    );
+    assert!(
+        backgrounds[start..end]
+            .iter()
+            .zip(&prose_backgrounds[start..end])
+            .all(|(code_background, prose_background)| code_background == prose_background),
+        "plain code fallback should use the same background as surrounding prose: {row}"
     );
 }
 
@@ -740,6 +767,7 @@ fn activity_groups_by_request_id() {
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Hello AI".to_string(),
             request_digest: "digest-1".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -765,6 +793,7 @@ fn transcript_accumulates_stream_deltas() {
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "test".to_string(),
             request_digest: "digest-1".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -803,6 +832,7 @@ fn activity_status_done_on_request_finished() {
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "test".to_string(),
             request_digest: "digest-1".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -819,6 +849,7 @@ fn activity_status_done_on_request_finished() {
             finish_reason: "stop".to_string(),
             output_digest: Some("digest-out".to_string()),
             usage: None,
+            metadata: None,
         }),
     ));
 
@@ -841,6 +872,7 @@ fn activity_status_error_on_run_failed() {
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "test".to_string(),
             request_digest: "digest-1".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -894,6 +926,7 @@ fn memory_cap_enforces_max_transcript_chars() {
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "test".to_string(),
             request_digest: "digest-1".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -934,6 +967,7 @@ fn run_workspace_renders_activity_with_compact_format() {
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Hello".to_string(),
             request_digest: "digest-1".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -975,6 +1009,7 @@ fn tool_call_requested_renders_pending_status() {
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Hello".to_string(),
             request_digest: "digest-1".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -1018,6 +1053,7 @@ fn tool_call_started_renders_running_status() {
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Hello".to_string(),
             request_digest: "digest-1".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -1069,6 +1105,7 @@ fn tool_call_finished_renders_truncated_output() {
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Hello".to_string(),
             request_digest: "digest-1".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -1138,6 +1175,7 @@ fn tool_call_failed_renders_error() {
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Hello".to_string(),
             request_digest: "digest-1".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -1202,6 +1240,7 @@ fn assistant_markdown_renders_headings_lists_and_quotes() {
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Render markdown".to_string(),
             request_digest: "digest-markdown".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -1220,6 +1259,7 @@ fn assistant_markdown_renders_headings_lists_and_quotes() {
             finish_reason: "stop".to_string(),
             output_digest: Some("digest-markdown-finished".to_string()),
             usage: None,
+            metadata: None,
         }),
     ));
 
@@ -1260,6 +1300,7 @@ fn block_style_tool_rows_render_titles_and_argument_blocks() {
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Run the suite".to_string(),
             request_digest: "digest-shell".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -1303,15 +1344,19 @@ fn block_style_tool_rows_render_titles_and_argument_blocks() {
 
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(
-        debug.contains("Shell"),
-        "shell blocks should surface the dedicated title row"
+        debug.contains("# Shell"),
+        "shell blocks should surface the harness block tool title"
+    );
+    assert!(
+        !debug.contains("● ● ●"),
+        "shell blocks should not render the removed fake terminal header icon"
     );
     assert!(
         !debug.contains("Shell · Failed"),
         "shell blocks should keep failure state out of the subtitle row"
     );
     assert!(
-        debug.contains("$ cargo test -p harness-tui"),
+        debug.contains("cargo test -p harness-tui"),
         "shell blocks should render the command body"
     );
     assert!(
@@ -1333,6 +1378,7 @@ fn generic_tool_output_toggle_reveals_block_payload() {
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Inspect generic tool output".to_string(),
             request_digest: "digest-generic-tool".to_string(),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -1423,6 +1469,7 @@ fn task_scheduled_queued_does_not_reuse_tool_call_id_as_task_id() {
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Hello".to_string(),
             request_digest: "digest-1".to_string(),
+            metadata: None,
         }),
     ));
 
@@ -1505,6 +1552,7 @@ fn sample_live_events() -> Vec<EventEnvelopeV1> {
                 model_id: "model-1".to_string(),
                 prompt_summary: "summarized prompt".to_string(),
                 request_digest: "digest-req-1".to_string(),
+                metadata: None,
             }),
         ),
         envelope(
@@ -1531,6 +1579,7 @@ fn sample_live_events() -> Vec<EventEnvelopeV1> {
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-output".to_string()),
                 usage: None,
+                metadata: None,
             }),
         ),
         permission_requested_event(6, "perm_1", "tool_call_1"),
@@ -1583,6 +1632,7 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "Match harness tool spacing".to_string(),
                 request_digest: "digest-spacing".to_string(),
+                metadata: None,
             }),
         ),
         envelope(
@@ -1737,6 +1787,7 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-spacing-output".to_string()),
                 usage: None,
+                metadata: None,
             }),
         ),
         envelope(
@@ -1863,6 +1914,7 @@ fn write_diff_fixture(with_diff_file: bool) -> TempDir {
                 model_id: "model-1".to_string(),
                 prompt_summary: "Show me the changes inline".to_string(),
                 request_digest: "digest-inline-diff-request".to_string(),
+                metadata: None,
             }),
         ),
         envelope(

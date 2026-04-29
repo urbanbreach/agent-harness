@@ -2901,6 +2901,11 @@ pub(crate) fn exact_test_live_composer_reserves_right_gap() {
     assert!(plan.operator_sidebar.is_some());
     assert_eq!(dock.composer.x, dock.shell.x);
     assert_eq!(dock.composer.width.saturating_add(2), dock.shell.width);
+    assert_eq!(dock.disclosure.map(|area| area.x), Some(dock.composer.x));
+    assert_eq!(
+        dock.disclosure.map(|area| area.width),
+        Some(dock.composer.width)
+    );
 }
 
 #[cfg(test)]

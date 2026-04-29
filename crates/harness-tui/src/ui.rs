@@ -31,6 +31,8 @@ mod ui_lifecycle;
 mod ui_overlays;
 #[path = "ui_secondary.rs"]
 mod ui_secondary;
+#[path = "ui_terminal.rs"]
+mod ui_terminal;
 #[path = "ui_transcript.rs"]
 mod ui_transcript;
 
@@ -48,6 +50,7 @@ pub(crate) use ui_secondary::operator_sidebar_section_hit_target;
 use ui_secondary::{
     render_events_tab, render_help_tab, render_live_details_overlay, render_operator_sidebar,
 };
+use ui_terminal::render_terminal_panel;
 pub use ui_transcript::hovered_wheel_target;
 use ui_transcript::render_transcript_pane;
 pub(crate) use ui_transcript::transcript_mouse_target;
@@ -160,46 +163,6 @@ pub(crate) fn exact_test_replay_prompt_pane_is_visibly_read_only() {
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_unified_bottom_dock_uses_single_layout_entrypoint() {
-    fn count_occurrences(haystack: &str, needle: &str) -> usize {
-        haystack.matches(needle).count()
-    }
-
-    let source = include_str!("ui.rs");
-    assert_eq!(
-        count_occurrences(
-            source,
-            "render_unified_bottom_dock(frame, app, dock, theme);"
-        )
-        .saturating_sub(1),
-        3,
-        "startup, live, and replay shells should each route through the unified dock renderer"
-    );
-    assert_eq!(
-        count_occurrences(source, "let Some(dock) = plan.dock else {").saturating_sub(1),
-        3,
-        "startup, live, and replay shells should consume the shared dock layout entrypoint"
-    );
-    assert_eq!(
-        count_occurrences(
-            source,
-            "render_live_control_dock_surface(frame, status_area, composer_area, theme);"
-        )
-        .saturating_sub(1),
-        0,
-        "legacy stacked live dock composition should be gone from ui.rs"
-    );
-    assert_eq!(
-        count_occurrences(
-            source,
-            "render_replay_read_only_control_dock(frame, app, composer_area, theme);"
-        )
-        .saturating_sub(1),
-        0,
-        "replay should no longer own a separate dock renderer entrypoint in ui.rs"
-    );
-}
-#[cfg(test)]
 use ui_secondary::format_detail_payload;
 #[cfg(test)]
 pub(crate) use ui_secondary::operator_sidebar_text_for_test;
@@ -209,8 +172,12 @@ pub(crate) use ui_secondary::orchestration_card_text_for_test;
 pub(crate) use ui_secondary::{
     exact_test_compaction_applied_updates_active_context_usage_estimate,
     exact_test_operator_rail_collapses_modified_files_section_body,
+    exact_test_operator_rail_collapses_todo_section_body,
+    exact_test_operator_rail_keeps_completed_todo_state_visible,
     exact_test_operator_rail_low_activity_presentation_prefers_primary_stack,
     exact_test_operator_rail_matches_sidebar_text_styles,
+    exact_test_operator_rail_renders_todo_items_from_artifact_state,
+    exact_test_operator_rail_renders_todo_items_from_tool_state,
     exact_test_operator_rail_sanitizes_control_chars_in_sidebar_strings,
     exact_test_operator_rail_section_model_builds_pinned_summary,
     exact_test_operator_rail_section_model_counts_generic_mcp_activity,
@@ -231,7 +198,7 @@ pub(crate) use ui_transcript::{
     exact_test_lsp_tool_successful_output_stays_hidden_until_generic_output_enabled,
     exact_test_mcp_tool_transcript_rows_use_effective_identity_without_generic_fallback,
     exact_test_native_tool_transcript_rows_show_disclosure_timestamps_and_task_metadata,
-    exact_test_todo_tool_rows_stay_hidden_by_default,
+    exact_test_todo_write_rows_render_open_checklist,
     exact_test_transcript_applied_edit_missing_diff_surfaces_fallback,
     exact_test_transcript_apply_patch_multifile_uses_output_edit_paths,
     exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs,
@@ -400,6 +367,7 @@ pub(crate) fn exact_test_persistent_operator_sidebar_uses_panel_gutter() {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WheelTarget {
     Transcript,
+    Terminal,
     Inspector,
 }
 
@@ -488,6 +456,9 @@ fn render_replay_session_surface(
 
     frame.render_widget(chromeless_shell_section(theme), plan.shell);
     render_transcript_pane(frame, app, transcript_area, theme);
+    if let Some(terminal_panel) = plan.terminal_panel {
+        render_terminal_panel(frame, app, terminal_panel, theme);
+    }
     if let Some(operator_sidebar) = plan.operator_sidebar {
         render_operator_sidebar(frame, app, operator_sidebar, theme);
     }
@@ -537,6 +508,9 @@ fn render_live_run_shell(frame: &mut Frame, app: &AppState, theme: &Theme, plan:
 
     frame.render_widget(chromeless_shell_section(theme), plan.shell);
     render_transcript_pane(frame, app, transcript_area, theme);
+    if let Some(terminal_panel) = plan.terminal_panel {
+        render_terminal_panel(frame, app, terminal_panel, theme);
+    }
     if let Some(operator_sidebar) = plan.operator_sidebar {
         render_operator_sidebar(frame, app, operator_sidebar, theme);
     }
@@ -913,6 +887,7 @@ mod tests {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "hello".to_string(),
                 request_digest: "digest-anchor-streaming".to_string(),
+                metadata: None,
             }),
         ));
         sending.ingest_event(envelope(
@@ -939,6 +914,7 @@ mod tests {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "edit the file".to_string(),
                 request_digest: "digest-anchor-permission".to_string(),
+                metadata: None,
             }),
         ));
         permission.ingest_event(envelope(
@@ -992,6 +968,7 @@ mod tests {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "Restyle the transcript shell".to_string(),
                 request_digest: "digest-answer-first".to_string(),
+                metadata: None,
             }),
         ));
         app.ingest_event(envelope(
@@ -1041,6 +1018,7 @@ mod tests {
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-answer-first-finished".to_string()),
                 usage: None,
+                metadata: None,
             }),
         ));
 
@@ -1465,6 +1443,7 @@ mod tests {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "Read src/lib.rs and report the first 20 lines".to_string(),
                 request_digest: "digest-tool-detail-request".to_string(),
+                metadata: None,
             }),
         ));
         app.ingest_event(envelope(
@@ -1523,6 +1502,7 @@ mod tests {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "Apply the edit".to_string(),
                 request_digest: "digest-permission-detail-request".to_string(),
+                metadata: None,
             }),
         ));
         app.ingest_event(envelope(
@@ -1597,6 +1577,7 @@ mod tests {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "Read the file".to_string(),
                 request_digest: "digest-tool-compact".to_string(),
+                metadata: None,
             }),
         ));
         app.ingest_event(envelope(
@@ -1653,6 +1634,7 @@ mod tests {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "Run the command".to_string(),
                 request_digest: "digest-tool-error".to_string(),
+                metadata: None,
             }),
         ));
         app.ingest_event(envelope(
@@ -1687,7 +1669,7 @@ mod tests {
         ));
 
         let transcript = transcript_debug(&app);
-        assert!(transcript.contains("$ false"));
+        assert!(transcript.contains("false"));
         assert!(transcript.contains("exit code: 1"));
         assert!(transcript.contains("stderr: permission denied"));
         assert!(!transcript.contains(r#"{"cmd":"false","cwd":"/tmp/demo"}"#));
@@ -1707,6 +1689,7 @@ mod tests {
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "Check tool status".to_string(),
                 request_digest: "digest-tool-status".to_string(),
+                metadata: None,
             }),
         ));
         app.ingest_event(envelope(

@@ -48,6 +48,7 @@ pub enum Action {
     /// Open/close the help tab
     Help,
     ToggleOperatorSidebar,
+    ToggleTerminalPanel,
     /// Toggle follow mode
     ToggleFollow,
     /// Submit the prompt
@@ -144,6 +145,13 @@ impl Action {
                 label: "Event log",
                 description: "Open the review event log surface",
                 shortcut: "",
+                section: PaletteCommandSection::Session,
+            },
+            PaletteCommand {
+                id: "toggle_terminal_panel",
+                label: "Toggle terminal panel",
+                description: "Show or hide shell command output below the transcript",
+                shortcut: "4",
                 section: PaletteCommandSection::Session,
             },
             PaletteCommand {
@@ -256,6 +264,7 @@ impl Action {
             Action::Palette => "palette",
             Action::Help => "help",
             Action::ToggleOperatorSidebar => "toggle_operator_sidebar",
+            Action::ToggleTerminalPanel => "toggle_terminal_panel",
             Action::ToggleFollow => "toggle_follow",
             Action::SubmitPrompt => "submit_prompt",
             Action::InsertNewline => "insert_newline",
@@ -301,6 +310,10 @@ impl Action {
                 "Return to the transcript-first session shell",
             ),
             ("open_event_log", "Open the review event log surface"),
+            (
+                "toggle_terminal_panel",
+                "Show or hide shell command output below the transcript",
+            ),
             ("toggle_follow", "Toggle follow mode"),
             (
                 "show_thinking",
@@ -405,6 +418,7 @@ impl FromStr for Action {
             "palette" => Ok(Action::Palette),
             "help" => Ok(Action::Help),
             "toggle_operator_sidebar" => Ok(Action::ToggleOperatorSidebar),
+            "toggle_terminal_panel" => Ok(Action::ToggleTerminalPanel),
             "toggle_follow" => Ok(Action::ToggleFollow),
             "submit_prompt" => Ok(Action::SubmitPrompt),
             "insert_newline" => Ok(Action::InsertNewline),
@@ -583,6 +597,10 @@ impl KeyMap {
         keymap.bind(
             KeyBinding::new(KeyCode::Char('3'), KeyModifiers::NONE),
             Action::OpenEventLog,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('4'), KeyModifiers::NONE),
+            Action::ToggleTerminalPanel,
         );
 
         keymap.bind(

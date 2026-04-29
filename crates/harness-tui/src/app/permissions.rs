@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::event::PermissionDecision as EventPermissionDecision;
-use harness_core::perm::PermissionDecision;
+use harness_core::perm::{PermissionDecision, PermissionGrantScope};
 
 #[cfg(test)]
 use harness_core::event::{ActorKind, EventEnvelopeV1, EventV1};
@@ -401,13 +401,12 @@ impl AppState {
                         if self.permission_modal_confirm_selection(&permission.permission_id)
                             == PermissionConfirmSelection::Confirm
                         {
-                            self.always_allowed_permission_digests
-                                .insert(permission.request_digest.clone());
                             self.clear_permission_modal_selection(&permission.permission_id);
                             self.send_permission_intent(
                                 permission.permission_id.clone(),
                                 PermissionDecision::Allow,
                                 None,
+                                Some(PermissionGrantScope::Run),
                             );
                         } else {
                             self.close_permission_allow_always_confirm(&permission.permission_id);
@@ -624,17 +623,17 @@ impl AppState {
                     return true;
                 }
                 self.clear_permission_modal_selection(&permission_id);
-                self.send_permission_intent(permission_id, PermissionDecision::Allow, reason);
+                self.send_permission_intent(permission_id, PermissionDecision::Allow, reason, None);
                 true
             }
             Action::DenyPermission => {
                 self.clear_permission_modal_selection(&permission_id);
-                self.send_permission_intent(permission_id, PermissionDecision::Deny, None);
+                self.send_permission_intent(permission_id, PermissionDecision::Deny, None, None);
                 true
             }
             Action::DismissModal => {
                 self.clear_permission_modal_selection(&permission_id);
-                self.send_permission_intent(permission_id, PermissionDecision::Deny, None);
+                self.send_permission_intent(permission_id, PermissionDecision::Deny, None, None);
                 true
             }
             Action::Quit => {
@@ -653,15 +652,15 @@ impl AppState {
 
         match (key.code, key.modifiers) {
             (KeyCode::Char('y'), KeyModifiers::CONTROL) => {
-                self.send_permission_intent(permission_id, PermissionDecision::Allow, None);
+                self.send_permission_intent(permission_id, PermissionDecision::Allow, None, None);
                 true
             }
             (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
-                self.send_permission_intent(permission_id, PermissionDecision::Deny, None);
+                self.send_permission_intent(permission_id, PermissionDecision::Deny, None, None);
                 true
             }
             (KeyCode::Esc, KeyModifiers::NONE) => {
-                self.send_permission_intent(permission_id, PermissionDecision::Deny, None);
+                self.send_permission_intent(permission_id, PermissionDecision::Deny, None, None);
                 true
             }
             _ => false,
@@ -966,6 +965,7 @@ impl AppState {
         permission_id: String,
         decision: PermissionDecision,
         reason: Option<String>,
+        grant_scope: Option<PermissionGrantScope>,
     ) {
         if self.submitted_permission_id.as_deref() == Some(permission_id.as_str()) {
             return;
@@ -975,6 +975,7 @@ impl AppState {
             permission_id: permission_id.clone(),
             decision,
             reason,
+            grant_scope,
         });
         self.submitted_permission_id = Some(permission_id);
     }

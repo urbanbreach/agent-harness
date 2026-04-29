@@ -78,9 +78,29 @@ impl SessionProjection {
             .position(|activity| activity.request_id == request_id)
     }
 
-    fn adopt_local_prompt_echo(&mut self, request_id: &str, seq: u64) -> Option<usize> {
-        let last_index = self.activities.len().checked_sub(1)?;
-        let entry = self.activities.get_mut(last_index)?;
+    fn local_prompt_echo_index_for_message(&self, text: &str) -> Option<usize> {
+        self.activities.iter().rposition(|activity| {
+            activity.request_id.is_empty()
+                && activity
+                    .user_message
+                    .as_ref()
+                    .is_some_and(|message| message.text == text)
+        })
+    }
+
+    fn last_local_prompt_echo_index(&self) -> Option<usize> {
+        self.activities
+            .iter()
+            .rposition(|activity| activity.request_id.is_empty())
+    }
+
+    fn adopt_local_prompt_echo_at(
+        &mut self,
+        index: usize,
+        request_id: &str,
+        seq: u64,
+    ) -> Option<usize> {
+        let entry = self.activities.get_mut(index)?;
         if !entry.request_id.is_empty() {
             return None;
         }
@@ -90,12 +110,62 @@ impl SessionProjection {
             entry.first_seq = seq;
         }
         entry.last_seq = seq;
-        Some(last_index)
+        Some(index)
+    }
+
+    fn adopt_local_prompt_echo(&mut self, request_id: &str, seq: u64) -> Option<usize> {
+        let index = self.last_local_prompt_echo_index()?;
+        self.adopt_local_prompt_echo_at(index, request_id, seq)
     }
 
     fn activity_index_or_local_echo(&mut self, request_id: &str, seq: u64) -> Option<usize> {
         self.activity_index_for_request(request_id)
             .or_else(|| self.adopt_local_prompt_echo(request_id, seq))
+    }
+
+    fn canonical_provider_turn_id<'a>(
+        event: &'a EventEnvelopeV1,
+        provider_request_id: &'a str,
+    ) -> &'a str {
+        event
+            .correlation_id
+            .as_deref()
+            .unwrap_or(provider_request_id)
+    }
+
+    fn activity_index_for_provider_event(
+        &mut self,
+        event: &EventEnvelopeV1,
+        provider_request_id: &str,
+    ) -> Option<usize> {
+        let turn_id = Self::canonical_provider_turn_id(event, provider_request_id);
+        self.activity_index_for_request(turn_id)
+            .or_else(|| self.activity_index_for_request(provider_request_id))
+            .or_else(|| self.adopt_local_prompt_echo(turn_id, event.seq))
+    }
+
+    fn activity_index_for_user_message(
+        &mut self,
+        data: &harness_core::event::UserMessageSubmittedEvent,
+        seq: u64,
+    ) -> Option<usize> {
+        if let Some(index) = self.activity_index_for_request(&data.request_id) {
+            self.remove_duplicate_local_prompt_echo(&data.text, index);
+            return self.activity_index_for_request(&data.request_id);
+        }
+
+        self.local_prompt_echo_index_for_message(&data.text)
+            .and_then(|index| self.adopt_local_prompt_echo_at(index, &data.request_id, seq))
+            .or_else(|| self.adopt_local_prompt_echo(&data.request_id, seq))
+    }
+
+    fn remove_duplicate_local_prompt_echo(&mut self, text: &str, keep_index: usize) {
+        let Some(index) = self.local_prompt_echo_index_for_message(text) else {
+            return;
+        };
+        if index != keep_index {
+            self.activities.remove(index);
+        }
     }
 
     fn attach_permission_request(&mut self, event: &EventEnvelopeV1) {
@@ -488,10 +558,11 @@ impl SessionProjection {
                     .insert(data.agent_id.clone(), data.profile.clone());
             }
             EventV1::UserMessageSubmitted(data) => {
-                if let Some(index) = self.activity_index_or_local_echo(&data.request_id, event.seq)
-                {
+                if let Some(index) = self.activity_index_for_user_message(data, event.seq) {
                     if let Some(entry) = self.activities.get_mut(index) {
-                        entry.status = ActivityStatus::Streaming;
+                        if !matches!(entry.status, ActivityStatus::Done | ActivityStatus::Error) {
+                            entry.status = ActivityStatus::Streaming;
+                        }
                         entry.user_message = Some(data.clone());
                         entry.user_timestamp = event.ts.clone();
                         mark_activity_event(entry, event.seq, event.mono_ms);
@@ -513,7 +584,8 @@ impl SessionProjection {
                 }
             }
             EventV1::ProviderRequestStarted(data) => {
-                if let Some(index) = self.activity_index_or_local_echo(&data.request_id, event.seq)
+                let turn_id = Self::canonical_provider_turn_id(event, &data.request_id);
+                if let Some(index) = self.activity_index_for_provider_event(event, &data.request_id)
                 {
                     if let Some(entry) = self.activities.get_mut(index) {
                         entry.status = ActivityStatus::Streaming;
@@ -525,7 +597,7 @@ impl SessionProjection {
                 } else {
                     self.activities.push_back(new_streaming_activity_entry(
                         NewStreamingActivityEntryArgs {
-                            request_id: data.request_id.clone(),
+                            request_id: turn_id.to_string(),
                             model_id: data.model_id.clone(),
                             provider_id: data.provider_id.clone(),
                             user_message: None,
@@ -539,7 +611,8 @@ impl SessionProjection {
                 }
             }
             EventV1::ProviderStreamDelta(data) => {
-                if let Some(index) = self.activity_index_or_local_echo(&data.request_id, event.seq)
+                let turn_id = Self::canonical_provider_turn_id(event, &data.request_id);
+                if let Some(index) = self.activity_index_for_provider_event(event, &data.request_id)
                 {
                     if let Some(entry) = self.activities.get_mut(index) {
                         entry.status = ActivityStatus::Streaming;
@@ -549,7 +622,7 @@ impl SessionProjection {
                 } else {
                     self.activities.push_back(new_streaming_activity_entry(
                         NewStreamingActivityEntryArgs {
-                            request_id: data.request_id.clone(),
+                            request_id: turn_id.to_string(),
                             model_id: String::new(),
                             provider_id: String::new(),
                             user_message: None,
@@ -564,7 +637,8 @@ impl SessionProjection {
                 self.enforce_transcript_memory_cap();
             }
             EventV1::ProviderReasoningDelta(data) => {
-                if let Some(index) = self.activity_index_or_local_echo(&data.request_id, event.seq)
+                let turn_id = Self::canonical_provider_turn_id(event, &data.request_id);
+                if let Some(index) = self.activity_index_for_provider_event(event, &data.request_id)
                 {
                     if let Some(entry) = self.activities.get_mut(index) {
                         entry.status = ActivityStatus::Streaming;
@@ -574,7 +648,7 @@ impl SessionProjection {
                 } else {
                     self.activities.push_back(new_streaming_activity_entry(
                         NewStreamingActivityEntryArgs {
-                            request_id: data.request_id.clone(),
+                            request_id: turn_id.to_string(),
                             model_id: String::new(),
                             provider_id: String::new(),
                             user_message: None,
@@ -592,9 +666,10 @@ impl SessionProjection {
                 self.enforce_transcript_memory_cap();
             }
             EventV1::ProviderRequestFinished(data) => {
-                if let Some(index) = self.activity_index_or_local_echo(&data.request_id, event.seq)
+                let turn_id = Self::canonical_provider_turn_id(event, &data.request_id);
+                if let Some(index) = self.activity_index_for_provider_event(event, &data.request_id)
                 {
-                    let should_mark_done = !self.has_active_turn_task_for_request(&data.request_id);
+                    let should_mark_done = !self.has_active_turn_task_for_request(turn_id);
                     if let Some(entry) = self.activities.get_mut(index) {
                         if entry.tool_calls.is_empty()
                             && entry.transcript_text.is_empty()

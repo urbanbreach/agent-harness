@@ -1136,7 +1136,12 @@ impl AppState {
     }
 
     fn model_switcher_supported(&self) -> bool {
-        false
+        !self.replay_mode
+            && (!self.launch_metadata.available_models().is_empty()
+                || self.launch_metadata.model().is_some()
+                || self.activities.iter().any(|activity| {
+                    !activity.provider_id.trim().is_empty() && !activity.model_id.trim().is_empty()
+                }))
     }
 
     fn restore_slash_draft(&mut self, preserved_draft: Option<String>) {
@@ -1239,6 +1244,7 @@ impl AppState {
     }
 
     pub(in crate::app) fn handle_model_key(&mut self, key: &KeyEvent) -> bool {
+        let ctrl_only = key.modifiers == KeyModifiers::CONTROL;
         match key.code {
             KeyCode::Esc => {
                 self.close_palette();
@@ -1248,28 +1254,83 @@ impl AppState {
                 self.execute_selected_model();
                 true
             }
+            KeyCode::PageUp => {
+                self.move_model_selection(-10);
+                true
+            }
+            KeyCode::PageDown => {
+                self.move_model_selection(10);
+                true
+            }
+            KeyCode::Home => {
+                self.model_selected = 0;
+                true
+            }
+            KeyCode::End => {
+                self.model_selected = self.model_filtered.len().saturating_sub(1);
+                true
+            }
             KeyCode::Up => {
-                if self.model_selected > 0 {
-                    self.model_selected -= 1;
-                }
+                self.move_model_selection(-1);
                 true
             }
             KeyCode::Down => {
-                if self.model_selected + 1 < self.model_filtered.len() {
-                    self.model_selected += 1;
-                }
+                self.move_model_selection(1);
                 true
             }
             KeyCode::Backspace => {
                 self.overlay_backspace(Self::update_model_filter);
                 true
             }
+            KeyCode::Delete => {
+                self.overlay_delete(Self::update_model_filter);
+                true
+            }
+            KeyCode::Char('p') if ctrl_only => {
+                self.move_model_selection(-1);
+                true
+            }
+            KeyCode::Char('n') if ctrl_only => {
+                self.move_model_selection(1);
+                true
+            }
             KeyCode::Char(c) => {
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    || key.modifiers.contains(KeyModifiers::ALT)
+                {
+                    return false;
+                }
                 self.overlay_insert_char(c, Self::update_model_filter);
                 true
             }
             _ => false,
         }
+    }
+
+    fn move_model_selection(&mut self, delta: isize) {
+        let len = self.model_filtered.len();
+        if len == 0 {
+            self.model_selected = 0;
+            return;
+        }
+
+        if delta == -1 {
+            self.model_selected = if self.model_selected == 0 {
+                len - 1
+            } else {
+                self.model_selected - 1
+            };
+            return;
+        }
+
+        if delta == 1 {
+            self.model_selected = (self.model_selected + 1) % len;
+            return;
+        }
+
+        let current = self.model_selected.min(len.saturating_sub(1)) as isize;
+        let next = (current + delta).clamp(0, len.saturating_sub(1) as isize);
+        self.model_selected = usize::try_from(next).unwrap_or(0);
     }
 
     pub(in crate::app) fn handle_slash_key(&mut self, key: &KeyEvent) -> bool {
@@ -1480,6 +1541,7 @@ impl AppState {
             "cycle_variant" => self.execute_action(Action::VariantCycle),
             "close_review_surface" => self.execute_action(Action::CloseReviewSurface),
             "open_event_log" => self.execute_action(Action::OpenEventLog),
+            "toggle_terminal_panel" => self.execute_action(Action::ToggleTerminalPanel),
             "toggle_follow" => self.execute_action(Action::ToggleFollow),
             "show_thinking" => self.show_transcript_thinking = true,
             "hide_thinking" => self.show_transcript_thinking = false,
@@ -1624,6 +1686,8 @@ impl AppState {
             self.active_review_surface.is_some()
         } else if command_id == "open_event_log" {
             self.active_review_surface != Some(ReviewSurface::Events)
+        } else if command_id == "toggle_terminal_panel" {
+            !self.startup_shell_visible()
         } else {
             true
         }
