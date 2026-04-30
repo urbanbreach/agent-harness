@@ -644,6 +644,21 @@ pub struct CompactionRuntimeConfig {
         alias = "autoRetryOverflow"
     )]
     pub auto_retry_overflow: bool,
+    #[serde(
+        default = "default_compaction_structured_summary_contract",
+        alias = "structuredSummaryContract"
+    )]
+    pub structured_summary_contract: bool,
+    #[serde(
+        default = "default_compaction_estimated_token_triggers",
+        alias = "estimatedTokenTriggers"
+    )]
+    pub estimated_token_triggers: bool,
+    #[serde(
+        default = "default_compaction_fallback_input_tokens",
+        alias = "fallbackInputTokens"
+    )]
+    pub fallback_input_tokens: u32,
 }
 
 impl Default for CompactionRuntimeConfig {
@@ -653,6 +668,9 @@ impl Default for CompactionRuntimeConfig {
             model_ref: None,
             split_oversized_turns: false,
             auto_retry_overflow: default_compaction_auto_retry_overflow(),
+            structured_summary_contract: default_compaction_structured_summary_contract(),
+            estimated_token_triggers: default_compaction_estimated_token_triggers(),
+            fallback_input_tokens: default_compaction_fallback_input_tokens(),
         }
     }
 }
@@ -1525,6 +1543,18 @@ fn default_prompt_wait_timeout_ms() -> u64 {
 
 fn default_compaction_auto_retry_overflow() -> bool {
     true
+}
+
+fn default_compaction_structured_summary_contract() -> bool {
+    true
+}
+
+fn default_compaction_estimated_token_triggers() -> bool {
+    true
+}
+
+fn default_compaction_fallback_input_tokens() -> u32 {
+    32_768
 }
 
 fn default_hook_timeout_ms() -> u64 {
@@ -2697,6 +2727,41 @@ mod tests {
 
     fn write_legacy_agent_markdown(repo_root: &Path, name: &str, content: &str) {
         write_agent_markdown_in(repo_root, ".agent-harness", name, content);
+    }
+
+    #[test]
+    fn structured_summary_contract_defaults_on_and_serializes_alias() {
+        let default_compaction: CompactionRuntimeConfig =
+            serde_json::from_value(serde_json::json!({})).expect("empty compaction config parses");
+        assert!(default_compaction.structured_summary_contract);
+        assert!(default_compaction.estimated_token_triggers);
+        assert_eq!(default_compaction.fallback_input_tokens, 32_768);
+
+        let disabled_via_alias: CompactionRuntimeConfig =
+            serde_json::from_value(serde_json::json!({
+                "structuredSummaryContract": false,
+                "estimatedTokenTriggers": false,
+                "fallbackInputTokens": 65_536,
+            }))
+            .expect("camelCase compaction aliases parse");
+        assert!(!disabled_via_alias.structured_summary_contract);
+        assert!(!disabled_via_alias.estimated_token_triggers);
+        assert_eq!(disabled_via_alias.fallback_input_tokens, 65_536);
+
+        let serialized =
+            serde_json::to_value(&disabled_via_alias).expect("compaction config serializes");
+        assert_eq!(
+            serialized.get("structured_summary_contract"),
+            Some(&serde_json::Value::Bool(false))
+        );
+        assert_eq!(
+            serialized.get("estimated_token_triggers"),
+            Some(&serde_json::Value::Bool(false))
+        );
+        assert_eq!(
+            serialized.get("fallback_input_tokens"),
+            Some(&serde_json::Value::from(65_536))
+        );
     }
 
     #[test]

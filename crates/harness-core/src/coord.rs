@@ -17,10 +17,11 @@ use crate::agent::{
     build_provider_context_messages, build_provider_tool_defs, default_model_settings_for_profile,
     default_provider, stream_assistant_response_once, tool_result_to_message_content,
     AgentModelRef, AgentModelSettings, AgentProfile, AgentRequest, AgentRuntimeEvent,
-    AgentTurnOutcome, AssistantResponse, AssistantToolIntent, ProviderBoundaryContext,
-    ProviderCompactionFacts, ProviderCompactionSummarySource, ProviderCompactionTailBoundary,
-    ProviderCompactionTimelineEntry, ProviderCompactionTurnFact, ProviderContext,
-    ProviderContextCheckpoint, ProviderContextCheckpointMetadata, ProviderConversationTurn,
+    AgentTurnFailure, AgentTurnOutcome, AssistantResponse, AssistantToolIntent,
+    ProviderBoundaryContext, ProviderCompactionFacts, ProviderCompactionSummarySource,
+    ProviderCompactionTailBoundary, ProviderCompactionTimelineEntry, ProviderCompactionTurnFact,
+    ProviderContext, ProviderContextCheckpoint, ProviderContextCheckpointMetadata,
+    ProviderConversationTurn, ProviderConversationTurnStatus, ProviderFileOperationFact,
     StreamAssistantResponseOnceRequest, MAX_TOOL_CALLS_TOTAL,
 };
 use crate::clock::Clock;
@@ -38,8 +39,8 @@ use crate::event::{
     HookExecutionMetadata, HookExecutionStatus, PermissionDecision as EventPermissionDecision,
     PermissionGrantRecordedEvent, PermissionRequestedArgs, PermissionResolvedEvent,
     PolicyViolationDetectedEvent, ProviderAssistantMessageMetadata, ProviderReasoningDeltaEvent,
-    ProviderRequestFinishedMetadata, ProviderRequestStartedMetadata, RunFinishedEvent,
-    RunStartedEvent, StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent,
+    ProviderRequestFinishedMetadata, ProviderRequestStartedMetadata, ResolvedToolIdentity,
+    RunFinishedEvent, RunStartedEvent, StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent,
     TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState,
     TaskScheduledEvent, TaskTerminalScope, ToolCallFinishedEvent, ToolCallMetadata,
     ToolCallStartedEvent, ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent,
@@ -77,6 +78,40 @@ const PROVIDER_CONTEXT_COMPACTION_KEEP_RECENT_MAX_TOKENS: u32 = 8_000;
 const PROVIDER_CONTEXT_COMPACTION_KEEP_RECENT_MIN_TOKENS: u32 = 2_000;
 const PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS: usize = 6_000;
 const PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS: usize = 240;
+const PROVIDER_CONTEXT_FILE_OPERATION_FACT_LIMIT: usize = 50;
+const PROVIDER_CONTEXT_OPERATION_FACT_LIMIT: usize = 20;
+const PROVIDER_CONTEXT_SUMMARY_CONTRACT_VERSION: u32 = 2;
+const PROVIDER_CONTEXT_PI_SUMMARY_HEADINGS: &[&str] = &[
+    "## Goal",
+    "## Constraints",
+    "## Progress",
+    "## Key Decisions",
+    "## Next Steps",
+    "## Critical Context",
+];
+const PROVIDER_CONTEXT_LEGACY_SUMMARY_HEADINGS: &[&str] = &[
+    "## Goal",
+    "## Constraints & Preferences",
+    "## Progress",
+    "### Done",
+    "### In Progress",
+    "### Blocked",
+    "## Key Decisions",
+    "## Next Steps",
+    "## Critical Context",
+    "## Source Facts",
+    "## Relevant Files / Artifacts",
+];
+
+fn provider_context_summary_required_headings(
+    config: &CompactionRuntimeConfig,
+) -> &'static [&'static str] {
+    if config.structured_summary_contract {
+        PROVIDER_CONTEXT_PI_SUMMARY_HEADINGS
+    } else {
+        PROVIDER_CONTEXT_LEGACY_SUMMARY_HEADINGS
+    }
+}
 
 fn warn_oneshot_send_failure<T>(result: Result<(), T>, operation: &str) {
     if result.is_err() {
@@ -292,6 +327,7 @@ pub enum Command {
         task_id: String,
         agent_id: String,
         request_id: String,
+        assistant_output: String,
         tool_call_count: usize,
         assistant_message: Option<ProviderAssistantMessageMetadata>,
         respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
@@ -328,8 +364,82 @@ pub enum Command {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentTurnTaskOutcome {
-    Succeeded { output: String },
-    Failed { reason: String },
+    Succeeded {
+        output: String,
+    },
+    Failed {
+        reason: String,
+        memory: Option<AgentTurnFailureMemory>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentTurnFailureMemory {
+    pub status: ProviderConversationTurnStatus,
+    pub failure_stage: String,
+    pub failure_reason: String,
+    pub partial_assistant_output: String,
+    pub provider_request_id: Option<String>,
+}
+
+impl AgentTurnFailureMemory {
+    fn new(
+        status: ProviderConversationTurnStatus,
+        failure_stage: impl Into<String>,
+        failure_reason: impl Into<String>,
+        partial_assistant_output: impl Into<String>,
+        provider_request_id: Option<String>,
+    ) -> Self {
+        Self {
+            status,
+            failure_stage: failure_stage.into(),
+            failure_reason: failure_reason.into(),
+            partial_assistant_output: partial_assistant_output.into(),
+            provider_request_id,
+        }
+    }
+
+    fn failed(
+        failure_stage: impl Into<String>,
+        failure_reason: impl Into<String>,
+        partial_assistant_output: impl Into<String>,
+        provider_request_id: Option<String>,
+    ) -> Self {
+        Self::new(
+            ProviderConversationTurnStatus::Failed,
+            failure_stage,
+            failure_reason,
+            partial_assistant_output,
+            provider_request_id,
+        )
+    }
+
+    fn aborted(
+        failure_stage: impl Into<String>,
+        failure_reason: impl Into<String>,
+        partial_assistant_output: impl Into<String>,
+        provider_request_id: Option<String>,
+    ) -> Self {
+        Self::new(
+            ProviderConversationTurnStatus::Aborted,
+            failure_stage,
+            failure_reason,
+            partial_assistant_output,
+            provider_request_id,
+        )
+    }
+}
+
+impl From<AgentTurnFailure> for AgentTurnFailureMemory {
+    fn from(failure: AgentTurnFailure) -> Self {
+        Self::new(
+            failure.status,
+            failure.failure_stage,
+            failure.reason,
+            failure.partial_assistant_output,
+            failure.provider_request_id,
+        )
+    }
 }
 
 #[derive(Debug, Error)]
@@ -1025,6 +1135,7 @@ impl Coordinator {
                 task_id,
                 agent_id,
                 request_id,
+                assistant_output,
                 tool_call_count,
                 assistant_message,
                 respond_to,
@@ -1033,6 +1144,7 @@ impl Coordinator {
                     task_id,
                     agent_id,
                     request_id,
+                    assistant_output,
                     tool_call_count,
                     assistant_message,
                 );
@@ -1177,6 +1289,8 @@ impl Coordinator {
             pending_agent_turn_messages: BTreeMap::new(),
             queued_agent_turns: BTreeMap::new(),
             running_agent_turns: BTreeMap::new(),
+            failed_terminal_compaction_attempts: BTreeSet::new(),
+            overflow_retry_compacted_context_by_attempt: BTreeMap::new(),
             scheduler: Scheduler::new(SchedulerLimits {
                 provider_model: self.config.provider_model_concurrency,
                 tool: self.config.tool_concurrency,
@@ -1391,6 +1505,8 @@ impl Coordinator {
             pending_agent_turn_messages: BTreeMap::new(),
             queued_agent_turns: BTreeMap::new(),
             running_agent_turns: BTreeMap::new(),
+            failed_terminal_compaction_attempts: BTreeSet::new(),
+            overflow_retry_compacted_context_by_attempt: BTreeMap::new(),
             scheduler: Scheduler::new(SchedulerLimits {
                 provider_model: self.config.provider_model_concurrency,
                 tool: self.config.tool_concurrency,
@@ -2775,6 +2891,9 @@ impl Coordinator {
             run_state
                 .pending_agent_turn_messages
                 .remove(&running.agent_id);
+            if let Some(memory) = cancelled_failure_memory_from_running(&running, &reason) {
+                push_incomplete_provider_turn(run_state, &running, &running.request_id, memory);
+            }
             let child_tool_task_ids = run_state
                 .tasks
                 .iter()
@@ -3367,6 +3486,7 @@ impl Coordinator {
         )
         .await;
         if let Some(running) = run_state.running_agent_turns.get_mut(&task_id) {
+            running.latest_provider_request_id = Some(request_id.clone());
             running.latest_provider_id = Some(provider_id_for_state);
             running.latest_model_id = Some(model_id_for_state);
             running
@@ -3564,6 +3684,7 @@ impl Coordinator {
         task_id: String,
         agent_id: String,
         request_id: String,
+        assistant_output: String,
         tool_call_count: usize,
         assistant_message: Option<ProviderAssistantMessageMetadata>,
     ) -> Result<(), CoordinatorError> {
@@ -3592,6 +3713,10 @@ impl Coordinator {
                 assistant_message,
             }),
         )?;
+
+        if let Some(running) = run_state.running_agent_turns.get_mut(&task_id) {
+            running.latest_assistant_output = Some(assistant_output);
+        }
 
         Ok(())
     }
@@ -3629,6 +3754,8 @@ impl Coordinator {
                 });
 
             let trigger = if let Some(running) = running_turn {
+                let prompt_tokens_estimate = (trigger_reason == "pre_prompt")
+                    .then(|| approximate_text_tokens(&running.request_prompt));
                 ProviderCompactionTrigger {
                     agent_id: agent_id.to_string(),
                     profile_name: running.profile_name.clone(),
@@ -3641,6 +3768,8 @@ impl Coordinator {
                         .as_ref()
                         .map(|usage| usage.prompt_tokens)
                         .or(manual_tokens_before),
+                    prompt_tokens_estimate,
+                    estimate_source: None,
                 }
             } else {
                 let profile = run_state
@@ -3660,6 +3789,8 @@ impl Coordinator {
                         .as_ref()
                         .map(|usage| usage.prompt_tokens)
                         .or(manual_tokens_before),
+                    prompt_tokens_estimate: None,
+                    estimate_source: None,
                 }
             };
 
@@ -3779,12 +3910,64 @@ impl Coordinator {
             }
         };
 
+        if trigger.trigger_reason == "overflow_retry" {
+            if let (Some(task_id), Some(request_id)) =
+                (task_id, trigger.through_request_id.as_ref())
+            {
+                run_state
+                    .overflow_retry_compacted_context_by_attempt
+                    .insert(
+                        (task_id.to_string(), request_id.clone()),
+                        updated_context.updated_context.clone(),
+                    );
+            }
+        }
+
         Ok(CompactAgentContextResult::CheckpointWritten {
             context: updated_context.updated_context,
             checkpoint_id: updated_context.checkpoint_id,
             tokens_before_estimate: updated_context.tokens_before_estimate,
             tokens_after_estimate: updated_context.tokens_after_estimate,
         })
+    }
+
+    async fn compact_failed_terminal_agent_context(
+        &mut self,
+        request: FailedTerminalCompactionRequest,
+    ) {
+        let should_attempt = {
+            let Some(run_state) = self.run_state.as_mut() else {
+                return;
+            };
+            mark_failed_terminal_compaction_attempt(run_state, &request)
+        };
+        if !should_attempt {
+            return;
+        }
+
+        match self
+            .compact_agent_context_internal(
+                Some(&request.task_id),
+                &request.agent_id,
+                Some(request.request_id.clone()),
+                &request.trigger_reason,
+                None,
+            )
+            .await
+        {
+            Ok(CompactAgentContextResult::CheckpointWritten { .. })
+            | Ok(CompactAgentContextResult::NoOp { .. }) => {}
+            Err(err) => {
+                tracing::warn!(
+                    task_id = %request.task_id,
+                    agent_id = %request.agent_id,
+                    request_id = %request.request_id,
+                    trigger_reason = %request.trigger_reason,
+                    error = %err,
+                    "failed-terminal provider context compaction did not complete; preserving original task terminal outcome"
+                );
+            }
+        }
     }
 
     async fn model_backed_compaction_summary(
@@ -3800,6 +3983,7 @@ impl Coordinator {
             &self.config.compaction,
             run_state,
             trigger,
+            self.redactor.as_ref(),
         )
         .await
     }
@@ -3811,75 +3995,46 @@ impl Coordinator {
         request_id: String,
         outcome: AgentTurnTaskOutcome,
     ) -> Result<(), CoordinatorError> {
-        let Some(run_state) = self.run_state.as_mut() else {
-            return Ok(());
-        };
+        let (dequeued, pending_follow_ups, terminal_compaction) = {
+            let Some(run_state) = self.run_state.as_mut() else {
+                return Ok(());
+            };
 
-        let Some(running) = run_state.running_agent_turns.remove(&task_id) else {
-            return Ok(());
-        };
+            let Some(running) = run_state.running_agent_turns.remove(&task_id) else {
+                return Ok(());
+            };
 
-        let was_cancelled = run_state.cancelled_running_tasks.remove(&task_id);
-        let dequeued = run_state.scheduler.complete(&running.queue_key);
-        let pending_follow_ups = if was_cancelled {
-            run_state
-                .pending_agent_turn_messages
-                .remove(&running.agent_id);
-            VecDeque::new()
-        } else {
-            run_state
-                .pending_agent_turn_messages
-                .remove(&running.agent_id)
-                .unwrap_or_default()
-        };
-        let finished_mono_ms = self.clock.mono_ms();
-        let subagent_parent_id = run_state
-            .subagent_parent_by_id
-            .get(&running.agent_id)
-            .cloned();
-        let (hook_outcome, hook_output_summary, hook_failure_reason) = match &outcome {
-            AgentTurnTaskOutcome::Succeeded { output } => {
-                ("succeeded".to_string(), Some(output.clone()), None)
-            }
-            AgentTurnTaskOutcome::Failed { reason } => {
-                ("failed".to_string(), None, Some(reason.clone()))
-            }
-        };
-        let finished_hook_batch = run_lifecycle_hooks(
-            self.clock.as_ref(),
-            &self.config.hook_runtime_config,
-            HookInvocationContext {
-                event: HookLifecycleEvent::AgentTurnFinished,
-                run_id: run_state.info.run_id.clone(),
-                workspace_root: run_state.info.workspace_root.clone(),
-                artifacts_dir: run_state.info.artifacts_dir.clone(),
-                actor: Some(agent_actor(&running.agent_id)),
-                agent_id: Some(running.agent_id.clone()),
-                request_id: Some(request_id.clone()),
-                permission_id: None,
-                task_id: Some(task_id.clone()),
-                tool_call_id: None,
-                tool_id: None,
-                provider_id: None,
-                model_id: None,
-                parent_agent_id: None,
-                category: running.category.clone(),
-                outcome: Some(hook_outcome.clone()),
-                output_summary: hook_output_summary.clone(),
-                failure_reason: hook_failure_reason.clone(),
-            },
-        )
-        .await;
-        let mut hook_executions = running.hook_executions.clone();
-        hook_executions.extend(finished_hook_batch.hook_executions.clone());
-        let mut critical_hook_failure = finished_hook_batch.critical_failure.clone();
-
-        if let Some(parent_agent_id) = subagent_parent_id {
-            let subagent_finished_hook_batch = run_lifecycle_hooks(
+            let was_cancelled = run_state.cancelled_running_tasks.remove(&task_id);
+            let dequeued = run_state.scheduler.complete(&running.queue_key);
+            let pending_follow_ups = if was_cancelled {
+                run_state
+                    .pending_agent_turn_messages
+                    .remove(&running.agent_id);
+                VecDeque::new()
+            } else {
+                run_state
+                    .pending_agent_turn_messages
+                    .remove(&running.agent_id)
+                    .unwrap_or_default()
+            };
+            let finished_mono_ms = self.clock.mono_ms();
+            let subagent_parent_id = run_state
+                .subagent_parent_by_id
+                .get(&running.agent_id)
+                .cloned();
+            let (hook_outcome, hook_output_summary, hook_failure_reason) = match &outcome {
+                AgentTurnTaskOutcome::Succeeded { output } => {
+                    ("succeeded".to_string(), Some(output.clone()), None)
+                }
+                AgentTurnTaskOutcome::Failed { reason, .. } => {
+                    ("failed".to_string(), None, Some(reason.clone()))
+                }
+            };
+            let finished_hook_batch = run_lifecycle_hooks(
                 self.clock.as_ref(),
                 &self.config.hook_runtime_config,
                 HookInvocationContext {
-                    event: HookLifecycleEvent::SubagentFinished,
+                    event: HookLifecycleEvent::AgentTurnFinished,
                     run_id: run_state.info.run_id.clone(),
                     workspace_root: run_state.info.workspace_root.clone(),
                     artifacts_dir: run_state.info.artifacts_dir.clone(),
@@ -3892,58 +4047,242 @@ impl Coordinator {
                     tool_id: None,
                     provider_id: None,
                     model_id: None,
-                    parent_agent_id: Some(parent_agent_id),
+                    parent_agent_id: None,
                     category: running.category.clone(),
-                    outcome: Some(hook_outcome),
-                    output_summary: hook_output_summary,
-                    failure_reason: hook_failure_reason,
+                    outcome: Some(hook_outcome.clone()),
+                    output_summary: hook_output_summary.clone(),
+                    failure_reason: hook_failure_reason.clone(),
                 },
             )
             .await;
-            hook_executions.extend(subagent_finished_hook_batch.hook_executions.clone());
-            if let Some(reason) = subagent_finished_hook_batch.critical_failure {
-                critical_hook_failure = Some(match critical_hook_failure {
-                    Some(existing) => format!("{existing}; {reason}"),
-                    None => reason,
-                });
-            }
-        }
+            let mut hook_executions = running.hook_executions.clone();
+            hook_executions.extend(finished_hook_batch.hook_executions.clone());
+            let mut critical_hook_failure = finished_hook_batch.critical_failure.clone();
 
-        if !was_cancelled {
-            match outcome {
-                AgentTurnTaskOutcome::Succeeded { output } => {
-                    let mut user_prompt = running.request_prompt.clone();
-                    for prompt in &running.injected_prompts {
-                        user_prompt.push_str("\n\n");
-                        user_prompt.push_str(prompt);
+            if let Some(parent_agent_id) = subagent_parent_id {
+                let subagent_finished_hook_batch = run_lifecycle_hooks(
+                    self.clock.as_ref(),
+                    &self.config.hook_runtime_config,
+                    HookInvocationContext {
+                        event: HookLifecycleEvent::SubagentFinished,
+                        run_id: run_state.info.run_id.clone(),
+                        workspace_root: run_state.info.workspace_root.clone(),
+                        artifacts_dir: run_state.info.artifacts_dir.clone(),
+                        actor: Some(agent_actor(&running.agent_id)),
+                        agent_id: Some(running.agent_id.clone()),
+                        request_id: Some(request_id.clone()),
+                        permission_id: None,
+                        task_id: Some(task_id.clone()),
+                        tool_call_id: None,
+                        tool_id: None,
+                        provider_id: None,
+                        model_id: None,
+                        parent_agent_id: Some(parent_agent_id),
+                        category: running.category.clone(),
+                        outcome: Some(hook_outcome),
+                        output_summary: hook_output_summary,
+                        failure_reason: hook_failure_reason,
+                    },
+                )
+                .await;
+                hook_executions.extend(subagent_finished_hook_batch.hook_executions.clone());
+                if let Some(reason) = subagent_finished_hook_batch.critical_failure {
+                    critical_hook_failure = Some(match critical_hook_failure {
+                        Some(existing) => format!("{existing}; {reason}"),
+                        None => reason,
+                    });
+                }
+            }
+
+            let mut terminal_compaction = None;
+
+            if was_cancelled {
+                let memory = match &outcome {
+                    AgentTurnTaskOutcome::Failed { reason, memory } => memory
+                        .clone()
+                        .or_else(|| cancelled_failure_memory_from_running(&running, reason)),
+                    AgentTurnTaskOutcome::Succeeded { .. } => {
+                        cancelled_failure_memory_from_running(&running, "job cancelled")
                     }
-                    run_state
-                        .provider_context_by_agent
-                        .entry(running.agent_id.clone())
-                        .or_default()
-                        .push_turn(ProviderConversationTurn {
-                            user_prompt,
-                            assistant_response: output.clone(),
-                            request_id: Some(request_id.clone()),
-                            first_seq: None,
-                            last_seq: None,
-                            artifacts: Vec::new(),
+                };
+                let has_incomplete_memory = memory.is_some();
+                if let Some(memory) = memory {
+                    push_incomplete_provider_turn(run_state, &running, &request_id, memory);
+                }
+                if has_incomplete_memory {
+                    terminal_compaction = Some(FailedTerminalCompactionRequest::new(
+                        task_id.clone(),
+                        running.agent_id.clone(),
+                        request_id.clone(),
+                        "aborted_response",
+                    ));
+                }
+            } else {
+                match outcome {
+                    AgentTurnTaskOutcome::Succeeded { output } => {
+                        if let Some(reason) = critical_hook_failure.clone() {
+                            push_incomplete_provider_turn(
+                                run_state,
+                                &running,
+                                &request_id,
+                                AgentTurnFailureMemory::failed(
+                                    "hook_failure",
+                                    reason.clone(),
+                                    output.clone(),
+                                    running.latest_provider_request_id.clone(),
+                                ),
+                            );
+                            append_payload_event_with_correlation(
+                                self.clock.as_ref(),
+                                self.redactor.as_ref(),
+                                run_state,
+                                agent_actor(&running.agent_id),
+                                Some(format!("task:{task_id}")),
+                                Some(request_id.clone()),
+                                EventV1::TaskCancelled(TaskCancelledEvent {
+                                    task_id: task_id.clone(),
+                                    reason,
+                                    task_scope: Some(TaskTerminalScope::AgentTurn),
+                                }),
+                            )?;
+                            terminal_compaction = Some(FailedTerminalCompactionRequest::new(
+                                task_id.clone(),
+                                running.agent_id.clone(),
+                                request_id.clone(),
+                                "failed_response",
+                            ));
+                        } else {
+                            run_state
+                                .provider_context_by_agent
+                                .entry(running.agent_id.clone())
+                                .or_default()
+                                .push_turn(ProviderConversationTurn {
+                                    user_prompt: provider_turn_user_prompt(&running),
+                                    assistant_response: output.clone(),
+                                    request_id: Some(request_id.clone()),
+                                    first_seq: None,
+                                    last_seq: None,
+                                    artifacts: Vec::new(),
+                                    ..ProviderConversationTurn::default()
+                                });
+                            append_payload_event_with_correlation(
+                                self.clock.as_ref(),
+                                self.redactor.as_ref(),
+                                run_state,
+                                agent_actor(&running.agent_id),
+                                Some(format!("task:{task_id}")),
+                                Some(request_id.clone()),
+                                EventV1::TaskCompleted(TaskCompletedEvent {
+                                    task_id,
+                                    result_digest: digest12(output.as_bytes()),
+                                    result_summary: output,
+                                    metadata: Some(TaskCompletionMetadata {
+                                        lineage: None,
+                                        task_scope: Some(TaskTerminalScope::AgentTurn),
+                                        timing: Some(execution_timing_metadata(
+                                            running.started_mono_ms,
+                                            finished_mono_ms,
+                                        )),
+                                        hook_executions,
+                                    }),
+                                }),
+                            )?;
+
+                            let proactive_trigger = ProviderCompactionTrigger {
+                                agent_id: running.agent_id.clone(),
+                                profile_name: running.profile_name.clone(),
+                                model_ref: running.model_ref.clone(),
+                                provider_id: running.latest_provider_id.clone(),
+                                model_id: running.latest_model_id.clone(),
+                                through_request_id: Some(request_id.clone()),
+                                trigger_reason: "proactive".to_string(),
+                                tokens_before: running
+                                    .latest_provider_usage
+                                    .as_ref()
+                                    .map(|usage| usage.prompt_tokens),
+                                prompt_tokens_estimate: None,
+                                estimate_source: None,
+                            };
+                            let summary_decision = if self.config.compaction.model_backed {
+                                match model_backed_compaction_summary_for(
+                                    self.config.provider.clone(),
+                                    &self.config.compaction,
+                                    run_state,
+                                    &proactive_trigger,
+                                    self.redactor.as_ref(),
+                                )
+                                .await
+                                {
+                                    Ok(summary) => CompactionSummaryDecision::model(
+                                        compaction_summary_model_ref(
+                                            &self.config.compaction,
+                                            &proactive_trigger,
+                                        ),
+                                        summary,
+                                        false,
+                                    ),
+                                    Err(reason) => {
+                                        tracing::warn!(%reason, agent_id = %running.agent_id, "model-backed proactive compaction summary fell back to deterministic summary");
+                                        CompactionSummaryDecision::model(
+                                            compaction_summary_model_ref(
+                                                &self.config.compaction,
+                                                &proactive_trigger,
+                                            ),
+                                            String::new(),
+                                            true,
+                                        )
+                                    }
+                                }
+                            } else {
+                                CompactionSummaryDecision::deterministic(&proactive_trigger)
+                            };
+                            if let Err(err) = compact_provider_context(
+                                self.clock.as_ref(),
+                                self.redactor.as_ref(),
+                                run_state,
+                                &proactive_trigger,
+                                &self.config.compaction,
+                                &summary_decision,
+                            ) {
+                                tracing::warn!(
+                                    agent_id = %running.agent_id,
+                                    error = %err,
+                                    "provider context compaction failed after successful agent turn"
+                                );
+                            }
+                        }
+                    }
+                    AgentTurnTaskOutcome::Failed { reason, memory } => {
+                        let reason = match critical_hook_failure.clone() {
+                            Some(hook_reason) => {
+                                format!("{reason}; critical lifecycle hook failed: {hook_reason}")
+                            }
+                            None => reason,
+                        };
+                        let mut memory = memory.or_else(|| {
+                            critical_hook_failure.clone().map(|_| {
+                                AgentTurnFailureMemory::failed(
+                                    "hook_failure",
+                                    reason.clone(),
+                                    "",
+                                    running.latest_provider_request_id.clone(),
+                                )
+                            })
                         });
-                    if let Some(reason) = critical_hook_failure.clone() {
-                        append_payload_event_with_correlation(
-                            self.clock.as_ref(),
-                            self.redactor.as_ref(),
-                            run_state,
-                            agent_actor(&running.agent_id),
-                            Some(format!("task:{task_id}")),
-                            Some(request_id),
-                            EventV1::TaskCancelled(TaskCancelledEvent {
-                                task_id,
-                                reason,
-                                task_scope: Some(TaskTerminalScope::AgentTurn),
-                            }),
-                        )?;
-                    } else {
+                        if let Some(memory) = &mut memory {
+                            memory.failure_reason = reason.clone();
+                        }
+                        let terminal_trigger_reason = memory
+                            .as_ref()
+                            .filter(|memory| {
+                                memory.status == ProviderConversationTurnStatus::Aborted
+                            })
+                            .map(|_| "aborted_response")
+                            .unwrap_or("failed_response");
+                        let has_incomplete_memory = memory.is_some();
+                        if let Some(memory) = memory {
+                            push_incomplete_provider_turn(run_state, &running, &request_id, memory);
+                        }
                         append_payload_event_with_correlation(
                             self.clock.as_ref(),
                             self.redactor.as_ref(),
@@ -3951,106 +4290,34 @@ impl Coordinator {
                             agent_actor(&running.agent_id),
                             Some(format!("task:{task_id}")),
                             Some(request_id.clone()),
-                            EventV1::TaskCompleted(TaskCompletedEvent {
-                                task_id,
-                                result_digest: digest12(output.as_bytes()),
-                                result_summary: output,
-                                metadata: Some(TaskCompletionMetadata {
-                                    lineage: None,
-                                    task_scope: Some(TaskTerminalScope::AgentTurn),
-                                    timing: Some(execution_timing_metadata(
-                                        running.started_mono_ms,
-                                        finished_mono_ms,
-                                    )),
-                                    hook_executions,
-                                }),
+                            EventV1::TaskCancelled(TaskCancelledEvent {
+                                task_id: task_id.clone(),
+                                reason,
+                                task_scope: Some(TaskTerminalScope::AgentTurn),
                             }),
                         )?;
-
-                        let proactive_trigger = ProviderCompactionTrigger {
-                            agent_id: running.agent_id.clone(),
-                            profile_name: running.profile_name.clone(),
-                            model_ref: running.model_ref.clone(),
-                            provider_id: running.latest_provider_id.clone(),
-                            model_id: running.latest_model_id.clone(),
-                            through_request_id: Some(request_id.clone()),
-                            trigger_reason: "proactive".to_string(),
-                            tokens_before: running
-                                .latest_provider_usage
-                                .as_ref()
-                                .map(|usage| usage.prompt_tokens),
-                        };
-                        let summary_decision = if self.config.compaction.model_backed {
-                            match model_backed_compaction_summary_for(
-                                self.config.provider.clone(),
-                                &self.config.compaction,
-                                run_state,
-                                &proactive_trigger,
-                            )
-                            .await
-                            {
-                                Ok(summary) => CompactionSummaryDecision::model(
-                                    compaction_summary_model_ref(
-                                        &self.config.compaction,
-                                        &proactive_trigger,
-                                    ),
-                                    summary,
-                                    false,
-                                ),
-                                Err(reason) => {
-                                    tracing::warn!(%reason, agent_id = %running.agent_id, "model-backed proactive compaction summary fell back to deterministic summary");
-                                    CompactionSummaryDecision::model(
-                                        compaction_summary_model_ref(
-                                            &self.config.compaction,
-                                            &proactive_trigger,
-                                        ),
-                                        String::new(),
-                                        true,
-                                    )
-                                }
-                            }
-                        } else {
-                            CompactionSummaryDecision::deterministic(&proactive_trigger)
-                        };
-                        if let Err(err) = compact_provider_context(
-                            self.clock.as_ref(),
-                            self.redactor.as_ref(),
-                            run_state,
-                            &proactive_trigger,
-                            &self.config.compaction,
-                            &summary_decision,
-                        ) {
-                            tracing::warn!(
-                                agent_id = %running.agent_id,
-                                error = %err,
-                                "provider context compaction failed after successful agent turn"
-                            );
+                        if has_incomplete_memory {
+                            terminal_compaction = Some(FailedTerminalCompactionRequest::new(
+                                task_id.clone(),
+                                running.agent_id.clone(),
+                                request_id.clone(),
+                                terminal_trigger_reason,
+                            ));
                         }
                     }
                 }
-                AgentTurnTaskOutcome::Failed { reason } => {
-                    let reason = match critical_hook_failure.clone() {
-                        Some(hook_reason) => {
-                            format!("{reason}; critical lifecycle hook failed: {hook_reason}")
-                        }
-                        None => reason,
-                    };
-                    append_payload_event_with_correlation(
-                        self.clock.as_ref(),
-                        self.redactor.as_ref(),
-                        run_state,
-                        agent_actor(&running.agent_id),
-                        Some(format!("task:{task_id}")),
-                        Some(request_id),
-                        EventV1::TaskCancelled(TaskCancelledEvent {
-                            task_id,
-                            reason,
-                            task_scope: Some(TaskTerminalScope::AgentTurn),
-                        }),
-                    )?;
-                }
             }
+
+            (dequeued, pending_follow_ups, terminal_compaction)
+        };
+
+        if let Some(request) = terminal_compaction {
+            self.compact_failed_terminal_agent_context(request).await;
         }
+
+        let Some(run_state) = self.run_state.as_mut() else {
+            return Ok(());
+        };
 
         for task in dequeued {
             if let Some(queued) = run_state.queued_agent_turns.get(&task.task_id).cloned() {
@@ -4129,6 +4396,8 @@ struct RunState {
     pending_agent_turn_messages: BTreeMap<String, VecDeque<PendingAgentTurnMessage>>,
     queued_agent_turns: BTreeMap<String, QueuedAgentTurn>,
     running_agent_turns: BTreeMap<String, RunningAgentTurn>,
+    failed_terminal_compaction_attempts: BTreeSet<(String, String)>,
+    overflow_retry_compacted_context_by_attempt: BTreeMap<(String, String), ProviderContext>,
     scheduler: Scheduler,
     recorded_runtime_context: Option<RecordedRuntimeContext>,
     allow_initial_runtime_context_recording: bool,
@@ -4166,8 +4435,78 @@ struct RunningAgentTurn {
     hook_executions: Vec<HookExecutionMetadata>,
     injected_prompts: Vec<String>,
     latest_provider_usage: Option<harness_providers::CompletionUsage>,
+    latest_provider_request_id: Option<String>,
+    latest_assistant_output: Option<String>,
     latest_provider_id: Option<String>,
     latest_model_id: Option<String>,
+}
+
+fn provider_turn_user_prompt(running: &RunningAgentTurn) -> String {
+    let mut user_prompt = running.request_prompt.clone();
+    for prompt in &running.injected_prompts {
+        user_prompt.push_str("\n\n");
+        user_prompt.push_str(prompt);
+    }
+    user_prompt
+}
+
+fn cancelled_failure_memory_from_running(
+    running: &RunningAgentTurn,
+    reason: &str,
+) -> Option<AgentTurnFailureMemory> {
+    let provider_request_id = running.latest_provider_request_id.clone()?;
+    Some(AgentTurnFailureMemory::aborted(
+        "cancelled",
+        reason.to_string(),
+        running.latest_assistant_output.clone().unwrap_or_default(),
+        Some(provider_request_id),
+    ))
+}
+
+fn push_incomplete_provider_turn(
+    run_state: &mut RunState,
+    running: &RunningAgentTurn,
+    fallback_request_id: &str,
+    memory: AgentTurnFailureMemory,
+) {
+    let request_id = memory
+        .provider_request_id
+        .clone()
+        .or_else(|| running.latest_provider_request_id.clone())
+        .unwrap_or_else(|| fallback_request_id.to_string());
+    let context = run_state
+        .provider_context_by_agent
+        .entry(running.agent_id.clone())
+        .or_default();
+    if context.preserved_turns.iter().any(|turn| {
+        turn.request_id.as_deref() == Some(request_id.as_str()) && !turn.status.is_completed()
+    }) {
+        return;
+    }
+
+    context.push_turn(ProviderConversationTurn {
+        user_prompt: provider_turn_user_prompt(running),
+        assistant_response: memory.partial_assistant_output,
+        status: memory.status,
+        failure_stage: Some(memory.failure_stage),
+        failure_reason: truncated_failure_reason(&memory.failure_reason),
+        request_id: Some(request_id),
+        first_seq: None,
+        last_seq: None,
+        artifacts: Vec::new(),
+    });
+}
+
+fn truncated_failure_reason(reason: &str) -> Option<String> {
+    let reason = reason.trim();
+    if reason.is_empty() {
+        None
+    } else {
+        Some(truncate_chars(
+            reason,
+            PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS,
+        ))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -4216,6 +4555,63 @@ impl CompactAgentContextResult {
 }
 
 #[derive(Debug, Clone)]
+struct FailedTerminalCompactionRequest {
+    task_id: String,
+    agent_id: String,
+    request_id: String,
+    trigger_reason: String,
+}
+
+impl FailedTerminalCompactionRequest {
+    fn new(
+        task_id: impl Into<String>,
+        agent_id: impl Into<String>,
+        request_id: impl Into<String>,
+        trigger_reason: impl Into<String>,
+    ) -> Self {
+        Self {
+            task_id: task_id.into(),
+            agent_id: agent_id.into(),
+            request_id: request_id.into(),
+            trigger_reason: trigger_reason.into(),
+        }
+    }
+
+    fn attempt_key(&self) -> (String, String) {
+        (self.task_id.clone(), self.request_id.clone())
+    }
+}
+
+fn mark_failed_terminal_compaction_attempt(
+    run_state: &mut RunState,
+    request: &FailedTerminalCompactionRequest,
+) -> bool {
+    let key = request.attempt_key();
+    if !run_state
+        .failed_terminal_compaction_attempts
+        .insert(key.clone())
+    {
+        return false;
+    }
+
+    if let Some(overflow_context) = run_state
+        .overflow_retry_compacted_context_by_attempt
+        .get(&key)
+    {
+        let current_context = run_state
+            .provider_context_by_agent
+            .get(&request.agent_id)
+            .cloned()
+            .unwrap_or_default();
+        if &current_context == overflow_context {
+            return false;
+        }
+    }
+
+    true
+}
+
+#[derive(Debug, Clone)]
 struct ProviderCompactionTrigger {
     agent_id: String,
     profile_name: String,
@@ -4225,6 +4621,16 @@ struct ProviderCompactionTrigger {
     through_request_id: Option<String>,
     trigger_reason: String,
     tokens_before: Option<u32>,
+    prompt_tokens_estimate: Option<u32>,
+    estimate_source: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ProviderContextTriggerEstimate {
+    tokens_before_estimate: u32,
+    input_budget: u32,
+    reserve: u32,
+    source: &'static str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -5303,6 +5709,8 @@ where
             hook_executions,
             injected_prompts: Vec::new(),
             latest_provider_usage: None,
+            latest_provider_request_id: None,
+            latest_assistant_output: None,
             latest_provider_id: None,
             latest_model_id: None,
         },
@@ -5312,6 +5720,30 @@ where
         cancellation_token,
         critical_failure: started_hook_batch.critical_failure,
     }
+}
+
+async fn request_agent_context_compaction(
+    job_tx: &mpsc::Sender<Command>,
+    task: &QueuedAgentTurn,
+    trigger_reason: &str,
+    usage: Option<harness_providers::CompletionUsage>,
+) -> Result<ProviderContext, CoordinatorError> {
+    let (respond_to, response_rx) = oneshot::channel();
+    job_tx
+        .send(Command::CompactAgentContext {
+            task_id: task.task_id.clone(),
+            agent_id: task.agent_id.clone(),
+            request_id: task.request_id.clone(),
+            trigger_reason: trigger_reason.to_string(),
+            usage,
+            respond_to,
+        })
+        .await
+        .map_err(|_| CoordinatorError::CommandChannelClosed)?;
+
+    response_rx
+        .await
+        .map_err(|_| CoordinatorError::ResponseChannelClosed)?
 }
 
 #[expect(
@@ -5343,7 +5775,10 @@ where
                     task_id: task.task_id,
                     agent_id: task.agent_id,
                     request_id: task.request_id,
-                    outcome: AgentTurnTaskOutcome::Failed { reason },
+                    outcome: AgentTurnTaskOutcome::Failed {
+                        reason,
+                        memory: None,
+                    },
                 })
                 .await,
             "agent_turn_finished_from_hook_failure",
@@ -5366,6 +5801,12 @@ where
                     request_id,
                     outcome: AgentTurnTaskOutcome::Failed {
                         reason: "job cancelled".to_string(),
+                        memory: Some(AgentTurnFailureMemory::aborted(
+                            "cancelled",
+                            "job cancelled",
+                            "",
+                            None,
+                        )),
                     },
                 }).await, "agent_turn_finished_from_cancellation");
             }
@@ -5373,7 +5814,36 @@ where
                 let mut prior_context = provider_context;
                 let mut overflow_retry_attempted = false;
 
-                loop {
+                let pre_prompt_critical_failure = match request_agent_context_compaction(
+                    &job_tx,
+                    &task,
+                    "pre_prompt",
+                    None,
+                )
+                .await
+                {
+                    Ok(compacted_context) => {
+                        prior_context = compacted_context;
+                        None
+                    }
+                    Err(CoordinatorError::LifecycleHookFailed(reason)) => Some(format!(
+                        "pre-prompt compaction critical lifecycle hook failed: {reason}"
+                    )),
+                    Err(err) => {
+                        tracing::warn!(
+                            agent_id = %task.agent_id,
+                            request_id = %task.request_id,
+                            error = %err,
+                            "pre-prompt provider context compaction failed; continuing without checkpoint"
+                        );
+                        None
+                    }
+                };
+
+                if let Some(reason) = pre_prompt_critical_failure {
+                    AgentTurnOutcome::failed(reason)
+                } else {
+                    loop {
                     let outcome = run_agent_turn_phase_loop(AgentTurnPhaseLoopRequest {
                         provider: provider.clone(),
                         tool_registry: tool_registry.clone(),
@@ -5385,69 +5855,71 @@ where
                     .await;
 
                     match &outcome {
-                        AgentTurnOutcome::Failed { reason }
+                        AgentTurnOutcome::Failed { reason, memory }
                             if compaction_config.auto_retry_overflow
                                 && !overflow_retry_attempted
                                 && is_provider_context_overflow_reason(reason) =>
                         {
-                            let (respond_to, response_rx) = oneshot::channel();
-                            let send_result = job_tx
-                                .send(Command::CompactAgentContext {
-                                    task_id: task.task_id.clone(),
-                                    agent_id: task.agent_id.clone(),
-                                    request_id: task.request_id.clone(),
-                                    trigger_reason: "overflow_retry".to_string(),
-                                    usage: None,
-                                    respond_to,
-                                })
-                                .await;
-                            if send_result.is_err() {
-                                break AgentTurnOutcome::Failed {
-                                    reason: format!(
-                                        "{reason}; failed to request overflow compaction because the coordinator channel is closed"
-                                    ),
-                                };
-                            }
-
-                            match response_rx.await {
-                                Ok(Ok(compacted_context)) => {
+                            match request_agent_context_compaction(
+                                &job_tx,
+                                &task,
+                                "overflow_retry",
+                                None,
+                            )
+                            .await
+                            {
+                                Ok(compacted_context) => {
                                     overflow_retry_attempted = true;
                                     prior_context = compacted_context;
                                     continue;
                                 }
-                                Ok(Err(err)) => {
-                                    break AgentTurnOutcome::Failed {
-                                        reason: format!(
-                                            "{reason}; overflow compaction failed: {err}"
-                                        ),
-                                    };
-                                }
-                                Err(_) => {
-                                    break AgentTurnOutcome::Failed {
-                                        reason: format!(
-                                            "{reason}; overflow compaction response channel closed"
-                                        ),
-                                    };
+                                Err(err) => {
+                                    let reason = format!(
+                                        "{reason}; overflow compaction failed: {err}"
+                                    );
+                                    let mut memory = memory.clone();
+                                    if let Some(memory) = &mut memory {
+                                        memory.reason = reason.clone();
+                                    }
+                                    break AgentTurnOutcome::Failed { reason, memory };
                                 }
                             }
                         }
-                        AgentTurnOutcome::Failed { reason }
+                        AgentTurnOutcome::Failed { reason, memory }
                             if overflow_retry_attempted
                                 && is_provider_context_overflow_reason(reason) =>
                         {
+                            let reason = format!(
+                                "{reason}; overflow persisted after checkpoint compaction; likely the active prompt or latest preserved turn still exceeds the provider window"
+                            );
+                            let mut memory = memory.clone().unwrap_or_else(|| {
+                                AgentTurnFailure::new(
+                                    ProviderConversationTurnStatus::Failed,
+                                    "overflow_retry_failed",
+                                    reason.clone(),
+                                    "",
+                                    None,
+                                )
+                            });
+                            memory.status = ProviderConversationTurnStatus::Failed;
+                            memory.failure_stage = "overflow_retry_failed".to_string();
+                            memory.reason = reason.clone();
                             break AgentTurnOutcome::Failed {
-                                reason: format!(
-                                    "{reason}; overflow persisted after checkpoint compaction; likely the active prompt or latest preserved turn still exceeds the provider window"
-                                ),
+                                reason,
+                                memory: Some(memory),
                             };
                         }
                         _ => break outcome,
+                    }
                     }
                 }
             } => {
                 let outcome = match outcome {
                     AgentTurnOutcome::Succeeded { output } => AgentTurnTaskOutcome::Succeeded { output },
-                    AgentTurnOutcome::Failed { reason } => AgentTurnTaskOutcome::Failed { reason },
+                    AgentTurnOutcome::Failed { reason, memory } => AgentTurnTaskOutcome::Failed {
+                        reason,
+                        memory: memory.map(AgentTurnFailureMemory::from),
+                    },
                 };
                 warn_command_send_failure(job_tx.send(Command::AgentTurnFinished {
                     task_id: task.task_id,
@@ -5514,7 +5986,7 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
         tool_registry.as_ref(),
     ) {
         Ok(turn_state) => turn_state,
-        Err(reason) => return AgentTurnOutcome::Failed { reason },
+        Err(reason) => return AgentTurnOutcome::failed(reason),
     };
 
     for _phase_iter in 1..=task.profile.max_iters {
@@ -5526,18 +5998,25 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
         )
         .await
         {
-            return AgentTurnOutcome::Failed { reason };
+            return AgentTurnOutcome::failed(reason);
         }
 
         if cancellation_token.is_cancelled() {
-            return AgentTurnOutcome::Failed {
-                reason: "job cancelled".to_string(),
-            };
+            return AgentTurnOutcome::failed_with_memory(
+                "job cancelled",
+                AgentTurnFailure::new(
+                    ProviderConversationTurnStatus::Aborted,
+                    "cancelled",
+                    "job cancelled",
+                    "",
+                    None,
+                ),
+            );
         }
 
         let provider_request_id = match allocate_provider_request_id_phase(&job_tx).await {
             Ok(request_id) => request_id,
-            Err(reason) => return AgentTurnOutcome::Failed { reason },
+            Err(reason) => return AgentTurnOutcome::failed(reason),
         };
 
         let assistant_response = match run_provider_stream_phase(ProviderStreamPhaseRequest {
@@ -5556,10 +6035,13 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
         .await
         {
             Ok(response) => response,
-            Err(reason) => {
+            Err(mut failure) => {
+                let reason = normalize_provider_phase_error(failure.to_string());
+                failure.reason = reason.clone();
                 return AgentTurnOutcome::Failed {
-                    reason: normalize_provider_phase_error(reason),
-                }
+                    reason,
+                    memory: (failure.failure_stage == "provider_error").then_some(failure),
+                };
             }
         };
 
@@ -5572,12 +6054,19 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
         )
         .await
         {
-            return AgentTurnOutcome::Failed { reason };
+            return AgentTurnOutcome::failed(reason);
         }
         if cancellation_token.is_cancelled() {
-            return AgentTurnOutcome::Failed {
-                reason: "job cancelled".to_string(),
-            };
+            return AgentTurnOutcome::failed_with_memory(
+                "job cancelled",
+                AgentTurnFailure::new(
+                    ProviderConversationTurnStatus::Aborted,
+                    "cancelled",
+                    "job cancelled",
+                    assistant_response.text.clone(),
+                    Some(assistant_response.request_id.clone()),
+                ),
+            );
         }
 
         match decide_tool_phase(&assistant_response, &mut turn_state.total_tool_calls) {
@@ -5595,25 +6084,39 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
                 )
                 .await
                 {
-                    return AgentTurnOutcome::Failed { reason };
+                    return AgentTurnOutcome::failed_with_memory(
+                        reason.clone(),
+                        AgentTurnFailure::new(
+                            ProviderConversationTurnStatus::Failed,
+                            "tool_failure",
+                            reason,
+                            assistant_response.text.clone(),
+                            Some(assistant_response.request_id.clone()),
+                        ),
+                    );
                 }
             }
-            Err(reason) => return AgentTurnOutcome::Failed { reason },
+            Err(reason) => return AgentTurnOutcome::failed(reason),
         }
 
         if cancellation_token.is_cancelled() {
-            return AgentTurnOutcome::Failed {
-                reason: "job cancelled".to_string(),
-            };
+            return AgentTurnOutcome::failed_with_memory(
+                "job cancelled",
+                AgentTurnFailure::new(
+                    ProviderConversationTurnStatus::Aborted,
+                    "cancelled",
+                    "job cancelled",
+                    assistant_response.text.clone(),
+                    Some(assistant_response.request_id.clone()),
+                ),
+            );
         }
     }
 
-    AgentTurnOutcome::Failed {
-        reason: format!(
-            "agent turn exceeded profile max_iters={}",
-            task.profile.max_iters
-        ),
-    }
+    AgentTurnOutcome::failed(format!(
+        "agent turn exceeded profile max_iters={}",
+        task.profile.max_iters
+    ))
 }
 
 async fn drain_steering_messages_phase(
@@ -5692,7 +6195,7 @@ async fn allocate_provider_request_id_phase(
 
 async fn run_provider_stream_phase(
     request: ProviderStreamPhaseRequest<'_>,
-) -> Result<AssistantResponse, String> {
+) -> Result<AssistantResponse, AgentTurnFailure> {
     let ProviderStreamPhaseRequest {
         provider,
         profile,
@@ -5831,6 +6334,7 @@ async fn append_assistant_message_end_phase(
             task_id: task_id.to_string(),
             agent_id: agent_id.to_string(),
             request_id: response.request_id.clone(),
+            assistant_output: response.text.clone(),
             tool_call_count: response.tool_intents.len(),
             assistant_message: response.finished_metadata.assistant_message.clone(),
             respond_to,
@@ -6801,20 +7305,32 @@ where
         .get(&trigger.agent_id)
         .cloned()
         .unwrap_or_default();
-    let current_tokens = approximate_provider_context_tokens(&current_context);
+    let current_context_tokens = approximate_provider_context_tokens(&current_context);
 
     let metadata = recorded_runtime_context_for_compaction(run_state, trigger);
-    if !should_compact_provider_context(&current_context, &metadata, trigger) {
+    if !should_compact_provider_context(&current_context, &metadata, trigger, compaction_config) {
         return Ok(None);
+    }
+
+    let trigger_estimate =
+        provider_context_trigger_estimate(&current_context, &metadata, trigger, compaction_config);
+    let tokens_before_estimate = trigger_estimate
+        .as_ref()
+        .map(|estimate| estimate.tokens_before_estimate)
+        .unwrap_or(current_context_tokens);
+    let mut trigger = trigger.clone();
+    if trigger.estimate_source.is_none() {
+        trigger.estimate_source = trigger_estimate.map(|estimate| estimate.source.to_string());
     }
 
     let keep_recent_budget = provider_context_keep_recent_tokens(&metadata);
     let Some(checkpoint) = build_provider_context_checkpoint(
         run_state,
-        trigger,
+        &trigger,
         &current_context,
+        redactor,
         keep_recent_budget,
-        current_tokens,
+        tokens_before_estimate,
         compaction_config,
         summary_decision,
     ) else {
@@ -6822,9 +7338,31 @@ where
     };
     let checkpoint_id = checkpoint.metadata.checkpoint_id.clone();
     let updated_context = ProviderContext::from_checkpoint(checkpoint.clone());
-    if trigger.trigger_reason != "manual"
-        && approximate_provider_context_tokens(&updated_context) >= current_tokens
-    {
+    let updated_tokens = approximate_provider_context_tokens(&updated_context);
+    if trigger.trigger_reason != "manual" && updated_tokens >= tokens_before_estimate {
+        if matches!(
+            trigger.trigger_reason.as_str(),
+            "pre_prompt" | "failed_response"
+        ) {
+            let reason = if trigger.trigger_reason == "pre_prompt" {
+                format!(
+                    "pre-prompt compaction did not reduce estimated provider context: before={tokens_before_estimate}, after={updated_tokens}"
+                )
+            } else {
+                format!(
+                    "failed-response compaction did not reduce estimated provider context: before={tokens_before_estimate}, after={updated_tokens}"
+                )
+            };
+            append_compaction_failed_event(
+                clock,
+                redactor,
+                run_state,
+                &trigger,
+                &reason,
+                Some(checkpoint.metadata.checkpoint_id.clone()),
+                Some(checkpoint.metadata.through_seq),
+            )?;
+        }
         return Ok(None);
     }
 
@@ -6844,10 +7382,12 @@ where
             model_id: checkpoint.metadata.model_id.clone(),
             tokens_before: checkpoint.metadata.tokens_before,
             tokens_before_estimate: checkpoint.metadata.tokens_before_estimate,
+            estimate_source: trigger.estimate_source.clone(),
         }),
     )?;
 
-    let body = serde_json::to_string_pretty(&checkpoint)?;
+    let body =
+        serialize_provider_context_checkpoint(&checkpoint, trigger.estimate_source.as_deref())?;
     let artifact_store = crate::tool::ArtifactStore::new(run_state.info.artifacts_dir.clone())
         .map_err(|err| CoordinatorError::ResumeRestoreFailed {
             run_id: run_state.info.run_id.clone(),
@@ -6888,6 +7428,7 @@ where
             compacted_turns: checkpoint.metadata.compacted_turns,
             reduction_tokens_estimate: checkpoint.metadata.reduction_tokens_estimate,
             reduction_percent_estimate: checkpoint.metadata.reduction_percent_estimate,
+            estimate_source: trigger.estimate_source.clone(),
             preserved_turns: checkpoint.recent_turns.len() as u32,
         }),
     )?;
@@ -6910,6 +7451,7 @@ where
             preserved_turns: checkpoint.metadata.preserved_turns,
             reduction_tokens_estimate: checkpoint.metadata.reduction_tokens_estimate,
             reduction_percent_estimate: checkpoint.metadata.reduction_percent_estimate,
+            estimate_source: trigger.estimate_source.clone(),
         }),
     )?;
 
@@ -6958,6 +7500,7 @@ fn should_compact_provider_context(
     context: &ProviderContext,
     metadata: &RecordedRuntimeContext,
     trigger: &ProviderCompactionTrigger,
+    compaction_config: &CompactionRuntimeConfig,
 ) -> bool {
     if trigger.trigger_reason == "manual" {
         return context.preserved_turns.len() >= 2;
@@ -6971,20 +7514,72 @@ fn should_compact_provider_context(
         return false;
     }
 
-    let Some(tokens_before) = trigger.tokens_before else {
-        return false;
-    };
-    let Some(input_budget) = metadata.max_input_tokens.or(metadata.context_window_tokens) else {
-        return false;
-    };
-    let reserve = provider_context_reserve_tokens(metadata, input_budget);
-    tokens_before >= input_budget.saturating_sub(reserve)
+    provider_context_trigger_estimate(context, metadata, trigger, compaction_config).is_some_and(
+        |estimate| {
+            estimate.tokens_before_estimate
+                >= estimate.input_budget.saturating_sub(estimate.reserve)
+        },
+    )
 }
 
+fn provider_context_trigger_estimate(
+    context: &ProviderContext,
+    metadata: &RecordedRuntimeContext,
+    trigger: &ProviderCompactionTrigger,
+    compaction_config: &CompactionRuntimeConfig,
+) -> Option<ProviderContextTriggerEstimate> {
+    let (input_budget, reserve, uses_fallback_budget) =
+        if let Some(input_budget) = metadata.max_input_tokens.or(metadata.context_window_tokens) {
+            (
+                input_budget,
+                provider_context_reserve_tokens(metadata, input_budget),
+                false,
+            )
+        } else if compaction_config.estimated_token_triggers {
+            let input_budget = compaction_config.fallback_input_tokens;
+            if input_budget == 0 {
+                return None;
+            }
+            (
+                input_budget,
+                PROVIDER_CONTEXT_COMPACTION_RESERVE_TOKENS.max(input_budget / 8),
+                true,
+            )
+        } else {
+            return None;
+        };
+
+    let context_tokens = approximate_provider_context_tokens(context);
+    let tokens_before_estimate = trigger.tokens_before.unwrap_or_else(|| {
+        context_tokens.saturating_add(trigger.prompt_tokens_estimate.unwrap_or(0))
+    });
+    let source = if uses_fallback_budget {
+        "fallback_budget"
+    } else if trigger.tokens_before.is_some() {
+        "provider_usage"
+    } else if trigger.prompt_tokens_estimate.is_some() {
+        "estimated_context_and_prompt"
+    } else {
+        "estimated_context"
+    };
+
+    Some(ProviderContextTriggerEstimate {
+        tokens_before_estimate,
+        input_budget,
+        reserve,
+        source,
+    })
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "checkpoint assembly keeps run state, trigger, token estimates, redaction, and summary decision explicit"
+)]
 fn build_provider_context_checkpoint(
     run_state: &RunState,
     trigger: &ProviderCompactionTrigger,
     context: &ProviderContext,
+    redactor: &(impl Redactor + ?Sized),
     keep_recent_budget: u32,
     tokens_before_estimate: u32,
     compaction_config: &CompactionRuntimeConfig,
@@ -6994,6 +7589,7 @@ fn build_provider_context_checkpoint(
         run_state,
         trigger,
         context,
+        redactor,
         keep_recent_budget,
         compaction_config,
     )?;
@@ -7003,6 +7599,7 @@ fn build_provider_context_checkpoint(
         trigger,
         context.compacted_summary.as_deref(),
         summary_decision.source.clone(),
+        compaction_config,
     );
     let summary = summary_decision
         .summary
@@ -7018,6 +7615,7 @@ fn build_provider_context_checkpoint(
                 &plan.facts,
                 &plan.tail_boundary,
                 &summary_source,
+                compaction_config,
             )
         });
     if summary.trim().is_empty() {
@@ -7080,23 +7678,53 @@ fn build_provider_context_checkpoint(
     })
 }
 
+fn serialize_provider_context_checkpoint(
+    checkpoint: &ProviderContextCheckpoint,
+    estimate_source: Option<&str>,
+) -> Result<String, serde_json::Error> {
+    let mut value = serde_json::to_value(checkpoint)?;
+    if let (Some(source), Some(object)) = (estimate_source, value.as_object_mut()) {
+        object.insert(
+            "estimate_source".to_string(),
+            serde_json::Value::String(source.to_string()),
+        );
+    }
+    serde_json::to_string_pretty(&value)
+}
+
 fn build_provider_context_compaction_plan(
     run_state: &RunState,
     trigger: &ProviderCompactionTrigger,
     context: &ProviderContext,
+    redactor: &(impl Redactor + ?Sized),
     keep_recent_budget: u32,
     compaction_config: &CompactionRuntimeConfig,
 ) -> Option<ProviderContextCompactionPlan> {
-    let (older_turns, recent_turns, split_tail) = if compaction_config.split_oversized_turns {
-        if let Some((older_latest_turn, recent_latest_turn)) = split_latest_oversized_turn(
+    let (mut older_turns, mut recent_turns, split_tail, split_prefix_summary) = if compaction_config
+        .split_oversized_turns
+    {
+        if let Some((older_latest_turn, recent_latest_turn, split_prefix_summary)) =
+            split_latest_oversized_turn(
+                &context.preserved_turns,
+                keep_recent_budget,
+                trigger.trigger_reason.as_str(),
+            )
+        {
+            let mut older_turns =
+                context.preserved_turns[..context.preserved_turns.len() - 1].to_vec();
+            older_turns.push(older_latest_turn);
+            (
+                older_turns,
+                vec![recent_latest_turn],
+                true,
+                Some(split_prefix_summary),
+            )
+        } else if latest_oversized_turn_needs_summary_only(
             &context.preserved_turns,
             keep_recent_budget,
             trigger.trigger_reason.as_str(),
         ) {
-            let mut older_turns =
-                context.preserved_turns[..context.preserved_turns.len() - 1].to_vec();
-            older_turns.push(older_latest_turn);
-            (older_turns, vec![recent_latest_turn], true)
+            (context.preserved_turns.clone(), Vec::new(), false, None)
         } else if let Some(split_index) =
             provider_context_split_index(&context.preserved_turns, keep_recent_budget)
         {
@@ -7104,6 +7732,7 @@ fn build_provider_context_compaction_plan(
                 context.preserved_turns[..split_index].to_vec(),
                 context.preserved_turns[split_index..].to_vec(),
                 false,
+                None,
             )
         } else if trigger.trigger_reason == "manual" && context.preserved_turns.len() >= 2 {
             let split_index = context.preserved_turns.len() - 1;
@@ -7111,10 +7740,11 @@ fn build_provider_context_compaction_plan(
                 context.preserved_turns[..split_index].to_vec(),
                 context.preserved_turns[split_index..].to_vec(),
                 false,
+                None,
             )
         } else if trigger.trigger_reason == "overflow_retry" && !context.preserved_turns.is_empty()
         {
-            (context.preserved_turns.clone(), Vec::new(), false)
+            (context.preserved_turns.clone(), Vec::new(), false, None)
         } else {
             return None;
         }
@@ -7125,6 +7755,7 @@ fn build_provider_context_compaction_plan(
             context.preserved_turns[..split_index].to_vec(),
             context.preserved_turns[split_index..].to_vec(),
             false,
+            None,
         )
     } else if trigger.trigger_reason == "manual" && context.preserved_turns.len() >= 2 {
         let split_index = context.preserved_turns.len() - 1;
@@ -7132,22 +7763,35 @@ fn build_provider_context_compaction_plan(
             context.preserved_turns[..split_index].to_vec(),
             context.preserved_turns[split_index..].to_vec(),
             false,
+            None,
         )
     } else if trigger.trigger_reason == "overflow_retry" && !context.preserved_turns.is_empty() {
-        (context.preserved_turns.clone(), Vec::new(), false)
+        (context.preserved_turns.clone(), Vec::new(), false, None)
     } else {
         return None;
     };
 
+    for turn in older_turns.iter_mut().chain(recent_turns.iter_mut()) {
+        sanitize_provider_turn_failure_metadata(turn, redactor);
+    }
+
     let pruned_tool_artifacts =
         collect_pruned_tool_artifacts(run_state, trigger, context, &older_turns);
-    let facts = build_provider_compaction_facts(context, &older_turns, &pruned_tool_artifacts);
+    let operational_memory =
+        collect_compacted_file_operation_facts(run_state, trigger, context, &older_turns, redactor);
+    let facts = build_provider_compaction_facts(
+        context,
+        &older_turns,
+        &pruned_tool_artifacts,
+        operational_memory,
+    );
     let tail_boundary = build_provider_compaction_tail_boundary(
         &recent_turns,
         preserved_tokens_estimate(&recent_turns),
         keep_recent_budget,
         trigger,
         split_tail,
+        split_prefix_summary,
     );
 
     Some(ProviderContextCompactionPlan {
@@ -7206,12 +7850,21 @@ fn split_latest_oversized_turn(
     turns: &[ProviderConversationTurn],
     keep_recent_budget: u32,
     trigger_reason: &str,
-) -> Option<(ProviderConversationTurn, ProviderConversationTurn)> {
-    if turns.is_empty() || !matches!(trigger_reason, "manual" | "overflow_retry") {
+) -> Option<(ProviderConversationTurn, ProviderConversationTurn, String)> {
+    if turns.is_empty()
+        || !matches!(
+            trigger_reason,
+            "manual" | "overflow_retry" | "pre_prompt" | "failed_response"
+        )
+    {
         return None;
     }
 
     let latest = turns.last()?;
+    if !can_split_latest_turn_safely(latest) {
+        return None;
+    }
+
     let latest_tokens = approximate_turn_tokens(latest);
     if latest_tokens <= keep_recent_budget || latest.assistant_response.chars().count() < 2 {
         return None;
@@ -7238,30 +7891,550 @@ fn split_latest_oversized_turn(
     if assistant_prefix.trim().is_empty() || assistant_suffix.trim().is_empty() {
         return None;
     }
+    let split_prefix_summary = summarize_compaction_text(&assistant_prefix);
 
     let mut older_turn = latest.clone();
     older_turn.user_prompt = format!(
-        "{}\n\n[Harness compaction note: earlier portion of an oversized latest turn]",
+        "{}\n\n[Harness compaction note: earlier prefix of an oversized latest turn; this prefix is summarized in the checkpoint and the suffix remains provider-visible.]",
         latest.user_prompt
     );
     older_turn.assistant_response = assistant_prefix;
     let mut recent_turn = latest.clone();
     recent_turn.user_prompt = format!(
-        "{}\n\n[Harness compaction note: preserved suffix of an oversized latest turn]",
+        "{}\n\n[Harness compaction note: preserved suffix of an oversized latest turn; earlier prefix is summarized in the checkpoint.]",
         latest.user_prompt
     );
     recent_turn.assistant_response = assistant_suffix;
-    Some((older_turn, recent_turn))
+    Some((older_turn, recent_turn, split_prefix_summary))
+}
+
+fn can_split_latest_turn_safely(turn: &ProviderConversationTurn) -> bool {
+    if !turn.artifacts.is_empty() {
+        return false;
+    }
+
+    match turn.status {
+        ProviderConversationTurnStatus::Completed => true,
+        ProviderConversationTurnStatus::Failed => {
+            turn.failure_stage.as_deref() == Some("provider_error")
+        }
+        ProviderConversationTurnStatus::Aborted => false,
+    }
+}
+
+fn latest_oversized_turn_needs_summary_only(
+    turns: &[ProviderConversationTurn],
+    keep_recent_budget: u32,
+    trigger_reason: &str,
+) -> bool {
+    if !matches!(trigger_reason, "overflow_retry" | "failed_response") {
+        return false;
+    }
+
+    let Some(latest) = turns.last() else {
+        return false;
+    };
+    approximate_turn_tokens(latest) > keep_recent_budget && !can_split_latest_turn_safely(latest)
 }
 
 fn preserved_tokens_estimate(turns: &[ProviderConversationTurn]) -> u32 {
     turns.iter().map(approximate_turn_tokens).sum::<u32>()
 }
 
+#[derive(Debug, Clone, Default)]
+struct ProviderOperationalMemoryFacts {
+    read_files: Vec<ProviderFileOperationFact>,
+    modified_files: Vec<ProviderFileOperationFact>,
+    operation_facts: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProviderFileOperationKind {
+    Read,
+    Modified,
+}
+
+impl ProviderFileOperationKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::Modified => "modified",
+        }
+    }
+}
+
+fn collect_compacted_file_operation_facts(
+    run_state: &RunState,
+    trigger: &ProviderCompactionTrigger,
+    context: &ProviderContext,
+    older_turns: &[ProviderConversationTurn],
+    redactor: &(impl Redactor + ?Sized),
+) -> ProviderOperationalMemoryFacts {
+    if older_turns.is_empty() {
+        return ProviderOperationalMemoryFacts::default();
+    }
+
+    let lower_bound_seq = context
+        .checkpoint
+        .as_ref()
+        .map(|checkpoint| checkpoint.through_seq)
+        .unwrap_or(0);
+    let through_seq = run_state.next_event_seq.saturating_sub(1);
+    let compacted_request_ids = compacted_request_ids_for_operational_memory(
+        run_state,
+        trigger,
+        context,
+        older_turns,
+        lower_bound_seq,
+        through_seq,
+    );
+    if compacted_request_ids.is_empty() {
+        return ProviderOperationalMemoryFacts::default();
+    }
+
+    let events = match read_historical_events_until(
+        &run_state.info.run_id,
+        &run_state.info.events_path,
+        through_seq,
+    ) {
+        Ok(events) => events,
+        Err(_) => return ProviderOperationalMemoryFacts::default(),
+    };
+
+    let mut tool_operations: BTreeMap<String, ProviderFileOperationKind> = BTreeMap::new();
+    let mut tool_output_paths: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for event in events
+        .iter()
+        .filter(|event| event.seq > lower_bound_seq && event.seq <= through_seq)
+    {
+        if !event_belongs_to_compacted_request(event, &compacted_request_ids) {
+            continue;
+        }
+        match &event.payload {
+            EventV1::ToolCallRequested(payload) => {
+                if let Some(operation) = tool_call_operation(
+                    Some(payload.tool_id.as_str()),
+                    payload.metadata.as_ref(),
+                    None,
+                ) {
+                    tool_operations.insert(payload.tool_call_id.clone(), operation);
+                }
+            }
+            EventV1::ToolCallFinished(payload) => {
+                if let Some(operation) = tool_call_operation(None, payload.metadata.as_ref(), None)
+                {
+                    tool_operations
+                        .entry(payload.tool_call_id.clone())
+                        .or_insert(operation);
+                }
+                let paths = extract_output_json_path_fields(payload.output_json.as_ref());
+                if !paths.is_empty() {
+                    tool_output_paths.insert(payload.tool_call_id.clone(), paths);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut read = BTreeMap::new();
+    let mut modified = BTreeMap::new();
+    for event in events
+        .iter()
+        .filter(|event| event.seq > lower_bound_seq && event.seq <= through_seq)
+    {
+        if !event_belongs_to_compacted_request(event, &compacted_request_ids) {
+            continue;
+        }
+        match &event.payload {
+            EventV1::EditApplied(payload) => {
+                add_file_operation_fact(
+                    &mut modified,
+                    &run_state.info.workspace_root,
+                    &payload.path,
+                    ProviderFileOperationKind::Modified,
+                    event.seq,
+                    format!("edit:{}", payload.edit_id),
+                    None,
+                    redactor,
+                );
+            }
+            EventV1::ArtifactWritten(payload) => {
+                let Some(tool_call_id) = payload.tool_call_id.as_deref() else {
+                    continue;
+                };
+                let operation = tool_call_operation(None, None, payload.tool_metadata.as_ref())
+                    .or_else(|| tool_operations.get(tool_call_id).copied())
+                    .unwrap_or(ProviderFileOperationKind::Read);
+                let paths = extract_artifact_workspace_paths(
+                    payload,
+                    tool_output_paths.get(tool_call_id).map(Vec::as_slice),
+                );
+                let summary = payload
+                    .metadata
+                    .get("summary")
+                    .or_else(|| payload.metadata.get("operation_summary"))
+                    .map(|value| summarize_compaction_text(value));
+                for path in paths {
+                    let target = match operation {
+                        ProviderFileOperationKind::Read => &mut read,
+                        ProviderFileOperationKind::Modified => &mut modified,
+                    };
+                    add_file_operation_fact(
+                        target,
+                        &run_state.info.workspace_root,
+                        &path,
+                        operation,
+                        event.seq,
+                        format!("artifact:{tool_call_id}"),
+                        summary.clone(),
+                        redactor,
+                    );
+                }
+            }
+            EventV1::ToolCallFinished(payload) => {
+                let operation = tool_operations
+                    .get(&payload.tool_call_id)
+                    .copied()
+                    .or_else(|| tool_call_operation(None, payload.metadata.as_ref(), None));
+                if operation != Some(ProviderFileOperationKind::Read) {
+                    continue;
+                }
+                for path in extract_output_json_path_fields(payload.output_json.as_ref()) {
+                    add_file_operation_fact(
+                        &mut read,
+                        &run_state.info.workspace_root,
+                        &path,
+                        ProviderFileOperationKind::Read,
+                        event.seq,
+                        format!("tool:{}", payload.tool_call_id),
+                        payload
+                            .output_summary
+                            .as_deref()
+                            .map(summarize_compaction_text),
+                        redactor,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
+    finalize_provider_operational_memory(read, modified)
+}
+
+fn compacted_request_ids_for_operational_memory(
+    run_state: &RunState,
+    trigger: &ProviderCompactionTrigger,
+    context: &ProviderContext,
+    older_turns: &[ProviderConversationTurn],
+    lower_bound_seq: u64,
+    through_seq: u64,
+) -> BTreeSet<String> {
+    let mut request_ids = older_turns
+        .iter()
+        .filter_map(|turn| turn.request_id.as_deref())
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
+    if !request_ids.is_empty() {
+        return request_ids;
+    }
+
+    let Ok(historical_turns) = collect_historical_agent_turns_until(
+        &run_state.info.run_id,
+        &run_state.info.events_path,
+        &trigger.agent_id,
+        lower_bound_seq,
+        through_seq,
+    ) else {
+        return BTreeSet::new();
+    };
+    if historical_turns.len() < context.preserved_turns.len() {
+        return BTreeSet::new();
+    }
+    let aligned_turns = &historical_turns[historical_turns.len() - context.preserved_turns.len()..];
+    if !aligned_turns
+        .iter()
+        .zip(&context.preserved_turns)
+        .all(|(historical, current)| {
+            historical.user_prompt == current.user_prompt
+                && historical.assistant_response == current.assistant_response
+        })
+    {
+        return BTreeSet::new();
+    }
+    request_ids.extend(
+        aligned_turns
+            .iter()
+            .take(older_turns.len())
+            .map(|turn| turn.request_id.clone()),
+    );
+    request_ids
+}
+
+fn read_historical_events_until(
+    run_id: &str,
+    events_path: &Path,
+    through_seq: u64,
+) -> Result<Vec<EventEnvelopeV1>, CoordinatorError> {
+    let file =
+        fs::File::open(events_path).map_err(|source| CoordinatorError::ResumeRestoreFailed {
+            run_id: run_id.to_string(),
+            reason: format!(
+                "failed to open historical events {}: {source}",
+                events_path.display()
+            ),
+        })?;
+    let mut expected_seq = 1_u64;
+    let mut events = Vec::new();
+    for (line_number, line) in BufReader::new(file).lines().enumerate() {
+        let line = line.map_err(|source| CoordinatorError::ResumeRestoreFailed {
+            run_id: run_id.to_string(),
+            reason: format!(
+                "failed to read historical event line {} in {}: {source}",
+                line_number + 1,
+                events_path.display()
+            ),
+        })?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let event: EventEnvelopeV1 = serde_json::from_str(&line).map_err(|source| {
+            CoordinatorError::ResumeRestoreFailed {
+                run_id: run_id.to_string(),
+                reason: format!(
+                    "invalid historical event line {} in {}: {source}",
+                    line_number + 1,
+                    events_path.display()
+                ),
+            }
+        })?;
+        if event.seq != expected_seq {
+            return Err(CoordinatorError::ResumeRestoreFailed {
+                run_id: run_id.to_string(),
+                reason: format!(
+                    "historical sequence mismatch at {}: expected {expected_seq}, got {}",
+                    events_path.display(),
+                    event.seq
+                ),
+            });
+        }
+        expected_seq = expected_seq.saturating_add(1);
+        if event.seq > through_seq {
+            break;
+        }
+        events.push(event);
+    }
+    Ok(events)
+}
+
+fn event_belongs_to_compacted_request(
+    event: &EventEnvelopeV1,
+    compacted_request_ids: &BTreeSet<String>,
+) -> bool {
+    event
+        .correlation_id
+        .as_deref()
+        .is_some_and(|request_id| compacted_request_ids.contains(request_id))
+}
+
+fn tool_call_operation(
+    invoked_tool_id: Option<&str>,
+    call_metadata: Option<&ToolCallMetadata>,
+    artifact_metadata: Option<&ToolIdentityMetadata>,
+) -> Option<ProviderFileOperationKind> {
+    let identity = if artifact_metadata.is_some() {
+        ResolvedToolIdentity::from_tool_artifact(invoked_tool_id, artifact_metadata)
+    } else {
+        ResolvedToolIdentity::from_tool_call(invoked_tool_id, call_metadata)
+    };
+    let operation = [
+        identity.canonical_tool_id.as_deref(),
+        identity.effective_tool_id.as_deref(),
+        identity.invoked_tool_id.as_deref(),
+        identity.alias_source_tool_id.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .find_map(operation_for_tool_id);
+    operation
+}
+
+fn operation_for_tool_id(tool_id: &str) -> Option<ProviderFileOperationKind> {
+    let normalized = tool_id.trim().to_ascii_lowercase();
+    if matches!(
+        normalized.as_str(),
+        "write" | "edit" | "apply" | "edit.hashline_apply"
+    ) {
+        return Some(ProviderFileOperationKind::Modified);
+    }
+    if matches!(
+        normalized.as_str(),
+        "read" | "grep" | "glob" | "list" | "lsp"
+    ) || normalized.starts_with("lsp.")
+    {
+        return Some(ProviderFileOperationKind::Read);
+    }
+    None
+}
+
+fn extract_output_json_path_fields(output_json: Option<&Value>) -> Vec<String> {
+    let Some(value) = output_json else {
+        return Vec::new();
+    };
+    let mut paths = Vec::new();
+    collect_direct_path_fields(value, &mut paths);
+    for key in ["files", "matches"] {
+        if let Some(items) = value.get(key).and_then(Value::as_array) {
+            for item in items {
+                collect_direct_path_fields(item, &mut paths);
+            }
+        }
+    }
+    paths
+}
+
+fn collect_direct_path_fields(value: &Value, paths: &mut Vec<String>) {
+    for key in ["path", "filePath", "file_path"] {
+        if let Some(path) = value
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+        {
+            paths.push(path.to_string());
+        }
+    }
+}
+
+fn extract_artifact_workspace_paths(
+    payload: &ArtifactWrittenEvent,
+    output_paths: Option<&[String]>,
+) -> Vec<String> {
+    let mut paths = Vec::new();
+    for key in ["path", "filePath", "file_path"] {
+        if let Some(path) = payload
+            .metadata
+            .get(key)
+            .map(String::as_str)
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+        {
+            paths.push(path.to_string());
+        }
+    }
+    if let Some(output_paths) = output_paths {
+        paths.extend(output_paths.iter().cloned());
+    }
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "operational-memory fact construction keeps path normalization, provenance, and redaction inputs explicit"
+)]
+fn add_file_operation_fact(
+    facts: &mut BTreeMap<(String, String), ProviderFileOperationFact>,
+    workspace_root: &Path,
+    raw_path: &str,
+    operation: ProviderFileOperationKind,
+    seq: u64,
+    source: String,
+    summary: Option<String>,
+    redactor: &(impl Redactor + ?Sized),
+) {
+    let Some(path) = workspace_relative_selector_path(workspace_root, Path::new(raw_path)) else {
+        return;
+    };
+    let path = redactor.redact_text(&path);
+    let operation = operation.as_str().to_string();
+    let summary = summary
+        .map(|summary| redactor.redact_text(&summary))
+        .map(|summary| summarize_compaction_text(&summary));
+    let fact = facts
+        .entry((path.clone(), operation.clone()))
+        .or_insert_with(|| ProviderFileOperationFact {
+            path,
+            operation,
+            first_seq: Some(seq),
+            last_seq: Some(seq),
+            sources: Vec::new(),
+            summary: None,
+        });
+    fact.first_seq = Some(fact.first_seq.map_or(seq, |first_seq| first_seq.min(seq)));
+    fact.last_seq = Some(fact.last_seq.map_or(seq, |last_seq| last_seq.max(seq)));
+    if !fact.sources.iter().any(|existing| existing == &source) {
+        fact.sources.push(source);
+        fact.sources.sort();
+    }
+    if fact.summary.is_none() {
+        fact.summary = summary;
+    }
+}
+
+fn finalize_provider_operational_memory(
+    read: BTreeMap<(String, String), ProviderFileOperationFact>,
+    modified: BTreeMap<(String, String), ProviderFileOperationFact>,
+) -> ProviderOperationalMemoryFacts {
+    let (read_files, read_omitted) = cap_file_operation_facts(read);
+    let (modified_files, modified_omitted) = cap_file_operation_facts(modified);
+    let mut operation_facts = Vec::new();
+    if read_omitted > 0 {
+        operation_facts.push(format!("{read_omitted} additional read file(s) omitted"));
+    }
+    if modified_omitted > 0 {
+        operation_facts.push(format!(
+            "{modified_omitted} additional modified file(s) omitted"
+        ));
+    }
+    for fact in read_files.iter().chain(modified_files.iter()) {
+        if operation_facts.len() >= PROVIDER_CONTEXT_OPERATION_FACT_LIMIT {
+            break;
+        }
+        let sources = if fact.sources.is_empty() {
+            "unknown source".to_string()
+        } else {
+            fact.sources.join(", ")
+        };
+        let mut line = format!("{} {} via {}", fact.operation, fact.path, sources);
+        if let Some(summary) = fact
+            .summary
+            .as_deref()
+            .filter(|summary| !summary.is_empty())
+        {
+            line.push_str(": ");
+            line.push_str(summary);
+        }
+        operation_facts.push(summarize_compaction_text(&line));
+    }
+    operation_facts.truncate(PROVIDER_CONTEXT_OPERATION_FACT_LIMIT);
+    ProviderOperationalMemoryFacts {
+        read_files,
+        modified_files,
+        operation_facts,
+    }
+}
+
+fn cap_file_operation_facts(
+    facts: BTreeMap<(String, String), ProviderFileOperationFact>,
+) -> (Vec<ProviderFileOperationFact>, usize) {
+    let total = facts.len();
+    let retained = facts
+        .into_values()
+        .take(PROVIDER_CONTEXT_FILE_OPERATION_FACT_LIMIT)
+        .collect::<Vec<_>>();
+    (
+        retained,
+        total.saturating_sub(PROVIDER_CONTEXT_FILE_OPERATION_FACT_LIMIT),
+    )
+}
+
 fn build_provider_compaction_facts(
     context: &ProviderContext,
     older_turns: &[ProviderConversationTurn],
     pruned_tool_artifacts: &[EventArtifactRef],
+    operational_memory: ProviderOperationalMemoryFacts,
 ) -> ProviderCompactionFacts {
     let compacted_turns = older_turns
         .iter()
@@ -7271,6 +8444,9 @@ fn build_provider_compaction_facts(
             last_seq: turn.last_seq,
             user_excerpt: summarize_compaction_text(&turn.user_prompt),
             assistant_excerpt: summarize_compaction_text(&turn.assistant_response),
+            status: turn.status,
+            failure_stage: turn.failure_stage.clone(),
+            failure_reason: turn.failure_reason.clone(),
             artifacts: turn.artifacts.clone(),
         })
         .collect::<Vec<_>>();
@@ -7287,9 +8463,11 @@ fn build_provider_compaction_facts(
         }
     }
 
-    let mut touched_files = relevant_artifacts
+    let mut touched_files = operational_memory
+        .read_files
         .iter()
-        .map(|artifact| artifact.path.clone())
+        .chain(operational_memory.modified_files.iter())
+        .map(|fact| fact.path.clone())
         .collect::<Vec<_>>();
     touched_files.sort();
     touched_files.dedup();
@@ -7301,9 +8479,23 @@ fn build_provider_compaction_facts(
             .map(|checkpoint| checkpoint.checkpoint_id.clone()),
         compacted_turns,
         relevant_artifacts,
+        read_files: operational_memory.read_files,
+        modified_files: operational_memory.modified_files,
+        operation_facts: operational_memory.operation_facts,
         touched_files,
         pending_work: Vec::new(),
         blockers: Vec::new(),
+    }
+}
+
+fn sanitize_provider_turn_failure_metadata(
+    turn: &mut ProviderConversationTurn,
+    redactor: &(impl Redactor + ?Sized),
+) {
+    if let Some(reason) = turn.failure_reason.take() {
+        let redacted = redactor.redact_text(&reason);
+        let summarized = summarize_compaction_text(&redacted);
+        turn.failure_reason = (!summarized.trim().is_empty()).then_some(summarized);
     }
 }
 
@@ -7313,6 +8505,7 @@ fn build_provider_compaction_tail_boundary(
     keep_recent_budget: u32,
     trigger: &ProviderCompactionTrigger,
     split_tail: bool,
+    split_prefix_summary: Option<String>,
 ) -> ProviderCompactionTailBoundary {
     let first_preserved = recent_turns.first();
     let mode = if split_tail {
@@ -7325,11 +8518,18 @@ fn build_provider_compaction_tail_boundary(
         "whole_turn_tail".to_string()
     };
     let note = if mode == "split_oversized_turn_tail" {
-        Some("The latest oversized turn was split inside the checkpoint artifact: the earlier portion was compacted and a suffix remains provider-visible as recent context.".to_string())
+        Some("The latest oversized turn was split inside the checkpoint artifact: the earlier prefix is summarized in the checkpoint and a suffix remains provider-visible as recent context.".to_string())
     } else if mode == "oversized_whole_turn_tail" {
         Some("Latest preserved turn exceeds the keep-recent budget; the harness records this tail boundary but does not split provider/tool turns yet.".to_string())
-    } else if trigger.trigger_reason == "overflow_retry" && recent_turns.is_empty() {
-        Some("Overflow retry compacted to summary-only context because preserving a recent turn would still exceed the provider window.".to_string())
+    } else if matches!(
+        trigger.trigger_reason.as_str(),
+        "overflow_retry" | "failed_response"
+    ) && recent_turns.is_empty()
+    {
+        Some(format!(
+            "{} compaction used summary-only context because preserving or splitting the latest oversized turn would risk invalid provider ordering or still exceed the provider window.",
+            trigger.trigger_reason
+        ))
     } else {
         None
     };
@@ -7340,6 +8540,7 @@ fn build_provider_compaction_tail_boundary(
         preserved_tokens_estimate,
         preserved_from_request_id: first_preserved.and_then(|turn| turn.request_id.clone()),
         preserved_from_seq: first_preserved.and_then(|turn| turn.first_seq),
+        split_prefix_summary,
         note,
     }
 }
@@ -7349,6 +8550,7 @@ fn build_provider_compaction_summary_source(
     trigger: &ProviderCompactionTrigger,
     existing_summary: Option<&str>,
     request: SummarySourceRequest,
+    config: &CompactionRuntimeConfig,
 ) -> ProviderCompactionSummarySource {
     let (strategy, model_ref, model_backed, deterministic_fallback) = match request {
         SummarySourceRequest::Hook => (
@@ -7401,6 +8603,8 @@ fn build_provider_compaction_summary_source(
             .is_some_and(|summary| !summary.is_empty()),
         model_backed,
         deterministic_fallback,
+        summary_contract_version: Some(PROVIDER_CONTEXT_SUMMARY_CONTRACT_VERSION),
+        summary_contract_enforced: Some(config.structured_summary_contract),
     }
 }
 
@@ -7436,6 +8640,7 @@ async fn model_backed_compaction_summary_for(
     compaction_config: &CompactionRuntimeConfig,
     run_state: &RunState,
     trigger: &ProviderCompactionTrigger,
+    redactor: &(impl Redactor + ?Sized),
 ) -> Result<String, String> {
     let context = run_state
         .provider_context_by_agent
@@ -7443,7 +8648,7 @@ async fn model_backed_compaction_summary_for(
         .cloned()
         .unwrap_or_default();
     let metadata = recorded_runtime_context_for_compaction(run_state, trigger);
-    if !should_compact_provider_context(&context, &metadata, trigger) {
+    if !should_compact_provider_context(&context, &metadata, trigger, compaction_config) {
         return Err("compaction would be a no-op".to_string());
     }
 
@@ -7453,6 +8658,7 @@ async fn model_backed_compaction_summary_for(
         run_state,
         trigger,
         &context,
+        redactor,
         keep_recent_budget,
         compaction_config,
     ) else {
@@ -7463,6 +8669,7 @@ async fn model_backed_compaction_summary_for(
         trigger,
         context.compacted_summary.as_deref(),
         SummarySourceRequest::Deterministic,
+        compaction_config,
     );
     let deterministic_draft = build_provider_context_summary(
         context.compacted_summary.as_deref(),
@@ -7471,6 +8678,7 @@ async fn model_backed_compaction_summary_for(
         &plan.facts,
         &plan.tail_boundary,
         &draft_source,
+        compaction_config,
     );
     let model_ref = compaction_summary_model_ref(compaction_config, trigger);
     let model = AgentModelRef::parse(&model_ref);
@@ -7491,6 +8699,7 @@ async fn model_backed_compaction_summary_for(
                     context.compacted_summary.as_deref(),
                     &plan,
                     &deterministic_draft,
+                    compaction_config,
                 ),
                 name: None,
                 tool_call_id: None,
@@ -7525,13 +8734,14 @@ async fn model_backed_compaction_summary_for(
         }
     }
 
-    validate_model_compaction_summary(&output, tokens_before, &plan)
+    validate_model_compaction_summary(&output, tokens_before, &plan, compaction_config)
 }
 
 fn build_model_compaction_prompt(
     existing_summary: Option<&str>,
     plan: &ProviderContextCompactionPlan,
     deterministic_draft: &str,
+    config: &CompactionRuntimeConfig,
 ) -> String {
     let compacted_facts = plan
         .facts
@@ -7552,9 +8762,16 @@ fn build_model_compaction_prompt(
         .map(str::trim)
         .filter(|summary| !summary.is_empty())
         .unwrap_or("(none)");
+    let required_headings = provider_context_summary_required_headings(config).join(", ");
+    let split_prefix_summary = plan
+        .tail_boundary
+        .split_prefix_summary
+        .as_deref()
+        .unwrap_or("none");
+    let operational_memory = operational_memory_summary_block(&plan.facts);
 
     format!(
-        "Update the Harness checkpoint summary for compacted provider context.\n\nRequired output rules:\n- Return markdown only.\n- Keep these headings exactly: ## Goal, ## Constraints & Preferences, ## Progress, ### Done, ### In Progress, ### Blocked, ## Key Decisions, ## Next Steps, ## Critical Context, ## Source Facts, ## Relevant Files / Artifacts.\n- Roll forward any still-relevant previous summary content into the structured sections. Do not append or label a raw previous-summary blob.\n- Keep under {max_chars} characters.\n\nPrevious checkpoint summary:\n{prior}\n\nNew compacted turn facts:\n{compacted_facts}\n\nTail boundary: {mode}; preserved turns: {preserved_turns}; note: {note}\n\nDeterministic Harness draft to improve:\n{deterministic_draft}",
+        "Update the Harness checkpoint summary for compacted provider context.\n\nRequired output rules:\n- Return markdown only.\n- Keep these headings exactly: {required_headings}.\n- Include `## Operational Memory` with `Read files:` and `Modified files:` subsections when operational memory is present.\n- Roll forward any still-relevant previous summary content into the structured sections. Do not append or label a raw previous-summary blob.\n- If split prefix summary is not `none`, preserve it under Critical Context and Source Facts wording.\n- Keep under {max_chars} characters.\n\nPrevious checkpoint summary:\n{prior}\n\nNew compacted turn facts:\n{compacted_facts}\n\nOperational memory facts:\n{operational_memory}\n\nTail boundary: {mode}; preserved turns: {preserved_turns}; note: {note}; split prefix summary: {split_prefix_summary}\n\nDeterministic Harness draft to improve:\n{deterministic_draft}",
         max_chars = PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS,
         mode = plan.tail_boundary.mode,
         preserved_turns = plan.tail_boundary.preserved_turns,
@@ -7566,6 +8783,7 @@ fn validate_model_compaction_summary(
     summary: &str,
     tokens_before: u32,
     plan: &ProviderContextCompactionPlan,
+    config: &CompactionRuntimeConfig,
 ) -> Result<String, String> {
     let trimmed = summary.trim();
     if trimmed.is_empty() {
@@ -7574,20 +8792,8 @@ fn validate_model_compaction_summary(
     if trimmed.chars().count() > PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS {
         return Err("model summary exceeded the checkpoint summary character budget".to_string());
     }
-    for heading in [
-        "## Goal",
-        "## Constraints & Preferences",
-        "## Progress",
-        "### Done",
-        "### In Progress",
-        "### Blocked",
-        "## Key Decisions",
-        "## Next Steps",
-        "## Critical Context",
-        "## Source Facts",
-        "## Relevant Files / Artifacts",
-    ] {
-        if !trimmed.contains(heading) {
+    for heading in provider_context_summary_required_headings(config) {
+        if !summary_contains_heading(trimmed, heading) {
             return Err(format!("model summary missed required heading `{heading}`"));
         }
     }
@@ -7600,6 +8806,10 @@ fn validate_model_compaction_summary(
     Ok(trimmed.to_string())
 }
 
+fn summary_contains_heading(summary: &str, heading: &str) -> bool {
+    summary.lines().any(|line| line.trim() == heading)
+}
+
 fn build_provider_context_summary(
     existing_summary: Option<&str>,
     older_turns: &[ProviderConversationTurn],
@@ -7607,16 +8817,50 @@ fn build_provider_context_summary(
     facts: &ProviderCompactionFacts,
     tail_boundary: &ProviderCompactionTailBoundary,
     summary_source: &ProviderCompactionSummarySource,
+    config: &CompactionRuntimeConfig,
 ) -> String {
+    if !config.structured_summary_contract {
+        return build_legacy_provider_context_summary(
+            existing_summary,
+            older_turns,
+            pruned_tool_artifacts,
+            facts,
+            tail_boundary,
+            summary_source,
+            config,
+        );
+    }
+
+    build_pi_provider_context_summary(
+        existing_summary,
+        older_turns,
+        pruned_tool_artifacts,
+        facts,
+        tail_boundary,
+        summary_source,
+        config,
+    )
+}
+
+fn build_legacy_provider_context_summary(
+    existing_summary: Option<&str>,
+    older_turns: &[ProviderConversationTurn],
+    pruned_tool_artifacts: &[EventArtifactRef],
+    facts: &ProviderCompactionFacts,
+    tail_boundary: &ProviderCompactionTailBoundary,
+    summary_source: &ProviderCompactionSummarySource,
+    config: &CompactionRuntimeConfig,
+) -> String {
+    let headings = provider_context_summary_required_headings(config);
     let mut lines = Vec::new();
-    lines.push("## Goal".to_string());
+    lines.push(headings[0].to_string());
     lines.push(format!(
         "- Continue the current agent session after compacting {} older turn(s).",
         older_turns.len()
     ));
     lines.push(String::new());
 
-    lines.push("## Constraints & Preferences".to_string());
+    lines.push(headings[1].to_string());
     if let Some(existing_summary) = existing_summary
         .map(str::trim)
         .filter(|summary| !summary.is_empty())
@@ -7631,8 +8875,8 @@ fn build_provider_context_summary(
     }
     lines.push(String::new());
 
-    lines.push("## Progress".to_string());
-    lines.push("### Done".to_string());
+    lines.push(headings[2].to_string());
+    lines.push(headings[3].to_string());
     for (index, turn) in older_turns.iter().enumerate() {
         lines.push(format!(
             "- Turn {} user: {}",
@@ -7644,17 +8888,22 @@ fn build_provider_context_summary(
             summarize_compaction_text(&turn.assistant_response)
         ));
     }
-    lines.push("### In Progress".to_string());
+    lines.push(headings[4].to_string());
     lines.push(
         "- Continue from the preserved recent turn(s) that follow this checkpoint summary."
             .to_string(),
     );
-    lines.push("### Blocked".to_string());
+    lines.push(headings[5].to_string());
     lines.push("- (none recorded explicitly)".to_string());
     lines.push(String::new());
 
-    lines.push("## Key Decisions".to_string());
+    lines.push(headings[6].to_string());
     lines.push("- Older provider-visible turns were compacted into this checkpoint; preserved recent turns and the current user message take precedence over this lossy summary.".to_string());
+    if let Some(split_prefix_summary) = tail_boundary.split_prefix_summary.as_deref() {
+        lines.push(format!(
+            "- Split prefix summary: {split_prefix_summary}; the provider-visible suffix follows this checkpoint as recent context."
+        ));
+    }
     if let Some(existing_summary) = existing_summary
         .map(str::trim)
         .filter(|summary| !summary.is_empty())
@@ -7666,11 +8915,11 @@ fn build_provider_context_summary(
     }
     lines.push(String::new());
 
-    lines.push("## Next Steps".to_string());
+    lines.push(headings[7].to_string());
     lines.push("1. Use the preserved recent turn(s) plus this checkpoint summary to continue the user's current task.".to_string());
     lines.push(String::new());
 
-    lines.push("## Critical Context".to_string());
+    lines.push(headings[8].to_string());
     lines.push(format!("- Compacted turns: {}", older_turns.len()));
     if let Some(previous_checkpoint_id) = facts.previous_checkpoint_id.as_deref() {
         lines.push(format!(
@@ -7694,7 +8943,12 @@ fn build_provider_context_summary(
     lines.push("- This summary is deterministic and lossy; verify details against artifacts or the event log when precision matters.".to_string());
     lines.push(String::new());
 
-    lines.push("## Source Facts".to_string());
+    lines.push(headings[9].to_string());
+    if let Some(split_prefix_summary) = tail_boundary.split_prefix_summary.as_deref() {
+        lines.push(format!(
+            "- Source facts: split prefix summary: {split_prefix_summary}"
+        ));
+    }
     if facts.compacted_turns.is_empty() {
         lines.push("- (no compacted turn facts recorded)".to_string());
     } else {
@@ -7715,7 +8969,7 @@ fn build_provider_context_summary(
     }
     lines.push(String::new());
 
-    lines.push("## Relevant Files / Artifacts".to_string());
+    lines.push(headings[10].to_string());
     let mut artifact_lines = Vec::new();
     let mut seen = BTreeSet::new();
     for artifact in pruned_tool_artifacts {
@@ -7756,6 +9010,270 @@ fn build_provider_context_summary(
         &lines.join("\n"),
         PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS,
     )
+}
+
+fn build_pi_provider_context_summary(
+    existing_summary: Option<&str>,
+    older_turns: &[ProviderConversationTurn],
+    pruned_tool_artifacts: &[EventArtifactRef],
+    facts: &ProviderCompactionFacts,
+    tail_boundary: &ProviderCompactionTailBoundary,
+    summary_source: &ProviderCompactionSummarySource,
+    config: &CompactionRuntimeConfig,
+) -> String {
+    let headings = provider_context_summary_required_headings(config);
+    let mut lines = Vec::new();
+    lines.push(headings[0].to_string());
+    lines.push(format!(
+        "- Continue the current agent session after compacting {} older turn(s).",
+        older_turns.len()
+    ));
+    lines.push(String::new());
+
+    lines.push(headings[1].to_string());
+    if let Some(existing_summary) = existing_summary
+        .map(str::trim)
+        .filter(|summary| !summary.is_empty())
+    {
+        lines.push("- Preserve still-relevant constraints, decisions, files, and next steps from the previous checkpoint summary.".to_string());
+        lines.push(format!(
+            "- Prior checkpoint constraints/context carried forward: {}",
+            summarize_compaction_text(existing_summary)
+        ));
+    } else {
+        lines.push("- (none recorded explicitly)".to_string());
+    }
+    lines.push(String::new());
+
+    lines.push(headings[2].to_string());
+    for (index, turn) in older_turns.iter().enumerate() {
+        lines.push(format!(
+            "- Done turn {} user: {}",
+            index + 1,
+            summarize_compaction_text(&turn.user_prompt)
+        ));
+        lines.push(format!(
+            "  Assistant: {}",
+            summarize_compaction_text(&turn.assistant_response)
+        ));
+    }
+    lines.push("- In progress: continue from the preserved recent turn(s) that follow this checkpoint summary.".to_string());
+    lines.push("- Blocked: (none recorded explicitly)".to_string());
+    lines.push(String::new());
+
+    lines.push(headings[3].to_string());
+    lines.push("- Older provider-visible turns were compacted into this checkpoint; preserved recent turns and the current user message take precedence over this lossy summary.".to_string());
+    if let Some(split_prefix_summary) = tail_boundary.split_prefix_summary.as_deref() {
+        lines.push(format!(
+            "- Split prefix summary: {split_prefix_summary}; the provider-visible suffix follows this checkpoint as recent context."
+        ));
+    }
+    if let Some(existing_summary) = existing_summary
+        .map(str::trim)
+        .filter(|summary| !summary.is_empty())
+    {
+        lines.push(format!(
+            "- Prior checkpoint decisions/context were rolled into this structured summary: {}",
+            summarize_compaction_text(existing_summary)
+        ));
+    }
+    lines.push(String::new());
+
+    lines.push(headings[4].to_string());
+    lines.push("1. Use the preserved recent turn(s) plus this checkpoint summary to continue the user's current task.".to_string());
+    lines.push(String::new());
+
+    lines.push(headings[5].to_string());
+    lines.push(format!("- Compacted turns: {}", older_turns.len()));
+    if let Some(previous_checkpoint_id) = facts.previous_checkpoint_id.as_deref() {
+        lines.push(format!(
+            "- Previous checkpoint: {previous_checkpoint_id}; this summary rolls forward from it."
+        ));
+    }
+    lines.push(format!(
+        "- Tail boundary: {} ({} preserved turn(s), ~{} token(s)).",
+        tail_boundary.mode, tail_boundary.preserved_turns, tail_boundary.preserved_tokens_estimate
+    ));
+    if let Some(note) = tail_boundary.note.as_deref() {
+        lines.push(format!("- Tail note: {note}"));
+    }
+    lines.push(format!(
+        "- Summary source: {} using {} (model-backed: {}, deterministic fallback: {}).",
+        summary_source.strategy,
+        summary_source.model_ref,
+        summary_source.model_backed,
+        summary_source.deterministic_fallback
+    ));
+    if facts.compacted_turns.is_empty() {
+        lines.push("- Source facts: (no compacted turn facts recorded)".to_string());
+    } else {
+        for fact in facts.compacted_turns.iter().take(8) {
+            let request = fact
+                .request_id
+                .as_deref()
+                .map(|request_id| format!(" `{request_id}`"))
+                .unwrap_or_default();
+            lines.push(format!(
+                "- Source fact request{request}: {}",
+                fact.user_excerpt
+            ));
+            lines.push(format!("  Assistant: {}", fact.assistant_excerpt));
+        }
+    }
+    if let Some(split_prefix_summary) = tail_boundary.split_prefix_summary.as_deref() {
+        lines.push(format!(
+            "- Source facts: split prefix summary: {split_prefix_summary}"
+        ));
+    }
+    let mut artifact_lines = Vec::new();
+    let mut seen = BTreeSet::new();
+    for artifact in pruned_tool_artifacts {
+        if seen.insert((artifact.path.clone(), artifact.digest.clone())) {
+            let digest = artifact
+                .digest
+                .as_deref()
+                .map(|value| format!(" ({value})"))
+                .unwrap_or_default();
+            artifact_lines.push(format!(
+                "- Artifact {}{}: referenced by compacted turn/tool output",
+                artifact.path, digest
+            ));
+        }
+    }
+    for turn in older_turns {
+        for artifact in &turn.artifacts {
+            if seen.insert((artifact.path.clone(), artifact.digest.clone())) {
+                let digest = artifact
+                    .digest
+                    .as_deref()
+                    .map(|value| format!(" ({value})"))
+                    .unwrap_or_default();
+                artifact_lines.push(format!(
+                    "- Artifact {}{}: referenced by compacted provider turn",
+                    artifact.path, digest
+                ));
+            }
+        }
+    }
+    if artifact_lines.is_empty() {
+        lines.push("- Relevant files/artifacts: (none recorded)".to_string());
+    } else {
+        lines.extend(artifact_lines.into_iter().take(12));
+    }
+    lines.push("- This summary is deterministic and lossy; verify details against artifacts or the event log when precision matters.".to_string());
+    append_operational_memory_section(&mut lines, facts);
+
+    truncate_chars(
+        &lines.join("\n"),
+        PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS,
+    )
+}
+
+fn operational_memory_summary_block(facts: &ProviderCompactionFacts) -> String {
+    if facts.read_files.is_empty()
+        && facts.modified_files.is_empty()
+        && facts.operation_facts.is_empty()
+    {
+        return "(none recorded)".to_string();
+    }
+
+    let mut lines = Vec::new();
+    lines.push("Read files:".to_string());
+    if facts.read_files.is_empty() {
+        lines.push("- (none recorded)".to_string());
+    } else {
+        lines.extend(
+            facts
+                .read_files
+                .iter()
+                .take(12)
+                .map(file_operation_fact_line),
+        );
+    }
+    lines.push("Modified files:".to_string());
+    if facts.modified_files.is_empty() {
+        lines.push("- (none recorded)".to_string());
+    } else {
+        lines.extend(
+            facts
+                .modified_files
+                .iter()
+                .take(12)
+                .map(file_operation_fact_line),
+        );
+    }
+    lines.extend(
+        facts
+            .operation_facts
+            .iter()
+            .take(20)
+            .map(|fact| format!("- {fact}")),
+    );
+    lines.join("\n")
+}
+
+fn append_operational_memory_section(lines: &mut Vec<String>, facts: &ProviderCompactionFacts) {
+    if facts.read_files.is_empty()
+        && facts.modified_files.is_empty()
+        && facts.operation_facts.is_empty()
+    {
+        return;
+    }
+    lines.push(String::new());
+    lines.push("## Operational Memory".to_string());
+    lines.push("Read files:".to_string());
+    if facts.read_files.is_empty() {
+        lines.push("- (none recorded)".to_string());
+    } else {
+        lines.extend(
+            facts
+                .read_files
+                .iter()
+                .take(12)
+                .map(file_operation_fact_line),
+        );
+    }
+    lines.push("Modified files:".to_string());
+    if facts.modified_files.is_empty() {
+        lines.push("- (none recorded)".to_string());
+    } else {
+        lines.extend(
+            facts
+                .modified_files
+                .iter()
+                .take(12)
+                .map(file_operation_fact_line),
+        );
+    }
+    lines.extend(
+        facts
+            .operation_facts
+            .iter()
+            .take(20)
+            .map(|fact| format!("- {fact}")),
+    );
+}
+
+fn file_operation_fact_line(fact: &ProviderFileOperationFact) -> String {
+    let seq = match (fact.first_seq, fact.last_seq) {
+        (Some(first), Some(last)) if first == last => format!(" seq {first}"),
+        (Some(first), Some(last)) => format!(" seq {first}-{last}"),
+        (Some(first), None) => format!(" seq {first}"),
+        (None, Some(last)) => format!(" seq {last}"),
+        (None, None) => String::new(),
+    };
+    let sources = if fact.sources.is_empty() {
+        String::new()
+    } else {
+        format!(" via {}", fact.sources.join(", "))
+    };
+    let summary = fact
+        .summary
+        .as_deref()
+        .filter(|summary| !summary.is_empty())
+        .map(|summary| format!(": {summary}"))
+        .unwrap_or_default();
+    format!("- {}{}{}{}", fact.path, seq, sources, summary)
 }
 
 fn summarize_compaction_text(text: &str) -> String {
@@ -8027,6 +9545,7 @@ fn collect_historical_agent_turns_until(
                 artifact_refs
                     .dedup_by(|left, right| left.path == right.path && left.digest == right.digest);
                 turns.push(HistoricalCompletedAgentTurn {
+                    request_id: request_id.to_string(),
                     user_prompt,
                     assistant_response,
                     artifact_refs,
@@ -8744,6 +10263,8 @@ struct HistoricalRequestState {
     prompt_summary: Option<String>,
     assistant_output: String,
     agent_id: Option<String>,
+    provider_request_id: Option<String>,
+    provider_finish_reason: Option<String>,
     first_seq: Option<u64>,
 }
 
@@ -8757,6 +10278,7 @@ struct AppliedCheckpointRecord {
 
 #[derive(Debug, Clone)]
 struct HistoricalCompletedAgentTurn {
+    request_id: String,
     user_prompt: String,
     assistant_response: String,
     artifact_refs: Vec<EventArtifactRef>,
@@ -8970,6 +10492,7 @@ fn restore_provider_context_from_history(
                 let request = requests.entry(request_id.to_string()).or_default();
                 request.first_seq.get_or_insert(event.seq);
                 request.prompt_summary = Some(payload.prompt_summary.clone());
+                request.provider_request_id = Some(payload.request_id.clone());
                 if let Some(agent_id) = event
                     .actor
                     .agent_id
@@ -8996,6 +10519,21 @@ fn restore_provider_context_from_history(
                     .assistant_output
                     .push_str(&payload.delta);
             }
+            EventV1::ProviderRequestFinished(payload) => {
+                if !replay_agent_event {
+                    continue;
+                }
+                let request_id = event
+                    .correlation_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|request_id| !request_id.is_empty())
+                    .unwrap_or(&payload.request_id);
+                let request = requests.entry(request_id.to_string()).or_default();
+                request.first_seq.get_or_insert(event.seq);
+                request.provider_request_id = Some(payload.request_id.clone());
+                request.provider_finish_reason = Some(payload.finish_reason.clone());
+            }
             EventV1::TaskScheduled(payload) => {
                 if !replay_agent_event {
                     continue;
@@ -9016,6 +10554,11 @@ fn restore_provider_context_from_history(
                     historical_task_scopes.insert(payload.task_id.clone(), scope);
                     if matches!(scope, TaskTerminalScope::AgentTurn) {
                         if let Some(request_id) = event.correlation_id.as_deref() {
+                            requests
+                                .entry(request_id.to_string())
+                                .or_default()
+                                .first_seq
+                                .get_or_insert(event.seq);
                             request_turn_task_ids
                                 .insert(request_id.to_string(), payload.task_id.clone());
                             if let Some(agent_id) = event.actor.agent_id.as_deref() {
@@ -9128,6 +10671,91 @@ fn restore_provider_context_from_history(
                         first_seq: request_state.first_seq,
                         last_seq: Some(event.seq),
                         artifacts,
+                        ..ProviderConversationTurn::default()
+                    });
+            }
+            EventV1::TaskCancelled(payload) => {
+                let agent_id_from_task = if matches!(
+                    historical_task_scopes.get(&payload.task_id),
+                    Some(TaskTerminalScope::AgentTurn)
+                ) {
+                    agent_turn_agent_by_task.remove(&payload.task_id)
+                } else {
+                    None
+                };
+                if let Some(agent_id) = agent_id_from_task.as_ref() {
+                    active_turn_by_agent.remove(agent_id);
+                }
+                if !replay_agent_event {
+                    continue;
+                }
+                let Some(request_id) = event.correlation_id.as_deref() else {
+                    continue;
+                };
+
+                if !historical_task_cancellation_marks_agent_turn(
+                    request_id,
+                    payload,
+                    &historical_task_scopes,
+                    &request_turn_task_ids,
+                ) {
+                    continue;
+                }
+
+                let Some(request_state) = requests.remove(request_id) else {
+                    continue;
+                };
+
+                let agent_id = event
+                    .actor
+                    .agent_id
+                    .as_deref()
+                    .filter(|value| !value.trim().is_empty())
+                    .map(str::to_string)
+                    .or(agent_id_from_task)
+                    .or_else(|| request_state.agent_id.clone())
+                    .ok_or_else(|| CoordinatorError::ResumeRestoreFailed {
+                        run_id: run_id.to_string(),
+                        reason: format!(
+                            "task cancellation for request `{request_id}` missing agent actor"
+                        ),
+                    })?;
+                active_turn_by_agent.remove(&agent_id);
+
+                let mut user_prompt = restore_historical_user_prompt(
+                    run_id,
+                    request_id,
+                    request_state.user_text,
+                    request_state.prompt_summary,
+                )?;
+                for steering_prompt in steering_prompts_by_request
+                    .remove(request_id)
+                    .unwrap_or_default()
+                {
+                    user_prompt.push_str("\n\n");
+                    user_prompt.push_str(&steering_prompt);
+                }
+
+                let (status, failure_stage) = historical_cancelled_turn_status_stage(
+                    request_state.provider_finish_reason.as_deref(),
+                    &payload.reason,
+                );
+                let provider_request_id = request_state
+                    .provider_request_id
+                    .unwrap_or_else(|| request_id.to_string());
+                histories
+                    .entry(agent_id)
+                    .or_default()
+                    .push_turn(ProviderConversationTurn {
+                        user_prompt,
+                        assistant_response: request_state.assistant_output,
+                        status,
+                        failure_stage: Some(failure_stage),
+                        failure_reason: truncated_failure_reason(&payload.reason),
+                        request_id: Some(provider_request_id),
+                        first_seq: request_state.first_seq,
+                        last_seq: Some(event.seq),
+                        artifacts: Vec::new(),
                     });
             }
             _ => {}
@@ -9256,6 +10884,67 @@ fn historical_task_completion_marks_agent_turn(
     }
 
     true
+}
+
+fn historical_task_cancellation_marks_agent_turn(
+    request_id: &str,
+    payload: &TaskCancelledEvent,
+    historical_task_scopes: &BTreeMap<String, TaskTerminalScope>,
+    request_turn_task_ids: &BTreeMap<String, String>,
+) -> bool {
+    if let Some(scope) = payload.task_scope {
+        return matches!(scope, TaskTerminalScope::AgentTurn);
+    }
+
+    if let Some(scope) = historical_task_scopes.get(&payload.task_id) {
+        return matches!(scope, TaskTerminalScope::AgentTurn);
+    }
+
+    if let Some(turn_task_id) = request_turn_task_ids.get(request_id) {
+        return turn_task_id == &payload.task_id;
+    }
+
+    false
+}
+
+fn historical_cancelled_turn_status_stage(
+    provider_finish_reason: Option<&str>,
+    cancellation_reason: &str,
+) -> (ProviderConversationTurnStatus, String) {
+    if provider_finish_reason == Some("error") {
+        return (
+            ProviderConversationTurnStatus::Failed,
+            "provider_error".to_string(),
+        );
+    }
+
+    if cancellation_reason.contains("overflow persisted after checkpoint compaction") {
+        return (
+            ProviderConversationTurnStatus::Failed,
+            "overflow_retry_failed".to_string(),
+        );
+    }
+
+    if cancellation_reason.contains("failed closed") {
+        return (
+            ProviderConversationTurnStatus::Failed,
+            "tool_failure".to_string(),
+        );
+    }
+
+    if cancellation_reason.contains("critical lifecycle hook failed")
+        || cancellation_reason.contains("lifecycle hook failed")
+    {
+        return (
+            ProviderConversationTurnStatus::Failed,
+            "hook_failure".to_string(),
+        );
+    }
+
+    (
+        ProviderConversationTurnStatus::Aborted,
+        "cancelled".to_string(),
+    )
 }
 
 fn parse_prefixed_counter(id: &str, expected_prefix: &str) -> Option<u64> {

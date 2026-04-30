@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -8,7 +9,7 @@ use harness_providers::{
     ProviderEventStream, ProviderStreamEvent, ProviderStreamFinishedMetadata,
     ProviderStreamStartMetadata, ProviderStreamThinkingMetadata, ToolChoice, ToolDef,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use tokio_stream::StreamExt;
 
@@ -78,10 +79,97 @@ pub struct AgentModelSettings {
     pub reasoning_summary: Option<String>,
 }
 
+const PROVIDER_TURN_FAILURE_REASON_MAX_CHARS: usize = 240;
+const ALLOWED_PROVIDER_TURN_FAILURE_STAGES: &[&str] = &[
+    "provider_error",
+    "provider_abort",
+    "tool_failure",
+    "overflow_retry_failed",
+    "hook_failure",
+    "cancelled",
+    "unknown",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderConversationTurnStatus {
+    #[default]
+    Completed,
+    Failed,
+    Aborted,
+}
+
+impl ProviderConversationTurnStatus {
+    pub fn is_completed(&self) -> bool {
+        matches!(self, Self::Completed)
+    }
+
+    fn marker_label(self) -> &'static str {
+        match self {
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Aborted => "aborted",
+        }
+    }
+}
+
+fn is_allowed_provider_turn_failure_stage(stage: &str) -> bool {
+    ALLOWED_PROVIDER_TURN_FAILURE_STAGES.contains(&stage)
+}
+
+fn serialize_provider_turn_failure_stage<S>(
+    stage: &Option<String>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match stage.as_deref() {
+        Some(stage) if is_allowed_provider_turn_failure_stage(stage) => {
+            serializer.serialize_some(stage)
+        }
+        Some(stage) => Err(serde::ser::Error::custom(format!(
+            "unsupported provider turn failure stage `{stage}`"
+        ))),
+        None => serializer.serialize_none(),
+    }
+}
+
+fn deserialize_provider_turn_failure_stage<'de, D>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let stage = Option::<String>::deserialize(deserializer)?;
+    if let Some(stage) = stage.as_deref() {
+        if !is_allowed_provider_turn_failure_stage(stage) {
+            return Err(serde::de::Error::custom(format!(
+                "unsupported provider turn failure stage `{stage}`"
+            )));
+        }
+    }
+    Ok(stage)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ProviderConversationTurn {
     pub user_prompt: String,
     pub assistant_response: String,
+    #[serde(
+        default,
+        skip_serializing_if = "ProviderConversationTurnStatus::is_completed"
+    )]
+    pub status: ProviderConversationTurnStatus,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_provider_turn_failure_stage",
+        deserialize_with = "deserialize_provider_turn_failure_stage"
+    )]
+    pub failure_stage: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -134,8 +222,36 @@ pub struct ProviderCompactionTurnFact {
     pub last_seq: Option<u64>,
     pub user_excerpt: String,
     pub assistant_excerpt: String,
+    #[serde(
+        default,
+        skip_serializing_if = "ProviderConversationTurnStatus::is_completed"
+    )]
+    pub status: ProviderConversationTurnStatus,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_provider_turn_failure_stage",
+        deserialize_with = "deserialize_provider_turn_failure_stage"
+    )]
+    pub failure_stage: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub artifacts: Vec<EventArtifactRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ProviderFileOperationFact {
+    pub path: String,
+    pub operation: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_seq: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_seq: Option<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -146,6 +262,12 @@ pub struct ProviderCompactionFacts {
     pub compacted_turns: Vec<ProviderCompactionTurnFact>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relevant_artifacts: Vec<EventArtifactRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub read_files: Vec<ProviderFileOperationFact>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modified_files: Vec<ProviderFileOperationFact>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub operation_facts: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub touched_files: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -163,6 +285,8 @@ pub struct ProviderCompactionTailBoundary {
     pub preserved_from_request_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preserved_from_seq: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub split_prefix_summary: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
 }
@@ -182,6 +306,10 @@ pub struct ProviderCompactionSummarySource {
     pub previous_summary_used: bool,
     pub model_backed: bool,
     pub deterministic_fallback: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_contract_version: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_contract_enforced: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -221,6 +349,9 @@ impl ProviderCompactionFacts {
         self.previous_checkpoint_id.is_none()
             && self.compacted_turns.is_empty()
             && self.relevant_artifacts.is_empty()
+            && self.read_files.is_empty()
+            && self.modified_files.is_empty()
+            && self.operation_facts.is_empty()
             && self.touched_files.is_empty()
             && self.pending_work.is_empty()
             && self.blockers.is_empty()
@@ -244,8 +375,10 @@ impl ProviderContext {
     }
 
     pub fn from_checkpoint(checkpoint: ProviderContextCheckpoint) -> Self {
+        let summary =
+            checkpoint_summary_with_operational_memory(&checkpoint.summary, &checkpoint.facts);
         Self {
-            compacted_summary: Some(checkpoint.summary),
+            compacted_summary: Some(summary),
             preserved_turns: checkpoint.recent_turns,
             checkpoint: Some(checkpoint.metadata),
         }
@@ -262,6 +395,50 @@ impl ProviderContext {
             .is_none_or(str::is_empty)
             && self.preserved_turns.is_empty()
     }
+}
+
+fn checkpoint_summary_with_operational_memory(
+    summary: &str,
+    facts: &ProviderCompactionFacts,
+) -> String {
+    if summary.contains("## Operational Memory")
+        || (facts.read_files.is_empty()
+            && facts.modified_files.is_empty()
+            && facts.operation_facts.is_empty())
+    {
+        return summary.to_string();
+    }
+
+    let mut lines = vec![summary.trim_end().to_string(), String::new()];
+    lines.push("## Operational Memory".to_string());
+    lines.push("Read files:".to_string());
+    if facts.read_files.is_empty() {
+        lines.push("- (none recorded)".to_string());
+    } else {
+        lines.extend(
+            facts
+                .read_files
+                .iter()
+                .take(12)
+                .map(|fact| format!("- {}", fact.path)),
+        );
+    }
+    lines.push("Modified files:".to_string());
+    if facts.modified_files.is_empty() {
+        lines.push("- (none recorded)".to_string());
+    } else {
+        lines.extend(
+            facts
+                .modified_files
+                .iter()
+                .take(12)
+                .map(|fact| format!("- {}", fact.path)),
+        );
+    }
+    for fact in facts.operation_facts.iter().take(20) {
+        lines.push(format!("- {fact}"));
+    }
+    lines.join("\n")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -326,8 +503,86 @@ pub enum AgentRuntimeEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentTurnOutcome {
-    Succeeded { output: String },
-    Failed { reason: String },
+    Succeeded {
+        output: String,
+    },
+    Failed {
+        reason: String,
+        memory: Option<AgentTurnFailure>,
+    },
+}
+
+impl AgentTurnOutcome {
+    pub fn failed(reason: impl Into<String>) -> Self {
+        Self::Failed {
+            reason: reason.into(),
+            memory: None,
+        }
+    }
+
+    pub fn failed_with_memory(reason: impl Into<String>, memory: AgentTurnFailure) -> Self {
+        Self::Failed {
+            reason: reason.into(),
+            memory: Some(memory),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentTurnFailure {
+    pub status: ProviderConversationTurnStatus,
+    pub failure_stage: String,
+    pub reason: String,
+    pub partial_assistant_output: String,
+    pub provider_request_id: Option<String>,
+}
+
+impl AgentTurnFailure {
+    pub fn new(
+        status: ProviderConversationTurnStatus,
+        failure_stage: impl Into<String>,
+        reason: impl Into<String>,
+        partial_assistant_output: impl Into<String>,
+        provider_request_id: Option<String>,
+    ) -> Self {
+        Self {
+            status,
+            failure_stage: failure_stage.into(),
+            reason: reason.into(),
+            partial_assistant_output: partial_assistant_output.into(),
+            provider_request_id,
+        }
+    }
+
+    pub fn provider_error(
+        reason: impl Into<String>,
+        partial_assistant_output: impl Into<String>,
+        provider_request_id: String,
+    ) -> Self {
+        Self::new(
+            ProviderConversationTurnStatus::Failed,
+            "provider_error",
+            reason,
+            partial_assistant_output,
+            Some(provider_request_id),
+        )
+    }
+
+    pub fn message(reason: impl Into<String>) -> Self {
+        Self::new(
+            ProviderConversationTurnStatus::Failed,
+            "unknown",
+            reason,
+            String::new(),
+            None,
+        )
+    }
+}
+
+impl fmt::Display for AgentTurnFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.reason)
+    }
 }
 
 pub fn default_provider() -> Arc<dyn Provider> {
@@ -549,7 +804,10 @@ where
                 ))
                 .await;
 
-                return AgentTurnOutcome::Failed { reason: message };
+                return AgentTurnOutcome::failed_with_memory(
+                    message.clone(),
+                    AgentTurnFailure::provider_error(message, output, request_id.clone()),
+                );
             }
         }
     }
@@ -578,7 +836,7 @@ where
 pub async fn stream_assistant_response_once<F, Fut>(
     request: StreamAssistantResponseOnceRequest<'_>,
     mut emit: F,
-) -> Result<AssistantResponse, String>
+) -> Result<AssistantResponse, AgentTurnFailure>
 where
     F: FnMut(AgentRuntimeEvent) -> Fut,
     Fut: Future<Output = ()>,
@@ -736,10 +994,15 @@ where
     .await;
 
     if let Some(reason) = provider_error {
-        return Err(reason);
+        return Err(AgentTurnFailure::provider_error(
+            reason,
+            output,
+            provider_request_id,
+        ));
     }
 
-    let tool_intents = parse_tool_intents(tool_calls, &function_to_tool_id)?;
+    let tool_intents =
+        parse_tool_intents(tool_calls, &function_to_tool_id).map_err(AgentTurnFailure::message)?;
     Ok(AssistantResponse {
         request_id: provider_request_id,
         text: output,
@@ -788,13 +1051,13 @@ where
     let model = AgentModelRef::parse(&request.model_ref);
     let tool_defs = match build_provider_tool_defs(profile, tool_registry.as_ref()) {
         Ok(tool_defs) => tool_defs,
-        Err(reason) => return AgentTurnOutcome::Failed { reason },
+        Err(reason) => return AgentTurnOutcome::failed(reason),
     };
 
     let projected_context = project_provider_context_for_prompt(prior_context, &request.prompt);
     let provider_request_id = match next_provider_request_id().await {
         Ok(request_id) => request_id,
-        Err(reason) => return AgentTurnOutcome::Failed { reason },
+        Err(reason) => return AgentTurnOutcome::failed(reason),
     };
 
     let assistant_response = match stream_assistant_response_once(
@@ -817,15 +1080,18 @@ where
     .await
     {
         Ok(assistant_response) => assistant_response,
-        Err(reason) => return AgentTurnOutcome::Failed { reason },
+        Err(reason) => {
+            return AgentTurnOutcome::Failed {
+                reason: reason.to_string(),
+                memory: (reason.failure_stage == "provider_error").then_some(reason),
+            }
+        }
     };
 
     if !assistant_response.tool_intents.is_empty() {
-        return AgentTurnOutcome::Failed {
-            reason:
-                "direct tool execution is unsupported on compatibility path; use coordinator loop"
-                    .to_string(),
-        };
+        return AgentTurnOutcome::failed(
+            "direct tool execution is unsupported on compatibility path; use coordinator loop",
+        );
     }
 
     AgentTurnOutcome::Succeeded {
@@ -1010,7 +1276,7 @@ fn project_provider_context_for_prompt(
                     .checkpoint
                     .as_ref()
                     .map(|metadata| metadata.agent_id.clone()),
-                text: turn.assistant_response.clone(),
+                text: provider_turn_assistant_projection_text(turn),
                 tool_calls: Vec::new(),
                 stop_reason: None,
                 first_seq: turn.first_seq,
@@ -1036,6 +1302,54 @@ fn project_provider_context_for_prompt(
     }));
 
     messages
+}
+
+fn provider_turn_assistant_projection_text(turn: &ProviderConversationTurn) -> String {
+    if turn.status.is_completed() {
+        return turn.assistant_response.clone();
+    }
+
+    let stage = turn
+        .failure_stage
+        .as_deref()
+        .filter(|stage| is_allowed_provider_turn_failure_stage(stage))
+        .unwrap_or("unknown");
+    let mut lines = vec![
+        "Harness preserved an incomplete provider turn for continuity. Do not treat it as a completed answer.".to_string(),
+        format!("Status: {}", turn.status.marker_label()),
+        format!("Stage: {stage}"),
+    ];
+    if let Some(reason) = turn
+        .failure_reason
+        .as_deref()
+        .map(str::trim)
+        .filter(|reason| !reason.is_empty())
+    {
+        lines.push(format!(
+            "Reason: {}",
+            truncate_provider_turn_failure_reason(reason)
+        ));
+    }
+    lines.push("Partial assistant output:".to_string());
+    if turn.assistant_response.trim().is_empty() {
+        lines.push("(none)".to_string());
+    } else {
+        lines.push(turn.assistant_response.clone());
+    }
+    lines.join("\n")
+}
+
+fn truncate_provider_turn_failure_reason(reason: &str) -> String {
+    if reason.chars().count() <= PROVIDER_TURN_FAILURE_REASON_MAX_CHARS {
+        return reason.to_string();
+    }
+
+    let mut truncated = reason
+        .chars()
+        .take(PROVIDER_TURN_FAILURE_REASON_MAX_CHARS)
+        .collect::<String>();
+    truncated.push('…');
+    truncated
 }
 
 fn tool_result_message_content(tool_result: &ConversationToolResultMessage) -> String {
@@ -1436,7 +1750,8 @@ mod tests {
         tool_result_to_message_content, transform_context_for_provider, AgentModelRef,
         AgentModelSettings, AgentProfile, AgentRequest, AgentTurnOutcome,
         MultiTurnStreamingRequest, ProviderBoundaryContext, ProviderBoundaryInput, ProviderContext,
-        ProviderContextCheckpointMetadata, ProviderConversationTurn, MAX_TOOL_CALLS_TOTAL,
+        ProviderContextCheckpointMetadata, ProviderConversationTurn,
+        ProviderConversationTurnStatus, MAX_TOOL_CALLS_TOTAL,
     };
     use crate::config::ToolFailureMode;
     use crate::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
@@ -1577,7 +1892,7 @@ mod tests {
         .await;
 
         match outcome {
-            AgentTurnOutcome::Failed { reason } => {
+            AgentTurnOutcome::Failed { reason, .. } => {
                 assert!(reason.contains("direct tool execution is unsupported"));
                 assert!(reason.contains("coordinator loop"));
             }
@@ -1676,6 +1991,46 @@ mod tests {
     }
 
     #[test]
+    fn failed_turn_projection_marks_partial_output_incomplete() {
+        let profile = test_profile();
+        let prior_context = ProviderContext::from_turns(vec![ProviderConversationTurn {
+            user_prompt: "why did it fail?".to_string(),
+            assistant_response: "partial draft".to_string(),
+            status: ProviderConversationTurnStatus::Failed,
+            failure_stage: Some("provider_error".to_string()),
+            failure_reason: Some("upstream returned 500".to_string()),
+            ..ProviderConversationTurn::default()
+        }]);
+
+        let messages = build_provider_context_messages(&profile, &prior_context, "continue");
+
+        assert_eq!(messages[2].role, MessageRole::Assistant);
+        assert_eq!(
+            messages[2].content,
+            "Harness preserved an incomplete provider turn for continuity. Do not treat it as a completed answer.\nStatus: failed\nStage: provider_error\nReason: upstream returned 500\nPartial assistant output:\npartial draft"
+        );
+    }
+
+    #[test]
+    fn aborted_turn_projection_marks_missing_output_incomplete() {
+        let profile = test_profile();
+        let prior_context = ProviderContext::from_turns(vec![ProviderConversationTurn {
+            user_prompt: "stop now".to_string(),
+            status: ProviderConversationTurnStatus::Aborted,
+            failure_stage: Some("cancelled".to_string()),
+            ..ProviderConversationTurn::default()
+        }]);
+
+        let messages = build_provider_context_messages(&profile, &prior_context, "continue");
+
+        assert_eq!(messages[2].role, MessageRole::Assistant);
+        assert_eq!(
+            messages[2].content,
+            "Harness preserved an incomplete provider turn for continuity. Do not treat it as a completed answer.\nStatus: aborted\nStage: cancelled\nPartial assistant output:\n(none)"
+        );
+    }
+
+    #[test]
     fn provider_boundary_preserves_existing_message_shape() {
         let profile = test_profile();
         let request = AgentRequest {
@@ -1696,6 +2051,7 @@ mod tests {
                 first_seq: Some(7),
                 last_seq: Some(9),
                 artifacts: Vec::new(),
+                ..ProviderConversationTurn::default()
             }],
             checkpoint: Some(ProviderContextCheckpointMetadata {
                 checkpoint_id: "checkpoint_1".to_string(),
@@ -1846,7 +2202,7 @@ mod tests {
         .await;
 
         match outcome {
-            AgentTurnOutcome::Failed { reason } => {
+            AgentTurnOutcome::Failed { reason, .. } => {
                 assert!(reason.contains("unmapped tool function"));
             }
             other => panic!("expected failed outcome, got {other:?}"),
@@ -1922,7 +2278,7 @@ mod tests {
         .await;
 
         match outcome {
-            AgentTurnOutcome::Failed { reason } => {
+            AgentTurnOutcome::Failed { reason, .. } => {
                 assert!(reason.contains("malformed tool args"));
             }
             other => panic!("expected failed outcome, got {other:?}"),
