@@ -451,6 +451,8 @@ pub struct CompactionRequestedEvent {
     pub tokens_before: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tokens_before_estimate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimate_source: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -483,6 +485,8 @@ pub struct CompactionWrittenEvent {
     pub reduction_tokens_estimate: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reduction_percent_estimate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimate_source: Option<String>,
     pub preserved_turns: u32,
 }
 
@@ -507,6 +511,8 @@ pub struct CompactionAppliedEvent {
     pub reduction_tokens_estimate: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reduction_percent_estimate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimate_source: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

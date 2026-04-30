@@ -3485,6 +3485,927 @@ async fn provider_partial_output_then_error_is_not_successful_assistant_message(
 }
 
 #[tokio::test]
+async fn records_provider_error_events_and_fails_agent_turn() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![vec![
+        ProviderStreamEvent::Start,
+        ProviderStreamEvent::TextDelta("partial answer".to_string()),
+        ProviderStreamEvent::Error {
+            message: "provider exploded".to_string(),
+        },
+    ]]);
+    let coordinator = test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider), 1);
+
+    let run = coordinator
+        .start_run(
+            "coord_provider_error_fails_agent_turn",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "partial then error")
+        .await
+        .expect("request agent turn");
+
+    let events = wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCancelled(data)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+                        && data.reason == "provider exploded"
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ProviderStreamDelta(data)
+                if event.correlation_id.as_deref() == Some(request_id.as_str())
+                    && data.delta == "partial answer"
+        )
+    }));
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ProviderRequestFinished(data)
+                if event.correlation_id.as_deref() == Some(request_id.as_str())
+                    && data.finish_reason == "error"
+                    && data.output_digest.is_none()
+        )
+    }));
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCompleted(data)
+                if event.correlation_id.as_deref() == Some(request_id.as_str())
+                    && data.result_summary.contains("partial answer")
+        )
+    }));
+}
+
+#[tokio::test]
+async fn failed_turn_context_preserves_provider_error_partial_output() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("partial answer".to_string()),
+            ProviderStreamEvent::Error {
+                message: "provider exploded".to_string(),
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("follow-up answer".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 4,
+                    completion_tokens: 2,
+                    total_tokens: 6,
+                },
+            },
+        ],
+    ]);
+    let coordinator =
+        test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider.clone()), 1);
+
+    let run = coordinator
+        .start_run(
+            "coord_failed_context_provider_error",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let failed_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "partial then error")
+        .await
+        .expect("request failing turn");
+    wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCancelled(data)
+                    if event.correlation_id.as_deref() == Some(failed_request_id.as_str())
+                        && data.reason == "provider exploded"
+            )
+        })
+    })
+    .await;
+
+    let follow_up_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "continue after failure")
+        .await
+        .expect("request follow-up turn");
+    wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data)
+                    if event.correlation_id.as_deref() == Some(follow_up_request_id.as_str())
+                        && data.result_summary == "follow-up answer"
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let requests = provider.requests();
+    let follow_up = requests.last().expect("follow-up provider request");
+    let assistant_marker = follow_up
+        .messages
+        .iter()
+        .find(|message| {
+            message.role == MessageRole::Assistant
+                && message
+                    .content
+                    .contains("Harness preserved an incomplete provider turn")
+        })
+        .expect("failed turn marker should be sent before follow-up prompt");
+    assert!(assistant_marker.content.contains("Status: failed"));
+    assert!(assistant_marker.content.contains("Stage: provider_error"));
+    assert!(assistant_marker
+        .content
+        .contains("Reason: provider exploded"));
+    assert!(assistant_marker.content.contains("partial answer"));
+    assert!(follow_up.messages.iter().any(|message| {
+        message.role == MessageRole::User && message.content == "partial then error"
+    }));
+    assert!(follow_up.messages.iter().any(|message| {
+        message.role == MessageRole::User && message.content == "continue after failure"
+    }));
+}
+
+#[tokio::test]
+async fn failed_turn_context_preserves_cancelled_turn_marker() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let tool_started = Arc::new(Notify::new());
+    let tool_release = Arc::new(Notify::new());
+    let provider = SequentialScriptedProvider::new(vec![
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("partial before cancellation".to_string()),
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id: "blocking_tool".to_string(),
+                function_name: "shell_block".to_string(),
+                arguments_json: "{}".to_string(),
+            },
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 2,
+                    completion_tokens: 1,
+                    total_tokens: 3,
+                },
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("after cancellation".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 4,
+                    completion_tokens: 2,
+                    total_tokens: 6,
+                },
+            },
+        ],
+    ]);
+    let coordinator = test_agent_tool_coordinator(
+        temp_dir.path(),
+        Arc::new(provider.clone()),
+        named_tool_registry(vec![NamedShellTool {
+            id: "shell.block",
+            output: "blocking output",
+            started: Some(tool_started.clone()),
+            release: Some(tool_release.clone()),
+        }]),
+        PermissionPolicy::new(
+            PermissionMode::Deny,
+            PermissionMode::Allow,
+            PermissionMode::Deny,
+        ),
+        vec!["shell.block".to_string()],
+        12,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_failed_context_cancelled_marker",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let cancelled_request_id = coordinator
+        .request_agent_turn(
+            supervisor_actor(),
+            agent_id.clone(),
+            "cancel after assistant",
+        )
+        .await
+        .expect("request cancellable turn");
+
+    tokio::time::timeout(Duration::from_millis(500), tool_started.notified())
+        .await
+        .expect("blocking tool should start");
+    let events = load_events(&run.events_path);
+    let task_id = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::TaskScheduled(data)
+                if event.correlation_id.as_deref() == Some(cancelled_request_id.as_str())
+                    && data
+                        .queue_key
+                        .as_deref()
+                        .is_some_and(|queue_key| queue_key.starts_with("provider_model:")) =>
+            {
+                Some(data.task_id.clone())
+            }
+            _ => None,
+        })
+        .expect("agent task id");
+    coordinator
+        .cancel_task(task_id.clone(), "operator cancelled")
+        .await
+        .expect("cancel running agent turn");
+    tool_release.notify_waiters();
+    wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCancelled(data)
+                    if data.task_id == task_id && data.reason == "operator cancelled"
+            )
+        })
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(120)).await;
+
+    let follow_up_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "continue after cancellation")
+        .await
+        .expect("request follow-up turn");
+    wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data)
+                    if event.correlation_id.as_deref() == Some(follow_up_request_id.as_str())
+                        && data.result_summary == "after cancellation"
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let requests = provider.requests();
+    let follow_up = requests.last().expect("follow-up provider request");
+    let assistant_marker = follow_up
+        .messages
+        .iter()
+        .find(|message| {
+            message.role == MessageRole::Assistant
+                && message
+                    .content
+                    .contains("Harness preserved an incomplete provider turn")
+        })
+        .expect("cancelled turn marker should be sent before follow-up prompt");
+    assert!(assistant_marker.content.contains("Status: aborted"));
+    assert!(assistant_marker.content.contains("Stage: cancelled"));
+    assert!(assistant_marker
+        .content
+        .contains("Reason: operator cancelled"));
+    assert!(assistant_marker
+        .content
+        .contains("partial before cancellation"));
+}
+
+#[tokio::test]
+async fn failed_turn_context_preserves_tool_failure_without_orphan_tool_call() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("plain text before tool failure".to_string()),
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id: "failing_tool".to_string(),
+                function_name: "shell_fail".to_string(),
+                arguments_json: "{}".to_string(),
+            },
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 2,
+                    completion_tokens: 1,
+                    total_tokens: 3,
+                },
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("after tool failure".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 4,
+                    completion_tokens: 2,
+                    total_tokens: 6,
+                },
+            },
+        ],
+    ]);
+    let coordinator = test_agent_tool_coordinator(
+        temp_dir.path(),
+        Arc::new(provider.clone()),
+        Arc::new({
+            let mut registry = ToolRegistry::new();
+            registry.register(Arc::new(FailingShellTool));
+            registry
+        }),
+        PermissionPolicy::new(
+            PermissionMode::Deny,
+            PermissionMode::Allow,
+            PermissionMode::Deny,
+        ),
+        vec!["shell.fail".to_string()],
+        12,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_failed_context_tool_failure",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let failed_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "call failing tool")
+        .await
+        .expect("request failing tool turn");
+    wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCancelled(data)
+                    if event.correlation_id.as_deref() == Some(failed_request_id.as_str())
+                        && data.reason.contains("tool call `shell_fail` failed closed")
+            )
+        })
+    })
+    .await;
+
+    let follow_up_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "continue after tool failure")
+        .await
+        .expect("request follow-up turn");
+    wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data)
+                    if event.correlation_id.as_deref() == Some(follow_up_request_id.as_str())
+                        && data.result_summary == "after tool failure"
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let requests = provider.requests();
+    let follow_up = requests.last().expect("follow-up provider request");
+    let assistant_marker = follow_up
+        .messages
+        .iter()
+        .find(|message| {
+            message.role == MessageRole::Assistant
+                && message
+                    .content
+                    .contains("Harness preserved an incomplete provider turn")
+        })
+        .expect("tool-failure marker should be sent before follow-up prompt");
+    assert!(assistant_marker.content.contains("Status: failed"));
+    assert!(assistant_marker.content.contains("Stage: tool_failure"));
+    assert!(assistant_marker
+        .content
+        .contains("plain text before tool failure"));
+    assert!(!assistant_marker.content.contains("failing_tool"));
+    assert!(assistant_marker.assistant_tool_calls.is_none());
+    assert!(!follow_up
+        .messages
+        .iter()
+        .any(|message| message.role == MessageRole::Tool));
+}
+
+#[tokio::test]
+async fn failed_response_compaction_writes_checkpoint_after_provider_error() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![
+        provider_text_events(&"A".repeat(12_000)),
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta(format!(
+                "partial provider output {}",
+                "B".repeat(12_000)
+            )),
+            ProviderStreamEvent::Error {
+                message: "provider exploded".to_string(),
+            },
+        ],
+    ]);
+    let coordinator = test_agent_coordinator_with_provider_and_compaction(
+        temp_dir.path(),
+        Arc::new(provider),
+        1,
+        CompactionRuntimeConfig {
+            fallback_input_tokens: 2_000,
+            ..CompactionRuntimeConfig::default()
+        },
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_failed_response_compaction_provider_error",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
+        .await
+        .expect("first turn");
+    wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data) if data.result_summary == "A".repeat(12_000)
+            )
+        })
+    })
+    .await;
+
+    let failed_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "partial then error")
+        .await
+        .expect("failing turn");
+    let events = wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::CompactionWritten(data)
+                    if data.trigger_reason == "failed_response"
+                        && data.through_request_id.as_deref() == Some(failed_request_id.as_str())
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let cancelled_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCancelled(data)
+                    if event.correlation_id.as_deref() == Some(failed_request_id.as_str())
+                        && data.reason == "provider exploded"
+            )
+        })
+        .expect("original provider failure cancellation");
+    let requested_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::CompactionRequested(data)
+                    if data.trigger_reason == "failed_response"
+                        && data.through_request_id.as_deref() == Some(failed_request_id.as_str())
+            )
+        })
+        .expect("failed-response compaction requested");
+    assert!(
+        cancelled_idx < requested_idx,
+        "terminal TaskCancelled must be durable before failed-response compaction starts"
+    );
+
+    let checkpoint = checkpoint_for_trigger(&run, &events, "failed_response");
+    let failed_turn = checkpoint
+        .recent_turns
+        .iter()
+        .find(|turn| !turn.status.is_completed())
+        .expect("failed provider turn remains provider-visible");
+    assert_eq!(
+        failed_turn.status,
+        harness_core::agent::ProviderConversationTurnStatus::Failed
+    );
+    assert_eq!(failed_turn.failure_stage.as_deref(), Some("provider_error"));
+    assert_eq!(
+        failed_turn.failure_reason.as_deref(),
+        Some("provider exploded")
+    );
+    assert!(failed_turn
+        .assistant_response
+        .contains("partial provider output"));
+}
+
+#[tokio::test]
+async fn aborted_response_compaction_preserves_abort_marker() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let tool_started = Arc::new(Notify::new());
+    let tool_release = Arc::new(Notify::new());
+    let provider = SequentialScriptedProvider::new(vec![
+        provider_text_events(&"A".repeat(12_000)),
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta(format!(
+                "partial before cancellation {}",
+                "C".repeat(12_000)
+            )),
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id: "blocking_tool".to_string(),
+                function_name: "shell_block".to_string(),
+                arguments_json: "{}".to_string(),
+            },
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 2,
+                    completion_tokens: 1,
+                    total_tokens: 3,
+                },
+            },
+        ],
+        provider_text_events("after cancellation"),
+    ]);
+    let coordinator = test_agent_tool_coordinator_with_compaction(
+        temp_dir.path(),
+        Arc::new(provider.clone()),
+        named_tool_registry(vec![NamedShellTool {
+            id: "shell.block",
+            output: "blocking output",
+            started: Some(tool_started.clone()),
+            release: Some(tool_release.clone()),
+        }]),
+        PermissionPolicy::new(
+            PermissionMode::Deny,
+            PermissionMode::Allow,
+            PermissionMode::Deny,
+        ),
+        vec!["shell.block".to_string()],
+        12,
+        CompactionRuntimeConfig {
+            fallback_input_tokens: 2_000,
+            ..CompactionRuntimeConfig::default()
+        },
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_aborted_response_compaction_marker",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
+        .await
+        .expect("first turn");
+    wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data) if data.result_summary == "A".repeat(12_000)
+            )
+        })
+    })
+    .await;
+
+    let cancelled_request_id = coordinator
+        .request_agent_turn(
+            supervisor_actor(),
+            agent_id.clone(),
+            "cancel after assistant",
+        )
+        .await
+        .expect("cancellable turn");
+    tokio::time::timeout(Duration::from_millis(700), tool_started.notified())
+        .await
+        .expect("blocking tool should start");
+    let task_id = load_events(&run.events_path)
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::TaskScheduled(data)
+                if event.correlation_id.as_deref() == Some(cancelled_request_id.as_str())
+                    && data
+                        .queue_key
+                        .as_deref()
+                        .is_some_and(|queue_key| queue_key.starts_with("provider_model:")) =>
+            {
+                Some(data.task_id.clone())
+            }
+            _ => None,
+        })
+        .expect("agent task id");
+    coordinator
+        .cancel_task(task_id.clone(), "operator cancelled")
+        .await
+        .expect("cancel running agent turn");
+    tool_release.notify_waiters();
+
+    let events = wait_for_events(&run.events_path, Duration::from_millis(900), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::CompactionWritten(data)
+                    if data.trigger_reason == "aborted_response"
+                        && data.through_request_id.as_deref() == Some(cancelled_request_id.as_str())
+            )
+        })
+    })
+    .await;
+
+    let follow_up_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "continue after cancellation")
+        .await
+        .expect("request follow-up turn");
+    wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data)
+                    if event.correlation_id.as_deref() == Some(follow_up_request_id.as_str())
+                        && data.result_summary == "after cancellation"
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCancelled(data)
+                if data.task_id == task_id && data.reason == "operator cancelled"
+        )
+    }));
+    let checkpoint = checkpoint_for_trigger(&run, &events, "aborted_response");
+    let aborted_turn = checkpoint
+        .recent_turns
+        .iter()
+        .find(|turn| !turn.status.is_completed())
+        .expect("aborted turn remains provider-visible");
+    assert_eq!(
+        aborted_turn.status,
+        harness_core::agent::ProviderConversationTurnStatus::Aborted
+    );
+    assert_eq!(aborted_turn.failure_stage.as_deref(), Some("cancelled"));
+    assert_eq!(
+        aborted_turn.failure_reason.as_deref(),
+        Some("operator cancelled")
+    );
+    assert!(aborted_turn
+        .assistant_response
+        .contains("partial before cancellation"));
+
+    let requests = provider.requests();
+    let follow_up = requests.last().expect("follow-up request");
+    let marker = follow_up
+        .messages
+        .iter()
+        .find(|message| {
+            message.role == MessageRole::Assistant
+                && message
+                    .content
+                    .contains("Harness preserved an incomplete provider turn")
+        })
+        .expect("aborted marker should remain in provider-visible context");
+    assert!(marker.content.contains("Status: aborted"));
+    assert!(marker.content.contains("Stage: cancelled"));
+}
+
+#[tokio::test]
+async fn failed_response_compaction_failure_does_not_mask_original_error() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![
+        provider_text_events(&"A".repeat(12_000)),
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta(format!(
+                "partial provider output {}",
+                "B".repeat(12_000)
+            )),
+            ProviderStreamEvent::Error {
+                message: "provider exploded".to_string(),
+            },
+        ],
+    ]);
+    let coordinator = test_agent_coordinator_with_provider_and_compaction(
+        temp_dir.path(),
+        Arc::new(provider),
+        1,
+        CompactionRuntimeConfig {
+            fallback_input_tokens: 2_000,
+            ..CompactionRuntimeConfig::default()
+        },
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_failed_response_compaction_artifact_failure",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
+        .await
+        .expect("first turn");
+    wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data) if data.result_summary == "A".repeat(12_000)
+            )
+        })
+    })
+    .await;
+    fs::remove_dir_all(&run.artifacts_dir).expect("remove artifacts dir");
+    fs::write(&run.artifacts_dir, "not a directory").expect("replace artifacts dir with file");
+
+    let failed_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "partial then error")
+        .await
+        .expect("failing turn");
+    let events = wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::CompactionFailed(data)
+                    if data.trigger_reason == "failed_response"
+                        && data.through_request_id.as_deref() == Some(failed_request_id.as_str())
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCancelled(data)
+                if event.correlation_id.as_deref() == Some(failed_request_id.as_str())
+                    && data.reason == "provider exploded"
+        )
+    }));
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::CompactionWritten(data) if data.trigger_reason == "failed_response"
+        )
+    }));
+}
+
+#[tokio::test]
+async fn critical_compaction_requested_hook_failure_records_compaction_failed() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![
+        provider_text_events(&"A".repeat(12_000)),
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta(format!(
+                "partial provider output {}",
+                "B".repeat(12_000)
+            )),
+            ProviderStreamEvent::Error {
+                message: "provider exploded".to_string(),
+            },
+        ],
+    ]);
+    let hook_runtime_config = HookRuntimeConfig {
+        hooks: HooksConfig {
+            lifecycle: vec![LifecycleHookConfig {
+                id: Some("failed-terminal-compaction-blocker".to_string()),
+                event: HookLifecycleEvent::CompactionRequested,
+                command: vec![
+                    "bash".to_string(),
+                    "-lc".to_string(),
+                    "if [ \"${HARNESS_HOOK_OUTCOME:-}\" = failed_response ]; then printf 'blocked failed terminal compaction'; exit 23; fi; printf ok".to_string(),
+                ],
+                cwd: Some(".".to_string()),
+                timeout_ms: 4_000,
+                critical: true,
+                env: BTreeMap::new(),
+            }],
+        },
+        shell_allowlist: ShellAllowlist {
+            executables: vec!["bash".to_string()],
+            cwd_roots: vec![".".to_string()],
+        },
+        suppress_execution: false,
+    };
+    let coordinator = test_agent_coordinator_with_provider_compaction_and_hooks(
+        temp_dir.path(),
+        Arc::new(provider),
+        1,
+        CompactionRuntimeConfig {
+            fallback_input_tokens: 2_000,
+            ..CompactionRuntimeConfig::default()
+        },
+        hook_runtime_config,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_failed_response_compaction_hook_failure",
+            temp_dir.path().to_path_buf(),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
+        .await
+        .expect("first turn");
+    wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data) if data.result_summary == "A".repeat(12_000)
+            )
+        })
+    })
+    .await;
+
+    let failed_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "partial then error")
+        .await
+        .expect("failing turn");
+    let events = wait_for_events(&run.events_path, Duration::from_millis(900), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::CompactionFailed(data)
+                    if data.trigger_reason == "failed_response"
+                        && data.through_request_id.as_deref() == Some(failed_request_id.as_str())
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCancelled(data)
+                if event.correlation_id.as_deref() == Some(failed_request_id.as_str())
+                    && data.reason == "provider exploded"
+        )
+    }));
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::CompactionWritten(data) if data.trigger_reason == "failed_response"
+        )
+    }));
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::CompactionWritten(data) if data.trigger_reason == "failed_response"
+        )
+    }));
+}
+
+#[tokio::test]
 async fn loop_cap_exhaustion_records_deterministic_stop_reason() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let provider = SequentialScriptedProvider::new(vec![
@@ -4825,6 +5746,510 @@ async fn overflow_retry_does_not_resend_same_context_when_compaction_is_noop() {
 }
 
 #[tokio::test]
+async fn compaction_trigger_pre_prompt_occurs_before_provider_request_started() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let current_prompt = "C".repeat(12_000);
+    let provider = SequentialScriptedProvider::new(vec![
+        provider_text_events(&"A".repeat(12_000)),
+        provider_text_events(&"B".repeat(12_000)),
+        provider_text_events("third answer"),
+    ]);
+    let coordinator = test_agent_coordinator_with_provider_and_compaction(
+        temp_dir.path(),
+        Arc::new(provider.clone()),
+        1,
+        CompactionRuntimeConfig {
+            fallback_input_tokens: 10_000,
+            ..CompactionRuntimeConfig::default()
+        },
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_pre_prompt_compaction_order",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
+        .await
+        .expect("first turn");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "second question")
+        .await
+        .expect("second turn");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    let third_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, &current_prompt)
+        .await
+        .expect("third turn");
+    tokio::time::sleep(Duration::from_millis(180)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    let pre_prompt_written_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::CompactionWritten(payload) if payload.trigger_reason == "pre_prompt"
+            )
+        })
+        .expect("pre-prompt compaction written event");
+    let provider_started_idx = events
+        .iter()
+        .position(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ProviderRequestStarted(_) if event.correlation_id.as_deref() == Some(third_request_id.as_str())
+            )
+        })
+        .expect("third provider request started event");
+    assert!(
+        pre_prompt_written_idx < provider_started_idx,
+        "pre-prompt checkpoint must be written before the third provider request is constructed"
+    );
+}
+
+#[tokio::test]
+async fn compaction_trigger_pre_prompt_attempts_once_per_turn() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let current_prompt = "C".repeat(12_000);
+    let provider = SequentialScriptedProvider::new(vec![
+        provider_text_events(&"A".repeat(12_000)),
+        provider_text_events(&"B".repeat(12_000)),
+        provider_text_events("third answer"),
+    ]);
+    let coordinator = test_agent_coordinator_with_provider_and_compaction(
+        temp_dir.path(),
+        Arc::new(provider.clone()),
+        1,
+        CompactionRuntimeConfig {
+            fallback_input_tokens: 10_000,
+            ..CompactionRuntimeConfig::default()
+        },
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_pre_prompt_compaction_attempts_once",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    for question in ["first question", "second question"] {
+        coordinator
+            .request_agent_turn(supervisor_actor(), agent_id.clone(), question)
+            .await
+            .expect("turn request");
+        tokio::time::sleep(Duration::from_millis(80)).await;
+    }
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, &current_prompt)
+        .await
+        .expect("third turn");
+    tokio::time::sleep(Duration::from_millis(180)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    let pre_prompt_writes = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                &event.payload,
+                EventV1::CompactionWritten(payload) if payload.trigger_reason == "pre_prompt"
+            )
+        })
+        .count();
+    assert_eq!(
+        pre_prompt_writes, 1,
+        "pre-prompt compaction should write at most one checkpoint for a turn"
+    );
+    assert_eq!(
+        provider.requests().len(),
+        3,
+        "provider execution should continue once with the uncompacted context"
+    );
+}
+
+#[tokio::test]
+async fn compaction_trigger_pre_prompt_runtime_uses_checkpointed_prior_context() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let current_prompt = "C".repeat(12_000);
+    let provider = SequentialScriptedProvider::new(vec![
+        provider_text_events(&"A".repeat(12_000)),
+        provider_text_events(&"B".repeat(12_000)),
+        provider_text_events("third answer"),
+    ]);
+    let coordinator = test_agent_coordinator_with_provider_and_compaction(
+        temp_dir.path(),
+        Arc::new(provider.clone()),
+        1,
+        CompactionRuntimeConfig {
+            fallback_input_tokens: 10_000,
+            ..CompactionRuntimeConfig::default()
+        },
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_pre_prompt_compaction_prior_context",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    for question in ["first question", "second question"] {
+        coordinator
+            .request_agent_turn(supervisor_actor(), agent_id.clone(), question)
+            .await
+            .expect("turn request");
+        tokio::time::sleep(Duration::from_millis(80)).await;
+    }
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, &current_prompt)
+        .await
+        .expect("third turn");
+    tokio::time::sleep(Duration::from_millis(180)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let requests = provider.requests();
+    assert_eq!(
+        requests.len(),
+        3,
+        "third turn should not need an overflow retry"
+    );
+    let third_messages = requests
+        .last()
+        .expect("third provider request")
+        .messages
+        .iter()
+        .map(|message| (message.role.clone(), message.content.clone()))
+        .collect::<Vec<_>>();
+    assert!(third_messages.iter().any(|(role, content)| {
+        *role == MessageRole::Assistant
+            && content.contains("Checkpoint recap generated by the harness for older turns")
+    }));
+    assert!(third_messages
+        .iter()
+        .any(|(role, content)| { *role == MessageRole::User && content == &current_prompt }));
+    assert!(!third_messages
+        .iter()
+        .any(|(role, content)| *role == MessageRole::User && content == "first question"));
+
+    let events = load_events(&run.events_path);
+    let written = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::CompactionWritten(payload) if payload.trigger_reason == "pre_prompt" => {
+                Some(payload.clone())
+            }
+            _ => None,
+        })
+        .expect("pre-prompt compaction written event");
+    assert_eq!(written.tokens_before, None);
+    let checkpoint_path = run.run_dir.join(&written.artifact_path);
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint_json: serde_json::Value =
+        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact json");
+    let recent_turns = checkpoint_json
+        .get("recent_turns")
+        .and_then(serde_json::Value::as_array)
+        .expect("checkpoint recent turns");
+    assert!(recent_turns.iter().all(|turn| {
+        turn.get("user_prompt").and_then(serde_json::Value::as_str) != Some(current_prompt.as_str())
+    }));
+}
+
+#[tokio::test]
+async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response() {
+    let pre_prompt_dir = tempfile::tempdir().expect("pre-prompt tempdir");
+    let pre_prompt_current_prompt = "C".repeat(12_000);
+    let pre_prompt_provider = SequentialScriptedProvider::new(vec![
+        provider_text_events(&"A".repeat(12_000)),
+        provider_text_events(&"B".repeat(12_000)),
+        provider_text_events("third answer after pre-prompt no-shrink"),
+    ]);
+    let pre_prompt = test_agent_coordinator_with_provider_and_compaction(
+        pre_prompt_dir.path(),
+        Arc::new(pre_prompt_provider.clone()),
+        1,
+        CompactionRuntimeConfig {
+            fallback_input_tokens: 10_000,
+            ..CompactionRuntimeConfig::default()
+        },
+    );
+    let pre_prompt_run = pre_prompt
+        .start_run(
+            "coord_no_loop_pre_prompt",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start pre-prompt run");
+    let pre_prompt_agent = pre_prompt
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn pre-prompt agent");
+    for question in ["first question", "second question"] {
+        pre_prompt
+            .request_agent_turn(supervisor_actor(), pre_prompt_agent.clone(), question)
+            .await
+            .expect("pre-prompt setup turn");
+        tokio::time::sleep(Duration::from_millis(80)).await;
+    }
+    let pre_prompt_request_id = pre_prompt
+        .request_agent_turn(
+            supervisor_actor(),
+            pre_prompt_agent,
+            &pre_prompt_current_prompt,
+        )
+        .await
+        .expect("pre-prompt no-shrink turn");
+    let pre_prompt_events = wait_for_events(
+        &pre_prompt_run.events_path,
+        Duration::from_millis(900),
+        |events| {
+            events.iter().any(|event| {
+                matches!(
+                    &event.payload,
+                    EventV1::TaskCompleted(payload)
+                        if event.correlation_id.as_deref() == Some(pre_prompt_request_id.as_str())
+                            && payload.result_summary == "third answer after pre-prompt no-shrink"
+                )
+            })
+        },
+    )
+    .await;
+    pre_prompt.stop_run().await.expect("stop pre-prompt run");
+    let pre_prompt_attempt_count = pre_prompt_events
+        .iter()
+        .filter(|event| {
+            matches!(
+                &event.payload,
+                EventV1::CompactionWritten(payload) if payload.trigger_reason == "pre_prompt"
+            ) || matches!(
+                &event.payload,
+                EventV1::CompactionFailed(payload) if payload.trigger_reason == "pre_prompt"
+            )
+        })
+        .count();
+    assert_eq!(
+        pre_prompt_attempt_count,
+        1,
+        "pre-prompt compaction should attempt at most once before provider execution; requested={}, written={}",
+        pre_prompt_events
+            .iter()
+            .filter(|event| matches!(
+                &event.payload,
+                EventV1::CompactionRequested(payload) if payload.trigger_reason == "pre_prompt"
+            ))
+            .count(),
+        pre_prompt_events
+            .iter()
+            .filter(|event| matches!(
+                &event.payload,
+                EventV1::CompactionWritten(payload) if payload.trigger_reason == "pre_prompt"
+            ))
+            .count()
+    );
+    assert_eq!(
+        pre_prompt_provider.requests().len(),
+        3,
+        "pre-prompt no-shrink must not loop provider execution"
+    );
+
+    let overflow_dir = tempfile::tempdir().expect("overflow tempdir");
+    let overflow_provider = SequentialScriptedProvider::new(vec![
+        provider_text_events("first answer"),
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::Error {
+                message: "prompt token count of 128713 exceeds the limit of 128000".to_string(),
+            },
+        ],
+    ]);
+    let overflow = test_agent_coordinator_with_provider(
+        overflow_dir.path(),
+        Arc::new(overflow_provider.clone()),
+        1,
+    );
+    let overflow_run = overflow
+        .start_run(
+            "coord_no_loop_overflow",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start overflow run");
+    let overflow_agent = overflow
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn overflow agent");
+    overflow
+        .request_agent_turn(supervisor_actor(), overflow_agent.clone(), "first question")
+        .await
+        .expect("overflow setup turn");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    let overflow_request_id = overflow
+        .request_agent_turn(supervisor_actor(), overflow_agent, "second question")
+        .await
+        .expect("overflow no-shrink turn");
+    let overflow_events = wait_for_events(&overflow_run.events_path, Duration::from_millis(700), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCancelled(payload)
+                    if event.correlation_id.as_deref() == Some(overflow_request_id.as_str())
+                        && payload.reason.contains("no checkpoint reduced the active provider context")
+            )
+        })
+    })
+    .await;
+    overflow.stop_run().await.expect("stop overflow run");
+    assert_eq!(
+        overflow_events
+            .iter()
+            .filter(|event| matches!(
+                &event.payload,
+                EventV1::CompactionFailed(payload) if payload.trigger_reason == "overflow_retry"
+            ))
+            .count(),
+        1,
+        "overflow retry no-shrink should record exactly one failed compaction attempt"
+    );
+    assert_eq!(
+        overflow_provider.requests().len(),
+        2,
+        "overflow no-shrink must not resend the same context"
+    );
+    assert!(overflow_events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCancelled(payload)
+                if event.correlation_id.as_deref() == Some(overflow_request_id.as_str())
+                    && payload.reason.contains("prompt token count")
+        )
+    }));
+
+    let failed_dir = tempfile::tempdir().expect("failed-response tempdir");
+    let failed_provider = SequentialScriptedProvider::new(vec![
+        provider_text_events("first answer"),
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta(format!(
+                "partial provider output {}",
+                "B".repeat(35_100)
+            )),
+            ProviderStreamEvent::Error {
+                message: "provider exploded".to_string(),
+            },
+        ],
+    ]);
+    let failed = test_agent_coordinator_with_provider_and_compaction(
+        failed_dir.path(),
+        Arc::new(failed_provider.clone()),
+        1,
+        CompactionRuntimeConfig {
+            fallback_input_tokens: 10_000,
+            ..CompactionRuntimeConfig::default()
+        },
+    );
+    let failed_run = failed
+        .start_run(
+            "coord_no_loop_failed_response",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start failed-response run");
+    let failed_agent = failed
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn failed-response agent");
+    failed
+        .request_agent_turn(supervisor_actor(), failed_agent.clone(), "first question")
+        .await
+        .expect("failed-response setup turn");
+    wait_for_events(
+        &failed_run.events_path,
+        Duration::from_millis(700),
+        |events| {
+            events.iter().any(|event| {
+                matches!(
+                    &event.payload,
+                    EventV1::TaskCompleted(payload) if payload.result_summary == "first answer"
+                )
+            })
+        },
+    )
+    .await;
+    let failed_request_id = failed
+        .request_agent_turn(supervisor_actor(), failed_agent, "partial then error")
+        .await
+        .expect("failed-response no-shrink turn");
+    let failed_events = wait_for_events(
+        &failed_run.events_path,
+        Duration::from_millis(900),
+        |events| {
+            events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCancelled(payload)
+                    if event.correlation_id.as_deref() == Some(failed_request_id.as_str())
+                        && payload.reason == "provider exploded"
+            )
+        }) && events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::CompactionFailed(payload)
+                    if payload.trigger_reason == "failed_response"
+                        && payload.through_request_id.as_deref() == Some(failed_request_id.as_str())
+            )
+        })
+        },
+    )
+    .await;
+    failed.stop_run().await.expect("stop failed-response run");
+    assert_eq!(
+        failed_events
+            .iter()
+            .filter(|event| matches!(
+                &event.payload,
+                EventV1::CompactionFailed(payload)
+                    if payload.trigger_reason == "failed_response"
+                        && payload.through_request_id.as_deref() == Some(failed_request_id.as_str())
+            ))
+            .count(),
+        1,
+        "failed-response no-shrink should record exactly one failed compaction attempt"
+    );
+    assert_eq!(
+        failed_provider.requests().len(),
+        2,
+        "failed-response no-shrink must not retry the provider turn"
+    );
+    assert!(failed_events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCancelled(payload)
+                if event.correlation_id.as_deref() == Some(failed_request_id.as_str())
+                    && payload.reason == "provider exploded"
+        )
+    }));
+}
+
+#[tokio::test]
 async fn manual_compaction_writes_checkpoint_and_manual_events() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let provider = SequentialScriptedProvider::new(vec![
@@ -5400,6 +6825,9 @@ async fn overflow_retry_split_oversized_latest_turn_preserves_suffix_context() {
             && message
                 .content
                 .contains("preserved suffix of an oversized latest turn")
+            && message
+                .content
+                .contains("earlier prefix is summarized in the checkpoint")
     }));
     assert!(retried_messages.iter().any(|message| {
         message.role == MessageRole::Assistant && message.content.len() < 12_000
@@ -5410,7 +6838,7 @@ async fn overflow_retry_split_oversized_latest_turn_preserves_suffix_context() {
     assert_eq!(checkpoint.recent_turns.len(), 1);
     assert!(checkpoint
         .summary
-        .contains("earlier portion of an oversized latest turn"));
+        .contains("earlier prefix of an oversized latest turn"));
     assert!(checkpoint
         .facts
         .compacted_turns
@@ -5418,17 +6846,20 @@ async fn overflow_retry_split_oversized_latest_turn_preserves_suffix_context() {
         .any(|fact| fact.user_excerpt.contains("first question")));
     assert!(checkpoint.facts.compacted_turns.iter().any(|fact| fact
         .user_excerpt
-        .contains("earlier portion of an oversized latest turn")));
+        .contains("earlier prefix of an oversized latest turn")));
     assert!(checkpoint.recent_turns[0]
         .user_prompt
         .contains("preserved suffix of an oversized latest turn"));
-    assert_eq!(
-        checkpoint
-            .tail_boundary
-            .as_ref()
-            .map(|boundary| boundary.mode.as_str()),
-        Some("split_oversized_turn_tail")
-    );
+    let tail_boundary = checkpoint.tail_boundary.as_ref().expect("tail boundary");
+    assert_eq!(tail_boundary.mode, "split_oversized_turn_tail");
+    assert!(tail_boundary
+        .split_prefix_summary
+        .as_deref()
+        .is_some_and(|summary| summary.contains('B')));
+    assert!(checkpoint.summary.contains("Split prefix summary"));
+    assert!(checkpoint
+        .summary
+        .contains("Source facts: split prefix summary"));
 }
 
 #[tokio::test]
@@ -6971,7 +8402,7 @@ fn provider_text_events(text: &str) -> Vec<ProviderStreamEvent> {
 
 fn structured_model_summary(goal: &str, next_step: &str) -> String {
     format!(
-        "## Goal\n- {goal}\n\n## Constraints & Preferences\n- Preserve Harness checkpoint structure.\n\n## Progress\n### Done\n- Older turns were summarized by the configured compaction model.\n### In Progress\n- Continue from preserved recent context.\n### Blocked\n- (none)\n\n## Key Decisions\n- Use the model summary because it passed Harness validation.\n\n## Next Steps\n1. {next_step}\n\n## Critical Context\n- This is a structured checkpoint update.\n\n## Source Facts\n- Model summary retained compacted turn facts.\n\n## Relevant Files / Artifacts\n- (none)"
+        "## Goal\n- {goal}\n\n## Constraints\n- Preserve Harness checkpoint structure.\n\n## Progress\n- Done: older turns were summarized by the configured compaction model.\n- In progress: continue from preserved recent context.\n- Blocked: (none)\n\n## Key Decisions\n- Use the model summary because it passed Harness validation.\n\n## Next Steps\n1. {next_step}\n\n## Critical Context\n- This is a structured checkpoint update.\n- Source facts: model summary retained compacted turn facts.\n- Relevant files/artifacts: (none)"
     )
 }
 
@@ -7032,12 +8463,29 @@ fn test_agent_coordinator_with_provider_and_compaction(
     provider_model_concurrency: usize,
     compaction: CompactionRuntimeConfig,
 ) -> CoordinatorHandle {
+    test_agent_coordinator_with_provider_compaction_and_hooks(
+        session_dir,
+        provider,
+        provider_model_concurrency,
+        compaction,
+        HookRuntimeConfig::default(),
+    )
+}
+
+fn test_agent_coordinator_with_provider_compaction_and_hooks(
+    session_dir: &Path,
+    provider: Arc<dyn Provider>,
+    provider_model_concurrency: usize,
+    compaction: CompactionRuntimeConfig,
+    hook_runtime_config: HookRuntimeConfig,
+) -> CoordinatorHandle {
     let mut config = CoordinatorConfig::new(session_dir.to_path_buf());
     config.deterministic_store = true;
     config.command_buffer = 64;
     config.provider_model_concurrency = provider_model_concurrency;
     config.provider = provider;
     config.compaction = compaction;
+    config.hook_runtime_config = hook_runtime_config;
     config.agent_profiles = agent_profiles();
 
     let clock = Arc::new(FakeClock::new());
@@ -7093,6 +8541,26 @@ fn test_agent_tool_coordinator(
     alpha_toolset: Vec<String>,
     alpha_max_iters: usize,
 ) -> CoordinatorHandle {
+    test_agent_tool_coordinator_with_compaction(
+        session_dir,
+        provider,
+        tool_registry,
+        permission_policy,
+        alpha_toolset,
+        alpha_max_iters,
+        CompactionRuntimeConfig::default(),
+    )
+}
+
+fn test_agent_tool_coordinator_with_compaction(
+    session_dir: &Path,
+    provider: Arc<dyn Provider>,
+    tool_registry: Arc<ToolRegistry>,
+    permission_policy: PermissionPolicy,
+    alpha_toolset: Vec<String>,
+    alpha_max_iters: usize,
+    compaction: CompactionRuntimeConfig,
+) -> CoordinatorHandle {
     let mut config = CoordinatorConfig::new(session_dir.to_path_buf());
     config.deterministic_store = true;
     config.command_buffer = 64;
@@ -7100,6 +8568,7 @@ fn test_agent_tool_coordinator(
     config.provider = provider;
     config.tool_registry = tool_registry;
     config.permission_policy = permission_policy;
+    config.compaction = compaction;
     config.agent_profiles = agent_profiles();
     if let Some(profile) = config.agent_profiles.get_mut("alpha") {
         profile.toolset = alpha_toolset;

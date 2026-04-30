@@ -298,6 +298,9 @@ fn canonicalize_runtime_aliases(runtime: &mut serde_json::Value) {
                 ("model", "model_ref"),
                 ("splitOversizedTurns", "split_oversized_turns"),
                 ("autoRetryOverflow", "auto_retry_overflow"),
+                ("structuredSummaryContract", "structured_summary_contract"),
+                ("estimatedTokenTriggers", "estimated_token_triggers"),
+                ("fallbackInputTokens", "fallback_input_tokens"),
             ],
         );
     }
@@ -619,6 +622,9 @@ pub(super) fn translate_public_runtime_root(
             "model_backed": false,
             "split_oversized_turns": false,
             "auto_retry_overflow": true,
+            "structured_summary_contract": true,
+            "estimated_token_triggers": true,
+            "fallback_input_tokens": 32768,
         },
     });
     if let Some(value) = object.get("runtime") {

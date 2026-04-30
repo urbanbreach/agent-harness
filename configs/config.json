@@ -85,9 +85,12 @@
       "default": {
         "compaction": {
           "auto_retry_overflow": true,
+          "estimated_token_triggers": true,
+          "fallback_input_tokens": 32768,
           "model_backed": false,
           "model_ref": null,
-          "split_oversized_turns": false
+          "split_oversized_turns": false,
+          "structured_summary_contract": true
         }
       },
       "allOf": [
@@ -135,6 +138,16 @@
           "default": true,
           "type": "boolean"
         },
+        "estimated_token_triggers": {
+          "default": true,
+          "type": "boolean"
+        },
+        "fallback_input_tokens": {
+          "default": 32768,
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
         "model_backed": {
           "default": false,
           "type": "boolean"
@@ -148,6 +161,10 @@
         },
         "split_oversized_turns": {
           "default": false,
+          "type": "boolean"
+        },
+        "structured_summary_contract": {
+          "default": true,
           "type": "boolean"
         }
       },
@@ -965,9 +982,12 @@
         "compaction": {
           "default": {
             "auto_retry_overflow": true,
+            "estimated_token_triggers": true,
+            "fallback_input_tokens": 32768,
             "model_backed": false,
             "model_ref": null,
-            "split_oversized_turns": false
+            "split_oversized_turns": false,
+            "structured_summary_contract": true
           },
           "allOf": [
             {

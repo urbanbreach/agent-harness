@@ -197,7 +197,13 @@
       "model_backed": false,
       "model": "default/gpt-5.4-mini",
       "split_oversized_turns": false,
-      "auto_retry_overflow": true
+      "auto_retry_overflow": true,
+      // Structured Pi-style checkpoint summaries are on by default.
+      "structured_summary_contract": true,
+      // Estimated triggers let Harness compact before prompts when usage or model metadata is missing.
+      "estimated_token_triggers": true,
+      // Fallback input budget used only for estimated compaction trigger decisions.
+      "fallback_input_tokens": 32768
     }
   },
   "mcp": {
