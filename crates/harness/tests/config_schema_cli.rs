@@ -744,6 +744,9 @@ fn public_runtime_config_accepts_compaction_settings() {
               model: "default/gpt-5.4-mini",
               splitOversizedTurns: true,
               autoRetryOverflow: false,
+              structuredSummaryContract: false,
+              estimatedTokenTriggers: false,
+              fallbackInputTokens: 65536,
             }
           }
         }
@@ -758,6 +761,31 @@ fn public_runtime_config_accepts_compaction_settings() {
     );
     assert!(parsed.runtime.compaction.split_oversized_turns);
     assert!(!parsed.runtime.compaction.auto_retry_overflow);
+    assert!(!parsed.runtime.compaction.structured_summary_contract);
+    assert!(!parsed.runtime.compaction.estimated_token_triggers);
+    assert_eq!(parsed.runtime.compaction.fallback_input_tokens, 65_536);
+}
+
+#[test]
+fn public_runtime_config_accepts_new_compaction_settings() {
+    let parsed: PublicRuntimeConfig = json5::from_str(
+        r#"
+        {
+          runtime: {
+            compaction: {
+              structured_summary_contract: true,
+              estimated_token_triggers: true,
+              fallback_input_tokens: 32768,
+            }
+          }
+        }
+        "#,
+    )
+    .expect("parse runtime compaction config with new canonical keys");
+
+    assert!(parsed.runtime.compaction.structured_summary_contract);
+    assert!(parsed.runtime.compaction.estimated_token_triggers);
+    assert_eq!(parsed.runtime.compaction.fallback_input_tokens, 32_768);
 }
 
 #[test]
