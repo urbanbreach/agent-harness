@@ -584,6 +584,7 @@ pub(crate) fn exact_test_compaction_applied_updates_active_context_usage_estimat
                 preserved_turns: Some(1),
                 reduction_tokens_estimate: Some(380),
                 reduction_percent_estimate: Some(76),
+                estimate_source: None,
             },
         ),
     ));

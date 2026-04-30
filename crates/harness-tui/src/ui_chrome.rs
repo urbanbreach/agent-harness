@@ -2939,6 +2939,7 @@ pub(crate) fn exact_test_live_composer_disclosure_summarizes_compaction_metrics(
                 preserved_turns: Some(1),
                 reduction_tokens_estimate: Some(380),
                 reduction_percent_estimate: Some(76),
+                estimate_source: None,
             },
         ),
     });
