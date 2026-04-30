@@ -256,6 +256,12 @@ pub struct ResumeArtifactSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artifact_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_contract_version: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_file_count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modified_file_count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_tool_call_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_task_id: Option<String>,
@@ -1127,6 +1133,17 @@ fn merge_session_artifact(
             if artifact.artifact_kind.is_none() {
                 artifact.artifact_kind = payload.metadata.get("artifact_kind").cloned();
             }
+            if artifact.summary_contract_version.is_none() {
+                artifact.summary_contract_version =
+                    metadata_u32(&payload.metadata, "summary_contract_version");
+            }
+            if artifact.read_file_count.is_none() {
+                artifact.read_file_count = metadata_u32(&payload.metadata, "read_file_count");
+            }
+            if artifact.modified_file_count.is_none() {
+                artifact.modified_file_count =
+                    metadata_u32(&payload.metadata, "modified_file_count");
+            }
             if artifact.parent_tool_call_id.is_none() {
                 artifact.parent_tool_call_id =
                     lineage.and_then(|lineage| lineage.parent_tool_call_id.clone());
@@ -1151,6 +1168,9 @@ fn merge_session_artifact(
             tool_call_id: payload.tool_call_id.clone(),
             tool_id,
             artifact_kind: payload.metadata.get("artifact_kind").cloned(),
+            summary_contract_version: metadata_u32(&payload.metadata, "summary_contract_version"),
+            read_file_count: metadata_u32(&payload.metadata, "read_file_count"),
+            modified_file_count: metadata_u32(&payload.metadata, "modified_file_count"),
             parent_tool_call_id: lineage.and_then(|lineage| lineage.parent_tool_call_id.clone()),
             parent_task_id: lineage.and_then(|lineage| lineage.parent_task_id.clone()),
             parent_request_id: lineage.and_then(|lineage| lineage.parent_request_id.clone()),
@@ -1207,6 +1227,9 @@ fn merge_tool_metadata_artifacts(
                 tool_call_id: Some(tool_call_id.to_string()),
                 tool_id: snapshot.tool_id.clone(),
                 artifact_kind: None,
+                summary_contract_version: None,
+                read_file_count: None,
+                modified_file_count: None,
                 parent_tool_call_id: metadata
                     .lineage
                     .as_ref()
@@ -1225,6 +1248,10 @@ fn merge_tool_metadata_artifacts(
                     .and_then(|lineage| lineage.child_session_id.clone()),
             });
     }
+}
+
+fn metadata_u32(metadata: &BTreeMap<String, String>, key: &str) -> Option<u32> {
+    metadata.get(key).and_then(|value| value.parse().ok())
 }
 
 fn artifact_snapshot_key(path: &str, digest: Option<&str>) -> String {

@@ -2,7 +2,7 @@ use harness_core::agent::{
     build_provider_context_messages, build_provider_tool_defs, transform_context_for_provider,
     AgentModelRef, AgentModelSettings, AgentProfile, AgentRequest, ProviderBoundaryContext,
     ProviderBoundaryInput, ProviderCompactionFacts, ProviderContext, ProviderContextCheckpoint,
-    ProviderContextCheckpointMetadata, ProviderConversationTurn,
+    ProviderContextCheckpointMetadata, ProviderConversationTurn, ProviderConversationTurnStatus,
 };
 use harness_core::config::ToolFailureMode;
 use harness_core::conversation::{project_conversation, ConversationMessage};
@@ -38,6 +38,7 @@ fn provider_boundary_preserves_existing_message_shape() {
             first_seq: Some(7),
             last_seq: Some(9),
             artifacts: Vec::new(),
+            ..ProviderConversationTurn::default()
         }],
         checkpoint: Some(checkpoint_metadata()),
     };
@@ -127,6 +128,45 @@ fn provider_boundary_preserves_existing_message_shape() {
 }
 
 #[test]
+fn conversation_projection_failed_checkpoint_turn_status() {
+    let checkpoint = ProviderContextCheckpoint {
+        metadata: checkpoint_metadata(),
+        summary: "Older work was compacted.".to_string(),
+        recent_turns: vec![ProviderConversationTurn {
+            user_prompt: "Try the risky operation".to_string(),
+            assistant_response: "Partial answer before failure".to_string(),
+            status: ProviderConversationTurnStatus::Failed,
+            failure_stage: Some("provider_error".to_string()),
+            failure_reason: Some("connection reset".to_string()),
+            request_id: Some("req_failed".to_string()),
+            first_seq: Some(7),
+            last_seq: Some(9),
+            artifacts: Vec::new(),
+        }],
+        pruned_tool_artifacts: Vec::new(),
+        facts: ProviderCompactionFacts::default(),
+        tail_boundary: None,
+        summary_source: None,
+        timeline_entry: None,
+    };
+
+    let projection =
+        project_conversation(&[], &[(&checkpoint).into()]).expect("project failed checkpoint turn");
+
+    let ConversationMessage::Assistant(assistant) = &projection.messages[2] else {
+        panic!("expected checkpoint assistant message");
+    };
+
+    assert!(assistant
+        .text
+        .contains("Harness preserved an incomplete provider turn for continuity"));
+    assert!(assistant.text.contains("Status: failed"));
+    assert!(assistant.text.contains("Stage: provider_error"));
+    assert!(assistant.text.contains("Reason: connection reset"));
+    assert!(assistant.text.contains("Partial answer before failure"));
+}
+
+#[test]
 fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events() {
     let checkpoint = ProviderContextCheckpoint {
         metadata: ProviderContextCheckpointMetadata {
@@ -155,6 +195,7 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
             first_seq: Some(1),
             last_seq: Some(2),
             artifacts: Vec::new(),
+            ..ProviderConversationTurn::default()
         }],
         pruned_tool_artifacts: Vec::new(),
         facts: ProviderCompactionFacts::default(),

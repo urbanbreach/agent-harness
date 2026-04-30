@@ -1225,6 +1225,9 @@ fn session_catalog_counts_checkpoint_artifacts_alongside_tool_artifacts() {
                         ),
                         ("checkpoint_id".to_string(), "checkpoint_000004".to_string()),
                         ("agent_id".to_string(), "agent_000001".to_string()),
+                        ("summary_contract_version".to_string(), "2".to_string()),
+                        ("read_file_count".to_string(), "3".to_string()),
+                        ("modified_file_count".to_string(), "1".to_string()),
                     ]),
                 }),
             ),
@@ -1242,6 +1245,9 @@ fn session_catalog_counts_checkpoint_artifacts_alongside_tool_artifacts() {
     assert!(plan.session_artifacts.values().any(|artifact| {
         artifact.artifact_kind.as_deref() == Some("provider_context_checkpoint")
             && artifact.tool_call_id.is_none()
+            && artifact.summary_contract_version == Some(2)
+            && artifact.read_file_count == Some(3)
+            && artifact.modified_file_count == Some(1)
     }));
 
     let events_path = run_dir.join("events.jsonl");

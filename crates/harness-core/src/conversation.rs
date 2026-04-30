@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::agent::{ProviderContextCheckpoint, ProviderConversationTurn};
+use crate::agent::{
+    ProviderContextCheckpoint, ProviderConversationTurn, ProviderConversationTurnStatus,
+};
 use crate::event::{EventArtifactRef, EventEnvelopeV1, EventV1, ToolCallMetadata, ToolCallStatus};
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -45,6 +47,15 @@ pub struct ConversationCheckpoint {
 pub struct ConversationCheckpointTurn {
     pub user_prompt: String,
     pub assistant_response: String,
+    #[serde(
+        default,
+        skip_serializing_if = "ProviderConversationTurnStatus::is_completed"
+    )]
+    pub status: ProviderConversationTurnStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_stage: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -341,6 +352,9 @@ impl From<&ProviderConversationTurn> for ConversationCheckpointTurn {
         Self {
             user_prompt: turn.user_prompt.clone(),
             assistant_response: turn.assistant_response.clone(),
+            status: turn.status,
+            failure_stage: turn.failure_stage.clone(),
+            failure_reason: turn.failure_reason.clone(),
             request_id: turn.request_id.clone(),
             first_seq: turn.first_seq,
             last_seq: turn.last_seq,
@@ -394,7 +408,7 @@ fn append_checkpoint_turn(
         ConversationAssistantMessage {
             request_id,
             agent_id: Some(checkpoint.agent_id.clone()),
-            text: turn.assistant_response.clone(),
+            text: checkpoint_turn_assistant_text(turn),
             tool_calls: Vec::new(),
             stop_reason: None,
             first_seq: turn.first_seq,
@@ -404,6 +418,34 @@ fn append_checkpoint_turn(
             output_digest: None,
         },
     ));
+}
+
+fn checkpoint_turn_assistant_text(turn: &ConversationCheckpointTurn) -> String {
+    if turn.status.is_completed() {
+        return turn.assistant_response.clone();
+    }
+
+    let status = match turn.status {
+        ProviderConversationTurnStatus::Completed => "completed",
+        ProviderConversationTurnStatus::Failed => "failed",
+        ProviderConversationTurnStatus::Aborted => "aborted",
+    };
+    let mut text = format!(
+        "Harness preserved an incomplete provider turn for continuity. Do not treat it as a completed answer.\nStatus: {status}"
+    );
+    if let Some(stage) = turn.failure_stage.as_deref() {
+        text.push_str("\nStage: ");
+        text.push_str(stage);
+    }
+    if let Some(reason) = turn.failure_reason.as_deref() {
+        text.push_str("\nReason: ");
+        text.push_str(reason);
+    }
+    if !turn.assistant_response.trim().is_empty() {
+        text.push_str("\nPartial response:\n");
+        text.push_str(&turn.assistant_response);
+    }
+    text
 }
 
 fn provider_turn_request_id(event: &EventEnvelopeV1, provider_request_id: &str) -> String {

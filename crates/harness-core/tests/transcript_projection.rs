@@ -267,6 +267,7 @@ fn projects_compaction_checkpoint_requested_written_applied_and_failed_state() {
                 model_id: Some("gpt-5".to_string()),
                 tokens_before: Some(1000),
                 tokens_before_estimate: Some(980),
+                estimate_source: Some("provider_usage".to_string()),
             }),
         ),
         envelope(
@@ -292,6 +293,7 @@ fn projects_compaction_checkpoint_requested_written_applied_and_failed_state() {
                 compacted_turns: Some(3),
                 reduction_tokens_estimate: Some(580),
                 reduction_percent_estimate: Some(59),
+                estimate_source: Some("provider_usage".to_string()),
                 preserved_turns: 1,
             }),
         ),
@@ -311,6 +313,7 @@ fn projects_compaction_checkpoint_requested_written_applied_and_failed_state() {
                 preserved_turns: Some(1),
                 reduction_tokens_estimate: Some(580),
                 reduction_percent_estimate: Some(59),
+                estimate_source: Some("provider_usage".to_string()),
             }),
         ),
         envelope(
@@ -432,10 +435,10 @@ fn projects_artifact_metadata_without_reading_artifact_contents() {
                 bytes: 42,
                 tool_call_id: Some("toolcall_000001".to_string()),
                 tool_metadata: None,
-                metadata: BTreeMap::from([(
-                    "artifact_kind".to_string(),
-                    "tool_output".to_string(),
-                )]),
+                metadata: BTreeMap::from([
+                    ("artifact_kind".to_string(), "tool_output".to_string()),
+                    ("path".to_string(), "src/lib.rs".to_string()),
+                ]),
             }),
         ),
         envelope(
@@ -466,6 +469,7 @@ fn projects_artifact_metadata_without_reading_artifact_contents() {
             && artifact.source == ArtifactProjectionSource::ArtifactWritten
             && artifact.bytes == Some(42)
             && artifact.metadata.get("artifact_kind").map(String::as_str) == Some("tool_output")
+            && artifact.metadata.get("path").map(String::as_str) == Some("src/lib.rs")
     }));
 
     let assistant = assistant_message(&projection, "req_000001");
