@@ -1,22 +1,22 @@
 
-      crates/harness-tui/src                                                                                                                                                        Inspect tool activity
-        44   use ui_secondary::{                                                             44   use ui_secondary::{
-        45 -     render_diff_tab, render_events_tab, render_help_tab,                        45 +     render_events_tab, render_help_tab, render_live_details_overlay,              ▼ MCP
-        46       render_operator_sidebar,                                                    46       render_operator_sidebar,                                                      • No MCP servers configured
-        47   };                                                                              47   };
-     ↗ Spawn researcher · audit tool lifecycle parity  ▸                                                                                                                       █    ▼ LSP
-      foreground · agent_worker · req_child · completed · 2 child tool calls                                                                                                   █    • No active LSP servers
+  ┃                                                                                                                                                                                 Inspect tool activity
+                                                                                                                                                                               █
+     → Read src/ui.rs [offset=1, limit=24]  ▸                                                                                                                                  █    ▼ MCP
+      ↳ Loaded src/ui.rs                                                                                                                                                       █    • No MCP servers configured
+      Compat alias · read → fs.read                                                                                                                                            █
+     ← Patch · ui.rs  ▸                                                                                                                                                        █    ▼ LSP
+      crates/harness-tui/src                                                                                                                                                   █    • No active LSP servers
+        44   use ui_secondary::{                                                             44   use ui_secondary::{                                                          █
+        45 -     render_diff_tab, render_events_tab, render_help_tab,                        45 +     render_events_tab, render_help_tab, render_live_details_overlay,         █    ▼ Modified Files
+        46       render_operator_sidebar,                                                    46       render_operator_sidebar,                                                 █    • crates/harness-tui/src/ui.rs · +1 -1
+        47   };                                                                              47   };                                                                           █
+     ↗ Spawn researcher · audit tool lifecycle parity  ▸                                                                                                                       █
+      foreground · agent_worker · req_child · completed · 2 child tool calls                                                                                                   █
       Found the whole-tool parity path.                                                                                                                                        █
-      Compat alias · task → agent.spawn                                                                                                                                        █    ▼ Modified Files
-                                                                                                                                                                               █    • crates/harness-tui/src/ui.rs · +1 -1
-      ┃                                                                                                                                                                        █
-      ┃     # Shell in /workspace                                                                                                                                              █
-      ┃                                                                                                                                                                        █
-      ┃  $ cargo test -p harness-tui                                                                                                                                           █
-      ┃                                                                                                                                                                        █
-      ┃  exit code: 1                                                                                                                                                          █
-      ┃  stderr: snapshot mismatch                                                                                                                                             █
-      ┃                                                                                                                                                                        █
+      Compat alias · task → agent.spawn                                                                                                                                        █
+     $ cargo test -p harness-tui  ▸                                                                                                                                            █
+      exit code: 1                                                                                                                                                             █
+      stderr: snapshot mismatch                                                                                                                                                █
                                                                                                                                                                                █
      Tool summaries are now easier to scan, and edits stay inline.                                                                                                             █
                                                                                                                                                                                █

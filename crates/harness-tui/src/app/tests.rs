@@ -171,7 +171,7 @@ fn mouse_click_toggles_transcript_tool_disclosure() {
         }),
     ));
 
-    let (column, row) = transcript_click_position(&app, "# Shell");
+    let (column, row) = transcript_click_position(&app, "false");
     app.handle_mouse(
         MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
@@ -1729,15 +1729,18 @@ fn details_drawer_toggles_without_stealing_transcript_state() {
 
 #[test]
 fn config_backed_live_launch_starts_in_session_shell_without_details_drawer() {
-    set_pending_live_launch_metadata(
-        LaunchMetadata::new("deep", "default", Some("gpt-5.4-mini".to_string()))
-            .with_mode_label("Live"),
-    );
+    set_pending_live_launch_metadata(LaunchMetadata::new(
+        "deep",
+        "default",
+        Some("gpt-5.4-mini".to_string()),
+    ));
 
     let app = AppState::new_live(None, false, None);
 
     assert!(!app.details_drawer_open());
     assert_eq!(app.focus, Focus::Prompt);
+    assert_eq!(app.launch_mode_label(), None);
+    assert_eq!(app.current_model_reasoning_label(), None);
 }
 
 #[test]

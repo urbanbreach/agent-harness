@@ -1344,20 +1344,20 @@ fn block_style_tool_rows_render_titles_and_argument_blocks() {
 
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(
-        debug.contains("# Shell"),
-        "shell blocks should surface the harness block tool title"
+        !debug.contains("# Shell"),
+        "failed shell calls without structured output should not render a block tool card"
     );
     assert!(
         !debug.contains("● ● ●"),
-        "shell blocks should not render the removed fake terminal header icon"
+        "inline shell failures should not render the removed fake terminal header icon"
     );
     assert!(
         !debug.contains("Shell · Failed"),
-        "shell blocks should keep failure state out of the subtitle row"
+        "inline shell failures should keep failure state out of the subtitle row"
     );
     assert!(
         debug.contains("cargo test -p harness-tui"),
-        "shell blocks should render the command body"
+        "inline shell failures should render the command row"
     );
     assert!(
         debug.contains("stderr: snapshot mismatch"),

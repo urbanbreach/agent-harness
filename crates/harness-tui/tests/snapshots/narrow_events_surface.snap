@@ -1,16 +1,16 @@
   events · run_fixture
 
      events   18 recorded · selected seq 18 · follow on
-    Event log · j/k active ·→Event details
-
-         1                    {
-     UserMessageSubmitted(Uork"schema_version": 1,
+    Event log · j/k active ·eEvent detailsdebar,
+          47   47   };
+         1pawn researcher · au{it tool lifecycle parity  ▸
+     UserMessageSubmitted(Uwor"schema_version": 1,mpleted · 2 child tool
      serMessageSubmittedEve   "event_id": "evt-0018",
-     nt { request_idest -p har"seq": 18,
-         2                    "run_id": "run_fixture",
-     ProviderRequestStarted   "mono_ms": 18,                               █
-     (ProviderRequestStarte mi"actor": {                                   █
-     dEvent { request_id      "kind": "system",                            █
+     nt { request_idole-tool p"seq": 18,.                                  █
+         2mpat alias · task → "run_id": "run_fixture",                     █
+     ProviderRequestStartedess"mono_ms": 18,                               █
+     (ProviderRequestStarte   "actor": {                                   █
+     dEvent { request_id misma"kind": "system",                            █
          3                    "agent_id": "pty-helper"                     █
      ToolCallRequested(Toolow },sier to scan, and edits stay inline.       █
      CallRequestedEvent {     "correlation_id": "req_tool_lifecycle",      █

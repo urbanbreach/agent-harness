@@ -225,9 +225,8 @@ fn transcript_turn_sections_keep_nested_tool_details() {
         .unwrap_or_else(|| panic!("assistant footer\n{rendered}"));
     let tool_row = find_line_containing_all_from(&lines, assistant_footer + 1, &["false"])
         .unwrap_or_else(|| panic!("tool row\n{rendered}"));
-    let error_row =
-        find_line_containing_all_from(&lines, tool_row + 1, &["error", "tool call failed"])
-            .unwrap_or_else(|| panic!("tool error row\n{rendered}"));
+    let error_row = find_line_containing_from(&lines, tool_row + 1, "tool call failed")
+        .unwrap_or_else(|| panic!("tool error row\n{rendered}"));
 
     assert!(reasoning_row < body_row);
     assert!(body_row >= reasoning_row + 2);

@@ -16,15 +16,6 @@ use super::ui_secondary::{
     StructuredDiffRenderOptions,
 };
 
-struct LabeledTextBlockStyle<'a> {
-    indent: &'a str,
-    label: &'a str,
-    rail_color: Color,
-    surface: Color,
-    label_style: Style,
-    body_style: Style,
-}
-
 #[derive(Debug, Clone, Copy)]
 struct TranscriptToolCardShell {
     indent: &'static str,
@@ -2188,11 +2179,7 @@ fn build_transcript_tool_call_section(
         ),
         "shell.run" | "bash" => {
             let cmd = shell_tool_command(tool_call).unwrap_or_else(|| "Shell".to_string());
-            let shell_output = shell_tool_output(tool_call).or_else(|| {
-                (tool_call.status == ToolCallDisplayStatus::Failed)
-                    .then(|| error_body.clone())
-                    .flatten()
-            });
+            let shell_output = shell_tool_output(tool_call);
             if shell_output.is_some() {
                 if let Some(output) = shell_output {
                     push_collapsible_bash_panel_block(
@@ -2202,11 +2189,7 @@ fn build_transcript_tool_call_section(
                         shell_tool_title_description(tool_call, session_path),
                         HARNESS_BASH_OUTPUT_LINE_CLAMP,
                         expanded,
-                        if tool_call.status == ToolCallDisplayStatus::Failed {
-                            TranscriptToolCallDetailTone::Error
-                        } else {
-                            TranscriptToolCallDetailTone::Primary
-                        },
+                        TranscriptToolCallDetailTone::Primary,
                     );
                 }
                 (
@@ -2217,7 +2200,7 @@ fn build_transcript_tool_call_section(
                 )
             } else {
                 (
-                    "Shell".to_string(),
+                    cmd.clone(),
                     Some("$"),
                     TranscriptToolCallVisualStyle::Inline,
                     false,
@@ -2500,21 +2483,16 @@ fn build_transcript_tool_call_section(
     }
 
     push_tool_identity_block(&mut detail_blocks, tool_call);
+    push_failed_tool_error_block(&mut detail_blocks, tool_call);
 
-    if detail_blocks.is_empty() {
-        if let Some(output) = error_body.as_deref() {
-            detail_blocks.push(TranscriptToolCallDetailBlock::Message {
-                text: output.to_string(),
-                tone: TranscriptToolCallDetailTone::Error,
-            });
-        } else if display_tool_id == "agent.spawn" {
-            if let Some(output) = tool_call.output_summary.as_deref() {
-                detail_blocks.push(TranscriptToolCallDetailBlock::Message {
-                    text: format!("└ {}", format_detail_payload(output)),
-                    tone: TranscriptToolCallDetailTone::Secondary,
-                });
-            }
-        }
+    let agent_spawn_summary = (detail_blocks.is_empty() && display_tool_id == "agent.spawn")
+        .then_some(tool_call.output_summary.as_deref())
+        .flatten();
+    if let Some(output) = agent_spawn_summary {
+        detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+            text: format!("└ {}", format_detail_payload(output)),
+            tone: TranscriptToolCallDetailTone::Secondary,
+        });
     }
 
     let disclosure_state = if uses_generic_output_visibility
@@ -3840,6 +3818,9 @@ fn home_collapsed_path_display(path: &Path) -> String {
 
 fn shell_tool_output(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
     let structured = shell_tool_structured_output(tool_call.output_json.as_ref());
+    if tool_call.status == ToolCallDisplayStatus::Failed {
+        return structured;
+    }
     structured.or_else(|| {
         tool_call
             .output_summary
@@ -3857,6 +3838,8 @@ fn shell_tool_structured_output(output_json: Option<&serde_json::Value>) -> Opti
         (Some(stdout), Some(stderr)) if !stdout.is_empty() && !stderr.is_empty() => {
             format!("{stdout}\n{stderr}")
         }
+        (Some(stdout), _) if !stdout.is_empty() => stdout.to_string(),
+        (_, Some(stderr)) if !stderr.is_empty() => stderr.to_string(),
         (Some(stdout), _) => stdout.to_string(),
         (_, Some(stderr)) => stderr.to_string(),
         _ => return None,
@@ -4272,6 +4255,37 @@ fn push_collapsible_bash_panel_block(
         }),
         tone,
     });
+}
+
+fn push_failed_tool_error_block(
+    detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
+    tool_call: &crate::app::ToolCallEntry,
+) {
+    let Some(error) = tool_error_text(tool_call) else {
+        return;
+    };
+    if detail_blocks_surface_error(detail_blocks, &error) {
+        return;
+    }
+    detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+        text: error,
+        tone: TranscriptToolCallDetailTone::Error,
+    });
+}
+
+fn detail_blocks_surface_error(blocks: &[TranscriptToolCallDetailBlock], error: &str) -> bool {
+    let error = error.trim();
+    blocks.iter().any(|block| match block {
+        TranscriptToolCallDetailBlock::Message { text, tone } => {
+            *tone == TranscriptToolCallDetailTone::Error && text.trim() == error
+        }
+        TranscriptToolCallDetailBlock::BashPanel { output, .. } => output.trim() == error,
+        TranscriptToolCallDetailBlock::FileSection(section) => {
+            detail_blocks_surface_error(&section.detail_blocks, error)
+        }
+        TranscriptToolCallDetailBlock::TodoList { .. }
+        | TranscriptToolCallDetailBlock::StructuredDiff { .. } => false,
+    })
 }
 
 fn search_result_count_suffix(
@@ -5306,24 +5320,11 @@ fn build_assistant_part_render_surface(
             )
         }
         TranscriptAssistantPart::Error(error) => {
-            append_labeled_text_block(
-                &mut lines,
-                &error.text,
-                LabeledTextBlockStyle {
-                    indent: TRANSCRIPT_NESTED_INDENT,
-                    label: "error",
-                    rail_color: transcript_nested_rail_color(theme),
-                    surface: transcript_nested_surface(theme, base_surface),
-                    label_style: Style::default().fg(theme.status.error),
-                    body_style: Style::default().fg(theme.status.error),
-                },
-                theme,
-                width,
-            );
+            append_assistant_error_box(&mut lines, &error.text, theme, width, base_surface);
             (
                 TranscriptRenderSurfaceKind::AssistantError,
                 false,
-                transcript_nested_rail_color(theme),
+                theme.status.error,
                 transcript_nested_surface(theme, base_surface),
                 None,
                 None,
@@ -6083,6 +6084,27 @@ fn append_tool_call_message_block(
             );
         }
     }
+}
+
+fn append_assistant_error_box(
+    lines: &mut Vec<Line<'static>>,
+    text: &str,
+    theme: &Theme,
+    width: u16,
+    base_surface: Color,
+) {
+    let surface = transcript_nested_surface(theme, base_surface);
+    append_nested_surface_row(
+        lines,
+        TRANSCRIPT_NESTED_INDENT,
+        theme.status.error,
+        surface,
+        vec![Span::styled(
+            text.trim().to_string(),
+            Style::default().fg(theme.text.secondary),
+        )],
+        width,
+    );
 }
 
 fn append_harness_bash_panel(
@@ -7762,88 +7784,6 @@ fn surface_wrap_tokens(span: Span<'static>) -> Vec<Span<'static>> {
     tokens
 }
 
-fn append_labeled_text_block(
-    lines: &mut Vec<Line<'static>>,
-    text: &str,
-    block_style: LabeledTextBlockStyle<'_>,
-    theme: &Theme,
-    width: u16,
-) {
-    let continuation_prefix = format!("{}  ", block_style.indent);
-    if text.contains("```") {
-        append_nested_surface_row(
-            lines,
-            block_style.indent,
-            block_style.rail_color,
-            block_style.surface,
-            vec![
-                Span::styled(block_style.label.to_string(), block_style.label_style),
-                Span::styled(" · code", muted_meta_style(theme)),
-            ],
-            transcript_surface_content_width(width, false),
-        );
-        append_rich_text_block(
-            lines,
-            text,
-            block_style.body_style.fg.unwrap_or(theme.text.primary),
-            &continuation_prefix,
-            theme,
-            transcript_surface_content_width(width, false),
-        );
-        return;
-    }
-
-    let mut rows = text.split('\n');
-    if let Some(first) = rows.next() {
-        let mut spans = vec![Span::styled(
-            block_style.label.to_string(),
-            block_style.label_style,
-        )];
-        if !first.is_empty() {
-            spans.push(Span::styled(" · ", muted_meta_style(theme)));
-            spans.push(Span::styled(first.to_string(), block_style.body_style));
-        }
-        append_nested_surface_row(
-            lines,
-            block_style.indent,
-            block_style.rail_color,
-            block_style.surface,
-            spans,
-            transcript_surface_content_width(width, false),
-        );
-    }
-
-    for row in rows {
-        let spans = if row.is_empty() {
-            Vec::new()
-        } else {
-            vec![Span::styled(row.to_string(), block_style.body_style)]
-        };
-        append_nested_surface_row(
-            lines,
-            block_style.indent,
-            block_style.rail_color,
-            block_style.surface,
-            spans,
-            transcript_surface_content_width(width, false),
-        );
-    }
-
-    if text.is_empty() {
-        append_nested_surface_row(
-            lines,
-            block_style.indent,
-            block_style.rail_color,
-            block_style.surface,
-            vec![Span::styled(
-                block_style.label.to_string(),
-                block_style.label_style,
-            )],
-            transcript_surface_content_width(width, false),
-        );
-    }
-}
-
 #[cfg(test)]
 pub(crate) fn exact_test_transcript_section_model_preserves_activity_order() {
     let mut app = AppState::default();
@@ -7934,20 +7874,17 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
             tool_call_id: "call-1".to_string(),
             header: TranscriptToolCallHeader {
                 tool_id: "shell.run".to_string(),
-                title: "Shell".to_string(),
+                title: "false".to_string(),
                 subtitle: None,
                 path_metadata: None,
-                icon: None,
+                icon: Some("$"),
                 status: ToolCallDisplayStatus::Failed,
-                visual_style: TranscriptToolCallVisualStyle::Block,
+                visual_style: TranscriptToolCallVisualStyle::Inline,
                 struck_out: false,
                 disclosure_state: Some(TranscriptToolCallDisclosureState::Collapsed),
             },
-            detail_blocks: vec![TranscriptToolCallDetailBlock::BashPanel {
-                command: "false".to_string(),
-                output: "command failed".to_string(),
-                description: None,
-                expand_hint: None,
+            detail_blocks: vec![TranscriptToolCallDetailBlock::Message {
+                text: "command failed".to_string(),
                 tone: TranscriptToolCallDetailTone::Error,
             }],
             expanded: false,
@@ -10468,6 +10405,10 @@ pub(crate) fn exact_test_block_tool_cards_skip_empty_subtitle_rows() {
         None,
     );
     assert_eq!(section.header.subtitle, None);
+    assert_eq!(
+        section.header.visual_style,
+        TranscriptToolCallVisualStyle::Inline
+    );
 
     let mut lines = Vec::new();
     {
@@ -10476,24 +10417,24 @@ pub(crate) fn exact_test_block_tool_cards_skip_empty_subtitle_rows() {
     }
     let text_lines = transcript_test_line_texts(lines);
 
-    let header_row = text_lines
-        .iter()
-        .position(|line| line.contains("# Shell"))
-        .expect("shell block title");
     let command_row = text_lines
         .iter()
         .position(|line| line.contains("cargo test -p harness-tui"))
-        .expect("shell card command");
+        .expect("shell inline command");
     let exit_row = text_lines
         .iter()
         .position(|line| line.contains("exit code: 1"))
-        .expect("shell card exit");
+        .expect("shell inline error exit");
     let stderr_row = text_lines
         .iter()
         .position(|line| line.contains("stderr: snapshot mismatch"))
-        .expect("shell card stderr");
+        .expect("shell inline error stderr");
 
-    assert!(header_row < command_row && command_row < exit_row && exit_row < stderr_row);
+    assert!(command_row < exit_row && exit_row < stderr_row);
+    assert!(
+        !text_lines.iter().any(|line| line.contains("# Shell")),
+        "failed shell summaries without structured output should stay inline like Opencode\n{text_lines:#?}"
+    );
     assert!(
         !text_lines.iter().any(|line| line.contains("● ● ●")),
         "block tool rows should not render the removed fake terminal header icon\n{text_lines:#?}"
@@ -10598,7 +10539,7 @@ fn denied_tool_cards_use_denied_subtitle() {
     assert!(section.detail_blocks.iter().any(|block| {
         matches!(
             block,
-            TranscriptToolCallDetailBlock::BashPanel { output, tone, .. }
+            TranscriptToolCallDetailBlock::Message { text: output, tone }
                 if *tone == TranscriptToolCallDetailTone::Error
                     && output.contains("Policy denied shell execution")
         )
@@ -10638,7 +10579,7 @@ fn denied_tool_cards_keep_denied_subtitle_when_reason_contains_colon() {
     assert!(section.detail_blocks.iter().any(|block| {
         matches!(
             block,
-            TranscriptToolCallDetailBlock::BashPanel { output, tone, .. }
+            TranscriptToolCallDetailBlock::Message { text: output, tone }
                 if *tone == TranscriptToolCallDetailTone::Error
                     && output.contains("shell execution blocked")
         )
@@ -11006,6 +10947,39 @@ fn shell_tool_cards_render_cmd_with_args_and_structured_output() {
         &section.detail_blocks[0],
         TranscriptToolCallDetailBlock::BashPanel { command, output, .. }
             if command == "bash -lc printf shell-run" && output == "shell-run"
+    ));
+}
+
+#[test]
+fn failed_structured_shell_output_does_not_duplicate_matching_error_summary() {
+    let mut tool_call = transcript_section_model_test_tool_call("tc-shell-structured-fail", "bash");
+    tool_call.args_summary = r#"{"command":"false"}"#.to_string();
+    tool_call.status = ToolCallDisplayStatus::Failed;
+    tool_call.output_summary = Some("boom".to_string());
+    tool_call.output_json = Some(serde_json::json!({
+        "stdout": "",
+        "stderr": "boom",
+        "status": 1,
+        "success": false,
+        "truncated": false
+    }));
+
+    let section = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        None,
+    );
+
+    assert_eq!(section.detail_blocks.len(), 1);
+    assert!(matches!(
+        &section.detail_blocks[0],
+        TranscriptToolCallDetailBlock::BashPanel { output, tone, .. }
+            if output == "boom" && *tone == TranscriptToolCallDetailTone::Primary
     ));
 }
 
