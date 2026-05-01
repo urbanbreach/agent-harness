@@ -1,78 +1,15 @@
 {
   "$schema": "./config.json",
-
-  // Shipped interactive workflow:
-  //   - `build` is the default agent
-  //   - prompts live in `.agent-harness/agents/*.md`
   "provider": {
     "default": {
       "type": "openai_compatible",
-      "name": "CLIProxyAPI (OpenAI)",
+      "name": "Local OpenAI-Compatible Provider",
       "options": {
         "baseURL": "http://127.0.0.1:8317/v1",
-        "apiKey": "sk-zerolimit",
+        "apiKey": "placeholder-api-key",
         "timeoutMs": 1800000
       },
       "models": {
-        "gpt-5.3-codex": {
-          "name": "GPT 5.3 Codex",
-          "metadata": {
-            "family": "gpt-5",
-            "release_stage": "stable",
-            "context_window_tokens": 272000,
-            "supports_tool_calls": true,
-            "supports_reasoning_summaries": true
-          },
-          "max_input_tokens": 272000,
-          "max_output_tokens": 128000,
-          "variants": {
-            "none": { "name": "None", "metadata": { "reasoning_effort": "none", "text_verbosity": "low", "recommended_for": "fast edits" } },
-            "low": { "name": "Low", "metadata": { "reasoning_effort": "low", "text_verbosity": "low", "recommended_for": "routine coding" } },
-            "medium": { "name": "Medium", "metadata": { "reasoning_effort": "medium", "text_verbosity": "medium", "recommended_for": "balanced coding" } },
-            "high": { "name": "High", "metadata": { "reasoning_effort": "high", "text_verbosity": "medium", "recommended_for": "deep coding" } },
-            "xhigh": { "name": "XHigh", "metadata": { "reasoning_effort": "xhigh", "text_verbosity": "medium", "recommended_for": "hard coding" } }
-          }
-        },
-        "gpt-5.5": {
-          "name": "GPT 5.5",
-          "metadata": {
-            "family": "gpt-5",
-            "release_stage": "stable",
-            "context_window_tokens": 272000,
-            "supports_tool_calls": true,
-            "supports_reasoning_summaries": true
-          },
-          "max_input_tokens": 272000,
-          "max_output_tokens": 128000,
-          "variants": {
-            "low": { "name": "Low", "metadata": { "reasoning_effort": "low", "text_verbosity": "low", "recommended_for": "quick implementation" } },
-            "medium": { "name": "Medium", "metadata": { "reasoning_effort": "medium", "text_verbosity": "medium", "recommended_for": "balanced implementation" } },
-            "high": { "name": "High", "metadata": { "reasoning_effort": "high", "text_verbosity": "medium", "recommended_for": "default build" } },
-            "xhigh": { "name": "XHigh", "metadata": { "reasoning_effort": "xhigh", "text_verbosity": "medium", "recommended_for": "hard reasoning" } }
-          }
-        },
-        "gpt-5.4": {
-          "name": "GPT 5.4 (272k)",
-          "metadata": {
-            "family": "gpt-5",
-            "release_stage": "stable",
-            "context_window_tokens": 272000,
-            "supports_tool_calls": true,
-            "supports_reasoning_summaries": true
-          },
-          "max_input_tokens": 272000,
-          "max_output_tokens": 128000,
-          "variants": {
-            "low": { "name": "Low", "metadata": { "reasoning_effort": "low", "text_verbosity": "low", "recommended_for": "routine coding" } },
-            "medium": { "name": "Medium", "metadata": { "reasoning_effort": "medium", "text_verbosity": "medium", "recommended_for": "balanced coding" } },
-            "high": { "name": "High", "metadata": { "reasoning_effort": "high", "text_verbosity": "medium", "recommended_for": "deep coding" } },
-            "xhigh": { "name": "XHigh", "metadata": { "reasoning_effort": "xhigh", "text_verbosity": "medium", "recommended_for": "hard reasoning" } },
-            "1m-low": { "name": "1M Low", "context_window_tokens": 922000, "max_input_tokens": 922000, "metadata": { "description": "GPT 5.4 with the extended CLIProxy context window.", "reasoning_effort": "low", "text_verbosity": "low", "recommended_for": "large-context scans" } },
-            "1m-medium": { "name": "1M Medium", "context_window_tokens": 922000, "max_input_tokens": 922000, "metadata": { "description": "GPT 5.4 with the extended CLIProxy context window.", "reasoning_effort": "medium", "text_verbosity": "medium", "recommended_for": "large-context implementation" } },
-            "1m-high": { "name": "1M High", "context_window_tokens": 922000, "max_input_tokens": 922000, "metadata": { "description": "GPT 5.4 with the extended CLIProxy context window.", "reasoning_effort": "high", "text_verbosity": "medium", "recommended_for": "large-context deep work" } },
-            "1m-xhigh": { "name": "1M XHigh", "context_window_tokens": 922000, "max_input_tokens": 922000, "metadata": { "description": "GPT 5.4 with the extended CLIProxy context window.", "reasoning_effort": "xhigh", "text_verbosity": "medium", "recommended_for": "large-context hard reasoning" } }
-          }
-        },
         "gpt-5.4-mini": {
           "name": "GPT 5.4 Mini",
           "metadata": {
@@ -85,89 +22,20 @@
           "max_input_tokens": 272000,
           "max_output_tokens": 128000,
           "variants": {
-            "low": {
-              "name": "Low",
-              "metadata": {
-                "description": "Low-reasoning lightweight profile.",
-                "reasoning_effort": "low",
-                "text_verbosity": "low",
-                "recommended_for": "lightweight runs"
-              }
-            },
             "high": {
               "name": "High",
               "metadata": {
-                "description": "High-reasoning interactive profile.",
                 "reasoning_effort": "high",
                 "text_verbosity": "low",
                 "recommended_for": "build"
               }
             }
           }
-        },
-        "gpt-5.2": {
-          "name": "GPT 5.2",
-          "metadata": { "family": "gpt-5", "release_stage": "stable", "context_window_tokens": 272000, "supports_tool_calls": true, "supports_reasoning_summaries": true },
-          "max_input_tokens": 272000,
-          "max_output_tokens": 128000,
-          "variants": {
-            "low": { "name": "Low", "metadata": { "reasoning_effort": "low", "text_verbosity": "low", "recommended_for": "routine coding" } },
-            "medium": { "name": "Medium", "metadata": { "reasoning_effort": "medium", "text_verbosity": "medium", "recommended_for": "balanced coding" } },
-            "high": { "name": "High", "metadata": { "reasoning_effort": "high", "text_verbosity": "medium", "recommended_for": "deep coding" } },
-            "xhigh": { "name": "XHigh", "metadata": { "reasoning_effort": "xhigh", "text_verbosity": "medium", "recommended_for": "hard reasoning" } },
-            "max": { "name": "Max", "metadata": { "reasoning_effort": "xhigh", "text_verbosity": "high", "recommended_for": "maximum reasoning" } }
-          }
-        },
-        "gpt-5.1-codex-max": {
-          "name": "GPT 5.1 Codex Max",
-          "metadata": { "family": "gpt-5", "release_stage": "stable", "context_window_tokens": 272000, "supports_tool_calls": true, "supports_reasoning_summaries": true },
-          "max_input_tokens": 272000,
-          "max_output_tokens": 128000,
-          "variants": {
-            "low": { "name": "Low", "metadata": { "reasoning_effort": "low", "text_verbosity": "low", "recommended_for": "routine codex work" } },
-            "medium": { "name": "Medium", "metadata": { "reasoning_effort": "medium", "text_verbosity": "medium", "recommended_for": "balanced codex work" } },
-            "high": { "name": "High", "metadata": { "reasoning_effort": "high", "text_verbosity": "medium", "recommended_for": "deep codex work" } },
-            "xhigh": { "name": "XHigh", "metadata": { "reasoning_effort": "xhigh", "text_verbosity": "medium", "recommended_for": "hard codex work" } }
-          }
-        },
-        "gpt-5.1-codex": {
-          "name": "GPT 5.1 Codex",
-          "metadata": { "family": "gpt-5", "release_stage": "stable", "context_window_tokens": 272000, "supports_tool_calls": true, "supports_reasoning_summaries": true },
-          "max_input_tokens": 272000,
-          "max_output_tokens": 128000,
-          "variants": {
-            "low": { "name": "Low", "metadata": { "reasoning_effort": "low", "text_verbosity": "low", "recommended_for": "routine codex work" } },
-            "medium": { "name": "Medium", "metadata": { "reasoning_effort": "medium", "text_verbosity": "medium", "recommended_for": "balanced codex work" } },
-            "high": { "name": "High", "metadata": { "reasoning_effort": "high", "text_verbosity": "medium", "recommended_for": "deep codex work" } }
-          }
-        },
-        "gpt-5.1-codex-mini": {
-          "name": "GPT 5.1 Codex Mini",
-          "metadata": { "family": "gpt-5", "release_stage": "stable", "context_window_tokens": 272000, "supports_tool_calls": true, "supports_reasoning_summaries": true },
-          "max_input_tokens": 272000,
-          "max_output_tokens": 128000,
-          "variants": {
-            "medium": { "name": "Medium", "metadata": { "reasoning_effort": "medium", "text_verbosity": "medium", "recommended_for": "balanced lightweight codex work" } },
-            "high": { "name": "High", "metadata": { "reasoning_effort": "high", "text_verbosity": "medium", "recommended_for": "deep lightweight codex work" } }
-          }
-        },
-        "gpt-5.1": {
-          "name": "GPT 5.1",
-          "metadata": { "family": "gpt-5", "release_stage": "stable", "context_window_tokens": 272000, "supports_tool_calls": true, "supports_reasoning_summaries": true },
-          "max_input_tokens": 272000,
-          "max_output_tokens": 128000,
-          "variants": {
-            "none": { "name": "None", "metadata": { "reasoning_effort": "none", "text_verbosity": "low", "recommended_for": "fast edits" } },
-            "low": { "name": "Low", "metadata": { "reasoning_effort": "low", "text_verbosity": "low", "recommended_for": "routine work" } },
-            "medium": { "name": "Medium", "metadata": { "reasoning_effort": "medium", "text_verbosity": "medium", "recommended_for": "balanced work" } },
-            "high": { "name": "High", "metadata": { "reasoning_effort": "high", "text_verbosity": "medium", "recommended_for": "deep work" } }
-          }
         }
       }
     }
   },
-  "model": "default/gpt-5.4",
-  "small_model": "default/gpt-5.4-mini",
+  "model": "default/gpt-5.4-mini",
   "agent": {
     "build": {
       "model": "default/gpt-5.4-mini",
@@ -175,71 +43,22 @@
     }
   },
   "default_agent": "build",
-  "permission": {
-    "edit": "ask",
-    "bash": "ask",
-    "question": "ask",
-    "task": "ask",
-    "webfetch": "ask",
-    "websearch": "ask",
-    "codesearch": "ask",
-    "lsp": "ask",
-    "shell_allowlist": {
-      "executables": ["bash", "git", "cargo", "ls", "rg"],
-      "cwd_roots": ["."]
-    }
-  },
+  "permission": "ask",
   "runtime": {
     "compaction": {
-      // Optional model-backed checkpoint summaries are disabled by default.
-      // Set model_backed true to ask a configured model for structured summaries;
-      // Harness falls back to deterministic summaries when validation fails.
       "model_backed": false,
       "model": "default/gpt-5.4-mini",
       "split_oversized_turns": false,
       "auto_retry_overflow": true,
-      // Structured Pi-style checkpoint summaries are on by default.
       "structured_summary_contract": true,
-      // Estimated triggers let Harness compact before prompts when usage or model metadata is missing.
       "estimated_token_triggers": true,
-      // Fallback input budget used only for estimated compaction trigger decisions.
       "fallback_input_tokens": 32768
     }
   },
   "mcp": {
-    "gh_grep": {
-      "transport": "http",
-      "endpoint": "https://mcp.grep.app",
-      "enabled": true
-    },
-    "docs-rs": {
-      "transport": "stdio",
-      "command": ["bunx", "-y", "@nuskey8/docs-rs-mcp@latest"],
-      "enabled": true
-    },
     "cargo-mcp": {
       "transport": "stdio",
-      "command": ["/home/ubere/.cargo/bin/cargo-mcp", "serve"],
-      "enabled": false
-    },
-    "pty-mcp": {
-      "transport": "stdio",
-      "command": ["bunx", "-y", "pty-mcp"],
-      "enabled": true
-    },
-    "playwright": {
-      "transport": "stdio",
-      "command": ["bunx", "-y", "@playwright/mcp@latest"],
-      "enabled": false
-    },
-    "svelte": {
-      "transport": "stdio",
-      "command": ["bunx", "-y", "@sveltejs/mcp"],
-      "enabled": false
-    },
-    "tauri": {
-      "transport": "stdio",
-      "command": ["bunx", "-y", "@hypothesi/tauri-mcp-server"],
+      "command": ["cargo-mcp", "serve"],
       "enabled": false
     }
   }

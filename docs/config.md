@@ -9,6 +9,48 @@ The generated JSON schemas are the source of truth:
 - runtime: `configs/config.json`
 - tui: `configs/tui.json`
 
+## Minimal starter
+
+Start with `configs/harness.example.jsonc`. It keeps the happy path small: one
+OpenAI-compatible provider, one default model, one `build` agent, scalar
+permission mode, optional MCP, and provider-context compaction settings.
+
+```jsonc
+{
+  "$schema": "./config.json",
+  "provider": {
+    "default": {
+      "type": "openai_compatible",
+      "name": "Local OpenAI-Compatible Provider",
+      "options": {
+        "baseURL": "http://127.0.0.1:8317/v1",
+        "apiKey": "placeholder-api-key"
+      },
+      "models": {
+        "gpt-5.4-mini": {
+          "name": "GPT 5.4 Mini",
+          "limit": { "context": 272000, "input": 272000, "output": 128000 },
+          "modalities": { "input": ["text"], "output": ["text"] }
+        }
+      }
+    }
+  },
+  "model": "default/gpt-5.4-mini",
+  "agent": { "build": { "model": "default/gpt-5.4-mini" } },
+  "default_agent": "build",
+  "permission": "ask"
+}
+```
+
+The larger provider catalog lives in `configs/provider-catalog.reference.jsonc`.
+That file is a reference and validation fixture for provider and model metadata,
+including variants and larger model lists. It is not auto-loaded by config
+discovery. Validate it explicitly when you want to check the catalog:
+
+```bash
+cargo run -p harness -- --config configs/provider-catalog.reference.jsonc config validate
+```
+
 ## Public contract summary
 
 | Area | Canonical shape | Notes |
@@ -19,6 +61,11 @@ The generated JSON schemas are the source of truth:
 | TUI surface | `keybinds` | Unsupported TUI-only fields fail validation. |
 | Permission naming | `bash`, `edit`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, `lsp` | Legacy `shell` / `network` remain compatibility-only. |
 | Prompt asset discovery | `.agent-harness/agents/*.md` | `AGENTS.md` is still auto-discovered separately. |
+
+Runtime and TUI config stay separate. Runtime config controls providers,
+models, agents, permissions, MCP, skills, instructions, and compaction. TUI
+config stays limited to `$schema` plus `keybinds`; use `tui.json` or `tui.jsonc`
+for those settings instead of mixing them into runtime config.
 
 ## Runtime top-level keys
 
@@ -68,6 +115,9 @@ TUI config discovery is separate and layered the same way:
 When multiple layers exist, the harness merges them instead of replacing the
 earlier config wholesale.
 
+Discovery never auto-loads `configs/provider-catalog.reference.jsonc`. That
+catalog reference must be passed with `--config` or read as documentation.
+
 ## Prompt and instruction discovery
 
 The runtime config stays focused on provider/model/agent selection. Prompt prose
@@ -81,7 +131,60 @@ Project instructions are still auto-discovered from `AGENTS.md`. If
 `instructions` is set in the runtime config, those entries are prepended ahead
 of the discovered `AGENTS.md` content.
 
-## Compatibility behavior
+## Permission policy
+
+The canonical scalar form is:
+
+```jsonc
+{ "permission": "ask" }
+```
+
+`permission` accepts exactly `"ask"`, `"allow"`, or `"deny"`. A scalar applies to
+all canonical public permission kinds: `bash`, `edit`, `question`, `task`,
+`webfetch`, `websearch`, `codesearch`, and `lsp`.
+
+Per-tool scalar modes use the same values:
+
+```jsonc
+{
+  "permission": {
+    "bash": "ask",
+    "edit": "deny",
+    "webfetch": "allow"
+  }
+}
+```
+
+`bash` and `edit` also support bounded selector maps. They are not a general
+policy language:
+
+```jsonc
+{
+  "permission": {
+    "bash": {
+      "git status": "allow",
+      "cargo test*": "ask",
+      "*": "deny"
+    },
+    "edit": {
+      "docs/**": "allow",
+      "crates/harness-core/src/config.rs": "ask",
+      "*": "deny"
+    }
+  }
+}
+```
+
+Bash selectors are either an exact command string, a trailing `*` prefix such as
+`cargo test*`, or the `*` catch-all. Edit selectors are either an exact
+workspace-relative path, a trailing `/**` path prefix such as `docs/**`, or the
+`*` catch-all. Regex and general glob syntax are not supported.
+
+`shell_allowlist` remains supported inside `permission` for the existing shell
+allowlist checks. Permission decisions improve operator UX by deciding whether a
+tool call runs, asks, or is denied. They are not a sandbox or security boundary.
+
+## Deprecated compatibility behavior
 
 The loader still accepts the previous broad harness-native shape for migration:
 
@@ -92,13 +195,15 @@ The loader still accepts the previous broad harness-native shape for migration:
 - compatibility permission names such as `shell` and `network`
 - compatibility config path `$XDG_CONFIG_HOME/harness/config.jsonc`
 
-Those keys and paths are compatibility inputs, not the canonical public contract.
-New configs, examples, docs, and schema-driven validation should use the
-harness-centered runtime/TUI split shown above.
+Those deprecated compatibility aliases, keys, and paths are compatibility inputs,
+not the canonical public contract. New configs, examples, docs, and
+schema-driven validation should use the harness-centered runtime/TUI split shown
+above. If a canonical key and compatibility alias both appear with conflicting
+values, config loading rejects the file instead of silently choosing one.
 
 ## Validation behavior
 
-- Unsupported top-level areas such as `server`, `command`, `plugin`, `share`, and `autoupdate` are rejected explicitly.
+- Unsupported top-level areas such as `server`, `command`, `plugin`, `share`, `autoupdate`, `enterprise`, `experimental`, and top-level `tools` are rejected explicitly.
 - Unsupported TUI fields are rejected explicitly.
 - `{env:VAR}` resolves to an empty string when `VAR` is unset.
 - `{file:path}` is supported for string references and resolves relative to the config file when the config comes from disk.
@@ -128,13 +233,13 @@ Public compaction knobs live under `runtime.compaction`:
 | `model` / `modelRef` / `model_ref` | unset | Optional model reference for summary calls. When unset, the active turn model is used. |
 | `splitOversizedTurns` / `split_oversized_turns` | `false` | Allows overflow compaction to split an oversized latest turn inside the checkpoint artifact, compacting the earlier portion while preserving a suffix as recent provider context. |
 | `autoRetryOverflow` / `auto_retry_overflow` | `true` | Keeps the existing one-shot overflow compaction retry enabled. Set `false` to fail immediately on provider context-window errors. |
-| `structuredSummaryContract` / `structured_summary_contract` | `true` | Requires default-on checkpoint summaries to carry the Pi sections `Goal`, `Constraints`, `Progress`, `Key Decisions`, `Next Steps`, and `Critical Context`. Set `false` only for legacy heading compatibility. |
+| `structuredSummaryContract` / `structured_summary_contract` | `true` | Requires default-on checkpoint summaries to carry the Harness sections `Goal`, `Constraints`, `Progress`, `Key Decisions`, `Next Steps`, and `Critical Context`. Set `false` only for legacy heading compatibility. |
 | `estimatedTokenTriggers` / `estimated_token_triggers` | `true` | Allows proactive and pre-prompt compaction to use deterministic context estimates when provider usage or model metadata is absent. |
 | `fallbackInputTokens` / `fallback_input_tokens` | `32768` | Input budget used for estimated trigger checks when the active model does not publish a context window or max input token limit. |
 
 On successful compaction, checkpoints are written under `artifacts/compactions/<agent_id>/` and recorded in the session event log. Checkpoints and compaction events include additive before/after active-context estimates (`tokens_before_estimate`, `tokens_after_estimate`, summary-token estimate, compacted/preserved turn counts, and estimated reduction) so UIs can report whether compaction helped without treating historical provider spend as active context. Checkpoints also include structured source facts, tail-boundary metadata, summary-source metadata, the summary contract version, replay-derived read/modified file counts, and a timeline entry for replay/UIs. Resume reconstructs provider context from the latest applied checkpoint plus post-checkpoint deltas in `events.jsonl`; the event log itself stays append-only.
 
-Manual `/compact` is a checkpoint command, not a guaranteed immediate token-shrink command: it writes a checkpoint now, summarizes older completed turns, preserves the latest completed turn verbatim, and uses the normal compaction artifact/event format. The success notice reports the active-context estimate delta when available, or says the estimate was unchanged. The default summary contract uses the Pi sections for goal, constraints, progress, key decisions, next steps, and critical context, with operational memory and source facts added as replay-derived context; it is still lossy. Sessions with only one completed turn no-op because there is no older turn to summarize.
+Manual `/compact` is a checkpoint command, not a guaranteed immediate token-shrink command: it writes a checkpoint now, summarizes older completed turns, preserves the latest completed turn verbatim, and uses the normal compaction artifact/event format. The success notice reports the active-context estimate delta when available, or says the estimate was unchanged. The default summary contract uses the Harness sections for goal, constraints, progress, key decisions, next steps, and critical context, with operational memory and source facts added as replay-derived context; it is still lossy. Sessions with only one completed turn no-op because there is no older turn to summarize.
 
 Lifecycle hooks may use `event = "compaction_requested"` to observe or cancel compaction. A critical hook failure cancels compaction and records `CompactionFailed`. A successful hook can replace the summary by emitting output prefixed with `compaction_summary:`; hook overrides take precedence over model-backed summaries. Otherwise, model-backed summaries are used only when explicitly enabled, and invalid/empty/failing model output falls back to the deterministic structured summary with `summary_source.deterministic_fallback=true`.
 
