@@ -58,6 +58,7 @@
     },
     "permission": {
       "default": {
+        "*": null,
         "bash": null,
         "codesearch": null,
         "edit": null,
@@ -70,7 +71,7 @@
       },
       "allOf": [
         {
-          "$ref": "#/definitions/PublicPermissionConfig"
+          "$ref": "#/definitions/PublicPermissionValue"
         }
       ]
     },
@@ -275,6 +276,18 @@
         "name"
       ],
       "properties": {
+        "limit": {
+          "default": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/ModelLimitConfig"
+            }
+          ]
+        },
         "max_input_tokens": {
           "default": null,
           "type": [
@@ -307,8 +320,24 @@
             }
           ]
         },
+        "modalities": {
+          "default": {
+            "input": [],
+            "output": []
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/ModelModalitiesConfig"
+            }
+          ]
+        },
         "name": {
           "type": "string"
+        },
+        "options": {
+          "default": {},
+          "type": "object",
+          "additionalProperties": true
         },
         "variants": {
           "default": {},
@@ -316,6 +345,39 @@
           "additionalProperties": {
             "$ref": "#/definitions/ModelVariantConfig"
           }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ModelLimitConfig": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "input": {
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "output": {
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
         }
       },
       "additionalProperties": false
@@ -363,6 +425,26 @@
             "boolean",
             "null"
           ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ModelModalitiesConfig": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "output": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "additionalProperties": false
@@ -436,6 +518,18 @@
           "default": false,
           "type": "boolean"
         },
+        "limit": {
+          "default": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/ModelLimitConfig"
+            }
+          ]
+        },
         "max_input_tokens": {
           "default": null,
           "type": [
@@ -467,12 +561,28 @@
             }
           ]
         },
+        "modalities": {
+          "default": {
+            "input": [],
+            "output": []
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/ModelModalitiesConfig"
+            }
+          ]
+        },
         "name": {
           "default": null,
           "type": [
             "string",
             "null"
           ]
+        },
+        "options": {
+          "default": {},
+          "type": "object",
+          "additionalProperties": true
         }
       },
       "additionalProperties": false
@@ -780,11 +890,22 @@
     "PublicPermissionConfig": {
       "type": "object",
       "properties": {
-        "bash": {
+        "*": {
           "default": null,
           "anyOf": [
             {
               "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bash": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicRulePermissionValue"
             },
             {
               "type": "null"
@@ -806,7 +927,7 @@
           "default": null,
           "anyOf": [
             {
-              "$ref": "#/definitions/PermissionMode"
+              "$ref": "#/definitions/PublicRulePermissionValue"
             },
             {
               "type": "null"
@@ -882,14 +1003,35 @@
       },
       "additionalProperties": false
     },
+    "PublicPermissionValue": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/PermissionMode"
+        },
+        {
+          "$ref": "#/definitions/PublicPermissionConfig"
+        }
+      ]
+    },
     "PublicProfilePermissions": {
       "type": "object",
       "properties": {
-        "bash": {
+        "*": {
           "default": null,
           "anyOf": [
             {
               "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bash": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicRulePermissionValue"
             },
             {
               "type": "null"
@@ -911,7 +1053,7 @@
           "default": null,
           "anyOf": [
             {
-              "$ref": "#/definitions/PermissionMode"
+              "$ref": "#/definitions/PublicRulePermissionValue"
             },
             {
               "type": "null"
@@ -975,6 +1117,19 @@
         }
       },
       "additionalProperties": false
+    },
+    "PublicRulePermissionValue": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/PermissionMode"
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/PermissionMode"
+          }
+        }
+      ]
     },
     "PublicRuntimeSettingsConfig": {
       "type": "object",
