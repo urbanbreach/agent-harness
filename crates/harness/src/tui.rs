@@ -130,7 +130,7 @@ struct LiveSettings {
     seed: u64,
     config_digest: String,
     launch_metadata: LaunchMetadata,
-    launch_mode_label: String,
+    launch_mode_label: Option<String>,
 }
 
 struct LiveBootstrap {
@@ -439,11 +439,10 @@ fn resolve_live_settings(
         || matches!(std::env::var("HARNESS_DETERMINISTIC").as_deref(), Ok("1"));
     let default_profile = cmd.profile.clone().unwrap_or(config_default_profile);
     let launch_mode_label = if live_config.is_some() {
-        "Live"
+        None
     } else {
-        "Demo"
-    }
-    .to_string();
+        Some("Demo".to_string())
+    };
     let launch_metadata =
         interactive_launch_metadata(live_config.as_ref(), &agent_profiles, &default_profile)?;
 
@@ -484,7 +483,7 @@ fn interactive_launch_metadata(
         ));
     };
 
-    let available_models = model_options_for_profiles(config, agent_profiles);
+    let available_models = model_options_for_profiles(config, agent_profiles, profile);
     let launch_metadata = config
         .and_then(|config| resolve_profile_model_metadata(config, profile).ok())
         .map(|metadata| {
@@ -522,18 +521,52 @@ fn interactive_launch_metadata(
 fn model_options_for_profiles(
     config: Option<&HarnessConfig>,
     agent_profiles: &BTreeMap<String, AgentProfile>,
+    selected_profile: &str,
 ) -> Vec<ModelOption> {
     config
-        .map(|config| configured_profile_model_options(config, agent_profiles))
+        .map(|config| configured_profile_model_options(config, agent_profiles, selected_profile))
         .unwrap_or_else(|| model_options_from_profiles(agent_profiles))
 }
 
 fn configured_profile_model_options(
     config: &HarnessConfig,
     agent_profiles: &BTreeMap<String, AgentProfile>,
+    selected_profile: &str,
 ) -> Vec<ModelOption> {
     let catalog_entries = configured_model_catalog(config);
     let mut options = Vec::new();
+
+    if agent_profiles.contains_key(selected_profile) {
+        let profile_description = resolve_profile_model_metadata(config, selected_profile)
+            .ok()
+            .and_then(|metadata| metadata.profile_description);
+        for entry in &catalog_entries {
+            let option = ModelOption {
+                profile: selected_profile.to_string(),
+                provider: entry.provider.clone(),
+                provider_display_label: Some(entry.provider_display_label.clone()),
+                provider_backend_label: entry.provider_backend_label.clone(),
+                model: entry.model.clone(),
+                model_display_label: Some(entry.model_display_label.clone()),
+                variant: entry.variant.clone(),
+                variant_display_label: entry.variant_display_label.clone(),
+                display_label: Some(entry.display_label.clone()),
+                token_window_label: entry.token_window_label.clone(),
+                context_window_tokens: entry.context_window_tokens,
+                max_input_tokens: entry.max_input_tokens,
+                max_output_tokens: entry.max_output_tokens,
+                description: entry.description.clone(),
+                profile_description: profile_description.clone(),
+                reasoning_effort: entry.reasoning_effort.clone(),
+                text_verbosity: entry.text_verbosity.clone(),
+                recommended_for: entry.recommended_for.clone(),
+            };
+
+            if !options.iter().any(|existing| existing == &option) {
+                options.push(option);
+            }
+        }
+    }
 
     for profile in agent_profiles.keys() {
         if let Ok(metadata) = resolve_profile_model_metadata(config, profile) {
@@ -632,9 +665,12 @@ fn launch_metadata_for_mode(
     settings: &LiveSettings,
     selection: &LaunchSelection,
 ) -> LaunchMetadata {
-    recover_mutex_lock(selection)
-        .clone()
-        .with_mode_label(settings.launch_mode_label.clone())
+    let launch_metadata = recover_mutex_lock(selection).clone();
+    if let Some(mode_label) = settings.launch_mode_label.as_deref() {
+        launch_metadata.with_mode_label(mode_label)
+    } else {
+        launch_metadata
+    }
 }
 
 fn demo_coordinator_config(settings: &LiveSettings) -> CoordinatorConfig {
@@ -2220,7 +2256,7 @@ pub(crate) fn assert_startup_command_workflow_maps_model_and_session_intents_cor
                 .available_models()
                 .to_vec(),
         )
-        .with_mode_label("Live");
+        .with_mode_label("Continued");
 
     record_launch_selection(&launch_selection, &switched_metadata);
 
@@ -2564,7 +2600,7 @@ mod tests {
 
         let settings = result.expect("mock mode settings should resolve");
         assert!(settings.config.is_none());
-        assert_eq!(settings.launch_mode_label, "Demo");
+        assert_eq!(settings.launch_mode_label.as_deref(), Some("Demo"));
         assert_eq!(settings.launch_metadata.profile(), "worker");
         assert_eq!(settings.launch_metadata.provider(), "mock");
         assert_eq!(settings.launch_metadata.model(), Some("model-1"));
@@ -2653,7 +2689,7 @@ mod tests {
         let workspace = prepare_new_live_workspace(&settings, false, "run_test")
             .expect("live workspace should resolve");
 
-        assert_eq!(settings.launch_mode_label, "Live");
+        assert_eq!(settings.launch_mode_label, None);
         assert_eq!(workspace, temp.path());
         assert!(!workspace.join("demo.txt").exists());
         assert!(!settings
@@ -2844,7 +2880,7 @@ mod tests {
     }
 
     #[test]
-    fn interactive_launch_metadata_exposes_cross_profile_switch_options() {
+    fn interactive_launch_metadata_exposes_catalog_and_cross_profile_switch_options() {
         let config = load_config_from_str(
             r#"
             {
@@ -2861,6 +2897,15 @@ mod tests {
                       variants: {
                         low: {
                           display_name: "Low"
+                        },
+                        medium: {
+                          display_name: "Medium"
+                        },
+                        high: {
+                          display_name: "High"
+                        },
+                        xhigh: {
+                          display_name: "XHigh"
                         }
                       }
                     },
@@ -2932,14 +2977,22 @@ mod tests {
             .available_models()
             .iter()
             .any(|option| option.profile == "ops" && option.model == "gpt-5.4"));
-        assert!(!metadata
+        assert!(metadata
             .available_models()
             .iter()
             .any(|option| option.profile == "build" && option.model == "gpt-5.4"));
+        let mut mini_variants = metadata
+            .available_models()
+            .iter()
+            .filter(|option| option.profile == "build" && option.model == "gpt-5.4-mini")
+            .filter_map(|option| option.variant.as_deref())
+            .collect::<Vec<_>>();
+        mini_variants.sort_unstable();
+        assert_eq!(mini_variants, vec!["high", "low", "medium", "xhigh"]);
     }
 
     #[test]
-    fn shipped_example_config_defaults_interactive_build_to_high_variant() {
+    fn shipped_example_config_does_not_synthesize_unconfigured_model_variant() {
         let config_path =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs/harness.example.jsonc");
         let config = harness_core::config::load_config_from_file(&config_path)
@@ -2951,7 +3004,7 @@ mod tests {
             .expect("launch metadata should build");
 
         assert_eq!(metadata.profile(), "build");
-        assert_eq!(metadata.variant(), Some("high"));
+        assert_eq!(metadata.variant(), None);
     }
 
     #[test]
@@ -3025,7 +3078,7 @@ mod tests {
             config_digest: "digest".to_string(),
             launch_metadata: interactive_launch_metadata(None, &agent_profiles, "build")
                 .expect("launch metadata should build"),
-            launch_mode_label: "Live".to_string(),
+            launch_mode_label: None,
         };
 
         let runtime = tokio::runtime::Builder::new_current_thread()
