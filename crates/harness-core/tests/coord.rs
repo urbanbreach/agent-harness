@@ -6863,6 +6863,288 @@ async fn overflow_retry_split_oversized_latest_turn_preserves_suffix_context() {
 }
 
 #[tokio::test]
+async fn model_backed_overflow_split_uses_model_prefix_summary() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let oversized_answer = format!(
+        "MODEL_PREFIX_ANCHOR {} MODEL_SUFFIX_ANCHOR",
+        "M".repeat(12_000)
+    );
+    let model_prefix_summary = "## Original Request\nSummarize the latest oversized model-backed turn.\n\n## Early Progress\n- MODEL_PREFIX_SUMMARY captured early progress from the prefix.\n\n## Context for Suffix\n- Continue from the retained suffix using MODEL_PREFIX_SUMMARY.";
+    let model_checkpoint_summary = structured_split_model_summary(
+        "model split goal",
+        "continue after split",
+        model_prefix_summary,
+    );
+    let provider = SequentialScriptedProvider::new(vec![
+        provider_text_events("first compacted answer"),
+        provider_text_events(&oversized_answer),
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::Error {
+                message: "prompt token count of 128713 exceeds the limit of 128000".to_string(),
+            },
+        ],
+        provider_text_events(model_prefix_summary),
+        provider_text_events(&model_checkpoint_summary),
+        provider_text_events("recovered answer"),
+    ]);
+    let coordinator = test_agent_coordinator_with_provider_and_compaction(
+        temp_dir.path(),
+        Arc::new(provider.clone()),
+        1,
+        CompactionRuntimeConfig {
+            model_backed: true,
+            model_ref: Some("mock:model-1".to_string()),
+            split_oversized_turns: true,
+            ..CompactionRuntimeConfig::default()
+        },
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_model_backed_overflow_split_prefix",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
+        .await
+        .expect("first turn");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "second question")
+        .await
+        .expect("second turn");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "third question")
+        .await
+        .expect("third turn triggers overflow retry");
+    tokio::time::sleep(Duration::from_millis(180)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let requests = provider.requests();
+    assert_eq!(
+        requests.len(),
+        6,
+        "two turns, failed turn, prefix summary, checkpoint summary, retry"
+    );
+    let prefix_request = &requests[3];
+    assert!(prefix_request
+        .messages
+        .iter()
+        .any(|message| message.content.contains("This is the PREFIX of a turn")));
+    assert!(prefix_request
+        .messages
+        .iter()
+        .any(|message| message.content.contains("MODEL_PREFIX_ANCHOR")));
+    assert!(requests[4]
+        .messages
+        .iter()
+        .any(|message| message.content.contains("MODEL_PREFIX_SUMMARY")));
+
+    let events = load_events(&run.events_path);
+    let checkpoint = overflow_checkpoint(&run, &events);
+    let tail_boundary = checkpoint.tail_boundary.as_ref().expect("tail boundary");
+    assert_eq!(tail_boundary.mode, "split_oversized_turn_tail");
+    assert!(tail_boundary
+        .split_prefix_summary
+        .as_deref()
+        .is_some_and(|summary| summary.contains("MODEL_PREFIX_SUMMARY")));
+    assert!(tail_boundary
+        .note
+        .as_deref()
+        .is_some_and(|note| note.contains("Split prefix summary source: model_backed.")));
+    assert!(checkpoint.summary.contains("MODEL_PREFIX_SUMMARY"));
+    let source = checkpoint.summary_source.expect("summary source metadata");
+    assert_eq!(source.strategy, "model_backed_summary");
+    assert!(source.model_backed);
+    assert!(!source.deterministic_fallback);
+}
+
+#[tokio::test]
+async fn model_backed_overflow_split_summary_without_prefix_content_falls_back() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let oversized_answer = format!(
+        "MISSING_PREFIX_CONTENT_ANCHOR {} MISSING_SUFFIX_ANCHOR",
+        "P".repeat(12_000)
+    );
+    let model_prefix_summary = "## Original Request\nSummarize the latest oversized turn.\n\n## Early Progress\n- MISSING_MODEL_PREFIX_SUMMARY captured early work.\n\n## Context for Suffix\n- Continue with MISSING_MODEL_PREFIX_SUMMARY.";
+    let invalid_checkpoint_summary = structured_split_model_summary(
+        "invalid split goal",
+        "continue after invalid split",
+        "label present but actual prefix content omitted",
+    );
+    let provider = SequentialScriptedProvider::new(vec![
+        provider_text_events("first compacted answer"),
+        provider_text_events(&oversized_answer),
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::Error {
+                message: "prompt token count of 128713 exceeds the limit of 128000".to_string(),
+            },
+        ],
+        provider_text_events(model_prefix_summary),
+        provider_text_events(&invalid_checkpoint_summary),
+        provider_text_events("recovered answer"),
+    ]);
+    let coordinator = test_agent_coordinator_with_provider_and_compaction(
+        temp_dir.path(),
+        Arc::new(provider.clone()),
+        1,
+        CompactionRuntimeConfig {
+            model_backed: true,
+            model_ref: Some("mock:model-1".to_string()),
+            split_oversized_turns: true,
+            ..CompactionRuntimeConfig::default()
+        },
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_model_backed_overflow_split_missing_prefix_content",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
+        .await
+        .expect("first turn");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "second question")
+        .await
+        .expect("second turn");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "third question")
+        .await
+        .expect("third turn triggers overflow retry");
+    tokio::time::sleep(Duration::from_millis(180)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    assert_eq!(
+        provider.requests().len(),
+        6,
+        "invalid checkpoint summary still allows deterministic compaction and retry"
+    );
+    let events = load_events(&run.events_path);
+    let checkpoint = overflow_checkpoint(&run, &events);
+    let source = checkpoint.summary_source.expect("summary source metadata");
+    assert_eq!(source.strategy, "model_backed_deterministic_fallback");
+    assert!(source.model_backed);
+    assert!(source.deterministic_fallback);
+    assert!(checkpoint.summary.contains("MISSING_PREFIX_CONTENT_ANCHOR"));
+    assert!(!checkpoint
+        .summary
+        .contains("label present but actual prefix content omitted"));
+    assert!(checkpoint
+        .tail_boundary
+        .as_ref()
+        .and_then(|boundary| boundary.split_prefix_summary.as_deref())
+        .is_some_and(|summary| summary.contains("MISSING_PREFIX_CONTENT_ANCHOR")));
+}
+
+#[tokio::test]
+async fn model_backed_overflow_split_empty_prefix_summary_falls_back_deterministically() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let oversized_answer = format!(
+        "FALLBACK_PREFIX_ANCHOR {} FALLBACK_SUFFIX_ANCHOR",
+        "N".repeat(12_000)
+    );
+    let deterministic_prefix_excerpt = test_compaction_excerpt(&oversized_answer);
+    let model_checkpoint_summary = structured_split_model_summary(
+        "fallback split goal",
+        "continue after fallback split",
+        &deterministic_prefix_excerpt,
+    );
+    let provider = SequentialScriptedProvider::new(vec![
+        provider_text_events("first compacted answer"),
+        provider_text_events(&oversized_answer),
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::Error {
+                message: "prompt token count of 128713 exceeds the limit of 128000".to_string(),
+            },
+        ],
+        provider_text_events(""),
+        provider_text_events(&model_checkpoint_summary),
+        provider_text_events("recovered answer"),
+    ]);
+    let coordinator = test_agent_coordinator_with_provider_and_compaction(
+        temp_dir.path(),
+        Arc::new(provider.clone()),
+        1,
+        CompactionRuntimeConfig {
+            model_backed: true,
+            model_ref: Some("mock:model-1".to_string()),
+            split_oversized_turns: true,
+            ..CompactionRuntimeConfig::default()
+        },
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_model_backed_overflow_split_prefix_fallback",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
+        .await
+        .expect("first turn");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "second question")
+        .await
+        .expect("second turn");
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "third question")
+        .await
+        .expect("third turn triggers overflow retry");
+    tokio::time::sleep(Duration::from_millis(180)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    assert_eq!(
+        provider.requests().len(),
+        6,
+        "empty prefix output still falls through to checkpoint summary and retry"
+    );
+    let events = load_events(&run.events_path);
+    let checkpoint = overflow_checkpoint(&run, &events);
+    let tail_boundary = checkpoint.tail_boundary.as_ref().expect("tail boundary");
+    assert_eq!(tail_boundary.mode, "split_oversized_turn_tail");
+    assert!(tail_boundary
+        .split_prefix_summary
+        .as_deref()
+        .is_some_and(|summary| summary.contains("FALLBACK_PREFIX_ANCHOR")));
+    let note = tail_boundary.note.as_deref().expect("tail note");
+    assert!(note.contains("Split prefix summary source: model_backed_deterministic_fallback."));
+    assert!(note.contains("model split prefix summary was empty"));
+    assert!(checkpoint.summary.contains("FALLBACK_PREFIX_ANCHOR"));
+    let source = checkpoint.summary_source.expect("summary source metadata");
+    assert_eq!(source.strategy, "model_backed_summary");
+    assert!(source.model_backed);
+    assert!(!source.deterministic_fallback);
+}
+
+#[tokio::test]
 async fn overflow_auto_retry_can_be_disabled_by_compaction_config() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let provider = SequentialScriptedProvider::new(vec![
@@ -8404,6 +8686,23 @@ fn structured_model_summary(goal: &str, next_step: &str) -> String {
     format!(
         "## Goal\n- {goal}\n\n## Constraints\n- Preserve Harness checkpoint structure.\n\n## Progress\n- Done: older turns were summarized by the configured compaction model.\n- In progress: continue from preserved recent context.\n- Blocked: (none)\n\n## Key Decisions\n- Use the model summary because it passed Harness validation.\n\n## Next Steps\n1. {next_step}\n\n## Critical Context\n- This is a structured checkpoint update.\n- Source facts: model summary retained compacted turn facts.\n- Relevant files/artifacts: (none)"
     )
+}
+
+fn structured_split_model_summary(goal: &str, next_step: &str, split_prefix: &str) -> String {
+    format!(
+        "## Goal\n- {goal}\n\n## Constraints\n- Preserve Harness checkpoint structure.\n\n## Progress\n- Done: older turns were summarized by the configured compaction model.\n- In progress: continue from preserved split-turn suffix.\n- Blocked: (none)\n\n## Key Decisions\n- Use the model split-prefix summary because it passed Harness validation.\n\n## Next Steps\n1. {next_step}\n\n## Critical Context\n- Split prefix summary: {split_prefix}; the provider-visible suffix follows this checkpoint as recent context.\n- Source facts: split prefix summary: {split_prefix}\n- Relevant files/artifacts: (none)"
+    )
+}
+
+fn test_compaction_excerpt(text: &str) -> String {
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.chars().count() <= 240 {
+        return normalized;
+    }
+
+    let mut truncated = normalized.chars().take(240).collect::<String>();
+    truncated.push('…');
+    truncated
 }
 
 fn manual_checkpoint(run: &RunInfo, events: &[EventEnvelopeV1]) -> ProviderContextCheckpoint {

@@ -252,6 +252,102 @@ async fn perm_allow_path_proceeds() {
 }
 
 #[tokio::test]
+async fn permission_rule_bash_selector_is_enforced_at_tool_call_site() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let parsed = load_config_from_str(
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              models: {
+                "gpt-4o-mini": { name: "GPT-4o mini" }
+              }
+            }
+          },
+          model: "default/gpt-4o-mini",
+          agent: {
+            deep: {
+              system_prompt: "Deep work",
+              tools: ["shell.run"]
+            }
+          },
+          default_agent: "deep",
+          permission: {
+            bash: {
+              "git status": "deny",
+              "*": "allow"
+            },
+            edit: "allow",
+            question: "allow",
+            task: "allow",
+            webfetch: "allow",
+            websearch: "allow",
+            codesearch: "allow",
+            lsp: "allow"
+          }
+        }
+        "#,
+    )
+    .expect("permission rule config should parse");
+    let mut config = test_config(temp_dir.path());
+    config.permission_policy = PermissionPolicy::from_config(&parsed);
+
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+
+    let run = handle
+        .start_run("permission_rule_bash", temp_dir.path())
+        .await
+        .expect("start run");
+
+    let actor = EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string()));
+    let denied = handle
+        .request_tool_call(
+            actor.clone(),
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "git status"}),
+        )
+        .await
+        .expect_err("exact bash rule should deny");
+    assert!(matches!(denied, CoordinatorError::PermissionDenied(_)));
+
+    let allowed_tool_call_id = handle
+        .request_tool_call(
+            actor,
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "git diff"}),
+        )
+        .await
+        .expect("catch-all bash rule should allow");
+
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    handle.stop_run().await.expect("stop run");
+
+    let events = read_events(&run.events_path);
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::PermissionResolved(data)
+                if data.reason.as_deref() == Some("policy denied request (shell)")
+        )
+    }));
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ToolCallStarted(data) if data.tool_call_id == allowed_tool_call_id
+        )
+    }));
+}
+
+#[tokio::test]
 async fn perm_ask_path_blocks_until_resolved() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let mut config = test_config(temp_dir.path());
@@ -1669,7 +1765,7 @@ fn structured_summary_contract_can_be_disabled_for_legacy_headings() {
 }
 
 #[test]
-fn deterministic_summary_uses_required_pi_sections() {
+fn deterministic_summary_uses_required_harness_sections() {
     let summary_source = ProviderCompactionSummarySource {
         strategy: "deterministic_rolling_summary".to_string(),
         model_ref: "default:model-1".to_string(),
@@ -1710,7 +1806,7 @@ fn deterministic_summary_uses_required_pi_sections() {
     for heading in provider_context_summary_required_headings(&config) {
         assert!(
             summary.contains(heading),
-            "Pi summary missing required heading {heading}:\n{summary}"
+            "Harness summary missing required heading {heading}:\n{summary}"
         );
     }
     let legacy_config = CompactionRuntimeConfig {
@@ -1723,13 +1819,13 @@ fn deterministic_summary_uses_required_pi_sections() {
 }
 
 #[test]
-fn model_summary_validation_rejects_missing_required_pi_section() {
+fn model_summary_validation_rejects_missing_required_harness_section() {
     let config = CompactionRuntimeConfig::default();
     let plan = provider_context_compaction_plan_fixture();
     let omitted_heading = provider_context_summary_required_headings(&config)
         .last()
         .copied()
-        .expect("Pi contract has headings");
+        .expect("Harness contract has headings");
     let mut headings = provider_context_summary_required_headings(&config)
         .iter()
         .copied()
@@ -1740,7 +1836,7 @@ fn model_summary_validation_rejects_missing_required_pi_section() {
     headings.push_str("\n\ncompact enough");
 
     let err = validate_model_compaction_summary(&headings, 20_000, &plan, &config)
-        .expect_err("summary missing a Pi heading must be rejected");
+        .expect_err("summary missing a Harness heading must be rejected");
 
     assert!(err.contains(omitted_heading));
     let prompt = build_model_compaction_prompt(None, &plan, "draft", &config);
