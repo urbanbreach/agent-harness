@@ -58,7 +58,9 @@
           "max_output_tokens": 128000,
           "variants": {
             "low": { "name": "Low", "metadata": { "description": "Low-reasoning lightweight profile.", "reasoning_effort": "low", "text_verbosity": "low", "recommended_for": "lightweight runs" } },
-            "high": { "name": "High", "metadata": { "description": "High-reasoning interactive profile.", "reasoning_effort": "high", "text_verbosity": "low", "recommended_for": "build" } }
+            "medium": { "name": "Medium", "metadata": { "description": "Medium-reasoning lightweight profile.", "reasoning_effort": "medium", "text_verbosity": "low", "recommended_for": "balanced lightweight runs" } },
+            "high": { "name": "High", "metadata": { "description": "High-reasoning interactive profile.", "reasoning_effort": "high", "text_verbosity": "low", "recommended_for": "build" } },
+            "xhigh": { "name": "XHigh", "metadata": { "description": "Extra-high-reasoning interactive profile.", "reasoning_effort": "xhigh", "text_verbosity": "low", "recommended_for": "hard reasoning" } }
           }
         },
         "gpt-5.2": {

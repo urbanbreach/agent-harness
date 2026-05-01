@@ -10,15 +10,124 @@
         "timeoutMs": 1800000
       },
       "models": {
-        "gpt-5.3-codex": { "name": "GPT 5.3 Codex", "limit": { "context": 272000, "input": 272000, "output": 128000 } },
-        "gpt-5.5": { "name": "GPT 5.5", "limit": { "context": 272000, "input": 272000, "output": 128000 } },
-        "gpt-5.4": { "name": "GPT 5.4", "limit": { "context": 272000, "input": 272000, "output": 128000 } },
-        "gpt-5.4-mini": { "name": "GPT 5.4 Mini", "limit": { "context": 272000, "input": 272000, "output": 128000 } },
-        "gpt-5.2": { "name": "GPT 5.2", "limit": { "context": 272000, "input": 272000, "output": 128000 } },
-        "gpt-5.1-codex-max": { "name": "GPT 5.1 Codex Max", "limit": { "context": 272000, "input": 272000, "output": 128000 } },
-        "gpt-5.1-codex": { "name": "GPT 5.1 Codex", "limit": { "context": 272000, "input": 272000, "output": 128000 } },
-        "gpt-5.1-codex-mini": { "name": "GPT 5.1 Codex Mini", "limit": { "context": 272000, "input": 272000, "output": 128000 } },
-        "gpt-5.1": { "name": "GPT 5.1", "limit": { "context": 272000, "input": 272000, "output": 128000 } }
+        "gpt-5.3-codex": {
+          "name": "GPT 5.3 Codex",
+          "limit": { "context": 272000, "output": 128000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "options": { "serviceTier": "priority" },
+          "variants": {
+            "none": { "name": "None", "metadata": { "reasoningEffort": "none" } },
+            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
+            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
+            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
+            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } }
+          }
+        },
+        "gpt-5.5": {
+          "name": "GPT 5.5",
+          "limit": { "context": 272000, "input": 272000, "output": 128000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "options": { "serviceTier": "priority" },
+          "variants": {
+            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
+            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
+            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
+            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } }
+          }
+        },
+        "gpt-5.4": {
+          "name": "GPT 5.4 (272k)",
+          "limit": { "context": 272000, "input": 272000, "output": 128000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "options": { "serviceTier": "priority" },
+          "variants": {
+            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
+            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
+            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
+            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } }
+          }
+        },
+        "gpt-5.4-1m": {
+          "name": "GPT 5.4 (1M)",
+          "limit": { "context": 922000, "input": 922000, "output": 128000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "options": { "serviceTier": "priority" },
+          "variants": {
+            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
+            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
+            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
+            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } }
+          }
+        },
+        "gpt-5.4-mini": {
+          "name": "GPT 5.4 Mini",
+          "limit": { "context": 272000, "output": 128000 },
+          "options": { "serviceTier": "priority", "reasoningSummary": "auto", "include": ["reasoning.encrypted_content"] },
+          "variants": {
+            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
+            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
+            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
+            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } }
+          }
+        },
+        "gpt-5.2": {
+          "name": "GPT 5.2",
+          "limit": { "context": 272000, "output": 128000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "options": { "serviceTier": "priority" },
+          "variants": {
+            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
+            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
+            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
+            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } },
+            "max": { "name": "Max", "metadata": { "reasoningEffort": "xhigh" } }
+          }
+        },
+        "gpt-5.1-codex-max": {
+          "name": "GPT 5.1 Codex Max",
+          "limit": { "context": 272000, "output": 128000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "options": { "serviceTier": "priority" },
+          "variants": {
+            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
+            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
+            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
+            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } }
+          }
+        },
+        "gpt-5.1-codex": {
+          "name": "GPT 5.1 Codex",
+          "limit": { "context": 272000, "output": 128000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "options": { "serviceTier": "priority" },
+          "variants": {
+            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
+            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
+            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } }
+          }
+        },
+        "gpt-5.1-codex-mini": {
+          "name": "GPT 5.1 Codex Mini",
+          "limit": { "context": 272000, "output": 128000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "options": { "serviceTier": "priority" },
+          "variants": {
+            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
+            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } }
+          }
+        },
+        "gpt-5.1": {
+          "name": "GPT 5.1",
+          "limit": { "context": 272000, "output": 128000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "options": { "serviceTier": "priority" },
+          "variants": {
+            "none": { "name": "None", "metadata": { "reasoningEffort": "none" } },
+            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
+            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
+            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } }
+          }
+        }
       }
     }
   },
