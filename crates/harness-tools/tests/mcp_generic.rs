@@ -181,18 +181,6 @@ fn install_fake_mcp_server(script_path: &Path) {
 }
 
 fn install_stateful_terminal_mcp_server(script_path: &Path) {
-    install_fake_mcp_server_with_tools(
-        script_path,
-        r#"[{
-    "name": "terminal_spawn",
-    "description": "Spawns a terminal session",
-    "inputSchema": {"type": "object", "properties": {"shell": {"type": "string"}}}
-}, {
-    "name": "terminal_wait",
-    "description": "Waits for terminal output",
-    "inputSchema": {"type": "object", "properties": {"sessionId": {"type": "string"}, "ms": {"type": "number"}}}
-}]"#,
-    );
     let script = r#"#!/usr/bin/env python3
 import json
 import sys

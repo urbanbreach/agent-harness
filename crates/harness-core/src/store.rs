@@ -173,8 +173,9 @@ impl EventStore for InMemoryEventStore {
         let mut state = lock_state(&self.state)?;
         let envelope = envelope.with_seq(state.next_seq);
         state.next_seq += 1;
-        state.events.push(envelope.clone());
-        let _ = self.tx.send(envelope.clone());
+        let event = envelope.clone();
+        state.events.push(event.clone());
+        let _ = self.tx.send(event);
         Ok(envelope)
     }
 

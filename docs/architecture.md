@@ -397,7 +397,7 @@ Checkpoint payloads carry:
 - structured source facts for compacted turns, relevant artifacts, touched files, and previous-checkpoint lineage,
 - tail-boundary metadata describing whether the preserved suffix is whole-turn, oversized whole-turn, or summary-only,
 - summary-source metadata recording hook overrides, optional model-backed summaries, and deterministic fallback,
-- summary contract metadata, including the active contract version when the default Pi sections are enforced,
+- summary contract metadata, including the active contract version when the default Harness sections are enforced,
 - replay-derived operational memory for read files, modified files, and compact operation facts,
 - a first-class timeline entry that UIs/replay views can render without parsing prose.
 
@@ -407,7 +407,7 @@ surface the same incomplete-turn marker instead of displaying the partial assist
 
 The checkpoint recap injected back into provider requests is historical background only. It is intentionally not treated as a system instruction; preserved recent turns and the live user prompt take precedence.
 
-Lifecycle hooks can observe `compaction_requested`. Critical hook failure cancels the checkpoint and records `CompactionFailed`. A successful hook may supply a custom summary by writing output beginning with `compaction_summary:`; hook summaries take precedence over optional model-backed summaries. Model-backed summary calls are disabled by default, run through the provider abstraction without emitting provider request/stream events, and must return the default Pi summary sections when `runtime.compaction.structured_summary_contract=true`. Empty, failing, overflowing, or invalid model summaries fall back to the deterministic rolling summary and record `summary_source.deterministic_fallback=true`.
+Lifecycle hooks can observe `compaction_requested`. Critical hook failure cancels the checkpoint and records `CompactionFailed`. A successful hook may supply a custom summary by writing output beginning with `compaction_summary:`; hook summaries take precedence over optional model-backed summaries. Model-backed summary calls are disabled by default, run through the provider abstraction without emitting provider request/stream events, and must return the default Harness summary sections when `runtime.compaction.structured_summary_contract=true`. Empty, failing, overflowing, or invalid model summaries fall back to the deterministic rolling summary and record `summary_source.deterministic_fallback=true`.
 
 Operational memory remains event-derived. The coordinator gathers capped read-file facts, modified-file facts, and compact operation facts from the durable event/artifact stream between checkpoint boundaries, then stores summary counts and facts inside checkpoint metadata. Replay does not scan the workspace or execute tools to rebuild that memory.
 

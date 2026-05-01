@@ -342,7 +342,7 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
         let placeholder = if app.session_history_visible {
             "Filter saved runs"
         } else if app.model_switcher_visible {
-            "Filter models, agents, providers"
+            "Filter models, providers"
         } else {
             "Search"
         };
@@ -486,7 +486,10 @@ fn model_switcher_overlay_title(app: &AppState) -> String {
 
 fn model_switcher_scope_line(app: &AppState) -> String {
     let active = app.current_model_label();
-    format!("Next turns use the selected agent/model · current {active}")
+    let agent = app
+        .current_agent_label()
+        .unwrap_or_else(|| app.active_profile().to_string());
+    format!("Pick a model for {agent} · switch agents outside this menu · current {active}")
 }
 
 fn model_switcher_row(
@@ -578,18 +581,6 @@ fn model_switcher_row(
         8,
     );
 
-    if let Some(recommended_for) = option.recommended_for() {
-        append_session_history_segment(
-            &mut spans,
-            &mut used_width,
-            row_width,
-            recommended_for,
-            meta_style,
-            meta_style,
-            6,
-        );
-    }
-
     if is_selected && used_width < row_width {
         spans.push(Span::styled(" ".repeat(row_width - used_width), row_style));
     }
@@ -602,8 +593,8 @@ fn model_option_source_label(option: &crate::app::ModelOption) -> String {
         .provider_display_label()
         .unwrap_or(option.provider.as_str());
     match option.provider_backend_label() {
-        Some(backend) => format!("{} · {} ({backend})", option.profile, provider),
-        None => format!("{} · {provider}", option.profile),
+        Some(backend) => format!("{provider} ({backend})"),
+        None => provider.to_string(),
     }
 }
 

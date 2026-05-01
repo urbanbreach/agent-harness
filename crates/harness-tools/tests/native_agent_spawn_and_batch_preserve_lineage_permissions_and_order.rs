@@ -42,6 +42,18 @@ fn read_events(path: &Path) -> Vec<EventEnvelopeV1> {
         .collect()
 }
 
+fn write_fixture(workspace: &Path) {
+    fs::write(workspace.join("fixture.txt"), "alpha\nbeta\n").expect("fixture file");
+}
+
+fn write_numbered_fixture(workspace: &Path) {
+    let fixture_body = (1..=30)
+        .map(|index| format!("line-{index:02}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(workspace.join("fixture.txt"), format!("{fixture_body}\n")).expect("fixture file");
+}
+
 async fn wait_for_tool_call_finish(path: &Path, tool_call_id: &str) {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
@@ -133,11 +145,7 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let workspace = temp_dir.path().join("workspace");
     fs::create_dir_all(&workspace).expect("workspace");
-    let fixture_body = (1..=30)
-        .map(|index| format!("line-{index:02}"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    fs::write(workspace.join("fixture.txt"), format!("{fixture_body}\n")).expect("fixture file");
+    write_numbered_fixture(&workspace);
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 
@@ -645,7 +653,7 @@ async fn batch_tool_accepts_args_alias_on_real_tool_path() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let workspace = temp_dir.path().join("workspace");
     fs::create_dir_all(&workspace).expect("workspace");
-    fs::write(workspace.join("fixture.txt"), "alpha\nbeta\n").expect("fixture file");
+    write_fixture(&workspace);
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 
@@ -697,7 +705,7 @@ async fn batch_tool_accepts_wrapper_calls_inside_tool_calls_on_real_path() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let workspace = temp_dir.path().join("workspace");
     fs::create_dir_all(&workspace).expect("workspace");
-    fs::write(workspace.join("fixture.txt"), "alpha\nbeta\n").expect("fixture file");
+    write_fixture(&workspace);
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 

@@ -379,9 +379,7 @@ fn translate_prepend_edit(
 
 fn normalize_edit_op(index: usize, edit: &RawHashlineEdit) -> Result<String, ToolError> {
     match edit.op.as_deref().map(str::trim) {
-        Some("replace") | Some("append") | Some("prepend") => {
-            Ok(edit.op.as_deref().unwrap().trim().to_string())
-        }
+        Some(op @ ("replace" | "append" | "prepend")) => Ok(op.to_string()),
         Some(other) => Err(ToolError::InvalidArguments(format!(
             "edit {index}: unsupported op \"{other}\". Use replace, append, or prepend."
         ))),

@@ -7,6 +7,20 @@ const STARTUP_LOGO_LINES: [(&str, &str); 3] = [
     ("╹ ╹  ╹ ╹  ╹┗╸  ╹ ╹", "┗━╸  ┗━┛  ┗━┛"),
 ];
 
+#[derive(Debug, Clone)]
+pub(super) struct LifecycleSelectionSurface {
+    pub viewport: Rect,
+    pub text_rows: Vec<LifecycleSelectableText>,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct LifecycleSelectableText {
+    pub row: usize,
+    pub max_height: u16,
+    pub line: Line<'static>,
+    pub alignment: Alignment,
+}
+
 fn lifecycle_surface_copy_area(area: Rect) -> Rect {
     inset_rect(
         area,
@@ -42,33 +56,31 @@ fn render_lifecycle_copy_line(
     );
 }
 
-fn startup_logo_lines(content_area: Rect, theme: &Theme) -> Text<'static> {
+fn startup_logo_lines(content_area: Rect, theme: &Theme) -> Vec<Line<'static>> {
     if content_area.width < 40 {
-        return Text::from(vec![Line::from(Span::styled(
+        return vec![Line::from(Span::styled(
             theme.live_shell.startup.title,
             Style::default()
                 .fg(theme.text.primary)
                 .add_modifier(Modifier::BOLD),
-        ))]);
+        ))];
     }
 
-    Text::from(
-        STARTUP_LOGO_LINES
-            .iter()
-            .map(|(left, right)| {
-                Line::from(vec![
-                    Span::styled(*left, Style::default().fg(theme.text.secondary)),
-                    Span::raw("  "),
-                    Span::styled(
-                        *right,
-                        Style::default()
-                            .fg(theme.text.primary)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ])
-            })
-            .collect::<Vec<_>>(),
-    )
+    STARTUP_LOGO_LINES
+        .iter()
+        .map(|(left, right)| {
+            Line::from(vec![
+                Span::styled(*left, Style::default().fg(theme.text.secondary)),
+                Span::raw("  "),
+                Span::styled(
+                    *right,
+                    Style::default()
+                        .fg(theme.text.primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ])
+        })
+        .collect::<Vec<_>>()
 }
 
 fn startup_logo_height(content_area: Rect) -> u16 {
@@ -113,9 +125,18 @@ pub(crate) fn render_startup_lifecycle_surface(
     render_startup_lifecycle_flow(frame, app, shell_area, theme);
 }
 
+pub(super) fn startup_lifecycle_selection_surface(
+    app: &AppState,
+    area: Rect,
+    theme: &Theme,
+) -> Option<LifecycleSelectionSurface> {
+    let shell_area = crate::layout::startup_shell_area(area, theme);
+    startup_lifecycle_flow_selection_surface(app, shell_area, theme)
+}
+
 pub(crate) fn render_startup_lifecycle_flow(
     frame: &mut Frame,
-    app: &AppState,
+    _app: &AppState,
     area: Rect,
     theme: &Theme,
 ) {
@@ -127,20 +148,7 @@ pub(crate) fn render_startup_lifecycle_flow(
     let surface = theme.surface.shell;
     let content_area = lifecycle_surface_copy_area(shell_area);
     let logo_height = startup_logo_height(content_area);
-    let runtime_summary = app.runtime_context_primary_summary();
-    let runtime_detail = startup_runtime_detail(app);
-    let summary_visible = content_area.height >= logo_height.saturating_add(1);
-    let detail_visible =
-        runtime_detail.is_some() && content_area.height >= logo_height.saturating_add(2);
-    let purpose_visible = content_area.height
-        >= logo_height
-            .saturating_add(u16::from(summary_visible))
-            .saturating_add(u16::from(detail_visible))
-            .saturating_add(1);
-    let content_height = logo_height
-        .saturating_add(u16::from(summary_visible))
-        .saturating_add(u16::from(detail_visible))
-        .saturating_add(u16::from(purpose_visible));
+    let content_height = logo_height;
     let top_gap = content_area.height.saturating_sub(content_height) / 2;
 
     frame.render_widget(
@@ -157,78 +165,64 @@ pub(crate) fn render_startup_lifecycle_flow(
         .constraints([
             Constraint::Length(top_gap),
             Constraint::Length(logo_height),
-            Constraint::Length(u16::from(summary_visible)),
-            Constraint::Length(u16::from(detail_visible)),
-            Constraint::Length(u16::from(purpose_visible)),
             Constraint::Min(0),
         ])
         .split(content_area);
 
+    let logo_lines = startup_logo_lines(content_area, theme);
+
     frame.render_widget(
-        Paragraph::new(startup_logo_lines(content_area, theme))
+        Paragraph::new(Text::from(logo_lines))
             .style(Style::default().bg(surface))
             .alignment(Alignment::Center)
             .wrap(Wrap { trim: false }),
         rows[1],
     );
-
-    if summary_visible && rows[2].height > 0 {
-        render_lifecycle_copy_line(
-            frame,
-            rows[2],
-            &runtime_summary,
-            Style::default()
-                .fg(theme.text.primary)
-                .bg(surface)
-                .add_modifier(Modifier::BOLD),
-            Alignment::Center,
-        );
-    }
-
-    if detail_visible && rows[3].height > 0 {
-        if let Some(detail) = runtime_detail.as_deref() {
-            render_lifecycle_copy_line(
-                frame,
-                rows[3],
-                detail,
-                Style::default().fg(theme.text.secondary).bg(surface),
-                Alignment::Center,
-            );
-        }
-    }
-
-    if purpose_visible && rows[4].height > 0 {
-        render_lifecycle_copy_line(
-            frame,
-            rows[4],
-            theme.live_shell.startup.new_session_purpose,
-            Style::default().fg(theme.text.secondary).bg(surface),
-            Alignment::Center,
-        );
-    }
 }
 
-fn startup_runtime_detail(app: &AppState) -> Option<String> {
-    let mut segments = Vec::new();
-
-    if let Some(provider) = app
-        .runtime_context_provider_display()
-        .as_deref()
-        .map(str::trim)
-        .filter(|provider| !provider.is_empty())
-    {
-        segments.push(format!("Provider {provider}"));
+fn startup_lifecycle_flow_selection_surface(
+    _app: &AppState,
+    area: Rect,
+    theme: &Theme,
+) -> Option<LifecycleSelectionSurface> {
+    if area.width == 0 || area.height == 0 {
+        return None;
     }
 
-    if let Some(mode) = app
-        .launch_mode_label()
-        .map(str::trim)
-        .filter(|mode| !mode.is_empty())
-    {
-        segments.push(mode.to_string());
+    let content_area = lifecycle_surface_copy_area(area);
+    if content_area.width == 0 || content_area.height == 0 {
+        return None;
     }
 
-    (!segments.is_empty()).then(|| segments.join(" · "))
+    let logo_height = startup_logo_height(content_area);
+    let content_height = logo_height;
+    let top_gap = content_area.height.saturating_sub(content_height) / 2;
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(top_gap),
+            Constraint::Length(logo_height),
+            Constraint::Min(0),
+        ])
+        .split(content_area);
+
+    let mut text_rows = Vec::new();
+    for (idx, line) in startup_logo_lines(content_area, theme)
+        .into_iter()
+        .enumerate()
+    {
+        text_rows.push(LifecycleSelectableText {
+            row: usize::from(rows[1].y.saturating_sub(content_area.y)).saturating_add(idx),
+            max_height: 1,
+            line,
+            alignment: Alignment::Center,
+        });
+    }
+
+    Some(LifecycleSelectionSurface {
+        viewport: content_area,
+        text_rows,
+    })
 }
 
 pub(super) fn render_live_empty_state(
@@ -317,4 +311,88 @@ pub(super) fn render_live_empty_state(
         Style::default().fg(theme.text.secondary).bg(surface),
         Alignment::Center,
     );
+}
+
+pub(super) fn live_empty_state_selection_surface(
+    app: &AppState,
+    area: Rect,
+    theme: &Theme,
+) -> Option<LifecycleSelectionSurface> {
+    if area.width == 0 || area.height == 0 {
+        return None;
+    }
+
+    let help_row = format!(
+        "{}  {}",
+        app.current_context_window_tokens()
+            .map(|_| "0 (0%)")
+            .unwrap_or("0"),
+        app.keymap.get_binding_label(Action::Palette, "commands")
+    );
+
+    let shell_area = live_empty_state_area(area, theme);
+    let block = lifecycle_surface_block(theme, "Session", false);
+    let content_area = lifecycle_surface_copy_area(block.inner(shell_area));
+    if content_area.width == 0 || content_area.height == 0 {
+        return None;
+    }
+
+    let startup_card = app.startup_card_view_model();
+    let example_prompts = empty_state_examples_text(theme);
+    let examples_height = u16::from(content_area.width < 76).saturating_add(1);
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(examples_height),
+            Constraint::Length(1),
+            Constraint::Min(0),
+        ])
+        .split(content_area);
+
+    let mut text_rows = Vec::new();
+    for (row_area, max_height, text) in [
+        (
+            rows[1],
+            rows[1].height,
+            theme.live_shell.empty_state.title.to_string(),
+        ),
+        (rows[2], rows[2].height, startup_card.metadata),
+        (
+            rows[3],
+            rows[3].height,
+            theme.live_shell.empty_state.value_prop.to_string(),
+        ),
+        (rows[5], rows[5].height, help_row),
+    ] {
+        if max_height == 0 {
+            continue;
+        }
+        text_rows.push(LifecycleSelectableText {
+            row: usize::from(row_area.y.saturating_sub(content_area.y)),
+            max_height,
+            line: Line::from(Span::raw(truncate_plain_text(
+                &text,
+                usize::from(row_area.width),
+            ))),
+            alignment: Alignment::Center,
+        });
+    }
+
+    if rows[4].height > 0 {
+        text_rows.push(LifecycleSelectableText {
+            row: usize::from(rows[4].y.saturating_sub(content_area.y)),
+            max_height: rows[4].height,
+            line: Line::from(Span::raw(example_prompts)),
+            alignment: Alignment::Center,
+        });
+    }
+
+    Some(LifecycleSelectionSurface {
+        viewport: content_area,
+        text_rows,
+    })
 }

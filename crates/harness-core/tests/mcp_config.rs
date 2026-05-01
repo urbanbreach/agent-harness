@@ -4,55 +4,72 @@ use harness_core::config::{
     harness_schema_pretty_json, load_config_from_str, HarnessConfig, McpServerConfig,
 };
 
-fn config_with_mcp_servers() -> HarnessConfig {
-    json5::from_str(
+fn config_with_mcp_servers_json(servers: &str) -> String {
+    format!(
         r#"
-        {
-          providers: {
-            default: {
+        {{
+          providers: {{
+            default: {{
               type: "openai_compatible",
               base_url: "http://127.0.0.1:8317/v1",
               api_key: "test-key",
               api_mode: "responses",
               timeout_ms: 60000,
-              models: {
-                "gpt-5.4-mini": {
+              models: {{
+                "gpt-5.4-mini": {{
                   display_name: "GPT-5.4 Mini",
-                },
-              },
-            },
-          },
-          agents: {
-            deep: {
+                }},
+              }},
+            }},
+          }},
+          agents: {{
+            deep: {{
               description: "Deep work",
               model_ref: "default:gpt-5.4-mini",
               tools: ["fs.read"],
-            },
-          },
-          permissions: {
-            defaults: {
+            }},
+          }},
+          permissions: {{
+            defaults: {{
               edit: "ask",
               shell: "ask",
               network: "deny",
-            },
-          },
-          runtime: {
-            background_tasks: {
+            }},
+          }},
+          runtime: {{
+            background_tasks: {{
               default_concurrency: 2,
               provider_concurrency: 2,
               model_concurrency: 2,
               stale_timeout_ms: 15000,
               message_staleness_timeout_ms: 5000,
-            },
+            }},
             session_dir: ".agent-harness/sessions",
-          },
-          integrations: {
-            remote_search: {
+          }},
+          integrations: {{
+            remote_search: {{
               endpoint: "https://mcp.exa.ai/mcp",
-            },
-            mcp: {
-              servers: {
-                fixture_stdio: {
+            }},
+            mcp: {{
+              servers: {{
+{servers}
+              }},
+            }},
+          }},
+        }}
+        "#
+    )
+}
+
+fn config_with_mcp_servers(servers: &str) -> HarnessConfig {
+    json5::from_str(&config_with_mcp_servers_json(servers))
+        .expect("config shape should deserialize")
+}
+
+#[test]
+fn integrations_mcp_accepts_stdio_and_http_server_shapes() {
+    let parsed = config_with_mcp_servers(
+        r#"                fixture_stdio: {
                   transport: "stdio",
                   command: ["python3", "fixtures/mcp_stdio_server.py"],
                   env: {
@@ -70,19 +87,8 @@ fn config_with_mcp_servers() -> HarnessConfig {
                   },
                   timeout_secs: 45,
                   enabled: true,
-                },
-              },
-            },
-          },
-        }
-        "#,
-    )
-    .expect("config shape should deserialize")
-}
-
-#[test]
-fn integrations_mcp_accepts_stdio_and_http_server_shapes() {
-    let parsed = config_with_mcp_servers();
+                },"#,
+    );
 
     let stdio = parsed
         .integrations
@@ -137,54 +143,8 @@ fn integrations_mcp_accepts_stdio_and_http_server_shapes() {
 
 #[test]
 fn integrations_mcp_rejects_legacy_local_and_remote_server_shapes() {
-    let error = json5::from_str::<HarnessConfig>(
-        r#"
-        {
-          providers: {
-            default: {
-              type: "openai_compatible",
-              base_url: "http://127.0.0.1:8317/v1",
-              api_key: "test-key",
-              api_mode: "responses",
-              timeout_ms: 60000,
-              models: {
-                "gpt-5.4-mini": {
-                  display_name: "GPT-5.4 Mini",
-                },
-              },
-            },
-          },
-          agents: {
-            deep: {
-              description: "Deep work",
-              model_ref: "default:gpt-5.4-mini",
-              tools: ["fs.read"],
-            },
-          },
-          permissions: {
-            defaults: {
-              edit: "ask",
-              shell: "ask",
-              network: "deny",
-            },
-          },
-          runtime: {
-            background_tasks: {
-              default_concurrency: 2,
-              provider_concurrency: 2,
-              model_concurrency: 2,
-              stale_timeout_ms: 15000,
-              message_staleness_timeout_ms: 5000,
-            },
-            session_dir: ".agent-harness/sessions",
-          },
-          integrations: {
-            remote_search: {
-              endpoint: "https://mcp.exa.ai/mcp",
-            },
-            mcp: {
-              servers: {
-                docs_rs: {
+    let error = json5::from_str::<HarnessConfig>(&config_with_mcp_servers_json(
+        r#"                docs_rs: {
                   type: "local",
                   command: ["bunx", "-y", "@nuskey8/docs-rs-mcp@latest"],
                   environment: {
@@ -204,13 +164,8 @@ fn integrations_mcp_rejects_legacy_local_and_remote_server_shapes() {
                   },
                   timeout: 33,
                   enabled: false,
-                },
-              },
-            },
-          },
-        }
-        "#,
-    )
+                },"#,
+    ))
     .expect_err("legacy-shaped MCP config should fail");
 
     assert!(error.to_string().contains("missing field `transport`"));

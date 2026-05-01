@@ -710,8 +710,7 @@ async fn skill_load_ask_permissions_use_question_approval_flow() {
         "Ask body",
     );
 
-    let toolset = ["skill"];
-    let agent_profiles = BTreeMap::from([("deep".to_string(), worker_profile("deep", &toolset))]);
+    let agent_profiles = BTreeMap::from([("deep".to_string(), worker_profile("deep", &["skill"]))]);
     let (handle, run, worker_id) = spawn_worker_run(&repo, "deep", agent_profiles).await;
 
     let skill_task = {

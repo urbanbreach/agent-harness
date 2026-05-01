@@ -453,10 +453,10 @@ impl VisualManifestEntry {
                 "focus": {
                     "marker": spec.focus_marker,
                     "found": spec.focus_marker_found,
-                "scope": spec.focus_scope,
-                "pixels_blake3": spec.focus_pixels_blake3,
-                "render_state_blake3": spec.focus_render_state_blake3,
-            },
+                    "scope": spec.focus_scope,
+                    "pixels_blake3": spec.focus_pixels_blake3,
+                    "render_state_blake3": spec.focus_render_state_blake3,
+                },
                 "region": {
                     "row": spec.focus_region_cells.0,
                     "col": spec.focus_region_cells.1,

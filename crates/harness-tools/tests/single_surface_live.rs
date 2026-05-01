@@ -320,8 +320,8 @@ async fn single_surface_tools_execute_under_example_config() {
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "bash",
             serde_json::json!({
-                "command": "ls && cargo --version",
-                "description": "List workspace and cargo version",
+                "command": "printf 'cargo surface\\n'",
+                "description": "Emit shell smoke output",
             }),
         )
         .await

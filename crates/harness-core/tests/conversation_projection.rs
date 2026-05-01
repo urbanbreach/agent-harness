@@ -42,7 +42,7 @@ fn provider_boundary_preserves_existing_message_shape() {
         }],
         checkpoint: Some(checkpoint_metadata()),
     };
-    let checkpoints = [ProviderContextCheckpoint {
+    let checkpoint = ProviderContextCheckpoint {
         metadata: checkpoint_metadata(),
         summary: "Earlier work summary".to_string(),
         recent_turns: prior_context.preserved_turns.clone(),
@@ -51,8 +51,8 @@ fn provider_boundary_preserves_existing_message_shape() {
         tail_boundary: None,
         summary_source: None,
         timeline_entry: None,
-    }];
-    let projected_context = project_conversation(&[], &[(&checkpoints[0]).into()])
+    };
+    let projected_context = project_conversation(&[], &[(&checkpoint).into()])
         .expect("project checkpoint context")
         .messages
         .into_iter()

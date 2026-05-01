@@ -186,32 +186,30 @@ impl ProviderRouter {
         requested_provider_id: Option<&'a str>,
     ) -> Result<&'a str, String> {
         if let Some(provider_id) = requested_provider_id {
-            if self.providers.contains_key(provider_id) {
-                return Ok(provider_id);
-            }
-
-            return Err(format!(
-                "unknown provider `{provider_id}` in completion request; configured providers: {}",
-                configured_provider_list(&self.providers)
-            ));
+            return if self.providers.contains_key(provider_id) {
+                Ok(provider_id)
+            } else {
+                Err(format!(
+                    "unknown provider `{provider_id}` in completion request; configured providers: {}",
+                    configured_provider_list(&self.providers)
+                ))
+            };
         }
 
         if self.providers.contains_key("default") {
-            return Ok("default");
-        }
-
-        if self.providers.len() == 1 {
-            return Ok(self
+            Ok("default")
+        } else if self.providers.len() == 1 {
+            Ok(self
                 .providers
                 .keys()
                 .next()
-                .expect("single-provider map should have a key"));
+                .expect("single-provider map should have a key"))
+        } else {
+            Err(format!(
+                "completion request omitted provider_id and no default provider is configured; configured providers: {}",
+                configured_provider_list(&self.providers)
+            ))
         }
-
-        Err(format!(
-            "completion request omitted provider_id and no default provider is configured; configured providers: {}",
-            configured_provider_list(&self.providers)
-        ))
     }
 }
 

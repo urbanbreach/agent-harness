@@ -3708,12 +3708,8 @@ fn diff_marker_style(marker: char, row_bg: Option<Color>, _theme: &Theme) -> Sty
     apply_optional_bg(style, row_bg)
 }
 
-fn diff_line_number_style(marker: char, row_bg: Option<Color>, theme: &Theme) -> Style {
-    let gutter_fg = match marker {
-        ' ' => theme.text.secondary,
-        _ => theme.text.secondary,
-    };
-    apply_optional_bg(Style::default().fg(gutter_fg), row_bg)
+fn diff_line_number_style(_marker: char, row_bg: Option<Color>, theme: &Theme) -> Style {
+    apply_optional_bg(Style::default().fg(theme.text.secondary), row_bg)
 }
 
 fn diff_segment_style(

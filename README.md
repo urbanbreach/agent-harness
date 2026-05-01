@@ -28,15 +28,15 @@ flows.
 
 ## Quick start
 
-The current blessed default path is:
+The default path is:
 
 - provider: `default` (`openai_compatible`) via the local CLIProxy-compatible loopback endpoint
 - default agent: `build`
 - default model: `default/gpt-5.4`
 - interactive model: `default/gpt-5.4-mini` (`high` reasoning preset)
 
-Primary shipped agents are discovered from `.agent-harness/agents/*.md` and
-filled in from the runtime config's `model` default:
+Primary agents are discovered from `.agent-harness/agents/*.md` and use the
+runtime config's `model` default:
 
 - `build` — default implementation lane
 
@@ -57,7 +57,7 @@ The older broad runtime shape plus `$XDG_CONFIG_HOME/harness/config.jsonc` still
 load for compatibility, but `harness.json{,c}` and the matching XDG runtime paths
 are the canonical public contract.
 
-Launch the interactive harness with the canonical Build-only surface:
+Launch the interactive harness with the Build-only surface:
 
 ```bash
 cargo run -p harness -- --config configs/harness.example.jsonc
@@ -79,13 +79,13 @@ cargo run -p harness -- --config configs/harness.example.jsonc \
   --out /tmp/harness-events.jsonl
 ```
 
-The shipped `build` profile now continues after recoverable tool failures by
+The `build` profile continues after recoverable tool failures by
 turning them into tool messages, so unsupported LSP/file probes can be surfaced to
 the model without aborting the whole turn.
 
 ## Command-driven stress harness
 
-Agents can now run a reusable stress suite directly from the terminal:
+Run the reusable stress suite directly from the terminal:
 
 ```bash
 scripts/stress-harness.sh --mode offline

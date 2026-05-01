@@ -224,16 +224,18 @@ pub(crate) fn provider_turn_summary(
     provider_name: &str,
     observation: &ProviderTurnObservation,
 ) -> Result<Value, String> {
+    let expectation = provider_turn_expectation(provider_name);
+
     Ok(json!({
         "provider": provider_name,
-        "expectation": provider_turn_expectation(provider_name).map(|expectation| {
+        "expectation": expectation.map(|expectation| {
             json!({
                 "label": expectation.label,
                 "completion": expectation.completion.as_str(),
                 "notes": expectation.notes,
             })
         }),
-        "expectation_status": if provider_turn_expectation(provider_name).is_some() {
+        "expectation_status": if expectation.is_some() {
             "recorded"
         } else {
             "unrecorded"

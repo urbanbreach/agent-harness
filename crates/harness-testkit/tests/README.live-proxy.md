@@ -1,6 +1,6 @@
 # Live proxy E2E lane
 
-This test lane proves real tool use against the configured live proxy/model.
+This lane exercises real tool use against the configured live proxy/model.
 
 ## Preflight
 
@@ -24,17 +24,17 @@ The preflight verifies:
 - the later live visual lane can use the bundled PTY→PNG capture path and the shell-free
   `write` bootstrap used by the file-edit review flow
 
-The live visual review lane does **not** require KDE, `konsole`, or `spectacle`. When you run the
-later live TUI/tool-flow lanes, screenshots are rendered from captured PTY state into PNGs inside
-the harness, and the tool-flow bootstrap uses `write` instead of `bash`, so the signoff
-path no longer depends on a desktop session or a local POSIX shell. `live_proxy_preflight` itself
-only verifies config/provider reachability plus the prepared live-config path.
+The live visual review lane does **not** require KDE, `konsole`, or `spectacle`. Later live
+TUI/tool-flow lanes render screenshots from captured PTY state inside the harness, and the
+tool-flow bootstrap uses `write` instead of `bash`, so signoff does not depend on a desktop session
+or a local POSIX shell. `live_proxy_preflight` itself only verifies config/provider reachability
+plus the prepared live-config path.
 
-When the shipped `configs/harness.example.jsonc` is the active live config, the interactive
-`build` profile now defaults `gpt-5.4-mini` to the `high` variant so live TUI runs can surface
-visible `Thinking:` traces. The signoff helpers still force `gpt-5.4-mini` onto the `low`
-variant so the Batch 1 parity lanes stay on the documented low-reasoning path. Set
-`HARNESS_LIVE_PROXY_VARIANT` to override the helper default.
+When `configs/harness.example.jsonc` is the active live config, the interactive `build` profile
+defaults `gpt-5.4-mini` to the `high` variant so live TUI runs can surface visible `Thinking:`
+traces. The signoff helpers still force `gpt-5.4-mini` onto the `low` variant so the Batch 1 parity
+lanes stay on the documented low-reasoning path. Set `HARNESS_LIVE_PROXY_VARIANT` to override the
+helper default.
 
 Minimal portable baseline:
 
@@ -62,16 +62,14 @@ HARNESS_VISUAL_ARTIFACT_DIR=target/pty-visual-artifacts \
 cargo test -p harness-testkit live_proxy_e2e_tui_parity_signoff -- --ignored --exact
 ```
 
-These wrappers chain the shipped live lanes instead of inventing a second verification category:
+These wrappers chain the shipped live lanes:
 
 - CLI: `live_proxy_prompt_responses_smoke` → `live_proxy_prompt_chat_tool_flow` → `live_proxy_prompt_native_tool_flow`
 - TUI: `live_proxy_preflight` → `live_proxy_e2e_tui_prompt_responses_smoke` → `live_proxy_e2e_tui_tool_flow`
 
-Batch 1 live parity signoff is scoped to the selected
-`HARNESS_LIVE_PROXY_PROVIDER` / model / variant tuple. The live helpers record that tuple in the
-manifest metadata and summarize observed provider-turn behavior in `run_summary.json` /
-`run_summary.txt` so later provider work builds on explicit evidence instead of treating one
-provider run as universal proof.
+Batch 1 live parity signoff is scoped to the selected `HARNESS_LIVE_PROXY_PROVIDER` / model /
+variant tuple. The live helpers record that tuple in the manifest metadata and summarize observed
+provider-turn behavior in `run_summary.json` / `run_summary.txt` for later provider work.
 
 ## Main live tool-flow test
 
@@ -91,13 +89,13 @@ This lane exercises a real model against prepared live agents for:
 - `question`
 - `skill`
 
-When the selected model exposes the documented `low` variant, the prepared signoff
-agents prefer it automatically so `gpt-5.4-mini` stays on the low-reasoning parity path.
+The prepared signoff agents prefer the documented `low` variant automatically so
+`gpt-5.4-mini` stays on the low-reasoning parity path.
 
-The repo now ships `rust-best-practices` in `.agent-harness/skills`, and the prepared live chat-tool lane
-copies that skill into its temporary workspace before the `skill` stage runs. A fresh checkout
-therefore does not depend on an externally installed skill. You can still override it by placing a
-same-named skill earlier in the configured project-root search order.
+The repo ships `rust-best-practices` in `.agent-harness/skills`, and the prepared live chat-tool lane
+copies that skill into its temporary workspace before the `skill` stage runs. A fresh checkout does
+not depend on an externally installed skill. You can still override it by placing a same-named
+skill earlier in the configured project-root search order.
 
 The live lane examples below use `configs/harness.example.jsonc` explicitly via
 `HARNESS_LIVE_PROXY_CONFIG`; the harness CLI does not auto-discover that file unless you copy it to
@@ -113,8 +111,8 @@ HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
 cargo test -p harness-testkit live_proxy_prompt_native_tool_flow -- --ignored --exact
 ```
 
-This keeps the headless signoff aligned with the same `write` → `read` →
-`edit.hashline_scan` → `edit.hashline_apply` → `read` path that the TUI live lane exercises.
+This keeps the headless signoff aligned with the same `write` → `read` → `edit.hashline_scan` →
+`edit.hashline_apply` → `read` path that the TUI live lane exercises.
 
 Then run the hashline-first visual lane:
 
@@ -168,8 +166,8 @@ The native screenshot lane writes sibling runs under:
 target/pty-visual-artifacts/native-visual/native_visual_ghostty_smoke/<run-id>/
 ```
 
-Those runs use the same manifest filenames plus `native_visual_summary.json` / `.txt` so window
-capture provenance and cleanup state stay reviewable next to the screenshots.
+Those runs use the same manifest filenames plus `native_visual_summary.json` / `.txt` so capture
+provenance and cleanup state stay reviewable next to the screenshots.
 
 Example run id:
 
@@ -222,8 +220,8 @@ Use this order while iterating:
 6. `live_proxy_e2e_tui_parity_signoff` when you want the full TUI Batch 1 closeout
 7. `live_proxy_e2e_visual_verifier` only for screenshot/signoff work
 
-The tests are still live-model dependent, so retries are expected and already built into the
-TUI tool-flow lane.
+The tests are live-model dependent, so retries are expected and already built into the TUI
+tool-flow lane.
 
 When provider behavior differs, record it under the selected provider name in the live summary
 evidence and, when it becomes part of signoff, in the provider-turn expectations helper instead of

@@ -154,7 +154,7 @@ fn resolve_settings(
     let loaded = load_resolved_config(config_path.as_deref())
         .map_err(|err| err.to_string())?
         .ok_or_else(|| {
-        "prompt mode requires a config file; pass --config <path>, create ./harness.jsonc or ./harness.json, or create $XDG_CONFIG_HOME/harness/harness.jsonc or $XDG_CONFIG_HOME/harness/harness.json for shared defaults. A starting point lives at configs/harness.example.jsonc, or re-run with --mock"
+            "prompt mode requires a config file; pass --config <path>, create ./harness.jsonc or ./harness.json, or create $XDG_CONFIG_HOME/harness/harness.jsonc or $XDG_CONFIG_HOME/harness/harness.json for shared defaults. A starting point lives at configs/harness.example.jsonc, or re-run with --mock"
                 .to_string()
         })?;
 

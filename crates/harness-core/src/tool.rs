@@ -452,14 +452,7 @@ impl ToolRegistry {
 
 pub fn actor_capabilities(actor_kind: ActorKind) -> BTreeSet<ToolCapability> {
     match actor_kind {
-        ActorKind::Worker => BTreeSet::from([
-            ToolCapability::ReadFs,
-            ToolCapability::EditFs,
-            ToolCapability::Shell,
-            ToolCapability::Network,
-            ToolCapability::SpawnAgent,
-        ]),
-        ActorKind::Supervisor | ActorKind::System => BTreeSet::from([
+        ActorKind::Worker | ActorKind::Supervisor | ActorKind::System => BTreeSet::from([
             ToolCapability::ReadFs,
             ToolCapability::EditFs,
             ToolCapability::Shell,

@@ -1498,7 +1498,7 @@ async fn native_code_lsp_supports_non_position_operations_without_cursor_placeho
         .expect("workspaceSymbol structured json");
     assert_eq!(workspace_json["operation"], json!("workspaceSymbol"));
     assert_eq!(workspace_json["query"], json!("helper"));
-    assert!(workspace_json["result"][0]["query"] == json!("helper"));
+    assert_eq!(workspace_json["result"][0]["query"], json!("helper"));
     assert!(workspace_json.get("line").is_none());
     assert!(workspace_json.get("character").is_none());
 }

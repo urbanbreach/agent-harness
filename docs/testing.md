@@ -24,8 +24,8 @@ Use the narrowest test that proves a change, then run the workspace gates before
 
 ## Provider context compaction regressions
 
-- `cargo test -p harness-core deterministic_summary_uses_required_pi_sections`
-- `cargo test -p harness-core model_summary_validation_rejects_missing_required_pi_section`
+- `cargo test -p harness-core deterministic_summary_uses_required_harness_sections`
+- `cargo test -p harness-core model_summary_validation_rejects_missing_required_harness_section`
 - `cargo test -p harness-core compaction_trigger_pre_prompt_uses_estimate_without_provider_usage`
 - `cargo test -p harness-core compaction_trigger_uses_fallback_budget_without_model_metadata`
 - `cargo test -p harness-core failed_turn_context`

@@ -415,25 +415,30 @@ fn selector_rule_mode<'a>(
     rules: &'a [PermissionSelectorRule],
     value: Option<&str>,
 ) -> Option<&'a PermissionMode> {
-    if let Some(value) = value {
-        if let Some(rule) = rules.iter().find(|rule| {
-            matches!(&rule.selector, PermissionSelector::Exact(selector) if selector == value)
-        }) {
-            return Some(&rule.mode);
-        }
-
-        if let Some(rule) = rules
+    let Some(value) = value else {
+        return rules
             .iter()
-            .filter(|rule| {
-                matches!(&rule.selector, PermissionSelector::Prefix(prefix) if value.starts_with(prefix))
-            })
-            .max_by_key(|rule| match &rule.selector {
-                PermissionSelector::Prefix(prefix) => prefix.len(),
-                PermissionSelector::Exact(_) | PermissionSelector::CatchAll => 0,
-            })
-        {
-            return Some(&rule.mode);
-        }
+            .find(|rule| matches!(rule.selector, PermissionSelector::CatchAll))
+            .map(|rule| &rule.mode);
+    };
+
+    if let Some(rule) = rules.iter().find(
+        |rule| matches!(&rule.selector, PermissionSelector::Exact(selector) if selector == value),
+    ) {
+        return Some(&rule.mode);
+    }
+
+    if let Some(rule) = rules
+        .iter()
+        .filter(|rule| {
+            matches!(&rule.selector, PermissionSelector::Prefix(prefix) if value.starts_with(prefix))
+        })
+        .max_by_key(|rule| match &rule.selector {
+            PermissionSelector::Prefix(prefix) => prefix.len(),
+            PermissionSelector::Exact(_) | PermissionSelector::CatchAll => 0,
+        })
+    {
+        return Some(&rule.mode);
     }
 
     rules

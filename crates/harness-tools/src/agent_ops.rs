@@ -413,17 +413,15 @@ async fn wait_for_request_completion(
             tokio::time::timeout(remaining.min(Duration::from_millis(250)), stream.next()).await;
         match next {
             Ok(Some(Ok(event))) => match &event.payload {
-                EventV1::TaskCompleted(data)
+                EventV1::TaskCompleted(_)
                     if event.correlation_id.as_deref() == Some(request_id) =>
                 {
-                    let _ = data;
                     return summarize_child_request(ctx, request_id, ChildTerminalState::Completed)
                         .await;
                 }
-                EventV1::TaskCancelled(data)
+                EventV1::TaskCancelled(_)
                     if event.correlation_id.as_deref() == Some(request_id) =>
                 {
-                    let _ = data;
                     return summarize_child_request(ctx, request_id, ChildTerminalState::Failed)
                         .await;
                 }
@@ -612,13 +610,15 @@ fn spawn_result_json(
 }
 
 fn batch_detail_json(outcome: BatchCallOutcome) -> Value {
-    let request = json!({
-        "tool_id": outcome.tool_id,
-        "canonical_tool_id": outcome.canonical_tool_id,
-        "parameters": outcome.parameters,
-    });
+    let BatchCallOutcome {
+        index,
+        tool_id,
+        canonical_tool_id,
+        parameters,
+        result,
+    } = outcome;
 
-    match outcome.result {
+    match result {
         Ok(value) => {
             let result = json!({
                 "success": true,
@@ -629,11 +629,15 @@ fn batch_detail_json(outcome: BatchCallOutcome) -> Value {
             });
 
             json!({
-                "index": outcome.index,
-                "tool_id": request.get("tool_id").cloned(),
-                "canonical_tool_id": request.get("canonical_tool_id").cloned(),
-                "parameters": request.get("parameters").cloned(),
-                "request": request,
+                "index": index,
+                "tool_id": &tool_id,
+                "canonical_tool_id": &canonical_tool_id,
+                "parameters": &parameters,
+                "request": {
+                    "tool_id": &tool_id,
+                    "canonical_tool_id": &canonical_tool_id,
+                    "parameters": &parameters,
+                },
                 "success": true,
                 "status": "succeeded",
                 "summary": result.get("summary").cloned(),
@@ -650,11 +654,15 @@ fn batch_detail_json(outcome: BatchCallOutcome) -> Value {
             });
 
             json!({
-                "index": outcome.index,
-                "tool_id": request.get("tool_id").cloned(),
-                "canonical_tool_id": request.get("canonical_tool_id").cloned(),
-                "parameters": request.get("parameters").cloned(),
-                "request": request,
+                "index": index,
+                "tool_id": &tool_id,
+                "canonical_tool_id": &canonical_tool_id,
+                "parameters": &parameters,
+                "request": {
+                    "tool_id": &tool_id,
+                    "canonical_tool_id": &canonical_tool_id,
+                    "parameters": &parameters,
+                },
                 "success": false,
                 "status": "failed",
                 "error": result.get("error").cloned(),

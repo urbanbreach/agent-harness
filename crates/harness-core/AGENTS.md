@@ -1,7 +1,7 @@
 # AGENTS: crates/harness-core
 
 ## OVERVIEW
-Core runtime/domain crate: event schema, coordinator, scheduling, permissions, config, projections, hashline edit engine, redaction, and deterministic storage.
+Core runtime crate: event schema, coordinator, scheduling, permissions, config, projections, hashline edit engine, redaction, and deterministic storage.
 
 Read the workspace root `AGENTS.md` first for search scope, commands, and cross-crate invariants.
 
@@ -32,7 +32,7 @@ Read the workspace root `AGENTS.md` first for search scope, commands, and cross-
 - Canonical runtime keys: `provider`, `model`, `small_model`, `agent`, `default_agent`, `permission`, `mcp`, `skills`, `instructions`.
 - Canonical permission names: `bash`, `edit`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, `lsp`.
 - Legacy aliases/shapes are migration inputs only; new examples/docs/tests should use the harness-centered split.
-- Unsupported top-level product areas fail validation explicitly.
+- Unsupported top-level areas fail validation explicitly.
 
 ## TESTS
 ```bash

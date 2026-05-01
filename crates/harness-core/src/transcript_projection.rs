@@ -582,7 +582,7 @@ pub fn project_transcript(
                     .metadata
                     .as_ref()
                     .and_then(|metadata| lineage_projection(metadata.lineage.as_ref(), event));
-                if let Some(lineage) = lineage.clone() {
+                if let Some(lineage) = lineage.as_ref() {
                     push_unique_lineage(&mut projection.session_lineage, lineage.clone());
                 }
                 append_task_part(
@@ -850,7 +850,7 @@ pub fn project_transcript(
                     .metadata
                     .as_ref()
                     .and_then(|metadata| lineage_projection(metadata.lineage.as_ref(), event));
-                if let Some(lineage) = lineage.clone() {
+                if let Some(lineage) = lineage.as_ref() {
                     push_unique_lineage(&mut projection.session_lineage, lineage.clone());
                 }
                 let metadata_artifacts = artifacts_from_tool_metadata(

@@ -75,15 +75,15 @@ async fn recorded_runtime_context_meta_roundtrips() {
         workspace_root.display().to_string()
     );
     assert_eq!(
-        metadata.recorded_runtime_context,
-        Some(expected_context.clone())
+        metadata.recorded_runtime_context.as_ref(),
+        Some(&expected_context)
     );
 
     let catalog_metadata: SessionCatalogMetadata =
         serde_json::from_str(&meta_body).expect("parse session catalog metadata");
     assert_eq!(
-        catalog_metadata.recorded_runtime_context,
-        Some(expected_context.clone())
+        catalog_metadata.recorded_runtime_context.as_ref(),
+        Some(&expected_context)
     );
 
     let events = load_events(&run.events_path);

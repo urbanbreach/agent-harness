@@ -1036,8 +1036,8 @@ fn startup_home_screen_renders_compose_first_shell() {
 
     let rendered = render_live_lines(&app, 160, 48);
     assert!(rendered.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻"));
-    assert!(rendered.contains("Launch: deep · gpt-5.4"));
-    assert!(rendered.contains("Provider proxy"));
+    assert!(!rendered.contains("Launch: deep · gpt-5.4"));
+    assert!(!rendered.contains("Provider proxy"));
     assert!(rendered.contains("Deep gpt-5.4 proxy · Demo"));
     assert!(rendered.contains("Ctrl+p opens saved sessions"));
     assert!(!rendered.contains("Enter select"));
@@ -5119,7 +5119,7 @@ fn streaming_transcript_auto_scrolls_to_latest_wrapped_content() {
                     "nu",
                     "xi",
                     "omicron",
-                    "pi",
+                    "harness",
                     "rho",
                     "sigma",
                     "tau",
@@ -5193,7 +5193,7 @@ fn transcript_page_down_reaches_response_tail_after_scrolling_up() {
             "nu",
             "xi",
             "omicron",
-            "pi",
+            "harness",
             "rho",
             "sigma",
             "tau",
@@ -6836,8 +6836,8 @@ fn startup_surface_renders_primary_actions() {
     let rendered = render_live_lines(&app, 100, 24);
     assert_eq!(app.focus, app::Focus::List);
     assert!(rendered.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻"));
-    assert!(rendered.contains("Launch: worker · model-1"));
-    assert!(rendered.contains("Provider mock"));
+    assert!(!rendered.contains("Launch: worker · model-1"));
+    assert!(!rendered.contains("Provider mock"));
     assert!(rendered.contains("Worker model-1 mock"));
     assert!(rendered.contains("Ctrl+p opens saved sessions"));
     assert!(!rendered.contains("Enter select"));
@@ -7811,8 +7811,8 @@ fn startup_shell_shows_profile_provider_and_model_chrome() {
 
     let rendered = render_live_lines(&app, 100, 24);
     assert!(rendered.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻"));
-    assert!(rendered.contains("Launch: deep · gpt-5.4"));
-    assert!(rendered.contains("Provider proxy"));
+    assert!(!rendered.contains("Launch: deep · gpt-5.4"));
+    assert!(!rendered.contains("Provider proxy"));
     assert!(rendered.contains("Deep gpt-5.4 proxy · Demo"));
     assert!(rendered.contains("Ctrl+p opens saved sessions"));
     assert!(!rendered.contains("Enter select"));
@@ -7836,15 +7836,16 @@ fn lifecycle_shell_narrow_layout_renders_primary_cta() {
 
     let lines = rendered.lines().collect::<Vec<_>>();
     let title_row = find_line_containing(&lines, "╻ ╻  ┏━┓  ┏━┓  ┏┓╻").expect("startup logo row");
-    let metadata_row =
-        find_line_containing(&lines, "Launch: worker · model-1").expect("metadata row");
+    let prompt_row = find_line_containing(&lines, "Ask anything... \"inspect src/ui.rs\"")
+        .expect("startup prompt row");
     let footer_row = find_line_containing(&lines, "opens saved sessions").expect("footer row");
 
     assert!(!rendered.contains("Actions:"));
     assert!(!rendered.contains("Dispatch a new run"));
+    assert!(!rendered.contains("Launch: worker · model-1"));
     assert!(rendered.contains("opens saved sessions"));
-    assert!(title_row < metadata_row);
-    assert!(metadata_row < footer_row);
+    assert!(title_row < prompt_row);
+    assert!(prompt_row < footer_row);
 }
 
 #[cfg(test)]
@@ -8056,7 +8057,10 @@ fn startup_home_matches_live_empty_shell_language() {
     let startup_render = render_live_lines(&startup, 100, 24);
     let live_render = render_live_lines(&live, 100, 24);
 
-    for marker in ["╻ ╻  ┏━┓  ┏━┓  ┏┓╻", "Launch: worker · model-1"] {
+    for marker in [
+        "╻ ╻  ┏━┓  ┏━┓  ┏┓╻",
+        "Ask anything... \"inspect src/ui.rs\"",
+    ] {
         assert!(
             startup_render.contains(marker),
             "startup missing {marker}\n{startup_render}"
@@ -8070,6 +8074,7 @@ fn startup_home_matches_live_empty_shell_language() {
     }
 
     assert!(!startup_render.contains("Dispatch a new run"));
+    assert!(!startup_render.contains("Launch: worker · model-1"));
     assert!(live_render.contains("Start a conversation to begin"));
     assert!(startup_render.contains("● Tip"));
     assert!(!live_render.contains("Waiting for first turn…"));
@@ -8097,8 +8102,8 @@ fn live_empty_state_uses_shared_home_surface_tokens() {
     let _theme = Theme::default();
 
     assert!(
-        startup_render.contains("open a fresh session in this directory"),
-        "startup should keep lifecycle copy attached to the compose stack\n{startup_render}"
+        !startup_render.contains("open a fresh session in this directory"),
+        "startup should not render purpose copy below the logo\n{startup_render}"
     );
     assert!(
         startup_render.contains("Ask anything... \"inspect src/ui.rs\""),
@@ -8141,8 +8146,9 @@ fn startup_and_live_empty_share_spacing_contract() {
     let startup_lines = startup_render.lines().collect::<Vec<_>>();
     let startup_title =
         find_line_containing(&startup_lines, "╻ ╻  ┏━┓  ┏━┓  ┏┓╻").expect("startup logo");
-    let startup_metadata =
-        find_line_containing(&startup_lines, "Launch: worker · model-1").expect("startup metadata");
+    let startup_prompt =
+        find_line_containing(&startup_lines, "Ask anything... \"inspect src/ui.rs\"")
+            .expect("startup prompt");
     let startup_keys =
         find_line_containing(&startup_lines, "opens saved sessions").expect("startup key hints");
 
@@ -8154,8 +8160,8 @@ fn startup_and_live_empty_share_spacing_contract() {
         .expect("live value prop");
     let live_keys = find_line_containing(&live_lines, "Ctrl+p commands").expect("live key hints");
 
-    assert!(startup_title < startup_metadata);
-    assert!(startup_metadata < startup_keys);
+    assert!(startup_title < startup_prompt);
+    assert!(startup_prompt < startup_keys);
 
     assert!(live_metadata < live_value);
     assert!(live_value < live_keys);

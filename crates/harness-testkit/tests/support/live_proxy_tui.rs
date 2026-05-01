@@ -828,7 +828,9 @@ pub(crate) fn tool_flow_tool_call_state(
                     .to_string();
                 if status != "succeeded" {
                     return Ok(ToolFlowToolCallState::Failed(status));
-                } else if expected_tool_id == "bash"
+                }
+
+                if expected_tool_id == "bash"
                     && data
                         .get("output_json")
                         .and_then(|output| output.get("success"))
@@ -844,9 +846,9 @@ pub(crate) fn tool_flow_tool_call_state(
                     return Ok(ToolFlowToolCallState::Failed(format!(
                         "shell_exit_{shell_status}"
                     )));
-                } else {
-                    success_count += 1;
                 }
+
+                success_count += 1;
             }
             _ => {}
         }

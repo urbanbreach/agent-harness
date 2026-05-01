@@ -27,9 +27,9 @@ const CONFIG_SEARCH_LOCATIONS: [&str; 4] = [
 
 pub fn interactive_config_guidance() -> String {
     format!(
-            "interactive mode requires a config file; pass --config <path> or create {}. A starting point lives at configs/harness.example.jsonc and defaults to the build agent. If you want the demo/mock UI instead, re-run with --mock",
-            CONFIG_SEARCH_LOCATIONS.join(" or ")
-        )
+        "interactive mode requires a config file; pass --config <path> or create {}. A starting point lives at configs/harness.example.jsonc and defaults to the build agent. If you want the demo/mock UI instead, re-run with --mock",
+        CONFIG_SEARCH_LOCATIONS.join(" or ")
+    )
 }
 
 pub fn build_interactive_coordinator_config(

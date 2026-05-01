@@ -15,12 +15,15 @@ use harness_core::redact::DefaultRedactor;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 use serde_json::json;
 
+const SHELL_RUN_TOOL_ID: &str = "shell.run";
+const TRUE_CMD_ARGS: &str = "true";
+
 struct TestShellTool;
 
 #[async_trait]
 impl Tool for TestShellTool {
     fn id(&self) -> &str {
-        "shell.run"
+        SHELL_RUN_TOOL_ID
     }
 
     fn capability(&self) -> ToolCapability {
@@ -79,8 +82,8 @@ async fn tool_auth_uses_derived_worker_category_not_caller_category() {
         .request_tool_call(
             EventActor::new(ActorKind::Worker, Some(worker_agent_id)),
             Some("spoof-allow".to_string()),
-            "shell.run",
-            json!({"cmd": "true"}),
+            SHELL_RUN_TOOL_ID,
+            json!({"cmd": TRUE_CMD_ARGS}),
         )
         .await
         .expect_err("request should be denied by derived worker category");
@@ -133,8 +136,8 @@ async fn unknown_worker_agent_id_is_denied_closed() {
         .request_tool_call(
             EventActor::new(ActorKind::Worker, Some("agent_missing".to_string())),
             Some("spoof-allow".to_string()),
-            "shell.run",
-            json!({"cmd": "true"}),
+            SHELL_RUN_TOOL_ID,
+            json!({"cmd": TRUE_CMD_ARGS}),
         )
         .await
         .expect_err("unknown worker id must fail closed");
@@ -181,8 +184,8 @@ async fn worker_toolset_enforcement_blocks_non_allowlisted_tool() {
         .request_tool_call(
             EventActor::new(ActorKind::Worker, Some(worker_agent_id)),
             Some("spoof-allow".to_string()),
-            "shell.run",
-            json!({"cmd": "true"}),
+            SHELL_RUN_TOOL_ID,
+            json!({"cmd": TRUE_CMD_ARGS}),
         )
         .await
         .expect_err("tool outside worker toolset must be denied");

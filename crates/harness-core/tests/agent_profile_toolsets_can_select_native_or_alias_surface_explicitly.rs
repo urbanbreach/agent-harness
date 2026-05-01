@@ -37,7 +37,14 @@ fn agent_profile_toolsets_are_exported_as_single_surface_provider_defs() {
     assert_eq!(tool_ids, vec!["bash", "list", "read"]);
     assert_eq!(function_names(&defs), vec!["bash", "list", "read"]);
     assert_eq!(
-        canonical_behaviors(&tool_ids),
+        tool_ids
+            .iter()
+            .map(|tool_id| {
+                canonical_tool_id_for(tool_id)
+                    .unwrap_or(tool_id)
+                    .to_string()
+            })
+            .collect::<BTreeSet<_>>(),
         tool_ids.iter().map(|tool_id| tool_id.to_string()).collect()
     );
     assert_eq!(
@@ -75,16 +82,5 @@ fn function_names(tool_defs: &[harness_providers::ToolDef]) -> Vec<&str> {
     tool_defs
         .iter()
         .map(|tool| tool.function_name.as_str())
-        .collect()
-}
-
-fn canonical_behaviors(tool_ids: &[&str]) -> BTreeSet<String> {
-    tool_ids
-        .iter()
-        .map(|tool_id| {
-            canonical_tool_id_for(tool_id)
-                .unwrap_or(tool_id)
-                .to_string()
-        })
         .collect()
 }

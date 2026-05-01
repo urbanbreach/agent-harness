@@ -18,7 +18,7 @@ pub fn execute(cmd: ModelsCommand, config_path: Option<PathBuf>) -> ExitCode {
         }
     }) else {
         eprintln!(
-        "models requires a config file; pass --config <path>, create ./harness.jsonc or ./harness.json, or create $XDG_CONFIG_HOME/harness/harness.jsonc or $XDG_CONFIG_HOME/harness/harness.json for shared defaults. A starting point lives at configs/harness.example.jsonc"
+            "models requires a config file; pass --config <path>, create ./harness.jsonc or ./harness.json, or create $XDG_CONFIG_HOME/harness/harness.jsonc or $XDG_CONFIG_HOME/harness/harness.json for shared defaults. A starting point lives at configs/harness.example.jsonc"
         );
         return ExitCode::from(2);
     };

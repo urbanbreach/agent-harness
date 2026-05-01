@@ -31,7 +31,7 @@ use markers::{
     RUN_FINISHED_SHELL_MARKERS, STARTUP_COMMAND_PALETTE_MARKER, STARTUP_CONTINUE_HISTORY_MARKER,
     STARTUP_CONTINUE_HISTORY_READY_MARKER, STARTUP_HOME_COMPOSER_HINT_MARKER,
     STARTUP_HOME_DENSE_VALUE_PROP_MARKER, STARTUP_HOME_SHORTCUT_MARKER,
-    STARTUP_HOME_VALUE_PROP_MARKER, STARTUP_LAUNCHER_READY_MARKER, STARTUP_REPLAY_HISTORY_MARKER,
+    STARTUP_LAUNCHER_READY_MARKER, STARTUP_REPLAY_HISTORY_MARKER,
 };
 use pty_process::{spawn_pty_process, SpawnedPtyProcess};
 use visual_contracts::OFFLINE_VISUAL_EVIDENCE_CONTRACTS;
@@ -461,10 +461,9 @@ fn pty_e2e_startup_home_primary() {
         "startup_home_primary",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact(STARTUP_HOME_VALUE_PROP_MARKER, 48, 8),
+        FocusCapture::anchored_exact(STARTUP_HOME_COMPOSER_HINT_MARKER, 48, 8),
         &[
             STARTUP_HOME_SHORTCUT_MARKER,
-            STARTUP_HOME_VALUE_PROP_MARKER,
             STARTUP_HOME_COMPOSER_HINT_MARKER,
         ],
     )
@@ -472,9 +471,7 @@ fn pty_e2e_startup_home_primary() {
 
     assert!(screen.contains(STARTUP_HOME_SHORTCUT_MARKER));
     assert!(screen.contains(STARTUP_HOME_COMPOSER_HINT_MARKER));
-    assert!(screen.contains("Launch: worker · model-1"));
-    assert!(screen.contains("Provider mock · Demo"));
-    assert!(screen.contains(STARTUP_HOME_VALUE_PROP_MARKER));
+    assert!(screen.contains("Worker model-1 mock · Demo"));
     assert!(!screen.contains("New session"));
     assert!(!screen.contains("Continue session"));
     assert!(!screen.contains("Replay session"));
@@ -485,7 +482,6 @@ fn pty_e2e_startup_home_primary() {
             &screen,
             &[
                 STARTUP_HOME_SHORTCUT_MARKER,
-                STARTUP_HOME_VALUE_PROP_MARKER,
                 STARTUP_HOME_COMPOSER_HINT_MARKER,
             ],
             &visual,
@@ -527,16 +523,12 @@ fn pty_e2e_startup_home_dense() {
         &harness.parser,
         &visual_dir,
         FocusCapture::anchored_exact(STARTUP_HOME_DENSE_VALUE_PROP_MARKER, 32, 6),
-        &[
-            STARTUP_HOME_DENSE_VALUE_PROP_MARKER,
-            STARTUP_HOME_COMPOSER_HINT_MARKER,
-        ],
+        &[STARTUP_HOME_DENSE_VALUE_PROP_MARKER],
     )
     .expect("capture startup home dense image");
 
     assert!(screen.contains(STARTUP_HOME_COMPOSER_HINT_MARKER));
-    assert!(screen.contains("Launch: worker · model-1"));
-    assert!(screen.contains("Provider mock · Demo"));
+    assert!(screen.contains("Worker model-1 mock · Demo"));
     assert!(screen.contains(STARTUP_HOME_DENSE_VALUE_PROP_MARKER));
     assert!(!screen.contains("New session"));
     assert!(!screen.contains("Continue session"));
@@ -544,14 +536,7 @@ fn pty_e2e_startup_home_dense() {
     assert!(visual_dir.join(&visual.file_name).exists());
     insta::assert_snapshot!(
         "pty_startup_home_dense",
-        checkpoint_visual_snapshot(
-            &screen,
-            &[
-                STARTUP_HOME_DENSE_VALUE_PROP_MARKER,
-                STARTUP_HOME_COMPOSER_HINT_MARKER,
-            ],
-            &visual,
-        )
+        checkpoint_visual_snapshot(&screen, &[STARTUP_HOME_DENSE_VALUE_PROP_MARKER], &visual)
     );
 
     harness
@@ -2648,9 +2633,8 @@ impl FocusCapture {
 fn checkpoint_visual_snapshot(screen: &str, markers: &[&str], visual: &VisualCheckpoint) -> String {
     let mut lines = marker_presence_lines(screen, markers);
     lines.push(format!("focus_marker: {}", visual.focus_marker));
-    // Keep the raster PNG + pixel hash in the manifest for manual visual review,
-    // but snapshot the terminal render state here so one-cell raster drift does
-    // not destabilize the deterministic PTY contract.
+    // Snapshot terminal render state here so one-cell raster drift does not
+    // destabilize the deterministic PTY contract.
     lines.push(format!(
         "focus_render_state_blake3: {}",
         visual.focus_render_state_blake3

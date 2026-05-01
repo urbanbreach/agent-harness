@@ -634,8 +634,7 @@ impl ModelOption {
         }
 
         let input = input.to_lowercase();
-        self.profile.to_lowercase().contains(&input)
-            || self.provider.to_lowercase().contains(&input)
+        self.provider.to_lowercase().contains(&input)
             || self
                 .provider_display_label()
                 .is_some_and(|value| value.to_lowercase().contains(&input))
@@ -660,9 +659,6 @@ impl ModelOption {
                 .is_some_and(|value| value.to_lowercase().contains(&input))
             || self
                 .text_verbosity()
-                .is_some_and(|value| value.to_lowercase().contains(&input))
-            || self
-                .recommended_for()
                 .is_some_and(|value| value.to_lowercase().contains(&input))
     }
 
@@ -2150,16 +2146,21 @@ impl AppState {
     fn collect_model_options(&self) -> BTreeSet<ModelOption> {
         let mut options = BTreeSet::new();
 
-        options.extend(self.launch_metadata.available_models().iter().cloned());
+        options.extend(
+            self.launch_metadata
+                .available_models()
+                .iter()
+                .map(|option| self.model_option_for_active_profile(option)),
+        );
 
         if let Some(current_option) = self.launch_metadata.to_model_option() {
-            options.insert(current_option);
+            options.insert(self.model_option_for_active_profile(&current_option));
         }
 
         if options.is_empty() {
             for activity in &self.activities {
                 if !activity.provider_id.trim().is_empty() && !activity.model_id.trim().is_empty() {
-                    options.insert(ModelOption {
+                    let option = ModelOption {
                         profile: self.launch_metadata.profile().to_string(),
                         provider: activity.provider_id.clone(),
                         provider_display_label: None,
@@ -2178,7 +2179,8 @@ impl AppState {
                         reasoning_effort: None,
                         text_verbosity: None,
                         recommended_for: None,
-                    });
+                    };
+                    options.insert(self.model_option_for_active_profile(&option));
                 }
             }
 
@@ -2189,7 +2191,7 @@ impl AppState {
                 let Some((provider, model)) = provider_model.split_once('/') else {
                     continue;
                 };
-                options.insert(ModelOption {
+                let option = ModelOption {
                     profile: session_history_profile_label(entry).to_string(),
                     provider: provider.to_string(),
                     provider_display_label: None,
@@ -2208,11 +2210,22 @@ impl AppState {
                     reasoning_effort: None,
                     text_verbosity: None,
                     recommended_for: None,
-                });
+                };
+                options.insert(self.model_option_for_active_profile(&option));
             }
         }
 
         options
+    }
+
+    fn model_option_for_active_profile(&self, option: &ModelOption) -> ModelOption {
+        let mut option = option.clone();
+        option.profile = self.active_profile().to_string();
+        option.profile_description = self
+            .launch_metadata
+            .profile_description()
+            .map(str::to_string);
+        option
     }
 
     pub(super) fn update_model_filter(&mut self) {

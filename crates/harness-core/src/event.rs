@@ -625,15 +625,9 @@ impl ResolvedToolIdentity {
             .as_deref()
             .is_some_and(|tool_id| tool_id.starts_with("mcp."));
 
-        let effective_tool_id = if is_mcp_invocation {
-            persisted_canonical_tool_id
-                .clone()
-                .or_else(|| invoked_tool_id.clone())
-        } else {
-            persisted_canonical_tool_id
-                .clone()
-                .or_else(|| invoked_tool_id.clone())
-        };
+        let effective_tool_id = persisted_canonical_tool_id
+            .clone()
+            .or_else(|| invoked_tool_id.clone());
         let canonical_tool_id = if is_mcp_invocation {
             None
         } else {

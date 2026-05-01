@@ -249,10 +249,10 @@ struct QuestionPromptCompat {
     custom: Option<bool>,
     #[serde(default, rename = "type")]
     question_type: Option<String>,
-    #[serde(default)]
-    required: Option<bool>,
-    #[serde(default)]
-    id: Option<Value>,
+    #[serde(default, rename = "required")]
+    _required: Option<bool>,
+    #[serde(default, rename = "id")]
+    _id: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -287,8 +287,8 @@ struct TodoItemCompat {
     priority: Option<String>,
     #[serde(default)]
     done: Option<bool>,
-    #[serde(default)]
-    id: Option<Value>,
+    #[serde(default, rename = "id")]
+    _id: Option<Value>,
 }
 
 impl<'de> Deserialize<'de> for TodoItem {
@@ -297,7 +297,6 @@ impl<'de> Deserialize<'de> for TodoItem {
         D: Deserializer<'de>,
     {
         let compat = TodoItemCompat::deserialize(deserializer)?;
-        let _ = compat.id;
         let content = compat
             .content
             .or(compat.text)
@@ -330,8 +329,6 @@ impl<'de> Deserialize<'de> for QuestionPrompt {
         D: Deserializer<'de>,
     {
         let compat = QuestionPromptCompat::deserialize(deserializer)?;
-        let _ = compat.required;
-        let _ = compat.id;
         let question = compat
             .question
             .or(compat.prompt)

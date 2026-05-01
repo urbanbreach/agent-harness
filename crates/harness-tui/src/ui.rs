@@ -112,8 +112,8 @@ pub(crate) fn exact_test_startup_shell_keeps_no_default_tab_chrome_after_runtime
         .expect("draw frame");
     let debug = format!("{:?}", terminal.backend().buffer());
 
-    assert!(debug.contains("Launch: deep · GPT-5.4 Mini · Deterministic"));
-    assert!(debug.contains("Provider default"));
+    assert!(!debug.contains("Launch: deep · GPT-5.4 Mini · Deterministic"));
+    assert!(!debug.contains("Provider default"));
     assert!(debug.contains("Ask anything... \"inspect src/ui.rs\""));
     assert!(!debug.contains("Tabs"));
     assert!(!debug.contains("Actions:"));
@@ -494,7 +494,7 @@ fn render_startup_session_surface(
     };
 
     frame.render_widget(chromeless_shell_section(theme), plan.shell);
-    render_startup_lifecycle_surface(frame, app, transcript_area, theme);
+    render_transcript_pane(frame, app, transcript_area, theme);
     render_unified_bottom_dock(frame, app, dock, theme);
 }
 
@@ -1352,8 +1352,8 @@ mod tests {
 
         let debug = render_debug(&app, 100, 24);
         assert!(debug.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻") || debug.contains("Harness"));
-        assert!(debug.contains("Launch: deep · gpt-5.4"));
-        assert!(debug.contains("Provider proxy"));
+        assert!(!debug.contains("Launch: deep · gpt-5.4"));
+        assert!(!debug.contains("Provider proxy"));
         assert!(debug.contains("Deep gpt-5.4 proxy · Demo"));
         assert!(debug.contains("Ctrl+p open"));
         assert!(!debug.contains("Enter select"));

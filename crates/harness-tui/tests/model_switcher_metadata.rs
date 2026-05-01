@@ -126,6 +126,51 @@ fn build_plan_models() -> Vec<ModelOption> {
     ]
 }
 
+fn duplicate_build_plan_models() -> Vec<ModelOption> {
+    vec![
+        ModelOption {
+            profile: "build".to_string(),
+            provider: "default".to_string(),
+            provider_display_label: Some("default".to_string()),
+            provider_backend_label: Some("OpenAI".to_string()),
+            model: "gpt-5.4-mini".to_string(),
+            model_display_label: Some("GPT-5.4 Mini".to_string()),
+            variant: Some("deterministic".to_string()),
+            variant_display_label: Some("Deterministic".to_string()),
+            display_label: Some("GPT-5.4 Mini · Deterministic".to_string()),
+            token_window_label: Some("128k ctx · 128k in · 4k out".to_string()),
+            context_window_tokens: Some(128000),
+            max_input_tokens: Some(128000),
+            max_output_tokens: Some(4096),
+            description: Some("Stable low-variance coding".to_string()),
+            profile_description: Some("Build".to_string()),
+            reasoning_effort: Some("minimal".to_string()),
+            text_verbosity: Some("low".to_string()),
+            recommended_for: Some("build".to_string()),
+        },
+        ModelOption {
+            profile: "plan".to_string(),
+            provider: "default".to_string(),
+            provider_display_label: Some("default".to_string()),
+            provider_backend_label: Some("OpenAI".to_string()),
+            model: "gpt-5.4-mini".to_string(),
+            model_display_label: Some("GPT-5.4 Mini".to_string()),
+            variant: Some("deterministic".to_string()),
+            variant_display_label: Some("Deterministic".to_string()),
+            display_label: Some("GPT-5.4 Mini · Deterministic".to_string()),
+            token_window_label: Some("128k ctx · 128k in · 4k out".to_string()),
+            context_window_tokens: Some(128000),
+            max_input_tokens: Some(128000),
+            max_output_tokens: Some(4096),
+            description: Some("Stable low-variance coding".to_string()),
+            profile_description: Some("Plan".to_string()),
+            reasoning_effort: Some("minimal".to_string()),
+            text_verbosity: Some("low".to_string()),
+            recommended_for: Some("planning".to_string()),
+        },
+    ]
+}
+
 fn same_profile_variant_options() -> Vec<ModelOption> {
     vec![
         ModelOption {
@@ -286,7 +331,7 @@ fn model_switcher_enter_emits_switch_intent_for_selected_model() {
     app.handle_key(key(KeyCode::Enter));
 
     assert!(!app.model_switcher_visible);
-    assert_eq!(app.active_profile(), "plan");
+    assert_eq!(app.active_profile(), "build");
     assert_eq!(app.launch_mode_label(), Some("Live"));
     let intents = intents.lock().expect("lock intents");
     let UiIntent::SwitchModel {
@@ -296,8 +341,54 @@ fn model_switcher_enter_emits_switch_intent_for_selected_model() {
     else {
         panic!("expected switch model intent");
     };
-    assert_eq!(profile, "plan");
+    assert_eq!(profile, "build");
     assert_eq!(launch_metadata.variant(), Some("deterministic"));
+}
+
+#[test]
+fn model_switcher_deduplicates_agent_rows_and_preserves_current_agent() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(sink));
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini")
+            .with_available_models(duplicate_build_plan_models()),
+    );
+
+    for ch in "/model".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+
+    assert!(app.model_switcher_visible);
+    assert_eq!(app.model_options.len(), 1);
+    assert_eq!(app.model_options[0].profile, "build");
+
+    for ch in "plan".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+
+    assert!(app.model_filtered.is_empty());
+
+    for _ in 0..4 {
+        app.handle_key(key(KeyCode::Backspace));
+    }
+    app.handle_key(key(KeyCode::Enter));
+
+    assert_eq!(app.active_profile(), "build");
+    let intents = intents.lock().expect("lock intents");
+    let UiIntent::SwitchModel { profile, .. } =
+        intents.last().expect("switch intent should be emitted")
+    else {
+        panic!("expected switch model intent");
+    };
+    assert_eq!(profile, "build");
 }
 
 #[test]

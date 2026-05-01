@@ -573,11 +573,39 @@ pub(super) fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Re
 
         if app.startup_shell_visible() {
             render_startup_lifecycle_surface(frame, app, inner_area, theme);
+            let selection_snapshot = app.transcript_selection().and_then(|_| {
+                app.last_frame_area().and_then(|frame_area| {
+                    with_transcript_selection_snapshot(app, frame_area, Clone::clone)
+                })
+            });
+            render_transcript_selection(
+                frame,
+                app.transcript_selection(),
+                selection_snapshot.as_ref(),
+                selection_snapshot
+                    .as_ref()
+                    .map_or(inner_area, |snapshot| snapshot.viewport),
+                theme,
+            );
             return;
         }
 
         if live_empty_state_visible(app) {
             render_live_empty_state(frame, app, inner_area, theme);
+            let selection_snapshot = app.transcript_selection().and_then(|_| {
+                app.last_frame_area().and_then(|frame_area| {
+                    with_transcript_selection_snapshot(app, frame_area, Clone::clone)
+                })
+            });
+            render_transcript_selection(
+                frame,
+                app.transcript_selection(),
+                selection_snapshot.as_ref(),
+                selection_snapshot
+                    .as_ref()
+                    .map_or(inner_area, |snapshot| snapshot.viewport),
+                theme,
+            );
             return;
         }
 
@@ -774,8 +802,23 @@ fn build_transcript_selection_snapshot(
 ) -> Option<TranscriptSelectionSnapshot> {
     let transcript_area = FrameLayoutPlan::for_app(app, area).transcript?;
     let context = transcript_pane_context(app, transcript_area, app.theme());
-    if app.startup_shell_visible() || live_empty_state_visible(app) {
-        return None;
+    if app.startup_shell_visible() {
+        return lifecycle_selection_snapshot(
+            super::ui_lifecycle::startup_lifecycle_selection_surface(
+                app,
+                context.inner_area,
+                app.theme(),
+            )?,
+        );
+    }
+    if live_empty_state_visible(app) {
+        return lifecycle_selection_snapshot(
+            super::ui_lifecycle::live_empty_state_selection_surface(
+                app,
+                context.inner_area,
+                app.theme(),
+            )?,
+        );
     }
 
     let show_scrollbar = with_measured_transcript_layout_for_width_on_surface(
@@ -1208,6 +1251,96 @@ fn blank_selection_row(width: u16) -> TranscriptSelectionRow {
         continues_previous: false,
         copy_offset: 0,
     }
+}
+
+fn lifecycle_selection_snapshot(
+    surface: super::ui_lifecycle::LifecycleSelectionSurface,
+) -> Option<TranscriptSelectionSnapshot> {
+    let width = usize::from(surface.viewport.width.max(1));
+    let height = usize::from(surface.viewport.height);
+    if height == 0 {
+        return None;
+    }
+
+    let mut rows = vec![
+        TranscriptSelectionRow {
+            cells: vec![" ".to_string(); width],
+            continues_previous: false,
+            copy_offset: 0,
+        };
+        height
+    ];
+
+    for text in surface.text_rows {
+        let rendered_rows = aligned_selection_rows_for_line(&text.line, width, text.alignment);
+        let max_height = usize::from(text.max_height).min(rendered_rows.len());
+        for (offset, mut row) in rendered_rows.into_iter().take(max_height).enumerate() {
+            let target = text.row.saturating_add(offset);
+            if target >= rows.len() {
+                break;
+            }
+            row.continues_previous = offset > 0;
+            rows[target] = row;
+        }
+    }
+
+    Some(TranscriptSelectionSnapshot {
+        viewport: surface.viewport,
+        scroll_top: 0,
+        rows,
+    })
+}
+
+fn aligned_selection_rows_for_line(
+    line: &Line<'static>,
+    width: usize,
+    alignment: Alignment,
+) -> Vec<TranscriptSelectionRow> {
+    let mut rows = transcript_selection_line_rows(line, width.max(1));
+    let mut copy_offsets = vec![0; rows.len()];
+    if !matches!(alignment, Alignment::Left) {
+        for (idx, cells) in rows.iter_mut().enumerate() {
+            copy_offsets[idx] = align_selection_cells(cells, alignment);
+        }
+    }
+
+    rows.into_iter()
+        .enumerate()
+        .map(|(idx, cells)| TranscriptSelectionRow {
+            cells,
+            continues_previous: idx > 0,
+            copy_offset: copy_offsets[idx],
+        })
+        .collect()
+}
+
+fn align_selection_cells(cells: &mut Vec<String>, alignment: Alignment) -> usize {
+    let width = cells.len();
+    let content_end = cells
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, cell)| !cell.is_empty() && cell.as_str() != " ")
+        .map(|(idx, _)| idx.saturating_add(1))
+        .unwrap_or(0);
+    if content_end == 0 || content_end >= width {
+        return 0;
+    }
+
+    let leading = match alignment {
+        Alignment::Center => width.saturating_sub(content_end) / 2,
+        Alignment::Right => width.saturating_sub(content_end),
+        Alignment::Left => 0,
+    };
+    if leading == 0 {
+        return 0;
+    }
+
+    let mut shifted = vec![" ".to_string(); width];
+    let copy_len = content_end.min(width.saturating_sub(leading));
+    shifted[leading..leading + copy_len].clone_from_slice(&cells[..copy_len]);
+    *cells = shifted;
+    leading
 }
 
 fn render_transcript_selection(
@@ -12017,5 +12150,142 @@ mod tests {
         }
 
         assert_eq!(transcript_selection_cache_build_count_for_test(), 1);
+    }
+
+    #[test]
+    fn startup_lifecycle_text_participates_in_selection_copy() {
+        let mut app = AppState::new_startup(Vec::new(), None);
+        app.set_launch_metadata(
+            crate::app::LaunchMetadata::from_model_ref("deep", "proxy:gpt-5.4")
+                .with_mode_label("Demo"),
+        );
+
+        let area = Rect::new(0, 0, 100, 24);
+        let snapshot = transcript_selection_debug_snapshot(&app, area)
+            .expect("startup lifecycle selection snapshot");
+        let purpose = app.theme().live_shell.startup.new_session_purpose;
+        assert!(!snapshot.rows.iter().any(|line| line.contains(purpose)));
+        assert!(!snapshot.rows.iter().any(|line| line.contains("Launch:")));
+        assert!(!snapshot.rows.iter().any(|line| line.contains("Provider")));
+        let row = snapshot
+            .rows
+            .iter()
+            .position(|line| line.contains("┏━╸"))
+            .expect("startup logo row is selectable");
+
+        let hit = transcript_selection_cell(
+            &app,
+            area,
+            snapshot.viewport.x,
+            snapshot.viewport.y + u16::try_from(row).expect("row fits"),
+        )
+        .expect("startup row accepts selection hits");
+        assert_eq!(hit.row, row);
+
+        let copied = transcript_selection_text(
+            &app,
+            area,
+            TranscriptSelection {
+                anchor: TranscriptSelectionCell { row, column: 0 },
+                focus: TranscriptSelectionCell {
+                    row,
+                    column: usize::from(snapshot.viewport.width.saturating_sub(1)),
+                },
+            },
+        )
+        .expect("startup text copies from selection");
+        assert!(copied.contains("┏━╸"));
+    }
+
+    #[test]
+    fn live_empty_state_text_participates_in_selection_copy() {
+        let mut app = AppState::new_live(None, false, None);
+        app.set_launch_metadata(
+            crate::app::LaunchMetadata::from_model_ref("worker", "mock:model-1")
+                .with_mode_label("Demo"),
+        );
+
+        let area = Rect::new(0, 0, 100, 24);
+        let snapshot = transcript_selection_debug_snapshot(&app, area)
+            .expect("empty-state lifecycle selection snapshot");
+        let value_prop = app.theme().live_shell.empty_state.value_prop;
+        let row = snapshot
+            .rows
+            .iter()
+            .position(|line| line.contains(value_prop))
+            .expect("empty-state value prop row is selectable");
+
+        assert!(transcript_selection_cell(
+            &app,
+            area,
+            snapshot.viewport.x,
+            snapshot.viewport.y + u16::try_from(row).expect("row fits"),
+        )
+        .is_some());
+
+        let copied = transcript_selection_text(
+            &app,
+            area,
+            TranscriptSelection {
+                anchor: TranscriptSelectionCell { row, column: 0 },
+                focus: TranscriptSelectionCell {
+                    row,
+                    column: usize::from(snapshot.viewport.width.saturating_sub(1)),
+                },
+            },
+        )
+        .expect("empty-state text copies from selection");
+        assert_eq!(copied, value_prop);
+    }
+
+    #[test]
+    fn live_empty_state_wrapped_examples_participate_in_selection_copy() {
+        let mut app = AppState::new_live(None, false, None);
+        app.set_launch_metadata(
+            crate::app::LaunchMetadata::from_model_ref("worker", "mock:model-1")
+                .with_mode_label("Demo"),
+        );
+
+        let area = Rect::new(0, 0, 80, 24);
+        let snapshot = transcript_selection_debug_snapshot(&app, area)
+            .expect("empty-state lifecycle selection snapshot");
+        let prompts = &app.theme().live_shell.empty_state.example_prompts;
+        let first_example_row = snapshot
+            .rows
+            .iter()
+            .position(|line| line.contains(prompts[0].prompt))
+            .expect("first example prompt row is selectable");
+        let wrapped_example_row = first_example_row.saturating_add(1);
+        assert!(
+            snapshot.rows[wrapped_example_row].contains(prompts[1].prompt)
+                || snapshot.rows[wrapped_example_row].contains(prompts[2].prompt)
+                || snapshot.rows[wrapped_example_row].contains("review")
+                || snapshot.rows[wrapped_example_row].contains("latest"),
+            "wrapped examples row should carry visible prompt text: {:?}",
+            snapshot.rows[wrapped_example_row]
+        );
+
+        let copied = transcript_selection_text(
+            &app,
+            area,
+            TranscriptSelection {
+                anchor: TranscriptSelectionCell {
+                    row: wrapped_example_row,
+                    column: 0,
+                },
+                focus: TranscriptSelectionCell {
+                    row: wrapped_example_row,
+                    column: usize::from(snapshot.viewport.width.saturating_sub(1)),
+                },
+            },
+        )
+        .expect("wrapped example text copies from selection");
+        assert!(
+            copied.contains(prompts[1].prompt)
+                || copied.contains(prompts[2].prompt)
+                || copied.contains("review")
+                || copied.contains("latest"),
+            "copied: {copied:?}"
+        );
     }
 }

@@ -1,5 +1,5 @@
 # Reference
 
-The docs tree exists to exercise glob and grep.
+Docs tree for glob and grep coverage.
 
-BETA_MARKER: this line should be easy to find with grep.
+BETA_MARKER: grep target.

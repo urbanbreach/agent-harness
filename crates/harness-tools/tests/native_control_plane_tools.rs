@@ -116,11 +116,7 @@ async fn native_control_plane_tools_cover_invalid_todo_and_skill() {
         }))
     );
     let state_path = todo_state_file(&run);
-    assert!(
-        state_path.ends_with(Path::new("control-plane/todos.json")),
-        "todo state path should use the harness control-plane contract: {}",
-        state_path.display()
-    );
+    assert!(state_path.ends_with(Path::new("control-plane/todos.json")));
     assert!(state_path.exists(), "todo state file should be written");
 
     let todo_read = handle

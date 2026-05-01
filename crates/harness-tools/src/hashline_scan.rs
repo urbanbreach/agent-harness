@@ -19,9 +19,7 @@ pub(crate) struct HashlineScanTool;
 #[serde(deny_unknown_fields)]
 struct HashlineScanArgs {
     path: String,
-    #[serde(default)]
     start_line: Option<u32>,
-    #[serde(default)]
     limit: Option<u32>,
 }
 

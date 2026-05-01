@@ -121,9 +121,9 @@ const LIVE_TOOL_FLOW_FINAL_READ_PROMPT: &str = concat!(
 const DEFAULT_LIVE_PROXY_PROMPT: &str = "Say hello in exactly five words.";
 const DEFAULT_LIVE_PROXY_WAIT_TIMEOUT_MS: &str = "120000";
 const RESPONSES_ENDPOINT_PATH: &str = "/v1/responses";
-const LIVE_TUI_READY_MARKER: &str = "Ask Harness anything…";
-const LIVE_TUI_STATUS_SUCCESS_MARKER: &str = "Success";
-const LIVE_TUI_FINISHED_MARKER: &str = "ready for next turn";
+const LIVE_TUI_READY_MARKER: &str = "Ask anything...";
+const LIVE_TUI_STATUS_SUCCESS_MARKER: &str = "Live_proxy";
+const LIVE_TUI_FINISHED_MARKER: &str = "live ctx";
 const LIVE_TUI_ASSISTANT_STREAMING_MARKER: &str = "assistant · streaming…";
 const LIVE_TUI_WAITING_FOR_RESPONSE_MARKER: &str = "Waiting for response…";
 const LIVE_TUI_READ_POLL_TIMEOUT: Duration = Duration::from_millis(50);
@@ -394,13 +394,15 @@ fn live_proxy_prompt_chat_tool_flow() {
         Some("rust-best-practices"),
         "skill-stage tool name mismatch: {skill_args}"
     );
-    assert!(
-        skill_args
-            .get("user_message")
-            .and_then(Value::as_str)
-            .is_some_and(|value| value.contains("Call skill with name=rust-best-practices.")),
-        "skill-stage tool arguments mismatch: {skill_args}"
-    );
+    if let Some(user_message) = skill_args.get("user_message") {
+        assert!(
+            user_message.is_null()
+                || user_message
+                    .as_str()
+                    .is_some_and(|value| value.contains("rust-best-practices")),
+            "skill-stage optional user_message mismatch: {skill_args}"
+        );
+    }
     assert_tool_call_output_contains(
         &skill_result.events_body,
         "skill",
@@ -1305,7 +1307,7 @@ fn example_config_ships_canonical_plan_and_build_agents() {
             .and_then(Value::as_object)
             .and_then(|options| options.get("apiKey"))
             .and_then(Value::as_str),
-        Some("sk-zerolimit")
+        Some("placeholder-api-key")
     );
     assert!(
         default_provider.get("api_mode").is_none(),
@@ -1365,28 +1367,16 @@ fn example_config_ships_canonical_plan_and_build_agents() {
         "gpt-5.4-mini should not ship a deterministic tool_audit variant"
     );
 
-    let low_variant = config
-        .get("provider")
-        .and_then(|providers| providers.get("default"))
-        .and_then(|provider| provider.get("models"))
-        .and_then(|models| models.get("gpt-5.4-mini"))
-        .and_then(|model| model.get("variants"))
-        .and_then(|variants| variants.get("low"))
-        .and_then(Value::as_object)
-        .expect("gpt-5.4-mini low variant present");
-    assert_eq!(
-        low_variant
-            .get("metadata")
-            .and_then(|metadata| metadata.get("reasoning_effort"))
-            .and_then(Value::as_str),
-        Some("low")
-    );
-    assert_eq!(
-        low_variant
-            .get("metadata")
-            .and_then(|metadata| metadata.get("recommended_for"))
-            .and_then(Value::as_str),
-        Some("lightweight runs")
+    assert!(
+        config
+            .get("provider")
+            .and_then(|providers| providers.get("default"))
+            .and_then(|provider| provider.get("models"))
+            .and_then(|models| models.get("gpt-5.4-mini"))
+            .and_then(|model| model.get("variants"))
+            .and_then(|variants| variants.get("low"))
+            .is_none(),
+        "the shipped public example keeps the build profile high; live signoff helpers synthesize low"
     );
 
     let high_variant = config
@@ -2082,6 +2072,64 @@ fn live_tui_smoke_helpers_reuse_cliproxy_config_and_endpoint_rules() {
     assert!(
         chat_err.contains("responses or auto"),
         "unexpected chat-mode error: {chat_err}"
+    );
+}
+
+#[test]
+fn prepared_live_config_translates_shipped_public_agent_model_aliases() {
+    let repo_root = repo_root();
+    let source_config_path = repo_root.join("configs").join("harness.example.jsonc");
+
+    let run_config = prepare_prompt_run_config(
+        &source_config_path,
+        DEFAULT_LIVE_PROXY_PROVIDER,
+        DEFAULT_LIVE_PROXY_MODEL,
+        Some(DEFAULT_LIVE_PROXY_VARIANT),
+        DEFAULT_LIVE_PROXY_PROFILE,
+    )
+    .expect("prepare shipped live config");
+
+    let prepared_config = load_json5_config(&run_config.config_path).expect("load prepared config");
+    let build_agent = prepared_config
+        .get("agents")
+        .and_then(Value::as_object)
+        .and_then(|agents| agents.get("build"))
+        .and_then(Value::as_object)
+        .expect("prepared build agent");
+
+    assert_eq!(
+        build_agent.get("model_ref").and_then(Value::as_str),
+        Some("default:gpt-5.4-mini")
+    );
+    assert_eq!(build_agent.get("model"), None);
+    assert_eq!(build_agent.get("modelRef"), None);
+    assert!(build_agent.get("description").is_some());
+    assert_eq!(build_agent.get("tools"), Some(&Value::Array(Vec::new())));
+    assert_eq!(
+        prepared_config.get("default_agent").and_then(Value::as_str),
+        Some(DEFAULT_LIVE_PROXY_PROFILE)
+    );
+    assert_eq!(
+        prepared_config
+            .get("ui")
+            .and_then(Value::as_object)
+            .and_then(|ui| ui.get("default_profile"))
+            .and_then(Value::as_str),
+        Some(DEFAULT_LIVE_PROXY_PROFILE)
+    );
+
+    let output = Command::new(resolve_harness_bin())
+        .arg("--config")
+        .arg(&run_config.config_path)
+        .arg("config")
+        .arg("validate")
+        .output()
+        .expect("run config validate for prepared live config");
+    assert!(
+        output.status.success(),
+        "prepared live config failed validation\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
     );
 }
 

@@ -496,10 +496,12 @@ pub(crate) fn resolve_live_prompt_request(repo_root: &Path) -> Result<LivePrompt
     let provider = provider_from_config(&config, &provider_name)?;
     let primary_model = resolve_trimmed_env_var("HARNESS_LIVE_PROXY_MODEL")
         .unwrap_or_else(|| first_model_from_provider(provider))?;
-    let default_variant = (source_config_path
-        == repo_root.join("configs").join("harness.example.jsonc"))
-    .then(|| resolve_live_proxy_variant(&config, &provider_name, &primary_model))
-    .flatten();
+    let default_variant =
+        if source_config_path == repo_root.join("configs").join("harness.example.jsonc") {
+            resolve_live_proxy_variant(&config, &provider_name, &primary_model)
+        } else {
+            None
+        };
     let primary_variant = resolve_trimmed_env_var("HARNESS_LIVE_PROXY_VARIANT")
         .transpose()?
         .or(default_variant);
@@ -869,15 +871,19 @@ fn resolve_live_proxy_variant(
     model_id: &str,
 ) -> Option<String> {
     let provider = provider_from_config(config, provider_name).ok()?;
-    provider
+    let model = provider
         .get("models")
         .and_then(Value::as_object)
         .and_then(|models| models.get(model_id))
+        .and_then(Value::as_object)?;
+
+    let exposes_default_variant = model
+        .get("variants")
         .and_then(Value::as_object)
-        .and_then(|model| model.get("variants"))
-        .and_then(Value::as_object)
-        .filter(|variants| variants.contains_key(DEFAULT_LIVE_PROXY_VARIANT))
-        .map(|_| DEFAULT_LIVE_PROXY_VARIANT.to_string())
+        .is_some_and(|variants| variants.contains_key(DEFAULT_LIVE_PROXY_VARIANT));
+
+    (model_id == DEFAULT_LIVE_PROXY_MODEL || exposes_default_variant)
+        .then(|| DEFAULT_LIVE_PROXY_VARIANT.to_string())
 }
 
 fn rewrite_selected_provider_to_default(
@@ -918,6 +924,7 @@ fn normalize_category_model_refs_to_default(config: &mut Value) -> Result<(), St
         let model_ref = category_obj
             .get("model_ref")
             .or_else(|| category_obj.get("modelRef"))
+            .or_else(|| category_obj.get("model"))
             .and_then(Value::as_str)
             .map(str::trim)
             .unwrap_or_default();
@@ -927,6 +934,7 @@ fn normalize_category_model_refs_to_default(config: &mut Value) -> Result<(), St
 
         let model_id = model_ref
             .split_once(':')
+            .or_else(|| model_ref.split_once('/'))
             .map(|(_, model_id)| model_id)
             .unwrap_or(model_ref)
             .trim();
@@ -938,6 +946,14 @@ fn normalize_category_model_refs_to_default(config: &mut Value) -> Result<(), St
             "model_ref".to_string(),
             Value::String(format!("default:{model_id}")),
         );
+        category_obj.remove("model");
+        category_obj.remove("modelRef");
+        category_obj
+            .entry("description".to_string())
+            .or_insert_with(|| Value::String(format!("{category_name} profile")));
+        category_obj
+            .entry("tools".to_string())
+            .or_insert_with(|| Value::Array(Vec::new()));
     }
 
     Ok(())
@@ -1213,6 +1229,10 @@ fn apply_prepared_run_paths(
         .ok_or_else(|| "config.ui must be an object".to_string())?;
     ui.insert(
         "default_profile".to_string(),
+        Value::String(profile_name.to_string()),
+    );
+    root.insert(
+        "default_agent".to_string(),
         Value::String(profile_name.to_string()),
     );
 

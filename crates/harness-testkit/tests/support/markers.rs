@@ -3,10 +3,10 @@ pub(crate) const STARTUP_HOME_WORDMARK_MARKER: &str = "Harness";
 #[allow(dead_code)]
 pub(crate) const STARTUP_HOME_ASCII_WORDMARK_MARKER: &str = "Harness";
 pub(crate) const STARTUP_HOME_SHORTCUT_MARKER: &str = "Ctrl+p open";
+#[allow(dead_code)]
 pub(crate) const STARTUP_HOME_VALUE_PROP_MARKER: &str = "open a fresh session in this directory";
 pub(crate) const STARTUP_HOME_COMPOSER_HINT_MARKER: &str = "Ask anything... \"inspect src/ui.rs\"";
-pub(crate) const STARTUP_HOME_DENSE_VALUE_PROP_MARKER: &str =
-    "open a fresh session in this directory";
+pub(crate) const STARTUP_HOME_DENSE_VALUE_PROP_MARKER: &str = STARTUP_HOME_COMPOSER_HINT_MARKER;
 pub(crate) const STARTUP_LAUNCHER_READY_MARKER: &str = STARTUP_HOME_SHORTCUT_MARKER;
 pub(crate) const STARTUP_COMMAND_PALETTE_MARKER: &str = "Commands";
 pub(crate) const STARTUP_CONTINUE_HISTORY_MARKER: &str = "Continue session";

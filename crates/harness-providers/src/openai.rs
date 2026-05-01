@@ -354,7 +354,8 @@ fn provider_stream_start_metadata_from_headers(
         ),
     };
 
-    (!metadata_is_empty(&metadata)).then_some(metadata)
+    (metadata.provider_session_id.is_some() || metadata.provider_cache_id.is_some())
+        .then_some(metadata)
 }
 
 fn first_header_value(headers: &HeaderMap, names: &[&'static str]) -> Option<String> {
@@ -366,10 +367,6 @@ fn first_header_value(headers: &HeaderMap, names: &[&'static str]) -> Option<Str
             .filter(|value| !value.is_empty())
             .map(str::to_string)
     })
-}
-
-fn metadata_is_empty(metadata: &ProviderStreamStartMetadata) -> bool {
-    metadata.provider_session_id.is_none() && metadata.provider_cache_id.is_none()
 }
 
 fn provider_stream_finished_metadata_from_start(

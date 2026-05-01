@@ -493,12 +493,10 @@ fn fallback_public_agent_description(name: &str) -> String {
     let words = name
         .split(['_', '-', ' '])
         .filter(|part| !part.is_empty())
-        .map(|part| {
+        .filter_map(|part| {
             let mut chars = part.chars();
-            let Some(first) = chars.next() else {
-                return String::new();
-            };
-            format!("{}{}", first.to_uppercase(), chars.as_str())
+            let first = chars.next()?;
+            Some(format!("{}{}", first.to_uppercase(), chars.as_str()))
         })
         .collect::<Vec<_>>();
     let humanized = if words.is_empty() {

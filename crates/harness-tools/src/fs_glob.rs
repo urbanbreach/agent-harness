@@ -133,9 +133,10 @@ fn collect_glob_matches(
         .take(capped_limit)
         .collect::<Vec<_>>();
     let truncated_count = total_count.saturating_sub(capped_limit);
+    let returned_count = paths.len();
 
     Ok(GlobMatches {
-        returned_count: capped_limit,
+        returned_count,
         is_truncated: truncated_count > 0,
         paths,
         total_count,

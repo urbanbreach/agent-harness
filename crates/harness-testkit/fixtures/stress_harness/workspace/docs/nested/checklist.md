@@ -1,5 +1,5 @@
 # Checklist
 
-- verify list and read
-- verify glob and grep
-- verify fail-open LSP behavior
+- verify list and read access
+- verify glob and grep access
+- verify fail-open LSP handling

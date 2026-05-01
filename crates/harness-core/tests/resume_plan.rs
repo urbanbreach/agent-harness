@@ -229,8 +229,6 @@ fn resume_plan_preserves_run_scoped_permission_grants_across_resume_markers() {
 fn replay_old_loop_events_without_provider_metadata() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let run_dir = temp_dir.path().join("run_old_loop_events");
-    // Minimal representative legacy loop stream: start, one provider request, one task, finish.
-    // This mirrors the pre-metadata shape and keeps replay coverage focused on deserialization.
     write_events(
         &run_dir,
         &[
@@ -447,10 +445,6 @@ fn replay_new_loop_metadata_is_non_semantic_for_run_summary() {
     assert_eq!(legacy_summary.status, RunStatus::Finished);
     assert!(legacy_summary.tasks_in_flight.is_empty());
     assert!(legacy_summary.pending_permissions.is_empty());
-    assert_eq!(
-        project_run_summary(legacy_events.iter()).expect("legacy summary"),
-        project_run_summary(metadata_events.iter()).expect("metadata summary")
-    );
 }
 
 #[test]

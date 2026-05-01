@@ -37,6 +37,7 @@ const RUNTIME_STATE_SURFACE_MAX_WIDTH: u16 = 68;
 const RUNTIME_STATE_SURFACE_MIN_WIDTH: u16 = 32;
 const RUNTIME_STATE_SURFACE_MIN_HEIGHT: u16 = 5;
 const SLASH_COMMAND_OVERLAY_GAP_Y: u16 = 0;
+const STARTUP_LOGO_TO_COMPOSER_GAP: u16 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SessionResponsiveMode {
@@ -971,10 +972,13 @@ fn centered_startup_dock_layout(
         .saturating_add(dock.shell.width.saturating_sub(width) / 2);
     let shell_height = dock.shell.height;
     let startup_card = startup_shell_area(transcript, theme);
+    let logo_height = if startup_card.width < 40 { 1 } else { 3 };
+    let logo_top_gap = startup_card.height.saturating_sub(logo_height) / 2;
     let target_y = startup_card
         .y
-        .saturating_add(startup_card.height)
-        .saturating_sub(1);
+        .saturating_add(logo_top_gap)
+        .saturating_add(logo_height)
+        .saturating_add(STARTUP_LOGO_TO_COMPOSER_GAP);
     let max_y = area
         .y
         .saturating_add(area.height.saturating_sub(shell_height));

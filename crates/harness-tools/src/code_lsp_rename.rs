@@ -248,10 +248,9 @@ fn build_rename_plan(ctx: &ToolContext, workspace_edit: &Value) -> Result<Rename
         .and_then(Value::as_array)
     {
         for change in document_changes {
-            if change.get("textDocument").is_some() {
-                let path = change
-                    .get("textDocument")
-                    .and_then(|text_document| text_document.get("uri"))
+            if let Some(text_document) = change.get("textDocument") {
+                let path = text_document
+                    .get("uri")
                     .and_then(Value::as_str)
                     .ok_or_else(|| {
                         ToolError::Execution(
@@ -535,10 +534,10 @@ fn apply_rename_operation(
         ))
     })?;
     let destination = load_virtual_file(ctx, virtual_files, to_path)?;
+    if destination.is_some() && ignore_if_exists && !overwrite {
+        return Ok(());
+    }
     if destination.is_some() {
-        if ignore_if_exists && !overwrite {
-            return Ok(());
-        }
         if overwrite {
             virtual_files.insert(to_path.to_string(), None);
             operations.push(HashlineWorkspaceOp::DeleteFile {

@@ -1,9 +1,9 @@
 # AGENTS: crates/harness-tools
 
 ## OVERVIEW
-Native tool registry and implementations for filesystem discovery/editing, shell execution, delegation/control-plane tools, network/code search, GitHub, LSP, and MCP integration.
+Native tool registry and implementations for filesystem discovery and editing, shell execution, delegation/control-plane tools, network/code search, GitHub, LSP, and MCP integration.
 
-Read the workspace root `AGENTS.md` first. Runtime policy lives in `harness-core`; this crate owns argument validation, execution, stable schemas, and tool-surface parity.
+Read the workspace root `AGENTS.md` first; runtime policy lives in `harness-core`, while this crate owns argument validation, execution, stable schemas, and tool-surface parity.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
