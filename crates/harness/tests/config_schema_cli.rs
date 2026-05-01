@@ -192,6 +192,9 @@ fn schema_cli_prints_runtime_json_schema() {
         .and_then(Value::as_object)
         .expect("ModelConfig properties");
     assert!(model_properties.contains_key("name"));
+    assert!(model_properties.contains_key("limit"));
+    assert!(model_properties.contains_key("modalities"));
+    assert!(model_properties.contains_key("options"));
     assert!(!model_properties.contains_key("display_name"));
 
     let variant_properties = definitions["ModelVariantConfig"]
@@ -199,6 +202,9 @@ fn schema_cli_prints_runtime_json_schema() {
         .and_then(Value::as_object)
         .expect("ModelVariantConfig properties");
     assert!(variant_properties.contains_key("name"));
+    assert!(variant_properties.contains_key("limit"));
+    assert!(variant_properties.contains_key("modalities"));
+    assert!(variant_properties.contains_key("options"));
     assert!(!variant_properties.contains_key("display_name"));
 
     let provider_properties = definitions["ProviderConfig"]["oneOf"][0]
@@ -300,6 +306,77 @@ fn config_validate_cli_accepts_shipped_example_config() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("config valid:"));
     assert!(stdout.contains("configs/harness.example.jsonc"));
+
+    let parsed = load_config_from_file(&config_path).expect("shipped example config should parse");
+    assert_eq!(parsed.providers.len(), 1);
+    let ProviderConfig::OpenAiCompatible(provider) = parsed
+        .providers
+        .get("default")
+        .expect("default provider present in shipped example config");
+    assert_eq!(provider.models.len(), 1);
+    assert!(provider.models.contains_key("gpt-5.4-mini"));
+}
+
+#[test]
+fn config_validate_cli_accepts_provider_catalog_reference_config_by_explicit_path() {
+    let repo_root = repo_root();
+    let config_path = repo_root
+        .join("configs")
+        .join("provider-catalog.reference.jsonc");
+
+    let output = harness_command()
+        .current_dir(&repo_root)
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "config",
+            "validate",
+        ])
+        .output()
+        .expect("run harness config validate with reference catalog config");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("config valid:"));
+    assert!(stdout.contains("configs/provider-catalog.reference.jsonc"));
+
+    let parsed = load_config_from_file(&config_path).expect("reference catalog should parse");
+    assert_eq!(parsed.providers.len(), 1);
+    let ProviderConfig::OpenAiCompatible(provider) = parsed
+        .providers
+        .get("default")
+        .expect("default provider present in reference catalog");
+    assert!(provider.models.len() > 1);
+}
+
+#[test]
+fn config_validate_cli_does_not_auto_discover_provider_catalog_reference_config() {
+    let temp = tempdir().expect("tempdir");
+    let configs_dir = temp.path().join("configs");
+    fs::create_dir_all(&configs_dir).expect("create configs dir");
+    fs::copy(
+        repo_root()
+            .join("configs")
+            .join("provider-catalog.reference.jsonc"),
+        configs_dir.join("provider-catalog.reference.jsonc"),
+    )
+    .expect("copy reference catalog fixture");
+
+    let output = harness_command()
+        .current_dir(temp.path())
+        .args(["config", "validate"])
+        .output()
+        .expect("run harness config validate with only reference catalog present");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("no config file found"));
+    assert!(!stderr.contains("provider-catalog.reference.jsonc"));
 }
 
 #[test]
@@ -588,62 +665,90 @@ fn config_validate_cli_rejects_unknown_provider_reference() {
 }
 
 #[test]
-fn config_validate_cli_rejects_unsupported_upstream_top_level_key() {
-    let temp = tempdir().expect("tempdir");
-    let config_path = temp.path().join("harness.jsonc");
-    let mut config = canonical_runtime_config();
-    config["plugin"] = serde_json::json!({ "enabled": true });
-    write_config(&config_path, &config);
+fn config_validate_cli_rejects_unsupported_upstream_top_level_keys() {
+    for key in [
+        "server",
+        "command",
+        "plugin",
+        "share",
+        "autoupdate",
+        "enterprise",
+        "experimental",
+        "tools",
+    ] {
+        let temp = tempdir().expect("tempdir");
+        let config_path = temp.path().join("harness.jsonc");
+        let mut config = canonical_runtime_config();
+        config[key] = serde_json::json!({ "enabled": true });
+        write_config(&config_path, &config);
 
-    let output = harness_command()
-        .current_dir(temp.path())
-        .args(["config", "validate"])
-        .output()
-        .expect("run harness config validate with unsupported upstream key");
+        let output = harness_command()
+            .current_dir(temp.path())
+            .args(["config", "validate"])
+            .output()
+            .unwrap_or_else(|err| {
+                panic!("run harness config validate with unsupported key {key}: {err}")
+            });
 
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("unknown top-level config keys:"));
-    assert!(stderr.contains("`plugin`"));
+        assert!(
+            !output.status.success(),
+            "unsupported key {key} unexpectedly validated"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("unknown top-level config keys:"),
+            "unsupported key {key} stderr did not mention unknown keys:\n{stderr}"
+        );
+        assert!(
+            stderr.contains(&format!("`{key}`")),
+            "unsupported key {key} stderr did not name the key:\n{stderr}"
+        );
+    }
 }
 
 #[test]
-fn shipped_example_config_uses_explicit_local_key_without_openai_api_key() {
+fn shipped_example_config_uses_placeholder_safe_provider_without_openai_api_key() {
     let repo_root = repo_root();
     let config_path = repo_root.join("configs").join("harness.example.jsonc");
 
     with_env_var_state("OPENAI_API_KEY", None, || {
         let parsed = load_config_from_file(&config_path)
-            .expect("shipped example config should use its explicit local loopback key");
+            .expect("shipped example config should use its explicit placeholder key");
         let ProviderConfig::OpenAiCompatible(provider) = parsed
             .providers
             .get("default")
             .expect("default provider present in shipped example config");
 
-        assert_eq!(provider.name.as_deref(), Some("CLIProxyAPI (OpenAI)"));
+        assert_eq!(
+            provider.name.as_deref(),
+            Some("Local OpenAI-Compatible Provider")
+        );
         assert_eq!(provider.base_url, "http://127.0.0.1:8317/v1");
-        assert_eq!(provider.api_key, "sk-zerolimit");
+        assert_eq!(provider.api_key, "placeholder-api-key");
         assert_eq!(provider.timeout_ms, 1_800_000);
         assert!(matches!(provider.api_mode, OpenAiApiMode::Auto));
     });
 }
 
 #[test]
-fn shipped_example_config_keeps_explicit_local_key_even_when_openai_api_key_is_set() {
+fn shipped_example_config_keeps_placeholder_safe_provider_even_when_openai_api_key_is_set() {
     let repo_root = repo_root();
     let config_path = repo_root.join("configs").join("harness.example.jsonc");
 
     with_env_var_state("OPENAI_API_KEY", Some("test-openai-api-key"), || {
         let parsed = load_config_from_file(&config_path)
-            .expect("shipped example config should keep its explicit local loopback key");
+            .expect("shipped example config should keep its explicit placeholder key");
         let ProviderConfig::OpenAiCompatible(provider) = parsed
             .providers
             .get("default")
             .expect("default provider present in shipped example config");
 
-        assert_eq!(provider.name.as_deref(), Some("CLIProxyAPI (OpenAI)"));
+        assert_eq!(
+            provider.name.as_deref(),
+            Some("Local OpenAI-Compatible Provider")
+        );
         assert_eq!(provider.base_url, "http://127.0.0.1:8317/v1");
-        assert_eq!(provider.api_key, "sk-zerolimit");
+        assert_eq!(provider.api_key, "placeholder-api-key");
         assert_eq!(provider.timeout_ms, 1_800_000);
         assert!(matches!(provider.api_mode, OpenAiApiMode::Auto));
     });
@@ -693,13 +798,21 @@ fn shipped_runtime_example_parses_as_public_runtime_config() {
         json5::from_str(&shipped).expect("parse shipped runtime example");
 
     assert_eq!(parsed.default_agent.as_deref(), Some("build"));
-    assert_eq!(parsed.model.as_deref(), Some("default/gpt-5.4"));
-    assert_eq!(parsed.small_model.as_deref(), Some("default/gpt-5.4-mini"));
+    assert_eq!(parsed.model.as_deref(), Some("default/gpt-5.4-mini"));
+    assert_eq!(parsed.small_model.as_deref(), None);
+    assert_eq!(parsed.provider.len(), 1);
     assert!(parsed.provider.contains_key("default"));
+    let ProviderConfig::OpenAiCompatible(provider) = parsed
+        .provider
+        .get("default")
+        .expect("default provider present in public example");
+    assert_eq!(provider.models.len(), 1);
+    assert!(provider.models.contains_key("gpt-5.4-mini"));
     assert!(parsed.agent.contains_key("build"));
     assert!(!parsed.provider.contains_key("providers"));
     assert!(!shipped.contains("\"base_url\""));
     assert!(!shipped.contains("\"api_key\""));
+    assert!(!shipped.contains("sk-zerolimit"));
     assert!(!shipped.contains("\"api_mode\""));
     assert!(!shipped.contains("\"timeout_ms\""));
     assert!(shipped.contains("\"model_backed\""));
