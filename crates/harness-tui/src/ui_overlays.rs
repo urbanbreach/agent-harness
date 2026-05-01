@@ -47,10 +47,10 @@ fn render_command_palette_overlay(
         };
         render_session_history_overlay(frame, app, theme, inner, &title);
     } else if app.model_switcher_visible {
-        let Some(inner) = render_command_palette_surface(frame, theme, overlay) else {
+        if !paint_model_select_panel(frame, theme, overlay) {
             return;
-        };
-        render_model_switcher_overlay(frame, app, theme, inner, &title);
+        }
+        render_model_switcher_overlay(frame, app, theme, overlay, &title);
     } else {
         if !paint_command_palette_panel(frame, theme, overlay) {
             return;
@@ -397,28 +397,35 @@ fn render_model_switcher_overlay(
     frame: &mut Frame,
     app: &AppState,
     theme: &Theme,
-    area: Rect,
+    overlay: Rect,
     title: &str,
 ) {
-    let sections = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Min(0),
-        ])
-        .split(area);
-    let surface = ui_chrome::command_palette_surface(theme);
+    if overlay.width <= 8 || overlay.height <= 5 {
+        return;
+    }
 
-    render_command_palette_header(frame, theme, sections[0], title);
-    render_command_palette_input(frame, app, theme, sections[1]);
-    frame.render_widget(
-        Paragraph::new(model_switcher_scope_line(app))
-            .style(Style::default().fg(theme.text.secondary).bg(surface)),
-        sections[2],
+    let header = Rect::new(
+        overlay.x.saturating_add(4),
+        overlay.y.saturating_add(1),
+        overlay.width.saturating_sub(8),
+        1,
     );
-    render_model_switcher_list(frame, app, theme, sections[3]);
+    let input = Rect::new(
+        overlay.x.saturating_add(4),
+        overlay.y.saturating_add(3),
+        overlay.width.saturating_sub(8),
+        1,
+    );
+    let list = Rect::new(
+        overlay.x.saturating_add(1),
+        overlay.y.saturating_add(5),
+        overlay.width.saturating_sub(2),
+        overlay.height.saturating_sub(6),
+    );
+
+    render_model_select_header(frame, theme, header, title);
+    render_model_select_input(frame, app, theme, input);
+    render_model_switcher_list(frame, app, theme, list);
 }
 
 fn render_model_switcher_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
@@ -426,13 +433,23 @@ fn render_model_switcher_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
         return;
     }
 
-    if app.model_filtered.is_empty() {
+    let surface = model_select_surface(theme);
+    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
+
+    let rows = model_switcher_rows(app);
+    if rows.is_empty() {
+        let empty_area = Rect::new(
+            area.x.saturating_add(3),
+            area.y,
+            area.width.saturating_sub(3),
+            1,
+        );
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
-                "No configured models match this filter.",
-                Style::default().fg(theme.text.secondary),
+                "No results found",
+                Style::default().fg(model_select_muted(theme)).bg(surface),
             ))),
-            area,
+            empty_area,
         );
         return;
     }
@@ -441,161 +458,339 @@ fn render_model_switcher_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
     let selected = app
         .model_selected
         .min(app.model_filtered.len().saturating_sub(1));
-    let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
-
-    for (visible_index, option_index) in app
-        .model_filtered
+    let selected_row = rows
         .iter()
-        .enumerate()
-        .skip(scroll)
-        .take(visible_rows)
-    {
-        let option = &app.model_options[*option_index];
+        .position(|row| matches!(row, ModelSwitcherRow::Option { filtered_index, .. } if *filtered_index == selected))
+        .unwrap_or(0);
+    let scroll = selected_row.saturating_sub(visible_rows.saturating_sub(1));
+
+    for (row_index, row) in rows.iter().enumerate().skip(scroll).take(visible_rows) {
         let row_y = area
             .y
-            .saturating_add(u16::try_from(visible_index - scroll).unwrap_or(u16::MAX));
+            .saturating_add(u16::try_from(row_index - scroll).unwrap_or(u16::MAX));
         let row_area = Rect::new(area.x, row_y, area.width, 1);
-        let is_selected = visible_index == selected;
-        if is_selected {
-            frame.render_widget(
-                Block::default().style(ui_chrome::overlay_focus_row_style(theme)),
-                row_area,
-            );
+        match row {
+            ModelSwitcherRow::Spacer => {
+                frame.render_widget(
+                    Block::default().style(Style::default().bg(surface)),
+                    row_area,
+                );
+            }
+            ModelSwitcherRow::Category(category) => {
+                frame.render_widget(
+                    Paragraph::new(model_switcher_category_row(category, theme, row_area.width)),
+                    row_area,
+                );
+            }
+            ModelSwitcherRow::Option {
+                filtered_index,
+                option_index,
+            } => {
+                let Some(option) = app.model_options.get(*option_index) else {
+                    continue;
+                };
+                let is_selected = *filtered_index == selected;
+                frame.render_widget(
+                    Block::default().style(model_switcher_option_row_style(theme, is_selected)),
+                    row_area,
+                );
+                frame.render_widget(
+                    Paragraph::new(model_switcher_row(
+                        option,
+                        app,
+                        is_selected,
+                        !app.palette_input.trim().is_empty(),
+                        theme,
+                        row_area.width,
+                    )),
+                    row_area,
+                );
+            }
         }
-
-        frame.render_widget(
-            Paragraph::new(model_switcher_row(
-                option,
-                app,
-                is_selected,
-                theme,
-                row_area.width,
-            )),
-            row_area,
-        );
     }
 }
 
 fn model_switcher_overlay_title(app: &AppState) -> String {
-    let total = app.model_filtered.len();
-    format!(
-        "Switch model · {total} match{}",
-        if total == 1 { "" } else { "es" }
-    )
-}
-
-fn model_switcher_scope_line(app: &AppState) -> String {
-    let active = app.current_model_label();
-    let agent = app
-        .current_agent_label()
-        .unwrap_or_else(|| app.active_profile().to_string());
-    format!("Pick a model for {agent} · switch agents outside this menu · current {active}")
+    let _ = app;
+    "Select model".to_string()
 }
 
 fn model_switcher_row(
     option: &crate::app::ModelOption,
     app: &AppState,
     is_selected: bool,
+    flatten: bool,
     theme: &Theme,
     width: u16,
 ) -> Line<'static> {
-    let row_style = if is_selected {
-        ui_chrome::overlay_focus_row_style(theme)
-    } else {
-        Style::default()
-    };
+    let row_style = model_switcher_option_row_style(theme, is_selected);
+    let selected_fg = model_select_selected_fg(theme);
     let title_style = if is_selected {
-        row_style.add_modifier(Modifier::BOLD)
+        row_style.fg(selected_fg).add_modifier(Modifier::BOLD)
+    } else if app.is_current_model_option(option) {
+        row_style.fg(model_select_primary(theme))
     } else {
-        Style::default()
-            .fg(theme.text.primary)
-            .add_modifier(Modifier::BOLD)
+        row_style.fg(model_select_text(theme))
     };
     let meta_style = if is_selected {
-        row_style
+        row_style.fg(selected_fg)
     } else {
-        Style::default().fg(theme.text.secondary)
+        row_style.fg(model_select_muted(theme))
     };
-    let action_style = if is_selected {
-        row_style.add_modifier(Modifier::BOLD)
-    } else if app.is_current_model_option(option) {
-        Style::default()
-            .fg(theme.status.success)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(theme.status.info)
-    };
-
-    let prefix = if app.is_current_model_option(option) {
-        "✓ current "
-    } else {
-        "  switch "
-    };
-    let title = option
-        .display_label()
-        .or_else(|| option.model_display_label())
-        .unwrap_or(option.model.as_str());
-    let source = model_option_source_label(option);
-    let reasoning = option
-        .reasoning_effort()
-        .or_else(|| option.variant_display_label())
-        .or_else(|| option.variant())
-        .unwrap_or("default");
-    let tokens = option.token_window_label().unwrap_or("tokens n/a");
 
     let row_width = usize::from(width);
     let mut spans = Vec::new();
-    spans.push(Span::styled(prefix.to_string(), action_style));
-    let mut used_width = prefix.chars().count();
+    let is_current = app.is_current_model_option(option);
+    let leading_padding = if is_current { 1 } else { 3 }.min(row_width);
+    if leading_padding > 0 {
+        spans.push(Span::styled(" ".repeat(leading_padding), row_style));
+    }
+    let mut used_width = leading_padding;
 
-    let title_budget = row_width.saturating_sub(used_width).clamp(12, 44);
-    let title = truncate_plain_text(title, title_budget);
+    if is_current && used_width < row_width {
+        let marker_style = if is_selected {
+            row_style.fg(selected_fg)
+        } else {
+            row_style.fg(model_select_primary(theme))
+        };
+        spans.push(Span::styled("●", marker_style));
+        used_width = used_width.saturating_add(1);
+    }
+
+    let title_padding = 3.min(row_width.saturating_sub(used_width));
+    if title_padding > 0 {
+        spans.push(Span::styled(" ".repeat(title_padding), row_style));
+        used_width = used_width.saturating_add(title_padding);
+    }
+
+    let footer = flatten.then(|| option.selector_category());
+    let footer_width = footer.map(str::chars).map(Iterator::count).unwrap_or(0);
+    let title_budget = row_width
+        .saturating_sub(used_width)
+        .saturating_sub(footer_width)
+        .saturating_sub(usize::from(footer_width > 0))
+        .min(61);
+    let title = truncate_plain_text(option.selector_title(), title_budget);
     used_width = used_width.saturating_add(title.chars().count());
     spans.push(Span::styled(title, title_style));
 
-    append_session_history_segment(
-        &mut spans,
-        &mut used_width,
-        row_width,
-        &source,
-        meta_style,
-        meta_style,
-        8,
-    );
-    append_session_history_segment(
-        &mut spans,
-        &mut used_width,
-        row_width,
-        reasoning,
-        meta_style,
-        meta_style,
-        4,
-    );
-    append_session_history_segment(
-        &mut spans,
-        &mut used_width,
-        row_width,
-        tokens,
-        meta_style,
-        meta_style,
-        8,
-    );
+    if let Some(footer) = footer {
+        let gap = row_width
+            .saturating_sub(used_width)
+            .saturating_sub(footer_width);
+        if gap > 0 {
+            spans.push(Span::styled(" ".repeat(gap), row_style));
+            used_width = used_width.saturating_add(gap);
+        }
+        if used_width < row_width {
+            spans.push(Span::styled(
+                truncate_plain_text(footer, row_width.saturating_sub(used_width)),
+                meta_style,
+            ));
+            used_width = row_width;
+        }
+    }
 
-    if is_selected && used_width < row_width {
+    if used_width < row_width {
         spans.push(Span::styled(" ".repeat(row_width - used_width), row_style));
     }
 
     Line::from(spans)
 }
 
-fn model_option_source_label(option: &crate::app::ModelOption) -> String {
-    let provider = option
-        .provider_display_label()
-        .unwrap_or(option.provider.as_str());
-    match option.provider_backend_label() {
-        Some(backend) => format!("{provider} ({backend})"),
-        None => provider.to_string(),
+enum ModelSwitcherRow {
+    Spacer,
+    Category(String),
+    Option {
+        filtered_index: usize,
+        option_index: usize,
+    },
+}
+
+fn model_switcher_rows(app: &AppState) -> Vec<ModelSwitcherRow> {
+    if app.palette_input.trim().is_empty() {
+        let mut rows = Vec::new();
+        let mut previous_category: Option<String> = None;
+        for (filtered_index, option_index) in app.model_filtered.iter().copied().enumerate() {
+            let Some(option) = app.model_options.get(option_index) else {
+                continue;
+            };
+            let category = option.selector_category().to_string();
+            if previous_category.as_deref() != Some(category.as_str()) {
+                if previous_category.is_some() {
+                    rows.push(ModelSwitcherRow::Spacer);
+                }
+                rows.push(ModelSwitcherRow::Category(category.clone()));
+                previous_category = Some(category);
+            }
+            rows.push(ModelSwitcherRow::Option {
+                filtered_index,
+                option_index,
+            });
+        }
+        return rows;
     }
+
+    app.model_filtered
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(filtered_index, option_index)| ModelSwitcherRow::Option {
+            filtered_index,
+            option_index,
+        })
+        .collect()
+}
+
+fn paint_model_select_panel(frame: &mut Frame, theme: &Theme, overlay: Rect) -> bool {
+    if overlay.width == 0 || overlay.height == 0 {
+        return false;
+    }
+
+    frame.render_widget(Clear, overlay);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(model_select_surface(theme))),
+        overlay,
+    );
+    true
+}
+
+fn render_model_select_header(frame: &mut Frame, theme: &Theme, area: Rect, title: &str) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let surface = model_select_surface(theme);
+    let esc = "esc";
+    let columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(esc.chars().count() as u16),
+        ])
+        .split(area);
+
+    frame.render_widget(
+        Paragraph::new(title.to_string()).style(
+            Style::default()
+                .fg(model_select_text(theme))
+                .bg(surface)
+                .add_modifier(Modifier::BOLD),
+        ),
+        columns[0],
+    );
+    frame.render_widget(
+        Paragraph::new(esc)
+            .alignment(Alignment::Right)
+            .style(Style::default().fg(model_select_muted(theme)).bg(surface)),
+        columns[1],
+    );
+}
+
+fn render_model_select_input(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let surface = model_select_surface(theme);
+    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
+
+    let line = if app.palette_input.is_empty() {
+        Line::from(vec![
+            Span::styled(
+                "█",
+                Style::default().fg(model_select_primary(theme)).bg(surface),
+            ),
+            Span::styled(
+                " Search",
+                Style::default().fg(model_select_muted(theme)).bg(surface),
+            ),
+        ])
+    } else {
+        let cursor_byte = app
+            .palette_input
+            .char_indices()
+            .nth(app.palette_cursor)
+            .map(|(index, _)| index)
+            .unwrap_or(app.palette_input.len());
+        let before = &app.palette_input[..cursor_byte];
+        let after = &app.palette_input[cursor_byte..];
+        Line::from(vec![
+            Span::styled(
+                before.to_string(),
+                Style::default().fg(model_select_muted(theme)).bg(surface),
+            ),
+            Span::styled(
+                "█",
+                Style::default().fg(model_select_primary(theme)).bg(surface),
+            ),
+            Span::styled(
+                after.to_string(),
+                Style::default().fg(model_select_muted(theme)).bg(surface),
+            ),
+        ])
+    };
+    frame.render_widget(Paragraph::new(line), area);
+}
+
+fn model_switcher_category_row(category: &str, theme: &Theme, width: u16) -> Line<'static> {
+    let surface = model_select_surface(theme);
+    let row_width = usize::from(width);
+    let padding = 3.min(row_width);
+    let mut used_width = padding;
+    let mut spans = Vec::new();
+    if padding > 0 {
+        spans.push(Span::styled(
+            " ".repeat(padding),
+            Style::default().bg(surface),
+        ));
+    }
+    let label = truncate_plain_text(category, row_width.saturating_sub(used_width));
+    used_width = used_width.saturating_add(label.chars().count());
+    spans.push(Span::styled(
+        label,
+        Style::default()
+            .fg(model_select_primary(theme))
+            .bg(surface)
+            .add_modifier(Modifier::BOLD),
+    ));
+    if used_width < row_width {
+        spans.push(Span::styled(
+            " ".repeat(row_width - used_width),
+            Style::default().bg(surface),
+        ));
+    }
+    Line::from(spans)
+}
+
+fn model_switcher_option_row_style(theme: &Theme, is_selected: bool) -> Style {
+    if is_selected {
+        Style::default()
+            .fg(model_select_selected_fg(theme))
+            .bg(model_select_primary(theme))
+    } else {
+        Style::default().bg(model_select_surface(theme))
+    }
+}
+
+const fn model_select_surface(theme: &Theme) -> Color {
+    theme.surface.panel_elevated
+}
+
+const fn model_select_primary(theme: &Theme) -> Color {
+    theme.status.info
+}
+
+const fn model_select_text(theme: &Theme) -> Color {
+    theme.text.primary
+}
+
+const fn model_select_muted(theme: &Theme) -> Color {
+    theme.text.secondary
+}
+
+const fn model_select_selected_fg(theme: &Theme) -> Color {
+    theme.text.inverse
 }
 
 fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {

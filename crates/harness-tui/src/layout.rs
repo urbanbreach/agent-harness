@@ -1118,7 +1118,7 @@ fn command_palette_overlay_width(shell: LiveShellLayout, app: &AppState) -> u16 
 fn command_palette_overlay_height(app: &AppState, terminal_height: u16) -> u16 {
     const COMMAND_OVERLAY_ROWS: u16 = 6;
     const SESSION_HISTORY_OVERLAY_ROWS: u16 = 5;
-    const MODEL_SWITCHER_OVERLAY_ROWS: u16 = 4;
+    const MODEL_SWITCHER_OVERLAY_ROWS: u16 = 6;
     const MAX_LIST_ROWS: usize = 7;
 
     if app.session_history_visible {
@@ -1128,7 +1128,9 @@ fn command_palette_overlay_height(app: &AppState, terminal_height: u16) -> u16 {
             .saturating_add(u16::from(app.continue_disabled_banner.is_some()))
             .saturating_add(history_rows)
     } else if app.model_switcher_visible {
-        let model_rows = app.model_filtered.len().clamp(1, MAX_LIST_ROWS + 2);
+        let model_rows = app
+            .model_switcher_visual_row_count()
+            .clamp(1, MAX_LIST_ROWS + 2);
         let model_rows = u16::try_from(model_rows).unwrap_or(u16::MAX);
         MODEL_SWITCHER_OVERLAY_ROWS.saturating_add(model_rows)
     } else {
