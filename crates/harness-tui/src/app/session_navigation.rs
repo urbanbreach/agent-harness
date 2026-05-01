@@ -628,38 +628,15 @@ impl ModelOption {
         self
     }
 
-    fn matches(&self, input: &str) -> bool {
-        if input.is_empty() {
-            return true;
-        }
+    pub(crate) fn selector_title(&self) -> &str {
+        self.display_label()
+            .or_else(|| self.model_display_label())
+            .unwrap_or(self.model.as_str())
+    }
 
-        let input = input.to_lowercase();
-        self.provider.to_lowercase().contains(&input)
-            || self
-                .provider_display_label()
-                .is_some_and(|value| value.to_lowercase().contains(&input))
-            || self.model.to_lowercase().contains(&input)
-            || self
-                .model_display_label()
-                .is_some_and(|value| value.to_lowercase().contains(&input))
-            || self
-                .variant()
-                .is_some_and(|value| value.to_lowercase().contains(&input))
-            || self
-                .display_label()
-                .is_some_and(|value| value.to_lowercase().contains(&input))
-            || self
-                .token_window_label()
-                .is_some_and(|value| value.to_lowercase().contains(&input))
-            || self
-                .description()
-                .is_some_and(|value| value.to_lowercase().contains(&input))
-            || self
-                .reasoning_effort()
-                .is_some_and(|value| value.to_lowercase().contains(&input))
-            || self
-                .text_verbosity()
-                .is_some_and(|value| value.to_lowercase().contains(&input))
+    pub(crate) fn selector_category(&self) -> &str {
+        self.provider_display_label()
+            .unwrap_or(self.provider.as_str())
     }
 
     pub fn variant(&self) -> Option<&str> {
@@ -776,6 +753,36 @@ impl Ord for ModelOption {
     }
 }
 
+fn model_variant_cycle_cmp(left: &ModelOption, right: &ModelOption) -> std::cmp::Ordering {
+    left.provider
+        .cmp(&right.provider)
+        .then_with(|| left.model.cmp(&right.model))
+        .then_with(|| variant_cycle_rank(left).cmp(&variant_cycle_rank(right)))
+        .then_with(|| left.variant.cmp(&right.variant))
+        .then_with(|| left.profile.cmp(&right.profile))
+}
+
+fn variant_cycle_rank(option: &ModelOption) -> u8 {
+    option
+        .reasoning_effort()
+        .or_else(|| option.variant())
+        .map(reasoning_variant_rank)
+        .unwrap_or(0)
+}
+
+fn reasoning_variant_rank(label: &str) -> u8 {
+    match label.trim().to_ascii_lowercase().as_str() {
+        "none" => 1,
+        "minimal" => 2,
+        "low" => 3,
+        "medium" => 4,
+        "high" => 5,
+        "xhigh" | "x-high" | "extra-high" => 6,
+        "max" => 7,
+        _ => u8::MAX,
+    }
+}
+
 fn metadata_for_profile_identity(
     profile: &str,
     provider: &str,
@@ -791,6 +798,49 @@ fn metadata_for_profile_identity(
         }
     }
     Some(metadata)
+}
+
+fn model_selector_fuzzy_score(option: &ModelOption, needle: &str) -> Option<usize> {
+    let title_score = fuzzy_subsequence_score(&option.selector_title().to_lowercase(), needle)
+        .map(|score| score.saturating_mul(2));
+    let category_score =
+        fuzzy_subsequence_score(&option.selector_category().to_lowercase(), needle)
+            .map(|score| score.saturating_mul(2).saturating_add(1));
+    match (title_score, category_score) {
+        (Some(title), Some(category)) => Some(title.min(category)),
+        (Some(title), None) => Some(title),
+        (None, Some(category)) => Some(category),
+        (None, None) => None,
+    }
+}
+
+fn fuzzy_subsequence_score(haystack: &str, needle: &str) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    if let Some(index) = haystack.find(needle) {
+        return Some(index);
+    }
+
+    let mut needle_chars = needle.chars();
+    let mut current = needle_chars.next()?;
+    let mut matched = 0usize;
+    let mut gap_score = 0usize;
+    for (position, candidate) in haystack.chars().enumerate() {
+        if candidate != current {
+            gap_score = gap_score.saturating_add(1);
+            continue;
+        }
+        matched = matched.saturating_add(1);
+        gap_score = gap_score.saturating_add(position.saturating_sub(matched.saturating_sub(1)));
+        match needle_chars.next() {
+            Some(next) => current = next,
+            None => {
+                return Some(gap_score.saturating_add(haystack.len().saturating_sub(needle.len())));
+            }
+        }
+    }
+    None
 }
 
 fn runtime_identity_for_metadata(metadata: &LaunchMetadata) -> String {
@@ -893,7 +943,11 @@ impl AppState {
             .reasoning_effort()
             .or_else(|| self.launch_metadata.variant_display_label())
             .or_else(|| self.launch_metadata.variant())
-            .or_else(|| self.launch_metadata.mode_label())
+            .or_else(|| {
+                self.launch_metadata
+                    .mode_label()
+                    .filter(|label| !label.eq_ignore_ascii_case("live"))
+            })
             .filter(|value| !Self::launch_value_is_unknown(value))
     }
 
@@ -1943,7 +1997,7 @@ impl AppState {
             }
         }
 
-        variants.sort();
+        variants.sort_by(model_variant_cycle_cmp);
         variants.dedup();
         if variants.is_empty() {
             return;
@@ -2136,7 +2190,35 @@ impl AppState {
         option.profile == self.active_profile()
             && option.provider == self.active_provider()
             && option.model == self.current_model_id()
-            && option.variant() == self.current_model_variant()
+            && option
+                .variant()
+                .is_none_or(|variant| Some(variant) == self.current_model_variant())
+    }
+
+    pub(crate) fn model_switcher_visual_row_count(&self) -> usize {
+        if self.model_filtered.is_empty() {
+            return 1;
+        }
+        if !self.palette_input.trim().is_empty() {
+            return self.model_filtered.len();
+        }
+
+        let mut rows = 0usize;
+        let mut groups = 0usize;
+        let mut previous_category: Option<&str> = None;
+        for option_index in &self.model_filtered {
+            let Some(option) = self.model_options.get(*option_index) else {
+                continue;
+            };
+            let category = option.selector_category();
+            if previous_category != Some(category) {
+                rows = rows.saturating_add(if groups == 0 { 1 } else { 2 });
+                groups = groups.saturating_add(1);
+                previous_category = Some(category);
+            }
+            rows = rows.saturating_add(1);
+        }
+        rows.max(1)
     }
 
     fn rebuild_model_options(&mut self) {
@@ -2150,11 +2232,11 @@ impl AppState {
             self.launch_metadata
                 .available_models()
                 .iter()
-                .map(|option| self.model_option_for_active_profile(option)),
+                .map(|option| self.model_selector_option_for_active_profile(option)),
         );
 
         if let Some(current_option) = self.launch_metadata.to_model_option() {
-            options.insert(self.model_option_for_active_profile(&current_option));
+            options.insert(self.model_selector_option_for_active_profile(&current_option));
         }
 
         if options.is_empty() {
@@ -2180,7 +2262,7 @@ impl AppState {
                         text_verbosity: None,
                         recommended_for: None,
                     };
-                    options.insert(self.model_option_for_active_profile(&option));
+                    options.insert(self.model_selector_option_for_active_profile(&option));
                 }
             }
 
@@ -2211,7 +2293,7 @@ impl AppState {
                     text_verbosity: None,
                     recommended_for: None,
                 };
-                options.insert(self.model_option_for_active_profile(&option));
+                options.insert(self.model_selector_option_for_active_profile(&option));
             }
         }
 
@@ -2228,26 +2310,70 @@ impl AppState {
         option
     }
 
+    fn model_selector_option_for_active_profile(&self, option: &ModelOption) -> ModelOption {
+        let mut option = self.model_option_for_active_profile(option);
+        option.variant = None;
+        option.variant_display_label = None;
+        option.display_label = option.model_display_label.clone();
+        option.reasoning_effort = None;
+        option.text_verbosity = None;
+        option.recommended_for = None;
+        option
+    }
+
     pub(super) fn update_model_filter(&mut self) {
-        let input = self.palette_input.to_lowercase();
+        let input = self.palette_input.trim().to_lowercase();
+        if input.is_empty() {
+            let mut filtered = (0..self.model_options.len()).collect::<Vec<_>>();
+            filtered.sort_by(|left, right| {
+                let left_option = &self.model_options[*left];
+                let right_option = &self.model_options[*right];
+                left_option
+                    .selector_category()
+                    .cmp(right_option.selector_category())
+                    .then_with(|| {
+                        left_option
+                            .selector_title()
+                            .cmp(right_option.selector_title())
+                    })
+                    .then_with(|| left_option.model.cmp(&right_option.model))
+                    .then_with(|| left_option.variant.cmp(&right_option.variant))
+                    .then_with(|| left_option.profile.cmp(&right_option.profile))
+            });
+            self.model_selected = filtered
+                .iter()
+                .position(|index| self.is_current_model_option(&self.model_options[*index]))
+                .unwrap_or(0);
+            self.model_filtered = filtered;
+            return;
+        }
+
         let mut filtered = self
             .model_options
             .iter()
             .enumerate()
-            .filter(|(_, option)| option.matches(&input))
-            .map(|(index, _)| index)
+            .filter_map(|(index, option)| {
+                model_selector_fuzzy_score(option, &input).map(|score| (index, score))
+            })
             .collect::<Vec<_>>();
-        filtered.sort_by(|left, right| {
+        filtered.sort_by(|(left, left_score), (right, right_score)| {
             let left_option = &self.model_options[*left];
             let right_option = &self.model_options[*right];
-            self.is_current_model_option(left_option)
-                .cmp(&self.is_current_model_option(right_option))
-                .reverse()
-                .then_with(|| left_option.profile.cmp(&right_option.profile))
-                .then_with(|| left_option.provider.cmp(&right_option.provider))
+            left_score
+                .cmp(right_score)
+                .then_with(|| {
+                    left_option
+                        .selector_category()
+                        .cmp(right_option.selector_category())
+                })
+                .then_with(|| {
+                    left_option
+                        .selector_title()
+                        .cmp(right_option.selector_title())
+                })
                 .then_with(|| left_option.model.cmp(&right_option.model))
         });
-        self.model_filtered = filtered;
+        self.model_filtered = filtered.into_iter().map(|(index, _)| index).collect();
         self.model_selected = 0;
     }
 

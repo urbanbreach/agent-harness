@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::config::{configured_model_catalog, load_config_from_str};
 use harness_tui::app::{AppState, LaunchMetadata, ModelOption, UiIntent};
+use ratatui::{backend::TestBackend, Terminal};
 
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
@@ -126,6 +127,51 @@ fn build_plan_models() -> Vec<ModelOption> {
     ]
 }
 
+fn multi_provider_models() -> Vec<ModelOption> {
+    vec![
+        ModelOption {
+            profile: "build".to_string(),
+            provider: "anthropic".to_string(),
+            provider_display_label: Some("Anthropic".to_string()),
+            provider_backend_label: None,
+            model: "claude-sonnet-4-5".to_string(),
+            model_display_label: Some("Claude Sonnet 4.5".to_string()),
+            variant: None,
+            variant_display_label: None,
+            display_label: Some("Claude Sonnet 4.5".to_string()),
+            token_window_label: None,
+            context_window_tokens: None,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            description: None,
+            profile_description: Some("Build".to_string()),
+            reasoning_effort: None,
+            text_verbosity: None,
+            recommended_for: None,
+        },
+        ModelOption {
+            profile: "build".to_string(),
+            provider: "default".to_string(),
+            provider_display_label: Some("OpenAI".to_string()),
+            provider_backend_label: None,
+            model: "gpt-5.4-mini".to_string(),
+            model_display_label: Some("GPT-5.4 Mini".to_string()),
+            variant: None,
+            variant_display_label: None,
+            display_label: Some("GPT-5.4 Mini".to_string()),
+            token_window_label: None,
+            context_window_tokens: None,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            description: None,
+            profile_description: Some("Build".to_string()),
+            reasoning_effort: None,
+            text_verbosity: None,
+            recommended_for: None,
+        },
+    ]
+}
+
 fn duplicate_build_plan_models() -> Vec<ModelOption> {
     vec![
         ModelOption {
@@ -216,6 +262,36 @@ fn same_profile_variant_options() -> Vec<ModelOption> {
     ]
 }
 
+fn reasoning_order_variant_options() -> Vec<ModelOption> {
+    [
+        ("medium", "Medium", "medium"),
+        ("high", "High", "high"),
+        ("xhigh", "XHigh", "xhigh"),
+    ]
+    .into_iter()
+    .map(|(variant, label, reasoning_effort)| ModelOption {
+        profile: "deep".to_string(),
+        provider: "default".to_string(),
+        provider_display_label: Some("default".to_string()),
+        provider_backend_label: Some("OpenAI".to_string()),
+        model: "gpt-5.4-mini".to_string(),
+        model_display_label: Some("GPT-5.4 Mini".to_string()),
+        variant: Some(variant.to_string()),
+        variant_display_label: Some(label.to_string()),
+        display_label: Some(format!("GPT-5.4 Mini · {label}")),
+        token_window_label: Some("128k ctx · 128k in · 16k out".to_string()),
+        context_window_tokens: Some(128000),
+        max_input_tokens: Some(128000),
+        max_output_tokens: Some(16384),
+        description: None,
+        profile_description: Some("Deep work".to_string()),
+        reasoning_effort: Some(reasoning_effort.to_string()),
+        text_verbosity: Some("medium".to_string()),
+        recommended_for: None,
+    })
+    .collect()
+}
+
 fn config_backed_profile_model_options(profile: &str) -> Vec<ModelOption> {
     let config = load_config_from_str(rich_model_config()).expect("config should parse");
     configured_model_catalog(&config)
@@ -271,7 +347,8 @@ fn model_switcher_ui_opens_from_slash_command() {
     app.handle_key(key(KeyCode::Enter));
 
     assert!(app.model_switcher_visible);
-    assert_eq!(app.model_options.len(), 2);
+    assert_eq!(app.model_options.len(), 1);
+    assert_eq!(app.model_options[0].variant(), None);
     assert!(intents.lock().expect("lock intents").is_empty());
 
     let mut replay = AppState::new_replay(PathBuf::from("/tmp/replay-models"), Vec::new());
@@ -302,8 +379,108 @@ fn model_switcher_populates_options_from_launch_metadata() {
     app.handle_key(key(KeyCode::Enter));
 
     assert!(app.model_switcher_visible);
-    assert_eq!(app.model_options.len(), 2);
+    assert_eq!(app.model_options.len(), 1);
+    assert_eq!(app.model_filtered.len(), 1);
+    assert_eq!(app.model_options[0].display_label(), Some("GPT-5.4 Mini"));
+    assert_eq!(app.model_options[0].variant(), None);
+}
+
+#[test]
+fn model_switcher_shows_base_models_without_variant_rows() {
+    let _config = load_config_from_str(rich_model_config()).expect("config should parse");
+
+    let mut app = AppState::new_live(None, false, None);
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_ref("deep", "default:gpt-5.4-mini")
+            .with_available_models(same_profile_variant_options()),
+    );
+
+    for ch in "/model".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+
+    assert!(app.model_switcher_visible);
+    assert_eq!(app.model_options.len(), 1);
+    assert_eq!(app.model_options[0].display_label(), Some("GPT-5.4 Mini"));
+    assert_eq!(app.model_options[0].variant(), None);
+
+    for ch in "creative".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+
+    assert!(app.model_filtered.is_empty());
+}
+
+#[test]
+fn model_switcher_renders_opencode_select_dialog_contract() {
+    let mut app = AppState::new_live(None, false, None);
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_option(&multi_provider_models()[1])
+            .with_available_models(multi_provider_models()),
+    );
+
+    for ch in "/model".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+
+    let backend = TestBackend::new(100, 30);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| harness_tui::ui::render_app(frame, &app))
+        .expect("draw frame");
+    let rendered = format!("{:?}", terminal.backend().buffer());
+
+    assert!(rendered.contains("Select model"), "{rendered}");
+    assert!(rendered.contains("esc"), "{rendered}");
+    assert!(rendered.contains("Search"), "{rendered}");
+    assert!(rendered.contains("Anthropic"), "{rendered}");
+    assert!(rendered.contains("OpenAI"), "{rendered}");
+    assert!(rendered.contains("●"), "{rendered}");
+    assert!(rendered.contains("GPT-5.4 Mini"), "{rendered}");
+    assert!(!rendered.contains("Switch model ·"), "{rendered}");
+    assert!(!rendered.contains("Filter models, providers"), "{rendered}");
+}
+
+#[test]
+fn model_switcher_filter_flattens_to_title_and_provider_matches() {
+    let mut app = AppState::new_live(None, false, None);
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_option(&multi_provider_models()[1])
+            .with_available_models(multi_provider_models()),
+    );
+
+    for ch in "/model".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
     assert_eq!(app.model_filtered.len(), 2);
+    assert_eq!(
+        app.model_options[app.model_filtered[app.model_selected]].model,
+        "gpt-5.4-mini"
+    );
+
+    for ch in "anth".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+
+    assert_eq!(app.model_filtered.len(), 1);
+    assert_eq!(app.model_selected, 0);
+    assert_eq!(
+        app.model_options[app.model_filtered[0]].model,
+        "claude-sonnet-4-5"
+    );
+
+    let backend = TestBackend::new(100, 30);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| harness_tui::ui::render_app(frame, &app))
+        .expect("draw frame");
+    let rendered = format!("{:?}", terminal.backend().buffer());
+
+    assert!(rendered.contains("Claude Sonnet 4.5"), "{rendered}");
+    assert!(rendered.contains("Anthropic"), "{rendered}");
 }
 
 #[test]
@@ -320,19 +497,18 @@ fn model_switcher_enter_emits_switch_intent_for_selected_model() {
     app.set_launch_metadata(
         LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini")
             .with_available_models(build_plan_models())
-            .with_mode_label("Live"),
+            .with_mode_label("Continued"),
     );
 
     for ch in "/model".chars() {
         app.handle_key(key(KeyCode::Char(ch)));
     }
     app.handle_key(key(KeyCode::Enter));
-    app.handle_key(key(KeyCode::Down));
     app.handle_key(key(KeyCode::Enter));
 
     assert!(!app.model_switcher_visible);
     assert_eq!(app.active_profile(), "build");
-    assert_eq!(app.launch_mode_label(), Some("Live"));
+    assert_eq!(app.launch_mode_label(), Some("Continued"));
     let intents = intents.lock().expect("lock intents");
     let UiIntent::SwitchModel {
         profile,
@@ -342,7 +518,41 @@ fn model_switcher_enter_emits_switch_intent_for_selected_model() {
         panic!("expected switch model intent");
     };
     assert_eq!(profile, "build");
-    assert_eq!(launch_metadata.variant(), Some("deterministic"));
+    assert_eq!(launch_metadata.variant(), None);
+}
+
+#[test]
+fn ctrl_t_cycles_reasoning_variants_in_semantic_order() {
+    let variants = reasoning_order_variant_options();
+    let mut live = AppState::new_live(None, false, None);
+    live.set_launch_metadata(
+        LaunchMetadata::from_model_option(&variants[0]).with_available_models(variants),
+    );
+
+    assert_eq!(live.current_model_label(), "GPT-5.4 Mini · Medium");
+
+    live.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL));
+
+    assert_eq!(live.active_profile(), "deep");
+    assert_eq!(live.current_model_label(), "GPT-5.4 Mini · High");
+    assert_eq!(live.current_model_reasoning_label(), Some("high"));
+
+    live.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL));
+
+    assert_eq!(live.current_model_label(), "GPT-5.4 Mini · XHigh");
+    assert_eq!(live.current_model_reasoning_label(), Some("xhigh"));
+}
+
+#[test]
+fn launch_mode_label_is_not_used_as_model_reasoning_fallback() {
+    let mut live = AppState::new_live(None, false, None);
+    live.set_launch_metadata(
+        LaunchMetadata::from_model_option(&multi_provider_models()[1]).with_mode_label("Live"),
+    );
+
+    assert_eq!(live.current_model_label(), "GPT-5.4 Mini");
+    assert_eq!(live.current_model_reasoning_label(), None);
+    assert_eq!(live.launch_mode_label(), Some("Live"));
 }
 
 #[test]
