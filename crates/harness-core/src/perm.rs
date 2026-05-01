@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{CategoryPermissions, HarnessConfig, PermissionMode};
+use crate::config::{
+    CategoryPermissions, HarnessConfig, PermissionMode, PermissionRuleSet, PermissionSelector,
+    PermissionSelectorRule,
+};
 use crate::tool::{canonical_tool_id_for, ToolCapability};
 
 const DEFAULT_ASK_TIMEOUT_MS: u64 = 0;
@@ -196,9 +199,16 @@ pub enum PolicyDecision {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PermissionRuleRequest {
+    ShellCommand(String),
+    WorkspacePath(String),
+}
+
 #[derive(Debug, Clone)]
 pub struct PermissionPolicy {
     defaults: DefaultPermissionModes,
+    default_rules: PermissionRuleSet,
     profile_overrides: BTreeMap<String, CategoryPermissions>,
     ask_timeout_ms: u64,
 }
@@ -291,6 +301,7 @@ impl PermissionPolicy {
 
         Self {
             defaults: DefaultPermissionModes::from_config(config),
+            default_rules: config.permissions.rules.clone(),
             profile_overrides,
             ask_timeout_ms: DEFAULT_ASK_TIMEOUT_MS,
         }
@@ -299,6 +310,7 @@ impl PermissionPolicy {
     pub fn new(edit: PermissionMode, shell: PermissionMode, network: PermissionMode) -> Self {
         Self {
             defaults: DefaultPermissionModes::from_legacy_defaults(edit, shell, network),
+            default_rules: PermissionRuleSet::default(),
             profile_overrides: BTreeMap::new(),
             ask_timeout_ms: DEFAULT_ASK_TIMEOUT_MS,
         }
@@ -319,9 +331,19 @@ impl PermissionPolicy {
     }
 
     pub fn evaluate(&self, profile: Option<&str>, kind: PermissionKind) -> PolicyDecision {
+        self.evaluate_request(profile, kind, None)
+    }
+
+    pub fn evaluate_request(
+        &self,
+        profile: Option<&str>,
+        kind: PermissionKind,
+        selector: Option<&PermissionRuleRequest>,
+    ) -> PolicyDecision {
         let effective_mode = profile
             .and_then(|name| self.profile_overrides.get(name))
-            .and_then(|permissions| mode_for_kind(permissions, kind).cloned())
+            .and_then(|permissions| profile_mode_for_request(permissions, kind, selector).cloned())
+            .or_else(|| rule_mode_for_kind(&self.default_rules, kind, selector).cloned())
             .unwrap_or_else(|| self.default_mode(kind).clone());
 
         match effective_mode {
@@ -347,6 +369,77 @@ impl PermissionPolicy {
             PermissionKind::Lsp => &self.defaults.lsp,
         }
     }
+}
+
+fn profile_mode_for_request<'a>(
+    permissions: &'a CategoryPermissions,
+    kind: PermissionKind,
+    selector: Option<&PermissionRuleRequest>,
+) -> Option<&'a PermissionMode> {
+    rule_mode_for_kind(&permissions.rules, kind, selector)
+        .or_else(|| mode_for_kind(permissions, kind))
+        .or(permissions.fallback.as_ref())
+}
+
+fn rule_mode_for_kind<'a>(
+    rules: &'a PermissionRuleSet,
+    kind: PermissionKind,
+    selector: Option<&PermissionRuleRequest>,
+) -> Option<&'a PermissionMode> {
+    match kind {
+        PermissionKind::Shell => selector_rule_mode(
+            &rules.shell,
+            selector.and_then(|selector| match selector {
+                PermissionRuleRequest::ShellCommand(command) => Some(command.as_str()),
+                PermissionRuleRequest::WorkspacePath(_) => None,
+            }),
+        ),
+        PermissionKind::EditFs => selector_rule_mode(
+            &rules.edit,
+            selector.and_then(|selector| match selector {
+                PermissionRuleRequest::WorkspacePath(path) => Some(path.as_str()),
+                PermissionRuleRequest::ShellCommand(_) => None,
+            }),
+        ),
+        PermissionKind::Network
+        | PermissionKind::Question
+        | PermissionKind::Task
+        | PermissionKind::WebFetch
+        | PermissionKind::WebSearch
+        | PermissionKind::CodeSearch
+        | PermissionKind::Lsp => None,
+    }
+}
+
+fn selector_rule_mode<'a>(
+    rules: &'a [PermissionSelectorRule],
+    value: Option<&str>,
+) -> Option<&'a PermissionMode> {
+    if let Some(value) = value {
+        if let Some(rule) = rules.iter().find(|rule| {
+            matches!(&rule.selector, PermissionSelector::Exact(selector) if selector == value)
+        }) {
+            return Some(&rule.mode);
+        }
+
+        if let Some(rule) = rules
+            .iter()
+            .filter(|rule| {
+                matches!(&rule.selector, PermissionSelector::Prefix(prefix) if value.starts_with(prefix))
+            })
+            .max_by_key(|rule| match &rule.selector {
+                PermissionSelector::Prefix(prefix) => prefix.len(),
+                PermissionSelector::Exact(_) | PermissionSelector::CatchAll => 0,
+            })
+        {
+            return Some(&rule.mode);
+        }
+    }
+
+    rules
+        .iter()
+        .find(|rule| matches!(rule.selector, PermissionSelector::CatchAll))
+        .map(|rule| &rule.mode)
 }
 
 impl Default for PermissionPolicy {
@@ -428,9 +521,12 @@ fn mode_for_kind(
 mod tests {
     use super::{
         permission_kind_for_capability, permission_kind_for_tool, PermissionDecision,
-        PermissionKind, PermissionPolicy, PolicyDecision,
+        PermissionKind, PermissionPolicy, PermissionRuleRequest, PolicyDecision,
     };
-    use crate::config::{CategoryPermissions, PermissionMode};
+    use crate::config::{
+        CategoryPermissions, PermissionMode, PermissionRuleSet, PermissionSelector,
+        PermissionSelectorRule,
+    };
     use crate::tool::ToolCapability;
 
     #[test]
@@ -557,6 +653,250 @@ mod tests {
                 timeout_ms: 77,
                 default_decision: PermissionDecision::Deny,
             }
+        );
+    }
+
+    #[test]
+    fn permission_rule_precedence_for_bash_exact_prefix_and_catch_all() {
+        let policy = PermissionPolicy::new(
+            PermissionMode::Allow,
+            PermissionMode::Allow,
+            PermissionMode::Deny,
+        )
+        .with_category_override(
+            "build",
+            CategoryPermissions {
+                rules: PermissionRuleSet {
+                    shell: vec![
+                        PermissionSelectorRule {
+                            selector: PermissionSelector::CatchAll,
+                            mode: PermissionMode::Deny,
+                        },
+                        PermissionSelectorRule {
+                            selector: PermissionSelector::Prefix("cargo test".to_string()),
+                            mode: PermissionMode::Ask,
+                        },
+                        PermissionSelectorRule {
+                            selector: PermissionSelector::Exact(
+                                "cargo test -p harness-core".to_string(),
+                            ),
+                            mode: PermissionMode::Allow,
+                        },
+                    ],
+                    edit: Vec::new(),
+                },
+                ..CategoryPermissions::default()
+            },
+        );
+
+        assert_eq!(
+            policy.evaluate_request(
+                Some("build"),
+                PermissionKind::Shell,
+                Some(&PermissionRuleRequest::ShellCommand(
+                    "cargo test -p harness-core".to_string()
+                ))
+            ),
+            PolicyDecision::Allow
+        );
+        assert_eq!(
+            policy.evaluate_request(
+                Some("build"),
+                PermissionKind::Shell,
+                Some(&PermissionRuleRequest::ShellCommand(
+                    "cargo test -p harness-core --lib".to_string()
+                ))
+            ),
+            PolicyDecision::Ask {
+                timeout_ms: 0,
+                default_decision: PermissionDecision::Deny,
+            }
+        );
+        assert_eq!(
+            policy.evaluate_request(
+                Some("build"),
+                PermissionKind::Shell,
+                Some(&PermissionRuleRequest::ShellCommand(
+                    "git status".to_string()
+                ))
+            ),
+            PolicyDecision::Deny
+        );
+    }
+
+    #[test]
+    fn config_permission_rule_precedence_for_bash_and_edit_exact_prefix_and_catch_all() {
+        let policy = PermissionPolicy::new(
+            PermissionMode::Allow,
+            PermissionMode::Allow,
+            PermissionMode::Deny,
+        )
+        .with_category_override(
+            "build",
+            CategoryPermissions {
+                rules: PermissionRuleSet {
+                    shell: vec![
+                        PermissionSelectorRule {
+                            selector: PermissionSelector::CatchAll,
+                            mode: PermissionMode::Deny,
+                        },
+                        PermissionSelectorRule {
+                            selector: PermissionSelector::Prefix("cargo test".to_string()),
+                            mode: PermissionMode::Ask,
+                        },
+                        PermissionSelectorRule {
+                            selector: PermissionSelector::Exact(
+                                "cargo test -p harness-core".to_string(),
+                            ),
+                            mode: PermissionMode::Allow,
+                        },
+                    ],
+                    edit: vec![
+                        PermissionSelectorRule {
+                            selector: PermissionSelector::CatchAll,
+                            mode: PermissionMode::Deny,
+                        },
+                        PermissionSelectorRule {
+                            selector: PermissionSelector::Prefix("docs/".to_string()),
+                            mode: PermissionMode::Allow,
+                        },
+                        PermissionSelectorRule {
+                            selector: PermissionSelector::Exact("docs/locked.md".to_string()),
+                            mode: PermissionMode::Ask,
+                        },
+                    ],
+                },
+                ..CategoryPermissions::default()
+            },
+        );
+
+        assert_eq!(
+            policy.evaluate_request(
+                Some("build"),
+                PermissionKind::Shell,
+                Some(&PermissionRuleRequest::ShellCommand(
+                    "cargo test -p harness-core".to_string()
+                ))
+            ),
+            PolicyDecision::Allow
+        );
+        assert_eq!(
+            policy.evaluate_request(
+                Some("build"),
+                PermissionKind::Shell,
+                Some(&PermissionRuleRequest::ShellCommand(
+                    "cargo test -p harness-core --lib".to_string()
+                ))
+            ),
+            PolicyDecision::Ask {
+                timeout_ms: 0,
+                default_decision: PermissionDecision::Deny,
+            }
+        );
+        assert_eq!(
+            policy.evaluate_request(
+                Some("build"),
+                PermissionKind::Shell,
+                Some(&PermissionRuleRequest::ShellCommand(
+                    "git status".to_string()
+                ))
+            ),
+            PolicyDecision::Deny
+        );
+        assert_eq!(
+            policy.evaluate_request(
+                Some("build"),
+                PermissionKind::EditFs,
+                Some(&PermissionRuleRequest::WorkspacePath(
+                    "docs/locked.md".to_string()
+                ))
+            ),
+            PolicyDecision::Ask {
+                timeout_ms: 0,
+                default_decision: PermissionDecision::Deny,
+            }
+        );
+        assert_eq!(
+            policy.evaluate_request(
+                Some("build"),
+                PermissionKind::EditFs,
+                Some(&PermissionRuleRequest::WorkspacePath(
+                    "docs/guide.md".to_string()
+                ))
+            ),
+            PolicyDecision::Allow
+        );
+        assert_eq!(
+            policy.evaluate_request(
+                Some("build"),
+                PermissionKind::EditFs,
+                Some(&PermissionRuleRequest::WorkspacePath(
+                    "src/main.rs".to_string()
+                ))
+            ),
+            PolicyDecision::Deny
+        );
+    }
+
+    #[test]
+    fn permission_rule_profile_override_beats_top_level_edit_rule() {
+        let parsed = crate::config::load_config_from_str(
+            r#"
+            {
+              provider: {
+                default: {
+                  type: "openai_compatible",
+                  base_url: "http://127.0.0.1:8317/v1",
+                  api_key: "test-key",
+                  models: {
+                    "gpt-4o-mini": { name: "GPT-4o mini" }
+                  }
+                }
+              },
+              model: "default/gpt-4o-mini",
+              agent: {
+                deep: {
+                  system_prompt: "Deep work",
+                  permission: { edit: "allow" },
+                  tools: ["write"]
+                }
+              },
+              default_agent: "deep",
+              permission: {
+                edit: { "*": "deny" },
+                bash: "allow",
+                webfetch: "allow",
+                websearch: "allow",
+                codesearch: "allow",
+                lsp: "allow",
+                question: "allow",
+                task: "allow"
+              }
+            }
+            "#,
+        )
+        .expect("config should parse");
+        let policy = PermissionPolicy::from_config(&parsed);
+
+        assert_eq!(
+            policy.evaluate_request(
+                Some("deep"),
+                PermissionKind::EditFs,
+                Some(&PermissionRuleRequest::WorkspacePath(
+                    "docs/readme.md".to_string()
+                ))
+            ),
+            PolicyDecision::Allow
+        );
+        assert_eq!(
+            policy.evaluate_request(
+                None,
+                PermissionKind::EditFs,
+                Some(&PermissionRuleRequest::WorkspacePath(
+                    "docs/readme.md".to_string()
+                ))
+            ),
+            PolicyDecision::Deny
         );
     }
 

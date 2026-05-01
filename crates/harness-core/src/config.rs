@@ -19,7 +19,8 @@ pub use self::loader::{
 };
 pub use self::public::{
     harness_schema_pretty_json, harness_tui_schema_pretty_json, InstructionList, PublicAgentConfig,
-    PublicPermissionConfig, PublicProfilePermissions, PublicRuntimeConfig, PublicTuiConfig,
+    PublicPermissionConfig, PublicPermissionValue, PublicProfilePermissions,
+    PublicRulePermissionValue, PublicRuntimeConfig, PublicTuiConfig,
 };
 
 static PROFILE_MODEL_METADATA_REGISTRY: OnceLock<
@@ -998,6 +999,12 @@ pub struct ModelConfig {
     pub display_name: String,
     #[serde(default)]
     pub metadata: ModelMetadataConfig,
+    #[serde(default)]
+    pub limit: ModelLimitConfig,
+    #[serde(default)]
+    pub modalities: ModelModalitiesConfig,
+    #[serde(default)]
+    pub options: BTreeMap<String, serde_json::Value>,
     #[serde(default, alias = "maxInputTokens")]
     pub max_input_tokens: Option<u32>,
     #[serde(default, alias = "maxOutputTokens")]
@@ -1037,6 +1044,12 @@ pub struct ModelVariantConfig {
     #[serde(default)]
     pub metadata: ModelVariantMetadataConfig,
     #[serde(default)]
+    pub limit: ModelLimitConfig,
+    #[serde(default)]
+    pub modalities: ModelModalitiesConfig,
+    #[serde(default)]
+    pub options: BTreeMap<String, serde_json::Value>,
+    #[serde(default)]
     pub disabled: bool,
     #[serde(default, alias = "contextWindowTokens")]
     pub context_window_tokens: Option<u32>,
@@ -1044,6 +1057,26 @@ pub struct ModelVariantConfig {
     pub max_input_tokens: Option<u32>,
     #[serde(default, alias = "maxOutputTokens")]
     pub max_output_tokens: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
+pub struct ModelLimitConfig {
+    #[serde(default)]
+    pub context: Option<u32>,
+    #[serde(default)]
+    pub input: Option<u32>,
+    #[serde(default)]
+    pub output: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
+pub struct ModelModalitiesConfig {
+    #[serde(default)]
+    pub input: Vec<String>,
+    #[serde(default)]
+    pub output: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1205,6 +1238,8 @@ pub type CategoryConfig = ProfileConfig;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
 pub struct ProfilePermissions {
+    #[serde(default, rename = "*")]
+    pub fallback: Option<PermissionMode>,
     #[serde(default)]
     pub edit: Option<PermissionMode>,
     #[serde(default)]
@@ -1223,6 +1258,8 @@ pub struct ProfilePermissions {
     pub codesearch: Option<PermissionMode>,
     #[serde(default, alias = "codeLsp")]
     pub lsp: Option<PermissionMode>,
+    #[serde(default)]
+    pub rules: PermissionRuleSet,
 }
 
 /// Legacy compatibility alias kept for older category-scoped permission call sites.
@@ -1256,6 +1293,10 @@ pub enum PermissionMode {
 #[serde(deny_unknown_fields)]
 pub struct PermissionsConfig {
     pub defaults: PermissionDefaultsConfig,
+    #[serde(default, rename = "*")]
+    pub fallback: Option<PermissionMode>,
+    #[serde(default)]
+    pub rules: PermissionRuleSet,
     #[serde(rename = "shell_allowlist", alias = "shellAllowlist", default)]
     pub shell_allowlist: ShellAllowlist,
 }
@@ -1292,6 +1333,30 @@ pub struct PermissionDefaultsConfig {
     pub codesearch: Option<PermissionMode>,
     #[serde(default, alias = "codeLsp")]
     pub lsp: Option<PermissionMode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
+pub struct PermissionRuleSet {
+    #[serde(default)]
+    pub shell: Vec<PermissionSelectorRule>,
+    #[serde(default)]
+    pub edit: Vec<PermissionSelectorRule>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PermissionSelectorRule {
+    pub selector: PermissionSelector,
+    pub mode: PermissionMode,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", content = "value", rename_all = "snake_case")]
+pub enum PermissionSelector {
+    Exact(String),
+    Prefix(String),
+    CatchAll,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
@@ -2129,13 +2194,19 @@ pub fn resolve_profile_model_metadata(
     });
     let context_window_tokens = variant
         .and_then(|(_, variant_cfg)| variant_cfg.context_window_tokens)
-        .or(model.metadata.context_window_tokens);
+        .or_else(|| variant.and_then(|(_, variant_cfg)| variant_cfg.limit.context))
+        .or(model.metadata.context_window_tokens)
+        .or(model.limit.context);
     let max_input_tokens = variant
         .and_then(|(_, variant_cfg)| variant_cfg.max_input_tokens)
-        .or(model.max_input_tokens);
+        .or_else(|| variant.and_then(|(_, variant_cfg)| variant_cfg.limit.input))
+        .or(model.max_input_tokens)
+        .or(model.limit.input);
     let max_output_tokens = variant
         .and_then(|(_, variant_cfg)| variant_cfg.max_output_tokens)
-        .or(model.max_output_tokens);
+        .or_else(|| variant.and_then(|(_, variant_cfg)| variant_cfg.limit.output))
+        .or(model.max_output_tokens)
+        .or(model.limit.output);
 
     Ok(ResolvedProfileModelMetadata {
         profile: profile_name.to_string(),
@@ -2281,13 +2352,19 @@ fn build_resolved_model_catalog_entry(
 ) -> ResolvedModelCatalogEntry {
     let context_window_tokens = variant
         .and_then(|(_, variant_cfg)| variant_cfg.context_window_tokens)
-        .or(model.metadata.context_window_tokens);
+        .or_else(|| variant.and_then(|(_, variant_cfg)| variant_cfg.limit.context))
+        .or(model.metadata.context_window_tokens)
+        .or(model.limit.context);
     let max_input_tokens = variant
         .and_then(|(_, variant_cfg)| variant_cfg.max_input_tokens)
-        .or(model.max_input_tokens);
+        .or_else(|| variant.and_then(|(_, variant_cfg)| variant_cfg.limit.input))
+        .or(model.max_input_tokens)
+        .or(model.limit.input);
     let max_output_tokens = variant
         .and_then(|(_, variant_cfg)| variant_cfg.max_output_tokens)
-        .or(model.max_output_tokens);
+        .or_else(|| variant.and_then(|(_, variant_cfg)| variant_cfg.limit.output))
+        .or(model.max_output_tokens)
+        .or(model.limit.output);
 
     ResolvedModelCatalogEntry {
         provider: provider_name.to_string(),
@@ -3478,6 +3555,242 @@ mod tests {
         assert_eq!(
             parsed.agents["build"].tool_failure_mode,
             ToolFailureMode::ContinueAsToolMessage
+        );
+    }
+
+    fn public_minimal_config_with_permission(permission: &str) -> String {
+        format!(
+            r#"
+        {{
+          provider: {{
+            default: {{
+              type: "openai_compatible",
+              options: {{
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKey: "test-key",
+              }},
+              models: {{
+                "gpt-4o-mini": {{
+                  name: "GPT-4o mini"
+                }}
+              }}
+            }}
+          }},
+          model: "default/gpt-4o-mini",
+          agent: {{
+            build: {{
+              system_prompt: "Build work"
+            }}
+          }},
+          default_agent: "build",
+          permission: {permission}
+        }}
+        "#
+        )
+    }
+
+    #[test]
+    fn permission_scalar_expands_to_public_kinds_and_network() {
+        for (raw, mode) in [
+            ("\"ask\"", PermissionMode::Ask),
+            ("\"allow\"", PermissionMode::Allow),
+            ("\"deny\"", PermissionMode::Deny),
+        ] {
+            let cfg = public_minimal_config_with_permission(raw);
+            let parsed = load_config_from_str(&cfg).expect("permission scalar should parse");
+            assert_eq!(parsed.permissions.defaults.edit, mode);
+            assert_eq!(parsed.permissions.defaults.shell, mode);
+            assert_eq!(parsed.permissions.defaults.network, mode);
+            assert_eq!(parsed.permissions.defaults.question, Some(mode.clone()));
+            assert_eq!(parsed.permissions.defaults.task, Some(mode.clone()));
+            assert_eq!(parsed.permissions.defaults.webfetch, Some(mode.clone()));
+            assert_eq!(parsed.permissions.defaults.websearch, Some(mode.clone()));
+            assert_eq!(parsed.permissions.defaults.codesearch, Some(mode.clone()));
+            assert_eq!(parsed.permissions.defaults.lsp, Some(mode));
+        }
+    }
+
+    #[test]
+    fn permission_scalar_rejects_invalid_mode() {
+        let cfg = public_minimal_config_with_permission("\"maybe\"");
+        load_config_from_str(&cfg).expect_err("invalid permission scalar must fail");
+    }
+
+    #[test]
+    fn permission_object_accepts_per_tool_scalar_modes() {
+        let cfg = public_minimal_config_with_permission(
+            r#"{
+                bash: "ask",
+                edit: "deny",
+                question: "allow",
+                task: "ask",
+                webfetch: "deny",
+                websearch: "allow",
+                codesearch: "deny",
+                lsp: "allow"
+            }"#,
+        );
+        let parsed = load_config_from_str(&cfg).expect("per-tool scalar permissions should parse");
+
+        assert_eq!(parsed.permissions.defaults.shell, PermissionMode::Ask);
+        assert_eq!(parsed.permissions.defaults.edit, PermissionMode::Deny);
+        assert_eq!(
+            parsed.permissions.defaults.question,
+            Some(PermissionMode::Allow)
+        );
+        assert_eq!(parsed.permissions.defaults.task, Some(PermissionMode::Ask));
+        assert_eq!(
+            parsed.permissions.defaults.webfetch,
+            Some(PermissionMode::Deny)
+        );
+        assert_eq!(
+            parsed.permissions.defaults.websearch,
+            Some(PermissionMode::Allow)
+        );
+        assert_eq!(
+            parsed.permissions.defaults.codesearch,
+            Some(PermissionMode::Deny)
+        );
+        assert_eq!(parsed.permissions.defaults.lsp, Some(PermissionMode::Allow));
+        assert!(parsed.permissions.rules.shell.is_empty());
+        assert!(parsed.permissions.rules.edit.is_empty());
+    }
+
+    #[test]
+    fn permission_rule_object_preserves_shell_allowlist_and_rules() {
+        let cfg = public_minimal_config_with_permission(
+            r#"{
+                "*": "deny",
+                bash: {
+                  "git status": "allow",
+                  "cargo test*": "ask",
+                  "*": "deny"
+                },
+                edit: {
+                  "docs/**": "allow",
+                  "crates/harness-core/src/config.rs": "ask",
+                  "*": "deny"
+                },
+                shell_allowlist: {
+                  executables: ["git"],
+                  cwd_roots: ["."]
+                }
+            }"#,
+        );
+        let parsed = load_config_from_str(&cfg).expect("permission rule object should parse");
+
+        assert_eq!(
+            parsed.permissions.defaults.question,
+            Some(PermissionMode::Deny)
+        );
+        assert_eq!(parsed.permissions.shell_allowlist.executables, vec!["git"]);
+        assert_eq!(parsed.permissions.shell_allowlist.cwd_roots, vec!["."]);
+        assert_eq!(parsed.permissions.rules.shell.len(), 3);
+        assert_eq!(parsed.permissions.rules.edit.len(), 3);
+    }
+
+    #[test]
+    fn permission_rule_rejects_invalid_selector_forms() {
+        for permission in [
+            r#"{ bash: { "/^git/": "allow" } }"#,
+            r#"{ bash: { "cargo * test": "allow" } }"#,
+            r#"{ edit: { "../secrets/**": "allow" } }"#,
+            r#"{ edit: { "/tmp/file": "allow" } }"#,
+            r#"{ edit: { "docs/*": "allow" } }"#,
+            r#"{ bash: { "git status": "sometimes" } }"#,
+            r#"{ bash: { "git status": { mode: "allow" } } }"#,
+            r#"{ edit: { "docs/**": 1 } }"#,
+            r#"{ question: { "*": "allow" } }"#,
+        ] {
+            let cfg = public_minimal_config_with_permission(permission);
+            load_config_from_str(&cfg).expect_err("invalid permission selector form must fail");
+        }
+    }
+
+    #[test]
+    fn model_limit_modalities_and_options_normalize_to_catalog_metadata() {
+        let cfg = r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              options: {
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKey: "test-key",
+                timeoutMs: 30000
+              },
+              models: {
+                "gpt-4o-mini": {
+                  name: "GPT-4o mini",
+                  limit: { context: 272000, input: 200000, output: 128000 },
+                  modalities: { input: ["text", "image"], output: ["text"] },
+                  options: { reasoning: { effort: "high" } },
+                  variants: {
+                    fast: {
+                      name: "Fast",
+                      limit: { context: 128000, input: 64000, output: 32000 },
+                      modalities: { input: ["text"], output: ["text"] },
+                      options: { temperature: 0.2 }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          model: "default/gpt-4o-mini",
+          agent: {
+            build: {
+              system_prompt: "Build work",
+              variant: "fast"
+            }
+          },
+          default_agent: "build",
+          permission: "allow"
+        }
+        "#;
+
+        let parsed = load_config_from_str(cfg).expect("model limit config should parse");
+        let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
+        assert_eq!(provider.timeout_ms, 30_000);
+        let model = &provider.models["gpt-4o-mini"];
+        assert_eq!(model.limit.context, Some(272_000));
+        assert_eq!(model.modalities.input, vec!["text", "image"]);
+        assert!(model.options.contains_key("reasoning"));
+        assert_eq!(model.variants["fast"].limit.output, Some(32_000));
+
+        let metadata = resolve_profile_model_metadata(&parsed, "build")
+            .expect("profile metadata should resolve");
+        assert_eq!(metadata.context_window_tokens, Some(128_000));
+        assert_eq!(metadata.max_input_tokens, Some(64_000));
+        assert_eq!(metadata.max_output_tokens, Some(32_000));
+    }
+
+    #[test]
+    fn model_limit_rejects_unknown_metadata_fields() {
+        let cfg = r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              base_url: "http://127.0.0.1:8317/v1",
+              api_key: "test-key",
+              models: {
+                "gpt-4o-mini": {
+                  name: "GPT-4o mini",
+                  limit: { context: 272000, training: 1 }
+                }
+              }
+            }
+          },
+          model: "default/gpt-4o-mini",
+          permission: "allow"
+        }
+        "#;
+
+        let err = load_config_from_str(cfg).expect_err("unknown limit field must fail");
+        assert!(
+            err.to_string().contains("unknown field `training`"),
+            "unexpected error: {err}"
         );
     }
 

@@ -59,7 +59,7 @@ pub struct PublicRuntimeConfig {
     #[serde(default, alias = "defaultAgent")]
     pub default_agent: Option<String>,
     #[serde(default)]
-    pub permission: PublicPermissionConfig,
+    pub permission: PublicPermissionValue,
     #[serde(default)]
     pub mcp: BTreeMap<String, McpServerConfig>,
     #[serde(default)]
@@ -102,13 +102,35 @@ pub struct PublicAgentConfig {
     pub tools: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum PublicPermissionValue {
+    Mode(PermissionMode),
+    Config(PublicPermissionConfig),
+}
+
+impl Default for PublicPermissionValue {
+    fn default() -> Self {
+        Self::Config(PublicPermissionConfig::default())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum PublicRulePermissionValue {
+    Mode(PermissionMode),
+    Rules(BTreeMap<String, PermissionMode>),
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PublicPermissionConfig {
+    #[serde(default, rename = "*")]
+    pub fallback: Option<PermissionMode>,
     #[serde(default)]
-    pub edit: Option<PermissionMode>,
+    pub edit: Option<PublicRulePermissionValue>,
     #[serde(default, alias = "shell")]
-    pub bash: Option<PermissionMode>,
+    pub bash: Option<PublicRulePermissionValue>,
     #[serde(default)]
     pub question: Option<PermissionMode>,
     #[serde(default)]
@@ -131,10 +153,12 @@ pub struct PublicPermissionConfig {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PublicProfilePermissions {
+    #[serde(default, rename = "*")]
+    pub fallback: Option<PermissionMode>,
     #[serde(default)]
-    pub edit: Option<PermissionMode>,
+    pub edit: Option<PublicRulePermissionValue>,
     #[serde(default, alias = "shell")]
-    pub bash: Option<PermissionMode>,
+    pub bash: Option<PublicRulePermissionValue>,
     #[serde(default)]
     pub question: Option<PermissionMode>,
     #[serde(default)]
@@ -216,8 +240,116 @@ fn default_internal_permissions_config() -> PermissionsConfig {
             codesearch: Some(PermissionMode::Ask),
             lsp: Some(PermissionMode::Ask),
         },
+        fallback: None,
+        rules: PermissionRuleSet::default(),
         shell_allowlist: ShellAllowlist::default(),
     }
+}
+
+fn public_rule_mode(value: &Option<PublicRulePermissionValue>) -> Option<PermissionMode> {
+    match value {
+        Some(PublicRulePermissionValue::Mode(mode)) => Some(mode.clone()),
+        Some(PublicRulePermissionValue::Rules(_)) | None => None,
+    }
+}
+
+fn public_selector_rules(
+    kind: &str,
+    value: Option<PublicRulePermissionValue>,
+) -> Result<Vec<PermissionSelectorRule>, ConfigError> {
+    match value {
+        Some(PublicRulePermissionValue::Rules(rules)) => rules
+            .into_iter()
+            .map(|(selector, mode)| {
+                Ok(PermissionSelectorRule {
+                    selector: public_permission_selector(kind, &selector)?,
+                    mode,
+                })
+            })
+            .collect(),
+        Some(PublicRulePermissionValue::Mode(_)) | None => Ok(Vec::new()),
+    }
+}
+
+fn public_permission_selector(
+    kind: &str,
+    selector: &str,
+) -> Result<PermissionSelector, ConfigError> {
+    match kind {
+        "bash" => public_bash_selector(selector),
+        "edit" => public_edit_selector(selector),
+        _ => Err(ConfigError::InvalidReference(format!(
+            "permission selector rules are only supported for `bash` and `edit`, not `{kind}`"
+        ))),
+    }
+}
+
+fn public_bash_selector(selector: &str) -> Result<PermissionSelector, ConfigError> {
+    let trimmed = selector.trim();
+    if trimmed == "*" {
+        return Ok(PermissionSelector::CatchAll);
+    }
+    if trimmed.is_empty() || trimmed.starts_with('/') {
+        return Err(ConfigError::InvalidReference(format!(
+            "invalid bash permission selector `{selector}`; use an exact command, trailing `*` prefix, or `*`"
+        )));
+    }
+    if let Some(prefix) = trimmed.strip_suffix('*') {
+        if prefix.is_empty() || prefix.contains('*') {
+            return Err(ConfigError::InvalidReference(format!(
+                "invalid bash permission selector `{selector}`; only a single trailing `*` prefix is supported"
+            )));
+        }
+        return Ok(PermissionSelector::Prefix(prefix.to_string()));
+    }
+    if trimmed.contains('*') {
+        return Err(ConfigError::InvalidReference(format!(
+            "invalid bash permission selector `{selector}`; only a trailing `*` prefix is supported"
+        )));
+    }
+    Ok(PermissionSelector::Exact(trimmed.to_string()))
+}
+
+fn public_edit_selector(selector: &str) -> Result<PermissionSelector, ConfigError> {
+    let trimmed = selector.trim();
+    if trimmed == "*" {
+        return Ok(PermissionSelector::CatchAll);
+    }
+    if let Some(prefix) = trimmed.strip_suffix("/**") {
+        let normalized = normalize_public_workspace_selector(prefix).ok_or_else(|| {
+            ConfigError::InvalidReference(format!(
+                "invalid edit permission selector `{selector}`; path prefixes must be workspace-relative and end with `/**`"
+            ))
+        })?;
+        return Ok(PermissionSelector::Prefix(format!("{normalized}/")));
+    }
+    if trimmed.contains('*') {
+        return Err(ConfigError::InvalidReference(format!(
+            "invalid edit permission selector `{selector}`; only trailing `/**` prefixes or `*` are supported"
+        )));
+    }
+    let normalized = normalize_public_workspace_selector(trimmed).ok_or_else(|| {
+        ConfigError::InvalidReference(format!(
+            "invalid edit permission selector `{selector}`; use a workspace-relative path, trailing `/**` prefix, or `*`"
+        ))
+    })?;
+    Ok(PermissionSelector::Exact(normalized))
+}
+
+fn normalize_public_workspace_selector(selector: &str) -> Option<String> {
+    let path = Path::new(selector.trim());
+    if path.is_absolute() {
+        return None;
+    }
+    let mut parts = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(value) => parts.push(value.to_string_lossy().to_string()),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+    (!parts.is_empty()).then(|| parts.join("/"))
 }
 
 fn default_internal_integrations_config() -> IntegrationsConfig {
@@ -317,6 +449,7 @@ fn default_shipped_agents(model_ref: &str) -> BTreeMap<String, ProfileConfig> {
             variant: None,
             temperature: None,
             permissions: Some(ProfilePermissions {
+                fallback: None,
                 edit: Some(PermissionMode::Allow),
                 shell: Some(PermissionMode::Allow),
                 network: Some(PermissionMode::Allow),
@@ -326,6 +459,7 @@ fn default_shipped_agents(model_ref: &str) -> BTreeMap<String, ProfileConfig> {
                 websearch: Some(PermissionMode::Allow),
                 codesearch: Some(PermissionMode::Allow),
                 lsp: Some(PermissionMode::Allow),
+                rules: PermissionRuleSet::default(),
             }),
             max_iters: 24,
             tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
@@ -449,18 +583,27 @@ fn public_agent_to_profile(
 fn translate_public_profile_permissions(
     permissions: PublicProfilePermissions,
 ) -> Result<ProfilePermissions, ConfigError> {
-    serde_json::from_value(serde_json::json!({
-        "edit": permissions.edit,
-        "shell": permissions.bash,
-        "network": permissions.network,
-        "question": permissions.question,
-        "task": permissions.task,
-        "webfetch": permissions.webfetch,
-        "websearch": permissions.websearch,
-        "codesearch": permissions.codesearch,
-        "lsp": permissions.lsp,
-    }))
-    .map_err(|err| ConfigError::ParseJson5(err.to_string()))
+    let edit = public_rule_mode(&permissions.edit);
+    let shell = public_rule_mode(&permissions.bash);
+    let edit_rules = public_selector_rules("edit", permissions.edit)?;
+    let shell_rules = public_selector_rules("bash", permissions.bash)?;
+
+    Ok(ProfilePermissions {
+        fallback: permissions.fallback,
+        edit,
+        shell,
+        network: permissions.network,
+        question: permissions.question,
+        task: permissions.task,
+        webfetch: permissions.webfetch,
+        websearch: permissions.websearch,
+        codesearch: permissions.codesearch,
+        lsp: permissions.lsp,
+        rules: PermissionRuleSet {
+            shell: shell_rules,
+            edit: edit_rules,
+        },
+    })
 }
 
 fn translate_public_permission_value(
@@ -474,21 +617,80 @@ fn translate_public_permission_value(
         return Ok(value);
     }
 
-    let parsed: PublicPermissionConfig =
+    let parsed: PublicPermissionValue =
         serde_json::from_value(value).map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
     let fallback = default_internal_permissions_config();
 
+    let parsed = match parsed {
+        PublicPermissionValue::Config(parsed) => parsed,
+        PublicPermissionValue::Mode(mode) => {
+            return serde_json::to_value(PermissionsConfig {
+                defaults: PermissionDefaultsConfig {
+                    edit: mode.clone(),
+                    shell: mode.clone(),
+                    network: mode.clone(),
+                    question: Some(mode.clone()),
+                    task: Some(mode.clone()),
+                    webfetch: Some(mode.clone()),
+                    websearch: Some(mode.clone()),
+                    codesearch: Some(mode.clone()),
+                    lsp: Some(mode),
+                },
+                fallback: None,
+                rules: PermissionRuleSet::default(),
+                shell_allowlist: fallback.shell_allowlist,
+            })
+            .map_err(|err| ConfigError::ParseJson5(err.to_string()));
+        }
+    };
+
+    let global = parsed.fallback.clone();
+    let edit = public_rule_mode(&parsed.edit)
+        .or_else(|| global.clone())
+        .unwrap_or(fallback.defaults.edit);
+    let shell = public_rule_mode(&parsed.bash)
+        .or_else(|| global.clone())
+        .unwrap_or(fallback.defaults.shell);
+    let edit_rules = public_selector_rules("edit", parsed.edit)?;
+    let shell_rules = public_selector_rules("bash", parsed.bash)?;
+
     serde_json::to_value(PermissionsConfig {
         defaults: PermissionDefaultsConfig {
-            edit: parsed.edit.unwrap_or(fallback.defaults.edit),
-            shell: parsed.bash.unwrap_or(fallback.defaults.shell),
-            network: parsed.network.unwrap_or(fallback.defaults.network),
-            question: parsed.question.or(fallback.defaults.question),
-            task: parsed.task.or(fallback.defaults.task),
-            webfetch: parsed.webfetch.or(fallback.defaults.webfetch),
-            websearch: parsed.websearch.or(fallback.defaults.websearch),
-            codesearch: parsed.codesearch.or(fallback.defaults.codesearch),
-            lsp: parsed.lsp.or(fallback.defaults.lsp),
+            edit,
+            shell,
+            network: parsed
+                .network
+                .or_else(|| global.clone())
+                .unwrap_or(fallback.defaults.network),
+            question: parsed
+                .question
+                .or_else(|| global.clone())
+                .or(fallback.defaults.question),
+            task: parsed
+                .task
+                .or_else(|| global.clone())
+                .or(fallback.defaults.task),
+            webfetch: parsed
+                .webfetch
+                .or_else(|| global.clone())
+                .or(fallback.defaults.webfetch),
+            websearch: parsed
+                .websearch
+                .or_else(|| global.clone())
+                .or(fallback.defaults.websearch),
+            codesearch: parsed
+                .codesearch
+                .or_else(|| global.clone())
+                .or(fallback.defaults.codesearch),
+            lsp: parsed
+                .lsp
+                .or_else(|| global.clone())
+                .or(fallback.defaults.lsp),
+        },
+        fallback: parsed.fallback,
+        rules: PermissionRuleSet {
+            shell: shell_rules,
+            edit: edit_rules,
         },
         shell_allowlist: parsed.shell_allowlist.unwrap_or(fallback.shell_allowlist),
     })
