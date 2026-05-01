@@ -12,49 +12,14 @@
       "models": {
         "gpt-5.4-mini": {
           "name": "GPT 5.4 Mini",
-          "metadata": {
-            "family": "gpt-5",
-            "release_stage": "stable",
-            "context_window_tokens": 272000,
-            "supports_tool_calls": true,
-            "supports_reasoning_summaries": true
-          },
-          "max_input_tokens": 272000,
-          "max_output_tokens": 128000,
-          "variants": {
-            "high": {
-              "name": "High",
-              "metadata": {
-                "reasoning_effort": "high",
-                "text_verbosity": "low",
-                "recommended_for": "build"
-              }
-            }
-          }
+          "limit": { "context": 272000, "input": 272000, "output": 128000 }
         }
       }
     }
   },
   "model": "default/gpt-5.4-mini",
-  "agent": {
-    "build": {
-      "model": "default/gpt-5.4-mini",
-      "variant": "high"
-    }
-  },
   "default_agent": "build",
   "permission": "ask",
-  "runtime": {
-    "compaction": {
-      "model_backed": false,
-      "model": "default/gpt-5.4-mini",
-      "split_oversized_turns": false,
-      "auto_retry_overflow": true,
-      "structured_summary_contract": true,
-      "estimated_token_triggers": true,
-      "fallback_input_tokens": 32768
-    }
-  },
   "mcp": {
     "cargo-mcp": {
       "transport": "stdio",

@@ -911,9 +911,11 @@ fn normalize_category_model_refs_to_default(config: &mut Value) -> Result<(), St
     let root = config
         .as_object_mut()
         .ok_or_else(|| "config root must be a JSON object".to_string())?;
-    let categories = root
-        .get_mut("agents")
-        .and_then(Value::as_object_mut)
+    let Some(categories_value) = root.get_mut("agents") else {
+        return Ok(());
+    };
+    let categories = categories_value
+        .as_object_mut()
         .ok_or_else(|| "config.agents must be an object".to_string())?;
 
     for (category_name, category_value) in categories.iter_mut() {

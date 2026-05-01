@@ -1283,9 +1283,9 @@ fn prepare_live_prompt_chat_tool_run_config_builds_restricted_agents() {
 }
 
 #[test]
-fn example_config_ships_canonical_plan_and_build_agents() {
-    let config = load_json5_config(&repo_root().join("configs").join("harness.example.jsonc"))
-        .expect("load shipped example config");
+fn example_config_keeps_minimal_surface_and_live_helper_prepares_runtime_profile() {
+    let config_path = repo_root().join("configs").join("harness.example.jsonc");
+    let config = load_json5_config(&config_path).expect("load shipped example config");
 
     let default_provider = config
         .get("provider")
@@ -1319,40 +1319,60 @@ fn example_config_ships_canonical_plan_and_build_agents() {
         Some("build")
     );
 
-    let agents = config
-        .get("agent")
-        .and_then(Value::as_object)
-        .expect("agent block present in example config");
-
-    let build = config
-        .get("agent")
-        .and_then(Value::as_object)
-        .and_then(|agents| agents.get("build"))
-        .and_then(Value::as_object)
-        .expect("build agent present in example config");
-    assert_eq!(
-        build.get("model").and_then(Value::as_str),
-        Some("default/gpt-5.4-mini")
+    assert!(
+        config.get("agent").is_none(),
+        "the shipped public example should rely on runtime-synthesized build defaults"
     );
-    assert_eq!(build.get("variant").and_then(Value::as_str), Some("high"));
+
     let build_prompt = read_shipped_agent_prompt_asset("build");
     assert!(build_prompt.contains("apply_patch"));
     assert!(build_prompt.contains("do the work without asking questions"));
 
+    let prepared = prepare_prompt_run_config(
+        &config_path,
+        DEFAULT_LIVE_PROXY_PROVIDER,
+        DEFAULT_LIVE_PROXY_MODEL,
+        Some(DEFAULT_LIVE_PROXY_VARIANT),
+        DEFAULT_LIVE_PROXY_PROFILE,
+    )
+    .expect("prepare shipped example config for live signoff");
+    let prepared_config =
+        load_json5_config(&prepared.config_path).expect("load prepared live signoff config");
+    let prepared_agents = prepared_config
+        .get("agents")
+        .and_then(Value::as_object)
+        .expect("prepared live config should define runtime agents");
+    let live_profile = prepared_agents
+        .get(DEFAULT_LIVE_PROXY_PROFILE)
+        .and_then(Value::as_object)
+        .expect("live helper should synthesize the selected runtime profile");
+    assert_eq!(
+        live_profile.get("model_ref").and_then(Value::as_str),
+        Some("default:gpt-5.4-mini")
+    );
+    assert_eq!(
+        live_profile.get("variant").and_then(Value::as_str),
+        Some(DEFAULT_LIVE_PROXY_VARIANT)
+    );
+    assert!(live_profile
+        .get("system_prompt")
+        .and_then(Value::as_str)
+        .is_some_and(|prompt| prompt.contains("apply_patch")));
+
     assert!(
-        !agents.contains_key("plan"),
+        !prepared_agents.contains_key("plan"),
         "plan should not be part of the shipped default agent surface"
     );
     assert!(
-        !agents.contains_key("explore"),
+        !prepared_agents.contains_key("explore"),
         "explore should not be part of the shipped default agent surface"
     );
     assert!(
-        !agents.contains_key("executor"),
+        !prepared_agents.contains_key("executor"),
         "executor should not be part of the shipped default agent surface"
     );
     assert!(
-        !agents.contains_key("tool_audit"),
+        !prepared_agents.contains_key("tool_audit"),
         "tool_audit should not be part of the shipped default agent surface"
     );
 
@@ -1363,8 +1383,8 @@ fn example_config_ships_canonical_plan_and_build_agents() {
             .and_then(|provider| provider.get("models"))
             .and_then(|models| models.get("gpt-5.4-mini"))
             .and_then(|model| model.get("variants"))
-            .is_some_and(|variants| variants.get("deterministic").is_none()),
-        "gpt-5.4-mini should not ship a deterministic tool_audit variant"
+            .is_none(),
+        "the shipped public example should not expose model variant clutter"
     );
 
     assert!(
@@ -1376,31 +1396,24 @@ fn example_config_ships_canonical_plan_and_build_agents() {
             .and_then(|model| model.get("variants"))
             .and_then(|variants| variants.get("low"))
             .is_none(),
-        "the shipped public example keeps the build profile high; live signoff helpers synthesize low"
+        "live signoff helpers synthesize low when they need a live-only variant"
     );
 
-    let high_variant = config
-        .get("provider")
+    let low_variant = prepared_config
+        .get("providers")
         .and_then(|providers| providers.get("default"))
         .and_then(|provider| provider.get("models"))
         .and_then(|models| models.get("gpt-5.4-mini"))
         .and_then(|model| model.get("variants"))
-        .and_then(|variants| variants.get("high"))
+        .and_then(|variants| variants.get(DEFAULT_LIVE_PROXY_VARIANT))
         .and_then(Value::as_object)
-        .expect("gpt-5.4-mini high variant present");
+        .expect("prepared live config should synthesize the low signoff variant");
     assert_eq!(
-        high_variant
-            .get("metadata")
-            .and_then(|metadata| metadata.get("reasoning_effort"))
-            .and_then(Value::as_str),
-        Some("high")
-    );
-    assert_eq!(
-        high_variant
+        low_variant
             .get("metadata")
             .and_then(|metadata| metadata.get("recommended_for"))
             .and_then(Value::as_str),
-        Some("build")
+        Some("live_proxy")
     );
 }
 
@@ -2076,7 +2089,7 @@ fn live_tui_smoke_helpers_reuse_cliproxy_config_and_endpoint_rules() {
 }
 
 #[test]
-fn prepared_live_config_translates_shipped_public_agent_model_aliases() {
+fn prepared_live_config_synthesizes_profile_from_minimal_example() {
     let repo_root = repo_root();
     let source_config_path = repo_root.join("configs").join("harness.example.jsonc");
 
@@ -2090,21 +2103,31 @@ fn prepared_live_config_translates_shipped_public_agent_model_aliases() {
     .expect("prepare shipped live config");
 
     let prepared_config = load_json5_config(&run_config.config_path).expect("load prepared config");
-    let build_agent = prepared_config
+    let agents = prepared_config
         .get("agents")
         .and_then(Value::as_object)
-        .and_then(|agents| agents.get("build"))
+        .expect("prepared agents object");
+    assert!(
+        !agents.contains_key("build"),
+        "prepared live config should not reintroduce the raw shipped build agent block"
+    );
+    let live_agent = agents
+        .get(DEFAULT_LIVE_PROXY_PROFILE)
         .and_then(Value::as_object)
-        .expect("prepared build agent");
+        .expect("prepared live profile");
 
     assert_eq!(
-        build_agent.get("model_ref").and_then(Value::as_str),
+        live_agent.get("model_ref").and_then(Value::as_str),
         Some("default:gpt-5.4-mini")
     );
-    assert_eq!(build_agent.get("model"), None);
-    assert_eq!(build_agent.get("modelRef"), None);
-    assert!(build_agent.get("description").is_some());
-    assert_eq!(build_agent.get("tools"), Some(&Value::Array(Vec::new())));
+    assert_eq!(live_agent.get("model"), None);
+    assert_eq!(live_agent.get("modelRef"), None);
+    assert_eq!(
+        live_agent.get("variant").and_then(Value::as_str),
+        Some(DEFAULT_LIVE_PROXY_VARIANT)
+    );
+    assert!(live_agent.get("description").is_some());
+    assert_eq!(live_agent.get("tools"), Some(&Value::Array(Vec::new())));
     assert_eq!(
         prepared_config.get("default_agent").and_then(Value::as_str),
         Some(DEFAULT_LIVE_PROXY_PROFILE)

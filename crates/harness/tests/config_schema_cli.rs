@@ -315,6 +315,12 @@ fn config_validate_cli_accepts_shipped_example_config() {
         .expect("default provider present in shipped example config");
     assert_eq!(provider.models.len(), 1);
     assert!(provider.models.contains_key("gpt-5.4-mini"));
+    assert!(parsed.agents.contains_key("build"));
+    assert!(!parsed.runtime.compaction.model_backed);
+    assert!(parsed.runtime.compaction.auto_retry_overflow);
+    assert!(parsed.runtime.compaction.structured_summary_contract);
+    assert!(parsed.runtime.compaction.estimated_token_triggers);
+    assert_eq!(parsed.runtime.compaction.fallback_input_tokens, 32_768);
 }
 
 #[test]
@@ -808,16 +814,18 @@ fn shipped_runtime_example_parses_as_public_runtime_config() {
         .expect("default provider present in public example");
     assert_eq!(provider.models.len(), 1);
     assert!(provider.models.contains_key("gpt-5.4-mini"));
-    assert!(parsed.agent.contains_key("build"));
+    assert!(parsed.agent.is_empty());
     assert!(!parsed.provider.contains_key("providers"));
     assert!(!shipped.contains("\"base_url\""));
     assert!(!shipped.contains("\"api_key\""));
     assert!(!shipped.contains("sk-zerolimit"));
     assert!(!shipped.contains("\"api_mode\""));
     assert!(!shipped.contains("\"timeout_ms\""));
-    assert!(shipped.contains("\"model_backed\""));
-    assert!(shipped.contains("\"split_oversized_turns\""));
-    assert!(shipped.contains("\"auto_retry_overflow\""));
+    assert!(!shipped.contains("\"metadata\""));
+    assert!(!shipped.contains("\"variants\""));
+    assert!(!shipped.contains("\"model_backed\""));
+    assert!(!shipped.contains("\"split_oversized_turns\""));
+    assert!(!shipped.contains("\"auto_retry_overflow\""));
     assert!(!shipped.contains("\"modelBacked\""));
     assert!(!shipped.contains("\"splitOversizedTurns\""));
     assert!(!shipped.contains("\"autoRetryOverflow\""));
@@ -911,8 +919,12 @@ fn root_runtime_example_uses_canonical_public_keys() {
 
     assert_eq!(parsed.default_agent.as_deref(), Some("build"));
     assert_eq!(parsed.model.as_deref(), Some("default/gpt-5.4"));
+    assert_eq!(parsed.small_model.as_deref(), Some("default/gpt-5.4-mini"));
     assert!(!root_example.contains("\"base_url\""));
     assert!(!root_example.contains("\"api_key\""));
     assert!(!root_example.contains("\"api_mode\""));
     assert!(!root_example.contains("\"timeout_ms\""));
+    assert!(!root_example.contains("\"metadata\""));
+    assert!(!root_example.contains("\"variants\""));
+    assert!(!root_example.contains("\"model_backed\""));
 }

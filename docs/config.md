@@ -12,8 +12,9 @@ The generated JSON schemas are the source of truth:
 ## Minimal starter
 
 Start with `configs/harness.example.jsonc`. It keeps the happy path small: one
-OpenAI-compatible provider, one default model, one `build` agent, scalar
-permission mode, optional MCP, and provider-context compaction settings.
+OpenAI-compatible provider, one default model, scalar permission mode, and
+optional MCP. The runtime fills in the standard `build` agent and
+provider-context compaction defaults unless you override them explicitly.
 
 ```jsonc
 {
@@ -29,18 +30,20 @@ permission mode, optional MCP, and provider-context compaction settings.
       "models": {
         "gpt-5.4-mini": {
           "name": "GPT 5.4 Mini",
-          "limit": { "context": 272000, "input": 272000, "output": 128000 },
-          "modalities": { "input": ["text"], "output": ["text"] }
+          "limit": { "context": 272000, "input": 272000, "output": 128000 }
         }
       }
     }
   },
   "model": "default/gpt-5.4-mini",
-  "agent": { "build": { "model": "default/gpt-5.4-mini" } },
   "default_agent": "build",
   "permission": "ask"
 }
 ```
+
+Only write the settings you want to own. Model catalog metadata, agent tool
+lists, background-task knobs, and compaction defaults are runtime concerns; keep
+them out of day-to-day configs unless a project needs a deliberate override.
 
 The larger provider catalog lives in `configs/provider-catalog.reference.jsonc`.
 That file is a reference and validation fixture for provider and model metadata,
@@ -211,7 +214,8 @@ values, config loading rejects the file instead of silently choosing one.
 
 ## Provider context compaction expectations
 
-Provider-context compaction relies on the active profile/model metadata, especially:
+Provider-context compaction uses the active profile/model limits when available,
+especially:
 
 - `context_window_tokens`
 - `max_input_tokens`
