@@ -111,7 +111,7 @@ LSP probes, and absolute-path workspace reads.
 
 The shipped `default` provider points at the local CLIProxy-compatible bridge (`http://127.0.0.1:8317/v1`) and uses an explicit local placeholder bearer token so the default flow stays aligned between docs, config, and live signoff lanes without depending on `OPENAI_API_KEY`. Its catalog mirrors the configured CLIProxyAPI GPT family, including GPT 5.5, GPT 5.4, GPT 5.4 Mini, GPT 5.4 extended-context presets, GPT 5.3 Codex, GPT 5.2, and GPT 5.1/Codex variants.
 
-The TUI exposes workflow slash commands for `/model`, `/resume`, and `/new`. `/model` switches the agent/model used for subsequent turns, `/resume` opens the saved-session picker, and `/new` starts a clean live run.
+The TUI exposes workflow slash commands for `/model`, `/status`, `/resume`, and `/new`. `/model` switches the agent/model used for subsequent turns, `/status` opens the system status dialog, `/resume` opens the saved-session picker, and `/new` starts a clean live run.
 
 ## Shipped workflow surfaces
 
@@ -123,11 +123,10 @@ The TUI exposes workflow slash commands for `/model`, `/resume`, and `/new`. `/m
 ## Common commands
 
 ```bash
-cargo fmt --all -- --check
-cargo check --workspace
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test -p harness --test config_schema_cli
-cargo test -p harness-tools --test native_control_plane_tools
-cargo test -p harness-tools --test single_surface_live
-cargo test -p harness-testkit live_proxy_e2e
+scripts/test-lanes.sh fast
+scripts/test-lanes.sh integration
+scripts/test-lanes.sh all-deterministic
 ```
+
+See [`docs/testing.md`](docs/testing.md) for every lane mode, dry-run usage, env-gated live and
+native signoff, stress lanes, and artifact expectations.
