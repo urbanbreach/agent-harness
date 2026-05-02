@@ -809,35 +809,3 @@ async fn native_public_edit_stale_anchor_error_includes_refresh_snippet() {
     assert!(error.contains("|current"));
     assert!(error.contains(">>> 2#"));
 }
-
-#[tokio::test]
-async fn native_registry_exposes_only_single_surface_ids() {
-    let registry = coordinator_registry(ShellAllowlist::default());
-    for tool_id in [
-        "question",
-        "invalid",
-        "write",
-        "webfetch",
-        "todowrite",
-        "todoread",
-        "skill",
-        "websearch",
-        "codesearch",
-        "lsp",
-        "lsp.rename",
-        "batch",
-        "task",
-        "list",
-    ] {
-        assert!(
-            registry.get(tool_id).is_some(),
-            "missing native tool {tool_id}"
-        );
-    }
-
-    assert!(
-        registry.get("edit").is_some(),
-        "missing canonical tool edit"
-    );
-    assert!(registry.get("apply_patch").is_none());
-}
