@@ -255,7 +255,7 @@ async fn native_web_search_uses_shared_client_and_fixture_backend() {
         (REMOTE_SEARCH_ENDPOINT_ENV, Some(base_url.as_str())),
         (REMOTE_SEARCH_AUTH_TOKEN_ENV, Some("fixture-token")),
         (REMOTE_SEARCH_REQUIRE_AUTH_ENV, Some("1")),
-        (REMOTE_SEARCH_TIMEOUT_SECS_ENV, Some("5")),
+        (REMOTE_SEARCH_TIMEOUT_SECS_ENV, Some("1")),
         (REMOTE_SEARCH_MAX_RETRIES_ENV, Some("0")),
         (REMOTE_SEARCH_RETRY_BACKOFF_MS_ENV, Some("1")),
     ]);
@@ -354,7 +354,7 @@ async fn native_web_search_handles_missing_auth_rate_limit_and_empty_results() {
         (REMOTE_SEARCH_ENDPOINT_ENV, Some("http://127.0.0.1:9")),
         (REMOTE_SEARCH_AUTH_TOKEN_ENV, None),
         (REMOTE_SEARCH_REQUIRE_AUTH_ENV, Some("1")),
-        (REMOTE_SEARCH_TIMEOUT_SECS_ENV, Some("5")),
+        (REMOTE_SEARCH_TIMEOUT_SECS_ENV, Some("1")),
         (REMOTE_SEARCH_MAX_RETRIES_ENV, Some("0")),
         (REMOTE_SEARCH_RETRY_BACKOFF_MS_ENV, Some("1")),
     ]);
@@ -391,7 +391,7 @@ async fn native_web_search_handles_missing_auth_rate_limit_and_empty_results() {
         (REMOTE_SEARCH_ENDPOINT_ENV, Some(rate_limit_url.as_str())),
         (REMOTE_SEARCH_AUTH_TOKEN_ENV, Some("fixture-token")),
         (REMOTE_SEARCH_REQUIRE_AUTH_ENV, Some("1")),
-        (REMOTE_SEARCH_TIMEOUT_SECS_ENV, Some("5")),
+        (REMOTE_SEARCH_TIMEOUT_SECS_ENV, Some("1")),
         (REMOTE_SEARCH_MAX_RETRIES_ENV, Some("1")),
         (REMOTE_SEARCH_RETRY_BACKOFF_MS_ENV, Some("1")),
     ]);

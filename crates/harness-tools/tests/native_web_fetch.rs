@@ -420,7 +420,7 @@ async fn native_web_fetch_rejects_invalid_scheme_large_response_and_timeout() {
             status: "200 OK",
             headers: vec![("Content-Type".to_string(), "text/plain".to_string())],
             body: b"too slow".to_vec(),
-            delay: Duration::from_millis(1500),
+            delay: Duration::from_millis(1100),
         },
         _ => TestResponse {
             status: "404 Not Found",
