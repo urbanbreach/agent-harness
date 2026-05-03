@@ -46,6 +46,11 @@ use ui_chrome::{
 pub(super) use ui_lifecycle::render_startup_lifecycle_surface;
 use ui_lifecycle::{live_empty_state_visible, render_live_empty_state, startup_shell_visible};
 use ui_overlays::render_overlays;
+#[cfg(test)]
+pub(crate) use ui_overlays::{
+    exact_test_status_dialog_mcp_rows_match_opencode_states,
+    exact_test_status_dialog_render_snapshot_covers_opencode_sections,
+};
 pub(crate) use ui_secondary::operator_sidebar_section_hit_target;
 use ui_secondary::{
     render_events_tab, render_help_tab, render_live_details_overlay, render_operator_sidebar,
@@ -71,6 +76,7 @@ pub(crate) use ui_transcript::{TranscriptMouseTarget, TranscriptScrollbarHit};
 #[cfg(test)]
 pub(crate) use ui_chrome::{
     exact_test_live_composer_disclosure_summarizes_compaction_metrics,
+    exact_test_live_composer_metadata_omits_success_without_variant,
     exact_test_live_composer_reserves_right_gap,
     exact_test_live_control_dock_collapses_disclosure_before_status,
     exact_test_live_control_dock_renders_shared_surface,
@@ -206,6 +212,7 @@ pub(crate) use ui_transcript::{
     exact_test_transcript_follow_mode_uses_measured_surface_heights,
     exact_test_transcript_inline_diff_stays_compact_between_tool_rows,
     exact_test_transcript_native_edit_renders_inline_diff_from_artifact,
+    exact_test_transcript_opencode_tool_progress_indicators,
     exact_test_transcript_pending_permission_stays_after_last_activity,
     exact_test_transcript_proposed_edit_renders_header,
     exact_test_transcript_reasoning_precedes_answer_and_tool_rows,
@@ -1221,7 +1228,7 @@ mod tests {
 
         assert_eq!(
             app.runtime_context_summary_segment_text(),
-            Some("Next turns: deep · GPT-5.4 Mini · Creative".to_string())
+            Some("Next turns: deep · GPT-5.4 Mini".to_string())
         );
 
         let debug = render_debug(&app, 160, 24);
@@ -1287,7 +1294,7 @@ mod tests {
 
         assert_eq!(
             app.runtime_context_summary_segment_text(),
-            Some("Next turns: deep · GPT-5.4 Mini · Creative".to_string())
+            Some("Next turns: deep · GPT-5.4 Mini".to_string())
         );
 
         let debug = render_debug(&app, 160, 24);

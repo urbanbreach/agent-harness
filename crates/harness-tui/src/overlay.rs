@@ -3,6 +3,7 @@ pub enum OverlayKind {
     DetailsDrawer,
     SlashCommands,
     CommandPalette,
+    StatusDialog,
     PermissionModal,
 }
 
@@ -11,6 +12,7 @@ pub struct OverlayState {
     pub details_drawer_open: bool,
     pub slash_visible: bool,
     pub palette_visible: bool,
+    pub status_dialog_visible: bool,
     pub session_history_visible: bool,
     pub model_switcher_visible: bool,
     pub permission_pending: bool,
@@ -39,6 +41,9 @@ impl OverlayStack {
         if state.command_palette_channel_visible() && !state.permission_pending {
             overlays.push(OverlayKind::CommandPalette);
         }
+        if state.status_dialog_visible && !state.permission_pending {
+            overlays.push(OverlayKind::StatusDialog);
+        }
         if state.permission_pending {
             overlays.push(OverlayKind::PermissionModal);
         }
@@ -59,6 +64,7 @@ impl OverlayStack {
             Some(
                 OverlayKind::SlashCommands
                     | OverlayKind::CommandPalette
+                    | OverlayKind::StatusDialog
                     | OverlayKind::PermissionModal
             )
         )
