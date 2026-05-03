@@ -458,6 +458,15 @@ pub struct StatusColors {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AgentColors {
+    pub build: Color,
+    pub plan: Color,
+    pub docs: Color,
+    pub ask: Color,
+    pub palette: [Color; 7],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScrollbarColors {
     pub track: Color,
     pub thumb: Color,
@@ -470,6 +479,7 @@ pub struct ThemePalette {
     pub borders: BorderColors,
     pub text: TextColors,
     pub status: StatusColors,
+    pub agents: AgentColors,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -486,6 +496,7 @@ pub struct Theme {
     pub text: TextColors,
     pub question_prompt: QuestionPromptColors,
     pub status: StatusColors,
+    pub agents: AgentColors,
     pub scrollbar: ScrollbarColors,
     pub live_shell: LiveShellTokens,
 }
@@ -754,9 +765,37 @@ impl Theme {
                 borders: self.border,
                 text: self.text,
                 status: self.status,
+                agents: self.agents,
             },
             live_shell: self.live_shell.families(),
         }
+    }
+
+    pub fn agent_accent(self, profile: &str) -> Color {
+        let profile = profile.trim();
+        if profile.is_empty()
+            || profile.eq_ignore_ascii_case("default")
+            || profile.eq_ignore_ascii_case("build")
+        {
+            return self.agents.build;
+        }
+        if profile.eq_ignore_ascii_case("plan") {
+            return self.agents.plan;
+        }
+        if profile.eq_ignore_ascii_case("docs") {
+            return self.agents.docs;
+        }
+        if profile.eq_ignore_ascii_case("ask") {
+            return self.agents.ask;
+        }
+
+        let hash = profile
+            .to_ascii_lowercase()
+            .bytes()
+            .fold(0usize, |hash, byte| {
+                hash.wrapping_mul(31).wrapping_add(usize::from(byte))
+            });
+        self.agents.palette[hash % self.agents.palette.len()]
     }
 
     pub fn harness_dark() -> Self {
@@ -777,7 +816,7 @@ impl Theme {
                 primary: rgb(0xEE, 0xEE, 0xEE),
                 secondary: rgb(0x80, 0x80, 0x80),
                 tertiary: rgb(0x80, 0x80, 0x80),
-                accent: rgb(0xFA, 0xB2, 0x83),
+                accent: rgb(0xF5, 0xA7, 0x42),
                 inverse: rgb(0x0A, 0x0A, 0x0A),
             },
             question_prompt: QuestionPromptColors {
@@ -790,6 +829,21 @@ impl Theme {
                 error: rgb(0xE0, 0x6C, 0x75),
                 info: rgb(0x56, 0xB6, 0xC2),
                 disabled: rgb(0x80, 0x80, 0x80),
+            },
+            agents: AgentColors {
+                build: rgb(0x5C, 0x9C, 0xF5),
+                plan: rgb(0x9D, 0x7C, 0xD8),
+                docs: rgb(0xF5, 0xA7, 0x42),
+                ask: rgb(0xFA, 0xB2, 0x83),
+                palette: [
+                    rgb(0x5C, 0x9C, 0xF5),
+                    rgb(0x9D, 0x7C, 0xD8),
+                    rgb(0x7F, 0xD8, 0x8F),
+                    rgb(0xF5, 0xA7, 0x42),
+                    rgb(0xFA, 0xB2, 0x83),
+                    rgb(0xE0, 0x6C, 0x75),
+                    rgb(0x56, 0xB6, 0xC2),
+                ],
             },
             scrollbar: ScrollbarColors {
                 track: rgb(0x14, 0x14, 0x14),
@@ -833,7 +887,7 @@ mod tests {
         assert_eq!(theme.text.primary, rgb(0xEE, 0xEE, 0xEE));
         assert_eq!(theme.text.secondary, rgb(0x80, 0x80, 0x80));
         assert_eq!(theme.text.tertiary, rgb(0x80, 0x80, 0x80));
-        assert_eq!(theme.text.accent, rgb(0xFA, 0xB2, 0x83));
+        assert_eq!(theme.text.accent, rgb(0xF5, 0xA7, 0x42));
         assert_eq!(theme.text.inverse, rgb(0x0A, 0x0A, 0x0A));
         assert_eq!(theme.question_prompt.accent, rgb(0x9D, 0x7C, 0xD8));
         assert_eq!(theme.question_prompt.secondary, rgb(0x5C, 0x9C, 0xF5));
@@ -842,6 +896,30 @@ mod tests {
         assert_eq!(theme.status.error, rgb(0xE0, 0x6C, 0x75));
         assert_eq!(theme.status.info, rgb(0x56, 0xB6, 0xC2));
         assert_eq!(theme.status.disabled, rgb(0x80, 0x80, 0x80));
+        assert_eq!(theme.agents.build, rgb(0x5C, 0x9C, 0xF5));
+        assert_eq!(theme.agents.plan, rgb(0x9D, 0x7C, 0xD8));
+        assert_eq!(theme.agents.docs, rgb(0xF5, 0xA7, 0x42));
+        assert_eq!(theme.agents.ask, rgb(0xFA, 0xB2, 0x83));
+        assert_eq!(
+            theme.agents.palette,
+            [
+                rgb(0x5C, 0x9C, 0xF5),
+                rgb(0x9D, 0x7C, 0xD8),
+                rgb(0x7F, 0xD8, 0x8F),
+                rgb(0xF5, 0xA7, 0x42),
+                rgb(0xFA, 0xB2, 0x83),
+                rgb(0xE0, 0x6C, 0x75),
+                rgb(0x56, 0xB6, 0xC2),
+            ]
+        );
+        assert_eq!(theme.agent_accent("build"), rgb(0x5C, 0x9C, 0xF5));
+        assert_eq!(theme.agent_accent("Build"), rgb(0x5C, 0x9C, 0xF5));
+        assert_eq!(theme.agent_accent("default"), rgb(0x5C, 0x9C, 0xF5));
+        assert_eq!(theme.agent_accent("plan"), rgb(0x9D, 0x7C, 0xD8));
+        assert_eq!(theme.agent_accent("docs"), rgb(0xF5, 0xA7, 0x42));
+        assert_eq!(theme.agent_accent("ask"), rgb(0xFA, 0xB2, 0x83));
+        assert_eq!(theme.agent_accent("Plan"), theme.agent_accent(" plan "));
+        assert_eq!(theme.agent_accent("worker"), theme.agent_accent("Worker"));
         assert_eq!(theme.scrollbar.track, rgb(0x14, 0x14, 0x14));
         assert_eq!(theme.scrollbar.thumb, rgb(0x32, 0x32, 0x32));
         assert_eq!(theme.scrollbar.thumb_active, rgb(0x60, 0x60, 0x60));

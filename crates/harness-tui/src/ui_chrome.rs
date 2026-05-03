@@ -56,6 +56,10 @@ pub(super) const fn composer_input_accent(theme: &Theme) -> Color {
     theme.text.accent
 }
 
+pub(super) fn composer_agent_accent(theme: &Theme, app: &AppState) -> Color {
+    theme.agent_accent(app.active_profile())
+}
+
 pub(super) const fn command_palette_surface(theme: &Theme) -> Color {
     theme.surface.panel
 }
@@ -128,7 +132,8 @@ pub(super) fn render_header(
         frame.render_widget(Paragraph::new(header_text).style(style), text_area);
     } else {
         frame.render_widget(
-            Paragraph::new(header_text).style(Style::default().fg(theme.text.tertiary)),
+            Paragraph::new(header_text)
+                .style(Style::default().fg(composer_agent_accent(theme, app))),
             text_area,
         );
     }
@@ -1638,7 +1643,7 @@ fn render_document_composer_content(
     let rail_color = if context.dock.composer_disabled {
         theme.status.disabled
     } else {
-        composer_input_accent(theme)
+        composer_agent_accent(theme, app)
     };
 
     if rail_area.height > 0 {
@@ -1721,6 +1726,7 @@ fn render_document_composer_content(
                 context.disclosure_visible,
                 usize::from(rows[3].width),
                 theme,
+                composer_agent_accent(theme, app),
                 composer_surface,
             ))
             .style(Style::default().bg(composer_surface)),
@@ -1732,6 +1738,7 @@ fn render_document_composer_content(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ComposerMetadataTone {
     Accent,
+    AgentAccent,
     Primary,
     Secondary,
     Tertiary,
@@ -1743,6 +1750,7 @@ fn composer_metadata_line(
     _disclosure_visible: bool,
     max_width: usize,
     theme: &Theme,
+    agent_accent: Color,
     surface: Color,
 ) -> Line<'static> {
     let candidates = composer_metadata_candidates(app, dock);
@@ -1764,7 +1772,7 @@ fn composer_metadata_line(
                 Span::styled(
                     text,
                     Style::default()
-                        .fg(composer_metadata_color(tone, theme))
+                        .fg(composer_metadata_color(tone, theme, agent_accent))
                         .bg(surface),
                 )
             })
@@ -1800,9 +1808,14 @@ fn control_dock_summary_tone_to_metadata_tone(
     }
 }
 
-fn composer_metadata_color(tone: ComposerMetadataTone, theme: &Theme) -> Color {
+fn composer_metadata_color(
+    tone: ComposerMetadataTone,
+    theme: &Theme,
+    agent_accent: Color,
+) -> Color {
     match tone {
         ComposerMetadataTone::Accent => composer_input_accent(theme),
+        ComposerMetadataTone::AgentAccent => agent_accent,
         ComposerMetadataTone::Primary => composer_input_text(theme),
         ComposerMetadataTone::Secondary => composer_input_muted(theme),
         ComposerMetadataTone::Tertiary => theme.text.tertiary,
@@ -1827,13 +1840,15 @@ fn composer_metadata_candidates(
         .current_model_reasoning_label()
         .map(str::to_string)
         .or_else(|| {
-            (!dock.runtime_badge.trim().is_empty() && dock.runtime_badge != "Ready")
+            (!dock.runtime_badge.trim().is_empty()
+                && dock.runtime_kind != RuntimeStateKind::Ready
+                && dock.runtime_kind != RuntimeStateKind::Success)
                 .then(|| dock.runtime_badge.to_ascii_lowercase())
         });
 
     let mut full = Vec::new();
     if let Some(profile) = profile.clone() {
-        full.push((profile, ComposerMetadataTone::Accent));
+        full.push((profile, ComposerMetadataTone::AgentAccent));
     }
     if !model.is_empty() && model != "-" {
         if !full.is_empty() {
@@ -1856,7 +1871,7 @@ fn composer_metadata_candidates(
 
     let mut compact = Vec::new();
     if let Some(profile) = profile.as_ref() {
-        compact.push((profile.clone(), ComposerMetadataTone::Accent));
+        compact.push((profile.clone(), ComposerMetadataTone::AgentAccent));
     }
     if !model.is_empty() && model != "-" {
         if !compact.is_empty() {
@@ -1873,7 +1888,7 @@ fn composer_metadata_candidates(
             .or_else(|| {
                 profile
                     .as_ref()
-                    .map(|profile| vec![(profile.clone(), ComposerMetadataTone::Accent)])
+                    .map(|profile| vec![(profile.clone(), ComposerMetadataTone::AgentAccent)])
             })
             .unwrap_or_default(),
         vec![(
@@ -1881,6 +1896,40 @@ fn composer_metadata_candidates(
             ComposerMetadataTone::Secondary,
         )],
     ]
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_live_composer_metadata_omits_success_without_variant() {
+    let mut app = AppState::new_live(None, false, None);
+    app.set_launch_metadata(crate::app::LaunchMetadata::from_model_ref(
+        "deep",
+        "default:gpt-5.4-mini",
+    ));
+    let dock = crate::view_model::ControlDockViewModel {
+        variant: crate::view_model::ControlDockVariant::Live,
+        runtime_context: None,
+        runtime_badge: "Success".to_string(),
+        runtime_kind: RuntimeStateKind::Success,
+        primary_summary: "turn 1 · ready for next turn".to_string(),
+        summary_segment: None,
+        composer_body: String::new(),
+        composer_disclosure: String::new(),
+        composer_focused: true,
+        composer_disabled: false,
+    };
+
+    let rendered = composer_metadata_candidates(&app, &dock)
+        .into_iter()
+        .map(|segments| {
+            segments
+                .into_iter()
+                .map(|(text, _)| text)
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(!rendered.contains("success"));
 }
 
 fn composer_metadata_text(
@@ -2229,7 +2278,7 @@ fn status_context(app: &AppState, theme: &Theme, state: RuntimeStateKind) -> (&'
         state,
         RuntimeStateKind::Sending | RuntimeStateKind::Streaming
     ) {
-        return ("live", theme.text.accent);
+        return ("live", composer_agent_accent(theme, app));
     }
     ("live", theme.text.secondary)
 }
@@ -2485,7 +2534,11 @@ fn disclosure_segment(
     Span::styled(
         text.into(),
         Style::default()
-            .fg(composer_metadata_color(tone, theme))
+            .fg(composer_metadata_color(
+                tone,
+                theme,
+                composer_input_accent(theme),
+            ))
             .bg(surface),
     )
 }
