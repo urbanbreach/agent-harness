@@ -23,6 +23,6 @@ expression: "render_live_lines(&app, 80, 24)"
   ┃                                                                             
   ┃                                                                             
   ┃                                                                             
-  ┃  gpt-5-codex openai · success                                               
+  ┃  gpt-5-codex openai                                                         
   ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  
   turn 1 · ready for next turn        Tab focus  ·  Ctrl+p commands  ·  q quit

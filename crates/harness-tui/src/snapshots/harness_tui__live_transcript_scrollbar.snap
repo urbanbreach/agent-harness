@@ -1,6 +1,5 @@
 ---
 source: crates/harness-tui/src/lib_tests.rs
-assertion_line: 5025
 expression: "render_live_lines(&app, 80, 24)"
 ---
                                                                                 
@@ -24,6 +23,6 @@ expression: "render_live_lines(&app, 80, 24)"
   ┃                                                                             
   ┃                                                                             
   ┃                                                                             
-  ┃  gpt-5.4-mini openai · success                                              
+  ┃  gpt-5.4-mini openai                                                        
   ┃                                                                             
   ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
