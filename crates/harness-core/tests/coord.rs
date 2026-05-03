@@ -1474,6 +1474,278 @@ async fn provider_calls_in_one_turn_have_unique_request_ids() {
 }
 
 #[tokio::test]
+async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id: "call_edit".to_string(),
+                function_name: "shell_run".to_string(),
+                arguments_json: r#"{"command":"touch docs/rust-language.md"}"#.to_string(),
+            },
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 2,
+                    completion_tokens: 1,
+                    total_tokens: 3,
+                },
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("I edited docs/rust-language.md.".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 3,
+                    completion_tokens: 2,
+                    total_tokens: 5,
+                },
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("I used shell.run.".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 4,
+                    completion_tokens: 2,
+                    total_tokens: 6,
+                },
+            },
+        ],
+    ]);
+    let coordinator = test_agent_tool_coordinator(
+        temp_dir.path(),
+        Arc::new(provider.clone()),
+        test_tool_registry(),
+        PermissionPolicy::new(
+            PermissionMode::Allow,
+            PermissionMode::Allow,
+            PermissionMode::Allow,
+        ),
+        vec!["shell.run".to_string()],
+        12,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_completed_tool_turn_preserves_tool_messages",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+
+    coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let first_request_id = coordinator
+        .request_agent_turn(
+            supervisor_actor(),
+            "agent_000001",
+            "edit docs/rust-language.md",
+        )
+        .await
+        .expect("first turn");
+    wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data)
+                    if event.correlation_id.as_deref() == Some(first_request_id.as_str())
+                        && data.result_summary == "I edited docs/rust-language.md."
+            )
+        })
+    })
+    .await;
+
+    coordinator
+        .request_agent_turn(supervisor_actor(), "agent_000001", "what tool did you use?")
+        .await
+        .expect("follow-up turn");
+    wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data) if data.result_summary == "I used shell.run."
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let requests = provider.requests();
+    assert_eq!(
+        requests.len(),
+        3,
+        "tool turn plus follow-up should make three provider calls"
+    );
+    let followup_messages = &requests[2].messages;
+    let tool_call_message = followup_messages
+        .iter()
+        .find(|message| {
+            message
+                .assistant_tool_calls
+                .as_ref()
+                .is_some_and(|calls| calls.iter().any(|call| call.tool_call_id == "call_edit"))
+        })
+        .expect("follow-up context should include prior assistant tool call");
+    let calls = tool_call_message
+        .assistant_tool_calls
+        .as_ref()
+        .expect("assistant tool calls");
+    assert_eq!(calls[0].function_name, "shell_run");
+    assert_eq!(
+        calls[0].arguments_json,
+        r#"{"command":"touch docs/rust-language.md"}"#
+    );
+
+    let tool_result_message = followup_messages
+        .iter()
+        .find(|message| {
+            message.role == MessageRole::Tool
+                && message.tool_call_id.as_deref() == Some("call_edit")
+        })
+        .expect("follow-up context should include prior tool result");
+    assert_eq!(tool_result_message.name.as_deref(), Some("shell_run"));
+    assert!(tool_result_message
+        .content
+        .contains("touch docs/rust-language.md"));
+    assert!(followup_messages.iter().any(|message| {
+        message.role == MessageRole::Assistant
+            && message.content == "I edited docs/rust-language.md."
+            && message.assistant_tool_calls.is_none()
+    }));
+}
+
+#[tokio::test]
+async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let initial_provider = SequentialScriptedProvider::new(vec![
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id: "call_edit".to_string(),
+                function_name: "shell_run".to_string(),
+                arguments_json: r#"{"command":"touch docs/rust-language.md"}"#.to_string(),
+            },
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 2,
+                    completion_tokens: 1,
+                    total_tokens: 3,
+                },
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("I edited docs/rust-language.md.".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 3,
+                    completion_tokens: 2,
+                    total_tokens: 5,
+                },
+            },
+        ],
+    ]);
+    let initial = test_agent_tool_coordinator(
+        temp_dir.path(),
+        Arc::new(initial_provider),
+        test_tool_registry(),
+        PermissionPolicy::new(
+            PermissionMode::Allow,
+            PermissionMode::Allow,
+            PermissionMode::Allow,
+        ),
+        vec!["shell.run".to_string()],
+        12,
+    );
+
+    let run = initial
+        .start_run(
+            "coord_resumed_tool_turn_preserves_tool_messages",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    initial
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let first_request_id = initial
+        .request_agent_turn(
+            supervisor_actor(),
+            "agent_000001",
+            "edit docs/rust-language.md",
+        )
+        .await
+        .expect("first turn");
+    wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data)
+                    if event.correlation_id.as_deref() == Some(first_request_id.as_str())
+                        && data.result_summary == "I edited docs/rust-language.md."
+            )
+        })
+    })
+    .await;
+    initial.stop_run().await.expect("stop initial run");
+
+    let resumed_provider = CapturingProvider::new(vec!["I used shell.run."]);
+    let resumed =
+        test_resume_coordinator_with_provider(temp_dir.path(), Arc::new(resumed_provider.clone()));
+    resumed
+        .resume_run(&run.run_id, "interactive")
+        .await
+        .expect("resume run");
+    resumed
+        .request_agent_turn(supervisor_actor(), "agent_000001", "what tool did you use?")
+        .await
+        .expect("follow-up turn");
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    resumed.stop_run().await.expect("stop resumed run");
+
+    let requests = resumed_provider.requests();
+    assert_eq!(requests.len(), 1, "expected one resumed provider request");
+    let followup_messages = &requests[0].messages;
+    let tool_call_message = followup_messages
+        .iter()
+        .find(|message| {
+            message
+                .assistant_tool_calls
+                .as_ref()
+                .is_some_and(|calls| calls.iter().any(|call| call.function_name == "shell_run"))
+        })
+        .expect("resumed follow-up context should include prior assistant tool call");
+    let calls = tool_call_message
+        .assistant_tool_calls
+        .as_ref()
+        .expect("assistant tool calls");
+    assert_eq!(calls[0].function_name, "shell_run");
+    assert_eq!(
+        calls[0].arguments_json,
+        r#"{"command":"touch docs/rust-language.md"}"#
+    );
+    let reconstructed_tool_call_id = calls[0].tool_call_id.as_str();
+
+    let tool_result_message = followup_messages
+        .iter()
+        .find(|message| {
+            message.role == MessageRole::Tool
+                && message.tool_call_id.as_deref() == Some(reconstructed_tool_call_id)
+        })
+        .expect("resumed follow-up context should include prior tool result");
+    assert_eq!(tool_result_message.name.as_deref(), Some("shell_run"));
+    assert!(tool_result_message
+        .content
+        .contains("touch docs/rust-language.md"));
+}
+
+#[tokio::test]
 async fn provider_stream_metadata_persists_to_jsonl_events() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let provider = SequentialScriptedProvider::new(vec![vec![

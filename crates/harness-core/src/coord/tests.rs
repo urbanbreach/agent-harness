@@ -9,15 +9,20 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::{
-    ProviderCompactionFacts, ProviderCompactionSummarySource, ProviderCompactionTailBoundary,
-    ProviderContext, ProviderContextCheckpoint, ProviderContextCheckpointMetadata,
-    ProviderConversationTurn, ProviderConversationTurnStatus, ProviderFileOperationFact,
+    AgentProfile, ProviderCompactionFacts, ProviderCompactionSummarySource,
+    ProviderCompactionTailBoundary, ProviderContext, ProviderContextCheckpoint,
+    ProviderContextCheckpointMetadata, ProviderConversationTurn, ProviderConversationTurnStatus,
+    ProviderFileOperationFact,
 };
 use crate::clock::{FakeClock, RealClock};
 use crate::config::{
     clear_registered_mcp_server_first_class_tool_ids, load_config_from_str,
     resolve_profile_model_metadata, set_registered_mcp_server_first_class_tool_ids,
     CategoryPermissions, CompactionRuntimeConfig, PermissionMode,
+};
+use crate::conversation::{
+    ConversationAssistantMessage, ConversationMessage, ConversationToolCall,
+    ConversationToolResultMessage, ConversationUserMessage,
 };
 use crate::event::{
     ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, CompactionAppliedEvent,
@@ -37,13 +42,15 @@ use crate::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, To
 
 use super::{
     build_model_compaction_prompt, build_provider_context_summary, compact_provider_context,
-    compaction_summary_override_from_hooks, mark_failed_terminal_compaction_attempt,
-    provider_context_summary_required_headings, restore_provider_context_from_history,
-    spawn_coordinator, validate_model_compaction_summary, Coordinator, CoordinatorConfig,
-    CoordinatorError, FailedTerminalCompactionRequest, HookExecutionBatch, JobOutcome,
-    JobProgressKind, ProviderCompactionTrigger, ProviderContextCompactionPlan, RunInfo, RunState,
+    compaction_summary_override_from_hooks, completion_messages_to_conversation_messages,
+    mark_failed_terminal_compaction_attempt, provider_context_summary_required_headings,
+    provider_tool_message_status, restore_provider_context_from_history, spawn_coordinator,
+    validate_model_compaction_summary, Coordinator, CoordinatorConfig, CoordinatorError,
+    FailedTerminalCompactionRequest, HookExecutionBatch, JobOutcome, JobProgressKind,
+    ProviderCompactionTrigger, ProviderContextCompactionPlan, RunInfo, RunState,
     TaskExecutionState, TaskState,
 };
+use harness_providers::{CompletionMessage, MessageRole};
 
 struct TestShellTool;
 
@@ -2826,7 +2833,10 @@ fn legacy_provider_context_checkpoint_deserializes() {
         "recent_turns": [
             {
                 "user_prompt": "legacy question",
-                "assistant_response": "legacy answer"
+                "assistant_response": "legacy answer",
+                "provider_messages": [
+                    {"role": "assistant", "content": "legacy provider-shaped message"}
+                ]
             }
         ]
     }"#;
@@ -2839,12 +2849,67 @@ fn legacy_provider_context_checkpoint_deserializes() {
     assert_eq!(checkpoint.recent_turns.len(), 1);
     assert_eq!(checkpoint.recent_turns[0].request_id, None);
     assert_eq!(checkpoint.recent_turns[0].artifacts, Vec::new());
+    assert_eq!(checkpoint.recent_turns[0].messages, Vec::new());
     let source = checkpoint
         .summary_source
         .as_ref()
         .expect("legacy summary source should deserialize");
     assert_eq!(source.summary_contract_version, None);
     assert_eq!(source.summary_contract_enforced, None);
+}
+
+#[test]
+fn provider_neutral_reconstruction_marks_continue_as_tool_message_failures() {
+    assert_eq!(
+        provider_tool_message_status("tool call `shell_run` failed: denied"),
+        ToolCallStatus::Failed
+    );
+    assert_eq!(
+        provider_tool_message_status("ok {\"command\":\"true\"}"),
+        ToolCallStatus::Succeeded
+    );
+
+    let profile = AgentProfile {
+        name: "alpha".to_string(),
+        category: "deep".to_string(),
+        model_ref: "mock:model-1".to_string(),
+        system_prompt: "sys".to_string(),
+        max_iters: 12,
+        temperature: Some(0.0),
+        tool_failure_mode: crate::config::ToolFailureMode::ContinueAsToolMessage,
+        toolset: vec!["shell.run".to_string()],
+    };
+    let messages = completion_messages_to_conversation_messages(
+        &profile,
+        "req_failed_tool",
+        "agent_000001",
+        &[
+            CompletionMessage {
+                role: MessageRole::Assistant,
+                content: String::new(),
+                name: None,
+                tool_call_id: None,
+                assistant_tool_calls: Some(vec![harness_providers::AssistantToolCall {
+                    tool_call_id: "call_failed".to_string(),
+                    function_name: "shell_run".to_string(),
+                    arguments_json: r#"{"command":"false"}"#.to_string(),
+                }]),
+            },
+            CompletionMessage {
+                role: MessageRole::Tool,
+                content: "tool call `shell_run` failed: denied".to_string(),
+                name: Some("shell_run".to_string()),
+                tool_call_id: Some("call_failed".to_string()),
+                assistant_tool_calls: None,
+            },
+        ],
+    );
+
+    let ConversationMessage::ToolResult(tool_result) = &messages[1] else {
+        panic!("expected tool result message");
+    };
+    assert_eq!(tool_result.status, ToolCallStatus::Failed);
+    assert_eq!(tool_result.tool_id.as_deref(), Some("shell.run"));
 }
 
 #[test]
@@ -3501,6 +3566,125 @@ fn split_oversized_turn_refuses_artifact_backed_turn() {
         .relevant_artifacts
         .iter()
         .any(|artifact| { artifact.path == "artifacts/toolcalls/toolcall_000001/result.txt" }));
+}
+
+#[test]
+fn split_oversized_turn_refuses_provider_neutral_tool_messages() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let clock = FakeClock::new();
+    let redactor = DefaultRedactor::default();
+    let mut run_state = test_run_state(temp_dir.path(), "run_split_refuses_neutral_tool_turn");
+    run_state.recorded_runtime_context = Some(compaction_runtime_context());
+    let assistant_response = format!(
+        "NEUTRAL_TOOL_PREFIX {} {} NEUTRAL_TOOL_SUFFIX",
+        "K".repeat(4_000),
+        "L".repeat(7_900)
+    );
+    run_state.provider_context_by_agent.insert(
+        "agent_000001".to_string(),
+        ProviderContext::from_turns(vec![ProviderConversationTurn {
+            user_prompt: "neutral tool latest question".to_string(),
+            assistant_response: assistant_response.clone(),
+            request_id: Some("req_neutral_tool".to_string()),
+            messages: vec![
+                ConversationMessage::User(ConversationUserMessage {
+                    request_id: "req_neutral_tool".to_string(),
+                    text: "neutral tool latest question".to_string(),
+                    seq: None,
+                    agent_id: Some("agent_000001".to_string()),
+                }),
+                ConversationMessage::Assistant(ConversationAssistantMessage {
+                    request_id: "req_neutral_tool".to_string(),
+                    agent_id: Some("agent_000001".to_string()),
+                    text: String::new(),
+                    tool_calls: vec![ConversationToolCall {
+                        tool_call_id: "toolcall_neutral".to_string(),
+                        tool_id: "shell.run".to_string(),
+                        args_summary: r#"{"command":"true"}"#.to_string(),
+                        args_digest: "digest-args".to_string(),
+                        seq: None,
+                        metadata: None,
+                    }],
+                    stop_reason: None,
+                    first_seq: None,
+                    last_seq: None,
+                    provider_id: None,
+                    model_id: None,
+                    output_digest: None,
+                }),
+                ConversationMessage::ToolResult(Box::new(ConversationToolResultMessage {
+                    request_id: "req_neutral_tool".to_string(),
+                    tool_call_id: "toolcall_neutral".to_string(),
+                    tool_id: Some("shell.run".to_string()),
+                    status: ToolCallStatus::Succeeded,
+                    output_summary: Some("ok".to_string()),
+                    output_digest: Some("digest-output".to_string()),
+                    output_json: None,
+                    seq: None,
+                    metadata: None,
+                })),
+                ConversationMessage::Assistant(ConversationAssistantMessage {
+                    request_id: "req_neutral_tool".to_string(),
+                    agent_id: Some("agent_000001".to_string()),
+                    text: assistant_response,
+                    tool_calls: Vec::new(),
+                    stop_reason: None,
+                    first_seq: None,
+                    last_seq: None,
+                    provider_id: None,
+                    model_id: None,
+                    output_digest: None,
+                }),
+            ],
+            ..ProviderConversationTurn::default()
+        }]),
+    );
+    let trigger = ProviderCompactionTrigger {
+        agent_id: "agent_000001".to_string(),
+        profile_name: "alpha".to_string(),
+        model_ref: "default:model-1".to_string(),
+        provider_id: Some("default".to_string()),
+        model_id: Some("model-1".to_string()),
+        through_request_id: Some("req_neutral_tool".to_string()),
+        trigger_reason: "overflow_retry".to_string(),
+        tokens_before: Some(4_000),
+        prompt_tokens_estimate: None,
+        estimate_source: None,
+    };
+    let compaction_config = CompactionRuntimeConfig {
+        split_oversized_turns: true,
+        ..CompactionRuntimeConfig::default()
+    };
+
+    compact_provider_context(
+        &clock,
+        &redactor,
+        &mut run_state,
+        &trigger,
+        &compaction_config,
+        &super::CompactionSummaryDecision::deterministic(&trigger),
+    )
+    .expect("neutral tool summary-only compaction should succeed")
+    .expect("neutral tool summary-only compaction should write checkpoint");
+
+    let events = read_events(&run_state.info.events_path);
+    let written = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::CompactionWritten(payload) if payload.trigger_reason == "overflow_retry" => {
+                Some(payload.clone())
+            }
+            _ => None,
+        })
+        .expect("overflow compaction written event");
+    let checkpoint_path = run_state.info.run_dir.join(&written.artifact_path);
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint: ProviderContextCheckpoint =
+        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact");
+    assert!(checkpoint.recent_turns.is_empty());
+    let tail_boundary = checkpoint.tail_boundary.expect("tail boundary");
+    assert_eq!(tail_boundary.mode, "summary_only");
+    assert_eq!(tail_boundary.split_prefix_summary, None);
 }
 
 #[test]

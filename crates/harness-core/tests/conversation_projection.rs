@@ -5,7 +5,10 @@ use harness_core::agent::{
     ProviderContextCheckpointMetadata, ProviderConversationTurn, ProviderConversationTurnStatus,
 };
 use harness_core::config::ToolFailureMode;
-use harness_core::conversation::{project_conversation, ConversationMessage};
+use harness_core::conversation::{
+    project_conversation, ConversationAssistantMessage, ConversationMessage, ConversationToolCall,
+    ConversationToolResultMessage, ConversationUserMessage,
+};
 use harness_core::event::{
     ActorKind, EventActor, EventEnvelopeV1, EventV1, ProviderRequestFinishedEvent,
     ProviderRequestStartedEvent, ProviderStreamDeltaEvent, ToolCallFinishedEvent,
@@ -142,6 +145,7 @@ fn conversation_projection_failed_checkpoint_turn_status() {
             first_seq: Some(7),
             last_seq: Some(9),
             artifacts: Vec::new(),
+            messages: Vec::new(),
         }],
         pruned_tool_artifacts: Vec::new(),
         facts: ProviderCompactionFacts::default(),
@@ -383,6 +387,210 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
     assert_eq!(second_result.tool_call_id, "toolcall_000002");
     assert_eq!(second_result.tool_id.as_deref(), Some("bash"));
     assert_eq!(second_result.output_summary.as_deref(), Some("clean"));
+
+    let provider_boundary = transform_context_for_provider(ProviderBoundaryInput {
+        profile: &boundary_profile(),
+        model: AgentModelRef::parse("mock:model-1"),
+        model_settings: AgentModelSettings::default(),
+        context: ProviderBoundaryContext::ProjectedHarness {
+            messages: &projection.messages,
+            checkpoint: None,
+        },
+        tools: None,
+        tool_choice: None,
+    });
+    let assistant_message = provider_boundary
+        .messages
+        .iter()
+        .find(|message| message.content == "I'll check.")
+        .expect("assistant provider message");
+    let assistant_tool_calls = assistant_message
+        .assistant_tool_calls
+        .as_ref()
+        .expect("assistant tool calls should be provider-visible");
+    assert_eq!(assistant_tool_calls[0].tool_call_id, "toolcall_000001");
+    assert_eq!(assistant_tool_calls[0].function_name, "read");
+    assert_eq!(
+        assistant_tool_calls[0].arguments_json,
+        r#"{"filePath":"README.md"}"#
+    );
+    let provider_tool_result = provider_boundary
+        .messages
+        .iter()
+        .find(|message| {
+            message.role == MessageRole::Tool
+                && message.tool_call_id.as_deref() == Some("toolcall_000001")
+        })
+        .expect("tool result provider message");
+    assert_eq!(provider_tool_result.name.as_deref(), Some("read"));
+}
+
+#[test]
+fn provider_boundary_falls_back_for_non_json_historical_tool_args() {
+    let events = vec![
+        envelope(
+            1,
+            EventActor::new(ActorKind::User, None),
+            Some("req_1"),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_1".to_string(),
+                text: "read a file".to_string(),
+            }),
+        ),
+        envelope(
+            2,
+            worker(),
+            Some("req_1"),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "provider_req_1".to_string(),
+                provider_id: "mock".to_string(),
+                model_id: "model-1".to_string(),
+                prompt_summary: "read a file".to_string(),
+                request_digest: "digest".to_string(),
+                metadata: None,
+            }),
+        ),
+        envelope(
+            3,
+            worker(),
+            Some("req_1"),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "toolcall_1".to_string(),
+                tool_id: "read".to_string(),
+                args_summary: "read README.md…".to_string(),
+                args_digest: "digest-args".to_string(),
+                metadata: None,
+            }),
+        ),
+    ];
+    let projection = project_conversation(&events, &[]).expect("project conversation");
+
+    let provider_boundary = transform_context_for_provider(ProviderBoundaryInput {
+        profile: &boundary_profile(),
+        model: AgentModelRef::parse("mock:model-1"),
+        model_settings: AgentModelSettings::default(),
+        context: ProviderBoundaryContext::ProjectedHarness {
+            messages: &projection.messages,
+            checkpoint: None,
+        },
+        tools: None,
+        tool_choice: None,
+    });
+
+    let assistant_message = provider_boundary
+        .messages
+        .iter()
+        .find(|message| message.role == MessageRole::Assistant)
+        .expect("assistant message");
+    let tool_calls = assistant_message
+        .assistant_tool_calls
+        .as_ref()
+        .expect("tool calls");
+    assert_eq!(tool_calls[0].arguments_json, "{}");
+}
+
+#[test]
+fn provider_boundary_sanitizes_unknown_historical_tool_ids() {
+    let mut profile = boundary_profile();
+    profile.toolset.clear();
+    let prior_context = ProviderContext {
+        compacted_summary: None,
+        preserved_turns: vec![ProviderConversationTurn {
+            user_prompt: "use unknown tools".to_string(),
+            assistant_response: "done".to_string(),
+            request_id: Some("req_unknown_tools".to_string()),
+            messages: vec![
+                ConversationMessage::User(ConversationUserMessage {
+                    request_id: "req_unknown_tools".to_string(),
+                    text: "use unknown tools".to_string(),
+                    seq: None,
+                    agent_id: Some("agent_1".to_string()),
+                }),
+                ConversationMessage::Assistant(ConversationAssistantMessage {
+                    request_id: "req_unknown_tools".to_string(),
+                    agent_id: Some("agent_1".to_string()),
+                    text: String::new(),
+                    tool_calls: vec![
+                        ConversationToolCall {
+                            tool_call_id: "toolcall_dot".to_string(),
+                            tool_id: "unknown.tool".to_string(),
+                            args_summary: r#"{"value":1}"#.to_string(),
+                            args_digest: "digest-dot".to_string(),
+                            seq: None,
+                            metadata: None,
+                        },
+                        ConversationToolCall {
+                            tool_call_id: "toolcall_slash".to_string(),
+                            tool_id: "unknown/tool".to_string(),
+                            args_summary: r#"{"value":2}"#.to_string(),
+                            args_digest: "digest-slash".to_string(),
+                            seq: None,
+                            metadata: None,
+                        },
+                    ],
+                    stop_reason: None,
+                    first_seq: None,
+                    last_seq: None,
+                    provider_id: None,
+                    model_id: None,
+                    output_digest: None,
+                }),
+                ConversationMessage::ToolResult(Box::new(ConversationToolResultMessage {
+                    request_id: "req_unknown_tools".to_string(),
+                    tool_call_id: "toolcall_dot".to_string(),
+                    tool_id: Some("unknown.tool".to_string()),
+                    status: ToolCallStatus::Succeeded,
+                    output_summary: Some("dot ok".to_string()),
+                    output_digest: None,
+                    output_json: None,
+                    seq: None,
+                    metadata: None,
+                })),
+                ConversationMessage::ToolResult(Box::new(ConversationToolResultMessage {
+                    request_id: "req_unknown_tools".to_string(),
+                    tool_call_id: "toolcall_slash".to_string(),
+                    tool_id: Some("unknown/tool".to_string()),
+                    status: ToolCallStatus::Succeeded,
+                    output_summary: Some("slash ok".to_string()),
+                    output_digest: None,
+                    output_json: None,
+                    seq: None,
+                    metadata: None,
+                })),
+                ConversationMessage::Assistant(ConversationAssistantMessage {
+                    request_id: "req_unknown_tools".to_string(),
+                    agent_id: Some("agent_1".to_string()),
+                    text: "done".to_string(),
+                    tool_calls: Vec::new(),
+                    stop_reason: None,
+                    first_seq: None,
+                    last_seq: None,
+                    provider_id: None,
+                    model_id: None,
+                    output_digest: None,
+                }),
+            ],
+            ..ProviderConversationTurn::default()
+        }],
+        checkpoint: None,
+    };
+
+    let messages = build_provider_context_messages(&profile, &prior_context, "next");
+    let assistant_tool_calls = messages
+        .iter()
+        .find_map(|message| message.assistant_tool_calls.as_ref())
+        .expect("assistant tool calls");
+    assert_eq!(assistant_tool_calls[0].function_name, "unknown_tool");
+    assert_eq!(assistant_tool_calls[1].function_name, "unknown_tool");
+    assert_eq!(
+        messages
+            .iter()
+            .filter(|message| {
+                message.role == MessageRole::Tool && message.name.as_deref() == Some("unknown_tool")
+            })
+            .count(),
+        2
+    );
 }
 
 fn worker() -> EventActor {
