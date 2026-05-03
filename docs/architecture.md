@@ -56,13 +56,17 @@ Provider abstraction for LLM completions:
 Built-in tool implementations:
 
 - `read` / `list` / `glob` / `grep` - Safe workspace discovery and search
-- `write` / `edit` - Default file editing workflows (`edit` is hashline-first)
+- `edit` - Hashline-first file creation, targeted edits, deletion, and rename
 - `bash` - Execute shell commands with allowlist
 - `task` / `batch` / `question` / `skill` - Control-plane and delegation workflows
 - `webfetch` / `websearch` / `codesearch` / `lsp` - Network and language-intelligence workflows
 
+Hashline editing is the only normal file-changing route. Agent profiles expose `read`
+and `edit`; low-level hashline scan/apply helpers are reserved for internal
+compatibility and focused test lanes.
+
 The active registry exposes a single native provider surface. Canonical ids such as
-`read`, `write`, `bash`, `webfetch`, `websearch`, `codesearch`, `question`, `batch`, `task`,
+`read`, `edit`, `bash`, `webfetch`, `websearch`, `codesearch`, `question`, `batch`, `task`,
 and `lsp` are the documented tool surface, while lower-level executors remain
 internal implementation details behind those tool ids.
 
@@ -316,7 +320,7 @@ guard when a checkpoint cannot reduce active context.
 
 Provider and tool exposure is selected per agent by its configured `tools` list. The harness ships
 a single native tool surface, so profiles opt in by naming canonical tool ids such as `read`,
-`write`, `edit`, `bash`, and `task` directly. By default, `read` emits
+`edit`, `bash`, and `task` directly. By default, `read` emits
 `LINE#HASH|text` anchors and `edit` consumes hashline operations on that anchored view.
 
 ## Hashline Spec
