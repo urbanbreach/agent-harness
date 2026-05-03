@@ -28,6 +28,7 @@ delegate_test!(transcript_tool_rows_follow_chronological_turn_order => ui::exact
 delegate_test!(transcript_applied_edit_missing_diff_surfaces_fallback => ui::exact_test_transcript_applied_edit_missing_diff_surfaces_fallback);
 delegate_test!(transcript_edit_tool_matches_inline_diff_shape => ui::exact_test_transcript_edit_tool_matches_inline_diff_shape);
 delegate_test!(transcript_native_edit_renders_inline_diff_from_artifact => ui::exact_test_transcript_native_edit_renders_inline_diff_from_artifact);
+delegate_test!(transcript_opencode_tool_progress_indicators => ui::exact_test_transcript_opencode_tool_progress_indicators);
 delegate_test!(transcript_apply_patch_multifile_uses_output_edit_paths => ui::exact_test_transcript_apply_patch_multifile_uses_output_edit_paths);
 delegate_test!(transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs => ui::exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs);
 delegate_test!(transcript_inline_diff_stays_compact_between_tool_rows => ui::exact_test_transcript_inline_diff_stays_compact_between_tool_rows);
@@ -110,7 +111,36 @@ fn transcript_turn_sections_render_open_rail_surfaces() {
     let (assistant_footer_row, assistant_footer_fgs, assistant_footer_bgs) =
         row_at(&buffer, 80, assistant_footer).expect("assistant footer palette row");
     let user_rail_column = user_body_row.find('┃').expect("user rail");
-    assert_eq!(user_body_fgs[user_rail_column], theme.text.accent);
+    assert_eq!(user_body_fgs[user_rail_column], theme.agent_accent("build"));
+
+    let mut plan_app = app::AppState::new_live(None, false, None);
+    plan_app.set_launch_metadata(app::LaunchMetadata::from_model_ref(
+        "plan",
+        "default:gpt-5.4-mini",
+    ));
+    plan_app.activities =
+        std::collections::VecDeque::from(vec![transcript_turn_group_test_activity(
+            "req_plan_turn_groups",
+            app::ActivityStatus::Done,
+            Some("Plan this work"),
+            "Planned response",
+        )]);
+    plan_app.selected_activity_index = 0;
+    plan_app.follow_mode = false;
+    plan_app.transcript_scroll = usize::MAX;
+
+    let plan_rendered = render_live_lines(&plan_app, 80, 24);
+    let plan_lines = plan_rendered.lines().collect::<Vec<_>>();
+    let plan_user_body = find_line_containing(&plan_lines, "Plan this work")
+        .unwrap_or_else(|| panic!("plan user body line\n{plan_rendered}"));
+    let (plan_user_body_row, plan_user_body_fgs, _) =
+        row_at(&render_live_cells(&plan_app, 80, 24), 80, plan_user_body)
+            .expect("plan user body palette row");
+    let plan_user_rail_column = plan_user_body_row.find('┃').expect("plan user rail");
+    assert_eq!(
+        plan_user_body_fgs[plan_user_rail_column],
+        theme.agent_accent("plan")
+    );
     assert!(!assistant_footer_row.contains('┃'));
     assert_eq!(
         assistant_footer_fgs[first_alphanumeric_column(lines[assistant_footer])],
@@ -430,6 +460,7 @@ delegate_test!(startup_shell_keeps_no_default_tab_chrome_after_runtime_context_a
 delegate_test!(replay_prompt_pane_is_visibly_read_only => ui::exact_test_replay_prompt_pane_is_visibly_read_only);
 delegate_test!(live_control_dock_renders_shared_surface => ui::exact_test_live_control_dock_renders_shared_surface);
 delegate_test!(live_control_dock_collapses_disclosure_before_status => ui::exact_test_live_control_dock_collapses_disclosure_before_status);
+delegate_test!(live_composer_metadata_omits_success_without_variant => ui::exact_test_live_composer_metadata_omits_success_without_variant);
 delegate_test!(live_composer_reserves_right_gap => ui::exact_test_live_composer_reserves_right_gap);
 delegate_test!(live_composer_disclosure_summarizes_compaction_metrics => ui::exact_test_live_composer_disclosure_summarizes_compaction_metrics);
 delegate_test!(tool_status_summary_uses_effective_tool_identity => ui::exact_test_tool_status_summary_uses_effective_tool_identity);
@@ -446,6 +477,9 @@ delegate_test!(replay_mode_disables_slash_workflow => app::exact_test_replay_mod
 delegate_test!(slash_replay_opens_history_and_restores_draft => app::exact_test_slash_replay_opens_history_and_restores_draft);
 delegate_test!(slash_resume_opens_history_and_restores_draft => app::exact_test_slash_resume_opens_history_and_restores_draft);
 delegate_test!(slash_events_opens_review_surface => app::exact_test_slash_events_opens_review_surface);
+delegate_test!(slash_status_opens_status_dialog_and_restores_draft => app::exact_test_slash_status_opens_status_dialog_and_restores_draft);
+delegate_test!(status_dialog_mcp_rows_match_opencode_states => ui::exact_test_status_dialog_mcp_rows_match_opencode_states);
+delegate_test!(status_dialog_render_snapshot_covers_opencode_sections => ui::exact_test_status_dialog_render_snapshot_covers_opencode_sections);
 delegate_test!(slash_shell_closes_review_surface => app::exact_test_slash_shell_closes_review_surface);
 delegate_test!(slash_follow_toggles_follow_mode => app::exact_test_slash_follow_toggles_follow_mode);
 delegate_test!(live_slash_compact_appears_when_supported => app::exact_test_live_slash_compact_appears_when_supported);
@@ -1994,7 +2028,7 @@ fn harness_dark_theme_has_exact_palette() {
     );
     assert_eq!(
         theme.text.accent,
-        ratatui::style::Color::Rgb(0xFA, 0xB2, 0x83)
+        ratatui::style::Color::Rgb(0xF5, 0xA7, 0x42)
     );
     assert_eq!(
         theme.text.inverse,
@@ -2019,6 +2053,14 @@ fn harness_dark_theme_has_exact_palette() {
     assert_eq!(
         theme.status.disabled,
         ratatui::style::Color::Rgb(0x80, 0x80, 0x80)
+    );
+    assert_eq!(
+        theme.agents.build,
+        ratatui::style::Color::Rgb(0x5C, 0x9C, 0xF5)
+    );
+    assert_eq!(
+        theme.agents.plan,
+        ratatui::style::Color::Rgb(0x9D, 0x7C, 0xD8)
     );
 }
 
@@ -4544,7 +4586,7 @@ fn module_overlays_share_elevated_card_language() {
         width,
         height,
         "New session",
-        ratatui::style::Color::Rgb(0xFA, 0xB2, 0x83),
+        ratatui::style::Color::Rgb(0xF5, 0xA7, 0x42),
     );
 
     let mut sessions = app::AppState::new_startup(
@@ -4569,7 +4611,7 @@ fn module_overlays_share_elevated_card_language() {
         width,
         height,
         "Resume target",
-        ratatui::style::Color::Rgb(0xFA, 0xB2, 0x83),
+        ratatui::style::Color::Rgb(0xF5, 0xA7, 0x42),
     );
 }
 
