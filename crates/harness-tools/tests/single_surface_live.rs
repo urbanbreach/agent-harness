@@ -37,7 +37,6 @@ fn surface_live_toolset() -> Vec<String> {
         "todowrite",
         "webfetch",
         "websearch",
-        "write",
     ]
     .into_iter()
     .map(str::to_string)
@@ -161,7 +160,6 @@ async fn example_config_exposes_single_surface_tools_through_live_registry() {
         "grep",
         "bash",
         "edit",
-        "write",
         "webfetch",
         "todowrite",
         "todoread",
@@ -240,32 +238,43 @@ async fn single_surface_tools_execute_under_example_config() {
         .await
         .expect("spawn worker");
 
-    let write = handle
+    let create = handle
         .execute_agent_tool_call(
             actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
-            "write",
+            "edit",
             serde_json::json!({
                 "filePath": "written.txt",
-                "content": "hello from surface\n",
+                "editId": "surface-create",
+                "edits": [
+                    {
+                        "op": "append",
+                        "lines": ["hello from surface"],
+                    }
+                ],
             }),
         )
         .await
-        .expect("write tool");
-    assert!(write.display_text.contains("Wrote file successfully"));
+        .expect("edit create tool");
+    assert!(create.display_text.contains("Edit applied successfully"));
 
     let escaped = handle
         .execute_agent_tool_call(
             actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
-            "write",
+            "edit",
             serde_json::json!({
                 "filePath": "../escape.txt",
-                "content": "blocked\n",
+                "edits": [
+                    {
+                        "op": "append",
+                        "lines": ["blocked"],
+                    }
+                ],
             }),
         )
         .await;
-    assert!(escaped.is_err(), "workspace escape write should fail");
+    assert!(escaped.is_err(), "workspace escape edit should fail");
 
     let read = handle
         .execute_agent_tool_call(
@@ -495,7 +504,7 @@ async fn single_surface_tools_execute_under_example_config() {
             actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "invalid",
-            serde_json::json!({ "tool": "write", "error": "bad args" }),
+            serde_json::json!({ "tool": "missing_tool", "error": "bad args" }),
         )
         .await
         .expect("invalid tool");

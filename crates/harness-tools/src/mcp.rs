@@ -100,10 +100,15 @@ fn discover_first_class_tools(
                 McpServerConnectionState::Connected,
             )
         }
-        Ok(Err(_)) | Err(_) => (
+        Ok(Err(err)) => (
             Vec::new(),
             BTreeMap::new(),
-            McpServerConnectionState::Disconnected,
+            McpServerConnectionState::Failed(err.to_string()),
+        ),
+        Err(_) => (
+            Vec::new(),
+            BTreeMap::new(),
+            McpServerConnectionState::Failed("MCP discovery task panicked".to_string()),
         ),
     }
 }

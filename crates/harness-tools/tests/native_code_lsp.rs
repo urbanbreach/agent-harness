@@ -1524,7 +1524,7 @@ async fn native_code_lsp_rejects_unsupported_operation_cleanly() {
         .expect_err("unsupported operation should fail");
     expect_invalid_arguments(
         unsupported_operation,
-        "use lsp.rename for the explicit write-capable rename flow",
+        "use lsp.rename for the explicit workspace-editing rename flow",
     );
 
     let repeated_unsupported_operation = lsp
@@ -1541,7 +1541,7 @@ async fn native_code_lsp_rejects_unsupported_operation_cleanly() {
         .expect_err("compat unsupported operation should fail");
     expect_invalid_arguments(
         repeated_unsupported_operation,
-        "use lsp.rename for the explicit write-capable rename flow",
+        "use lsp.rename for the explicit workspace-editing rename flow",
     );
 }
 
