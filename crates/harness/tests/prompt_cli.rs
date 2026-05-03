@@ -1132,7 +1132,7 @@ async fn prompt_cli_executes_tool_call_and_completes_turn() {
     let session_dir = temp.path().join("sessions");
     let out_path = temp.path().join("events.jsonl");
     fs::write(temp.path().join("tool-target.txt"), "alpha\nbeta\ngamma\n")
-        .expect("write tool target");
+        .expect("seed tool target");
 
     let config = prompt_cli_config(&format!("{}/v1", server.uri()), &session_dir, &["read"]);
 
@@ -1558,7 +1558,7 @@ async fn prompt_cli_reads_absolute_workspace_path_and_completes_turn() {
     let server = MockServer::start().await;
     let temp = tempdir().expect("tempdir");
     let absolute_target = temp.path().join("tool-target.txt");
-    fs::write(&absolute_target, "alpha\nbeta\ngamma\n").expect("write tool target");
+    fs::write(&absolute_target, "alpha\nbeta\ngamma\n").expect("seed tool target");
 
     Mock::given(method("POST"))
         .and(path("/v1/responses"))
