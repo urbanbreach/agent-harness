@@ -10,7 +10,7 @@ use harness_core::edit::hashline::compute_line_hash;
 use harness_core::event::{ActorKind, EventActor};
 use harness_core::redact::DefaultRedactor;
 use harness_core::tool::ToolContext;
-use harness_tools::coordinator_registry;
+use harness_tools::{coordinator_registry, coordinator_registry_with_internal_hashline_tools};
 use serde_json::json;
 
 fn test_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
@@ -44,7 +44,6 @@ async fn native_execution_surface_tools_execute_through_native_ids() {
     let registry = coordinator_registry(ShellAllowlist::default());
 
     let read = registry.get("read").expect("read in registry");
-    let write = registry.get("write").expect("write in registry");
     let todo_write = registry.get("todowrite").expect("todowrite in registry");
     let todo_read = registry.get("todoread").expect("todoread in registry");
     let invalid = registry.get("invalid").expect("invalid in registry");
@@ -67,32 +66,6 @@ async fn native_execution_surface_tools_execute_through_native_ids() {
     )
     .await
     .expect("read");
-
-    let write_result = write
-        .call(
-            test_context(&workspace, "write"),
-            json!({
-                "filePath": "surface.txt",
-                "content": "shared path\n",
-            }),
-        )
-        .await
-        .expect("write");
-    assert!(write_result
-        .display_text
-        .contains("Wrote file successfully:"));
-    let write_json = write_result
-        .structured_json
-        .clone()
-        .expect("write structured json");
-    assert_eq!(write_json.get("path"), Some(&json!("surface.txt")));
-    assert_eq!(
-        write_json
-            .get("resolved_path")
-            .and_then(serde_json::Value::as_str),
-        Some(workspace.join("surface.txt").to_string_lossy().as_ref())
-    );
-    assert!(write_json.get("changed_ranges").is_some());
 
     let todos_payload = json!({
         "todos": [
@@ -126,7 +99,7 @@ async fn native_execution_surface_tools_execute_through_native_ids() {
         .call(
             test_context(&workspace, "invalid"),
             json!({
-                "tool": "write",
+                "tool": "missing_tool",
                 "error": "bad args",
             }),
         )
@@ -279,6 +252,27 @@ async fn native_public_edit_uses_hashline_surface_and_reports_success() {
     let workspace = temp_dir.path().join("workspace");
     let registry = coordinator_registry(ShellAllowlist::default());
     let edit = registry.get("edit").expect("edit in registry");
+    let edit_description = edit.description();
+
+    assert!(edit_description.contains("one edit call per file snapshot"));
+    assert!(edit_description.contains("do not overlap ranges"));
+    assert!(edit_description.contains("do not insert inside a replaced range"));
+    assert!(edit_description.contains("merge touching changes into one replace"));
+
+    let schema = edit.parameters_json_schema();
+    assert!(schema["properties"]["edits"]["description"]
+        .as_str()
+        .is_some_and(|value| value.contains("same original file snapshot")));
+    assert!(
+        schema["properties"]["edits"]["items"]["properties"]["end"]["description"]
+            .as_str()
+            .is_some_and(|value| value.contains("must not overlap"))
+    );
+    assert!(
+        schema["properties"]["edits"]["items"]["properties"]["lines"]["description"]
+            .as_str()
+            .is_some_and(|value| value.contains("no unchanged boundary lines"))
+    );
 
     fs::write(workspace.join("surface.txt"), "before\n").expect("seed existing file");
 
@@ -613,10 +607,10 @@ async fn native_public_edit_uses_recent_hashline_read_to_disambiguate_hash_only_
 }
 
 #[tokio::test]
-async fn native_public_edit_uses_hashline_scan_to_disambiguate_hash_only_anchor() {
+async fn native_internal_hashline_scan_disambiguates_hash_only_anchor_for_edit() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    let registry = coordinator_registry(ShellAllowlist::default());
+    let registry = coordinator_registry_with_internal_hashline_tools(ShellAllowlist::default());
     let scan = registry
         .get("edit.hashline_scan")
         .expect("edit.hashline_scan in registry");
@@ -702,8 +696,7 @@ async fn native_public_edit_ignores_stale_recent_hashline_read_for_hash_only_anc
 
     let error = error.to_string();
     assert!(error.contains("matches multiple current lines"));
-    assert!(error.contains("read(hashlineAnchors=true)"));
-    assert!(error.contains("edit.hashline_scan"));
+    assert!(error.contains("Re-read the file"));
     assert_eq!(
         fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
         "same\nanother\nsame\n"
@@ -738,8 +731,7 @@ async fn native_public_edit_rejects_ambiguous_hash_only_anchor() {
 
     let error = error.to_string();
     assert!(error.contains("omitted its line number and matches multiple current lines"));
-    assert!(error.contains("read(hashlineAnchors=true)"));
-    assert!(error.contains("edit.hashline_scan"));
+    assert!(error.contains("Re-read the file"));
     assert!(error.contains(&format!(">>> 1#{}|same", compute_line_hash("same"))));
     assert!(error.contains(&format!(">>> 3#{}|same", compute_line_hash("same"))));
 }
@@ -772,8 +764,7 @@ async fn native_public_edit_rejects_unknown_hash_only_anchor() {
 
     let error = error.to_string();
     assert!(error.contains("does not match any current line"));
-    assert!(error.contains("read(hashlineAnchors=true)"));
-    assert!(error.contains("edit.hashline_scan"));
+    assert!(error.contains("Re-read the file"));
 }
 
 #[tokio::test]
@@ -804,7 +795,7 @@ async fn native_public_edit_stale_anchor_error_includes_refresh_snippet() {
 
     let error = error.to_string();
     assert!(error.contains("Copy updated tags from this snippet"));
-    assert!(error.contains("edit.hashline_scan"));
+    assert!(error.contains("re-read the file"));
     assert!(error.contains(">>> 1#"));
     assert!(error.contains("|current"));
     assert!(error.contains(">>> 2#"));

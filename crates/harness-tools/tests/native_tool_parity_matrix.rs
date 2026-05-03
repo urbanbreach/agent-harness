@@ -11,8 +11,6 @@ fn coordinator_registry_exposes_single_native_tool_surface() {
         "lsp.rename",
         "codesearch",
         "edit",
-        "edit.hashline_apply",
-        "edit.hashline_scan",
         "github.issue",
         "github.pull_request",
         "glob",
@@ -29,7 +27,6 @@ fn coordinator_registry_exposes_single_native_tool_surface() {
         "todowrite",
         "webfetch",
         "websearch",
-        "write",
     ] {
         assert!(
             registry.get(tool_id).is_some(),
@@ -39,6 +36,10 @@ fn coordinator_registry_exposes_single_native_tool_surface() {
     }
 
     assert!(registry.get("edit_compat").is_none());
+    assert!(registry.get("edit.hashline_apply").is_none());
+    assert!(registry.get("edit.hashline_scan").is_none());
+    assert!(registry.get("fs.write").is_none());
+    assert!(registry.get("write").is_none());
     assert!(registry.get("apply_patch").is_none());
     assert!(registry.get("patch").is_none());
 
