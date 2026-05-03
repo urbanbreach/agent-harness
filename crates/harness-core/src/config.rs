@@ -1410,10 +1410,10 @@ pub struct IntegrationsConfig {
     pub mcp: McpConfig,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum McpServerConnectionState {
     Connected,
-    Disconnected,
+    Failed(String),
 }
 
 /// Settings for the built-in remote search bridge.
@@ -2116,7 +2116,7 @@ pub fn registered_mcp_server_first_class_tool_id(
 pub fn registered_mcp_server_connection_state(
     server_name: &str,
 ) -> Option<McpServerConnectionState> {
-    with_mcp_server_connection_registry(|registered| registered.get(server_name).copied())
+    with_mcp_server_connection_registry(|registered| registered.get(server_name).cloned())
 }
 
 pub fn set_registered_lsp_config(config: LspConfig) {

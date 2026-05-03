@@ -476,7 +476,6 @@ fn default_shipped_agents(model_ref: &str) -> BTreeMap<String, ProfileConfig> {
                 "glob",
                 "grep",
                 "list",
-                "write",
                 "edit",
                 "bash",
                 "batch",

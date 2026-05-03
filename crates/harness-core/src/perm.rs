@@ -468,7 +468,6 @@ pub fn permission_kind_for_tool(tool_id: &str) -> Option<PermissionKind> {
         "codesearch" => Some(PermissionKind::CodeSearch),
         "lsp" => Some(PermissionKind::Lsp),
         "lsp.rename" => Some(PermissionKind::EditFs),
-        "write" => Some(PermissionKind::EditFs),
         "bash" => Some(PermissionKind::Shell),
         _ if canonical_tool_id.starts_with("edit.") => Some(PermissionKind::EditFs),
         _ if canonical_tool_id.starts_with("shell.") => Some(PermissionKind::Shell),
@@ -863,7 +862,7 @@ mod tests {
                 deep: {
                   system_prompt: "Deep work",
                   permission: { edit: "allow" },
-                  tools: ["write"]
+                  tools: ["edit"]
                 }
               },
               default_agent: "deep",

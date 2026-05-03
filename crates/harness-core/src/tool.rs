@@ -638,7 +638,6 @@ mod tests {
             "glob",
             "grep",
             "bash",
-            "write",
             "edit",
             "webfetch",
             "todowrite",
@@ -654,7 +653,6 @@ mod tests {
             "lsp.rename",
             "github.issue",
             "github.pull_request",
-            "edit.hashline_scan",
         ];
         let mapping_a = build_tool_function_name_mapping(tool_ids.iter().copied());
 
