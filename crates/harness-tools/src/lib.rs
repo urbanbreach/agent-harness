@@ -39,9 +39,7 @@ mod fs_grep;
 use fs_grep::FsGrepTool;
 
 mod workspace_edit;
-use workspace_edit::{
-    record_file_hashline_read, record_file_read, FsWriteTool, WorkspaceEditExecutor,
-};
+use workspace_edit::{record_file_hashline_read, record_file_read};
 
 mod network;
 use network::NetworkExecutor;
@@ -69,7 +67,7 @@ mod native_tools;
 use native_tools::{
     blocked_shell_command_message, BashTool, BatchTool, CodeSearchTool, GlobTool, GrepTool,
     InvalidTool, ListTool, LspTool, QuestionTool, ReadTool, SkillTool, TaskTool, TodoReadTool,
-    TodoWriteTool, WebFetchTool, WebSearchTool, WriteTool,
+    TodoWriteTool, WebFetchTool, WebSearchTool,
 };
 
 pub use harness_core::tool::canonical_tool_id_for;
@@ -117,19 +115,13 @@ pub fn coordinator_registry_with_mcp_and_editing(
     let code_lsp_executor = Arc::new(CodeLspExecutor::new());
     let github_executor = Arc::new(GitHubExecutor::new());
     let code_lsp_rename_executor = Arc::new(CodeLspRenameExecutor::new());
-    let workspace_edit_executor = Arc::new(WorkspaceEditExecutor::new());
-
     let mut registry = ToolRegistry::new();
     registry.register(Arc::new(ReadTool::new(editing.hashline_edit)));
     registry.register(Arc::new(ListTool));
     registry.register(Arc::new(GlobTool));
     registry.register(Arc::new(GrepTool));
     registry.register(Arc::new(TaskTool::new(agent_ops_executor.clone())));
-    registry.register(Arc::new(HashlineScanTool));
-    registry.register(Arc::new(HashlineApplyTool));
-    registry.register(Arc::new(FsWriteTool::new(workspace_edit_executor.clone())));
     registry.register(Arc::new(HashlineEditTool));
-    registry.register(Arc::new(WriteTool::new(workspace_edit_executor.clone())));
     registry.register(Arc::new(ShellRunTool::new(shell_allowlist.clone())));
     registry.register(Arc::new(BashTool::new(shell_allowlist)));
     registry.register(Arc::new(WebFetchTool::new(network_executor.clone())));
@@ -147,6 +139,19 @@ pub fn coordinator_registry_with_mcp_and_editing(
     registry.register(Arc::new(InvalidTool::new(control_plane_executor)));
     mcp::register_mcp_tools(&mut registry, mcp_config);
     registry
+}
+
+pub fn coordinator_registry_with_internal_hashline_tools(
+    shell_allowlist: ShellAllowlist,
+) -> ToolRegistry {
+    let mut registry = coordinator_registry(shell_allowlist);
+    register_internal_hashline_tools(&mut registry);
+    registry
+}
+
+fn register_internal_hashline_tools(registry: &mut ToolRegistry) {
+    registry.register(Arc::new(HashlineScanTool));
+    registry.register(Arc::new(HashlineApplyTool));
 }
 
 pub fn worker_registry(shell_allowlist: ShellAllowlist) -> ToolRegistry {
@@ -813,7 +818,7 @@ impl Tool for ShellRunTool {
     }
 
     fn description(&self) -> &str {
-        "Runs an allowlisted shell command inside the workspace and returns stdout/stderr. Use bash for real shell work like git, cargo, or npm—not for file discovery, file search, reading, or editing. Commands such as find, grep/rg, cat, head, tail, sed, and awk are blocked; use glob, grep, list, read, edit, or write instead."
+        "Runs an allowlisted shell command inside the workspace and returns stdout/stderr. Use bash for real shell work like git, cargo, or npm—not for file discovery, file search, reading, or editing. Commands such as find, grep/rg, cat, head, tail, sed, and awk are blocked; use glob, grep, list, read, or edit instead."
     }
 
     fn parameters_json_schema(&self) -> serde_json::Value {
@@ -1033,9 +1038,6 @@ mod tests {
             "task",
             "webfetch",
             "websearch",
-            "write",
-            "edit.hashline_apply",
-            "edit.hashline_scan",
         ] {
             let tool = registry
                 .get(tool_id)

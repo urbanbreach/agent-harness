@@ -12,7 +12,6 @@ use crate::control_plane::{
 use crate::network::{
     CodeSearchRequest, NetworkExecutor, WebFetchFormat, WebFetchRequest, WebSearchRequest,
 };
-use crate::workspace_edit::WorkspaceEditExecutor;
 use crate::{FsGlobTool, FsGrepTool, FsLsTool, FsReadTool, ShellRunTool};
 use async_trait::async_trait;
 use globset::Glob;
@@ -43,9 +42,6 @@ pub(crate) struct GlobTool;
 pub(crate) struct GrepTool;
 pub(crate) struct BashTool {
     allowlist: ShellAllowlist,
-}
-pub(crate) struct WriteTool {
-    executor: Arc<WorkspaceEditExecutor>,
 }
 pub(crate) struct WebFetchTool {
     executor: Arc<NetworkExecutor>,
@@ -92,12 +88,6 @@ impl ReadTool {
         Self {
             default_hashline_anchors,
         }
-    }
-}
-
-impl WriteTool {
-    pub(crate) fn new(executor: Arc<WorkspaceEditExecutor>) -> Self {
-        Self { executor }
     }
 }
 
@@ -255,14 +245,6 @@ struct BashArgs {
     #[serde(default)]
     workdir: Option<String>,
     description: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct WriteArgs {
-    content: String,
-    #[serde(rename = "filePath", alias = "path")]
-    file_path: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -662,7 +644,7 @@ impl Tool for BashTool {
     }
 
     fn description(&self) -> &str {
-        "Executes a shell command using the canonical bash arguments. Use bash for real shell work like git, cargo, or npm-not for file discovery, content search, reading files, or editing. Commands such as find, grep/rg, cat, head, tail, sed, and awk are blocked; use glob, grep, list, read, edit, or write instead."
+        "Executes a shell command using the canonical bash arguments. Use bash for real shell work like git, cargo, or npm-not for file discovery, content search, reading files, or editing. Commands such as find, grep/rg, cat, head, tail, sed, and awk are blocked; use glob, grep, list, read, or edit instead."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -687,32 +669,6 @@ impl Tool for BashTool {
                 }),
             )
             .await
-    }
-}
-
-#[async_trait]
-impl Tool for WriteTool {
-    fn id(&self) -> &str {
-        "write"
-    }
-
-    fn description(&self) -> &str {
-        "Writes file contents using the canonical write semantics. Read existing files first so overwrites can be freshness-checked."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
-        super::json_schema_for::<WriteArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::EditFs
-    }
-
-    async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: WriteArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
-        self.executor
-            .write_file(&ctx, &args.file_path, &args.content)
     }
 }
 
@@ -1319,7 +1275,7 @@ pub(crate) fn blocked_shell_command_message(executable: &str) -> String {
                 .to_string()
         }
         "cat" | "head" | "tail" | "sed" | "awk" => {
-            "text-processing shell commands are blocked; use read for file contents and edit/write for changes"
+        "text-processing shell commands are blocked; use read for file contents and edit for changes"
                 .to_string()
         }
         _ => executable.to_string(),
