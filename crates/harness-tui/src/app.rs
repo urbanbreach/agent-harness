@@ -61,11 +61,12 @@ pub use session_navigation::{LaunchMetadata, ModelOption, SessionHistoryEntry};
 const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS: usize = 72;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS: usize = 3;
-pub(crate) const SLASH_COMMANDS: [(&str, &str); 9] = [
+pub(crate) const SLASH_COMMANDS: [(&str, &str); 10] = [
     ("new", "Return to the home shell"),
     ("resume", "Continue a saved session"),
     ("replay", "Replay a saved session"),
     ("model", "Switch model"),
+    ("status", "View status"),
     ("events", "Open the event log review"),
     ("shell", "Return to the session shell"),
     ("follow", "Toggle follow mode"),
@@ -1116,6 +1117,7 @@ pub struct AppState {
     pub palette_filtered: Vec<String>,
     pub palette_selected: usize,
     palette_focus_return: Option<Focus>,
+    pub(crate) status_dialog_visible: bool,
     show_transcript_thinking: bool,
     show_transcript_timestamps: bool,
     show_tool_details: bool,
@@ -1210,6 +1212,7 @@ impl Default for AppState {
             palette_filtered: Vec::new(),
             palette_selected: 0,
             palette_focus_return: None,
+            status_dialog_visible: false,
             show_transcript_thinking: true,
             show_transcript_timestamps: false,
             show_tool_details: true,
@@ -2069,6 +2072,7 @@ impl AppState {
             details_drawer_open: self.details_drawer_open(),
             slash_visible: self.slash_overlay_should_render(),
             palette_visible: self.palette_visible,
+            status_dialog_visible: self.status_dialog_visible,
             session_history_visible: self.session_history_visible,
             model_switcher_visible: self.model_switcher_visible,
             permission_pending: self.active_permission().is_some(),
@@ -2558,6 +2562,14 @@ impl AppState {
     pub fn handle_key(&mut self, key: KeyEvent) {
         if self.overlay_stack().top() == Some(OverlayKind::PermissionModal) {
             self.handle_permission_modal_key(key);
+            return;
+        }
+
+        if self.overlay_stack().top() == Some(OverlayKind::StatusDialog) {
+            if key.code == KeyCode::Esc {
+                self.status_dialog_visible = false;
+            }
+            self.maybe_auto_exit();
             return;
         }
 
@@ -3540,6 +3552,7 @@ pub(crate) fn exact_test_startup_slash_commands_execute_without_menu() {
             "new".to_string(),
             "replay".to_string(),
             "resume".to_string(),
+            "status".to_string(),
         ]
     );
 }
@@ -3627,6 +3640,25 @@ pub(crate) fn exact_test_slash_events_opens_review_surface() {
     assert_eq!(app.active_review_surface, Some(ReviewSurface::Events));
     assert_eq!(app.prompt_buffer, "keep events draft");
     assert!(!app.slash_visible);
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_slash_status_opens_status_dialog_and_restores_draft() {
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    app.prompt_buffer = "/status".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.slash_draft_snapshot = Some("status draft".to_string());
+    app.sync_slash_overlay();
+
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert!(app.status_dialog_visible);
+    assert_eq!(app.overlay_stack().top(), Some(OverlayKind::StatusDialog));
+    assert_eq!(app.prompt_buffer, "status draft");
+    assert!(!app.slash_visible);
+
+    app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert!(!app.status_dialog_visible);
 }
 
 #[cfg(test)]

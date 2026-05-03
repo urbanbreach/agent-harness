@@ -762,6 +762,45 @@ fn model_variant_cycle_cmp(left: &ModelOption, right: &ModelOption) -> std::cmp:
         .then_with(|| left.profile.cmp(&right.profile))
 }
 
+fn model_variant_cycle_none_option(seed: &ModelOption) -> ModelOption {
+    let mut option = seed.clone();
+    let base_label = option.model_display_label.clone().or_else(|| {
+        option
+            .display_label
+            .as_deref()
+            .and_then(|label| label.split_once(" · ").map(|(base, _)| base.trim()))
+            .filter(|base| !base.is_empty())
+            .map(str::to_string)
+    });
+    option.variant = None;
+    option.variant_display_label = None;
+    if option.model_display_label.is_none() {
+        option.model_display_label = base_label.clone();
+    }
+    option.display_label = base_label;
+    option.token_window_label = None;
+    option.max_input_tokens = None;
+    option.max_output_tokens = None;
+    option.description = None;
+    option.reasoning_effort = None;
+    option.text_verbosity = None;
+    option.recommended_for = None;
+    option
+}
+
+fn model_variant_cycle_option_matches_current(
+    option: &ModelOption,
+    profile_id: &str,
+    provider_id: &str,
+    model_id: &str,
+    variant: Option<&str>,
+) -> bool {
+    option.profile == profile_id
+        && option.provider == provider_id
+        && option.model == model_id
+        && option.variant() == variant
+}
+
 fn variant_cycle_rank(option: &ModelOption) -> u8 {
     option
         .reasoning_effort()
@@ -988,8 +1027,11 @@ impl AppState {
             .provider_backend_label()
             .filter(|value| !Self::launch_value_is_unknown(value));
         Some(match backend {
-            Some(backend) => format!("{provider} ({backend})"),
+            Some(backend) if !provider_label_includes_backend(provider, backend) => {
+                format!("{provider} ({backend})")
+            }
             None => provider.to_string(),
+            Some(_) => provider.to_string(),
         })
     }
 
@@ -1174,7 +1216,7 @@ impl AppState {
 
     fn slash_command_available(&self, command: &str) -> bool {
         match command {
-            "new" | "exit" => true,
+            "new" | "status" | "exit" => true,
             "resume" | "replay" => !self.replay_mode,
             "model" => self.model_switcher_supported(),
             "events" => !self.startup_mode,
@@ -1264,6 +1306,10 @@ impl AppState {
             "model" => {
                 self.restore_slash_draft(preserved_draft);
                 self.open_model_switcher();
+            }
+            "status" => {
+                self.restore_slash_draft(preserved_draft);
+                self.status_dialog_visible = true;
             }
             "events" => {
                 self.restore_slash_draft(preserved_draft);
@@ -1982,16 +2028,31 @@ impl AppState {
             .collect::<Vec<_>>();
 
         let explicit_variants_exist = variants.iter().any(|option| option.variant().is_some());
-        if explicit_variants_exist {
-            variants.retain(|option| option.variant().is_some());
+        let base_variant_exists = variants.iter().any(|option| option.variant().is_none());
+        if explicit_variants_exist && !base_variant_exists {
+            let none_seed = self
+                .launch_metadata
+                .to_model_option()
+                .or_else(|| variants.first().cloned());
+            if let Some(none_seed) = none_seed {
+                variants.push(model_variant_cycle_none_option(&none_seed));
+            }
         }
 
         if let Some(current_option) = self.launch_metadata.to_model_option() {
+            let current_variant = current_option.variant();
             if current_option.profile == profile_id
                 && current_option.provider == provider_id
                 && current_option.model == model_id
-                && (!explicit_variants_exist || current_option.variant().is_some())
-                && !variants.iter().any(|option| option == &current_option)
+                && !variants.iter().any(|option| {
+                    model_variant_cycle_option_matches_current(
+                        option,
+                        &profile_id,
+                        &provider_id,
+                        &model_id,
+                        current_variant,
+                    )
+                })
             {
                 variants.push(current_option);
             }
@@ -2003,10 +2064,15 @@ impl AppState {
             return;
         }
 
-        let selected_model = match variants
-            .iter()
-            .position(|option| self.is_current_model_option(option))
-        {
+        let selected_model = match variants.iter().position(|option| {
+            model_variant_cycle_option_matches_current(
+                option,
+                &profile_id,
+                &provider_id,
+                &model_id,
+                self.current_model_variant(),
+            )
+        }) {
             Some(_) if variants.len() < 2 => return,
             Some(current_index) => {
                 let next_index = (current_index + 1) % variants.len();
@@ -2710,6 +2776,7 @@ fn slash_command_aliases(command: &str) -> &'static [&'static str] {
         "new" => &["new-session", "session"],
         "resume" => &["continue"],
         "model" => &["models"],
+        "status" => &["system-status"],
         "events" => &["event-log"],
         "shell" => &["session-shell"],
         "compact" => &["summarize", "summary"],
@@ -2753,6 +2820,19 @@ fn humanize_profile_label(profile: &str) -> String {
         return profile.to_string();
     }
     words.join(" ")
+}
+
+fn provider_label_includes_backend(provider: &str, backend: &str) -> bool {
+    let provider = provider.trim();
+    let backend = backend.trim();
+    if provider.eq_ignore_ascii_case(backend) {
+        return true;
+    }
+
+    provider
+        .strip_suffix(')')
+        .and_then(|label| label.rsplit_once('(').map(|(_, suffix)| suffix.trim()))
+        .is_some_and(|suffix| suffix.eq_ignore_ascii_case(backend))
 }
 
 fn sibling_session_id(

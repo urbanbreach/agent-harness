@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use crossterm::event::{
@@ -209,6 +209,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
 
     let run_result = (|| -> Result<()> {
         let mut redraw_requested = true;
+        let mut next_animation_tick = Instant::now() + ACTIVE_POLL_INTERVAL;
 
         loop {
             if let Some(update_rx) = live_updates.as_ref() {
@@ -251,10 +252,28 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             }
 
             let animation_active = app.has_active_animations();
-            let event = poll(poll_timeout(animation_active, live_updates.is_some()))?;
+            if animation_active {
+                let now = Instant::now();
+                if now >= next_animation_tick {
+                    app.advance_transcript_animation_phase();
+                    next_animation_tick = now + ACTIVE_POLL_INTERVAL;
+                    redraw_requested = true;
+                    continue;
+                }
+            } else {
+                next_animation_tick = Instant::now() + ACTIVE_POLL_INTERVAL;
+            }
+
+            let event = poll(poll_timeout(
+                animation_active,
+                live_updates.is_some(),
+                Instant::now(),
+                next_animation_tick,
+            ))?;
 
             if event.is_none() && animation_active {
                 app.advance_transcript_animation_phase();
+                next_animation_tick = Instant::now() + ACTIVE_POLL_INTERVAL;
                 redraw_requested = true;
                 continue;
             }
@@ -268,6 +287,10 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                         app.handle_key(key)
                     }
                     event::TuiEvent::Mouse(mouse) => {
+                        if !mouse_event_requires_handling(mouse.kind, app.slash_visible) {
+                            continue;
+                        }
+
                         let size = terminal.size()?;
                         let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
                         app.set_frame_area(frame_area);
@@ -417,12 +440,25 @@ fn load_events_from_path(path: &Path) -> Result<Vec<EventEnvelopeV1>> {
         .collect()
 }
 
-fn poll_timeout(animation_active: bool, live_updates_connected: bool) -> Duration {
-    if animation_active || live_updates_connected {
+fn poll_timeout(
+    animation_active: bool,
+    live_updates_connected: bool,
+    now: Instant,
+    next_animation_tick: Instant,
+) -> Duration {
+    if animation_active {
+        return next_animation_tick.saturating_duration_since(now);
+    }
+
+    if live_updates_connected {
         ACTIVE_POLL_INTERVAL
     } else {
         IDLE_POLL_INTERVAL
     }
+}
+
+fn mouse_event_requires_handling(kind: MouseEventKind, slash_visible: bool) -> bool {
+    !matches!(kind, MouseEventKind::Moved) || slash_visible
 }
 
 fn drain_live_updates(
@@ -493,9 +529,40 @@ mod tests {
 
     #[test]
     fn poll_timeout_blocks_when_idle_and_live_updates_are_gone() {
-        assert_eq!(poll_timeout(false, false), IDLE_POLL_INTERVAL);
-        assert_eq!(poll_timeout(true, false), ACTIVE_POLL_INTERVAL);
-        assert_eq!(poll_timeout(false, true), ACTIVE_POLL_INTERVAL);
+        let now = Instant::now();
+        assert_eq!(
+            poll_timeout(false, false, now, now + ACTIVE_POLL_INTERVAL),
+            IDLE_POLL_INTERVAL
+        );
+        assert_eq!(
+            poll_timeout(false, true, now, now + ACTIVE_POLL_INTERVAL),
+            ACTIVE_POLL_INTERVAL
+        );
+    }
+
+    #[test]
+    fn poll_timeout_tracks_next_animation_tick() {
+        let now = Instant::now();
+        let next_tick = now + Duration::from_millis(42);
+
+        assert_eq!(
+            poll_timeout(true, false, now, next_tick),
+            Duration::from_millis(42)
+        );
+        assert_eq!(
+            poll_timeout(true, true, next_tick, next_tick),
+            Duration::ZERO
+        );
+    }
+
+    #[test]
+    fn plain_mouse_movement_does_not_force_a_redraw() {
+        assert!(!mouse_event_requires_handling(MouseEventKind::Moved, false));
+        assert!(mouse_event_requires_handling(MouseEventKind::Moved, true));
+        assert!(mouse_event_requires_handling(
+            MouseEventKind::ScrollDown,
+            false
+        ));
     }
 
     #[test]
