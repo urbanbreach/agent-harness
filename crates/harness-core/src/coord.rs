@@ -30,6 +30,10 @@ use crate::config::{
     CompactionRuntimeConfig, HookLifecycleEvent, HookRuntimeConfig, LifecycleHookConfig,
     ShellAllowlist, ToolFailureMode,
 };
+use crate::conversation::{
+    ConversationAssistantMessage, ConversationMessage, ConversationToolCall,
+    ConversationToolResultMessage, ConversationUserMessage,
+};
 use crate::edit::hashline::HashlinePatch;
 use crate::event::{
     ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, CompactionAppliedEvent,
@@ -373,6 +377,7 @@ pub enum Command {
 pub enum AgentTurnTaskOutcome {
     Succeeded {
         output: String,
+        messages: Vec<ConversationMessage>,
     },
     Failed {
         reason: String,
@@ -4037,7 +4042,7 @@ impl Coordinator {
                 .get(&running.agent_id)
                 .cloned();
             let (hook_outcome, hook_output_summary, hook_failure_reason) = match &outcome {
-                AgentTurnTaskOutcome::Succeeded { output } => {
+                AgentTurnTaskOutcome::Succeeded { output, .. } => {
                     ("succeeded".to_string(), Some(output.clone()), None)
                 }
                 AgentTurnTaskOutcome::Failed { reason, .. } => {
@@ -4133,7 +4138,7 @@ impl Coordinator {
                 }
             } else {
                 match outcome {
-                    AgentTurnTaskOutcome::Succeeded { output } => {
+                    AgentTurnTaskOutcome::Succeeded { output, messages } => {
                         if let Some(reason) = critical_hook_failure.clone() {
                             push_incomplete_provider_turn(
                                 run_state,
@@ -4177,6 +4182,7 @@ impl Coordinator {
                                     first_seq: None,
                                     last_seq: None,
                                     artifacts: Vec::new(),
+                                    messages,
                                     ..ProviderConversationTurn::default()
                                 });
                             append_payload_event_with_correlation(
@@ -4510,6 +4516,7 @@ fn push_incomplete_provider_turn(
         first_seq: None,
         last_seq: None,
         artifacts: Vec::new(),
+        messages: Vec::new(),
     });
 }
 
@@ -5931,7 +5938,13 @@ where
                 }
             } => {
                 let outcome = match outcome {
-                    AgentTurnOutcome::Succeeded { output } => AgentTurnTaskOutcome::Succeeded { output },
+                    AgentTurnOutcome::Succeeded {
+                        output,
+                        messages,
+                    } => AgentTurnTaskOutcome::Succeeded {
+                        output,
+                        messages,
+                    },
                     AgentTurnOutcome::Failed { reason, memory } => AgentTurnTaskOutcome::Failed {
                         reason,
                         memory: memory.map(AgentTurnFailureMemory::from),
@@ -6004,6 +6017,7 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
         Ok(turn_state) => turn_state,
         Err(reason) => return AgentTurnOutcome::failed(reason),
     };
+    let current_turn_start_index = turn_state.messages.len().saturating_sub(1);
 
     for _phase_iter in 1..=task.profile.max_iters {
         if let Err(reason) = drain_steering_messages_phase(
@@ -6087,7 +6101,15 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
 
         match decide_tool_phase(&assistant_response, &mut turn_state.total_tool_calls) {
             Ok(AgentToolPhaseDecision::TurnEnd { output }) => {
-                return AgentTurnOutcome::Succeeded { output };
+                return AgentTurnOutcome::Succeeded {
+                    output,
+                    messages: completion_messages_to_conversation_messages(
+                        &task.profile,
+                        &task.request_id,
+                        &task.agent_id,
+                        &turn_state.messages[current_turn_start_index..],
+                    ),
+                };
             }
             Ok(AgentToolPhaseDecision::RunTools(tool_intents)) => {
                 if let Err(reason) = run_tool_phase(
@@ -6500,6 +6522,105 @@ fn append_tool_result_message_phase(
         tool_call_id: Some(tool_call.tool_call_id.clone()),
         assistant_tool_calls: None,
     });
+}
+
+fn completion_messages_to_conversation_messages(
+    profile: &AgentProfile,
+    request_id: &str,
+    agent_id: &str,
+    messages: &[CompletionMessage],
+) -> Vec<ConversationMessage> {
+    let mapping =
+        crate::tool::build_tool_function_name_mapping(profile.toolset.iter().map(String::as_str));
+    let mut tool_ids_by_call_id = BTreeMap::new();
+    let mut conversation_messages = Vec::new();
+
+    for message in messages {
+        match message.role {
+            MessageRole::System => {}
+            MessageRole::User => {
+                conversation_messages.push(ConversationMessage::User(ConversationUserMessage {
+                    request_id: request_id.to_string(),
+                    text: message.content.clone(),
+                    seq: None,
+                    agent_id: Some(agent_id.to_string()),
+                }))
+            }
+            MessageRole::Assistant => {
+                let tool_calls = message
+                    .assistant_tool_calls
+                    .as_deref()
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|tool_call| {
+                        let tool_id = mapping
+                            .tool_id_for_function_name(&tool_call.function_name)
+                            .unwrap_or(&tool_call.function_name)
+                            .to_string();
+                        tool_ids_by_call_id.insert(tool_call.tool_call_id.clone(), tool_id.clone());
+                        ConversationToolCall {
+                            tool_call_id: tool_call.tool_call_id.clone(),
+                            tool_id,
+                            args_summary: provider_tool_arguments_json(&tool_call.arguments_json),
+                            args_digest: digest12(tool_call.arguments_json.as_bytes()),
+                            seq: None,
+                            metadata: None,
+                        }
+                    })
+                    .collect();
+                conversation_messages.push(ConversationMessage::Assistant(
+                    ConversationAssistantMessage {
+                        request_id: request_id.to_string(),
+                        agent_id: Some(agent_id.to_string()),
+                        text: message.content.clone(),
+                        tool_calls,
+                        stop_reason: None,
+                        first_seq: None,
+                        last_seq: None,
+                        provider_id: None,
+                        model_id: None,
+                        output_digest: None,
+                    },
+                ));
+            }
+            MessageRole::Tool => {
+                let tool_call_id = message.tool_call_id.clone().unwrap_or_default();
+                let tool_id = message
+                    .name
+                    .as_deref()
+                    .and_then(|name| mapping.tool_id_for_function_name(name))
+                    .map(str::to_string)
+                    .or_else(|| tool_ids_by_call_id.get(&tool_call_id).cloned())
+                    .or_else(|| message.name.clone());
+                conversation_messages.push(ConversationMessage::ToolResult(Box::new(
+                    ConversationToolResultMessage {
+                        request_id: request_id.to_string(),
+                        tool_call_id,
+                        tool_id,
+                        status: provider_tool_message_status(&message.content),
+                        output_summary: (!message.content.trim().is_empty())
+                            .then(|| message.content.clone()),
+                        output_digest: (!message.content.is_empty())
+                            .then(|| digest12(message.content.as_bytes())),
+                        output_json: None,
+                        seq: None,
+                        metadata: None,
+                    },
+                )));
+            }
+        }
+    }
+
+    conversation_messages
+}
+
+fn provider_tool_message_status(content: &str) -> ToolCallStatus {
+    let trimmed = content.trim_start();
+    if trimmed.starts_with("tool call `") && trimmed.contains("` failed: ") {
+        ToolCallStatus::Failed
+    } else {
+        ToolCallStatus::Succeeded
+    }
 }
 
 async fn finalize_permission_denied<C, R>(
@@ -7990,17 +8111,26 @@ fn split_latest_oversized_turn(
         latest.user_prompt
     );
     older_turn.assistant_response = assistant_prefix;
+    older_turn.messages.clear();
     let mut recent_turn = latest.clone();
     recent_turn.user_prompt = format!(
         "{}\n\n[Harness compaction note: preserved suffix of an oversized latest turn; earlier prefix is summarized in the checkpoint.]",
         latest.user_prompt
     );
     recent_turn.assistant_response = assistant_suffix;
+    recent_turn.messages.clear();
     Some((older_turn, recent_turn, split_prefix_summary))
 }
 
 fn can_split_latest_turn_safely(turn: &ProviderConversationTurn) -> bool {
     if !turn.artifacts.is_empty() {
+        return false;
+    }
+    if turn.messages.iter().any(|message| match message {
+        ConversationMessage::Assistant(assistant) => !assistant.tool_calls.is_empty(),
+        ConversationMessage::ToolResult(_) => true,
+        ConversationMessage::Checkpoint(_) | ConversationMessage::User(_) => false,
+    }) {
         return false;
     }
 
@@ -8354,7 +8484,7 @@ fn operation_for_tool_id(tool_id: &str) -> Option<ProviderFileOperationKind> {
     let normalized = tool_id.trim().to_ascii_lowercase();
     if matches!(
         normalized.as_str(),
-        "write" | "edit" | "apply" | "edit.hashline_apply"
+        "edit" | "apply" | "edit.hashline_apply"
     ) {
         return Some(ProviderFileOperationKind::Modified);
     }
@@ -9554,8 +9684,58 @@ fn truncate_chars(text: &str, max_chars: usize) -> String {
 }
 
 fn approximate_turn_tokens(turn: &ProviderConversationTurn) -> u32 {
+    if !turn.messages.is_empty() {
+        return turn
+            .messages
+            .iter()
+            .map(approximate_conversation_message_tokens)
+            .sum();
+    }
+
     approximate_text_tokens(&turn.user_prompt)
         .saturating_add(approximate_text_tokens(&turn.assistant_response))
+}
+
+fn approximate_conversation_message_tokens(message: &ConversationMessage) -> u32 {
+    match message {
+        ConversationMessage::Checkpoint(checkpoint) => approximate_text_tokens(&checkpoint.summary),
+        ConversationMessage::User(user) => approximate_text_tokens(&user.text),
+        ConversationMessage::Assistant(assistant) => assistant.tool_calls.iter().fold(
+            approximate_text_tokens(&assistant.text),
+            |tokens, tool_call| {
+                tokens
+                    .saturating_add(approximate_text_tokens(&tool_call.tool_call_id))
+                    .saturating_add(approximate_text_tokens(&tool_call.tool_id))
+                    .saturating_add(approximate_text_tokens(&tool_call.args_summary))
+            },
+        ),
+        ConversationMessage::ToolResult(tool_result) => {
+            approximate_text_tokens(&tool_result.tool_call_id)
+                .saturating_add(
+                    tool_result
+                        .tool_id
+                        .as_deref()
+                        .map(approximate_text_tokens)
+                        .unwrap_or(0),
+                )
+                .saturating_add(
+                    tool_result
+                        .output_summary
+                        .as_deref()
+                        .map(approximate_text_tokens)
+                        .unwrap_or(0),
+                )
+                .saturating_add(
+                    tool_result
+                        .output_json
+                        .as_ref()
+                        .map(Value::to_string)
+                        .as_deref()
+                        .map(approximate_text_tokens)
+                        .unwrap_or(0),
+                )
+        }
+    }
 }
 
 fn approximate_text_tokens(text: &str) -> u32 {
@@ -9787,11 +9967,11 @@ fn collect_historical_agent_turns_until(
                 let user_prompt = restore_historical_user_prompt(
                     run_id,
                     request_id,
-                    request_state.user_text,
-                    request_state.prompt_summary,
+                    request_state.user_text.clone(),
+                    request_state.prompt_summary.clone(),
                 )?;
                 let assistant_response = if payload.result_summary.is_empty() {
-                    request_state.assistant_output
+                    request_state.assistant_output.clone()
                 } else {
                     payload.result_summary.clone()
                 };
@@ -10112,7 +10292,7 @@ fn hashline_edit_metadata(
 ) -> Option<HashlineEditMetadata> {
     if tool_id != HASHLINE_APPLY_TOOL_ID {
         let canonical_tool_id = canonical_tool_id_for(tool_id)?;
-        if canonical_tool_id != "write" && canonical_tool_id != "edit" {
+        if canonical_tool_id != "edit" {
             return None;
         }
 
@@ -10122,17 +10302,10 @@ fn hashline_edit_metadata(
             .and_then(Value::as_str)?;
         let canonical_request = serde_json::to_vec(args_json).unwrap_or_else(|_| b"null".to_vec());
 
-        let (edit_id, summary) = match canonical_tool_id {
-            "write" => (
-                format!("fs-write-{tool_call_id}"),
-                "rewrite file through hashline workspace op".to_string(),
-            ),
-            "edit" => (
-                format!("edit-{tool_call_id}"),
-                "rewrite file through native edit tool".to_string(),
-            ),
-            _ => return None,
-        };
+        let (edit_id, summary) = (
+            format!("edit-{tool_call_id}"),
+            "rewrite file through native edit tool".to_string(),
+        );
 
         return Some(HashlineEditMetadata {
             edit_id,
@@ -10559,6 +10732,9 @@ struct HistoricalRequestState {
     user_text: Option<String>,
     prompt_summary: Option<String>,
     assistant_output: String,
+    messages: Vec<ConversationMessage>,
+    active_assistant_message_index: Option<usize>,
+    tool_ids_by_call_id: BTreeMap<String, String>,
     agent_id: Option<String>,
     provider_request_id: Option<String>,
     provider_finish_reason: Option<String>,
@@ -10579,6 +10755,51 @@ struct HistoricalCompletedAgentTurn {
     user_prompt: String,
     assistant_response: String,
     artifact_refs: Vec<EventArtifactRef>,
+}
+
+fn provider_tool_arguments_json(args_summary: &str) -> String {
+    if serde_json::from_str::<Value>(args_summary).is_ok() {
+        args_summary.to_string()
+    } else {
+        "{}".to_string()
+    }
+}
+
+fn historical_conversation_messages_for_completed_turn(
+    user_prompt: &str,
+    assistant_response: &str,
+    request_state: &HistoricalRequestState,
+) -> Vec<ConversationMessage> {
+    if request_state.messages.is_empty() {
+        return Vec::new();
+    }
+
+    let request_id = request_state
+        .messages
+        .iter()
+        .find_map(|message| match message {
+            ConversationMessage::Assistant(assistant) => Some(assistant.request_id.clone()),
+            ConversationMessage::ToolResult(tool_result) => Some(tool_result.request_id.clone()),
+            ConversationMessage::User(user) => Some(user.request_id.clone()),
+            ConversationMessage::Checkpoint(_) => None,
+        })
+        .unwrap_or_default();
+    let agent_id = request_state.agent_id.clone();
+
+    let mut messages = Vec::with_capacity(request_state.messages.len() + 1);
+    messages.push(ConversationMessage::User(ConversationUserMessage {
+        request_id,
+        text: user_prompt.to_string(),
+        seq: request_state.first_seq,
+        agent_id,
+    }));
+    messages.extend(request_state.messages.clone());
+    if let Some(ConversationMessage::Assistant(assistant)) = messages.last_mut() {
+        if assistant.tool_calls.is_empty() && assistant.text != assistant_response {
+            assistant.text = assistant_response.to_string();
+        }
+    }
+    messages
 }
 
 fn restore_historical_user_prompt(
@@ -10790,6 +11011,22 @@ fn restore_provider_context_from_history(
                 request.first_seq.get_or_insert(event.seq);
                 request.prompt_summary = Some(payload.prompt_summary.clone());
                 request.provider_request_id = Some(payload.request_id.clone());
+                request.messages.push(ConversationMessage::Assistant(
+                    ConversationAssistantMessage {
+                        request_id: request_id.to_string(),
+                        agent_id: event.actor.agent_id.clone(),
+                        text: String::new(),
+                        tool_calls: Vec::new(),
+                        stop_reason: None,
+                        first_seq: Some(event.seq),
+                        last_seq: Some(event.seq),
+                        provider_id: Some(payload.provider_id.clone()),
+                        model_id: Some(payload.model_id.clone()),
+                        output_digest: None,
+                    },
+                ));
+                request.active_assistant_message_index =
+                    Some(request.messages.len().saturating_sub(1));
                 if let Some(agent_id) = event
                     .actor
                     .agent_id
@@ -10810,11 +11047,16 @@ fn restore_provider_context_from_history(
                     .map(str::trim)
                     .filter(|request_id| !request_id.is_empty())
                     .unwrap_or(&payload.request_id);
-                requests
-                    .entry(request_id.to_string())
-                    .or_default()
-                    .assistant_output
-                    .push_str(&payload.delta);
+                let request = requests.entry(request_id.to_string()).or_default();
+                request.assistant_output.push_str(&payload.delta);
+                if let Some(index) = request.active_assistant_message_index {
+                    if let Some(ConversationMessage::Assistant(assistant)) =
+                        request.messages.get_mut(index)
+                    {
+                        assistant.text.push_str(&payload.delta);
+                        assistant.last_seq = Some(event.seq);
+                    }
+                }
             }
             EventV1::ProviderRequestFinished(payload) => {
                 if !replay_agent_event {
@@ -10830,6 +11072,15 @@ fn restore_provider_context_from_history(
                 request.first_seq.get_or_insert(event.seq);
                 request.provider_request_id = Some(payload.request_id.clone());
                 request.provider_finish_reason = Some(payload.finish_reason.clone());
+                if let Some(index) = request.active_assistant_message_index {
+                    if let Some(ConversationMessage::Assistant(assistant)) =
+                        request.messages.get_mut(index)
+                    {
+                        assistant.stop_reason = Some(payload.finish_reason.clone());
+                        assistant.output_digest = payload.output_digest.clone();
+                        assistant.last_seq = Some(event.seq);
+                    }
+                }
             }
             EventV1::TaskScheduled(payload) => {
                 if !replay_agent_event {
@@ -10879,6 +11130,66 @@ fn restore_provider_context_from_history(
                         path: payload.path.clone(),
                         digest: Some(payload.digest.clone()),
                     });
+            }
+            EventV1::ToolCallRequested(payload) => {
+                if !replay_agent_event {
+                    continue;
+                }
+                let Some(request_id) = event.correlation_id.as_deref() else {
+                    continue;
+                };
+                let request = requests.entry(request_id.to_string()).or_default();
+                request
+                    .tool_ids_by_call_id
+                    .insert(payload.tool_call_id.clone(), payload.tool_id.clone());
+                if let Some(index) = request.active_assistant_message_index {
+                    if let Some(ConversationMessage::Assistant(assistant)) =
+                        request.messages.get_mut(index)
+                    {
+                        assistant.tool_calls.push(ConversationToolCall {
+                            tool_call_id: payload.tool_call_id.clone(),
+                            tool_id: payload.tool_id.clone(),
+                            args_summary: provider_tool_arguments_json(&payload.args_summary),
+                            args_digest: payload.args_digest.clone(),
+                            seq: Some(event.seq),
+                            metadata: payload.metadata.clone(),
+                        });
+                        assistant.last_seq = Some(event.seq);
+                    }
+                }
+            }
+            EventV1::ToolCallFinished(payload) => {
+                if !replay_agent_event {
+                    continue;
+                }
+                let Some(request_id) = event.correlation_id.as_deref() else {
+                    continue;
+                };
+                let Some(request) = requests.get_mut(request_id) else {
+                    continue;
+                };
+                let Some(tool_id) = request
+                    .tool_ids_by_call_id
+                    .get(&payload.tool_call_id)
+                    .cloned()
+                else {
+                    continue;
+                };
+                request
+                    .messages
+                    .push(ConversationMessage::ToolResult(Box::new(
+                        ConversationToolResultMessage {
+                            request_id: request_id.to_string(),
+                            tool_call_id: payload.tool_call_id.clone(),
+                            tool_id: Some(tool_id),
+                            status: payload.status,
+                            output_summary: payload.output_summary.clone(),
+                            output_digest: payload.output_digest.clone(),
+                            output_json: payload.output_json.clone(),
+                            seq: Some(event.seq),
+                            metadata: payload.metadata.clone(),
+                        },
+                    )));
             }
             EventV1::TaskCompleted(payload) => {
                 if matches!(
@@ -10933,8 +11244,8 @@ fn restore_provider_context_from_history(
                 let mut user_prompt = restore_historical_user_prompt(
                     run_id,
                     request_id,
-                    request_state.user_text,
-                    request_state.prompt_summary,
+                    request_state.user_text.clone(),
+                    request_state.prompt_summary.clone(),
                 )?;
                 for steering_prompt in steering_prompts_by_request
                     .remove(request_id)
@@ -10945,10 +11256,15 @@ fn restore_provider_context_from_history(
                 }
 
                 let assistant_response = if payload.result_summary.is_empty() {
-                    request_state.assistant_output
+                    request_state.assistant_output.clone()
                 } else {
                     payload.result_summary.clone()
                 };
+                let messages = historical_conversation_messages_for_completed_turn(
+                    &user_prompt,
+                    &assistant_response,
+                    &request_state,
+                );
                 let mut artifacts = request_artifacts.remove(request_id).unwrap_or_default();
                 artifacts.sort_by(|left, right| {
                     left.path
@@ -10968,6 +11284,7 @@ fn restore_provider_context_from_history(
                         first_seq: request_state.first_seq,
                         last_seq: Some(event.seq),
                         artifacts,
+                        messages,
                         ..ProviderConversationTurn::default()
                     });
             }
@@ -11053,6 +11370,7 @@ fn restore_provider_context_from_history(
                         first_seq: request_state.first_seq,
                         last_seq: Some(event.seq),
                         artifacts: Vec::new(),
+                        messages: Vec::new(),
                     });
             }
             _ => {}

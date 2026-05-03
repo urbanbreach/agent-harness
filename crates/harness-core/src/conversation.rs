@@ -64,6 +64,8 @@ pub struct ConversationCheckpointTurn {
     pub last_seq: Option<u64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub artifacts: Vec<EventArtifactRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub messages: Vec<ConversationMessage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -359,6 +361,7 @@ impl From<&ProviderConversationTurn> for ConversationCheckpointTurn {
             first_seq: turn.first_seq,
             last_seq: turn.last_seq,
             artifacts: turn.artifacts.clone(),
+            messages: turn.messages.clone(),
         }
     }
 }
@@ -393,6 +396,11 @@ fn append_checkpoint_turn(
     checkpoint: &ConversationCheckpoint,
     turn: &ConversationCheckpointTurn,
 ) {
+    if !turn.messages.is_empty() {
+        messages.extend(turn.messages.clone());
+        return;
+    }
+
     let request_id = turn
         .request_id
         .clone()

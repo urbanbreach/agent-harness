@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use harness_providers::{
-    CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
-    ProviderEventStream, ProviderStreamEvent, ProviderStreamFinishedMetadata,
+    AssistantToolCall, CompletionMessage, CompletionRequest, CompletionUsage, MessageRole,
+    Provider, ProviderEventStream, ProviderStreamEvent, ProviderStreamFinishedMetadata,
     ProviderStreamStartMetadata, ProviderStreamThinkingMetadata, ToolChoice, ToolDef,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -22,7 +22,9 @@ use crate::event::{
     EventArtifactRef, ProviderAssistantMessageMetadata, ProviderRequestFinishedMetadata,
     ProviderRequestStartedMetadata, ProviderThinkingMetadata,
 };
-use crate::tool::{build_tool_function_name_mapping, ToolRegistry, ToolResult};
+use crate::tool::{
+    build_tool_function_name_mapping, sanitize_tool_function_name, ToolRegistry, ToolResult,
+};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AgentProfile {
@@ -178,6 +180,8 @@ pub struct ProviderConversationTurn {
     pub last_seq: Option<u64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub artifacts: Vec<EventArtifactRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub messages: Vec<ConversationMessage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -505,6 +509,7 @@ pub enum AgentRuntimeEvent {
 pub enum AgentTurnOutcome {
     Succeeded {
         output: String,
+        messages: Vec<ConversationMessage>,
     },
     Failed {
         reason: String,
@@ -759,7 +764,10 @@ where
                 ))
                 .await;
 
-                return AgentTurnOutcome::Succeeded { output };
+                return AgentTurnOutcome::Succeeded {
+                    output,
+                    messages: Vec::new(),
+                };
             }
             ProviderStreamEvent::DoneWithMetadata {
                 usage,
@@ -783,7 +791,10 @@ where
                 ))
                 .await;
 
-                return AgentTurnOutcome::Succeeded { output };
+                return AgentTurnOutcome::Succeeded {
+                    output,
+                    messages: Vec::new(),
+                };
             }
             ProviderStreamEvent::Error { message } => {
                 emit(AgentRuntimeEvent::ProviderRequestFinished(
@@ -830,7 +841,10 @@ where
     ))
     .await;
 
-    AgentTurnOutcome::Succeeded { output }
+    AgentTurnOutcome::Succeeded {
+        output,
+        messages: Vec::new(),
+    }
 }
 
 pub async fn stream_assistant_response_once<F, Fut>(
@@ -1096,6 +1110,7 @@ where
 
     AgentTurnOutcome::Succeeded {
         output: assistant_response.text,
+        messages: Vec::new(),
     }
 }
 
@@ -1162,6 +1177,8 @@ fn convert_projected_context_to_provider_messages(
     projected_context: &[ConversationMessage],
 ) -> Vec<CompletionMessage> {
     let mut messages = Vec::with_capacity(1 + projected_context.len());
+    let tool_name_mapping =
+        build_tool_function_name_mapping(profile.toolset.iter().map(String::as_str));
     messages.push(CompletionMessage {
         role: MessageRole::System,
         content: profile.system_prompt.clone(),
@@ -1197,19 +1214,23 @@ fn convert_projected_context_to_provider_messages(
                 });
             }
             ConversationMessage::Assistant(assistant) => {
+                let assistant_tool_calls =
+                    assistant_tool_calls_for_provider(&assistant.tool_calls, &tool_name_mapping);
                 messages.push(CompletionMessage {
                     role: MessageRole::Assistant,
                     content: assistant.text.clone(),
                     name: None,
                     tool_call_id: None,
-                    assistant_tool_calls: None,
+                    assistant_tool_calls,
                 });
             }
             ConversationMessage::ToolResult(tool_result) => {
                 messages.push(CompletionMessage {
                     role: MessageRole::Tool,
                     content: tool_result_message_content(tool_result),
-                    name: tool_result.tool_id.clone(),
+                    name: tool_result.tool_id.as_deref().map(|tool_id| {
+                        provider_function_name_for_tool_id(&tool_name_mapping, tool_id)
+                    }),
                     tool_call_id: Some(tool_result.tool_call_id.clone()),
                     assistant_tool_calls: None,
                 });
@@ -1218,6 +1239,40 @@ fn convert_projected_context_to_provider_messages(
     }
 
     messages
+}
+
+fn assistant_tool_calls_for_provider(
+    tool_calls: &[crate::conversation::ConversationToolCall],
+    mapping: &crate::tool::ToolFunctionNameMapping,
+) -> Option<Vec<AssistantToolCall>> {
+    (!tool_calls.is_empty()).then(|| {
+        tool_calls
+            .iter()
+            .map(|tool_call| AssistantToolCall {
+                tool_call_id: tool_call.tool_call_id.clone(),
+                function_name: provider_function_name_for_tool_id(mapping, &tool_call.tool_id),
+                arguments_json: provider_tool_arguments_json(&tool_call.args_summary),
+            })
+            .collect()
+    })
+}
+
+fn provider_function_name_for_tool_id(
+    mapping: &crate::tool::ToolFunctionNameMapping,
+    tool_id: &str,
+) -> String {
+    mapping
+        .function_name_for_tool_id(tool_id)
+        .map(str::to_string)
+        .unwrap_or_else(|| sanitize_tool_function_name(tool_id))
+}
+
+fn provider_tool_arguments_json(args_summary: &str) -> String {
+    if serde_json::from_str::<Value>(args_summary).is_ok() {
+        args_summary.to_string()
+    } else {
+        "{}".to_string()
+    }
 }
 
 fn project_provider_context_for_prompt(
@@ -1232,7 +1287,7 @@ fn project_provider_context_for_prompt(
             .is_some_and(|summary| !summary.is_empty()),
     );
     let mut messages = Vec::with_capacity(
-        1 + summary_message_count + prior_context.preserved_turns.len().saturating_mul(2),
+        1 + summary_message_count + prior_context.preserved_turns.len().saturating_mul(3),
     );
 
     if let Some(summary) = prior_context
@@ -1259,6 +1314,11 @@ fn project_provider_context_for_prompt(
     }
 
     for turn in &prior_context.preserved_turns {
+        if !turn.messages.is_empty() {
+            messages.extend(turn.messages.clone());
+            continue;
+        }
+
         let request_id = turn.request_id.clone().unwrap_or_default();
         messages.push(ConversationMessage::User(ConversationUserMessage {
             request_id: request_id.clone(),
@@ -1820,6 +1880,7 @@ mod tests {
             outcome,
             AgentTurnOutcome::Succeeded {
                 output: "plain response".to_string(),
+                messages: Vec::new(),
             }
         );
         assert_eq!(*seen_calls.lock().expect("lock seen calls"), 0);
