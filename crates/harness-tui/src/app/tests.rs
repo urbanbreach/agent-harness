@@ -1582,6 +1582,36 @@ fn composer_metadata_prefers_short_agent_name_and_configured_source_label() {
 }
 
 #[test]
+fn composer_metadata_deduplicates_provider_backend_source_label() {
+    let openai_option = metadata_model_option(
+        "build",
+        Some("Deep Agent"),
+        "openai",
+        Some("OpenAI"),
+        "gpt-5.4-mini",
+        "GPT-5.4 Mini · High",
+    );
+    let configured_suffix_option = metadata_model_option(
+        "build",
+        Some("Deep Agent"),
+        "default",
+        Some("CLIProxyAPI (OpenAI)"),
+        "gpt-5.4-mini",
+        "GPT-5.4 Mini · High",
+    );
+
+    let mut app = AppState::new_live(None, false, None);
+    app.set_launch_metadata(LaunchMetadata::from_model_option(&openai_option));
+    assert_eq!(app.current_source_label().as_deref(), Some("OpenAI"));
+
+    app.set_launch_metadata(LaunchMetadata::from_model_option(&configured_suffix_option));
+    assert_eq!(
+        app.current_source_label().as_deref(),
+        Some("CLIProxyAPI (OpenAI)")
+    );
+}
+
+#[test]
 fn live_switch_model_labels_next_turn_only() {
     let launch_option = runtime_context_model_option(
         "deep",
@@ -1616,7 +1646,7 @@ fn live_switch_model_labels_next_turn_only() {
         dock.summary_segment,
         Some(view_model::ControlDockSummarySegment {
             kind: view_model::ControlDockSummarySegmentKind::Orchestration,
-            text: "Next turns: deep · GPT-5.4 Mini · Creative".to_string(),
+            text: "Next turns: deep · GPT-5.4 Mini".to_string(),
             tone: view_model::ControlDockSummaryTone::Secondary,
         })
     );

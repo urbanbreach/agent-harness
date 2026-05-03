@@ -346,6 +346,6 @@ fn continued_runtime_stays_primary_until_variant_cycle_sets_next_turns() {
     );
     assert_eq!(
         app.runtime_context_summary_segment_text(),
-        Some("Next turns: deep · GPT-5.4 Mini · Creative".to_string())
+        Some("Next turns: deep · GPT-5.4 Mini".to_string())
     );
 }
