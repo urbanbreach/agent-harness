@@ -193,7 +193,7 @@ impl Tool for CodeLspRenameTool {
     }
 
     fn description(&self) -> &str {
-        "Previews or applies a semantic LSP rename through an explicit write-capable flow."
+        "Previews or applies a semantic LSP rename through an explicit workspace-editing flow."
     }
 
     fn parameters_json_schema(&self) -> Value {

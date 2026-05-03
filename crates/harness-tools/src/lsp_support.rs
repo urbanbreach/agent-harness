@@ -94,7 +94,7 @@ impl LspOperation {
             "fileDiagnostics" => Ok(Self::FileDiagnostics),
             "workspaceDiagnostics" => Ok(Self::WorkspaceDiagnostics),
             "prepareRename" | "renameSymbol" => Err(ToolError::InvalidArguments(format!(
-                "unsupported lsp operation: {value}; use lsp.rename for the explicit write-capable rename flow; supported operations: {}",
+            "unsupported lsp operation: {value}; use lsp.rename for the explicit workspace-editing rename flow; supported operations: {}",
                 SUPPORTED_LSP_OPERATION_NAMES.join(", ")
             ))),
             _ => Err(ToolError::InvalidArguments(format!(
@@ -1278,7 +1278,7 @@ mod tests {
         let err = LspOperation::parse("renameSymbol").expect_err("operation should fail");
         assert!(
             matches!(err, ToolError::InvalidArguments(message) if message == format!(
-                "unsupported lsp operation: renameSymbol; use lsp.rename for the explicit write-capable rename flow; supported operations: {}",
+                "unsupported lsp operation: renameSymbol; use lsp.rename for the explicit workspace-editing rename flow; supported operations: {}",
                 SUPPORTED_LSP_OPERATION_NAMES.join(", ")
             ))
         );

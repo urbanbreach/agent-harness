@@ -37,7 +37,7 @@ impl Tool for HashlineScanTool {
     }
 
     fn description(&self) -> &str {
-        "Scans workspace file lines and returns hashline anchors for patch authoring. Prefer this or read(hashlineAnchors=true) before edit.hashline_apply when precise edits might be stale."
+        "Internal helper that scans workspace file lines and returns hashline anchors for low-level hashline patch tests. Normal agents should use read and edit instead."
     }
 
     fn parameters_json_schema(&self) -> serde_json::Value {
