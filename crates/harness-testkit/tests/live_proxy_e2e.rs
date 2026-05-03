@@ -30,9 +30,9 @@ use support::live_proxy_config::{
     LiveToolFlowRunConfig,
 };
 use support::live_proxy_tui::{
-    live_tui_command_timeout, read_hashline_scan_line_hash, run_live_tui_smoke,
-    run_live_tui_tool_flow, tool_flow_tool_call_state, write_live_tool_flow_summary_artifacts,
-    LiveToolFlowArtifacts, ToolFlowToolCallState,
+    live_tui_command_timeout, run_live_tui_smoke, run_live_tui_tool_flow,
+    tool_flow_tool_call_state, write_live_tool_flow_summary_artifacts, LiveToolFlowArtifacts,
+    ToolFlowToolCallState,
 };
 use support::live_vision::{self, LiveVisionProxyConfig};
 use support::live_visual::{
@@ -81,7 +81,6 @@ const LIVE_TOOL_FLOW_RELATIVE_PATH: &str = "tmp/live_tool_flow.md";
 const LIVE_TOOL_FLOW_DRAFT_MARKER: &str =
     "You must use tools only. Use exactly tmp/live_tool_flow.md.";
 const LIVE_TOOL_FLOW_FINAL_CONTENT: &str = "alpha\nBETA\ngamma\n";
-const LIVE_TOOL_FLOW_APPLY_EDIT_ID: &str = "live-tool-flow-apply";
 const LIVE_CHAT_TODO_CONTENT: &str = "live chat todo item";
 const LIVE_CHAT_TODO_FLOW_PROMPT: &str = concat!(
     "Use tools before the final answer. ",
@@ -102,18 +101,15 @@ const LIVE_CHAT_SKILL_PROMPT: &str = concat!(
 );
 const LIVE_TOOL_FLOW_CREATE_PROMPT: &str = concat!(
     "You must use tools only. Use exactly tmp/live_tool_flow.md. ",
-    "Now perform only step 1: call write with this exact payload shape: ",
-    r#"{"filePath":"tmp/live_tool_flow.md","content":"alpha\nbeta\ngamma\n"}"#,
-    ". Return exactly one write tool call and zero prose. Do not call any other tool."
+    "Now perform only step 1: call edit with this exact payload shape: ",
+    r#"{"filePath":"tmp/live_tool_flow.md","editId":"live-tool-flow-create","edits":[{"op":"append","lines":["alpha","beta","gamma"]}]}"#,
+    ". Return exactly one edit tool call and zero prose. Do not call any other tool."
 );
 const LIVE_TOOL_FLOW_READ_PROMPT: &str = concat!(
     "Now perform only step 2 on the same file: call read with filePath=tmp/live_tool_flow.md. ",
     "Return exactly one read tool call and zero prose. Do not call any other tool."
 );
-const LIVE_TOOL_FLOW_SCAN_PROMPT: &str = concat!(
-    "Now perform only step 3 on the same file: call edit.hashline_scan with path=tmp/live_tool_flow.md start_line=1 limit=20. ",
-    "Return exactly one edit.hashline_scan tool call and zero prose. Do not call any other tool."
-);
+const LIVE_TOOL_FLOW_EDIT_ID: &str = "live-tool-flow-edit";
 const LIVE_TOOL_FLOW_FINAL_READ_PROMPT: &str = concat!(
     "Now perform steps 5 and 6 only: call read with filePath=tmp/live_tool_flow.md again, then summarize the final contents. ",
     "Do not make any more edits and do not use any other file path. Before the summary, there must be exactly one read tool call."
@@ -436,7 +432,7 @@ fn live_proxy_prompt_native_tool_flow() {
         &[],
     )
     .unwrap_or_else(|err| panic!("live prompt native tool-flow create stage failed: {err}"));
-    assert_requested_tool_sequence(&create_result.events_body, &["write"])
+    assert_requested_tool_sequence(&create_result.events_body, &["edit"])
         .unwrap_or_else(|err| panic!("native tool-flow create tool sequence mismatch: {err}"));
     assert_run_records_live_runtime_context(
         &create_result.run_dir,
@@ -456,28 +452,15 @@ fn live_proxy_prompt_native_tool_flow() {
     assert_requested_tool_sequence(&first_read_result.events_body, &["read"])
         .unwrap_or_else(|err| panic!("native tool-flow first-read tool sequence mismatch: {err}"));
 
-    let scan_result = run_live_prompt_stage(
-        &run_config.scan,
-        LIVE_TOOL_FLOW_SCAN_PROMPT,
+    let edit_result = run_live_prompt_stage(
+        &run_config.edit,
+        &live_tool_flow_edit_prompt(),
         &live_request.wait_timeout_ms,
         &[],
     )
-    .unwrap_or_else(|err| panic!("live prompt native tool-flow scan stage failed: {err}"));
-    assert_requested_tool_sequence(&scan_result.events_body, &["edit.hashline_scan"])
-        .unwrap_or_else(|err| panic!("native tool-flow scan tool sequence mismatch: {err}"));
-    let line_two_hash =
-        read_hashline_scan_line_hash(&scan_result.run_dir, &run_config.canonical_relative_path, 2)
-            .unwrap_or_else(|err| panic!("native tool-flow scan hash evidence mismatch: {err}"));
-
-    let apply_result = run_live_prompt_stage(
-        &run_config.apply,
-        &live_tool_flow_apply_prompt(&line_two_hash),
-        &live_request.wait_timeout_ms,
-        &[],
-    )
-    .unwrap_or_else(|err| panic!("live prompt native tool-flow apply stage failed: {err}"));
-    assert_requested_tool_sequence(&apply_result.events_body, &["edit.hashline_apply"])
-        .unwrap_or_else(|err| panic!("native tool-flow apply tool sequence mismatch: {err}"));
+    .unwrap_or_else(|err| panic!("live prompt native tool-flow edit stage failed: {err}"));
+    assert_requested_tool_sequence(&edit_result.events_body, &["edit"])
+        .unwrap_or_else(|err| panic!("native tool-flow edit tool sequence mismatch: {err}"));
 
     let final_read_result = run_live_prompt_stage(
         &run_config.final_read,
@@ -495,8 +478,7 @@ fn live_proxy_prompt_native_tool_flow() {
         &[
             create_result.run_dir.clone(),
             first_read_result.run_dir.clone(),
-            scan_result.run_dir.clone(),
-            apply_result.run_dir.clone(),
+            edit_result.run_dir.clone(),
             final_read_result.run_dir.clone(),
         ],
         &run_config.create.workspace_root,
@@ -964,7 +946,7 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
         &source_config_path,
         serde_json::to_string_pretty(&source_config).expect("serialize tool flow config"),
     )
-    .expect("write tool flow config");
+    .expect("tool flow config");
 
     let request = LivePromptRequest {
         source_config_path,
@@ -1079,10 +1061,8 @@ fn prepare_live_tool_flow_run_config_builds_minimal_tool_profile() {
     assert_eq!(
         tool_flow_profile.get("tools").and_then(Value::as_array),
         Some(&vec![
-            Value::String("write".to_string()),
             Value::String("read".to_string()),
-            Value::String("edit.hashline_scan".to_string()),
-            Value::String("edit.hashline_apply".to_string()),
+            Value::String("edit".to_string()),
         ])
     );
     let profile_permissions = tool_flow_profile
@@ -1145,11 +1125,7 @@ fn prepare_live_prompt_native_tool_flow_run_config_builds_cli_parity_stages() {
     );
     assert_eq!(
         run_config.create.workspace_root,
-        run_config.scan.workspace_root
-    );
-    assert_eq!(
-        run_config.create.workspace_root,
-        run_config.apply.workspace_root
+        run_config.edit.workspace_root
     );
     assert_eq!(
         run_config.create.workspace_root,
@@ -1161,11 +1137,10 @@ fn prepare_live_prompt_native_tool_flow_run_config_builds_cli_parity_stages() {
     );
     assert_ne!(
         run_config.first_read.session_dir,
-        run_config.scan.session_dir
+        run_config.edit.session_dir
     );
-    assert_ne!(run_config.scan.session_dir, run_config.apply.session_dir);
     assert_ne!(
-        run_config.apply.session_dir,
+        run_config.edit.session_dir,
         run_config.final_read.session_dir
     );
     assert_eq!(
@@ -1325,7 +1300,13 @@ fn example_config_keeps_minimal_surface_and_live_helper_prepares_runtime_profile
     );
 
     let build_prompt = read_shipped_agent_prompt_asset("build");
-    assert!(build_prompt.contains("apply_patch"));
+    assert!(build_prompt.contains("Use `read` to view files"));
+    assert!(
+        build_prompt.contains("`edit` for file creation, targeted changes, deletion, and rename")
+    );
+    assert!(!build_prompt.contains("apply_patch"));
+    assert!(!build_prompt.contains("edit.hashline_apply"));
+    assert!(!build_prompt.contains("edit.hashline_scan"));
     assert!(build_prompt.contains("do the work without asking questions"));
 
     let prepared = prepare_prompt_run_config(
@@ -1357,7 +1338,8 @@ fn example_config_keeps_minimal_surface_and_live_helper_prepares_runtime_profile
     assert!(live_profile
         .get("system_prompt")
         .and_then(Value::as_str)
-        .is_some_and(|prompt| prompt.contains("apply_patch")));
+        .is_some_and(|prompt| prompt
+            .contains("`edit` for file creation, targeted changes, deletion, and rename")));
 
     assert!(
         !prepared_agents.contains_key("plan"),
@@ -1472,14 +1454,18 @@ fn tool_flow_evidence_detects_ordered_same_file_sequence() {
     let events_body = vec![
         requested(
             1,
-            "call-write",
-            "write",
+            "call-create-edit",
+            "edit",
             json!({
+                "editId": "live-tool-flow-create",
                 "filePath": LIVE_TOOL_FLOW_RELATIVE_PATH,
-                "content": "alpha\nbeta\ngamma\n",
+                "edits": [{
+                    "op": "append",
+                    "lines": ["alpha", "beta", "gamma"],
+                }],
             }),
         ),
-        finished(2, "call-write"),
+        finished(2, "call-create-edit"),
         requested(
             3,
             "call-read-1",
@@ -1493,51 +1479,42 @@ fn tool_flow_evidence_detects_ordered_same_file_sequence() {
         finished(4, "call-read-1"),
         requested(
             5,
-            "call-scan",
-            "edit.hashline_scan",
+            "call-edit",
+            "edit",
             json!({
-                "path": LIVE_TOOL_FLOW_RELATIVE_PATH,
-                "start_line": 1,
-                "limit": 20,
-            }),
-        ),
-        finished(6, "call-scan"),
-        requested(
-            7,
-            "call-apply",
-            "edit.hashline_apply",
-            json!({
-                "edit_id": "edit-live-tool-flow",
-                "path": LIVE_TOOL_FLOW_RELATIVE_PATH,
-                "ops": [{
-                    "kind": "replace"
+                "editId": LIVE_TOOL_FLOW_EDIT_ID,
+                "filePath": LIVE_TOOL_FLOW_RELATIVE_PATH,
+                "edits": [{
+                    "op": "replace",
+                    "pos": "2#beta-hash",
+                    "lines": ["BETA"],
                 }],
             }),
         ),
         event(
-            8,
+            6,
             "edit_proposed",
             json!({
-                "edit_id": "edit-live-tool-flow",
+                "edit_id": LIVE_TOOL_FLOW_EDIT_ID,
                 "path": LIVE_TOOL_FLOW_RELATIVE_PATH,
-                "summary": "apply hashline patch with 1 op(s)",
+                "summary": "rewrite file through native edit tool",
                 "patch_digest": "patch-0001",
             }),
         ),
         event(
-            9,
+            7,
             "edit_applied",
             json!({
-                "edit_id": "edit-live-tool-flow",
+                "edit_id": LIVE_TOOL_FLOW_EDIT_ID,
                 "path": LIVE_TOOL_FLOW_RELATIVE_PATH,
                 "new_file_digest": "file-0001",
-                "diff_rel_path": "edit-live-tool-flow.diff",
+                "diff_rel_path": "live-tool-flow-edit.diff",
                 "diff_digest": "diff-0001",
             }),
         ),
-        finished(10, "call-apply"),
+        finished(8, "call-edit"),
         requested(
-            11,
+            9,
             "call-read-2",
             "read",
             json!({
@@ -1546,14 +1523,14 @@ fn tool_flow_evidence_detects_ordered_same_file_sequence() {
                 "limit": 2000,
             }),
         ),
-        finished(12, "call-read-2"),
+        finished(10, "call-read-2"),
     ]
     .into_iter()
     .map(|value| value.to_string())
     .collect::<Vec<_>>()
     .join("\n");
     fs::write(run_dir.join("events.jsonl"), format!("{events_body}\n"))
-        .expect("write tool-flow evidence events");
+        .expect("tool-flow evidence events");
 
     let evidence = ToolFlowEvidence::collect(
         &run_dir,
@@ -1638,14 +1615,18 @@ fn tool_flow_evidence_collect_many_merges_stage_runs() {
         vec![
             requested(
                 1,
-                "call-write",
-                "write",
+                "call-create-edit",
+                "edit",
                 json!({
+                    "editId": "live-tool-flow-create",
                     "filePath": LIVE_TOOL_FLOW_RELATIVE_PATH,
-                    "content": "alpha\nbeta\ngamma\n",
+                    "edits": [{
+                        "op": "append",
+                        "lines": ["alpha", "beta", "gamma"],
+                    }],
                 }),
             ),
-            finished(2, "call-write"),
+            finished(2, "call-create-edit"),
         ],
     );
     let first_read_run = write_run(
@@ -1664,64 +1645,52 @@ fn tool_flow_evidence_collect_many_merges_stage_runs() {
             finished(4, "call-read-1"),
         ],
     );
-    let scan_run = write_run(
-        "live-proxy-tool-flow-evidence-scan-run",
+    let edit_run = write_run(
+        "live-proxy-tool-flow-evidence-edit-run",
         vec![
             requested(
                 5,
-                "call-scan",
-                "edit.hashline_scan",
+                "call-edit",
+                "edit",
                 json!({
-                    "path": LIVE_TOOL_FLOW_RELATIVE_PATH,
-                    "start_line": 1,
-                    "limit": 20,
-                }),
-            ),
-            finished(6, "call-scan"),
-        ],
-    );
-    let apply_run = write_run(
-        "live-proxy-tool-flow-evidence-apply-run",
-        vec![
-            requested(
-                7,
-                "call-apply",
-                "edit.hashline_apply",
-                json!({
-                    "edit_id": "edit-live-tool-flow",
-                    "path": LIVE_TOOL_FLOW_RELATIVE_PATH,
-                    "ops": [{ "kind": "replace" }],
+                    "editId": LIVE_TOOL_FLOW_EDIT_ID,
+                    "filePath": LIVE_TOOL_FLOW_RELATIVE_PATH,
+                    "edits": [{
+                        "op": "replace",
+                        "pos": "2#beta-hash",
+                        "lines": ["BETA"],
+                    }],
                 }),
             ),
             event(
-                8,
+                6,
                 "edit_proposed",
                 json!({
-                    "edit_id": "edit-live-tool-flow",
+                    "edit_id": LIVE_TOOL_FLOW_EDIT_ID,
                     "path": LIVE_TOOL_FLOW_RELATIVE_PATH,
-                    "summary": "apply hashline patch with 1 op(s)",
+                    "summary": "rewrite file through native edit tool",
                     "patch_digest": "patch-0001",
                 }),
             ),
             event(
-                9,
+                7,
                 "edit_applied",
                 json!({
-                    "edit_id": "edit-live-tool-flow",
+                    "edit_id": LIVE_TOOL_FLOW_EDIT_ID,
                     "path": LIVE_TOOL_FLOW_RELATIVE_PATH,
                     "new_file_digest": "file-0001",
-                    "diff_rel_path": "edit-live-tool-flow.diff",
+                    "diff_rel_path": "live-tool-flow-edit.diff",
                     "diff_digest": "diff-0001",
                 }),
             ),
-            finished(10, "call-apply"),
+            finished(8, "call-edit"),
         ],
     );
     let final_read_run = write_run(
         "live-proxy-tool-flow-evidence-read-2-run",
         vec![
             requested(
-                11,
+                9,
                 "call-read-2",
                 "read",
                 json!({
@@ -1730,18 +1699,12 @@ fn tool_flow_evidence_collect_many_merges_stage_runs() {
                     "limit": 2000,
                 }),
             ),
-            finished(12, "call-read-2"),
+            finished(10, "call-read-2"),
         ],
     );
 
     let evidence = ToolFlowEvidence::collect_many(
-        &[
-            create_run,
-            first_read_run,
-            scan_run,
-            apply_run,
-            final_read_run,
-        ],
+        &[create_run, first_read_run, edit_run, final_read_run],
         &workspace_root,
         Path::new(LIVE_TOOL_FLOW_RELATIVE_PATH),
     )
@@ -1781,17 +1744,17 @@ fn resolve_tagged_run_dir_rejects_collisions() {
 }
 
 #[test]
-fn tool_flow_tool_call_state_recognizes_write_same_file_success() {
+fn tool_flow_tool_call_state_recognizes_edit_same_file_success() {
     let events = concat!(
-        r#"{"payload":{"event_type":"tool_call_requested","data":{"tool_call_id":"toolcall_000001","tool_id":"write","args_summary":"{\"content\":\"alpha\\nbeta\\ngamma\\n\",\"filePath\":\"tmp/live_tool_flow.md\"}"}}}"#,
+        r#"{"payload":{"event_type":"tool_call_requested","data":{"tool_call_id":"toolcall_000001","tool_id":"edit","args_summary":"{\"editId\":\"live-tool-flow-create\",\"filePath\":\"tmp/live_tool_flow.md\",\"edits\":[{\"op\":\"append\",\"lines\":[\"alpha\",\"beta\",\"gamma\"]}]}"}}}"#,
         "\n",
         r#"{"payload":{"event_type":"tool_call_finished","data":{"tool_call_id":"toolcall_000001","status":"succeeded"}}}"#,
         "\n"
     );
 
     let state =
-        tool_flow_tool_call_state(events, Path::new(LIVE_TOOL_FLOW_RELATIVE_PATH), "write", 1)
-            .expect("write tool-flow state should parse");
+        tool_flow_tool_call_state(events, Path::new(LIVE_TOOL_FLOW_RELATIVE_PATH), "edit", 1)
+            .expect("edit tool-flow state should parse");
 
     assert_eq!(state, ToolFlowToolCallState::Succeeded);
 }
@@ -2924,16 +2887,16 @@ fn assert_final_visual_checkpoint(artifacts: &LiveToolFlowArtifacts) -> Result<(
     )
 }
 
-fn live_tool_flow_apply_prompt(line_two_hash: &str) -> String {
+pub(crate) fn live_tool_flow_edit_prompt() -> String {
     format!(
         concat!(
-            "Now perform only step 4 on the same file. Return exactly one edit.hashline_apply tool call and zero prose. ",
+            "Now perform only step 3 on the same file. Return exactly one edit tool call and zero prose. ",
             "Use exactly these arguments: ",
-            r#"{{\"edit_id\":\"{edit_id}\",\"path\":\"tmp/live_tool_flow.md\",\"ops\":[{{\"Replace\":{{\"expected\":[{{\"line\":2,\"hash\":\"{line_two_hash}\"}}],\"lines\":[\"BETA\"]}}}}]}}. "#,
+            r#"{{\"editId\":\"{edit_id}\",\"filePath\":\"tmp/live_tool_flow.md\",\"edits\":[{{\"op\":\"replace\",\"pos\":\"<line-2-LINE#HASH-from-previous-read>\",\"lines\":[\"BETA\"]}}]}}. "#,
+            "Replace <line-2-LINE#HASH-from-previous-read> with the exact LINE#HASH tag shown for line 2 in the prior read output. ",
             "That means only line 2 changes from beta to BETA. Do not insert lines, do not delete lines, do not change alpha, and do not change gamma."
         ),
-        edit_id = LIVE_TOOL_FLOW_APPLY_EDIT_ID,
-        line_two_hash = line_two_hash,
+        edit_id = LIVE_TOOL_FLOW_EDIT_ID,
     )
 }
 
@@ -2958,15 +2921,15 @@ fn live_vision_checkpoint_contracts() -> &'static [LiveVisionCheckpointContract]
             checkpoint_id: CHECKPOINT_FILE_WRITE_FINISHED,
             expected_markers: &[
                 "UI shows file-creation progress for tmp/live_tool_flow.md.",
-                "write",
+                "edit",
                 LIVE_TOOL_FLOW_RELATIVE_PATH,
             ],
         },
         LiveVisionCheckpointContract {
             checkpoint_id: CHECKPOINT_HASHLINE_SCAN_FINISHED,
             expected_markers: &[
-                "UI shows scan/edit stage for tmp/live_tool_flow.md.",
-                "edit.hashline_scan",
+                "UI shows hashline edit stage for tmp/live_tool_flow.md.",
+                "edit",
                 LIVE_TOOL_FLOW_RELATIVE_PATH,
             ],
         },

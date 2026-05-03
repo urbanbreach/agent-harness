@@ -10,7 +10,7 @@ use portable_pty::{CommandBuilder, PtySize};
 use serde_json::{json, Value};
 use vt100::Parser as VtParser;
 
-use super::live_events::{read_required_json, resolve_tagged_run_dir, ToolFlowEvidence};
+use super::live_events::{resolve_tagged_run_dir, ToolFlowEvidence};
 use super::live_provider_parity::{
     assert_events_show_successful_provider_turn, collect_provider_turn_observation,
     provider_turn_summary,
@@ -49,7 +49,7 @@ pub(crate) struct LiveToolFlowArtifacts {
     pub(crate) manifest_jsonl_path: PathBuf,
     pub(crate) startup_png: PathBuf,
     pub(crate) draft_visible_png: PathBuf,
-    pub(crate) shell_create_finished_png: PathBuf,
+    pub(crate) edit_create_finished_png: PathBuf,
     pub(crate) hashline_scan_finished_png: PathBuf,
     pub(crate) run_finished_png: PathBuf,
 }
@@ -145,65 +145,6 @@ pub(crate) fn write_live_tool_flow_summary_artifacts(
         .map_err(|err| format!("failed to write {}: {err}", summary_txt_path.display()))?;
 
     Ok(())
-}
-
-pub(crate) fn read_hashline_scan_line_hash(
-    run_dir: &Path,
-    canonical_relative_path: &Path,
-    line_number: u64,
-) -> Result<String, String> {
-    let artifact_path = run_dir
-        .join("artifacts")
-        .join("hashline_scan")
-        .join(format!(
-            "{}.json",
-            sanitize_hashline_artifact_name(canonical_relative_path)
-        ));
-    let artifact = read_required_json(&artifact_path)?;
-    let anchors = artifact
-        .get("anchors")
-        .and_then(Value::as_array)
-        .ok_or_else(|| {
-            format!(
-                "hashline scan artifact missing anchors array: {}",
-                artifact_path.display()
-            )
-        })?;
-    let hash = anchors.iter().find_map(|anchor| {
-        (anchor.get("line").and_then(Value::as_u64) == Some(line_number)).then(|| {
-            anchor
-                .get("hash")
-                .and_then(Value::as_str)
-                .map(ToOwned::to_owned)
-        })
-    });
-    hash.flatten().ok_or_else(|| {
-        format!(
-            "hashline scan artifact {} missing hash for line {}",
-            artifact_path.display(),
-            line_number
-        )
-    })
-}
-
-fn sanitize_hashline_artifact_name(path: &Path) -> String {
-    let rendered = path.display().to_string();
-    let sanitized = rendered
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_') {
-                ch
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>();
-    let trimmed = sanitized.trim_matches('_');
-    if trimmed.is_empty() {
-        "workspace_root".to_string()
-    } else {
-        trimmed.to_string()
-    }
 }
 
 pub(crate) fn run_live_tui_smoke(
@@ -417,9 +358,9 @@ pub(crate) fn run_live_tui_tool_flow(
         &run_config.tool_flow.session_dir,
         &run_config.canonical_relative_path,
         &tool_flow_namespace,
-        "write",
+        "edit",
         1,
-        remaining_before(deadline, "write tool completion")?,
+        remaining_before(deadline, "create edit completion")?,
     )?;
     let create_events = wait_for_tui_provider_turn_count(
         &run_config.tool_flow.session_dir,
@@ -435,22 +376,22 @@ pub(crate) fn run_live_tui_tool_flow(
     wait_for_screen_contains(
         &mut stage.parser,
         &stage.output_rx,
-        "write",
+        "edit",
         Duration::from_secs(5),
     )?;
-    let shell_create_finished_checkpoint = live_visual.capture_checkpoint_with_metadata(
+    let edit_create_finished_checkpoint = live_visual.capture_checkpoint_with_metadata(
         CHECKPOINT_FILE_WRITE_FINISHED,
         &stage.parser,
         &[
             crate::LIVE_TUI_READY_MARKER,
-            "write",
+            "edit",
             crate::LIVE_TOOL_FLOW_RELATIVE_PATH,
         ],
-        &FocusCapture::anchored_exact("write", 28, 5),
+        &FocusCapture::anchored_exact("edit", 28, 5),
         Some(json!({
             "purpose": "tool-flow-stage-finished",
             "stage": "create",
-            "stage_tool": "write",
+            "stage_tool": "edit",
             "session_dir": run_config.tool_flow.session_dir.display().to_string(),
         })),
     )?;
@@ -483,74 +424,49 @@ pub(crate) fn run_live_tui_tool_flow(
     wait_for_live_tui_idle(
         &mut stage.parser,
         &stage.output_rx,
-        remaining_before(deadline, "tool-flow ready for scan")?,
+        remaining_before(deadline, "tool-flow ready for edit")?,
     )?;
 
-    type_and_flush_live_prompt(&mut stage.writer, crate::LIVE_TOOL_FLOW_SCAN_PROMPT)?;
+    let edit_prompt = crate::live_tool_flow_edit_prompt();
+    type_and_flush_live_prompt(&mut stage.writer, &edit_prompt)?;
     submit_live_prompt(&mut stage.writer)?;
     wait_for_tool_flow_tool_call_succeeded(
         &run_config.tool_flow.session_dir,
         &run_config.canonical_relative_path,
         &tool_flow_namespace,
-        "edit.hashline_scan",
+        "edit",
         1,
-        remaining_before(deadline, "edit.hashline_scan completion")?,
+        remaining_before(deadline, "edit completion")?,
     )?;
     wait_for_screen_contains(
         &mut stage.parser,
         &stage.output_rx,
-        "edit.hashline_scan",
+        "edit",
         Duration::from_secs(5),
     )?;
-    let scan_events = wait_for_tui_provider_turn_count(
+    let edit_events = wait_for_tui_provider_turn_count(
         &run_config.tool_flow.session_dir,
         &tool_flow_namespace,
         3,
-        remaining_before(deadline, "scan-stage provider turn completion")?,
+        remaining_before(deadline, "edit-stage provider turn completion")?,
     )?;
-    assert_events_show_successful_provider_turn(&run_config.tool_flow.provider_name, &scan_events);
+    assert_events_show_successful_provider_turn(&run_config.tool_flow.provider_name, &edit_events);
     let hashline_scan_finished_checkpoint = live_visual.capture_checkpoint_with_metadata(
         CHECKPOINT_HASHLINE_SCAN_FINISHED,
         &stage.parser,
         &[
             crate::LIVE_TUI_READY_MARKER,
-            "edit.hashline_scan",
+            "edit",
             crate::LIVE_TOOL_FLOW_RELATIVE_PATH,
         ],
-        &FocusCapture::anchored_exact("edit.hashline_scan", 32, 5),
+        &FocusCapture::anchored_exact("edit", 32, 5),
         Some(json!({
             "purpose": "tool-flow-stage-finished",
-            "stage": "scan",
-            "stage_tool": "edit.hashline_scan",
+            "stage": "edit",
+            "stage_tool": "edit",
             "session_dir": run_config.tool_flow.session_dir.display().to_string(),
         })),
     )?;
-    let line_two_hash =
-        read_hashline_scan_line_hash(&tool_flow_run_dir, &run_config.canonical_relative_path, 2)?;
-    wait_for_live_tui_idle(
-        &mut stage.parser,
-        &stage.output_rx,
-        remaining_before(deadline, "tool-flow ready for apply")?,
-    )?;
-
-    let apply_prompt = crate::live_tool_flow_apply_prompt(&line_two_hash);
-    type_and_flush_live_prompt(&mut stage.writer, &apply_prompt)?;
-    submit_live_prompt(&mut stage.writer)?;
-    wait_for_tool_flow_tool_call_succeeded(
-        &run_config.tool_flow.session_dir,
-        &run_config.canonical_relative_path,
-        &tool_flow_namespace,
-        "edit.hashline_apply",
-        1,
-        remaining_before(deadline, "edit.hashline_apply completion")?,
-    )?;
-    let apply_events = wait_for_tui_provider_turn_count(
-        &run_config.tool_flow.session_dir,
-        &tool_flow_namespace,
-        4,
-        remaining_before(deadline, "apply-stage provider turn completion")?,
-    )?;
-    assert_events_show_successful_provider_turn(&run_config.tool_flow.provider_name, &apply_events);
     wait_for_live_tui_idle(
         &mut stage.parser,
         &stage.output_rx,
@@ -570,7 +486,7 @@ pub(crate) fn run_live_tui_tool_flow(
     let final_read_events = wait_for_tui_provider_turn_count(
         &run_config.tool_flow.session_dir,
         &tool_flow_namespace,
-        5,
+        4,
         remaining_before(deadline, "final-read provider turn completion")?,
     )?;
     assert_events_show_successful_provider_turn(
@@ -628,7 +544,7 @@ pub(crate) fn run_live_tui_tool_flow(
         manifest_jsonl_path: run_finished_checkpoint.manifest_jsonl_path().to_path_buf(),
         startup_png: startup_checkpoint.png_path().to_path_buf(),
         draft_visible_png: draft_visible_checkpoint.png_path().to_path_buf(),
-        shell_create_finished_png: shell_create_finished_checkpoint.png_path().to_path_buf(),
+        edit_create_finished_png: edit_create_finished_checkpoint.png_path().to_path_buf(),
         hashline_scan_finished_png: hashline_scan_finished_checkpoint.png_path().to_path_buf(),
         run_finished_png: run_finished_checkpoint.png_path().to_path_buf(),
     })
@@ -943,13 +859,7 @@ fn tool_call_targets_path(tool_id: &str, args_summary: &str, canonical_path: &st
     let args_json = serde_json::from_str::<Value>(args_summary).ok();
 
     match tool_id {
-        "write" => args_json
-            .as_ref()
-            .and_then(|value| value.get("filePath"))
-            .and_then(Value::as_str)
-            .map(|path| path == canonical_path)
-            .unwrap_or_else(|| args_summary.contains(canonical_path)),
-        "read" | "edit.hashline_scan" | "edit.hashline_apply" => args_json
+        "read" | "edit" => args_json
             .as_ref()
             .and_then(|value| value.get("path").or_else(|| value.get("filePath")))
             .and_then(Value::as_str)

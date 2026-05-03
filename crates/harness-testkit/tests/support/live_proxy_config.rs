@@ -167,8 +167,7 @@ pub(crate) struct LivePromptStageResult {
 pub(crate) struct LivePromptNativeToolFlowRunConfig {
     pub(crate) create: PromptRunConfig,
     pub(crate) first_read: PromptRunConfig,
-    pub(crate) scan: PromptRunConfig,
-    pub(crate) apply: PromptRunConfig,
+    pub(crate) edit: PromptRunConfig,
     pub(crate) final_read: PromptRunConfig,
     pub(crate) canonical_relative_path: PathBuf,
 }
@@ -219,7 +218,7 @@ pub(crate) enum ToolFlowStage {
 impl ToolFlowStage {
     pub(crate) fn tools(self) -> &'static [&'static str] {
         match self {
-            Self::Full => &["write", "read", "edit.hashline_scan", "edit.hashline_apply"],
+            Self::Full => &["read", "edit"],
         }
     }
 
@@ -227,7 +226,7 @@ impl ToolFlowStage {
         match self {
             Self::Full => concat!(
                 "Execute the full live tool-flow task in one session. ",
-                "Use only write, read, edit.hashline_scan, and edit.hashline_apply against tmp/live_tool_flow.md."
+                "Use only read and edit against tmp/live_tool_flow.md."
             ),
         }
     }
@@ -476,8 +475,7 @@ pub(crate) fn prepare_live_prompt_native_tool_flow_run_config(
     Ok(LivePromptNativeToolFlowRunConfig {
         create: prepare_stage("native-tool-create", "native-tool-create-config")?,
         first_read: prepare_stage("native-tool-first-read", "native-tool-first-read-config")?,
-        scan: prepare_stage("native-tool-scan", "native-tool-scan-config")?,
-        apply: prepare_stage("native-tool-apply", "native-tool-apply-config")?,
+        edit: prepare_stage("native-tool-edit", "native-tool-edit-config")?,
         final_read: prepare_stage("native-tool-final-read", "native-tool-final-read-config")?,
         canonical_relative_path: PathBuf::from(LIVE_TOOL_FLOW_RELATIVE_PATH),
     })

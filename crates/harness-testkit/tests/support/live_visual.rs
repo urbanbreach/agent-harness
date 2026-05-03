@@ -16,7 +16,11 @@ pub const CHECKPOINT_STARTUP: &str = "startup";
 pub const CHECKPOINT_PERMISSION_REQUESTED: &str = "permission_requested";
 pub const CHECKPOINT_PROMPT_STREAM: &str = "prompt_stream";
 pub const CHECKPOINT_DRAFT_VISIBLE: &str = "draft_visible";
+// Kept stable for existing visual artifact manifests; the stage now captures file creation
+// through the high-level hashline-backed `edit` tool rather than a separate write tool.
 pub const CHECKPOINT_FILE_WRITE_FINISHED: &str = "file_write_finished";
+// Kept stable for existing visual artifact manifests; the stage now captures the high-level
+// hashline-backed `edit` tool rather than the removed agent-facing scan tool.
 pub const CHECKPOINT_HASHLINE_SCAN_FINISHED: &str = "hashline_scan_finished";
 pub const CHECKPOINT_RUN_FINISHED: &str = "run_finished";
 pub const VISUAL_MANIFEST_JSON_FILE: &str = "manifest.json";
