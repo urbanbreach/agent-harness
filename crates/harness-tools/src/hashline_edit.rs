@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 
 use crate::hashline_apply::{
     apply_hashline_patch_to_workspace, apply_hashline_workspace_op_to_workspace,
-    resolve_workspace_target_path,
+    resolve_workspace_target_path, validate_workspace_move_target,
 };
 use crate::workspace_edit::recent_hashline_anchors;
 
@@ -77,7 +77,7 @@ impl Tool for HashlineEditTool {
     }
 
     fn description(&self) -> &str {
-        "Edit files using LINE#HASH anchors for precise, safe modifications. Use pos/end anchors for each edit, read the file first, batch related edits in one call, and re-read before editing the same file again. Use delete=true by itself when you want to remove a file by path."
+        "Edit files using LINE#HASH anchors for precise, safe modifications. Workflow: read the target file first, copy exact LINE#HASH tags from read output, make the smallest operation per logical mutation site, submit one edit call per file snapshot, and re-read before editing the same file again. All operations in one call target the original read snapshot: do not adjust later line numbers for earlier operations, do not overlap ranges, do not insert inside a replaced range, and do not make two inserts at the same anchor. Use replace with pos/end for one consumed range, append/prepend to insert outside replaced ranges, merge touching changes into one replace, or split conflicting changes into separate edit calls with a re-read between calls. Replacement lines must contain only the new content for the consumed range, without LINE#HASH prefixes or diff markers. Use delete=true by itself when you want to remove a file by path."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -90,8 +90,14 @@ impl Tool for HashlineEditTool {
                     "type": "string",
                     "enum": ["replace", "append", "prepend"]
                 },
-                "pos": { "type": "string" },
-                "end": { "type": "string" },
+                "pos": {
+                    "type": "string",
+                    "description": "Primary LINE#HASH anchor copied from the latest read output. Required for replace on existing files; optional for append/prepend, where omission means EOF/BOF."
+                },
+                "end": {
+                    "type": "string",
+                    "description": "Inclusive range end LINE#HASH anchor for replace. Must be on or after pos, and replace ranges in the same call must not overlap any other operation."
+                },
                 "lines": {
                     "oneOf": [
                         { "type": "string" },
@@ -100,7 +106,8 @@ impl Tool for HashlineEditTool {
                             "items": { "type": "string" }
                         },
                         { "type": "null" }
-                    ]
+                    ],
+                    "description": "Plain replacement or inserted text only: no LINE#HASH prefixes, no diff markers, and no unchanged boundary lines outside the consumed pos..end range. null or [] with replace deletes the targeted range."
                 }
             }
         });
@@ -119,13 +126,13 @@ impl Tool for HashlineEditTool {
                 },
                 "rename": {
                     "type": "string",
-                    "description": "Rename the file after applying edits. Requires an edit operation and cannot be combined with delete=true."
+                    "description": "Rename the file after applying edits, or rename an existing file when edits is omitted. Cannot be combined with delete=true."
                 },
                 "edits": {
                     "type": "array",
                     "minItems": 1,
                     "items": edit_item_schema,
-                    "description": "Required for non-delete edit requests. Omit edits only when delete=true removes the whole file by path."
+                    "description": "Required for non-delete edit requests. Batch means multiple small, non-overlapping operations against the same original file snapshot, not one oversized rewrite. Omit edits only when delete=true removes the whole file by path."
                 }
             }
         })
@@ -170,6 +177,20 @@ fn execute_hashline_edit(
                 path: args.file_path,
             },
         );
+    }
+
+    if let Some(rename) = args.rename.as_deref() {
+        validate_workspace_move_target(ctx, &args.file_path, rename)?;
+        if args.edits.is_empty() {
+            return apply_hashline_workspace_op_to_workspace(
+                ctx,
+                HashlineWorkspaceOp::MoveFile {
+                    edit_id,
+                    from_path: args.file_path,
+                    to_path: rename.to_string(),
+                },
+            );
+        }
     }
 
     let resolved_path = resolve_workspace_target_path(ctx, &args.file_path)?;
@@ -551,7 +572,7 @@ fn resolve_hash_only_anchor(
 
     match matches.as_slice() {
         [] => Err(ToolError::InvalidArguments(format!(
-            "edit {index}: anchor \"{value}\" omitted its line number and does not match any current line. Re-read with read(hashlineAnchors=true) or edit.hashline_scan and copy the full LINE#HASH tag."
+                "edit {index}: anchor \"{value}\" omitted its line number and does not match any current line. Re-read the file and copy the full LINE#HASH tag."
         ))),
         [(line_index, line_hash)] => Ok(LineAnchor {
             line: *line_index as u32 + 1,
@@ -576,7 +597,7 @@ fn resolve_ambiguous_hash_only_anchor(
 
     let snippet = format_hash_only_anchor_candidates(hash, source_lines);
     Err(ToolError::InvalidArguments(format!(
-        "edit {index}: anchor \"{value}\" omitted its line number and matches multiple current lines. Re-read with read(hashlineAnchors=true) or edit.hashline_scan and copy the full LINE#HASH tag. Matching tags:\n{}",
+                "edit {index}: anchor \"{value}\" omitted its line number and matches multiple current lines. Re-read the file and copy the full LINE#HASH tag. Matching tags:\n{}",
         snippet
     )))
 }
@@ -696,7 +717,7 @@ fn validate_anchor(
     if actual_hash != anchor.hash {
         let snippet = format_anchor_refresh_snippet(source_lines, anchor.line);
         return Err(ToolError::Execution(format!(
-            "edit {index}: anchor {}#{} no longer matches the current file (current hash: {}). Copy updated tags from this snippet and retry, or re-read with read(hashlineAnchors=true) / edit.hashline_scan if you need a wider view.\n{}",
+                "edit {index}: anchor {}#{} no longer matches the current file (current hash: {}). Copy updated tags from this snippet and retry, or re-read the file if you need a wider view.\n{}",
             anchor.line, anchor.hash, actual_hash, snippet
         )));
     }

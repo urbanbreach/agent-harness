@@ -171,9 +171,8 @@ pub(crate) fn apply_hashline_patch_to_workspace(
     let source = std::fs::read_to_string(&resolved_path)
         .map_err(|err| ToolError::Execution(format!("failed to read target file: {err}")))?;
 
-    let applied = apply_hashline_patch(&source, &patch).map_err(|err| {
-        ToolError::Execution(format!("hashline apply rejected [{}]: {err}", err.code()))
-    })?;
+    let applied = apply_hashline_patch(&source, &patch)
+        .map_err(|err| ToolError::Execution(format_hashline_apply_rejection(&err)))?;
 
     write_atomic(&resolved_path, &applied.content)?;
     let diff = TextDiff::from_lines(&source, &applied.content)
@@ -187,6 +186,14 @@ pub(crate) fn apply_hashline_patch_to_workspace(
         applied.changed_ranges,
         &diff,
     )
+}
+
+fn format_hashline_apply_rejection(err: &harness_core::edit::hashline::HashlineError) -> String {
+    let mut message = format!("hashline apply rejected [{}]: {err}", err.code());
+    if err.code() == "OVERLAP" {
+        message.push_str(". Recovery: all operations in one patch target the original file snapshot; merge touching changes into one replace, move inserts outside replaced ranges, avoid two inserts at the same anchor, or re-read and apply conflicting changes in a second patch.");
+    }
+    message
 }
 
 pub(crate) fn apply_hashline_workspace_op_to_workspace(
@@ -258,6 +265,33 @@ pub(crate) fn resolve_workspace_target_path(
     Ok(resolved)
 }
 
+pub(crate) fn validate_workspace_move_target(
+    ctx: &ToolContext,
+    from_path: &str,
+    to_path: &str,
+) -> Result<(), ToolError> {
+    let from_resolved_path = resolve_workspace_target_path(ctx, from_path)?;
+    let to_resolved_path = resolve_workspace_target_path(ctx, to_path)?;
+    if from_resolved_path == to_resolved_path {
+        return Err(ToolError::InvalidArguments(
+            "move source and destination must differ".to_string(),
+        ));
+    }
+    if !from_resolved_path.exists() {
+        return Err(ToolError::Execution(format!(
+            "failed to move file: source is missing: {}",
+            from_resolved_path.display()
+        )));
+    }
+    if to_resolved_path.exists() {
+        return Err(ToolError::Execution(format!(
+            "failed to move file: destination already exists: {}",
+            to_resolved_path.display()
+        )));
+    }
+    Ok(())
+}
+
 fn ensure_target_stays_within_workspace(
     workspace: &Path,
     resolved: &Path,
@@ -298,22 +332,6 @@ fn nearest_existing_ancestor(path: &Path) -> Option<&Path> {
     None
 }
 
-pub(crate) fn write_file_via_hashline_engine(
-    ctx: &ToolContext,
-    file_path: &str,
-    content: &str,
-    edit_id: &str,
-) -> Result<ToolResult, ToolError> {
-    apply_hashline_workspace_op_to_workspace(
-        ctx,
-        HashlineWorkspaceOp::RewriteFile {
-            edit_id: edit_id.to_string(),
-            path: file_path.to_string(),
-            content: content.to_string(),
-        },
-    )
-}
-
 fn rewrite_workspace_file(
     ctx: &ToolContext,
     file_path: &str,
@@ -326,7 +344,7 @@ fn rewrite_workspace_file(
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(err) => {
             return Err(ToolError::Execution(format!(
-                "failed to read target file for write: {err}"
+                "failed to read target file for rewrite: {err}"
             )));
         }
     };
@@ -382,17 +400,7 @@ fn move_workspace_file(
 ) -> Result<ToolResult, ToolError> {
     let from_resolved_path = resolve_workspace_target_path(ctx, from_path)?;
     let to_resolved_path = resolve_workspace_target_path(ctx, to_path)?;
-    if from_resolved_path == to_resolved_path {
-        return Err(ToolError::InvalidArguments(
-            "move source and destination must differ".to_string(),
-        ));
-    }
-    if to_resolved_path.exists() {
-        return Err(ToolError::Execution(format!(
-            "failed to move file: destination already exists: {}",
-            to_resolved_path.display()
-        )));
-    }
+    validate_workspace_move_target(ctx, from_path, to_path)?;
 
     let source = std::fs::read_to_string(&from_resolved_path)
         .map_err(|err| ToolError::Execution(format!("failed to read file for move: {err}")))?;

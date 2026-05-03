@@ -11,7 +11,7 @@ use harness_core::edit::hashline::{compute_line_hash, HashlineOp, HashlinePatch,
 use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1, ToolCallStatus};
 use harness_core::perm::{PermissionDecision, PermissionPolicy};
 use harness_core::redact::DefaultRedactor;
-use harness_tools::coordinator_registry;
+use harness_tools::coordinator_registry_with_internal_hashline_tools;
 
 #[tokio::test]
 async fn hashline_apply_success_writes_file_and_emits_applied_event() {
@@ -173,6 +173,101 @@ async fn hashline_apply_mismatch_leaves_file_unchanged() {
 }
 
 #[tokio::test]
+async fn hashline_apply_overlap_rejection_explains_recovery() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+
+    let file_path = workspace.join("demo.txt");
+    let original = "alpha\nbeta\ngamma\ndelta\n";
+    fs::write(&file_path, original).expect("seed file");
+
+    let source_lines = original
+        .trim_end_matches('\n')
+        .split('\n')
+        .collect::<Vec<_>>();
+    let anchor = |line_number: u32| LineAnchor {
+        line: line_number,
+        hash: compute_line_hash(source_lines[(line_number - 1) as usize]),
+    };
+    let patch = HashlinePatch {
+        edit_id: "edit-overlap".to_string(),
+        path: "demo.txt".to_string(),
+        ops: vec![
+            HashlineOp::Replace {
+                expected: vec![anchor(2), anchor(3)],
+                lines: vec!["BETA".to_string(), "GAMMA".to_string()],
+            },
+            HashlineOp::Delete {
+                expected: vec![anchor(3)],
+            },
+        ],
+    };
+
+    let handle = test_coordinator(
+        temp_dir.path(),
+        PermissionPolicy::new(
+            PermissionMode::Allow,
+            PermissionMode::Deny,
+            PermissionMode::Deny,
+        ),
+    );
+
+    let run = handle
+        .start_run("hashline_apply_overlap", &workspace)
+        .await
+        .expect("start run");
+
+    let worker_agent_id = handle
+        .spawn_agent(supervisor_actor(), "worker", None)
+        .await
+        .expect("spawn worker");
+
+    let tool_call_id = handle
+        .request_tool_call(
+            worker_actor(worker_agent_id),
+            Some("deep".to_string()),
+            "edit.hashline_apply",
+            serde_json::to_value(&patch).expect("patch json"),
+        )
+        .await
+        .expect("request tool call");
+
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    handle.stop_run().await.expect("stop run");
+
+    let unchanged = fs::read_to_string(&file_path).expect("read unchanged file");
+    assert_eq!(unchanged, original);
+
+    let events = read_events(&run.events_path);
+    let rejection_reason = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::EditRejected(data)
+                if data.edit_id == "edit-overlap"
+                    && event.correlation_id.as_deref() == Some(tool_call_id.as_str()) =>
+            {
+                Some(data.reason.as_str())
+            }
+            _ => None,
+        })
+        .expect("edit rejected event");
+
+    assert!(rejection_reason.contains("OVERLAP"));
+    assert!(rejection_reason.contains("Recovery:"));
+    assert!(rejection_reason.contains("original file snapshot"));
+    assert!(rejection_reason.contains("merge touching changes into one replace"));
+    assert!(rejection_reason.contains("re-read and apply conflicting changes in a second patch"));
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ToolCallFinished(data)
+                if data.tool_call_id == tool_call_id && data.status == ToolCallStatus::Failed
+        )
+    }));
+}
+
+#[tokio::test]
 async fn hashline_apply_permission_ask_blocks_until_resolved() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let workspace = temp_dir.path().join("workspace");
@@ -310,7 +405,9 @@ fn test_coordinator(session_dir: &Path, permission_policy: PermissionPolicy) -> 
     let mut config = CoordinatorConfig::new(session_dir.to_path_buf());
     config.deterministic_store = true;
     config.permission_policy = permission_policy;
-    config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
+    config.tool_registry = Arc::new(coordinator_registry_with_internal_hashline_tools(
+        ShellAllowlist::default(),
+    ));
     config.agent_profiles.insert(
         "worker".to_string(),
         AgentProfile {
