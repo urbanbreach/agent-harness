@@ -2348,7 +2348,7 @@ fn operator_sidebar_mcp_items(app: &AppState) -> Vec<OperatorRailItem> {
                 Some(harness_core::config::McpServerConnectionState::Connected) => {
                     RuntimeHealthState::Healthy
                 }
-                Some(harness_core::config::McpServerConnectionState::Disconnected) => {
+                Some(harness_core::config::McpServerConnectionState::Failed(_)) => {
                     RuntimeHealthState::Unhealthy
                 }
                 None => RuntimeHealthState::Unhealthy,
