@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use crate::logging;
 use crate::scenarios::{
-    create_workspace, default_permission_policy, golden_path_patch, golden_path_profiles,
+    create_workspace, default_permission_policy, golden_path_edit_args, golden_path_profiles,
     golden_path_provider, supervisor_actor, worker_actor, ScenarioName,
 };
 
@@ -234,8 +234,8 @@ async fn run_once(cmd: &RunCommand, settings: &RunSettings) -> Result<RunOutcome
         .request_tool_call(
             worker_actor(worker_agent_id),
             Some("deep".to_string()),
-            "edit.hashline_apply",
-            serde_json::to_value(golden_path_patch()).map_err(|err| err.to_string())?,
+            "edit",
+            golden_path_edit_args(),
         )
         .await
         .map_err(|err| err.to_string())?;

@@ -184,14 +184,8 @@ fn normalize_profile_toolset(
         push_tool(&mut ordered, &mut seen, tool_id);
     }
 
-    let has_edit = seen.contains("edit");
-    let has_read = seen.contains("read");
-
-    if editing_surface.hashline_edit && has_edit {
-        if !has_read {
-            push_tool(&mut ordered, &mut seen, "read");
-        }
-        push_tool(&mut ordered, &mut seen, "edit.hashline_scan");
+    if editing_surface.hashline_edit && seen.contains("edit") && !seen.contains("read") {
+        push_tool(&mut ordered, &mut seen, "read");
     }
 
     ordered

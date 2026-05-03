@@ -16,6 +16,7 @@ use harness_providers::{
     ToolChoice, ToolDef,
 };
 use harness_tools::coordinator_registry;
+use serde_json::{json, Value};
 
 static WORKSPACE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -96,6 +97,21 @@ pub fn golden_path_patch() -> HashlinePatch {
             lines: vec!["BETA".to_string()],
         }],
     }
+}
+
+pub fn golden_path_edit_args() -> Value {
+    let patch = golden_path_patch();
+    json!({
+        "editId": patch.edit_id,
+        "filePath": patch.path,
+        "edits": [
+            {
+                "op": "replace",
+                "pos": format!("2#{}", compute_line_hash("beta")),
+                "lines": ["BETA"],
+            }
+        ],
+    })
 }
 
 pub fn golden_path_provider() -> MockProvider {
@@ -204,7 +220,7 @@ pub fn golden_path_provider() -> MockProvider {
         reasoning_effort: interactive_request.reasoning_effort.clone(),
         text_verbosity: interactive_request.text_verbosity.clone(),
         reasoning_summary: interactive_request.reasoning_summary.clone(),
-        tools: Some(vec![demo_hashline_apply_tool_def()]),
+        tools: Some(vec![demo_edit_tool_def()]),
         tool_choice: Some(ToolChoice::Auto),
         stream: interactive_request.stream,
     };
@@ -250,7 +266,7 @@ pub fn golden_path_provider() -> MockProvider {
         reasoning_effort: None,
         text_verbosity: None,
         reasoning_summary: None,
-        tools: Some(vec![demo_hashline_apply_tool_def()]),
+        tools: Some(vec![demo_edit_tool_def()]),
         tool_choice: Some(ToolChoice::Auto),
         stream: true,
     };
@@ -274,15 +290,15 @@ pub fn golden_path_provider() -> MockProvider {
     MockProvider::new(scripted_events)
 }
 
-fn demo_hashline_apply_tool_def() -> ToolDef {
-    let tool_id = "edit.hashline_apply";
+fn demo_edit_tool_def() -> ToolDef {
+    let tool_id = "edit";
     let registry = coordinator_registry(ShellAllowlist::default());
     let tool = registry
         .get(tool_id)
-        .expect("golden path scenario requires edit.hashline_apply");
+        .expect("golden path scenario requires edit");
     let function_name = build_tool_function_name_mapping([tool_id])
         .function_name_for_tool_id(tool_id)
-        .expect("golden path scenario requires a deterministic tool function name")
+        .expect("golden path scenario requires a deterministic edit function name")
         .to_string();
 
     ToolDef {
@@ -318,7 +334,7 @@ pub fn golden_path_profiles() -> BTreeMap<String, AgentProfile> {
             max_iters: 12,
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::ContinueAsToolMessage,
-            toolset: vec!["edit.hashline_apply".to_string()],
+            toolset: vec!["edit".to_string()],
         },
     );
     profiles
