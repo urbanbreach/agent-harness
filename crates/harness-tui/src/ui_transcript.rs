@@ -2132,17 +2132,31 @@ fn build_transcript_tool_call_section(
     let todo_items = todo_items_from_tool_call(tool_call, session_path);
     let mut header_path_metadata = None;
 
+    let animation_phase = app.transcript_animation_phase();
+
     let (title, icon, visual_style, uses_generic_output_visibility) = match display_tool_id {
-        "fs.read" => (
-            format!(
-                "Read {}{}",
-                tool_path_display(tool_call).unwrap_or_else(|| "file".to_string()),
-                read_tool_input_suffix(tool_call),
-            ),
-            Some("→"),
-            TranscriptToolCallVisualStyle::Inline,
-            false,
-        ),
+        "fs.read" => {
+            let path = tool_path_display(tool_call);
+            let title = path.as_ref().map_or_else(
+                || "Reading file...".to_string(),
+                |path| format!("Read {path}{}", read_tool_input_suffix(tool_call)),
+            );
+            let icon = match tool_call.status {
+                ToolCallDisplayStatus::Running => {
+                    Some(transcript_streaming_spinner_frame(animation_phase))
+                }
+                ToolCallDisplayStatus::PendingPermission | ToolCallDisplayStatus::Queued
+                    if path.is_none() =>
+                {
+                    Some("~")
+                }
+                ToolCallDisplayStatus::PendingPermission
+                | ToolCallDisplayStatus::Queued
+                | ToolCallDisplayStatus::Succeeded
+                | ToolCallDisplayStatus::Failed => Some("→"),
+            };
+            (title, icon, TranscriptToolCallVisualStyle::Inline, false)
+        }
         "fs.glob" => (
             format!(
                 "Glob \"{}\"{}{}",
@@ -2243,12 +2257,13 @@ fn build_transcript_tool_call_section(
                 }
             }
 
-            (
-                title,
-                Some("←"),
-                TranscriptToolCallVisualStyle::Block,
-                false,
-            )
+            let icon = if title == "Preparing edit..." {
+                Some("~")
+            } else {
+                Some("←")
+            };
+
+            (title, icon, TranscriptToolCallVisualStyle::Block, false)
         }
         "edit.hashline_scan" => (
             format!(
@@ -2287,31 +2302,44 @@ fn build_transcript_tool_call_section(
                 session_path,
                 stacked_diffs,
             );
-            (
-                "Edit".to_string(),
-                Some("←"),
-                if rendered_diff {
-                    TranscriptToolCallVisualStyle::Block
-                } else {
-                    TranscriptToolCallVisualStyle::Inline
-                },
-                false,
-            )
+            let path = tool_path_display(tool_call);
+            let preparing = !rendered_diff && path.is_none();
+            let title = if preparing {
+                "Preparing edit...".to_string()
+            } else {
+                "Edit".to_string()
+            };
+            let icon = if preparing { Some("~") } else { Some("←") };
+            let visual_style = if rendered_diff {
+                TranscriptToolCallVisualStyle::Block
+            } else {
+                TranscriptToolCallVisualStyle::Inline
+            };
+            (title, icon, visual_style, false)
         }
         "apply_patch" => {
-            push_tool_call_diff_blocks(
+            let rendered_diff = push_tool_call_diff_blocks(
                 &mut detail_blocks,
                 tool_call,
                 app,
                 session_path,
                 stacked_diffs,
             );
-            (
-                "Patch".to_string(),
-                Some("←"),
-                TranscriptToolCallVisualStyle::Block,
-                false,
-            )
+            if rendered_diff {
+                (
+                    "Patch".to_string(),
+                    Some("←"),
+                    TranscriptToolCallVisualStyle::Block,
+                    false,
+                )
+            } else {
+                (
+                    "Preparing patch...".to_string(),
+                    Some("~"),
+                    TranscriptToolCallVisualStyle::Inline,
+                    false,
+                )
+            }
         }
         "web.fetch" => (
             format!(
@@ -5043,7 +5071,7 @@ fn build_turn_render_surfaces(
 }
 
 fn build_user_render_surface(
-    _turn: &TranscriptTurnSection,
+    turn: &TranscriptTurnSection,
     user_msg: &TranscriptUserMessageSection,
     theme: &Theme,
     width: u16,
@@ -5076,7 +5104,7 @@ fn build_user_render_surface(
     TranscriptRenderSurface {
         kind: TranscriptRenderSurfaceKind::User,
         show_outer_rail: true,
-        rail_color: theme.text.accent,
+        rail_color: theme.agent_accent(&turn.header.profile_label),
         surface,
         lines,
         interaction_rows: None,
@@ -5102,13 +5130,14 @@ fn build_assistant_render_surfaces(
     width: u16,
     base_surface: Color,
 ) -> Vec<TranscriptRenderSurface> {
+    let agent_accent = theme.agent_accent(&turn.header.profile_label);
     let (assistant_icon, assistant_color, assistant_status) = match turn.header.status {
         ActivityStatus::Streaming => (
             transcript_streaming_spinner_frame(turn.animation_phase),
-            theme.text.accent,
+            agent_accent,
             "active",
         ),
-        ActivityStatus::Done => ("▪", theme.text.accent, "done"),
+        ActivityStatus::Done => ("▪", agent_accent, "done"),
         ActivityStatus::Error => (theme.live_shell.glyphs.error, theme.status.error, "error"),
     };
 
@@ -5128,7 +5157,9 @@ fn build_assistant_render_surfaces(
             _ => 0,
         };
 
-        if group_len > 1 {
+        if group_len > 1
+            && context_tool_group_complete(&turn.assistant_parts[index..index + group_len])
+        {
             let tool_calls = turn.assistant_parts[index..index + group_len]
                 .iter()
                 .filter_map(|part| match part {
@@ -5233,6 +5264,16 @@ fn context_tool_group_len(parts: &[TranscriptAssistantPart]) -> usize {
             )
         })
         .count()
+}
+
+fn context_tool_group_complete(parts: &[TranscriptAssistantPart]) -> bool {
+    parts.iter().all(|part| {
+        matches!(
+            part,
+            TranscriptAssistantPart::ToolCall(tool_call)
+                if tool_call.header.status == ToolCallDisplayStatus::Succeeded
+        )
+    })
 }
 
 #[expect(
@@ -7552,8 +7593,9 @@ fn assistant_primary_label_color(turn: &TranscriptTurnSection, theme: &Theme) ->
 
 fn assistant_primary_rail_color(turn: &TranscriptTurnSection, theme: &Theme) -> Color {
     match turn.header.status {
-        ActivityStatus::Streaming => theme.text.accent,
-        ActivityStatus::Done => theme.text.secondary,
+        ActivityStatus::Streaming | ActivityStatus::Done => {
+            theme.agent_accent(&turn.header.profile_label)
+        }
         ActivityStatus::Error => theme.status.error,
     }
 }
@@ -9205,6 +9247,95 @@ pub(crate) fn exact_test_transcript_proposed_edit_renders_header() {
     assert!(rendered.contains("← Edit · ui.rs"));
     assert!(rendered.contains("crates/harness-tui/src"));
     assert!(!rendered.contains("tool edit.hashline_apply"));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_transcript_opencode_tool_progress_indicators() {
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-opencode-tool-progress",
+        ActivityStatus::Done,
+        "",
+    );
+
+    let mut pending_read = transcript_section_model_test_tool_call("call-read-pending", "fs.read");
+    pending_read.status = ToolCallDisplayStatus::Queued;
+
+    let mut running_read = transcript_section_model_test_tool_call("call-read-running", "fs.read");
+    running_read.args_summary = r#"{"path":"src/lib.rs","offset":3,"limit":8}"#.to_string();
+    running_read.status = ToolCallDisplayStatus::Running;
+
+    let mut pending_edit = transcript_section_model_test_tool_call("call-edit-pending", "edit");
+    pending_edit.status = ToolCallDisplayStatus::Queued;
+
+    let mut pending_patch =
+        transcript_section_model_test_tool_call("call-patch-pending", "apply_patch");
+    pending_patch.status = ToolCallDisplayStatus::Queued;
+
+    entry.tool_calls = vec![pending_read, running_read, pending_edit, pending_patch];
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+
+    let initial_lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        120,
+    ));
+    let initial_rendered = initial_lines.join("\n");
+    assert!(
+        initial_rendered.contains("~ Reading file..."),
+        "missing pending read indicator\n{initial_rendered}"
+    );
+    assert!(initial_lines
+        .iter()
+        .any(|line| line.contains("⠋ Read src/lib.rs [offset=3, limit=8]")));
+    assert!(initial_lines
+        .iter()
+        .any(|line| line.contains("~ Preparing edit...")));
+    assert!(initial_lines
+        .iter()
+        .any(|line| line.contains("~ Preparing patch...")));
+
+    app.advance_transcript_animation_phase();
+
+    let updated_lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        120,
+    ));
+    assert!(updated_lines
+        .iter()
+        .any(|line| line.contains("⠙ Read src/lib.rs [offset=3, limit=8]")));
+
+    let mut mixed_context_app = AppState::default();
+    let mut mixed_context_entry = transcript_section_model_test_activity(
+        "request-mixed-context-progress",
+        ActivityStatus::Done,
+        "",
+    );
+    let mut completed_read = transcript_section_model_test_tool_call("call-read-done", "fs.read");
+    completed_read.args_summary = r#"{"path":"src/lib.rs"}"#.to_string();
+    completed_read.status = ToolCallDisplayStatus::Succeeded;
+    completed_read.output_summary = Some("12 lines read from src/lib.rs".to_string());
+
+    let mut running_glob = transcript_section_model_test_tool_call("call-glob-running", "fs.glob");
+    running_glob.args_summary = r#"{"pattern":"*.rs","path":"src"}"#.to_string();
+    running_glob.status = ToolCallDisplayStatus::Running;
+
+    mixed_context_entry.tool_calls = vec![completed_read, running_glob];
+    mixed_context_app.activities = std::collections::VecDeque::from(vec![mixed_context_entry]);
+
+    let mixed_context_rendered = transcript_test_line_texts(build_transcript_lines_for_width(
+        &mixed_context_app,
+        &Theme::default(),
+        120,
+    ))
+    .join("\n");
+    assert!(
+        !mixed_context_rendered.contains("Gathering context"),
+        "active context tools should stay as per-tool indicators\n{mixed_context_rendered}"
+    );
+    assert!(mixed_context_rendered.contains("→ Read src/lib.rs"));
+    assert!(mixed_context_rendered.contains("✱ Glob \"*.rs\" in src"));
 }
 
 #[cfg(test)]
