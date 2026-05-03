@@ -166,7 +166,7 @@ async fn worker_toolset_enforcement_blocks_non_allowlisted_tool() {
 
     let coordinator = test_coordinator(
         temp_dir.path(),
-        worker_profile("worker-allow", vec!["edit.hashline_apply".to_string()]),
+        worker_profile("worker-allow", vec!["edit".to_string()]),
         policy,
     );
 

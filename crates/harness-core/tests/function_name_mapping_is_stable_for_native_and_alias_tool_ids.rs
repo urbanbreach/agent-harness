@@ -22,7 +22,6 @@ fn function_name_mapping_is_stable_for_single_surface_tool_ids() {
         "todowrite",
         "webfetch",
         "websearch",
-        "write",
     ];
     let mapping_a = build_tool_function_name_mapping(tool_ids.iter().copied());
 
