@@ -1513,7 +1513,7 @@ fn write_tool_lifecycle_diff_fixture(run_dir: &Path) {
         artifacts_dir.join("tool-lifecycle-inline.diff"),
         "--- crates/harness-tui/src/ui.rs\n+++ crates/harness-tui/src/ui.rs\n@@ -44,8 +44,7 @@\n use ui_secondary::{\n-    render_diff_tab, render_events_tab, render_help_tab,\n+    render_events_tab, render_help_tab, render_live_details_overlay,\n     render_operator_sidebar,\n };\n",
     )
-    .expect("write tool lifecycle diff fixture");
+    .expect("write lifecycle diff fixture");
 }
 
 fn write_inline_diff_parity_fixtures(run_dir: &Path) {
