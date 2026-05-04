@@ -210,18 +210,23 @@ impl TodoRailStatus {
 }
 
 fn sanitize_operator_sidebar_line(text: &str) -> String {
-    text.chars()
-        .map(|character| {
-            if character.is_control() {
-                ' '
-            } else {
-                character
-            }
-        })
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+    let mut sanitized = String::with_capacity(text.len());
+    let mut pending_space = false;
+
+    for character in text.chars() {
+        if character.is_control() || character.is_whitespace() {
+            pending_space = !sanitized.is_empty();
+            continue;
+        }
+
+        if pending_space {
+            sanitized.push(' ');
+            pending_space = false;
+        }
+        sanitized.push(character);
+    }
+
+    sanitized
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2022,10 +2027,10 @@ fn build_operator_rail_section_lines(
         OperatorRailBodySection::Todo { items, .. }
         | OperatorRailBodySection::Mcp { items, .. }
         | OperatorRailBodySection::Lsp { items, .. }
-        | OperatorRailBodySection::ModifiedFiles { items, .. } => items.clone(),
+        | OperatorRailBodySection::ModifiedFiles { items, .. } => items,
     };
 
-    for item in &items {
+    for item in items {
         append_operator_rail_item(&mut lines, theme, section, item);
     }
 

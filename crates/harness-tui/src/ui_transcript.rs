@@ -4241,11 +4241,10 @@ fn push_collapsible_output_block(
     tone: TranscriptToolCallDetailTone,
 ) {
     let formatted = format_detail_payload(output);
-    let output_lines = formatted.lines().collect::<Vec<_>>();
-    let overflow = output_lines.len() > max_lines;
+    let overflow = line_count_exceeds(&formatted, max_lines);
     if overflow && !expanded {
         detail_blocks.push(TranscriptToolCallDetailBlock::Message {
-            text: format!("{}\n…", output_lines[..max_lines].join("\n")),
+            text: first_lines_with_ellipsis(&formatted, max_lines),
             tone,
         });
         detail_blocks.push(TranscriptToolCallDetailBlock::Message {
@@ -4275,10 +4274,9 @@ fn push_collapsible_bash_panel_block(
     expanded: bool,
     tone: TranscriptToolCallDetailTone,
 ) {
-    let output_lines = output.lines().collect::<Vec<_>>();
-    let overflow = output_lines.len() > max_lines;
+    let overflow = line_count_exceeds(output, max_lines);
     let rendered_output = if overflow && !expanded {
-        format!("{}\n…", output_lines[..max_lines].join("\n"))
+        first_lines_with_ellipsis(output, max_lines)
     } else {
         output.to_string()
     };
@@ -4296,6 +4294,22 @@ fn push_collapsible_bash_panel_block(
         }),
         tone,
     });
+}
+
+fn line_count_exceeds(text: &str, max_lines: usize) -> bool {
+    text.lines().nth(max_lines).is_some()
+}
+
+fn first_lines_with_ellipsis(text: &str, max_lines: usize) -> String {
+    let mut preview = String::new();
+    for (index, line) in text.lines().take(max_lines).enumerate() {
+        if index > 0 {
+            preview.push('\n');
+        }
+        preview.push_str(line);
+    }
+    preview.push_str("\n…");
+    preview
 }
 
 fn push_failed_tool_error_block(
