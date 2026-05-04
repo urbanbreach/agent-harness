@@ -8,6 +8,7 @@ pub mod coord;
 pub mod edit;
 pub mod event;
 pub mod perm;
+pub mod plan;
 pub mod proj;
 pub mod redact;
 pub mod sched;

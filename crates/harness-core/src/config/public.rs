@@ -439,53 +439,116 @@ fn canonicalize_runtime_aliases(runtime: &mut serde_json::Value) {
 }
 
 fn default_shipped_agents(model_ref: &str) -> BTreeMap<String, ProfileConfig> {
-    BTreeMap::from([(
-        "build".to_string(),
-        ProfileConfig {
-            description: "Implementation lane: execute the requested work and verify the result."
-                .to_string(),
-            system_prompt: None,
-            model_ref: model_ref.to_string(),
-            variant: None,
-            temperature: None,
-            permissions: Some(ProfilePermissions {
-                fallback: None,
-                edit: Some(PermissionMode::Allow),
-                shell: Some(PermissionMode::Allow),
-                network: Some(PermissionMode::Allow),
-                question: Some(PermissionMode::Allow),
-                task: Some(PermissionMode::Allow),
-                webfetch: Some(PermissionMode::Allow),
-                websearch: Some(PermissionMode::Allow),
-                codesearch: Some(PermissionMode::Allow),
-                lsp: Some(PermissionMode::Allow),
-                rules: PermissionRuleSet::default(),
-            }),
-            max_iters: 24,
-            tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
-            tools: vec![
-                "todowrite",
-                "todoread",
-                "question",
-                "skill",
-                "websearch",
-                "webfetch",
-                "codesearch",
-                "lsp",
-                "read",
-                "glob",
-                "grep",
-                "list",
-                "edit",
-                "bash",
-                "batch",
-                "task",
-            ]
-            .into_iter()
-            .map(str::to_string)
-            .collect(),
-        },
-    )])
+    BTreeMap::from([
+        (
+            crate::plan::BUILD_AGENT_NAME.to_string(),
+            ProfileConfig {
+                description:
+                    "Implementation lane: execute the requested work and verify the result."
+                        .to_string(),
+                system_prompt: None,
+                model_ref: model_ref.to_string(),
+                variant: None,
+                temperature: None,
+                permissions: Some(ProfilePermissions {
+                    fallback: None,
+                    edit: Some(PermissionMode::Allow),
+                    shell: Some(PermissionMode::Allow),
+                    network: Some(PermissionMode::Allow),
+                    question: Some(PermissionMode::Allow),
+                    task: Some(PermissionMode::Allow),
+                    webfetch: Some(PermissionMode::Allow),
+                    websearch: Some(PermissionMode::Allow),
+                    codesearch: Some(PermissionMode::Allow),
+                    lsp: Some(PermissionMode::Allow),
+                    rules: PermissionRuleSet::default(),
+                }),
+                max_iters: 24,
+                tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
+                tools: vec![
+                    "todowrite",
+                    "todoread",
+                    "question",
+                    "skill",
+                    "websearch",
+                    "webfetch",
+                    "codesearch",
+                    "lsp",
+                    "read",
+                    "glob",
+                    "grep",
+                    "list",
+                    "edit",
+                    "bash",
+                    "batch",
+                    "task",
+                ]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            },
+        ),
+        (
+            crate::plan::PLAN_AGENT_NAME.to_string(),
+            ProfileConfig {
+                description: "Plan mode. Disallows all edit tools except the active plan file."
+                    .to_string(),
+                system_prompt: None,
+                model_ref: model_ref.to_string(),
+                variant: None,
+                temperature: None,
+                permissions: Some(ProfilePermissions {
+                    fallback: None,
+                    edit: None,
+                    shell: Some(PermissionMode::Deny),
+                    network: Some(PermissionMode::Allow),
+                    question: Some(PermissionMode::Allow),
+                    task: Some(PermissionMode::Allow),
+                    webfetch: Some(PermissionMode::Allow),
+                    websearch: Some(PermissionMode::Allow),
+                    codesearch: Some(PermissionMode::Allow),
+                    lsp: Some(PermissionMode::Allow),
+                    rules: PermissionRuleSet {
+                        edit: vec![
+                            PermissionSelectorRule {
+                                selector: PermissionSelector::CatchAll,
+                                mode: PermissionMode::Deny,
+                            },
+                            PermissionSelectorRule {
+                                selector: PermissionSelector::Prefix(format!(
+                                    "{}/",
+                                    crate::plan::PLAN_DIR
+                                )),
+                                mode: PermissionMode::Allow,
+                            },
+                        ],
+                        shell: Vec::new(),
+                    },
+                }),
+                max_iters: 24,
+                tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
+                tools: vec![
+                    "todowrite",
+                    "todoread",
+                    "question",
+                    "skill",
+                    "websearch",
+                    "webfetch",
+                    "codesearch",
+                    "lsp",
+                    "read",
+                    "glob",
+                    "grep",
+                    "list",
+                    "edit",
+                    crate::plan::PLAN_EXIT_TOOL_ID,
+                ]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            },
+        ),
+    ])
 }
 
 fn fallback_public_agent_description(name: &str) -> String {
