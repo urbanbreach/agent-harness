@@ -4,7 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::event::{EventEnvelopeV1, EventV1};
 use harness_core::proj::{RunStatus, SessionCatalogEntry};
 use harness_core::session_lineage::{
-    project_lineage_tree, validate_fork_stable_prefix, SessionLineageNode, StableSessionPrefix,
+    project_lineage_tree, validate_tui_fork_stable_prefix, SessionLineageNode, StableSessionPrefix,
 };
 
 use super::AppState;
@@ -237,23 +237,50 @@ struct ForkSelectorRow {
     prefix: StableSessionPrefix,
     event_id: Option<String>,
     event_kind: &'static str,
+    prompt_text: String,
+    restore_prompt_text: Option<String>,
     timestamp: Option<String>,
 }
 
 impl ForkSelectorState {
     fn rebuild(&mut self, events: &[EventEnvelopeV1], filter_input: &str) {
-        self.rows = events
+        let full_session = events
+            .last()
+            .and_then(|event| validate_tui_fork_stable_prefix(events, event.seq).ok())
+            .filter(|prefix| prefix.event_count > 0)
+            .map(|prefix| ForkSelectorRow {
+                prefix,
+                event_id: None,
+                event_kind: "full_session",
+                prompt_text: "Full session".to_string(),
+                restore_prompt_text: None,
+                timestamp: None,
+            });
+
+        let mut prompt_rows = events
             .iter()
             .filter_map(|event| {
-                let prefix = validate_fork_stable_prefix(events, event.seq).ok()?;
+                let EventV1::UserMessageSubmitted(payload) = &event.payload else {
+                    return None;
+                };
+                let prefix =
+                    validate_tui_fork_stable_prefix(events, event.seq.saturating_sub(1)).ok()?;
                 (prefix.event_count > 0).then(|| ForkSelectorRow {
                     prefix,
                     event_id: Some(event.event_id.clone()),
                     event_kind: event_kind_label(&event.payload),
+                    prompt_text: payload.text.clone(),
+                    restore_prompt_text: Some(payload.text.clone()),
                     timestamp: event.ts.clone(),
                 })
             })
-            .collect();
+            .collect::<Vec<_>>();
+        prompt_rows.reverse();
+
+        self.rows = full_session
+            .into_iter()
+            .chain(prompt_rows)
+            .collect::<Vec<_>>();
         self.confirmed = None;
         self.update_filter(filter_input);
     }
@@ -309,6 +336,17 @@ impl ForkSelectorState {
         self.confirmed.as_ref()
     }
 
+    fn confirmed_row(&self) -> Option<&ForkSelectorRow> {
+        let confirmed = self.confirmed.as_ref()?;
+        self.rows.iter().find(|row| &row.prefix == confirmed)
+    }
+
+    fn confirmed_prompt_text(&self) -> String {
+        self.confirmed_row()
+            .and_then(|row| row.restore_prompt_text.clone())
+            .unwrap_or_default()
+    }
+
     pub fn selected_prefix(&self) -> Option<&StableSessionPrefix> {
         self.filtered
             .get(self.selected)
@@ -330,6 +368,7 @@ impl ForkSelectorState {
                     status: row.prefix.status,
                     event_id: row.event_id.clone(),
                     event_kind: row.event_kind,
+                    prompt_text: row.prompt_text.clone(),
                     timestamp: row.timestamp.clone(),
                     selected: filtered_index == self.selected && !self.filtered.is_empty(),
                 })
@@ -490,7 +529,8 @@ impl AppState {
             }
             KeyCode::Enter => {
                 if let Some(prefix) = self.fork_selector.confirm_selected() {
-                    match self.emit_fork_session_intent(prefix) {
+                    let prompt_text = self.fork_selector.confirmed_prompt_text();
+                    match self.emit_fork_session_intent(prefix, prompt_text) {
                         Ok(()) => {
                             self.fork_selector_visible = false;
                         }
@@ -603,6 +643,7 @@ fn fork_row_matches(row: &ForkSelectorRow, input: &str) -> bool {
         row.prefix.status.map(status_label).map(str::to_string),
         row.event_id.clone(),
         Some(row.event_kind.to_string()),
+        Some(row.prompt_text.clone()),
         row.timestamp.clone(),
     ]
     .into_iter()

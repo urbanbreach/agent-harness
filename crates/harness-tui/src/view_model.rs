@@ -98,6 +98,7 @@ pub struct ForkSelectorRowViewModel {
     pub status: Option<RunStatus>,
     pub event_id: Option<String>,
     pub event_kind: &'static str,
+    pub prompt_text: String,
     pub timestamp: Option<String>,
     pub selected: bool,
 }

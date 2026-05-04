@@ -506,7 +506,7 @@ fn pty_lineage_fork_selector() {
         Arc::new(move |intent| intents.lock().expect("lock lineage intents").push(intent))
     };
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/run_fixture")), false, Some(sink));
-    for event in replay_read_only_events() {
+    for event in fork_selector_events() {
         app.ingest_event(event);
     }
 
@@ -514,7 +514,20 @@ fn pty_lineage_fork_selector() {
 
     assert!(app.fork_selector_visible);
     assert!(intents.lock().expect("lock lineage intents").is_empty());
-    assert_eq!(app.fork_selector_view_model().selected_cutoff_seq, Some(2));
+    assert_eq!(app.fork_selector_view_model().selected_cutoff_seq, Some(5));
+    assert_eq!(
+        app.fork_selector_view_model().rows[0].prompt_text,
+        "Full session"
+    );
+    assert_eq!(
+        app.fork_selector_view_model().rows[1].prompt_text,
+        "Fork this prompt"
+    );
+
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Down,
+        crossterm::event::KeyModifiers::NONE,
+    ));
 
     app.handle_key(crossterm::event::KeyEvent::new(
         crossterm::event::KeyCode::Enter,
@@ -524,9 +537,69 @@ fn pty_lineage_fork_selector() {
     let intents = intents.lock().expect("lock lineage intents");
     assert_eq!(intents.len(), 1);
     match &intents[0] {
-        UiIntent::ForkSession { stable_prefix, .. } => assert_eq!(stable_prefix.cutoff_seq, 2),
+        UiIntent::ForkSession {
+            stable_prefix,
+            prompt_text,
+            ..
+        } => {
+            assert_eq!(stable_prefix.cutoff_seq, 2);
+            assert_eq!(prompt_text, "Fork this prompt");
+        }
         intent => panic!("expected fork lineage intent, got {intent:?}"),
     }
+}
+
+fn fork_selector_events() -> Vec<EventEnvelopeV1> {
+    vec![
+        envelope(
+            1,
+            Some("run_fixture"),
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "fork-fixture".to_string(),
+                workspace_root: "/tmp/workspace".to_string(),
+            }),
+        ),
+        envelope(
+            2,
+            Some("run_fixture"),
+            EventV1::AgentSpawned(AgentSpawnedEvent {
+                agent_id: "agent_fork".to_string(),
+                parent_agent_id: None,
+                profile: "worker".to_string(),
+            }),
+        ),
+        envelope(
+            3,
+            Some("req_fork"),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_fork".to_string(),
+                text: "Fork this prompt".to_string(),
+            }),
+        ),
+        envelope(
+            4,
+            Some("req_fork"),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_fork".to_string(),
+                provider_id: "mock".to_string(),
+                model_id: "model-1".to_string(),
+                prompt_summary: "Fork this prompt".to_string(),
+                request_digest: "digest-req-fork".to_string(),
+                metadata: None,
+            }),
+        ),
+        envelope(
+            5,
+            Some("req_fork"),
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: "req_fork".to_string(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some("digest-fork-output".to_string()),
+                usage: None,
+                metadata: None,
+            }),
+        ),
+    ]
 }
 
 #[test]

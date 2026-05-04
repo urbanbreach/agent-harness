@@ -1252,7 +1252,8 @@ impl AppState {
         match command {
             "new" | "status" | "exit" => true,
             "resume" | "replay" => !self.replay_mode,
-            "fork" | "clone" => !self.startup_mode && self.lineage_write_blocked_reason().is_none(),
+            "fork" => !self.startup_mode && !self.replay_mode,
+            "clone" => !self.startup_mode && self.lineage_write_blocked_reason().is_none(),
             "tree" => !self.startup_mode,
             "model" => self.model_switcher_supported(),
             "events" => !self.startup_mode,
@@ -1379,9 +1380,9 @@ impl AppState {
     ) {
         self.restore_slash_draft(preserved_draft);
         let blocked_reason = match command {
-            LineageSlashCommand::Fork | LineageSlashCommand::Clone => {
-                self.lineage_write_blocked_reason()
-            }
+            LineageSlashCommand::Fork if self.replay_mode => Some("replay"),
+            LineageSlashCommand::Fork => None,
+            LineageSlashCommand::Clone => self.lineage_write_blocked_reason(),
             LineageSlashCommand::Tree => None,
         };
         if blocked_reason.is_none() {
@@ -1412,12 +1413,14 @@ impl AppState {
     pub(in crate::app) fn emit_fork_session_intent(
         &mut self,
         stable_prefix: StableSessionPrefix,
+        prompt_text: String,
     ) -> Result<(), String> {
         let source_run_dir = self.source_run_dir_for_lineage_write()?;
         self.emit_ui_intent(UiIntent::ForkSession {
             source_run_dir,
             events: self.events.clone(),
             stable_prefix,
+            prompt_text,
         });
         Ok(())
     }

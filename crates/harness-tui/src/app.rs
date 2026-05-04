@@ -68,7 +68,7 @@ pub(crate) const SLASH_COMMANDS: [(&str, &str); 13] = [
     ("new", "Return to the home shell"),
     ("resume", "Continue a saved session"),
     ("replay", "Replay a saved session"),
-    ("fork", "Prepare a Harness session fork"),
+    ("fork", "Fork session"),
     ("tree", "View the Harness session tree"),
     ("clone", "Prepare a Harness session clone"),
     ("model", "Switch model"),
@@ -1014,6 +1014,7 @@ pub enum UiIntent {
         source_run_dir: PathBuf,
         events: Vec<EventEnvelopeV1>,
         stable_prefix: harness_core::session_lineage::StableSessionPrefix,
+        prompt_text: String,
     },
     CloneSession {
         source_run_dir: PathBuf,
@@ -3834,10 +3835,7 @@ pub(crate) fn exact_test_slash_menu_lists_lineage_commands() {
         assert_eq!(app.typed_slash_command(), Some(query));
     }
 
-    assert_eq!(
-        slash_command_description("fork"),
-        "Prepare a Harness session fork"
-    );
+    assert_eq!(slash_command_description("fork"), "Fork session");
     assert_eq!(
         slash_command_description("tree"),
         "View the Harness session tree"
@@ -3922,30 +3920,31 @@ pub(crate) fn exact_test_slash_lineage_write_commands_blocked_when_live_unstable
     });
     assert!(app.active_turn_in_progress());
 
-    for command in ["fork", "clone"] {
-        app.replace_prompt_input(format!("/{command}"));
-        app.sync_slash_overlay();
+    app.replace_prompt_input("/fork".to_string());
+    app.sync_slash_overlay();
+    assert_eq!(app.typed_slash_command(), Some("fork"));
+    assert_eq!(app.slash_filtered, vec!["fork".to_string()]);
+    app.execute_slash_command("fork", Some("fork draft".to_string()));
+    assert_eq!(app.prompt_buffer, "fork draft");
+    assert!(app.fork_selector_visible);
 
-        assert!(
-            app.typed_slash_command().is_none(),
-            "/{command} should not type-dispatch while live work is active"
-        );
-        assert!(
-            !app.slash_filtered.iter().any(|entry| entry == command),
-            "/{command} should be hidden while live work is active"
-        );
-
-        app.execute_slash_command(command, Some(format!("{command} draft")));
-        assert_eq!(app.prompt_buffer, format!("{command} draft"));
-        assert_eq!(
-            app.status_banner.as_deref(),
-            Some(match command {
-                "fork" => "Harness session fork blocked: live session has active work",
-                "clone" => "Harness session clone blocked: live session has active work",
-                _ => unreachable!("tested lineage write command"),
-            })
-        );
-    }
+    app.fork_selector_visible = false;
+    app.replace_prompt_input("/clone".to_string());
+    app.sync_slash_overlay();
+    assert!(
+        app.typed_slash_command().is_none(),
+        "/clone should not type-dispatch while live work is active"
+    );
+    assert!(
+        !app.slash_filtered.iter().any(|entry| entry == "clone"),
+        "/clone should be hidden while live work is active"
+    );
+    app.execute_slash_command("clone", Some("clone draft".to_string()));
+    assert_eq!(app.prompt_buffer, "clone draft");
+    assert_eq!(
+        app.status_banner.as_deref(),
+        Some("Harness session clone blocked: live session has active work")
+    );
 
     app.replace_prompt_input("/tree".to_string());
     app.sync_slash_overlay();
@@ -3956,7 +3955,7 @@ pub(crate) fn exact_test_slash_lineage_write_commands_blocked_when_live_unstable
 
 #[cfg(test)]
 pub(crate) fn exact_test_slash_lineage_descriptions_use_harness_branding() {
-    for command in ["fork", "tree", "clone"] {
+    for command in ["tree", "clone"] {
         let description = slash_command_description(command);
         assert!(
             description.contains("Harness"),

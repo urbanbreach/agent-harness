@@ -2,8 +2,10 @@ use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::event::{
-    ActorKind, EventActor, EventEnvelopeV1, EventV1, RunFinishedEvent, RunStartedEvent,
-    ToolCallFinishedEvent, ToolCallRequestedEvent, ToolCallStatus, SCHEMA_VERSION,
+    ActorKind, AgentSpawnedEvent, EditAppliedEvent, EditProposedEvent, EventActor, EventEnvelopeV1,
+    EventV1, ProviderRequestFinishedEvent, ProviderRequestStartedEvent, RunStartedEvent,
+    ToolCallFinishedEvent, ToolCallRequestedEvent, ToolCallStatus, UserMessageSubmittedEvent,
+    SCHEMA_VERSION,
 };
 use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
 use harness_tui::app::{AppState, SessionHistoryEntry};
@@ -71,6 +73,32 @@ fn fork_source_events() -> Vec<EventEnvelopeV1> {
         ),
         envelope(
             2,
+            EventV1::AgentSpawned(AgentSpawnedEvent {
+                agent_id: "agent_1".to_string(),
+                parent_agent_id: None,
+                profile: "build".to_string(),
+            }),
+        ),
+        envelope(
+            3,
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_first".to_string(),
+                text: "First prompt".to_string(),
+            }),
+        ),
+        envelope(
+            4,
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_first".to_string(),
+                provider_id: "mock".to_string(),
+                model_id: "model-1".to_string(),
+                prompt_summary: "First prompt".to_string(),
+                request_digest: "digest-req-first".to_string(),
+                metadata: None,
+            }),
+        ),
+        envelope(
+            5,
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
                 tool_call_id: "tool_1".to_string(),
                 tool_id: "bash".to_string(),
@@ -80,13 +108,14 @@ fn fork_source_events() -> Vec<EventEnvelopeV1> {
             }),
         ),
         envelope(
-            3,
-            EventV1::RunFinished(RunFinishedEvent {
-                summary: "finished before tool result".to_string(),
+            6,
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_unstable".to_string(),
+                text: "Unstable prompt".to_string(),
             }),
         ),
         envelope(
-            4,
+            7,
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
                 tool_call_id: "tool_1".to_string(),
                 status: ToolCallStatus::Succeeded,
@@ -96,7 +125,180 @@ fn fork_source_events() -> Vec<EventEnvelopeV1> {
                 metadata: None,
             }),
         ),
+        envelope(
+            8,
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: "req_first".to_string(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some("digest-first-output".to_string()),
+                usage: None,
+                metadata: None,
+            }),
+        ),
+        envelope(
+            9,
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_unstable".to_string(),
+                provider_id: "mock".to_string(),
+                model_id: "model-1".to_string(),
+                prompt_summary: "Unstable prompt".to_string(),
+                request_digest: "digest-req-unstable".to_string(),
+                metadata: None,
+            }),
+        ),
+        envelope(
+            10,
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: "req_unstable".to_string(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some("digest-unstable-output".to_string()),
+                usage: None,
+                metadata: None,
+            }),
+        ),
+        envelope(
+            11,
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_second".to_string(),
+                text: "Second prompt".to_string(),
+            }),
+        ),
     ]
+}
+
+fn fork_source_events_with_completed_native_edit() -> Vec<EventEnvelopeV1> {
+    let mut events = vec![
+        envelope(
+            1,
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "fork source".to_string(),
+                workspace_root: "/workspace".to_string(),
+            }),
+        ),
+        envelope(
+            2,
+            EventV1::AgentSpawned(AgentSpawnedEvent {
+                agent_id: "agent_1".to_string(),
+                parent_agent_id: None,
+                profile: "build".to_string(),
+            }),
+        ),
+    ];
+
+    push_completed_turn(&mut events, "req_first", "First prompt");
+    let edit_insert_at = events.len() - 1;
+    events.insert(
+        edit_insert_at,
+        envelope(
+            5,
+            EventV1::EditProposed(EditProposedEvent {
+                edit_id: "edit-tool_1".to_string(),
+                path: "demo.txt".to_string(),
+                summary: "rewrite file through native edit tool".to_string(),
+                patch_digest: "digest-native-edit".to_string(),
+            }),
+        ),
+    );
+    events.insert(
+        edit_insert_at + 1,
+        envelope(
+            6,
+            EventV1::EditApplied(EditAppliedEvent {
+                edit_id: "create-demo".to_string(),
+                path: "demo.txt".to_string(),
+                new_file_digest: "digest-demo".to_string(),
+                diff_rel_path: Some("artifacts/toolcalls/edit-create-demo.diff".to_string()),
+                diff_digest: Some("digest-demo-diff".to_string()),
+            }),
+        ),
+    );
+    resequence_events(&mut events);
+
+    push_completed_turn(&mut events, "req_second", "Second prompt");
+    push_completed_turn(&mut events, "req_third", "Third prompt");
+    push_completed_turn(&mut events, "req_fourth", "Fourth prompt");
+    push_completed_turn(&mut events, "req_fifth", "Fifth prompt");
+    events
+}
+
+fn fork_source_events_with_lingering_native_edit_state() -> Vec<EventEnvelopeV1> {
+    let mut events = vec![
+        envelope(
+            1,
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "fork source".to_string(),
+                workspace_root: "/workspace".to_string(),
+            }),
+        ),
+        envelope(
+            2,
+            EventV1::AgentSpawned(AgentSpawnedEvent {
+                agent_id: "agent_1".to_string(),
+                parent_agent_id: None,
+                profile: "build".to_string(),
+            }),
+        ),
+    ];
+
+    push_completed_turn(&mut events, "req_first", "First prompt");
+    events.push(envelope(
+        events.len() as u64 + 1,
+        EventV1::EditProposed(EditProposedEvent {
+            edit_id: "edit-tool_1".to_string(),
+            path: "demo.txt".to_string(),
+            summary: "rewrite file through native edit tool".to_string(),
+            patch_digest: "digest-native-edit".to_string(),
+        }),
+    ));
+    push_completed_turn(&mut events, "req_second", "Second prompt");
+    push_completed_turn(&mut events, "req_third", "Third prompt");
+    push_completed_turn(&mut events, "req_fourth", "Fourth prompt");
+    push_completed_turn(&mut events, "req_fifth", "Fifth prompt");
+    events
+}
+
+fn push_completed_turn(events: &mut Vec<EventEnvelopeV1>, request_id: &str, text: &str) {
+    let next_seq = events.len() as u64 + 1;
+    events.extend([
+        envelope(
+            next_seq,
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: request_id.to_string(),
+                text: text.to_string(),
+            }),
+        ),
+        envelope(
+            next_seq + 1,
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: request_id.to_string(),
+                provider_id: "mock".to_string(),
+                model_id: "model-1".to_string(),
+                prompt_summary: text.to_string(),
+                request_digest: format!("digest-{request_id}"),
+                metadata: None,
+            }),
+        ),
+        envelope(
+            next_seq + 2,
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: request_id.to_string(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some(format!("digest-{request_id}-output")),
+                usage: None,
+                metadata: None,
+            }),
+        ),
+    ]);
+}
+
+fn resequence_events(events: &mut [EventEnvelopeV1]) {
+    for (index, event) in events.iter_mut().enumerate() {
+        let seq = index as u64 + 1;
+        event.seq = seq;
+        event.event_id = format!("evt_lineage_tui_{seq:04}");
+        event.mono_ms = seq;
+        event.ts = Some(format!("2026-05-03T00:{:02}:00Z", seq.min(59)));
+    }
 }
 
 #[test]
@@ -165,7 +367,7 @@ fn lineage_tree_navigation_filters_and_folds() {
 }
 
 #[test]
-fn fork_selector_excludes_unstable_cutoffs() {
+fn fork_selector_lists_user_messages_like_reference_selector() {
     let mut app = AppState::new_live(Some(PathBuf::from("/runs/source")), false, None);
     for event in fork_source_events() {
         app.ingest_event(event);
@@ -177,32 +379,105 @@ fn fork_selector_excludes_unstable_cutoffs() {
         initial
             .rows
             .iter()
-            .map(|row| row.cutoff_seq)
+            .map(|row| (row.cutoff_seq, row.prompt_text.as_str()))
             .collect::<Vec<_>>(),
-        vec![4]
+        vec![
+            (11, "Full session"),
+            (10, "Second prompt"),
+            (5, "Unstable prompt"),
+            (2, "First prompt"),
+        ]
     );
-    assert_eq!(initial.selected_cutoff_seq, Some(4));
+    assert_eq!(initial.selected_cutoff_seq, Some(11));
 
-    for ch in "0003".chars() {
+    for ch in "unstable".chars() {
         app.handle_key(key(KeyCode::Char(ch)));
     }
-    assert!(app.fork_selector_view_model().rows.is_empty());
+    assert_eq!(
+        app.fork_selector_view_model()
+            .rows
+            .iter()
+            .map(|row| (row.cutoff_seq, row.prompt_text.as_str()))
+            .collect::<Vec<_>>(),
+        vec![(5, "Unstable prompt")]
+    );
     app.handle_key(key(KeyCode::Enter));
-    assert!(app.confirmed_fork_prefix().is_none());
-    assert!(app.fork_selector_visible);
 
-    for _ in 0..4 {
+    let confirmed = app
+        .confirmed_fork_prefix()
+        .expect("reference-style selected user message confirmed");
+    assert_eq!(confirmed.cutoff_seq, 5);
+    assert_eq!(confirmed.event_count, 5);
+    assert!(!app.fork_selector_visible);
+
+    app.open_fork_selector();
+
+    for _ in 0..8 {
         app.handle_key(key(KeyCode::Backspace));
     }
-    app.handle_key(key(KeyCode::Char('4')));
+    for ch in "second".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
     app.handle_key(key(KeyCode::Enter));
 
     let confirmed = app
         .confirmed_fork_prefix()
         .expect("stable cutoff confirmed");
-    assert_eq!(confirmed.cutoff_seq, 4);
-    assert_eq!(confirmed.event_count, 4);
+    assert_eq!(confirmed.cutoff_seq, 10);
+    assert_eq!(confirmed.event_count, 10);
     assert!(!app.fork_selector_visible);
+}
+
+#[test]
+fn fork_selector_keeps_later_messages_after_completed_native_edit() {
+    let mut app = AppState::new_live(Some(PathBuf::from("/runs/source")), false, None);
+    for event in fork_source_events_with_completed_native_edit() {
+        app.ingest_event(event);
+    }
+
+    app.open_fork_selector();
+    let rows = app.fork_selector_view_model().rows;
+
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.prompt_text.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "Full session",
+            "Fifth prompt",
+            "Fourth prompt",
+            "Third prompt",
+            "Second prompt",
+            "First prompt",
+        ]
+    );
+    assert_eq!(rows.iter().filter(|row| row.event_id.is_some()).count(), 5);
+}
+
+#[test]
+fn fork_selector_keeps_later_messages_after_lingering_native_edit_state() {
+    let mut app = AppState::new_live(Some(PathBuf::from("/runs/source")), false, None);
+    for event in fork_source_events_with_lingering_native_edit_state() {
+        app.ingest_event(event);
+    }
+
+    app.open_fork_selector();
+    let rows = app.fork_selector_view_model().rows;
+
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.prompt_text.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "Full session",
+            "Fifth prompt",
+            "Fourth prompt",
+            "Third prompt",
+            "Second prompt",
+            "First prompt",
+        ]
+    );
+    assert_eq!(rows.iter().filter(|row| row.event_id.is_some()).count(), 5);
 }
 
 #[test]
