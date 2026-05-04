@@ -4726,7 +4726,6 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
         pending_permissions: std::collections::BTreeMap::new(),
         active_permission_grants: crate::perm::PermissionGrantSet::default(),
         cancelled_running_tasks: std::collections::BTreeSet::new(),
-        pending_agent_turn_messages: std::collections::BTreeMap::new(),
         queued_agent_turns: std::collections::BTreeMap::new(),
         running_agent_turns: std::collections::BTreeMap::new(),
         failed_terminal_compaction_attempts: std::collections::BTreeSet::new(),

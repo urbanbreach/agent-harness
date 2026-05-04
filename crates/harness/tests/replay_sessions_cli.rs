@@ -1284,6 +1284,153 @@ fn sessions_help_lists_lifecycle_subcommands() {
 }
 
 #[test]
+fn sessions_lineage_help_is_harness_branded() {
+    let forbidden_terms = forbidden_brand_terms();
+    let sessions_help = run_harness_help(&["sessions", "--help"]);
+    assert_harness_branded("harness sessions --help", &sessions_help, &forbidden_terms);
+
+    for command in ["tree", "fork", "clone"] {
+        if sessions_help.contains(command) {
+            let help = run_harness_help(&["sessions", command, "--help"]);
+            assert_harness_branded(
+                &format!("harness sessions {command} --help"),
+                &help,
+                &forbidden_terms,
+            );
+        }
+    }
+
+    let repo_root = workspace_root();
+    let scan_output = Command::new("python3")
+        .arg(repo_root.join("scripts/check-forbidden-branding.py"))
+        .output()
+        .expect("run forbidden-brand scan");
+    assert!(
+        scan_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&scan_output.stdout),
+        String::from_utf8_lossy(&scan_output.stderr)
+    );
+
+    let fixture = tempdir().expect("tempdir");
+    std::fs::write(
+        fixture.path().join("README.md"),
+        forbidden_terms[1].as_bytes(),
+    )
+    .expect("write injected forbidden term");
+    std::fs::create_dir_all(fixture.path().join(".sisyphus")).expect("create allowed dir");
+    std::fs::write(
+        fixture.path().join(".sisyphus/notes.md"),
+        forbidden_terms[0].as_bytes(),
+    )
+    .expect("write allowed-path forbidden term");
+    let injected_output = Command::new("python3")
+        .arg(repo_root.join("scripts/check-forbidden-branding.py"))
+        .arg("--root")
+        .arg(fixture.path())
+        .output()
+        .expect("run forbidden-brand scan against injected fixture");
+    assert!(
+        !injected_output.status.success(),
+        "injected forbidden term should fail scan"
+    );
+
+    let git_fixture = tempdir().expect("tempdir");
+    let init_output = Command::new("git")
+        .arg("init")
+        .arg(git_fixture.path())
+        .output()
+        .expect("initialize temporary git checkout");
+    assert!(
+        init_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&init_output.stdout),
+        String::from_utf8_lossy(&init_output.stderr)
+    );
+    std::fs::write(git_fixture.path().join("tracked.txt"), b"Harness only")
+        .expect("write tracked safe file");
+    let add_output = Command::new("git")
+        .arg("-C")
+        .arg(git_fixture.path())
+        .args(["add", "tracked.txt"])
+        .output()
+        .expect("stage safe file");
+    assert!(
+        add_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&add_output.stdout),
+        String::from_utf8_lossy(&add_output.stderr)
+    );
+    std::fs::write(
+        git_fixture.path().join("untracked-note.txt"),
+        forbidden_terms[2].as_bytes(),
+    )
+    .expect("write untracked forbidden term");
+    let untracked_output = Command::new("python3")
+        .arg(repo_root.join("scripts/check-forbidden-branding.py"))
+        .arg("--root")
+        .arg(git_fixture.path())
+        .output()
+        .expect("run forbidden-brand scan against git fixture");
+    assert!(
+        !untracked_output.status.success(),
+        "untracked forbidden term in git checkout should fail scan"
+    );
+}
+
+fn forbidden_brand_terms() -> Vec<String> {
+    let source_prefix = ["p", "i"].concat();
+    vec![
+        ["open", "code"].concat(),
+        ["open", "code"].join(" "),
+        format!("{source_prefix}-mono"),
+        format!("{source_prefix} mono"),
+        source_prefix,
+    ]
+}
+
+fn run_harness_help(args: &[&str]) -> String {
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args(args)
+        .output()
+        .expect("run harness help");
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).expect("help is utf-8")
+}
+
+fn assert_harness_branded(context: &str, text: &str, forbidden_terms: &[String]) {
+    let lower = text.to_lowercase();
+    let source_prefix = ["p", "i"].concat();
+    for term in forbidden_terms {
+        let found = if term == &source_prefix {
+            lower
+                .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+                .any(|token| token == term)
+        } else {
+            lower.contains(term)
+        };
+        assert!(!found, "{context} contains forbidden source-brand term");
+    }
+    assert!(
+        lower.contains("harness"),
+        "{context} should use harness branding"
+    );
+}
+
+fn workspace_root() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("workspace root")
+        .parent()
+        .expect("repo root")
+        .to_path_buf()
+}
+
+#[test]
 fn sessions_list_cli_prints_json_entries() {
     let session_dir = tempdir().expect("tempdir");
     let run_dir = session_dir.path().join("run_json");
@@ -2351,6 +2498,273 @@ fn sessions_fork_clone_child_replays() {
 }
 
 #[test]
+fn sessions_fork_clone_reject_active_or_writer_locked_source() {
+    let session_dir = tempdir().expect("tempdir");
+    let active_dir = session_dir.path().join("active_source");
+    std::fs::create_dir_all(&active_dir).expect("create active source dir");
+    write_events_jsonl(
+        &active_dir,
+        &[envelope(
+            "run_active_lineage_source",
+            1,
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "interactive".to_string(),
+                workspace_root: "/tmp/workspace".to_string(),
+            }),
+        )],
+    );
+
+    let clone_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "clone",
+            "--source",
+            "run_active_lineage_source",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions clone active source");
+    assert!(!clone_output.status.success());
+    let clone_stderr = String::from_utf8_lossy(&clone_output.stderr);
+    assert!(clone_stderr.contains("Harness session clone failed"));
+    assert!(clone_stderr.contains("no stable completed prefix"));
+
+    let fork_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "fork",
+            "--source",
+            "run_active_lineage_source",
+            "--cutoff",
+            "1",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions fork active source");
+    assert!(!fork_output.status.success());
+    let fork_stderr = String::from_utf8_lossy(&fork_output.stderr);
+    assert!(fork_stderr.contains("Harness session fork failed"));
+    assert!(fork_stderr.contains("run is still active"));
+
+    let locked_dir = session_dir.path().join("locked_source");
+    std::fs::create_dir_all(&locked_dir).expect("create locked source dir");
+    write_events_jsonl(
+        &locked_dir,
+        &resumable_finished_events("run_locked_lineage_source"),
+    );
+    std::fs::write(locked_dir.join(".writer.lock"), "locked").expect("write writer lock");
+
+    let locked_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "fork",
+            "--source",
+            "run_locked_lineage_source",
+            "--cutoff",
+            "5",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions fork locked source");
+    assert!(!locked_output.status.success());
+    let locked_stderr = String::from_utf8_lossy(&locked_output.stderr);
+    assert!(locked_stderr.contains("Harness session fork failed"));
+    assert!(locked_stderr.contains("actively writer-locked"));
+
+    let entries = std::fs::read_dir(session_dir.path())
+        .expect("read session dir")
+        .map(|entry| entry.expect("dir entry").file_name())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        entries.len(),
+        2,
+        "no child run should be published on rejection"
+    );
+}
+
+#[test]
+fn sessions_child_replay_and_continue_readiness_survive_parent_movement() {
+    let session_dir = tempdir().expect("tempdir");
+    let source_dir = session_dir.path().join("movable_source");
+    std::fs::create_dir_all(&source_dir).expect("create source run dir");
+    write_events_jsonl(
+        &source_dir,
+        &resumable_finished_events("run_movable_parent"),
+    );
+
+    let fork_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "fork",
+            "--source",
+            "run_movable_parent",
+            "--cutoff",
+            "5",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions fork json");
+    assert!(
+        fork_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&fork_output.stderr)
+    );
+    let forked: serde_json::Value =
+        serde_json::from_slice(&fork_output.stdout).expect("fork json should parse");
+    let child_run_id = forked["child_run_id"].as_str().expect("child run id");
+
+    let moved_parent_dir = tempdir().expect("moved parent tempdir");
+    let moved_parent = moved_parent_dir.path().join("moved_parent");
+    std::fs::rename(&source_dir, &moved_parent).expect("move parent outside session catalog");
+
+    let replay_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "replay",
+            child_run_id,
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions replay moved-parent child");
+    assert!(
+        replay_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&replay_output.stderr)
+    );
+    let replay: serde_json::Value =
+        serde_json::from_slice(&replay_output.stdout).expect("replay json should parse");
+    assert_eq!(replay["run_id"], child_run_id);
+    assert_eq!(replay["is_resumable"], true);
+
+    let reopen_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "reopen",
+            "--session",
+            child_run_id,
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions reopen moved-parent child");
+    assert!(
+        reopen_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&reopen_output.stderr)
+    );
+    let recovery: serde_json::Value =
+        serde_json::from_slice(&reopen_output.stdout).expect("reopen json should parse");
+    assert_eq!(recovery["run_id"], child_run_id);
+    assert_eq!(recovery["resumable"], true);
+    assert!(recovery["continue_hint"]
+        .as_str()
+        .expect("continue hint")
+        .contains(child_run_id));
+
+    std::fs::remove_dir_all(&moved_parent).expect("delete moved parent");
+    let tree_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "tree",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions tree after parent deletion");
+    assert!(
+        tree_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&tree_output.stderr)
+    );
+    let tree: serde_json::Value =
+        serde_json::from_slice(&tree_output.stdout).expect("tree json should parse");
+    assert_eq!(tree["session_count"], 1);
+    assert_eq!(tree["harness_lineage"][0]["run_id"], child_run_id);
+    assert_eq!(tree["harness_lineage"][0]["depth"], 0);
+}
+
+#[test]
+fn sessions_tree_renders_deep_lineage_deterministically() {
+    let session_dir = tempdir().expect("tempdir");
+    let chain = [
+        ("run_deep_root", None),
+        ("run_deep_child", Some("run_deep_root")),
+        ("run_deep_grandchild", Some("run_deep_child")),
+        ("run_deep_great_grandchild", Some("run_deep_grandchild")),
+        ("run_deep_leaf", Some("run_deep_great_grandchild")),
+    ];
+    for (run_id, parent) in chain {
+        let run_dir = session_dir.path().join(run_id);
+        std::fs::create_dir_all(&run_dir).expect("create run dir");
+        write_events_jsonl(&run_dir, &resumable_finished_events(run_id));
+        if let Some(parent) = parent {
+            write_harness_lineage_meta(&run_dir, run_id, parent);
+        }
+    }
+
+    let json_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "tree",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions tree deep json");
+    assert!(
+        json_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&json_output.stderr)
+    );
+    let tree: serde_json::Value =
+        serde_json::from_slice(&json_output.stdout).expect("tree json should parse");
+    let rows = tree["harness_lineage"].as_array().expect("tree rows");
+    assert_eq!(rows.len(), 5);
+    assert_eq!(rows[0]["run_id"], "run_deep_root");
+    assert_eq!(rows[1]["run_id"], "run_deep_child");
+    assert_eq!(rows[2]["run_id"], "run_deep_grandchild");
+    assert_eq!(rows[3]["run_id"], "run_deep_great_grandchild");
+    assert_eq!(rows[4]["run_id"], "run_deep_leaf");
+    assert_eq!(
+        rows.iter()
+            .map(|row| row["depth"].as_u64().expect("depth"))
+            .collect::<Vec<_>>(),
+        vec![0, 1, 2, 3, 4]
+    );
+
+    let human_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "tree",
+        ])
+        .output()
+        .expect("run harness sessions tree deep human");
+    assert!(
+        human_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&human_output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&human_output.stdout);
+    assert!(stdout.contains("Harness session lineage"));
+    assert!(stdout.contains("        - run_deep_leaf status=finished"));
+}
+
+#[test]
 fn sessions_fork_rejects_invalid_cutoff() {
     let session_dir = tempdir().expect("tempdir");
     let source_dir = session_dir.path().join("unstable_source");
@@ -2405,6 +2819,93 @@ fn sessions_fork_rejects_invalid_cutoff() {
     assert!(stderr.contains("Harness session fork failed"));
     assert!(stderr.contains("prefix ending at seq 2 is unstable"));
     assert!(stderr.contains("tasks are still in flight: task_in_flight"));
+}
+
+#[test]
+fn sessions_fork_clone_reject_invalid_source_selector() {
+    let session_dir = tempdir().expect("tempdir");
+
+    let fork_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "fork",
+            "--source",
+            "missing_lineage_source",
+            "--cutoff",
+            "1",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions fork invalid source");
+    assert!(!fork_output.status.success());
+    let fork_stderr = String::from_utf8_lossy(&fork_output.stderr);
+    assert!(fork_stderr.contains("Harness session fork failed"));
+    assert!(fork_stderr.contains("no saved session matched `missing_lineage_source`"));
+
+    let clone_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "clone",
+            "--source",
+            "missing_lineage_source",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions clone invalid source");
+    assert!(!clone_output.status.success());
+    let clone_stderr = String::from_utf8_lossy(&clone_output.stderr);
+    assert!(clone_stderr.contains("Harness session clone failed"));
+    assert!(clone_stderr.contains("no saved session matched `missing_lineage_source`"));
+}
+
+#[test]
+fn sessions_fork_clone_reject_ambiguous_source_selector() {
+    let session_dir = tempdir().expect("tempdir");
+    for run_dir_name in ["ambiguous_source_a", "ambiguous_source_b"] {
+        let run_dir = session_dir.path().join(run_dir_name);
+        std::fs::create_dir_all(&run_dir).expect("create source run dir");
+        write_events_jsonl(&run_dir, &resumable_finished_events("run_ambiguous_source"));
+    }
+
+    let fork_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "fork",
+            "--source",
+            "run_ambiguous_source",
+            "--cutoff",
+            "5",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions fork ambiguous source");
+    assert!(!fork_output.status.success());
+    let fork_stderr = String::from_utf8_lossy(&fork_output.stderr);
+    assert!(fork_stderr.contains("Harness session fork failed"));
+    assert!(fork_stderr.contains("multiple saved sessions matched `run_ambiguous_source`"));
+
+    let clone_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "clone",
+            "--source",
+            "run_ambiguous_source",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions clone ambiguous source");
+    assert!(!clone_output.status.success());
+    let clone_stderr = String::from_utf8_lossy(&clone_output.stderr);
+    assert!(clone_stderr.contains("Harness session clone failed"));
+    assert!(clone_stderr.contains("multiple saved sessions matched `run_ambiguous_source`"));
 }
 
 #[test]

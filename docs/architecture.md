@@ -294,9 +294,8 @@ tools on the production coordinator path. The turn loop runs through explicit ph
    calls.
 6. **Tool-result projection** - completed tool results are appended to the next provider request as
    tool-role messages in assistant source order.
-7. **Steering/follow-up and turn end** - queued same-agent steering is drained only at safe provider
-   barriers; otherwise pending messages become follow-up turns after the current turn reaches a
-   terminal task lifecycle event.
+7. **Turn end** - the agent turn reaches a terminal task lifecycle event, freeing scheduler slots
+   for any separately queued turns.
 
 JSONL lifecycle events remain chronological append-time records. A parallel tool batch can therefore
 emit `ToolCallFinished` events in completion order while the next provider request receives the

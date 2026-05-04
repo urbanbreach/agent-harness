@@ -1786,6 +1786,127 @@ mod tests {
         );
     }
 
+    #[test]
+    fn session_lineage_rejects_source_event_log_changed_while_materializing() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let source_run_dir = temp_dir.path().join("run_session_lineage");
+        fs::create_dir_all(&source_run_dir).expect("create source run dir");
+        let events = finished_events();
+        write_events_jsonl(&source_run_dir, &events);
+        let prefix = validate_fork_stable_prefix(&events, events.len() as u64)
+            .expect("source prefix is stable");
+
+        let mut changed_events = events.clone();
+        changed_events.push(envelope(
+            3,
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "changed".to_string(),
+                workspace_root: "/workspace".to_string(),
+            }),
+        ));
+
+        let err = materialize_child_session_inner(
+            ChildSessionMaterializationRequest {
+                source_run_dir: &source_run_dir,
+                events: &events,
+                stable_prefix: &prefix,
+                source_kind: ChildSessionMaterializationSourceKind::DiskRunDirectory,
+            },
+            None,
+            || write_events_jsonl(&source_run_dir, &changed_events),
+            |from, to| fs::rename(from, to),
+        )
+        .expect_err("changed source event log must reject before publish");
+
+        assert!(matches!(
+            err,
+            ChildSessionMaterializationError::SourceEventLogChanged { .. }
+        ));
+        assert_eq!(
+            session_dir_entries(temp_dir.path()),
+            vec!["run_session_lineage"]
+        );
+        assert_no_unpublished_temp_dirs(temp_dir.path());
+    }
+
+    #[test]
+    fn session_lineage_destination_collision_cleans_temp_without_overwriting_existing_run() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let source_run_dir = temp_dir.path().join("run_session_lineage");
+        fs::create_dir_all(&source_run_dir).expect("create source run dir");
+        let events = finished_events();
+        write_events_jsonl(&source_run_dir, &events);
+        let prefix = validate_fork_stable_prefix(&events, events.len() as u64)
+            .expect("source prefix is stable");
+        let (child_run_id, child_run_dir, temp_run_dir) = planned_child_paths(temp_dir.path());
+        fs::create_dir_all(&child_run_dir).expect("create colliding child dir");
+        fs::write(child_run_dir.join("existing.txt"), "existing child")
+            .expect("write existing child marker");
+
+        let err = materialize_child_session_inner(
+            ChildSessionMaterializationRequest {
+                source_run_dir: &source_run_dir,
+                events: &events,
+                stable_prefix: &prefix,
+                source_kind: ChildSessionMaterializationSourceKind::DiskRunDirectory,
+            },
+            Some((
+                child_run_id.clone(),
+                child_run_dir.clone(),
+                temp_run_dir.clone(),
+            )),
+            || {},
+            |from, to| fs::rename(from, to),
+        )
+        .expect_err("colliding child directory must reject publish");
+
+        assert!(matches!(
+            err,
+            ChildSessionMaterializationError::PublishRunDirectory { .. }
+        ));
+        assert!(child_run_dir.join("existing.txt").exists());
+        assert!(!child_run_dir.join("events.jsonl").exists());
+        assert!(!temp_run_dir.exists());
+        assert_no_unpublished_temp_dirs(temp_dir.path());
+    }
+
+    #[test]
+    fn session_lineage_cross_device_publish_error_cleans_temp_without_fallback() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let source_run_dir = temp_dir.path().join("run_session_lineage");
+        fs::create_dir_all(&source_run_dir).expect("create source run dir");
+        let events = finished_events();
+        write_events_jsonl(&source_run_dir, &events);
+        let prefix = validate_fork_stable_prefix(&events, events.len() as u64)
+            .expect("source prefix is stable");
+        let (child_run_id, child_run_dir, temp_run_dir) = planned_child_paths(temp_dir.path());
+
+        let err = materialize_child_session_inner(
+            ChildSessionMaterializationRequest {
+                source_run_dir: &source_run_dir,
+                events: &events,
+                stable_prefix: &prefix,
+                source_kind: ChildSessionMaterializationSourceKind::DiskRunDirectory,
+            },
+            Some((
+                child_run_id.clone(),
+                child_run_dir.clone(),
+                temp_run_dir.clone(),
+            )),
+            || {},
+            |_, _| Err(std::io::Error::from_raw_os_error(18)),
+        )
+        .expect_err("cross-device rename error must not fall back to a non-atomic copy");
+
+        assert!(matches!(
+            err,
+            ChildSessionMaterializationError::PublishRunDirectory { .. }
+        ));
+        assert!(!child_run_dir.exists());
+        assert!(!temp_run_dir.exists());
+        assert_no_unpublished_temp_dirs(temp_dir.path());
+    }
+
     fn envelope(seq: u64, payload: EventV1) -> EventEnvelopeV1 {
         EventEnvelopeV1 {
             schema_version: SCHEMA_VERSION,

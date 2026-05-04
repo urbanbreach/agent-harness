@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -345,11 +345,6 @@ pub enum Command {
     },
     AllocateProviderRequestId {
         respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
-    },
-    DrainAgentTurnSteering {
-        task_id: String,
-        agent_id: String,
-        respond_to: oneshot::Sender<Result<Vec<String>, CoordinatorError>>,
     },
     CompactAgentContext {
         task_id: String,
@@ -1169,14 +1164,6 @@ impl Coordinator {
                 let result = self.allocate_provider_request_id_internal();
                 warn_oneshot_send_failure(respond_to.send(result), "allocate_provider_request_id");
             }
-            Command::DrainAgentTurnSteering {
-                task_id,
-                agent_id,
-                respond_to,
-            } => {
-                let result = self.drain_agent_turn_steering_internal(task_id, agent_id);
-                warn_oneshot_send_failure(respond_to.send(result), "drain_agent_turn_steering");
-            }
             Command::CompactAgentContext {
                 task_id,
                 agent_id,
@@ -1298,7 +1285,6 @@ impl Coordinator {
             pending_permissions: BTreeMap::new(),
             active_permission_grants: PermissionGrantSet::default(),
             cancelled_running_tasks: BTreeSet::new(),
-            pending_agent_turn_messages: BTreeMap::new(),
             queued_agent_turns: BTreeMap::new(),
             running_agent_turns: BTreeMap::new(),
             failed_terminal_compaction_attempts: BTreeSet::new(),
@@ -1514,7 +1500,6 @@ impl Coordinator {
             pending_permissions: BTreeMap::new(),
             active_permission_grants: resume_plan.active_permission_grants,
             cancelled_running_tasks: BTreeSet::new(),
-            pending_agent_turn_messages: BTreeMap::new(),
             queued_agent_turns: BTreeMap::new(),
             running_agent_turns: BTreeMap::new(),
             failed_terminal_compaction_attempts: BTreeSet::new(),
@@ -1837,19 +1822,6 @@ impl Coordinator {
             }),
         )?;
 
-        if has_running_agent_turn(run_state, &request.agent_id) {
-            run_state
-                .pending_agent_turn_messages
-                .entry(request.agent_id.clone())
-                .or_default()
-                .push_back(PendingAgentTurnMessage {
-                    profile,
-                    request,
-                    request_id: request_id.clone(),
-                });
-            return Ok(request_id);
-        }
-
         schedule_agent_turn(
             self.clock.as_ref(),
             self.redactor.as_ref(),
@@ -1876,41 +1848,6 @@ impl Coordinator {
             .as_mut()
             .ok_or(CoordinatorError::RunNotStarted)?;
         Ok(allocate_provider_request_id(run_state))
-    }
-
-    fn drain_agent_turn_steering_internal(
-        &mut self,
-        task_id: String,
-        agent_id: String,
-    ) -> Result<Vec<String>, CoordinatorError> {
-        let Some(run_state) = self.run_state.as_mut() else {
-            return Ok(Vec::new());
-        };
-
-        if run_state.cancelled_running_tasks.contains(&task_id) {
-            return Ok(Vec::new());
-        }
-
-        let Some(running) = run_state.running_agent_turns.get(&task_id) else {
-            return Ok(Vec::new());
-        };
-        if running.agent_id != agent_id {
-            return Ok(Vec::new());
-        }
-
-        let Some(pending) = run_state.pending_agent_turn_messages.remove(&agent_id) else {
-            return Ok(Vec::new());
-        };
-        let prompts = pending
-            .into_iter()
-            .map(|message| message.request.prompt)
-            .collect::<Vec<_>>();
-
-        if let Some(running) = run_state.running_agent_turns.get_mut(&task_id) {
-            running.injected_prompts.extend(prompts.iter().cloned());
-        }
-
-        Ok(prompts)
     }
 
     async fn request_tool_call_internal(
@@ -2905,9 +2842,6 @@ impl Coordinator {
         if let Some(running) = run_state.running_agent_turns.get(&task_id).cloned() {
             running.cancellation_token.cancel();
             run_state.cancelled_running_tasks.insert(task_id.clone());
-            run_state
-                .pending_agent_turn_messages
-                .remove(&running.agent_id);
             if let Some(memory) = cancelled_failure_memory_from_running(&running, &reason) {
                 push_incomplete_provider_turn(run_state, &running, &running.request_id, memory);
             }
@@ -4014,7 +3948,7 @@ impl Coordinator {
         request_id: String,
         outcome: AgentTurnTaskOutcome,
     ) -> Result<(), CoordinatorError> {
-        let (dequeued, pending_follow_ups, terminal_compaction) = {
+        let (dequeued, terminal_compaction) = {
             let Some(run_state) = self.run_state.as_mut() else {
                 return Ok(());
             };
@@ -4025,17 +3959,6 @@ impl Coordinator {
 
             let was_cancelled = run_state.cancelled_running_tasks.remove(&task_id);
             let dequeued = run_state.scheduler.complete(&running.queue_key);
-            let pending_follow_ups = if was_cancelled {
-                run_state
-                    .pending_agent_turn_messages
-                    .remove(&running.agent_id);
-                VecDeque::new()
-            } else {
-                run_state
-                    .pending_agent_turn_messages
-                    .remove(&running.agent_id)
-                    .unwrap_or_default()
-            };
             let finished_mono_ms = self.clock.mono_ms();
             let subagent_parent_id = run_state
                 .subagent_parent_by_id
@@ -4176,7 +4099,7 @@ impl Coordinator {
                                 .entry(running.agent_id.clone())
                                 .or_default()
                                 .push_turn(ProviderConversationTurn {
-                                    user_prompt: provider_turn_user_prompt(&running),
+                                    user_prompt: running.request_prompt.clone(),
                                     assistant_response: output.clone(),
                                     request_id: Some(request_id.clone()),
                                     first_seq: None,
@@ -4330,7 +4253,7 @@ impl Coordinator {
                 }
             }
 
-            (dequeued, pending_follow_ups, terminal_compaction)
+            (dequeued, terminal_compaction)
         };
 
         if let Some(request) = terminal_compaction {
@@ -4374,25 +4297,6 @@ impl Coordinator {
             }
         }
 
-        for pending in pending_follow_ups {
-            schedule_agent_turn(
-                self.clock.as_ref(),
-                self.redactor.as_ref(),
-                self.job_tx.clone(),
-                run_state,
-                self.config.hook_runtime_config.clone(),
-                self.config.compaction.clone(),
-                ScheduleAgentTurnArgs {
-                    provider: self.config.provider.clone(),
-                    tool_registry: self.config.tool_registry.clone(),
-                    profile: pending.profile,
-                    request: pending.request,
-                    request_id: pending.request_id,
-                },
-            )
-            .await?;
-        }
-
         Ok(())
     }
 }
@@ -4415,7 +4319,6 @@ struct RunState {
     pending_permissions: BTreeMap<String, PendingPermissionState>,
     active_permission_grants: PermissionGrantSet,
     cancelled_running_tasks: BTreeSet<String>,
-    pending_agent_turn_messages: BTreeMap<String, VecDeque<PendingAgentTurnMessage>>,
     queued_agent_turns: BTreeMap<String, QueuedAgentTurn>,
     running_agent_turns: BTreeMap<String, RunningAgentTurn>,
     failed_terminal_compaction_attempts: BTreeSet<(String, String)>,
@@ -4437,13 +4340,6 @@ struct QueuedAgentTurn {
 }
 
 #[derive(Debug, Clone)]
-struct PendingAgentTurnMessage {
-    profile: AgentProfile,
-    request: AgentRequest,
-    request_id: String,
-}
-
-#[derive(Debug, Clone)]
 struct RunningAgentTurn {
     agent_id: String,
     request_id: String,
@@ -4455,21 +4351,11 @@ struct RunningAgentTurn {
     cancellation_token: CancellationToken,
     started_mono_ms: u64,
     hook_executions: Vec<HookExecutionMetadata>,
-    injected_prompts: Vec<String>,
     latest_provider_usage: Option<harness_providers::CompletionUsage>,
     latest_provider_request_id: Option<String>,
     latest_assistant_output: Option<String>,
     latest_provider_id: Option<String>,
     latest_model_id: Option<String>,
-}
-
-fn provider_turn_user_prompt(running: &RunningAgentTurn) -> String {
-    let mut user_prompt = running.request_prompt.clone();
-    for prompt in &running.injected_prompts {
-        user_prompt.push_str("\n\n");
-        user_prompt.push_str(prompt);
-    }
-    user_prompt
 }
 
 fn cancelled_failure_memory_from_running(
@@ -4507,7 +4393,7 @@ fn push_incomplete_provider_turn(
     }
 
     context.push_turn(ProviderConversationTurn {
-        user_prompt: provider_turn_user_prompt(running),
+        user_prompt: running.request_prompt.clone(),
         assistant_response: memory.partial_assistant_output,
         status: memory.status,
         failure_stage: Some(memory.failure_stage),
@@ -5637,13 +5523,6 @@ fn recompute_provider_context_for_agent(run_state: &RunState, agent_id: &str) ->
         .unwrap_or_default()
 }
 
-fn has_running_agent_turn(run_state: &RunState, agent_id: &str) -> bool {
-    run_state
-        .running_agent_turns
-        .values()
-        .any(|turn| turn.agent_id == agent_id)
-}
-
 fn provider_request_started_metadata(
     metadata: Option<ProviderRequestStartedMetadata>,
     turn_request_id: &str,
@@ -5730,7 +5609,6 @@ where
             cancellation_token: cancellation_token.clone(),
             started_mono_ms: clock.mono_ms(),
             hook_executions,
-            injected_prompts: Vec::new(),
             latest_provider_usage: None,
             latest_provider_request_id: None,
             latest_assistant_output: None,
@@ -6020,17 +5898,6 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
     let current_turn_start_index = turn_state.messages.len().saturating_sub(1);
 
     for _phase_iter in 1..=task.profile.max_iters {
-        if let Err(reason) = drain_steering_messages_phase(
-            &job_tx,
-            &task.task_id,
-            &task.agent_id,
-            &mut turn_state.messages,
-        )
-        .await
-        {
-            return AgentTurnOutcome::failed(reason);
-        }
-
         if cancellation_token.is_cancelled() {
             return AgentTurnOutcome::failed_with_memory(
                 "job cancelled",
@@ -6155,40 +6022,6 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
         "agent turn exceeded profile max_iters={}",
         task.profile.max_iters
     ))
-}
-
-async fn drain_steering_messages_phase(
-    job_tx: &mpsc::Sender<Command>,
-    task_id: &str,
-    agent_id: &str,
-    messages: &mut Vec<CompletionMessage>,
-) -> Result<(), String> {
-    let (respond_to, response_rx) = oneshot::channel();
-    job_tx
-        .send(Command::DrainAgentTurnSteering {
-            task_id: task_id.to_string(),
-            agent_id: agent_id.to_string(),
-            respond_to,
-        })
-        .await
-        .map_err(|_| "steering drain channel closed".to_string())?;
-
-    let prompts = response_rx
-        .await
-        .map_err(|_| "steering drain response channel closed".to_string())?
-        .map_err(|err| err.to_string())?;
-
-    for prompt in prompts {
-        messages.push(CompletionMessage {
-            role: MessageRole::User,
-            content: prompt,
-            name: None,
-            tool_call_id: None,
-            assistant_tool_calls: None,
-        });
-    }
-
-    Ok(())
 }
 
 fn normalize_provider_phase_error(reason: String) -> String {
@@ -10835,13 +10668,6 @@ fn restore_historical_user_prompt(
     Ok(prompt_summary.to_string())
 }
 
-fn agent_id_from_agent_stream_key(stream_key: Option<&str>) -> Option<&str> {
-    stream_key?
-        .strip_prefix("agent:")
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-}
-
 fn restore_provider_context_from_history(
     session_dir: &Path,
     run_id: &str,
@@ -10968,9 +10794,7 @@ fn restore_provider_context_from_history(
     let mut request_turn_task_ids: BTreeMap<String, String> = BTreeMap::new();
     let mut historical_task_scopes: BTreeMap<String, TaskTerminalScope> = BTreeMap::new();
     let mut request_artifacts: BTreeMap<String, Vec<EventArtifactRef>> = BTreeMap::new();
-    let mut active_turn_by_agent: BTreeMap<String, String> = BTreeMap::new();
     let mut agent_turn_agent_by_task: BTreeMap<String, String> = BTreeMap::new();
-    let mut steering_prompts_by_request: BTreeMap<String, Vec<String>> = BTreeMap::new();
 
     for event in &historical_events {
         let replay_agent_event = should_replay_agent_scoped_event(
@@ -10984,18 +10808,6 @@ fn restore_provider_context_from_history(
                 let request = requests.entry(payload.request_id.clone()).or_default();
                 request.first_seq.get_or_insert(event.seq);
                 request.user_text = Some(payload.text.clone());
-
-                if let Some(agent_id) = agent_id_from_agent_stream_key(event.stream_key.as_deref())
-                {
-                    if let Some(active_request_id) = active_turn_by_agent.get(agent_id) {
-                        if active_request_id != &payload.request_id {
-                            steering_prompts_by_request
-                                .entry(active_request_id.clone())
-                                .or_default()
-                                .push(payload.text.clone());
-                        }
-                    }
-                }
             }
             EventV1::ProviderRequestStarted(payload) => {
                 if !replay_agent_event {
@@ -11034,7 +10846,6 @@ fn restore_provider_context_from_history(
                     .filter(|value| !value.trim().is_empty())
                 {
                     request.agent_id = Some(agent_id.to_string());
-                    active_turn_by_agent.insert(agent_id.to_string(), request_id.to_string());
                 }
             }
             EventV1::ProviderStreamDelta(payload) => {
@@ -11110,8 +10921,6 @@ fn restore_provider_context_from_history(
                             request_turn_task_ids
                                 .insert(request_id.to_string(), payload.task_id.clone());
                             if let Some(agent_id) = event.actor.agent_id.as_deref() {
-                                active_turn_by_agent
-                                    .insert(agent_id.to_string(), request_id.to_string());
                                 agent_turn_agent_by_task
                                     .insert(payload.task_id.clone(), agent_id.to_string());
                             }
@@ -11196,9 +11005,7 @@ fn restore_provider_context_from_history(
                     historical_task_scopes.get(&payload.task_id),
                     Some(TaskTerminalScope::AgentTurn)
                 ) {
-                    if let Some(agent_id) = agent_turn_agent_by_task.remove(&payload.task_id) {
-                        active_turn_by_agent.remove(&agent_id);
-                    }
+                    agent_turn_agent_by_task.remove(&payload.task_id);
                 }
                 if !replay_agent_event {
                     continue;
@@ -11230,8 +11037,6 @@ fn restore_provider_context_from_history(
                         ),
                     });
                 };
-                active_turn_by_agent.remove(&agent_id);
-
                 let request_state = requests.remove(request_id).ok_or_else(|| {
                     CoordinatorError::ResumeRestoreFailed {
                         run_id: run_id.to_string(),
@@ -11241,19 +11046,12 @@ fn restore_provider_context_from_history(
                     }
                 })?;
 
-                let mut user_prompt = restore_historical_user_prompt(
+                let user_prompt = restore_historical_user_prompt(
                     run_id,
                     request_id,
                     request_state.user_text.clone(),
                     request_state.prompt_summary.clone(),
                 )?;
-                for steering_prompt in steering_prompts_by_request
-                    .remove(request_id)
-                    .unwrap_or_default()
-                {
-                    user_prompt.push_str("\n\n");
-                    user_prompt.push_str(&steering_prompt);
-                }
 
                 let assistant_response = if payload.result_summary.is_empty() {
                     request_state.assistant_output.clone()
@@ -11297,9 +11095,6 @@ fn restore_provider_context_from_history(
                 } else {
                     None
                 };
-                if let Some(agent_id) = agent_id_from_task.as_ref() {
-                    active_turn_by_agent.remove(agent_id);
-                }
                 if !replay_agent_event {
                     continue;
                 }
@@ -11334,21 +11129,12 @@ fn restore_provider_context_from_history(
                             "task cancellation for request `{request_id}` missing agent actor"
                         ),
                     })?;
-                active_turn_by_agent.remove(&agent_id);
-
-                let mut user_prompt = restore_historical_user_prompt(
+                let user_prompt = restore_historical_user_prompt(
                     run_id,
                     request_id,
                     request_state.user_text,
                     request_state.prompt_summary,
                 )?;
-                for steering_prompt in steering_prompts_by_request
-                    .remove(request_id)
-                    .unwrap_or_default()
-                {
-                    user_prompt.push_str("\n\n");
-                    user_prompt.push_str(&steering_prompt);
-                }
 
                 let (status, failure_stage) = historical_cancelled_turn_status_stage(
                     request_state.provider_finish_reason.as_deref(),

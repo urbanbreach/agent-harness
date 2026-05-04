@@ -58,10 +58,13 @@ scripts/test-lanes.sh integration
 `integration` carries the protected deterministic checks that are too focused or too slow for
 `fast`: public config drift, event docs drift, coordinator scheduling and replay contracts,
 permission and redelegation guards, native tool parity, and provider-context compaction
-regressions. It remains non-live, non-native-visual, and non-PTY-signoff.
+regressions. Run the forbidden-branding scan with integration-focused changes that add public
+docs, help text, snapshots, or generated artifacts. It remains non-live, non-native-visual, and
+non-PTY-signoff.
 
 Current stage commands:
 
+- `python3 scripts/check-forbidden-branding.py`
 - `cargo test -p harness --test bootstrap_profiles`
 - `cargo test -p harness --test config_docs_reference`
 - `cargo test -p harness --test determinism_multi_turn_tools`

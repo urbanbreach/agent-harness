@@ -1,6 +1,8 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
+use std::thread;
 
 use harness_core::event::{
     ActorKind, ArtifactWrittenEvent, EventActor, EventArtifactRef, EventEnvelopeV1, EventV1,
@@ -192,6 +194,235 @@ fn session_lineage_missing_artifact_rolls_back() {
         .map(|entry| entry.expect("dir entry").file_name())
         .collect::<Vec<_>>();
     assert_eq!(run_dirs, vec![source_run_id]);
+    assert_no_unpublished_temp_dirs(session_dir);
+}
+
+#[test]
+fn session_lineage_concurrent_fork_clone_from_same_source_create_unique_children() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let session_dir = temp_dir.path();
+    let source_run_id = "run_parent_concurrent";
+    let source_run_dir = session_dir.join(source_run_id);
+    fs::create_dir_all(&source_run_dir).expect("create source run dir");
+
+    let artifact_path = "artifacts/toolcalls/toolcall_000001/output.txt";
+    let artifact_body = b"shared concurrent materialization artifact\n".as_slice();
+    write_source_artifact(&source_run_dir, artifact_path, artifact_body);
+    let artifact_digest = blake3::hash(artifact_body).to_hex().to_string();
+    let events = stable_events(
+        source_run_id,
+        artifact_path,
+        &artifact_digest,
+        artifact_body.len(),
+    );
+    write_source_events(&source_run_dir, &events);
+    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).expect("stable prefix");
+
+    let source_run_dir = Arc::new(source_run_dir);
+    let events = Arc::new(events);
+    let prefix = Arc::new(prefix);
+    let handles = (0..6)
+        .map(|_| {
+            let source_run_dir = Arc::clone(&source_run_dir);
+            let events = Arc::clone(&events);
+            let prefix = Arc::clone(&prefix);
+            thread::spawn(move || {
+                materialize_child_session(ChildSessionMaterializationRequest {
+                    source_run_dir: source_run_dir.as_ref(),
+                    events: events.as_slice(),
+                    stable_prefix: prefix.as_ref(),
+                    source_kind: ChildSessionMaterializationSourceKind::DiskRunDirectory,
+                })
+                .expect("concurrent child materialization succeeds")
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let results = handles
+        .into_iter()
+        .map(|handle| handle.join().expect("join materialization thread"))
+        .collect::<Vec<_>>();
+    let child_ids = results
+        .iter()
+        .map(|result| result.child_run_id.clone())
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(child_ids.len(), results.len());
+    for result in &results {
+        assert_ne!(result.child_run_id, source_run_id);
+        assert!(result.child_run_dir.join("events.jsonl").exists());
+        assert!(result.child_run_dir.join("meta.json").exists());
+        assert_eq!(
+            fs::read(result.child_run_dir.join(artifact_path)).expect("read child artifact"),
+            artifact_body
+        );
+    }
+    assert_no_unpublished_temp_dirs(session_dir);
+}
+
+#[test]
+fn session_lineage_missing_meta_uses_harness_fallback_metadata() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let session_dir = temp_dir.path();
+    let source_run_id = "run_parent_missing_meta";
+    let source_run_dir = session_dir.join(source_run_id);
+    fs::create_dir_all(&source_run_dir).expect("create source run dir");
+
+    let artifact_path = "artifacts/toolcalls/toolcall_000001/output.txt";
+    let artifact_body = b"metadata fallback artifact\n".as_slice();
+    write_source_artifact(&source_run_dir, artifact_path, artifact_body);
+    let artifact_digest = blake3::hash(artifact_body).to_hex().to_string();
+    let events = stable_events(
+        source_run_id,
+        artifact_path,
+        &artifact_digest,
+        artifact_body.len(),
+    );
+    write_source_events(&source_run_dir, &events);
+    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).expect("stable prefix");
+
+    let result = materialize_child_session(ChildSessionMaterializationRequest {
+        source_run_dir: &source_run_dir,
+        events: &events,
+        stable_prefix: &prefix,
+        source_kind: ChildSessionMaterializationSourceKind::DiskRunDirectory,
+    })
+    .expect("missing source metadata falls back to event-derived fields");
+
+    let meta: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(result.child_run_dir.join("meta.json")).expect("read child meta"),
+    )
+    .expect("parse child meta");
+    assert_eq!(
+        meta["run_name"],
+        format!("Harness child of {source_run_id}")
+    );
+    assert_eq!(meta["workspace_root"], "/workspace/source");
+    assert_eq!(meta["config_digest"], "harness-lineage-materialized");
+    assert_eq!(
+        meta["harness_lineage"]["harness_source_run_id"],
+        source_run_id
+    );
+    assert_no_unpublished_temp_dirs(session_dir);
+}
+
+#[test]
+fn session_lineage_invalid_artifact_path_rolls_back() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let session_dir = temp_dir.path();
+    let source_run_id = "run_parent_bad_artifact_path";
+    let source_run_dir = session_dir.join(source_run_id);
+    fs::create_dir_all(&source_run_dir).expect("create source run dir");
+
+    let events = stable_events(
+        source_run_id,
+        "artifacts/../meta.json",
+        &blake3::hash(b"bad").to_hex().to_string(),
+        3,
+    );
+    write_source_events(&source_run_dir, &events);
+    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).expect("stable prefix");
+
+    let err = materialize_child_session(ChildSessionMaterializationRequest {
+        source_run_dir: &source_run_dir,
+        events: &events,
+        stable_prefix: &prefix,
+        source_kind: ChildSessionMaterializationSourceKind::DiskRunDirectory,
+    })
+    .expect_err("path traversal artifact reference rejects before publish");
+
+    assert!(matches!(
+        err,
+        ChildSessionMaterializationError::InvalidArtifactPath { .. }
+    ));
+    assert_eq!(session_dir_entries(session_dir), vec![source_run_id]);
+    assert_no_unpublished_temp_dirs(session_dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn session_lineage_rejects_artifact_symlink_without_copying_target() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let session_dir = temp_dir.path();
+    let source_run_id = "run_parent_symlink_artifact";
+    let source_run_dir = session_dir.join(source_run_id);
+    fs::create_dir_all(&source_run_dir).expect("create source run dir");
+
+    let artifact_path = "artifacts/toolcalls/toolcall_000001/output.txt";
+    let artifact_body = b"outside symlink target\n".as_slice();
+    let outside_dir = tempfile::tempdir().expect("outside tempdir");
+    let outside_target = outside_dir.path().join("outside-target.txt");
+    fs::write(&outside_target, artifact_body).expect("write outside target");
+    let link_path = source_run_dir.join(artifact_path);
+    fs::create_dir_all(link_path.parent().expect("artifact parent"))
+        .expect("create artifact parent");
+    std::os::unix::fs::symlink(&outside_target, &link_path).expect("create artifact symlink");
+
+    let artifact_digest = blake3::hash(artifact_body).to_hex().to_string();
+    let events = stable_events(
+        source_run_id,
+        artifact_path,
+        &artifact_digest,
+        artifact_body.len(),
+    );
+    write_source_events(&source_run_dir, &events);
+    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).expect("stable prefix");
+
+    let err = materialize_child_session(ChildSessionMaterializationRequest {
+        source_run_dir: &source_run_dir,
+        events: &events,
+        stable_prefix: &prefix,
+        source_kind: ChildSessionMaterializationSourceKind::DiskRunDirectory,
+    })
+    .expect_err("symlinked artifact must not be copied");
+
+    assert!(matches!(
+        err,
+        ChildSessionMaterializationError::ArtifactSymlink { .. }
+    ));
+    assert_eq!(session_dir_entries(session_dir), vec![source_run_id]);
+    assert_no_unpublished_temp_dirs(session_dir);
+}
+
+#[test]
+fn session_lineage_source_event_log_mismatch_rolls_back_before_publish() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let session_dir = temp_dir.path();
+    let source_run_id = "run_parent_modified_source";
+    let source_run_dir = session_dir.join(source_run_id);
+    fs::create_dir_all(&source_run_dir).expect("create source run dir");
+
+    let events = stable_events(
+        source_run_id,
+        "artifacts/toolcalls/toolcall_000001/output.txt",
+        &blake3::hash(b"unchanged").to_hex().to_string(),
+        9,
+    );
+    let mut changed_events = events.clone();
+    changed_events.push(envelope(
+        source_run_id,
+        6,
+        EventV1::RunStarted(RunStartedEvent {
+            run_name: "modified after load".to_string(),
+            workspace_root: "/workspace/source".to_string(),
+        }),
+    ));
+    write_source_events(&source_run_dir, &changed_events);
+    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).expect("stable prefix");
+
+    let err = materialize_child_session(ChildSessionMaterializationRequest {
+        source_run_dir: &source_run_dir,
+        events: &events,
+        stable_prefix: &prefix,
+        source_kind: ChildSessionMaterializationSourceKind::DiskRunDirectory,
+    })
+    .expect_err("changed source event log must reject before temp publish");
+
+    assert!(matches!(
+        err,
+        ChildSessionMaterializationError::SourceEventLogChanged { .. }
+    ));
+    assert_eq!(session_dir_entries(session_dir), vec![source_run_id]);
     assert_no_unpublished_temp_dirs(session_dir);
 }
 
