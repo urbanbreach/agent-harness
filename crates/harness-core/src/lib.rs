@@ -11,6 +11,7 @@ pub mod perm;
 pub mod proj;
 pub mod redact;
 pub mod sched;
+pub mod session_lineage;
 pub mod store;
 pub mod tool;
 pub mod transcript_projection;
