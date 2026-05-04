@@ -673,6 +673,10 @@ fn ensure_artifact_source_is_regular_file(
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "lineage metadata writer keeps source and child identifiers explicit at the call site"
+)]
 fn write_child_metadata(
     source_run_dir: &Path,
     child_run_dir: &Path,

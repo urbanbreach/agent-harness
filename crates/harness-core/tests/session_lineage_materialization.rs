@@ -171,7 +171,7 @@ fn session_lineage_missing_artifact_rolls_back() {
     let events = stable_events(
         source_run_id,
         "artifacts/toolcalls/toolcall_000001/missing.txt",
-        &blake3::hash(b"missing").to_hex().to_string(),
+        blake3::hash(b"missing").to_hex().as_ref(),
         7,
     );
     write_source_events(&source_run_dir, &events);
@@ -317,7 +317,7 @@ fn session_lineage_invalid_artifact_path_rolls_back() {
     let events = stable_events(
         source_run_id,
         "artifacts/../meta.json",
-        &blake3::hash(b"bad").to_hex().to_string(),
+        blake3::hash(b"bad").to_hex().as_ref(),
         3,
     );
     write_source_events(&source_run_dir, &events);
@@ -395,7 +395,7 @@ fn session_lineage_source_event_log_mismatch_rolls_back_before_publish() {
     let events = stable_events(
         source_run_id,
         "artifacts/toolcalls/toolcall_000001/output.txt",
-        &blake3::hash(b"unchanged").to_hex().to_string(),
+        blake3::hash(b"unchanged").to_hex().as_ref(),
         9,
     );
     let mut changed_events = events.clone();
