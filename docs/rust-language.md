@@ -3,7 +3,6 @@
 Rust is a systems programming language that emphasizes safety, speed, and concurrency. Its type system and borrow checker catch many bugs before code runs, which makes it a strong fit for reliable software.
 
 ## What Rust is good at
-
 Memory safety without a garbage collector
 High-performance services and command-line tools
 Reliable concurrent and parallel code

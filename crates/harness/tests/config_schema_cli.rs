@@ -924,7 +924,19 @@ fn root_runtime_example_uses_canonical_public_keys() {
     assert!(!root_example.contains("\"api_key\""));
     assert!(!root_example.contains("\"api_mode\""));
     assert!(!root_example.contains("\"timeout_ms\""));
-    assert!(!root_example.contains("\"metadata\""));
-    assert!(!root_example.contains("\"variants\""));
     assert!(!root_example.contains("\"model_backed\""));
+
+    let provider = parsed.provider.get("default").expect("default provider");
+    let ProviderConfig::OpenAiCompatible(provider) = provider;
+    let mini = provider
+        .models
+        .get("gpt-5.4-mini")
+        .expect("mini model keeps variant cycle options");
+    let mut variants = mini.variants.keys().map(String::as_str).collect::<Vec<_>>();
+    variants.sort_unstable();
+    assert_eq!(variants, vec!["high", "low", "medium", "xhigh"]);
+    assert!(mini
+        .variants
+        .values()
+        .all(|variant| variant.metadata.reasoning_effort.is_some()));
 }
