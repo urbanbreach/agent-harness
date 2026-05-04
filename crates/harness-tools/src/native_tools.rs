@@ -608,7 +608,7 @@ impl Tool for GrepTool {
     }
 
     fn description(&self) -> &str {
-        "Searches file contents by regex using canonical harness arguments."
+        "Searches file or directory contents by regex using canonical harness arguments."
     }
 
     fn parameters_json_schema(&self) -> Value {

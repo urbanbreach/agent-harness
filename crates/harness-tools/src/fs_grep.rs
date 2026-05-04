@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::io::BufRead;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use globset::{Glob, GlobMatcher};
@@ -50,7 +50,7 @@ impl Tool for FsGrepTool {
     }
 
     fn description(&self) -> &str {
-        "Searches UTF-8 workspace files for regex matches with optional include glob and context lines."
+        "Searches UTF-8 workspace files or directories for regex matches with optional include glob and context lines."
     }
 
     fn parameters_json_schema(&self) -> serde_json::Value {
@@ -72,9 +72,9 @@ impl Tool for FsGrepTool {
         let base_path = args.path.as_deref().unwrap_or(".");
         let workspace_root = ctx.resolve_workspace_path(Path::new("."))?;
         let resolved_base = resolve_workspace_target_path(&ctx, base_path)?;
-        if !resolved_base.is_dir() {
+        if !resolved_base.is_dir() && !resolved_base.is_file() {
             return Err(ToolError::InvalidArguments(
-                "path must resolve to a directory".to_string(),
+                "path must resolve to a file or directory".to_string(),
             ));
         }
         let display_path = workspace_relative_display(&workspace_root, &resolved_base)?;
@@ -114,7 +114,7 @@ impl Tool for FsGrepTool {
 
 fn collect_grep_matches(
     workspace_root: &Path,
-    base_dir: &Path,
+    search_path: &Path,
     pattern: &str,
     include: Option<&str>,
     limit: usize,
@@ -124,30 +124,7 @@ fn collect_grep_matches(
         .map_err(|err| ToolError::InvalidArguments(format!("invalid regex pattern: {err}")))?;
     let include_matcher = compile_include_matcher(include)?;
 
-    let mut files = Vec::new();
-    for entry in WalkDir::new(base_dir)
-        .follow_links(false)
-        .into_iter()
-        .filter_entry(|entry| !should_skip_entry(workspace_root, entry))
-    {
-        let entry = entry.map_err(|err| {
-            ToolError::Execution(format!("failed to traverse directory tree: {err}"))
-        })?;
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let relative = entry.path().strip_prefix(workspace_root).map_err(|_| {
-            ToolError::Execution(format!(
-                "failed to compute workspace-relative path for {}",
-                entry.path().display()
-            ))
-        })?;
-
-        let relative = normalize_relative_path(relative);
-        let file_name = entry.file_name().to_string_lossy().to_string();
-        let path = entry.into_path();
-        files.push((relative, file_name, path));
-    }
+    let mut files = collect_candidate_files(workspace_root, search_path)?;
 
     if let Some(matcher) = include_matcher.as_ref() {
         files.retain(|(relative, file_name, _)| {
@@ -213,6 +190,61 @@ fn compile_include_matcher(include: Option<&str>) -> Result<Option<GlobMatcher>,
                 .map(|glob| glob.compile_matcher())
         })
         .transpose()
+}
+
+fn collect_candidate_files(
+    workspace_root: &Path,
+    search_path: &Path,
+) -> Result<Vec<(String, String, PathBuf)>, ToolError> {
+    if search_path.is_file() {
+        let relative = search_path.strip_prefix(workspace_root).map_err(|_| {
+            ToolError::Execution(format!(
+                "failed to compute workspace-relative path for {}",
+                search_path.display()
+            ))
+        })?;
+        let file_name = search_path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_default();
+        return Ok(vec![(
+            normalize_relative_path(relative),
+            file_name,
+            search_path.to_path_buf(),
+        )]);
+    }
+
+    if !search_path.is_dir() {
+        return Err(ToolError::InvalidArguments(
+            "path must resolve to a file or directory".to_string(),
+        ));
+    }
+
+    let mut files = Vec::new();
+    for entry in WalkDir::new(search_path)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|entry| !should_skip_entry(workspace_root, entry))
+    {
+        let entry = entry.map_err(|err| {
+            ToolError::Execution(format!("failed to traverse directory tree: {err}"))
+        })?;
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let relative = entry.path().strip_prefix(workspace_root).map_err(|_| {
+            ToolError::Execution(format!(
+                "failed to compute workspace-relative path for {}",
+                entry.path().display()
+            ))
+        })?;
+
+        let relative = normalize_relative_path(relative);
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        let path = entry.into_path();
+        files.push((relative, file_name, path));
+    }
+    Ok(files)
 }
 
 fn append_rendered_lines(
@@ -436,6 +468,39 @@ mod tests {
         assert_eq!(result.truncated_count, 1);
         assert!(result.is_truncated);
         assert_eq!(result.lines, vec!["a.txt:1: TODO a"]);
+    }
+
+    #[tokio::test]
+    async fn fs_grep_accepts_exact_file_path_without_searching_siblings() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let root = tempdir.path();
+        fs::create_dir_all(root.join("src")).expect("create src");
+        fs::write(root.join("src/session_lineage.rs"), "fn fork_point() {}\n")
+            .expect("write target file");
+        fs::write(root.join("src/other.rs"), "fn fork_point() {}\n").expect("write sibling file");
+
+        let result = FsGrepTool
+            .call(
+                test_context(root, "grep-exact-file-path"),
+                json!({
+                    "pattern": "fork_point",
+                    "path": "src/session_lineage.rs",
+                    "include": "*.rs"
+                }),
+            )
+            .await
+            .expect("grep should accept exact file paths");
+
+        assert_eq!(
+            result.display_text,
+            "src/session_lineage.rs:1: fn fork_point() {}"
+        );
+        let structured = result.structured_json.expect("structured result");
+        assert_eq!(
+            structured.get("path"),
+            Some(&json!("src/session_lineage.rs"))
+        );
+        assert_eq!(structured.get("total_count"), Some(&json!(1)));
     }
 
     #[tokio::test]
