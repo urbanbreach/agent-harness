@@ -18,6 +18,7 @@ fn coordinator_registry_exposes_single_native_tool_surface() {
         "invalid",
         "list",
         "lsp",
+        "plan_exit",
         "question",
         "read",
         "skill",
