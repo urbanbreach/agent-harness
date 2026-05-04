@@ -368,6 +368,7 @@ enum TranscriptSection {
 
 struct BuildTurnSectionArgs<'a> {
     activity: &'a ActivityEntry,
+    queued_user_message: bool,
     is_selected: bool,
     is_latest: bool,
     thinking_visible: bool,
@@ -405,6 +406,7 @@ struct TranscriptTurnSection {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TranscriptUserMessageSection {
     text: String,
+    queued: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1509,10 +1511,15 @@ fn with_measured_transcript_layout_for_width_on_surface<R>(
 fn build_transcript_sections(app: &AppState) -> Vec<TranscriptSection> {
     let mut sections = Vec::new();
     let mut turn_sections = Vec::with_capacity(app.activities.len());
+    let pending_assistant_index = app
+        .activities
+        .iter()
+        .rposition(|activity| activity.status == ActivityStatus::Streaming);
 
     for (index, activity) in app.activities.iter().enumerate() {
         turn_sections.push(build_turn_section(BuildTurnSectionArgs {
             activity,
+            queued_user_message: pending_assistant_index.is_some_and(|pending| index > pending),
             is_selected: index == app.selected_activity_index,
             is_latest: false,
             thinking_visible: app.transcript_thinking_visible(),
@@ -1560,12 +1567,17 @@ fn build_transcript_sections(app: &AppState) -> Vec<TranscriptSection> {
 }
 
 fn turn_supports_assistant_footer(turn: &TranscriptTurnSection) -> bool {
-    !turn.assistant_parts.is_empty() || turn.header.status == ActivityStatus::Streaming
+    !turn.assistant_parts.is_empty() || activity_status_supports_footer_only(turn.header.status)
+}
+
+fn activity_status_supports_footer_only(status: ActivityStatus) -> bool {
+    matches!(status, ActivityStatus::Streaming)
 }
 
 fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
     let BuildTurnSectionArgs {
         activity,
+        queued_user_message,
         is_selected,
         is_latest,
         thinking_visible,
@@ -1584,6 +1596,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
             .as_ref()
             .map(|user_msg| TranscriptUserMessageSection {
                 text: user_msg.text.clone(),
+                queued: queued_user_message,
             });
 
     let thinking = (thinking_visible && !activity.thinking_text.trim().is_empty()).then(|| {
@@ -5094,6 +5107,21 @@ fn build_user_render_surface(
         surface,
         theme,
     );
+    if user_msg.queued {
+        let agent_accent = theme.agent_accent(&turn.header.profile_label);
+        lines.push(user_surface_line(
+            vec![Span::styled(
+                " QUEUED ".to_string(),
+                Style::default()
+                    .fg(selected_foreground_for_badge(agent_accent, theme))
+                    .bg(agent_accent)
+                    .add_modifier(Modifier::BOLD),
+            )],
+            Style::default().fg(theme.text.secondary),
+            content_width,
+            surface,
+        ));
+    }
     lines.push(user_surface_line(
         Vec::new(),
         Style::default().fg(theme.text.primary),
@@ -5132,6 +5160,7 @@ fn build_assistant_render_surfaces(
 ) -> Vec<TranscriptRenderSurface> {
     let agent_accent = theme.agent_accent(&turn.header.profile_label);
     let (assistant_icon, assistant_color, assistant_status) = match turn.header.status {
+        ActivityStatus::Queued => ("◇", agent_accent, "queued"),
         ActivityStatus::Streaming => (
             transcript_streaming_spinner_frame(turn.animation_phase),
             agent_accent,
@@ -5218,8 +5247,9 @@ fn assistant_footer_target_index(turn: &TranscriptTurnSection) -> Option<usize> 
         return None;
     }
     if turn.assistant_parts.is_empty() {
-        return (turn.user_message.is_some() || turn.header.status == ActivityStatus::Streaming)
-            .then_some(0);
+        return (turn.user_message.is_some()
+            || activity_status_supports_footer_only(turn.header.status))
+        .then_some(0);
     }
 
     Some(
@@ -7538,7 +7568,10 @@ fn build_assistant_footer_line(
             muted_meta_style(theme),
         ));
     }
-    if turn.header.status != ActivityStatus::Streaming {
+    if matches!(
+        turn.header.status,
+        ActivityStatus::Done | ActivityStatus::Error
+    ) {
         if let Some(duration_ms) = turn.header.duration_ms {
             spans.push(Span::styled(" · ", muted_meta_style(theme)));
             spans.push(Span::styled(
@@ -7585,15 +7618,31 @@ fn assistant_footer_label(value: &str) -> String {
 
 fn assistant_primary_label_color(turn: &TranscriptTurnSection, theme: &Theme) -> Color {
     match turn.header.status {
+        ActivityStatus::Queued => theme.text.secondary,
         ActivityStatus::Streaming => theme.text.primary,
         ActivityStatus::Done => theme.text.primary,
         ActivityStatus::Error => theme.status.error,
     }
 }
 
+fn selected_foreground_for_badge(background: Color, theme: &Theme) -> Color {
+    match background {
+        Color::Rgb(red, green, blue) => {
+            let luminance =
+                0.299 * f64::from(red) + 0.587 * f64::from(green) + 0.114 * f64::from(blue);
+            if luminance > 127.5 {
+                theme.text.inverse
+            } else {
+                theme.text.primary
+            }
+        }
+        _ => theme.text.inverse,
+    }
+}
+
 fn assistant_primary_rail_color(turn: &TranscriptTurnSection, theme: &Theme) -> Color {
     match turn.header.status {
-        ActivityStatus::Streaming | ActivityStatus::Done => {
+        ActivityStatus::Queued | ActivityStatus::Streaming | ActivityStatus::Done => {
             theme.agent_accent(&turn.header.profile_label)
         }
         ActivityStatus::Error => theme.status.error,
@@ -12160,6 +12209,195 @@ mod tests {
 
         assert_eq!(first[0], "   ⠋ Assistant · gpt-5.4-mini · active");
         assert_eq!(second[0], "   ⠙ Assistant · gpt-5.4-mini · active");
+    }
+
+    #[test]
+    fn queued_runtime_status_without_pending_assistant_does_not_render_user_badge_or_footer() {
+        let mut app = AppState::default();
+        app.activities = std::collections::VecDeque::from(vec![
+            ActivityEntry {
+                request_id: "request-complete".to_string(),
+                model_id: "gpt-5.4-mini".to_string(),
+                provider_id: "openai".to_string(),
+                status: ActivityStatus::Done,
+                user_message: Some(harness_core::event::UserMessageSubmittedEvent {
+                    request_id: "request-complete".to_string(),
+                    text: "completed turn".to_string(),
+                }),
+                user_timestamp: None,
+                request_data: None,
+                thinking_text: String::new(),
+                transcript_text: "done".to_string(),
+                usage: None,
+                error_message: None,
+                permissions: Vec::new(),
+                tool_calls: Vec::new(),
+                first_seq: 1,
+                last_seq: 1,
+                first_mono_ms: 1,
+                last_mono_ms: 1,
+            },
+            ActivityEntry {
+                request_id: "request-queued-followup".to_string(),
+                model_id: "gpt-5.4-mini".to_string(),
+                provider_id: "openai".to_string(),
+                status: ActivityStatus::Queued,
+                user_message: Some(harness_core::event::UserMessageSubmittedEvent {
+                    request_id: "request-queued-followup".to_string(),
+                    text: "follow up after the active turn finished".to_string(),
+                }),
+                user_timestamp: None,
+                request_data: None,
+                thinking_text: String::new(),
+                transcript_text: String::new(),
+                usage: None,
+                error_message: None,
+                permissions: Vec::new(),
+                tool_calls: Vec::new(),
+                first_seq: 2,
+                last_seq: 2,
+                first_mono_ms: 2,
+                last_mono_ms: 2,
+            },
+        ]);
+        app.selected_activity_index = 1;
+
+        let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+            &app,
+            &Theme::default(),
+            80,
+        ));
+
+        assert!(
+            lines.iter().all(|line| !line.contains(" QUEUED ")),
+            "runtime queued status alone should not show the Harness queued badge: {lines:#?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .all(|line| !line.contains("Assistant · gpt-5.4-mini · queued")),
+            "runtime queued status alone should not render a queued assistant footer: {lines:#?}"
+        );
+    }
+
+    #[test]
+    fn streaming_turn_with_own_user_message_does_not_render_queued_badge() {
+        let mut app = AppState::default();
+        app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
+            request_id: "request-started-followup".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
+            provider_id: "openai".to_string(),
+            status: ActivityStatus::Streaming,
+            user_message: Some(harness_core::event::UserMessageSubmittedEvent {
+                request_id: "request-started-followup".to_string(),
+                text: "follow up now running".to_string(),
+            }),
+            user_timestamp: None,
+            request_data: None,
+            thinking_text: String::new(),
+            transcript_text: String::new(),
+            usage: None,
+            error_message: None,
+            permissions: Vec::new(),
+            tool_calls: Vec::new(),
+            first_seq: 1,
+            last_seq: 1,
+            first_mono_ms: 1,
+            last_mono_ms: 1,
+        }]);
+        app.selected_activity_index = 0;
+
+        let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+            &app,
+            &Theme::default(),
+            80,
+        ));
+
+        assert!(
+            lines.iter().all(|line| !line.contains(" QUEUED ")),
+            "a turn should not mark its own user message as queued once it is the active assistant turn: {lines:#?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("Assistant · gpt-5.4-mini · active")),
+            "streaming follow-up should keep the active assistant footer: {lines:#?}"
+        );
+    }
+
+    #[test]
+    fn queued_user_followup_keeps_active_footer_on_streaming_turn() {
+        let mut app = AppState::default();
+        app.activities = std::collections::VecDeque::from(vec![
+            ActivityEntry {
+                request_id: "request-active".to_string(),
+                model_id: "gpt-5.4-mini".to_string(),
+                provider_id: "openai".to_string(),
+                status: ActivityStatus::Streaming,
+                user_message: Some(harness_core::event::UserMessageSubmittedEvent {
+                    request_id: "request-active".to_string(),
+                    text: "active turn".to_string(),
+                }),
+                user_timestamp: None,
+                request_data: None,
+                thinking_text: String::new(),
+                transcript_text: String::new(),
+                usage: None,
+                error_message: None,
+                permissions: Vec::new(),
+                tool_calls: Vec::new(),
+                first_seq: 1,
+                last_seq: 1,
+                first_mono_ms: 1,
+                last_mono_ms: 1,
+            },
+            ActivityEntry {
+                request_id: "request-queued-followup".to_string(),
+                model_id: "gpt-5.4-mini".to_string(),
+                provider_id: "openai".to_string(),
+                status: ActivityStatus::Queued,
+                user_message: Some(harness_core::event::UserMessageSubmittedEvent {
+                    request_id: "request-queued-followup".to_string(),
+                    text: "follow up while the current turn is still running".to_string(),
+                }),
+                user_timestamp: None,
+                request_data: None,
+                thinking_text: String::new(),
+                transcript_text: String::new(),
+                usage: None,
+                error_message: None,
+                permissions: Vec::new(),
+                tool_calls: Vec::new(),
+                first_seq: 2,
+                last_seq: 2,
+                first_mono_ms: 2,
+                last_mono_ms: 2,
+            },
+        ]);
+        app.selected_activity_index = 1;
+
+        let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+            &app,
+            &Theme::default(),
+            80,
+        ));
+
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("Assistant · gpt-5.4-mini · active")),
+            "active assistant footer should stay on the in-flight turn: {lines:#?}"
+        );
+        assert!(
+            lines.iter().any(|line| line.contains(" QUEUED ")),
+            "queued follow-up should still show the user badge: {lines:#?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .all(|line| !line.contains("Assistant · gpt-5.4-mini · queued")),
+            "queued follow-up should not steal the assistant footer: {lines:#?}"
+        );
     }
 
     #[test]
