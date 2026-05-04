@@ -2159,12 +2159,15 @@ fn layout_plan_minimum_geometry_matches_shell_contract() {
     assert_eq!(plan.status, None);
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(2, 18, 76, 6))
+        Some(ratatui::layout::Rect::new(2, 18, 76, 5))
     );
     assert_eq!(dock.shell, ratatui::layout::Rect::new(2, 18, 76, 6));
     assert_eq!(dock.status, plan.status);
     assert_eq!(dock.composer, plan.composer.expect("minimum composer"));
-    assert_eq!(dock.disclosure, None);
+    assert_eq!(
+        dock.disclosure,
+        Some(ratatui::layout::Rect::new(2, 23, 76, 1))
+    );
     assert_eq!(plan.disclosure, dock.disclosure);
 }
 
@@ -8991,9 +8994,12 @@ fn layout_plan_minimum_geometry_stacks_live_details_drawer() {
     assert_eq!(plan.status, None);
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(2, 18, 76, 6))
+        Some(ratatui::layout::Rect::new(2, 18, 76, 5))
     );
-    assert_eq!(plan.disclosure, None);
+    assert_eq!(
+        plan.disclosure,
+        Some(ratatui::layout::Rect::new(2, 23, 76, 1))
+    );
 }
 
 #[cfg(test)]

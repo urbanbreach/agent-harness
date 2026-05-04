@@ -895,11 +895,7 @@ fn live_prompt_block_height(
 }
 
 fn control_dock_disclosure_rows(app: &AppState, contract: SessionGeometryContract) -> u16 {
-    if app.replay_mode
-        || app.active_permission_view().is_some()
-        || (!app.startup_shell_visible() && app.events.is_empty() && app.prompt_buffer.is_empty())
-        || app.review_surface().is_some()
-    {
+    if app.replay_mode || app.active_permission_view().is_some() || app.review_surface().is_some() {
         return 0;
     }
 
