@@ -1801,6 +1801,12 @@ impl Coordinator {
 
         let request_id = allocate_provider_request_id(run_state);
 
+        let prompt = if profile.name == crate::plan::PLAN_AGENT_NAME {
+            Self::plan_mode_prompt(&run_state.info.run_id, &prompt)
+        } else {
+            prompt
+        };
+
         let request = AgentRequest {
             agent_id,
             prompt,
@@ -1848,6 +1854,13 @@ impl Coordinator {
             .as_mut()
             .ok_or(CoordinatorError::RunNotStarted)?;
         Ok(allocate_provider_request_id(run_state))
+    }
+
+    fn plan_mode_prompt(run_id: &str, prompt: &str) -> String {
+        let plan_file = crate::plan::plan_file_display_path(run_id);
+        format!(
+            "{prompt}\n\n<system-reminder>\nPlan mode is active. The user indicated that they do not want you to execute yet -- you MUST NOT make any edits (with the exception of the plan file mentioned below), run any non-readonly tools (including changing configs or making commits), or otherwise make any changes to the system. This supersedes any other instructions you have received.\n\n## Plan File Info:\nCreate or update your plan at {plan_file} using the edit tool. This is the only workspace path you are allowed to edit; all other workspace edits are denied by runtime policy.\n\n## Plan Workflow\n1. Gain a comprehensive understanding of the user's request by reading/searching the codebase.\n2. Clarify ambiguities with the question tool when needed.\n3. Design the implementation approach and include critical files, constraints, risks, and verification.\n4. Write the final plan to the plan file.\n5. At the very end of your turn, call plan_exit to ask whether to switch to the build agent. Do not ask whether the plan is okay with question; plan_exit handles that approval flow.\n</system-reminder>"
+        )
     }
 
     async fn request_tool_call_internal(
@@ -2002,14 +2015,17 @@ impl Coordinator {
         } else {
             permission_kind_for_tool_call(&tool_id, capability)
         };
-        let rule_selector = maybe_kind.and_then(|kind| {
-            permission_rule_request_selector(&run_state.info.workspace_root, kind, &args_json)
-        });
+        let rule_selectors = maybe_kind
+            .map(|kind| {
+                permission_rule_request_selectors(&run_state.info.workspace_root, kind, &args_json)
+            })
+            .unwrap_or_default();
         let decision = maybe_kind.map(|kind| {
-            self.config.permission_policy.evaluate_request(
+            evaluate_permission_rule_requests(
+                &self.config.permission_policy,
                 effective_category.as_deref(),
                 kind,
-                rule_selector.as_ref(),
+                &rule_selectors,
             )
         });
         let hashline_edit = hashline_edit_metadata(&tool_id, &args_json, &tool_call_id);
@@ -6030,7 +6046,7 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
     };
     let current_turn_start_index = turn_state.messages.len().saturating_sub(1);
 
-    for _phase_iter in 1..=task.profile.max_iters {
+    loop {
         if cancellation_token.is_cancelled() {
             return AgentTurnOutcome::failed_with_memory(
                 "job cancelled",
@@ -6149,11 +6165,6 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
             );
         }
     }
-
-    AgentTurnOutcome::failed(format!(
-        "agent turn exceeded profile max_iters={}",
-        task.profile.max_iters
-    ))
 }
 
 fn normalize_provider_phase_error(reason: String) -> String {
@@ -10123,28 +10134,65 @@ fn permission_grant_matcher(
         PermissionKind::Shell => shell_command_selector(args_json, request_digest)
             .unwrap_or_else(|| request_digest_selector(request_digest)),
         PermissionKind::EditFs => {
-            workspace_path_selector(workspace_root, args_json, request_digest)
-                .unwrap_or_else(|| request_digest_selector(request_digest))
+            let paths = workspace_path_selector_paths(workspace_root, args_json);
+            if paths.len() == 1 {
+                PermissionGrantMatcher::WorkspacePath {
+                    path: paths.into_iter().next().expect("single path exists"),
+                    request_digest: request_digest.to_string(),
+                }
+            } else {
+                request_digest_selector(request_digest)
+            }
         }
         _ => request_digest_selector(request_digest),
     }
 }
 
-fn permission_rule_request_selector(
+fn evaluate_permission_rule_requests(
+    policy: &PermissionPolicy,
+    category: Option<&str>,
+    kind: PermissionKind,
+    selectors: &[PermissionRuleRequest],
+) -> PolicyDecision {
+    if selectors.is_empty() {
+        return policy.evaluate_request(category, kind, None);
+    }
+
+    let mut ask_decision = None;
+    for selector in selectors {
+        match policy.evaluate_request(category, kind, Some(selector)) {
+            PolicyDecision::Deny => return PolicyDecision::Deny,
+            PolicyDecision::Ask {
+                timeout_ms,
+                default_decision,
+            } => {
+                ask_decision = Some(PolicyDecision::Ask {
+                    timeout_ms,
+                    default_decision,
+                });
+            }
+            PolicyDecision::Allow => {}
+        }
+    }
+
+    ask_decision.unwrap_or(PolicyDecision::Allow)
+}
+
+fn permission_rule_request_selectors(
     workspace_root: &Path,
     kind: PermissionKind,
     args_json: &Value,
-) -> Option<PermissionRuleRequest> {
+) -> Vec<PermissionRuleRequest> {
     match kind {
-        PermissionKind::Shell => shell_command_rule_selector(args_json),
-        PermissionKind::EditFs => workspace_path_rule_selector(workspace_root, args_json),
+        PermissionKind::Shell => shell_command_rule_selector(args_json).into_iter().collect(),
+        PermissionKind::EditFs => workspace_path_rule_selectors(workspace_root, args_json),
         PermissionKind::Network
         | PermissionKind::Question
         | PermissionKind::Task
         | PermissionKind::WebFetch
         | PermissionKind::WebSearch
         | PermissionKind::CodeSearch
-        | PermissionKind::Lsp => None,
+        | PermissionKind::Lsp => Vec::new(),
     }
 }
 
@@ -10156,16 +10204,14 @@ fn shell_command_rule_selector(args_json: &Value) -> Option<PermissionRuleReques
         .map(|command| PermissionRuleRequest::ShellCommand(command.to_string()))
 }
 
-fn workspace_path_rule_selector(
+fn workspace_path_rule_selectors(
     workspace_root: &Path,
     args_json: &Value,
-) -> Option<PermissionRuleRequest> {
-    let raw_path = args_json
-        .get("path")
-        .or_else(|| args_json.get("filePath"))
-        .and_then(Value::as_str)?;
-    workspace_relative_selector_path(workspace_root, Path::new(raw_path))
+) -> Vec<PermissionRuleRequest> {
+    workspace_path_selector_paths(workspace_root, args_json)
+        .into_iter()
         .map(PermissionRuleRequest::WorkspacePath)
+        .collect()
 }
 
 fn request_digest_selector(request_digest: &str) -> PermissionGrantMatcher {
@@ -10194,20 +10240,26 @@ fn shell_command_selector(
     })
 }
 
-fn workspace_path_selector(
-    workspace_root: &Path,
-    args_json: &Value,
-    request_digest: &str,
-) -> Option<PermissionGrantMatcher> {
-    let raw_path = args_json
-        .get("path")
-        .or_else(|| args_json.get("filePath"))
-        .and_then(Value::as_str)?;
-    let path = workspace_relative_selector_path(workspace_root, Path::new(raw_path))?;
-    Some(PermissionGrantMatcher::WorkspacePath {
-        path,
-        request_digest: request_digest.to_string(),
-    })
+fn workspace_path_selector_paths(workspace_root: &Path, args_json: &Value) -> Vec<String> {
+    let mut paths = BTreeSet::new();
+    for key in [
+        "path",
+        "filePath",
+        "from_path",
+        "fromPath",
+        "rename",
+        "to_path",
+        "toPath",
+    ] {
+        if let Some(raw_path) = args_json.get(key).and_then(Value::as_str) {
+            if let Some(path) =
+                workspace_relative_selector_path(workspace_root, Path::new(raw_path))
+            {
+                paths.insert(path);
+            }
+        }
+    }
+    paths.into_iter().collect()
 }
 
 fn workspace_relative_selector_path(workspace_root: &Path, path: &Path) -> Option<String> {

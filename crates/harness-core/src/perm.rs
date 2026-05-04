@@ -905,6 +905,57 @@ mod tests {
     }
 
     #[test]
+    fn shipped_plan_agent_allows_only_plan_file_edits() {
+        let parsed = crate::config::load_config_from_str(
+            r#"
+            {
+              provider: {
+                default: {
+                  type: "openai_compatible",
+                  options: { baseURL: "http://127.0.0.1:8317/v1", apiKey: "test-key" },
+                  models: { "gpt-4o-mini": { name: "GPT-4o mini" } }
+                }
+              },
+              model: "default/gpt-4o-mini",
+              default_agent: "build",
+              permission: "allow"
+            }
+            "#,
+        )
+        .expect("public config should parse");
+        let policy = PermissionPolicy::from_config(&parsed);
+
+        assert_eq!(
+            policy.evaluate_request(
+                Some("plan"),
+                PermissionKind::EditFs,
+                Some(&PermissionRuleRequest::WorkspacePath(
+                    ".agent-harness/plans/run-001.md".to_string()
+                ))
+            ),
+            PolicyDecision::Allow
+        );
+        assert_eq!(
+            policy.evaluate_request(
+                Some("plan"),
+                PermissionKind::EditFs,
+                Some(&PermissionRuleRequest::WorkspacePath(
+                    "src/lib.rs".to_string()
+                ))
+            ),
+            PolicyDecision::Deny
+        );
+        assert_eq!(
+            policy.evaluate_request(Some("plan"), PermissionKind::Shell, None),
+            PolicyDecision::Deny
+        );
+        assert_eq!(
+            policy.evaluate_request(Some("plan"), PermissionKind::Task, None),
+            PolicyDecision::Allow
+        );
+    }
+
+    #[test]
     fn native_tool_ids_resolve_to_permission_kinds_without_aliases() {
         assert_eq!(
             permission_kind_for_tool("question"),
