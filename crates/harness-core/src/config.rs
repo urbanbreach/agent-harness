@@ -3556,6 +3556,15 @@ mod tests {
             parsed.agents["build"].tool_failure_mode,
             ToolFailureMode::ContinueAsToolMessage
         );
+        assert!(parsed.agents.contains_key("plan"));
+        let plan = parsed.agents["plan"].permissions.as_ref().unwrap();
+        assert_eq!(plan.shell, Some(PermissionMode::Deny));
+        assert_eq!(plan.task, Some(PermissionMode::Allow));
+        assert!(parsed.agents["plan"]
+            .tools
+            .contains(&"plan_exit".to_string()));
+        assert!(!parsed.agents["plan"].tools.contains(&"bash".to_string()));
+        assert!(!parsed.agents["plan"].tools.contains(&"task".to_string()));
     }
 
     fn public_minimal_config_with_permission(permission: &str) -> String {
@@ -4473,7 +4482,7 @@ mod tests {
                     loaded.config.permissions.defaults.shell,
                     PermissionMode::Allow
                 ));
-                assert_eq!(loaded.config.default_agent.as_deref(), Some("build"));
+                assert_eq!(loaded.config.default_agent.as_deref(), Some("plan"));
             },
         );
     }

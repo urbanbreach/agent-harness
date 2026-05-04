@@ -442,7 +442,10 @@ fn load_config_allows_public_agents_without_explicit_description() {
         .get("plan")
         .expect("plan profile should be translated from public config");
 
-    assert_eq!(plan.description, "The Plan agent");
+    assert_eq!(
+        plan.description,
+        "Plan mode. Disallows all edit tools except the active plan file."
+    );
     assert_eq!(plan.model_ref, "default/gpt-4o-mini");
 }
 
