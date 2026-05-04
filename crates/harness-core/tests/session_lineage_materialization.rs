@@ -1,0 +1,338 @@
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
+
+use harness_core::event::{
+    ActorKind, ArtifactWrittenEvent, EventActor, EventArtifactRef, EventEnvelopeV1, EventV1,
+    RunFinishedEvent, RunStartedEvent, ToolCallFinishedEvent, ToolCallMetadata,
+    ToolCallRequestedEvent, ToolCallStatus, SCHEMA_VERSION,
+};
+use harness_core::session_lineage::{
+    materialize_child_session, validate_fork_stable_prefix, ChildSessionMaterializationError,
+    ChildSessionMaterializationRequest, ChildSessionMaterializationSourceKind,
+};
+
+#[test]
+fn session_lineage_materializes_child_atomically() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let session_dir = temp_dir.path();
+    let source_run_id = "run_parent_materialize";
+    let source_run_dir = session_dir.join(source_run_id);
+    fs::create_dir_all(&source_run_dir).expect("create source run dir");
+
+    let artifact_path = "artifacts/toolcalls/toolcall_000001/output.txt";
+    let artifact_body = b"child materialization artifact\n".as_slice();
+    write_source_artifact(&source_run_dir, artifact_path, artifact_body);
+    let artifact_digest = blake3::hash(artifact_body).to_hex().to_string();
+    fs::write(
+        source_run_dir.join("meta.json"),
+        serde_json::json!({
+            "run_id": source_run_id,
+            "run_name": "Parent run",
+            "workspace_root": "/workspace/source",
+            "config_digest": "cfg-parent",
+            "harness_version": "test-version"
+        })
+        .to_string(),
+    )
+    .expect("write source meta");
+
+    let events = stable_events(
+        source_run_id,
+        artifact_path,
+        &artifact_digest,
+        artifact_body.len(),
+    );
+    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).expect("stable prefix");
+
+    let lock_path = source_run_dir.join(".writer.lock");
+    fs::write(&lock_path, b"locked").expect("write source writer lock");
+    let locked_err = materialize_child_session(ChildSessionMaterializationRequest {
+        source_run_dir: &source_run_dir,
+        events: &events,
+        stable_prefix: &prefix,
+        source_kind: ChildSessionMaterializationSourceKind::DiskRunDirectory,
+    })
+    .expect_err("disk source must reject active writer lock");
+    assert!(matches!(
+        locked_err,
+        ChildSessionMaterializationError::SourceWriterLocked { .. }
+    ));
+
+    let result = materialize_child_session(ChildSessionMaterializationRequest {
+        source_run_dir: &source_run_dir,
+        events: &events,
+        stable_prefix: &prefix,
+        source_kind: ChildSessionMaterializationSourceKind::TuiStableInMemorySnapshot,
+    })
+    .expect("TUI stable in-memory snapshot may materialize while source writer is locked");
+
+    assert_ne!(result.child_run_id, source_run_id);
+    assert_eq!(result.source_run_id.as_deref(), Some(source_run_id));
+    assert_eq!(result.source_cutoff_seq, events.len() as u64);
+    assert_eq!(result.event_count, events.len());
+    assert_eq!(result.artifact_count, 1);
+    assert!(result.child_run_dir.is_dir());
+    assert_eq!(
+        fs::read(result.child_run_dir.join(artifact_path)).expect("read child artifact"),
+        artifact_body
+    );
+
+    let child_events = read_events(&result.child_run_dir);
+    assert_eq!(child_events.len(), events.len());
+    for (index, (source, child)) in events.iter().zip(&child_events).enumerate() {
+        assert_eq!(child.seq, index as u64 + 1);
+        assert_eq!(child.run_id, result.child_run_id);
+        assert_ne!(child.event_id, source.event_id);
+        assert!(child.event_id.contains(&result.child_run_id));
+        assert_eq!(child.correlation_id, None);
+        assert_eq!(child.causation_id, None);
+        assert_eq!(
+            child.stream_key.as_deref(),
+            Some(format!("run:{}", result.child_run_id).as_str())
+        );
+    }
+
+    let meta: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(result.child_run_dir.join("meta.json")).expect("read child meta"),
+    )
+    .expect("parse child meta");
+    let created_at = meta["created_at"]
+        .as_str()
+        .expect("created_at should be populated");
+    assert!(
+        created_at.starts_with("unix_ms:"),
+        "created_at should use deterministic harness materialization timestamp shape"
+    );
+    assert_eq!(meta["run_id"], result.child_run_id);
+    assert_eq!(
+        meta["run_name"],
+        format!("Harness child of {source_run_id}")
+    );
+    assert_eq!(meta["workspace_root"], "/workspace/source");
+    assert_eq!(meta["config_digest"], "cfg-parent");
+    assert_eq!(meta["harness_version"], "test-version");
+    assert_eq!(
+        meta["harness_lineage"]["relationship"],
+        "child_session_materialization"
+    );
+    assert_eq!(
+        meta["harness_lineage"]["harness_operation"],
+        "child_session_materialization"
+    );
+    assert_eq!(
+        meta["harness_lineage"]["harness_source_run_id"],
+        source_run_id
+    );
+    assert_eq!(
+        meta["harness_lineage"]["harness_source_cutoff_seq"],
+        events.len() as u64
+    );
+    assert_eq!(
+        meta["harness_lineage"]["harness_source_cutoff_event_id"],
+        events.last().expect("cutoff event").event_id
+    );
+    assert_eq!(
+        meta["harness_lineage"]["harness_source_digest"],
+        source_prefix_digest(&events)
+    );
+    assert_eq!(meta["harness_lineage"]["harness_created_at"], created_at);
+    assert_eq!(meta["harness_lineage"]["parent_run_id"], source_run_id);
+    assert_eq!(
+        meta["harness_lineage"]["source_cutoff_seq"],
+        events.len() as u64
+    );
+    assert_eq!(
+        meta["harness_lineage"]["source_cutoff_event_id"],
+        events.last().expect("cutoff event").event_id
+    );
+    assert_eq!(
+        meta["harness_lineage"]["source_digest"],
+        source_prefix_digest(&events)
+    );
+    assert!(meta["harness_lineage"]["event_rewrite_policy"]
+        .as_str()
+        .expect("event policy")
+        .contains("clears correlation_id and causation_id"));
+
+    assert_no_unpublished_temp_dirs(session_dir);
+}
+
+#[test]
+fn session_lineage_missing_artifact_rolls_back() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let session_dir = temp_dir.path();
+    let source_run_id = "run_parent_missing_artifact";
+    let source_run_dir = session_dir.join(source_run_id);
+    fs::create_dir_all(&source_run_dir).expect("create source run dir");
+
+    let events = stable_events(
+        source_run_id,
+        "artifacts/toolcalls/toolcall_000001/missing.txt",
+        &blake3::hash(b"missing").to_hex().to_string(),
+        7,
+    );
+    write_source_events(&source_run_dir, &events);
+    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).expect("stable prefix");
+
+    let err = materialize_child_session(ChildSessionMaterializationRequest {
+        source_run_dir: &source_run_dir,
+        events: &events,
+        stable_prefix: &prefix,
+        source_kind: ChildSessionMaterializationSourceKind::DiskRunDirectory,
+    })
+    .expect_err("missing artifact rejects before publish");
+    assert!(matches!(
+        err,
+        ChildSessionMaterializationError::MissingArtifact { .. }
+    ));
+
+    let run_dirs = fs::read_dir(session_dir)
+        .expect("read session dir")
+        .map(|entry| entry.expect("dir entry").file_name())
+        .collect::<Vec<_>>();
+    assert_eq!(run_dirs, vec![source_run_id]);
+    assert_no_unpublished_temp_dirs(session_dir);
+}
+
+fn stable_events(
+    run_id: &str,
+    artifact_path: &str,
+    artifact_digest: &str,
+    artifact_bytes: usize,
+) -> Vec<EventEnvelopeV1> {
+    vec![
+        envelope(
+            run_id,
+            1,
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "parent".to_string(),
+                workspace_root: "/workspace/source".to_string(),
+            }),
+        ),
+        envelope(
+            run_id,
+            2,
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "toolcall_000001".to_string(),
+                tool_id: "bash".to_string(),
+                args_summary: "{}".to_string(),
+                args_digest: "argsdigest".to_string(),
+                metadata: Some(ToolCallMetadata {
+                    artifact_refs: vec![EventArtifactRef {
+                        path: artifact_path.to_string(),
+                        digest: Some(artifact_digest.to_string()),
+                    }],
+                    ..ToolCallMetadata::default()
+                }),
+            }),
+        ),
+        envelope(
+            run_id,
+            3,
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "toolcall_000001".to_string(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("wrote artifact".to_string()),
+                output_digest: Some("outputdigest".to_string()),
+                output_json: None,
+                metadata: None,
+            }),
+        ),
+        envelope(
+            run_id,
+            4,
+            EventV1::ArtifactWritten(ArtifactWrittenEvent {
+                path: artifact_path.to_string(),
+                digest: artifact_digest.to_string(),
+                bytes: artifact_bytes as u64,
+                tool_call_id: Some("toolcall_000001".to_string()),
+                tool_metadata: None,
+                metadata: BTreeMap::new(),
+            }),
+        ),
+        envelope(
+            run_id,
+            5,
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: "finished".to_string(),
+            }),
+        ),
+    ]
+}
+
+fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
+    EventEnvelopeV1 {
+        schema_version: SCHEMA_VERSION,
+        event_id: format!("evt-parent-{seq:04}"),
+        seq,
+        run_id: run_id.to_string(),
+        mono_ms: seq,
+        ts: None,
+        actor: EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+        correlation_id: Some("corr-parent".to_string()),
+        causation_id: Some("evt-parent-cause".to_string()),
+        stream_key: Some(format!("run:{run_id}")),
+        payload,
+    }
+}
+
+fn write_source_artifact(source_run_dir: &Path, artifact_path: &str, contents: &[u8]) {
+    let path = source_run_dir.join(artifact_path);
+    fs::create_dir_all(path.parent().expect("artifact parent")).expect("create artifact parent");
+    fs::write(path, contents).expect("write source artifact");
+}
+
+fn write_source_events(source_run_dir: &Path, events: &[EventEnvelopeV1]) {
+    let body = events
+        .iter()
+        .map(|event| serde_json::to_string(event).expect("serialize source event"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(source_run_dir.join("events.jsonl"), format!("{body}\n"))
+        .expect("write source events");
+}
+
+fn read_events(run_dir: &Path) -> Vec<EventEnvelopeV1> {
+    fs::read_to_string(run_dir.join("events.jsonl"))
+        .expect("read events")
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("parse event"))
+        .collect()
+}
+
+fn source_prefix_digest(events: &[EventEnvelopeV1]) -> String {
+    let mut bytes = Vec::new();
+    for event in events {
+        serde_json::to_writer(&mut bytes, event).expect("serialize source event");
+        bytes.push(b'\n');
+    }
+    blake3::hash(&bytes).to_hex().to_string()
+}
+
+fn session_dir_entries(session_dir: &Path) -> Vec<String> {
+    let mut entries = fs::read_dir(session_dir)
+        .expect("read session dir")
+        .map(|entry| {
+            entry
+                .expect("dir entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect::<Vec<_>>();
+    entries.sort();
+    entries
+}
+
+fn assert_no_unpublished_temp_dirs(session_dir: &Path) {
+    for entry in fs::read_dir(session_dir).expect("read session dir") {
+        let entry = entry.expect("dir entry");
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        assert!(
+            !(name.starts_with(".run_harness_child") && name.contains(".tmp-")),
+            "unpublished temp dir remained: {name}"
+        );
+    }
+}
