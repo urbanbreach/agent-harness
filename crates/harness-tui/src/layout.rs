@@ -1336,7 +1336,7 @@ mod tests {
     }
 
     #[test]
-    fn fork_selector_overlay_uses_opencode_large_dialog_geometry() {
+    fn fork_selector_overlay_uses_reference_large_dialog_geometry() {
         let mut app = AppState::new_live(None, false, None);
         app.open_fork_selector();
 

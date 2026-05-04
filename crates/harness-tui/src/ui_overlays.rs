@@ -2593,39 +2593,6 @@ fn color_rgb(color: Color) -> Option<(u8, u8, u8)> {
     }
 }
 
-#[cfg(test)]
-mod fork_selector_tests {
-    use super::*;
-    use crate::view_model::ForkSelectorRowViewModel;
-
-    #[test]
-    fn fork_selector_row_matches_opencode_dialog_select_padding_and_colors() {
-        let theme = Theme::default();
-        let row = ForkSelectorRowViewModel {
-            cutoff_seq: 2,
-            event_count: 2,
-            run_id: Some("run".to_string()),
-            status: None,
-            event_id: Some("event".to_string()),
-            event_kind: "UserMessageSubmitted",
-            prompt_text: "Fork this prompt".to_string(),
-            timestamp: Some("2026-05-04T12:34:56Z".to_string()),
-            selected: true,
-        };
-
-        let line = fork_selector_row(&row, &theme, 86);
-
-        assert_eq!(line.spans[0].content.as_ref(), "      ");
-        assert_eq!(line.spans[0].style.bg, Some(Color::Rgb(0xFA, 0xB2, 0x83)));
-        assert_eq!(line.spans[1].content.as_ref(), "Fork this prompt");
-        assert_eq!(line.spans[1].style.fg, Some(theme.text.inverse));
-        assert!(line.spans[1].style.add_modifier.contains(Modifier::BOLD));
-        assert_eq!(line.spans[3].content.as_ref(), "12:34");
-        assert_eq!(line.spans[3].style.fg, Some(theme.text.inverse));
-        assert_eq!(line.spans[4].content.as_ref(), "   ");
-    }
-}
-
 pub(super) fn permission_modal_actions_text(
     app: &AppState,
     theme: &Theme,
@@ -2948,5 +2915,38 @@ fn question_prompt_tint(base: Color, overlay: Color, alpha: f32) -> Color {
             )
         }
         _ => overlay,
+    }
+}
+
+#[cfg(test)]
+mod fork_selector_tests {
+    use super::*;
+    use crate::view_model::ForkSelectorRowViewModel;
+
+    #[test]
+    fn fork_selector_row_matches_reference_dialog_select_padding_and_colors() {
+        let theme = Theme::default();
+        let row = ForkSelectorRowViewModel {
+            cutoff_seq: 2,
+            event_count: 2,
+            run_id: Some("run".to_string()),
+            status: None,
+            event_id: Some("event".to_string()),
+            event_kind: "UserMessageSubmitted",
+            prompt_text: "Fork this prompt".to_string(),
+            timestamp: Some("2026-05-04T12:34:56Z".to_string()),
+            selected: true,
+        };
+
+        let line = fork_selector_row(&row, &theme, 86);
+
+        assert_eq!(line.spans[0].content.as_ref(), "      ");
+        assert_eq!(line.spans[0].style.bg, Some(Color::Rgb(0xFA, 0xB2, 0x83)));
+        assert_eq!(line.spans[1].content.as_ref(), "Fork this prompt");
+        assert_eq!(line.spans[1].style.fg, Some(theme.text.inverse));
+        assert!(line.spans[1].style.add_modifier.contains(Modifier::BOLD));
+        assert_eq!(line.spans[3].content.as_ref(), "12:34");
+        assert_eq!(line.spans[3].style.fg, Some(theme.text.inverse));
+        assert_eq!(line.spans[4].content.as_ref(), "   ");
     }
 }
