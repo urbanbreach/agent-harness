@@ -67,12 +67,11 @@ async fn native_edit_create_routes_through_hashline_and_emits_edit_events() {
     );
 
     let events = read_events(&run.events_path);
-    let proposed_edit_id = format!("edit-{tool_call_id}");
     assert!(events.iter().any(|event| {
         matches!(
             &event.payload,
             EventV1::EditProposed(data)
-                if data.edit_id == proposed_edit_id
+                if data.edit_id == "create-demo"
                     && data.path == "demo.txt"
         )
     }));

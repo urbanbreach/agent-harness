@@ -88,6 +88,7 @@ const ALLOWED_PROVIDER_TURN_FAILURE_STAGES: &[&str] = &[
     "tool_failure",
     "overflow_retry_failed",
     "hook_failure",
+    "max_iters",
     "cancelled",
     "unknown",
 ];
@@ -1814,6 +1815,7 @@ mod tests {
         ProviderConversationTurnStatus, MAX_TOOL_CALLS_TOTAL,
     };
     use crate::config::ToolFailureMode;
+    use crate::conversation::{ConversationMessage, ConversationUserMessage};
     use crate::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 
     #[tokio::test]
@@ -2089,6 +2091,30 @@ mod tests {
             messages[2].content,
             "Harness preserved an incomplete provider turn for continuity. Do not treat it as a completed answer.\nStatus: aborted\nStage: cancelled\nPartial assistant output:\n(none)"
         );
+    }
+
+    #[test]
+    fn max_iters_turn_round_trips_failure_stage_and_messages() {
+        let turn = ProviderConversationTurn {
+            user_prompt: "loop until capped".to_string(),
+            assistant_response: "partial work".to_string(),
+            status: ProviderConversationTurnStatus::Aborted,
+            failure_stage: Some("max_iters".to_string()),
+            failure_reason: Some("agent turn exceeded profile max_iters=2".to_string()),
+            messages: vec![ConversationMessage::User(ConversationUserMessage {
+                request_id: "req_000001".to_string(),
+                text: "loop until capped".to_string(),
+                seq: Some(3),
+                agent_id: Some("agent_000001".to_string()),
+            })],
+            ..ProviderConversationTurn::default()
+        };
+
+        let serialized = serde_json::to_value(&turn).expect("serialize max_iters turn");
+        let restored: ProviderConversationTurn =
+            serde_json::from_value(serialized).expect("deserialize max_iters turn");
+
+        assert_eq!(restored, turn);
     }
 
     #[test]

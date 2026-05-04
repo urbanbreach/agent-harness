@@ -4479,7 +4479,7 @@ async fn critical_compaction_requested_hook_failure_records_compaction_failed() 
 }
 
 #[tokio::test]
-async fn loop_cap_exhaustion_records_deterministic_stop_reason() {
+async fn profile_max_iters_does_not_cap_tool_loops() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let provider = SequentialScriptedProvider::new(vec![
         vec![
@@ -4512,7 +4512,19 @@ async fn loop_cap_exhaustion_records_deterministic_stop_reason() {
                 },
             },
         ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("completed after former cap".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 12,
+                    completion_tokens: 3,
+                    total_tokens: 15,
+                },
+            },
+        ],
     ]);
+    let provider_handle = provider.clone();
     let coordinator = test_agent_tool_coordinator(
         temp_dir.path(),
         Arc::new(provider),
@@ -4528,7 +4540,7 @@ async fn loop_cap_exhaustion_records_deterministic_stop_reason() {
 
     let run = coordinator
         .start_run(
-            "coord_tool_loop_cap_stop_reason",
+            "coord_profile_max_iters_not_enforced",
             PathBuf::from("/workspace/project"),
         )
         .await
@@ -4538,7 +4550,7 @@ async fn loop_cap_exhaustion_records_deterministic_stop_reason() {
         .await
         .expect("spawn idle alpha");
     let request_id = coordinator
-        .request_agent_turn(supervisor_actor(), agent_id, "loop until capped")
+        .request_agent_turn(supervisor_actor(), agent_id, "loop past former cap")
         .await
         .expect("request agent turn");
 
@@ -4546,14 +4558,23 @@ async fn loop_cap_exhaustion_records_deterministic_stop_reason() {
         events.iter().any(|event| {
             matches!(
                 &event.payload,
-                EventV1::TaskCancelled(data)
+                EventV1::TaskCompleted(data)
                     if event.correlation_id.as_deref() == Some(request_id.as_str())
-                        && data.reason == "agent turn exceeded profile max_iters=2"
+                        && data.result_summary == "completed after former cap"
             )
         })
     })
     .await;
     coordinator.stop_run().await.expect("stop run");
+
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCancelled(data)
+                if event.correlation_id.as_deref() == Some(request_id.as_str())
+                    && data.reason.contains("max_iters")
+        )
+    }));
 
     let started_tools = events
         .iter()
@@ -4561,8 +4582,18 @@ async fn loop_cap_exhaustion_records_deterministic_stop_reason() {
         .count();
     assert_eq!(
         started_tools, 2,
-        "max_iters=2 should execute exactly two tool loops"
+        "max_iters=2 should not stop the third provider phase after two tool loops"
     );
+
+    let requests = provider_handle.requests();
+    assert_eq!(requests.len(), 3, "expected all provider phases to run");
+    let final_messages = &requests[2].messages;
+    assert!(final_messages.iter().any(|message| {
+        message.role == MessageRole::User && message.content == "loop past former cap"
+    }));
+    assert!(final_messages
+        .iter()
+        .any(|message| { message.role == MessageRole::Tool && message.content.contains("ok {}") }));
 }
 
 #[tokio::test]

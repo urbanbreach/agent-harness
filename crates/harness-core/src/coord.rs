@@ -6074,7 +6074,6 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
                 };
             }
         };
-
         if let Err(reason) = append_assistant_message_end_phase(
             &job_tx,
             &task.task_id,
@@ -10269,7 +10268,7 @@ fn hashline_edit_metadata(
         let canonical_request = serde_json::to_vec(args_json).unwrap_or_else(|_| b"null".to_vec());
 
         let (edit_id, summary) = (
-            format!("edit-{tool_call_id}"),
+            edit_id_from_native_edit_args(args_json, tool_call_id),
             "rewrite file through native edit tool".to_string(),
         );
 
@@ -10290,6 +10289,17 @@ fn hashline_edit_metadata(
         summary: format!("apply hashline patch with {} op(s)", patch.ops.len()),
         patch_digest: digest12(&canonical_patch),
     })
+}
+
+fn edit_id_from_native_edit_args(args_json: &Value, tool_call_id: &str) -> String {
+    args_json
+        .get("editId")
+        .or_else(|| args_json.get("edit_id"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| format!("edit-{tool_call_id}"))
 }
 
 fn hashline_diff_refs(result: &ToolResult) -> (Option<String>, Option<String>) {
@@ -11265,14 +11275,23 @@ fn restore_provider_context_from_history(
                 let user_prompt = restore_historical_user_prompt(
                     run_id,
                     request_id,
-                    request_state.user_text,
-                    request_state.prompt_summary,
+                    request_state.user_text.clone(),
+                    request_state.prompt_summary.clone(),
                 )?;
 
                 let (status, failure_stage) = historical_cancelled_turn_status_stage(
                     request_state.provider_finish_reason.as_deref(),
                     &payload.reason,
                 );
+                let messages = if failure_stage == "max_iters" {
+                    historical_conversation_messages_for_completed_turn(
+                        &user_prompt,
+                        &request_state.assistant_output,
+                        &request_state,
+                    )
+                } else {
+                    Vec::new()
+                };
                 let provider_request_id = request_state
                     .provider_request_id
                     .unwrap_or_else(|| request_id.to_string());
@@ -11289,7 +11308,7 @@ fn restore_provider_context_from_history(
                         first_seq: request_state.first_seq,
                         last_seq: Some(event.seq),
                         artifacts: Vec::new(),
-                        messages: Vec::new(),
+                        messages,
                     });
             }
             _ => {}
@@ -11472,6 +11491,13 @@ fn historical_cancelled_turn_status_stage(
         return (
             ProviderConversationTurnStatus::Failed,
             "hook_failure".to_string(),
+        );
+    }
+
+    if cancellation_reason.contains("agent turn exceeded profile max_iters=") {
+        return (
+            ProviderConversationTurnStatus::Aborted,
+            "max_iters".to_string(),
         );
     }
 
