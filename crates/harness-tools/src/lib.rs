@@ -70,6 +70,9 @@ use native_tools::{
     TodoWriteTool, WebFetchTool, WebSearchTool,
 };
 
+mod plan;
+use plan::PlanExitTool;
+
 pub use harness_core::tool::canonical_tool_id_for;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,6 +124,7 @@ pub fn coordinator_registry_with_mcp_and_editing(
     registry.register(Arc::new(GlobTool));
     registry.register(Arc::new(GrepTool));
     registry.register(Arc::new(TaskTool::new(agent_ops_executor.clone())));
+    registry.register(Arc::new(PlanExitTool));
     registry.register(Arc::new(HashlineEditTool));
     registry.register(Arc::new(ShellRunTool::new(shell_allowlist.clone())));
     registry.register(Arc::new(BashTool::new(shell_allowlist)));

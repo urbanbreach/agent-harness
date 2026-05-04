@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use harness_core::agent::AgentProfile;
 use harness_core::clock::RealClock;
@@ -15,6 +15,7 @@ use harness_core::perm::PermissionPolicy;
 use harness_core::redact::DefaultRedactor;
 use harness_tools::coordinator_registry;
 use serde_json::{json, Value};
+use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration, Instant};
 
 fn worker_actor(agent_id: &str) -> EventActor {
@@ -31,6 +32,46 @@ fn worker_profile(toolset: &[&str]) -> AgentProfile {
         temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
+    }
+}
+
+fn named_worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
+    AgentProfile {
+        name: name.to_string(),
+        category: name.to_string(),
+        model_ref: format!("default:{name}"),
+        system_prompt: format!("{name} prompt"),
+        max_iters: 12,
+        temperature: Some(0.0),
+        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+        toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
+    }
+}
+
+fn env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+struct ScopedEnvVar {
+    key: &'static str,
+    previous: Option<String>,
+}
+
+impl ScopedEnvVar {
+    fn set(key: &'static str, value: &str) -> Self {
+        let previous = std::env::var(key).ok();
+        std::env::set_var(key, value);
+        Self { key, previous }
+    }
+}
+
+impl Drop for ScopedEnvVar {
+    fn drop(&mut self) {
+        match &self.previous {
+            Some(value) => std::env::set_var(self.key, value),
+            None => std::env::remove_var(self.key),
+        }
     }
 }
 
@@ -138,6 +179,85 @@ async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
         .expect("spawn worker");
 
     (handle, run, worker_id)
+}
+
+#[tokio::test]
+async fn native_plan_exit_switches_to_build_agent_after_approval() {
+    let _guard = env_lock().lock().await;
+    let _answers = ScopedEnvVar::set("HARNESS_QUESTION_ANSWERS", r#"[["Yes"]]"#);
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+    let session_dir = workspace.join("sessions");
+    fs::create_dir_all(&session_dir).expect("session dir");
+
+    let mut config = CoordinatorConfig::new(session_dir);
+    config.permission_policy = PermissionPolicy::new(
+        PermissionMode::Deny,
+        PermissionMode::Deny,
+        PermissionMode::Allow,
+    );
+    config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
+    config.agent_profiles = BTreeMap::from([
+        (
+            "plan".to_string(),
+            named_worker_profile("plan", &["plan_exit"]),
+        ),
+        ("build".to_string(), named_worker_profile("build", &[])),
+    ]);
+
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(RealClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("native_plan_exit", &workspace)
+        .await
+        .expect("start run");
+    let plan_agent_id = handle
+        .spawn_agent_idle(EventActor::new(ActorKind::Supervisor, None), "plan", None)
+        .await
+        .expect("spawn plan");
+
+    let tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&plan_agent_id),
+            Some("plan".to_string()),
+            "plan_exit",
+            json!({}),
+        )
+        .await
+        .expect("request plan_exit");
+    wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
+
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Succeeded);
+    let output = finished.output_json.expect("plan_exit structured output");
+    assert_eq!(output["agent"], "build");
+    assert_eq!(
+        output["plan_file"],
+        format!(".agent-harness/plans/{}.md", run.run_id)
+    );
+    let build_agent_id = output["build_agent_id"]
+        .as_str()
+        .expect("build agent id")
+        .to_string();
+
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::AgentSpawned(payload)
+            if payload.agent_id == build_agent_id
+                && payload.profile == "build"
+                && payload.parent_agent_id.as_deref() == Some(plan_agent_id.as_str())
+    )));
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::UserMessageSubmitted(payload)
+            if payload.text.contains("has been approved")
+                && payload.text.contains(".agent-harness/plans/")
+    )));
 }
 
 #[tokio::test]

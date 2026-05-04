@@ -652,6 +652,7 @@ fn skill_not_found_message(name: &str, catalog: &BTreeMap<String, DiscoveredSkil
 fn known_agent_name(name: &str) -> Option<&'static str> {
     match name.trim().to_ascii_lowercase().as_str() {
         "build" => Some("build"),
+        "plan" => Some("plan"),
         _ => None,
     }
 }
