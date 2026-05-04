@@ -345,6 +345,14 @@ pub(crate) fn runtime_state(input: RuntimeStateInput<'_>) -> RuntimeState {
                 }
 
                 return match activity.status {
+                    ActivityStatus::Queued => RuntimeState {
+                        kind: RuntimeStateKind::Sending,
+                        summary: format!("{summary} · queued for next turn"),
+                        detail: None,
+                        composer_disabled: false,
+                        composer_hint: "Draft another follow-up while this prompt waits…"
+                            .to_string(),
+                    },
                     ActivityStatus::Streaming if activity.transcript_text.is_empty() => {
                         RuntimeState {
                             kind: RuntimeStateKind::Sending,

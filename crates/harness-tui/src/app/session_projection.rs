@@ -559,15 +559,32 @@ impl SessionProjection {
             }
             EventV1::UserMessageSubmitted(data) => {
                 if let Some(index) = self.activity_index_for_user_message(data, event.seq) {
+                    let status = if self.activities.iter().any(|activity| {
+                        activity.status == ActivityStatus::Streaming
+                            && activity.request_id != data.request_id
+                    }) {
+                        ActivityStatus::Queued
+                    } else {
+                        ActivityStatus::Streaming
+                    };
                     if let Some(entry) = self.activities.get_mut(index) {
                         if !matches!(entry.status, ActivityStatus::Done | ActivityStatus::Error) {
-                            entry.status = ActivityStatus::Streaming;
+                            entry.status = status;
                         }
                         entry.user_message = Some(data.clone());
                         entry.user_timestamp = event.ts.clone();
                         mark_activity_event(entry, event.seq, event.mono_ms);
                     }
                 } else {
+                    let status = if self
+                        .activities
+                        .iter()
+                        .any(|activity| activity.status == ActivityStatus::Streaming)
+                    {
+                        ActivityStatus::Queued
+                    } else {
+                        ActivityStatus::Streaming
+                    };
                     self.activities.push_back(new_streaming_activity_entry(
                         NewStreamingActivityEntryArgs {
                             request_id: data.request_id.clone(),
@@ -581,6 +598,9 @@ impl SessionProjection {
                             first_mono_ms: event.mono_ms,
                         },
                     ));
+                    if let Some(entry) = self.activities.back_mut() {
+                        entry.status = status;
+                    }
                 }
             }
             EventV1::ProviderRequestStarted(data) => {
@@ -787,6 +807,23 @@ impl SessionProjection {
                 }
             }
             EventV1::TaskScheduled(data) => {
+                if data.state == harness_core::event::TaskScheduleState::Queued {
+                    if let Some(request_id) = event.correlation_id.as_deref() {
+                        if let Some(index) =
+                            self.activity_index_or_local_echo(request_id, event.seq)
+                        {
+                            if let Some(entry) = self.activities.get_mut(index) {
+                                if !matches!(
+                                    entry.status,
+                                    ActivityStatus::Done | ActivityStatus::Error
+                                ) {
+                                    entry.status = ActivityStatus::Queued;
+                                    mark_activity_event(entry, event.seq, event.mono_ms);
+                                }
+                            }
+                        }
+                    }
+                }
                 self.update_orchestration_task(event, &data.task_id, |row| {
                     if let Some(queue_key) = data.queue_key.as_ref() {
                         row.queue_key = Some(queue_key.clone());

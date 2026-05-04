@@ -2538,7 +2538,7 @@ fn continued_quiescent_bootstrap_stays_in_session_shell_without_handoff() {
 }
 
 #[test]
-fn startup_prompt_enter_emits_submit_intent_and_quits_launcher() {
+fn startup_prompt_enter_echoes_prompt_and_selects_new_session() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
@@ -2555,10 +2555,24 @@ fn startup_prompt_enter_emits_submit_intent_and_quits_launcher() {
     app.handle_key(key(KeyCode::Enter));
 
     assert!(app.should_quit, "startup submit should leave the launcher");
-    let next_live = AppState::new_live(None, false, None);
+    assert!(!app.startup_shell_visible());
+    assert_eq!(app.focus, Focus::Prompt);
+    assert_eq!(app.prompt_buffer, "");
+    assert_eq!(app.prompt_history, vec!["ship it".to_string()]);
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
-        &[UiIntent::NewSession]
+        app.activities
+            .back()
+            .and_then(|activity| activity.user_message.as_ref())
+            .map(|message| message.text.as_str()),
+        Some("ship it")
+    );
+    let next_live = AppState::new_live(None, false, None);
+    assert!(
+        matches!(
+            intents.lock().expect("lock intents").as_slice(),
+            [UiIntent::NewSession]
+        ),
+        "startup submit should select a fresh session after the local prompt echo"
     );
     assert_eq!(next_live.prompt_history, vec!["ship it".to_string()]);
     assert_eq!(
@@ -2595,9 +2609,13 @@ fn slash_new_then_submit_bootstraps_fresh_session_instead_of_live_turn_submit() 
     app.handle_key(key(KeyCode::Enter));
 
     assert!(app.should_quit);
-    assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
-        &[UiIntent::NewSession]
+    assert!(!app.startup_shell_visible());
+    assert!(
+        matches!(
+            intents.lock().expect("lock intents").as_slice(),
+            [UiIntent::NewSession]
+        ),
+        "/new startup handoff must select a fresh session, not submit to the old live run"
     );
 
     let relaunched = AppState::new_live(None, false, None);
@@ -3179,7 +3197,7 @@ fn live_bootstrap_auto_submit_echoes_and_emits_first_prompt() {
 }
 
 #[test]
-fn submit_prompt_while_turn_streams_emits_intent() {
+fn submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
@@ -3225,12 +3243,86 @@ fn submit_prompt_while_turn_streams_emits_intent() {
         Some("next prompt")
     );
     assert_eq!(
+        app.activities.back().map(|activity| activity.status),
+        Some(ActivityStatus::Queued)
+    );
+    assert_eq!(
         intents.lock().expect("lock intents").as_slice(),
         &[UiIntent::SubmitPrompt {
             text: "next prompt".to_string(),
             launch_metadata: LaunchMetadata::default(),
         }]
     );
+}
+
+#[test]
+fn queued_turn_schedule_keeps_activity_queued_until_provider_starts() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        "req_active",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_active".to_string(),
+            text: "active".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_active",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_active".to_string(),
+            provider_id: "default".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
+            prompt_summary: "active".to_string(),
+            request_digest: "digest-active".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "req_queued",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_queued".to_string(),
+            text: "queued".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        4,
+        "req_queued",
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_queued".to_string(),
+            state: TaskScheduleState::Queued,
+            queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
+        }),
+    ));
+
+    let queued = app
+        .activities
+        .iter()
+        .find(|activity| activity.request_id == "req_queued")
+        .expect("queued activity");
+    assert_eq!(queued.status, ActivityStatus::Queued);
+    assert!(app.active_turn_in_progress());
+
+    app.ingest_event(envelope(
+        5,
+        "req_queued",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_queued".to_string(),
+            provider_id: "default".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
+            prompt_summary: "queued".to_string(),
+            request_digest: "digest-queued".to_string(),
+            metadata: None,
+        }),
+    ));
+
+    let queued = app
+        .activities
+        .iter()
+        .find(|activity| activity.request_id == "req_queued")
+        .expect("queued activity");
+    assert_eq!(queued.status, ActivityStatus::Streaming);
 }
 
 #[test]

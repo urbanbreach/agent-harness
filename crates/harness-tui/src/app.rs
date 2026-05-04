@@ -655,6 +655,7 @@ fn mark_activity_event(entry: &mut ActivityEntry, seq: u64, mono_ms: u64) {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ActivityStatus {
+    Queued,
     Streaming,
     Done,
     Error,
@@ -663,6 +664,7 @@ pub enum ActivityStatus {
 impl std::fmt::Display for ActivityStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ActivityStatus::Queued => write!(f, "queued"),
             ActivityStatus::Streaming => write!(f, "streaming…"),
             ActivityStatus::Done => write!(f, "done"),
             ActivityStatus::Error => write!(f, "error"),
@@ -2310,12 +2312,12 @@ impl AppState {
             .or_else(|| self.activities.back())
     }
 
-    fn echo_submitted_prompt(&mut self, text: String) {
+    fn echo_submitted_prompt(&mut self, text: String, status: ActivityStatus) {
         self.activities.push_back(ActivityEntry {
             request_id: String::new(),
             model_id: String::new(),
             provider_id: String::new(),
-            status: ActivityStatus::Streaming,
+            status,
             user_message: Some(UserMessageSubmittedEvent {
                 request_id: String::new(),
                 text,
@@ -2338,10 +2340,19 @@ impl AppState {
         self.transcript_scroll = 0;
     }
 
-    fn dispatch_submitted_prompt(&mut self, text: String) {
+    fn record_submitted_prompt_locally(&mut self, text: String) {
+        let status = if self.active_turn_in_progress() {
+            ActivityStatus::Queued
+        } else {
+            ActivityStatus::Streaming
+        };
         self.prompt_history.push(text.clone());
         self.clear_prompt_input();
-        self.echo_submitted_prompt(text.clone());
+        self.echo_submitted_prompt(text.clone(), status);
+    }
+
+    fn dispatch_submitted_prompt(&mut self, text: String) {
+        self.record_submitted_prompt_locally(text.clone());
         self.emit_ui_intent(UiIntent::SubmitPrompt {
             text,
             launch_metadata: self.launch_metadata.clone(),
@@ -3428,7 +3439,10 @@ impl AppState {
         if self.startup_mode {
             let text = self.prompt_buffer.clone();
             set_pending_live_launch_metadata(self.launch_metadata.clone());
-            set_pending_live_prompt_auto_submit(Some(text));
+            set_pending_live_prompt_auto_submit(Some(text.clone()));
+            self.startup_mode = false;
+            self.focus = Focus::Prompt;
+            self.record_submitted_prompt_locally(text);
             self.emit_ui_intent(UiIntent::NewSession);
             self.should_quit = true;
             return;
