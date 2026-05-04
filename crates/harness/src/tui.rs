@@ -46,6 +46,8 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
+use serde::{Deserialize, Serialize};
+
 use crate::bootstrap;
 use crate::logging;
 use crate::replay::inspect_session_catalog;
@@ -56,8 +58,19 @@ use crate::scenarios::{
 
 const DEFAULT_SESSION_DIR: &str = ".agent-harness/sessions";
 const DEFAULT_MOCK_PROFILE: &str = "worker";
+const MODEL_SELECTION_STATE_FILE: &str = "model.json";
 const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
 const EVENT_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct PersistedModelSelection {
+    schema_version: u8,
+    profile: String,
+    provider: String,
+    model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    variant: Option<String>,
+}
 
 fn handoff_profile_file() -> Option<&'static Mutex<std::fs::File>> {
     static PROFILE_FILE: OnceLock<Option<Mutex<std::fs::File>>> = OnceLock::new();
@@ -449,6 +462,11 @@ fn resolve_live_settings(
     };
     let launch_metadata =
         interactive_launch_metadata(live_config.as_ref(), &agent_profiles, &default_profile)?;
+    let launch_metadata = if live_config.is_some() {
+        apply_persisted_model_selection(launch_metadata)
+    } else {
+        launch_metadata
+    };
 
     Ok(LiveSettings {
         config: live_config,
@@ -474,6 +492,144 @@ fn config_digest_for_paths(paths: &[PathBuf]) -> Result<String, String> {
         hasher.update(&[0xff]);
     }
     Ok(hasher.finalize().to_hex().to_string())
+}
+
+fn model_selection_state_path() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("HARNESS_MODEL_SELECTION_STATE_FILE") {
+        let path = PathBuf::from(path);
+        return (!path.as_os_str().is_empty()).then_some(path);
+    }
+
+    if let Some(state_home) = std::env::var_os("XDG_STATE_HOME") {
+        let state_home = PathBuf::from(state_home);
+        if !state_home.as_os_str().is_empty() {
+            return Some(state_home.join("harness").join(MODEL_SELECTION_STATE_FILE));
+        }
+    }
+
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .filter(|home| !home.as_os_str().is_empty())
+        .map(|home| {
+            home.join(".local")
+                .join("state")
+                .join("harness")
+                .join(MODEL_SELECTION_STATE_FILE)
+        })
+}
+
+fn load_persisted_model_selection() -> Option<PersistedModelSelection> {
+    load_persisted_model_selection_from_path(&model_selection_state_path()?)
+}
+
+fn load_persisted_model_selection_from_path(path: &Path) -> Option<PersistedModelSelection> {
+    let body = fs::read_to_string(path).ok()?;
+    let selection = serde_json::from_str::<PersistedModelSelection>(&body).ok()?;
+    persisted_model_selection_valid(&selection).then_some(selection)
+}
+
+fn persisted_model_selection_valid(selection: &PersistedModelSelection) -> bool {
+    selection.schema_version == 1
+        && !selection.profile.trim().is_empty()
+        && !selection.provider.trim().is_empty()
+        && !selection.model.trim().is_empty()
+        && selection
+            .variant
+            .as_deref()
+            .is_none_or(|variant| !variant.trim().is_empty())
+}
+
+fn save_persisted_model_selection(launch_metadata: &LaunchMetadata) -> Result<(), String> {
+    let Some(path) = model_selection_state_path() else {
+        return Ok(());
+    };
+    save_persisted_model_selection_to_path(&path, launch_metadata)
+}
+
+fn save_persisted_model_selection_to_path(
+    path: &Path,
+    launch_metadata: &LaunchMetadata,
+) -> Result<(), String> {
+    let Some(selection) = persisted_model_selection_from_metadata(launch_metadata) else {
+        return Ok(());
+    };
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|err| {
+            format!(
+                "failed to create model selection state dir {}: {err}",
+                parent.display()
+            )
+        })?;
+    }
+
+    let body = serde_json::to_vec_pretty(&selection)
+        .map_err(|err| format!("failed to serialize model selection state: {err}"))?;
+    let temp_path = path.with_extension("json.tmp");
+    fs::write(&temp_path, body).map_err(|err| {
+        format!(
+            "failed to write model selection state {}: {err}",
+            temp_path.display()
+        )
+    })?;
+    fs::rename(&temp_path, path).map_err(|err| {
+        format!(
+            "failed to replace model selection state {}: {err}",
+            path.display()
+        )
+    })
+}
+
+fn persisted_model_selection_from_metadata(
+    launch_metadata: &LaunchMetadata,
+) -> Option<PersistedModelSelection> {
+    Some(PersistedModelSelection {
+        schema_version: 1,
+        profile: launch_metadata.profile().to_string(),
+        provider: launch_metadata.provider().to_string(),
+        model: launch_metadata.model()?.to_string(),
+        variant: launch_metadata.variant().map(str::to_string),
+    })
+}
+
+fn apply_persisted_model_selection(launch_metadata: LaunchMetadata) -> LaunchMetadata {
+    let Some(selection) = load_persisted_model_selection() else {
+        return launch_metadata;
+    };
+    apply_model_selection_to_launch_metadata(launch_metadata, &selection)
+}
+
+fn apply_model_selection_to_launch_metadata(
+    launch_metadata: LaunchMetadata,
+    selection: &PersistedModelSelection,
+) -> LaunchMetadata {
+    let Some(option) = matching_persisted_model_option(&launch_metadata, selection) else {
+        return launch_metadata;
+    };
+    LaunchMetadata::from_model_option(option)
+        .with_available_models(launch_metadata.available_models().to_vec())
+}
+
+fn matching_persisted_model_option<'a>(
+    launch_metadata: &'a LaunchMetadata,
+    selection: &PersistedModelSelection,
+) -> Option<&'a ModelOption> {
+    if !persisted_model_selection_valid(selection) {
+        return None;
+    }
+
+    let active_profile = launch_metadata.profile();
+    launch_metadata.available_models().iter().find(|option| {
+        option.profile == active_profile
+            && option.provider == selection.provider
+            && option.model == selection.model
+            && option.variant() == selection.variant.as_deref()
+    })
+}
+
+fn persist_launch_selection_for_exit(launch_metadata: &LaunchMetadata) {
+    if let Err(err) = save_persisted_model_selection(launch_metadata) {
+        profile_handoff(&format!("model_selection.persist_failed {err}"));
+    }
 }
 
 fn interactive_launch_metadata(
@@ -713,7 +869,8 @@ fn prepare_new_live_workspace(
 }
 
 fn record_launch_selection(selection: &LaunchSelection, launch_metadata: &LaunchMetadata) {
-    *recover_mutex_lock(selection) = launch_metadata.clone().without_mode_label();
+    let launch_metadata = launch_metadata.clone().without_mode_label();
+    *recover_mutex_lock(selection) = launch_metadata.clone();
 }
 
 fn scenario_launch_metadata() -> LaunchMetadata {
@@ -732,6 +889,7 @@ async fn run_interactive_mode(
     let launch_selection = Arc::new(Mutex::new(
         settings.launch_metadata.clone().without_mode_label(),
     ));
+    let persist_model_selection = settings.config.is_some() && !demo_mode;
     let coordinator_config_warmup = LiveCoordinatorConfigWarmup::start(settings, demo_mode);
     profile_handoff("interactive_mode.warmup_started");
 
@@ -754,6 +912,7 @@ async fn run_interactive_mode(
                     cmd.exit_on_finish,
                     session_history_entries,
                     Arc::clone(&launch_selection),
+                    persist_model_selection,
                 )
             }
         },
@@ -792,6 +951,9 @@ async fn run_interactive_mode(
     )
     .await;
 
+    if persist_model_selection {
+        persist_launch_selection_for_exit(&recover_mutex_lock(&launch_selection));
+    }
     close_preserved_terminal_session().map_err(|err| err.to_string())?;
     result
 }
@@ -851,6 +1013,7 @@ async fn run_direct_continue_mode(
     let launch_selection = Arc::new(Mutex::new(
         settings.launch_metadata.clone().without_mode_label(),
     ));
+    let persist_model_selection = settings.config.is_some() && !demo_mode;
     let coordinator_config_warmup = LiveCoordinatorConfigWarmup::start(settings, demo_mode);
     let _ = coordinator_config_warmup
         .coordinator_config(settings, demo_mode)
@@ -888,6 +1051,7 @@ async fn run_direct_continue_mode(
                     cmd.exit_on_finish,
                     session_history_entries,
                     Arc::clone(&launch_selection),
+                    persist_model_selection,
                 )
             }
         },
@@ -926,6 +1090,9 @@ async fn run_direct_continue_mode(
     )
     .await;
 
+    if persist_model_selection {
+        persist_launch_selection_for_exit(&recover_mutex_lock(&launch_selection));
+    }
     close_preserved_terminal_session().map_err(|err| err.to_string())?;
     result
 }
@@ -987,6 +1154,7 @@ async fn run_startup_launcher(
     exit_on_finish: bool,
     session_history_entries: Vec<SessionHistoryEntry>,
     launch_selection: LaunchSelection,
+    persist_model_selection: bool,
 ) -> Result<InteractiveWorkflow, String> {
     profile_handoff("startup_launcher.begin");
     let selected_intent = Arc::new(Mutex::new(None::<UiIntent>));
@@ -997,6 +1165,9 @@ async fn run_startup_launcher(
         } = &intent
         {
             record_launch_selection(&launch_selection, launch_metadata);
+            if persist_model_selection {
+                persist_launch_selection_for_exit(&launch_metadata.clone().without_mode_label());
+            }
             return;
         }
 
@@ -1184,8 +1355,11 @@ async fn run_continue_session_bootstrap(
         .await
     });
 
-    let (selected_workflow, ui_intent_sender) =
-        build_live_ui_intent_router(intent_tx.clone(), Arc::clone(&launch_selection));
+    let (selected_workflow, ui_intent_sender) = build_live_ui_intent_router(
+        intent_tx.clone(),
+        Arc::clone(&launch_selection),
+        settings.config.is_some() && !demo_mode,
+    );
 
     let exit_on_finish = cmd.exit_on_finish;
     set_pending_live_launch_metadata(continue_metadata);
@@ -1356,6 +1530,7 @@ fn replay_launch_metadata(
 fn build_live_ui_intent_router(
     intent_tx: mpsc::UnboundedSender<UiIntent>,
     launch_selection: LaunchSelection,
+    persist_model_selection: bool,
 ) -> (SelectedWorkflow, UiIntentSink) {
     let selected_workflow = Arc::new(Mutex::new(None::<InteractiveWorkflow>));
     let selected_workflow_sink = Arc::clone(&selected_workflow);
@@ -1365,6 +1540,9 @@ fn build_live_ui_intent_router(
         } = &intent
         {
             record_launch_selection(&launch_selection, launch_metadata);
+            if persist_model_selection {
+                persist_launch_selection_for_exit(&launch_metadata.clone().without_mode_label());
+            }
         }
         if let Some(workflow) = live_workflow_from_intent(&intent) {
             capture_first_workflow(&selected_workflow_sink, workflow);
@@ -1609,8 +1787,11 @@ async fn run_new_live_session(
         shutdown_rx,
     ));
 
-    let (selected_workflow, ui_intent_sender) =
-        build_live_ui_intent_router(intent_tx.clone(), Arc::clone(&launch_selection));
+    let (selected_workflow, ui_intent_sender) = build_live_ui_intent_router(
+        intent_tx.clone(),
+        Arc::clone(&launch_selection),
+        settings.config.is_some() && !demo_mode,
+    );
 
     let exit_on_finish = cmd.exit_on_finish;
     set_pending_live_launch_metadata(launch_metadata);
@@ -1656,9 +1837,13 @@ async fn run_new_live_session(
     let selected_workflow = take_selected_workflow(&selected_workflow);
     await_task("new live runtime", runtime_task).await?;
 
-    Ok(selected_workflow?)
+    selected_workflow
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "new live runtime task wiring passes explicit runtime dependencies"
+)]
 async fn run_new_live_runtime(
     settings: LiveSettings,
     demo_mode: bool,
@@ -2263,9 +2448,10 @@ async fn handle_ui_intents(
                 source_run_dir,
                 events,
                 stable_prefix,
+                prompt_text,
             } => {
                 let notice =
-                    materialize_tui_lineage_child("fork", source_run_dir, events, stable_prefix);
+                    materialize_tui_fork_child(source_run_dir, events, stable_prefix, prompt_text);
                 let _ = live_update_tx.send(notice);
             }
             UiIntent::CloneSession {
@@ -2339,6 +2525,32 @@ fn materialize_tui_lineage_child(
         },
         Err(err) => LiveUpdate::OperatorNotice {
             message: format!("Harness session {operation} blocked: {err}"),
+            level: OperatorNoticeLevel::Error,
+        },
+    }
+}
+
+fn materialize_tui_fork_child(
+    source_run_dir: PathBuf,
+    events: Vec<EventEnvelopeV1>,
+    stable_prefix: StableSessionPrefix,
+    prompt_text: String,
+) -> LiveUpdate {
+    let result = materialize_child_session(ChildSessionMaterializationRequest {
+        source_run_dir: &source_run_dir,
+        events: &events,
+        stable_prefix: &stable_prefix,
+        source_kind: ChildSessionMaterializationSourceKind::TuiStableInMemorySnapshot,
+    });
+
+    match result {
+        Ok(result) => LiveUpdate::ContinueSession {
+            run_id: result.child_run_id,
+            run_dir: result.child_run_dir,
+            prompt_draft: prompt_text,
+        },
+        Err(err) => LiveUpdate::OperatorNotice {
+            message: format!("Harness session fork blocked: {err}"),
             level: OperatorNoticeLevel::Error,
         },
     }
@@ -2550,8 +2762,8 @@ mod tests {
     use super::*;
     use harness_core::config::load_config_from_str;
     use harness_core::event::{
-        AgentSpawnedEvent, ProviderRequestStartedEvent, RunFinishedEvent, RunStartedEvent,
-        SCHEMA_VERSION,
+        AgentSpawnedEvent, ProviderRequestFinishedEvent, ProviderRequestStartedEvent,
+        RunFinishedEvent, RunStartedEvent, SCHEMA_VERSION,
     };
     use harness_tui::app::{set_pending_live_prompt_draft, AppState};
     use std::sync::{Mutex, OnceLock};
@@ -2593,6 +2805,98 @@ mod tests {
                 }),
             ),
         ]
+    }
+
+    fn active_stable_lineage_test_events() -> Vec<EventEnvelopeV1> {
+        vec![
+            lineage_test_event(
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "tui active lineage source".to_string(),
+                    workspace_root: "/workspace".to_string(),
+                }),
+            ),
+            lineage_test_event(
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_tui_lineage".to_string(),
+                    parent_agent_id: None,
+                    profile: "build".to_string(),
+                }),
+            ),
+            lineage_test_event(
+                3,
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_000001".to_string(),
+                    provider_id: "default".to_string(),
+                    model_id: "gpt-5.5".to_string(),
+                    prompt_summary: "first turn".to_string(),
+                    request_digest: "digest-tui-lineage".to_string(),
+                    metadata: None,
+                }),
+            ),
+            lineage_test_event(
+                4,
+                EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                    request_id: "req_000001".to_string(),
+                    finish_reason: "stop".to_string(),
+                    output_digest: Some("digest-output".to_string()),
+                    usage: None,
+                    metadata: None,
+                }),
+            ),
+        ]
+    }
+
+    fn first_prompt_lineage_test_events() -> Vec<EventEnvelopeV1> {
+        vec![
+            lineage_test_event(
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "tui first prompt lineage source".to_string(),
+                    workspace_root: "/workspace".to_string(),
+                }),
+            ),
+            lineage_test_event(
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_tui_lineage".to_string(),
+                    parent_agent_id: None,
+                    profile: "build".to_string(),
+                }),
+            ),
+        ]
+    }
+
+    fn write_recorded_runtime_context_meta(run_dir: &Path) {
+        let meta = serde_json::json!({
+            "run_id": "run_tui_lineage_source",
+            "run_name": "tui lineage source",
+            "workspace_root": "/workspace",
+            "created_at": "2026-05-04T00:00:00Z",
+            "config_digest": "digest-config",
+            "harness_version": env!("CARGO_PKG_VERSION"),
+            "recorded_runtime_context": {
+                "profile": "build",
+                "provider": "default",
+                "model": "gpt-5.5",
+                "variant": null,
+                "display_label": "gpt-5.5",
+                "token_window_label": null,
+                "context_window_tokens": null,
+                "max_input_tokens": null,
+                "max_output_tokens": null,
+                "description": null,
+                "recommended_for": null,
+                "reasoning_effort": null,
+                "text_verbosity": null
+            }
+        });
+        std::fs::write(
+            run_dir.join("meta.json"),
+            serde_json::to_vec_pretty(&meta).expect("serialize meta"),
+        )
+        .expect("write source meta");
     }
 
     fn catalog_event(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
@@ -2905,6 +3209,85 @@ mod tests {
         );
     }
 
+    #[test]
+    fn tui_lineage_fork_continues_child_with_prompt_draft() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let source_run_dir = temp_dir.path().join("run_tui_lineage_source");
+        std::fs::create_dir(&source_run_dir).expect("create source run dir");
+        std::fs::write(source_run_dir.join(".writer.lock"), "locked").expect("write source lock");
+        let events = active_stable_lineage_test_events();
+        let stable_prefix = harness_core::session_lineage::validate_tui_fork_stable_prefix(
+            &events,
+            events.len() as u64,
+        )
+        .expect("stable fork prefix");
+
+        let update = materialize_tui_fork_child(
+            source_run_dir,
+            events,
+            stable_prefix,
+            "repeat this prompt".to_string(),
+        );
+
+        let LiveUpdate::ContinueSession {
+            run_id,
+            run_dir,
+            prompt_draft,
+        } = update
+        else {
+            panic!("expected fork continuation update");
+        };
+        assert_eq!(prompt_draft, "repeat this prompt");
+        assert_eq!(run_id, run_dir.file_name().unwrap().to_string_lossy());
+        let child_events = load_events_from_run_dir(&run_dir).expect("load child events");
+        assert!(matches!(
+            child_events.last().map(|event| &event.payload),
+            Some(EventV1::RunFinished(_))
+        ));
+        let resume_plan = inspect_resume_plan(&run_dir);
+        assert!(
+            resume_plan.is_resumable,
+            "child should be resumable: {:?}",
+            resume_plan.resume_disabled_reason
+        );
+    }
+
+    #[test]
+    fn tui_lineage_fork_first_prompt_uses_recorded_runtime_context_for_resume() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let source_run_dir = temp_dir.path().join("run_tui_lineage_source");
+        std::fs::create_dir(&source_run_dir).expect("create source run dir");
+        std::fs::write(source_run_dir.join(".writer.lock"), "locked").expect("write source lock");
+        write_recorded_runtime_context_meta(&source_run_dir);
+        let events = first_prompt_lineage_test_events();
+        let stable_prefix = harness_core::session_lineage::validate_tui_fork_stable_prefix(
+            &events,
+            events.len() as u64,
+        )
+        .expect("stable first prompt fork prefix");
+
+        let update = materialize_tui_fork_child(
+            source_run_dir,
+            events,
+            stable_prefix,
+            "first prompt".to_string(),
+        );
+
+        let LiveUpdate::ContinueSession { run_dir, .. } = update else {
+            panic!("expected fork continuation update");
+        };
+        let resume_plan = inspect_resume_plan(&run_dir);
+        assert_eq!(
+            resume_plan.provider_model.as_deref(),
+            Some("default/gpt-5.5")
+        );
+        assert!(
+            resume_plan.is_resumable,
+            "child should be resumable from copied metadata: {:?}",
+            resume_plan.resume_disabled_reason
+        );
+    }
+
     #[tokio::test]
     async fn compact_intent_reports_unavailable_when_no_live_agent_target_exists() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
@@ -2959,7 +3342,7 @@ mod tests {
         let (intent_tx, mut intent_rx) = mpsc::unbounded_channel::<UiIntent>();
         let launch_selection = Arc::new(Mutex::new(LaunchMetadata::default()));
         let (selected_workflow, sink) =
-            build_live_ui_intent_router(intent_tx, Arc::clone(&launch_selection));
+            build_live_ui_intent_router(intent_tx, Arc::clone(&launch_selection), false);
 
         sink(UiIntent::CompactSession);
 
@@ -3452,6 +3835,145 @@ mod tests {
 
         assert_eq!(metadata.profile(), "build");
         assert_eq!(metadata.variant(), None);
+    }
+
+    #[test]
+    fn persisted_model_selection_restores_valid_variant_for_active_profile() {
+        let base = LaunchMetadata::from_model_option(&ModelOption {
+            profile: "build".to_string(),
+            provider: "default".to_string(),
+            provider_display_label: Some("Default".to_string()),
+            provider_backend_label: None,
+            model: "gpt-5.4-mini".to_string(),
+            model_display_label: Some("GPT-5.4 Mini".to_string()),
+            variant: None,
+            variant_display_label: None,
+            display_label: Some("GPT-5.4 Mini".to_string()),
+            token_window_label: None,
+            context_window_tokens: None,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            description: None,
+            profile_description: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            recommended_for: None,
+        })
+        .with_available_models(vec![
+            ModelOption {
+                profile: "build".to_string(),
+                provider: "default".to_string(),
+                provider_display_label: Some("Default".to_string()),
+                provider_backend_label: None,
+                model: "gpt-5.4-mini".to_string(),
+                model_display_label: Some("GPT-5.4 Mini".to_string()),
+                variant: None,
+                variant_display_label: None,
+                display_label: Some("GPT-5.4 Mini".to_string()),
+                token_window_label: None,
+                context_window_tokens: None,
+                max_input_tokens: None,
+                max_output_tokens: None,
+                description: None,
+                profile_description: None,
+                reasoning_effort: None,
+                text_verbosity: None,
+                recommended_for: None,
+            },
+            ModelOption {
+                profile: "build".to_string(),
+                provider: "default".to_string(),
+                provider_display_label: Some("Default".to_string()),
+                provider_backend_label: None,
+                model: "gpt-5.4-mini".to_string(),
+                model_display_label: Some("GPT-5.4 Mini".to_string()),
+                variant: Some("high".to_string()),
+                variant_display_label: Some("High".to_string()),
+                display_label: Some("GPT-5.4 Mini High".to_string()),
+                token_window_label: None,
+                context_window_tokens: None,
+                max_input_tokens: None,
+                max_output_tokens: None,
+                description: None,
+                profile_description: None,
+                reasoning_effort: Some("high".to_string()),
+                text_verbosity: None,
+                recommended_for: None,
+            },
+        ]);
+
+        let restored = apply_model_selection_to_launch_metadata(
+            base,
+            &PersistedModelSelection {
+                schema_version: 1,
+                profile: "build".to_string(),
+                provider: "default".to_string(),
+                model: "gpt-5.4-mini".to_string(),
+                variant: Some("high".to_string()),
+            },
+        );
+
+        assert_eq!(restored.profile(), "build");
+        assert_eq!(restored.provider(), "default");
+        assert_eq!(restored.model(), Some("gpt-5.4-mini"));
+        assert_eq!(restored.variant(), Some("high"));
+        assert_eq!(restored.reasoning_effort(), Some("high"));
+    }
+
+    #[test]
+    fn persisted_model_selection_ignores_unconfigured_variant() {
+        let base =
+            LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini").with_available_models(
+                vec![ModelOption::from_model_ref("build", "default:gpt-5.4-mini")],
+            );
+        let restored = apply_model_selection_to_launch_metadata(
+            base.clone(),
+            &PersistedModelSelection {
+                schema_version: 1,
+                profile: "build".to_string(),
+                provider: "default".to_string(),
+                model: "gpt-5.4-mini".to_string(),
+                variant: Some("stale".to_string()),
+            },
+        );
+
+        assert_eq!(restored, base);
+    }
+
+    #[test]
+    fn persisted_model_selection_round_trips_model_json() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("model.json");
+        let metadata = LaunchMetadata::from_model_option(&ModelOption {
+            profile: "build".to_string(),
+            provider: "default".to_string(),
+            provider_display_label: None,
+            provider_backend_label: None,
+            model: "gpt-5.4-mini".to_string(),
+            model_display_label: None,
+            variant: Some("xhigh".to_string()),
+            variant_display_label: None,
+            display_label: None,
+            token_window_label: None,
+            context_window_tokens: None,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            description: None,
+            profile_description: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            recommended_for: None,
+        });
+
+        save_persisted_model_selection_to_path(&path, &metadata).expect("persist model selection");
+        let selection =
+            load_persisted_model_selection_from_path(&path).expect("load model selection");
+
+        assert_eq!(selection.schema_version, 1);
+        assert_eq!(selection.profile, "build");
+        assert_eq!(selection.provider, "default");
+        assert_eq!(selection.model, "gpt-5.4-mini");
+        assert_eq!(selection.variant.as_deref(), Some("xhigh"));
     }
 
     #[test]

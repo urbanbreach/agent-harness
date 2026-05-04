@@ -13,7 +13,10 @@ use harness_core::event::EventEnvelopeV1;
 use ratatui::buffer::Buffer;
 use ratatui::{backend::CrosstermBackend, Terminal};
 
-use crate::app::{AppState, LaunchMetadata, SessionHistoryEntry, ToastVariant, UiIntent};
+use crate::app::{
+    set_pending_live_prompt_draft, AppState, LaunchMetadata, SessionHistoryEntry, ToastVariant,
+    UiIntent,
+};
 use crate::event::{self, poll};
 use crate::ui;
 
@@ -66,6 +69,11 @@ pub enum LiveUpdate {
     Event(Box<EventEnvelopeV1>),
     Status(String),
     SessionHistory(Vec<SessionHistoryEntry>),
+    ContinueSession {
+        run_id: String,
+        run_dir: PathBuf,
+        prompt_draft: String,
+    },
     OperatorNotice {
         message: String,
         level: OperatorNoticeLevel,
@@ -528,6 +536,17 @@ fn drain_live_updates(
             Ok(LiveUpdate::SessionHistory(entries)) => {
                 drained += 1;
                 app.set_session_history_entries(entries);
+                state.changed = true;
+            }
+            Ok(LiveUpdate::ContinueSession {
+                run_id,
+                run_dir,
+                prompt_draft,
+            }) => {
+                drained += 1;
+                set_pending_live_prompt_draft(Some(prompt_draft));
+                app.emit_ui_intent(UiIntent::ContinueSession { run_id, run_dir });
+                app.should_quit = true;
                 state.changed = true;
             }
             Ok(LiveUpdate::OperatorNotice { message, level }) => {
