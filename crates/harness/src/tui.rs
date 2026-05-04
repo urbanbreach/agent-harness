@@ -1333,16 +1333,23 @@ async fn run_continue_session_bootstrap(
     let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
     let intent_live_update_tx = live_update_tx.clone();
 
-    let event_forwarder_task = tokio::spawn(async move {
-        forward_events_to_tui(store, live_update_tx, preloaded_last_seq.saturating_add(1)).await
-    });
-
-    let intent_coordinator = coordinator.clone();
     let live_agent_target = Arc::new(Mutex::new(LiveAgentTarget {
         agent_id: Some(resume_agent_id.clone()),
         profile: continue_metadata.profile().to_string(),
         last_request_id: latest_request_id_for_agent(&historical_events, &resume_agent_id),
     }));
+    let forwarder_live_agent_target = Arc::clone(&live_agent_target);
+    let event_forwarder_task = tokio::spawn(async move {
+        forward_events_to_tui(
+            store,
+            live_update_tx,
+            preloaded_last_seq.saturating_add(1),
+            Some(forwarder_live_agent_target),
+        )
+        .await
+    });
+
+    let intent_coordinator = coordinator.clone();
     let intent_live_agent_target = Arc::clone(&live_agent_target);
     let ui_intent_task = tokio::spawn(async move {
         handle_ui_intents(
@@ -1997,17 +2004,20 @@ async fn bootstrap_new_live_runtime(
         .map_err(|err| err.to_string())?;
     profile_handoff("new_live.spawn_agent_idle_done");
 
-    let event_forwarder_task = tokio::spawn({
-        let live_update_tx = live_update_tx.clone();
-        async move { forward_events_to_tui(store, live_update_tx, 1).await }
-    });
-
-    let intent_coordinator = coordinator.clone();
     let live_agent_target = Arc::new(Mutex::new(LiveAgentTarget {
         agent_id: Some(agent_id),
         profile: launch_metadata.profile().to_string(),
         last_request_id: None,
     }));
+    let event_forwarder_task = tokio::spawn({
+        let live_update_tx = live_update_tx.clone();
+        let forwarder_live_agent_target = Arc::clone(&live_agent_target);
+        async move {
+            forward_events_to_tui(store, live_update_tx, 1, Some(forwarder_live_agent_target)).await
+        }
+    });
+
+    let intent_coordinator = coordinator.clone();
     let intent_live_agent_target = Arc::clone(&live_agent_target);
     let ui_intent_task = tokio::spawn(async move {
         handle_ui_intents(
@@ -2097,7 +2107,7 @@ async fn run_live_mode(
     }
 
     let event_forwarder_task =
-        tokio::spawn(async move { forward_events_to_tui(store, live_update_tx, 1).await });
+        tokio::spawn(async move { forward_events_to_tui(store, live_update_tx, 1, None).await });
 
     let intent_coordinator = coordinator.clone();
     let ui_intent_task = tokio::spawn(async move {
@@ -2243,6 +2253,7 @@ async fn forward_events_to_tui(
     store: Arc<dyn EventStore>,
     live_update_tx: std_mpsc::Sender<LiveUpdate>,
     start_from_seq: u64,
+    live_agent_target: Option<LiveAgentTargetState>,
 ) -> Result<(), String> {
     let mut from_seq = start_from_seq.max(1);
     let mut last_seq_seen = from_seq.saturating_sub(1);
@@ -2260,6 +2271,10 @@ async fn forward_events_to_tui(
 
                     last_seq_seen = event.seq;
                     from_seq = last_seq_seen.saturating_add(1);
+                    maybe_update_live_agent_target_for_plan_handoff(
+                        &event,
+                        live_agent_target.as_ref(),
+                    );
                     if live_update_tx
                         .send(LiveUpdate::Event(Box::new(event)))
                         .is_err()
@@ -2286,6 +2301,10 @@ async fn forward_events_to_tui(
 
                         last_seq_seen = replayed_event.seq;
                         from_seq = last_seq_seen.saturating_add(1);
+                        maybe_update_live_agent_target_for_plan_handoff(
+                            &replayed_event,
+                            live_agent_target.as_ref(),
+                        );
                         if live_update_tx
                             .send(LiveUpdate::Event(Box::new(replayed_event)))
                             .is_err()
@@ -2328,6 +2347,33 @@ fn manual_compaction_success_message(
         (Some(_), Some(_)) => format!("{prefix} · active ctx estimate unchanged"),
         _ => prefix,
     }
+}
+
+fn maybe_update_live_agent_target_for_plan_handoff(
+    event: &EventEnvelopeV1,
+    live_agent_target: Option<&LiveAgentTargetState>,
+) {
+    let Some(live_agent_target) = live_agent_target else {
+        return;
+    };
+    let EventV1::AgentSpawned(payload) = &event.payload else {
+        return;
+    };
+    if payload.profile != harness_core::plan::BUILD_AGENT_NAME {
+        return;
+    }
+
+    let mut target = recover_mutex_lock(live_agent_target);
+    if target.profile != harness_core::plan::PLAN_AGENT_NAME {
+        return;
+    }
+    if payload.parent_agent_id.as_deref() != target.agent_id.as_deref() {
+        return;
+    }
+
+    target.agent_id = Some(payload.agent_id.clone());
+    target.profile = payload.profile.clone();
+    target.last_request_id = None;
 }
 
 fn compact_token_estimate(value: u32) -> String {
@@ -2787,6 +2833,30 @@ mod tests {
             stream_key: Some("run:run_tui_lineage_source".to_string()),
             payload,
         }
+    }
+
+    #[test]
+    fn plan_handoff_updates_live_agent_target_to_spawned_build_agent() {
+        let target = Arc::new(Mutex::new(LiveAgentTarget {
+            agent_id: Some("agent_plan".to_string()),
+            profile: "plan".to_string(),
+            last_request_id: Some("req_plan".to_string()),
+        }));
+        let event = lineage_test_event(
+            1,
+            EventV1::AgentSpawned(AgentSpawnedEvent {
+                agent_id: "agent_build".to_string(),
+                profile: "build".to_string(),
+                parent_agent_id: Some("agent_plan".to_string()),
+            }),
+        );
+
+        maybe_update_live_agent_target_for_plan_handoff(&event, Some(&target));
+
+        let target = target.lock().expect("target lock");
+        assert_eq!(target.agent_id.as_deref(), Some("agent_build"));
+        assert_eq!(target.profile, "build");
+        assert_eq!(target.last_request_id, None);
     }
 
     fn stable_lineage_test_events() -> Vec<EventEnvelopeV1> {

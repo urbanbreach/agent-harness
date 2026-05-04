@@ -110,16 +110,32 @@ fn compose_interactive_system_prompt(
     profile_name: &str,
     profile_cfg: &harness_core::config::ProfileConfig,
 ) -> Result<String, String> {
-    let agent_prompt = profile_cfg.system_prompt.clone().ok_or_else(|| {
-        format!(
-            "agent `{profile_name}` is missing a system prompt; define `agents.{profile_name}.system_prompt` or ship `.agent-harness/agents/{profile_name}.md`"
-        )
-    })?;
+    let agent_prompt = profile_cfg
+        .system_prompt
+        .clone()
+        .or_else(|| builtin_agent_system_prompt(profile_name).map(str::to_string))
+        .ok_or_else(|| {
+            format!(
+                "agent `{profile_name}` is missing a system prompt; define `agents.{profile_name}.system_prompt` or ship `.agent-harness/agents/{profile_name}.md`"
+            )
+        })?;
 
     Ok(cfg
         .instruction_prompt_prefix()
         .map(|instructions| format!("{instructions}\n\n{agent_prompt}"))
         .unwrap_or(agent_prompt))
+}
+
+fn builtin_agent_system_prompt(profile_name: &str) -> Option<&'static str> {
+    match profile_name {
+        harness_core::plan::BUILD_AGENT_NAME => Some(
+            "You are harness, a coding agent. Use the available tools to implement, verify, and clearly summarize software engineering work.",
+        ),
+        harness_core::plan::PLAN_AGENT_NAME => Some(
+            "You are harness in planning mode. Inspect the workspace, write the final plan to the active plan file, and call plan_exit when the plan is complete. Do not edit files outside the active plan file or execute implementation work.",
+        ),
+        _ => None,
+    }
 }
 
 pub fn interactive_agent_profiles(
@@ -470,19 +486,23 @@ mod tests {
     }
 
     #[test]
-    fn shipped_example_config_only_seeds_build() {
+    fn shipped_example_config_seeds_build_and_plan() {
         let config_path =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs/harness.example.jsonc");
         let cfg = load_config_from_file(&config_path).expect("shipped example config should parse");
 
         assert!(cfg.agents.contains_key("build"));
-        assert_eq!(cfg.agents.len(), 1);
+        assert!(cfg.agents.contains_key("plan"));
+        assert_eq!(cfg.default_agent.as_deref(), Some("build"));
 
         let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles");
-        assert_eq!(profiles.len(), 1);
         assert!(profiles["build"].toolset.contains(&"edit".to_string()));
         assert!(profiles["build"].toolset.contains(&"bash".to_string()));
         assert!(profiles["build"].toolset.contains(&"task".to_string()));
         assert!(profiles["build"].toolset.contains(&"todowrite".to_string()));
+        assert!(profiles["plan"].toolset.contains(&"edit".to_string()));
+        assert!(profiles["plan"].toolset.contains(&"plan_exit".to_string()));
+        assert!(!profiles["plan"].toolset.contains(&"bash".to_string()));
+        assert!(!profiles["plan"].toolset.contains(&"task".to_string()));
     }
 }
