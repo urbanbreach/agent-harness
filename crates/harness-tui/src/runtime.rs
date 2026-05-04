@@ -19,11 +19,14 @@ use crate::ui;
 
 const ACTIVE_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const IDLE_POLL_INTERVAL: Duration = Duration::from_secs(1);
+const LIVE_UPDATE_DRAIN_MAX_PER_FRAME: usize = 16;
+const LIVE_UPDATE_DRAIN_MAX_DURATION: Duration = Duration::from_millis(8);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct LiveUpdateDrainState {
     changed: bool,
     disconnected: bool,
+    budget_exhausted: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -62,6 +65,7 @@ fn take_pending_replay_launch_metadata() -> Option<LaunchMetadata> {
 pub enum LiveUpdate {
     Event(Box<EventEnvelopeV1>),
     Status(String),
+    SessionHistory(Vec<SessionHistoryEntry>),
     OperatorNotice {
         message: String,
         level: OperatorNoticeLevel,
@@ -219,11 +223,15 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         let mut next_animation_tick = Instant::now() + ACTIVE_POLL_INTERVAL;
 
         loop {
+            let mut live_updates_pending = false;
             if let Some(update_rx) = live_updates.as_ref() {
                 let drain_state = drain_live_updates(&mut app, update_rx);
                 redraw_requested |= drain_state.changed;
                 if drain_state.disconnected {
                     live_updates = None;
+                }
+                if drain_state.budget_exhausted {
+                    live_updates_pending = true;
                 }
             }
 
@@ -252,6 +260,9 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 app.set_frame_area(frame_area);
                 terminal.draw(|frame| ui::render_app(frame, &app))?;
                 redraw_requested = false;
+                if app.has_active_animations() {
+                    next_animation_tick = next_animation_tick_after_frame(Instant::now());
+                }
             }
 
             if app.should_quit {
@@ -263,24 +274,28 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 let now = Instant::now();
                 if now >= next_animation_tick {
                     app.advance_transcript_animation_phase();
-                    next_animation_tick = now + ACTIVE_POLL_INTERVAL;
+                    next_animation_tick = next_animation_tick_after_frame(now);
                     redraw_requested = true;
                     continue;
                 }
             } else {
-                next_animation_tick = Instant::now() + ACTIVE_POLL_INTERVAL;
+                next_animation_tick = next_animation_tick_after_frame(Instant::now());
             }
 
-            let event = poll(poll_timeout(
-                animation_active,
-                live_updates.is_some(),
-                Instant::now(),
-                next_animation_tick,
-            ))?;
+            let event = if live_updates_pending {
+                poll(Duration::ZERO)?
+            } else {
+                poll(poll_timeout(
+                    animation_active,
+                    live_updates.is_some(),
+                    Instant::now(),
+                    next_animation_tick,
+                ))?
+            };
 
-            if event.is_none() && animation_active {
+            if event.is_none() && animation_active && Instant::now() >= next_animation_tick {
                 app.advance_transcript_animation_phase();
-                next_animation_tick = Instant::now() + ACTIVE_POLL_INTERVAL;
+                next_animation_tick = next_animation_tick_after_frame(Instant::now());
                 redraw_requested = true;
                 continue;
             }
@@ -465,6 +480,10 @@ fn poll_timeout(
     }
 }
 
+fn next_animation_tick_after_frame(frame_completed_at: Instant) -> Instant {
+    frame_completed_at + ACTIVE_POLL_INTERVAL
+}
+
 fn mouse_event_requires_handling(kind: MouseEventKind, slash_visible: bool) -> bool {
     !matches!(kind, MouseEventKind::Moved) || slash_visible
 }
@@ -475,9 +494,20 @@ fn drain_live_updates(
 ) -> LiveUpdateDrainState {
     let mut state = LiveUpdateDrainState::default();
 
+    let mut drained = 0usize;
+    let drain_started_at = Instant::now();
+
     loop {
+        if drained >= LIVE_UPDATE_DRAIN_MAX_PER_FRAME
+            || (drained > 0 && drain_started_at.elapsed() >= LIVE_UPDATE_DRAIN_MAX_DURATION)
+        {
+            state.budget_exhausted = true;
+            break;
+        }
+
         match update_rx.try_recv() {
             Ok(LiveUpdate::Event(event)) => {
+                drained += 1;
                 if app
                     .status_banner
                     .as_deref()
@@ -489,12 +519,19 @@ fn drain_live_updates(
                 state.changed = true;
             }
             Ok(LiveUpdate::Status(status)) => {
+                drained += 1;
                 if app.status_banner.as_deref() != Some(status.as_str()) {
                     app.set_status_banner(Some(status));
                     state.changed = true;
                 }
             }
+            Ok(LiveUpdate::SessionHistory(entries)) => {
+                drained += 1;
+                app.set_session_history_entries(entries);
+                state.changed = true;
+            }
             Ok(LiveUpdate::OperatorNotice { message, level }) => {
+                drained += 1;
                 if matches!(level, OperatorNoticeLevel::Error)
                     && app.status_banner.as_deref() != Some(message.as_str())
                 {
@@ -534,6 +571,7 @@ fn transient_live_status_banner(status: &str) -> bool {
 mod tests {
     use super::*;
     use crate::app::{AppState, ToastVariant};
+    use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
 
     #[test]
     fn poll_timeout_blocks_when_idle_and_live_updates_are_gone() {
@@ -564,6 +602,18 @@ mod tests {
     }
 
     #[test]
+    fn next_animation_tick_after_slow_frame_remains_throttled() {
+        let started_at = Instant::now();
+        let slow_frame_completed_at = started_at + ACTIVE_POLL_INTERVAL * 3;
+        let next_tick = next_animation_tick_after_frame(slow_frame_completed_at);
+
+        assert_eq!(
+            poll_timeout(true, false, slow_frame_completed_at, next_tick),
+            ACTIVE_POLL_INTERVAL
+        );
+    }
+
+    #[test]
     fn plain_mouse_movement_does_not_force_a_redraw() {
         assert!(!mouse_event_requires_handling(MouseEventKind::Moved, false));
         assert!(mouse_event_requires_handling(MouseEventKind::Moved, true));
@@ -585,6 +635,7 @@ mod tests {
             LiveUpdateDrainState {
                 changed: true,
                 disconnected: true,
+                budget_exhausted: false,
             }
         );
         assert_eq!(
@@ -598,6 +649,7 @@ mod tests {
             LiveUpdateDrainState {
                 changed: false,
                 disconnected: true,
+                budget_exhausted: false,
             }
         );
     }
@@ -629,6 +681,7 @@ mod tests {
             LiveUpdateDrainState {
                 changed: true,
                 disconnected: false,
+                budget_exhausted: false,
             }
         );
         assert_eq!(app.status_banner.as_deref(), None);
@@ -659,6 +712,7 @@ mod tests {
             LiveUpdateDrainState {
                 changed: true,
                 disconnected: false,
+                budget_exhausted: false,
             }
         );
         assert_eq!(
@@ -669,6 +723,83 @@ mod tests {
             app.toast()
                 .map(|toast| (toast.message.as_str(), toast.variant)),
             Some(("manual compaction failed: boom", ToastVariant::Error))
+        );
+    }
+
+    #[test]
+    fn drain_live_updates_applies_session_history_refresh() {
+        let entry = SessionHistoryEntry {
+            run_dir: PathBuf::from("/tmp/session-history-refresh"),
+            catalog: SessionCatalogEntry {
+                run_id: "session-history-refresh".to_string(),
+                run_name: Some("session history refresh".to_string()),
+                status: Some(RunStatus::Finished),
+                last_updated_at: Some("2026-05-04T00:00:00Z".to_string()),
+                workspace_root: Some("/workspace".to_string()),
+                profile_preset: Some("worker".to_string()),
+                provider_model: Some("mock:model".to_string()),
+                mode_source: SessionModeSource::InteractiveLive,
+                is_resumable: true,
+                resume_disabled_reason: None,
+                artifact_count: 0,
+                child_session_count: 0,
+                parent_session_id: None,
+            },
+        };
+        let (tx, rx) = mpsc::channel();
+        tx.send(LiveUpdate::SessionHistory(vec![entry.clone()]))
+            .expect("send session history");
+
+        let mut app = AppState::default();
+        let state = drain_live_updates(&mut app, &rx);
+
+        assert_eq!(
+            state,
+            LiveUpdateDrainState {
+                changed: true,
+                disconnected: false,
+                budget_exhausted: false,
+            }
+        );
+        assert_eq!(app.session_history_entries, vec![entry]);
+    }
+
+    #[test]
+    fn drain_live_updates_yields_after_frame_budget() {
+        let (tx, rx) = mpsc::channel();
+        for index in 0..=LIVE_UPDATE_DRAIN_MAX_PER_FRAME {
+            tx.send(LiveUpdate::Status(format!("status {index}")))
+                .expect("send status update");
+        }
+
+        let mut app = AppState::default();
+        let first = drain_live_updates(&mut app, &rx);
+
+        assert_eq!(
+            first,
+            LiveUpdateDrainState {
+                changed: true,
+                disconnected: false,
+                budget_exhausted: true,
+            }
+        );
+        assert_eq!(
+            app.status_banner.as_deref(),
+            Some(format!("status {}", LIVE_UPDATE_DRAIN_MAX_PER_FRAME - 1).as_str())
+        );
+
+        let second = drain_live_updates(&mut app, &rx);
+        assert_eq!(
+            second,
+            LiveUpdateDrainState {
+                changed: true,
+                disconnected: false,
+                budget_exhausted: false,
+            }
+        );
+        assert_eq!(
+            app.status_banner.as_deref(),
+            Some(format!("status {LIVE_UPDATE_DRAIN_MAX_PER_FRAME}").as_str())
         );
     }
 }

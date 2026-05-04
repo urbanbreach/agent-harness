@@ -124,7 +124,7 @@ pub struct TuiCommand {
     pub profile: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct LiveSettings {
     config: Option<HarnessConfig>,
     session_dir: PathBuf,
@@ -1590,6 +1590,178 @@ async fn run_new_live_session(
         }
     }
 
+    let launch_metadata = launch_metadata_for_mode(settings, &launch_selection);
+    let run_dir = settings.session_dir.join(&run_id_override);
+
+    let (live_update_tx, live_update_rx) = std_mpsc::channel::<LiveUpdate>();
+    let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+    let mut shutdown_tx = Some(shutdown_tx);
+
+    let runtime_task = tokio::spawn(run_new_live_runtime(
+        settings.clone(),
+        demo_mode,
+        run_id_override,
+        launch_metadata.clone(),
+        coordinator_config_warmup,
+        live_update_tx,
+        intent_rx,
+        shutdown_rx,
+    ));
+
+    let (selected_workflow, ui_intent_sender) =
+        build_live_ui_intent_router(intent_tx.clone(), Arc::clone(&launch_selection));
+
+    let exit_on_finish = cmd.exit_on_finish;
+    set_pending_live_launch_metadata(launch_metadata);
+
+    let tui_result = tokio::task::spawn_blocking(move || {
+        profile_handoff("new_live.live_tui_begin");
+        run_tui_with_options(new_live_tui_options(
+            run_dir,
+            Vec::new(),
+            live_update_rx,
+            exit_on_finish,
+            ui_intent_sender,
+            true,
+        ))
+    })
+    .await;
+    profile_handoff("new_live.live_tui_end");
+
+    let tui_result = match tui_result {
+        Ok(result) => result,
+        Err(err) => {
+            if let Some(shutdown_tx) = shutdown_tx.take() {
+                let _ = shutdown_tx.send(());
+            }
+            let _ = await_task("new live runtime", runtime_task).await;
+            return Err(format!("TUI task failed: {err}"));
+        }
+    };
+
+    if let Err(err) = tui_result {
+        if let Some(shutdown_tx) = shutdown_tx.take() {
+            let _ = shutdown_tx.send(());
+        }
+        let _ = await_task("new live runtime", runtime_task).await;
+        return Err(format!("TUI error: {err}"));
+    }
+
+    drop(intent_tx);
+    if let Some(shutdown_tx) = shutdown_tx.take() {
+        let _ = shutdown_tx.send(());
+    }
+
+    let selected_workflow = take_selected_workflow(&selected_workflow);
+    await_task("new live runtime", runtime_task).await?;
+
+    Ok(selected_workflow?)
+}
+
+async fn run_new_live_runtime(
+    settings: LiveSettings,
+    demo_mode: bool,
+    run_id_override: String,
+    launch_metadata: LaunchMetadata,
+    coordinator_config_warmup: LiveCoordinatorConfigWarmup,
+    live_update_tx: std_mpsc::Sender<LiveUpdate>,
+    intent_rx: mpsc::UnboundedReceiver<UiIntent>,
+    shutdown_rx: oneshot::Receiver<()>,
+) -> Result<(), String> {
+    let _ = live_update_tx.send(LiveUpdate::Status("starting new session".to_string()));
+    let bootstrap_error_tx = live_update_tx.clone();
+    let session_history_update_tx = live_update_tx.clone();
+
+    match bootstrap_new_live_runtime(
+        &settings,
+        demo_mode,
+        run_id_override,
+        launch_metadata,
+        coordinator_config_warmup,
+        live_update_tx,
+        intent_rx,
+    )
+    .await
+    {
+        Ok(runtime) => {
+            let session_history_task = spawn_session_history_refresh(
+                settings.session_dir.clone(),
+                session_history_update_tx,
+            );
+            runtime
+                .wait_for_shutdown(shutdown_rx, session_history_task)
+                .await
+        }
+        Err(err) => {
+            let _ = bootstrap_error_tx.send(LiveUpdate::OperatorNotice {
+                message: format!("new session failed: {err}"),
+                level: OperatorNoticeLevel::Error,
+            });
+            let _ = runtime_bootstrap_error_notice(&err, shutdown_rx).await;
+            Err(err)
+        }
+    }
+}
+
+struct NewLiveRuntime {
+    coordinator: CoordinatorHandle,
+    event_forwarder_task: JoinHandle<Result<(), String>>,
+    ui_intent_task: JoinHandle<Result<(), String>>,
+}
+
+impl NewLiveRuntime {
+    async fn wait_for_shutdown(
+        self,
+        shutdown_rx: oneshot::Receiver<()>,
+        session_history_task: JoinHandle<Result<(), String>>,
+    ) -> Result<(), String> {
+        let _ = shutdown_rx.await;
+        let stop_result = stop_live_source_run(&self.coordinator).await;
+        self.event_forwarder_task.abort();
+        self.ui_intent_task.abort();
+        await_task("session history refresh", session_history_task).await?;
+        stop_result
+    }
+}
+
+fn spawn_session_history_refresh(
+    session_dir: PathBuf,
+    live_update_tx: std_mpsc::Sender<LiveUpdate>,
+) -> JoinHandle<Result<(), String>> {
+    tokio::task::spawn_blocking(move || {
+        match load_startup_session_history_entries(&session_dir) {
+            Ok(entries) => {
+                let _ = live_update_tx.send(LiveUpdate::SessionHistory(entries));
+            }
+            Err(err) => {
+                let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                    message: format!("session history refresh failed: {err}"),
+                    level: OperatorNoticeLevel::Error,
+                });
+            }
+        }
+        Ok(())
+    })
+}
+
+async fn runtime_bootstrap_error_notice(
+    err: &str,
+    shutdown_rx: oneshot::Receiver<()>,
+) -> Result<(), String> {
+    let _ = shutdown_rx.await;
+    Err(err.to_string())
+}
+
+async fn bootstrap_new_live_runtime(
+    settings: &LiveSettings,
+    demo_mode: bool,
+    run_id_override: String,
+    launch_metadata: LaunchMetadata,
+    coordinator_config_warmup: LiveCoordinatorConfigWarmup,
+    live_update_tx: std_mpsc::Sender<LiveUpdate>,
+    intent_rx: mpsc::UnboundedReceiver<UiIntent>,
+) -> Result<NewLiveRuntime, String> {
     let workspace = prepare_new_live_workspace(settings, demo_mode, run_id_override.as_str())?;
     profile_handoff("new_live.workspace_ready");
 
@@ -1630,8 +1802,6 @@ async fn run_new_live_session(
         .map_err(|err| err.to_string())?;
     profile_handoff("new_live.event_store_done");
 
-    let launch_metadata = launch_metadata_for_mode(settings, &launch_selection);
-
     let agent_id = coordinator
         .spawn_agent_idle(
             supervisor_actor(),
@@ -1642,12 +1812,10 @@ async fn run_new_live_session(
         .map_err(|err| err.to_string())?;
     profile_handoff("new_live.spawn_agent_idle_done");
 
-    let (live_update_tx, live_update_rx) = std_mpsc::channel::<LiveUpdate>();
-    let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
-    let intent_live_update_tx = live_update_tx.clone();
-
-    let event_forwarder_task =
-        tokio::spawn(async move { forward_events_to_tui(store, live_update_tx, 1).await });
+    let event_forwarder_task = tokio::spawn({
+        let live_update_tx = live_update_tx.clone();
+        async move { forward_events_to_tui(store, live_update_tx, 1).await }
+    });
 
     let intent_coordinator = coordinator.clone();
     let live_agent_target = Arc::new(Mutex::new(LiveAgentTarget {
@@ -1662,50 +1830,16 @@ async fn run_new_live_session(
             intent_rx,
             user_actor(),
             Some(intent_live_agent_target),
-            intent_live_update_tx,
+            live_update_tx,
         )
         .await
     });
 
-    let (selected_workflow, ui_intent_sender) =
-        build_live_ui_intent_router(intent_tx.clone(), Arc::clone(&launch_selection));
-
-    let exit_on_finish = cmd.exit_on_finish;
-    set_pending_live_launch_metadata(launch_metadata);
-    let session_history_entries =
-        load_live_session_history_entries(&run.run_dir, &settings.session_dir)?;
-
-    let tui_result = tokio::task::spawn_blocking(move || {
-        profile_handoff("new_live.live_tui_begin");
-        run_tui_with_options(new_live_tui_options(
-            run.run_dir,
-            session_history_entries,
-            live_update_rx,
-            exit_on_finish,
-            ui_intent_sender,
-            true,
-        ))
+    Ok(NewLiveRuntime {
+        coordinator,
+        event_forwarder_task,
+        ui_intent_task,
     })
-    .await
-    .map_err(|err| format!("TUI task failed: {err}"))?;
-    profile_handoff("new_live.live_tui_end");
-
-    if let Err(err) = tui_result {
-        event_forwarder_task.abort();
-        ui_intent_task.abort();
-        return Err(format!("TUI error: {err}"));
-    }
-
-    drop(intent_tx);
-
-    let selected_workflow = take_selected_workflow(&selected_workflow)?;
-    let stop_result = stop_live_source_run(&coordinator).await;
-    event_forwarder_task.abort();
-    ui_intent_task.abort();
-
-    stop_result?;
-
-    Ok(selected_workflow)
 }
 
 async fn run_live_mode(
@@ -2576,6 +2710,51 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn new_live_tui_options_allow_pre_bootstrap_run_directory() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let run_dir = temp_dir.path().join("run_projected_new_session");
+        let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
+        let sink: UiIntentSink = Arc::new(|_| {});
+
+        let options = new_live_tui_options(run_dir.clone(), Vec::new(), rx, false, sink, true);
+
+        let TuiMode::Live {
+            run_dir: configured_run_dir,
+            historical_events,
+            ..
+        } = options.mode
+        else {
+            panic!("expected live TUI mode");
+        };
+        assert_eq!(configured_run_dir, run_dir);
+        assert!(historical_events.is_empty());
+        assert!(options.preserve_terminal_on_exit);
+    }
+
+    #[tokio::test]
+    async fn session_history_refresh_sends_bootstrapped_catalog() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let run_dir = temp_dir.path().join("run_projected_new_session");
+        write_catalog_run(&run_dir, &catalog_events("run_projected_new_session"));
+        let (tx, rx) = std_mpsc::channel::<LiveUpdate>();
+
+        await_task(
+            "session history refresh",
+            spawn_session_history_refresh(temp_dir.path().to_path_buf(), tx),
+        )
+        .await
+        .expect("refresh session history");
+
+        let update = rx.try_recv().expect("session history update");
+        let LiveUpdate::SessionHistory(entries) = update else {
+            panic!("expected session history update");
+        };
+        assert!(entries
+            .iter()
+            .any(|entry| entry.catalog.run_id == "run_projected_new_session"));
     }
 
     #[test]
