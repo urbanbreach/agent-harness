@@ -9250,10 +9250,10 @@ pub(crate) fn exact_test_transcript_proposed_edit_renders_header() {
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_transcript_opencode_tool_progress_indicators() {
+pub(crate) fn exact_test_transcript_harness_tool_progress_indicators() {
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
-        "request-opencode-tool-progress",
+        "request-harness-tool-progress",
         ActivityStatus::Done,
         "",
     );
@@ -10564,7 +10564,7 @@ pub(crate) fn exact_test_block_tool_cards_skip_empty_subtitle_rows() {
     assert!(command_row < exit_row && exit_row < stderr_row);
     assert!(
         !text_lines.iter().any(|line| line.contains("# Shell")),
-        "failed shell summaries without structured output should stay inline like Opencode\n{text_lines:#?}"
+        "failed shell summaries without structured output should stay inline like harness tool rows\n{text_lines:#?}"
     );
     assert!(
         !text_lines.iter().any(|line| line.contains("● ● ●")),

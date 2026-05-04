@@ -85,6 +85,7 @@ pub enum TuiMode {
     Live {
         run_dir: PathBuf,
         historical_events: Vec<EventEnvelopeV1>,
+        session_history_entries: Vec<SessionHistoryEntry>,
         update_rx: Receiver<LiveUpdate>,
         compact_session_supported: bool,
     },
@@ -139,10 +140,16 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         TuiMode::Live {
             run_dir,
             historical_events,
+            session_history_entries,
             update_rx,
             compact_session_supported,
         } => {
-            let mut app = AppState::new_live(Some(run_dir), exit_on_finish, on_ui_intent);
+            let mut app = AppState::new_live_with_session_history(
+                Some(run_dir),
+                exit_on_finish,
+                on_ui_intent,
+                session_history_entries,
+            );
             app.set_compact_session_supported(compact_session_supported);
             if let Some(bindings) = keybindings.as_ref() {
                 app.apply_keybindings(bindings.clone());
@@ -414,6 +421,7 @@ pub fn run_tui() -> Result<()> {
         mode: TuiMode::Live {
             run_dir: PathBuf::from("."),
             historical_events: Vec::new(),
+            session_history_entries: Vec::new(),
             update_rx: rx,
             compact_session_supported: false,
         },

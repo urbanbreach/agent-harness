@@ -223,18 +223,16 @@ impl FrameLayoutPlan {
             Rect::new(shell.x, footer_text_y, shell.width, footer_text_height)
         };
 
-        let palette_overlay =
-            matches!(app.overlay_stack().top(), Some(OverlayKind::CommandPalette))
-                .then(|| {
-                    command_palette_overlay_area(
-                        content,
-                        theme,
-                        shell_layout,
-                        session_contract,
-                        app,
-                    )
-                })
-                .flatten();
+        let palette_overlay = matches!(
+            app.overlay_stack().top(),
+            Some(
+                OverlayKind::CommandPalette
+                    | OverlayKind::LineageBrowser
+                    | OverlayKind::ForkSelector
+            )
+        )
+        .then(|| command_palette_overlay_area(content, theme, shell_layout, session_contract, app))
+        .flatten();
 
         let mut plan = Self {
             root: area,

@@ -3179,6 +3179,61 @@ fn live_bootstrap_auto_submit_echoes_and_emits_first_prompt() {
 }
 
 #[test]
+fn submit_prompt_while_turn_streams_emits_intent() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(sink));
+    app.focus = Focus::Prompt;
+    app.ingest_event(envelope(
+        1,
+        "req_active",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_active".to_string(),
+            text: "active".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_active",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_active".to_string(),
+            provider_id: "default".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
+            prompt_summary: "active".to_string(),
+            request_digest: "digest-active".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.prompt_buffer = "next prompt".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
+
+    app.submit_prompt();
+
+    assert!(app.prompt_buffer.is_empty());
+    assert_eq!(app.activities.len(), 2);
+    assert_eq!(
+        app.activities
+            .back()
+            .and_then(|activity| activity.user_message.as_ref())
+            .map(|message| message.text.as_str()),
+        Some("next prompt")
+    );
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::SubmitPrompt {
+            text: "next prompt".to_string(),
+            launch_metadata: LaunchMetadata::default(),
+        }]
+    );
+}
+
+#[test]
 fn replay_mode_focus_cycle_skips_prompt_and_blocks_draft_edits() {
     let mut app = AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new());
 

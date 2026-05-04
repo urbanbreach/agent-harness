@@ -7,7 +7,9 @@ use harness_core::event::{
     ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
-use harness_tui::app::{set_pending_live_launch_metadata, LaunchMetadata, SessionHistoryEntry};
+use harness_tui::app::{
+    set_pending_live_launch_metadata, AppState, LaunchMetadata, SessionHistoryEntry,
+};
 use harness_tui::{run_tui_with_options, LiveUpdate, TuiMode, TuiOptions, UiIntent};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::cmp;
@@ -497,6 +499,50 @@ fn pty_helper_replay_read_only() {
 }
 
 #[test]
+fn pty_lineage_fork_selector() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent| intents.lock().expect("lock lineage intents").push(intent))
+    };
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/run_fixture")), false, Some(sink));
+    for event in replay_read_only_events() {
+        app.ingest_event(event);
+    }
+
+    app.execute_slash_command("fork", Some(String::new()));
+
+    assert!(app.fork_selector_visible);
+    assert!(intents.lock().expect("lock lineage intents").is_empty());
+    assert_eq!(app.fork_selector_view_model().selected_cutoff_seq, Some(2));
+
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Enter,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+
+    let intents = intents.lock().expect("lock lineage intents");
+    assert_eq!(intents.len(), 1);
+    match &intents[0] {
+        UiIntent::ForkSession { stable_prefix, .. } => assert_eq!(stable_prefix.cutoff_seq, 2),
+        intent => panic!("expected fork lineage intent, got {intent:?}"),
+    }
+}
+
+#[test]
+fn pty_lineage_clone_blocked_in_replay() {
+    let mut app = AppState::new_replay(PathBuf::from("/tmp/replay_run"), replay_read_only_events());
+
+    app.execute_slash_command("clone", Some("preserved replay draft".to_string()));
+
+    assert_eq!(app.prompt_buffer, "preserved replay draft");
+    assert_eq!(
+        app.status_banner.as_deref(),
+        Some("session clone blocked: replay mode is read-only")
+    );
+}
+
+#[test]
 fn pty_live_details_drawer_remains_reachable() {
     if !cfg!(target_os = "linux") {
         return;
@@ -961,6 +1007,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
                 mode: TuiMode::Live {
                     run_dir: run_dir.path().to_path_buf(),
                     historical_events: Vec::new(),
+                    session_history_entries: Vec::new(),
                     update_rx: rx,
                     compact_session_supported: false,
                 },
@@ -995,6 +1042,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
             historical_events: Vec::new(),
+            session_history_entries: Vec::new(),
             update_rx: rx,
             compact_session_supported: false,
         },

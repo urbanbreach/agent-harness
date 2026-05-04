@@ -28,7 +28,7 @@ delegate_test!(transcript_tool_rows_follow_chronological_turn_order => ui::exact
 delegate_test!(transcript_applied_edit_missing_diff_surfaces_fallback => ui::exact_test_transcript_applied_edit_missing_diff_surfaces_fallback);
 delegate_test!(transcript_edit_tool_matches_inline_diff_shape => ui::exact_test_transcript_edit_tool_matches_inline_diff_shape);
 delegate_test!(transcript_native_edit_renders_inline_diff_from_artifact => ui::exact_test_transcript_native_edit_renders_inline_diff_from_artifact);
-delegate_test!(transcript_opencode_tool_progress_indicators => ui::exact_test_transcript_opencode_tool_progress_indicators);
+delegate_test!(transcript_harness_tool_progress_indicators => ui::exact_test_transcript_harness_tool_progress_indicators);
 delegate_test!(transcript_apply_patch_multifile_uses_output_edit_paths => ui::exact_test_transcript_apply_patch_multifile_uses_output_edit_paths);
 delegate_test!(transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs => ui::exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs);
 delegate_test!(transcript_inline_diff_stays_compact_between_tool_rows => ui::exact_test_transcript_inline_diff_stays_compact_between_tool_rows);
@@ -478,13 +478,17 @@ delegate_test!(slash_replay_opens_history_and_restores_draft => app::exact_test_
 delegate_test!(slash_resume_opens_history_and_restores_draft => app::exact_test_slash_resume_opens_history_and_restores_draft);
 delegate_test!(slash_events_opens_review_surface => app::exact_test_slash_events_opens_review_surface);
 delegate_test!(slash_status_opens_status_dialog_and_restores_draft => app::exact_test_slash_status_opens_status_dialog_and_restores_draft);
-delegate_test!(status_dialog_mcp_rows_match_opencode_states => ui::exact_test_status_dialog_mcp_rows_match_opencode_states);
-delegate_test!(status_dialog_render_snapshot_covers_opencode_sections => ui::exact_test_status_dialog_render_snapshot_covers_opencode_sections);
+delegate_test!(status_dialog_mcp_rows_match_harness_states => ui::exact_test_status_dialog_mcp_rows_match_harness_states);
+delegate_test!(status_dialog_render_snapshot_covers_harness_sections => ui::exact_test_status_dialog_render_snapshot_covers_harness_sections);
 delegate_test!(slash_shell_closes_review_surface => app::exact_test_slash_shell_closes_review_surface);
 delegate_test!(slash_follow_toggles_follow_mode => app::exact_test_slash_follow_toggles_follow_mode);
 delegate_test!(live_slash_compact_appears_when_supported => app::exact_test_live_slash_compact_appears_when_supported);
 delegate_test!(live_slash_compact_emits_ui_intent => app::exact_test_live_slash_compact_emits_ui_intent);
 delegate_test!(live_without_compact_support_hides_slash_compact => app::exact_test_live_without_compact_support_hides_slash_compact);
+delegate_test!(slash_menu_lists_lineage_commands => app::exact_test_slash_menu_lists_lineage_commands);
+delegate_test!(slash_lineage_write_commands_blocked_in_replay => app::exact_test_slash_lineage_write_commands_blocked_in_replay);
+delegate_test!(slash_lineage_write_commands_blocked_when_live_unstable => app::exact_test_slash_lineage_write_commands_blocked_when_live_unstable);
+delegate_test!(slash_lineage_descriptions_use_harness_branding => app::exact_test_slash_lineage_descriptions_use_harness_branding);
 
 #[cfg(test)]
 #[test]
@@ -1300,13 +1304,19 @@ fn slash_overlay_uses_input_width_aligned_rows_and_accent_selection() {
     assert!(!rendered.contains('╭') && !rendered.contains('╰') && !rendered.contains('│'));
 
     let buffer = render_live_cells(&app, 100, 24);
+    let selected_command = format!(
+        "/{}",
+        app.slash_filtered.first().expect("selected slash command")
+    );
     let (selected_row, selected_fgs, selected_bgs) =
-        row_text_and_palette(&buffer, 100, "/events").expect("selected slash row palette");
+        row_text_and_palette(&buffer, 100, &selected_command).expect("selected slash row palette");
     let command_start = selected_row
-        .find("/events")
+        .find(&selected_command)
         .expect("selected command start");
     let description_start = selected_row
-        .find("Open the event log review")
+        .find(crate::app::slash_command_description(
+            selected_command.trim_start_matches('/'),
+        ))
         .expect("selected description start");
     let theme = Theme::default();
 
@@ -7687,7 +7697,7 @@ fn composer_ctrl_j_inserts_newline() {
 
 #[cfg(test)]
 #[test]
-fn composer_preserves_draft_while_streaming() {
+fn composer_submits_queued_followup_while_streaming() {
     use std::sync::Mutex;
 
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
@@ -7739,20 +7749,34 @@ fn composer_preserves_draft_while_streaming() {
     let intents = intents.lock().expect("lock intents");
     assert_eq!(
         intents.as_slice(),
-        &[UiIntent::SubmitPrompt {
-            text: "first".to_string(),
-            launch_metadata: app::LaunchMetadata::default(),
-        }]
+        &[
+            UiIntent::SubmitPrompt {
+                text: "first".to_string(),
+                launch_metadata: app::LaunchMetadata::default(),
+            },
+            UiIntent::SubmitPrompt {
+                text: "next".to_string(),
+                launch_metadata: app::LaunchMetadata::default(),
+            },
+        ]
     );
     drop(intents);
 
-    assert_eq!(app.prompt_buffer, "next");
-    assert_eq!(app.prompt_cursor, 4);
-    assert_eq!(app.prompt_history.last().map(String::as_str), Some("first"));
-    let activity = app.activities.back().expect("streaming activity");
+    assert!(app.prompt_buffer.is_empty());
+    assert_eq!(app.prompt_cursor, 0);
+    assert_eq!(app.prompt_history.last().map(String::as_str), Some("next"));
+    let activity = app.activities.front().expect("streaming activity");
     assert_eq!(activity.request_id, "req_001");
     assert_eq!(activity.transcript_text, "streaming");
     assert_eq!(activity.status, app::ActivityStatus::Streaming);
+    let queued_activity = app.activities.back().expect("submitted activity");
+    assert_eq!(
+        queued_activity
+            .user_message
+            .as_ref()
+            .map(|message| message.text.as_str()),
+        Some("next")
+    );
 }
 
 #[cfg(test)]

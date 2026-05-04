@@ -413,7 +413,7 @@ fn model_switcher_shows_base_models_without_variant_rows() {
 }
 
 #[test]
-fn model_switcher_renders_opencode_select_dialog_contract() {
+fn model_switcher_renders_harness_select_dialog_contract() {
     let mut app = AppState::new_live(None, false, None);
     app.set_launch_metadata(
         LaunchMetadata::from_model_option(&multi_provider_models()[1])

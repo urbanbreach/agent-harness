@@ -48,8 +48,8 @@ use ui_lifecycle::{live_empty_state_visible, render_live_empty_state, startup_sh
 use ui_overlays::render_overlays;
 #[cfg(test)]
 pub(crate) use ui_overlays::{
-    exact_test_status_dialog_mcp_rows_match_opencode_states,
-    exact_test_status_dialog_render_snapshot_covers_opencode_sections,
+    exact_test_status_dialog_mcp_rows_match_harness_states,
+    exact_test_status_dialog_render_snapshot_covers_harness_sections,
 };
 pub(crate) use ui_secondary::operator_sidebar_section_hit_target;
 use ui_secondary::{
@@ -210,9 +210,9 @@ pub(crate) use ui_transcript::{
     exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs,
     exact_test_transcript_edit_tool_matches_inline_diff_shape,
     exact_test_transcript_follow_mode_uses_measured_surface_heights,
+    exact_test_transcript_harness_tool_progress_indicators,
     exact_test_transcript_inline_diff_stays_compact_between_tool_rows,
     exact_test_transcript_native_edit_renders_inline_diff_from_artifact,
-    exact_test_transcript_opencode_tool_progress_indicators,
     exact_test_transcript_pending_permission_stays_after_last_activity,
     exact_test_transcript_proposed_edit_renders_header,
     exact_test_transcript_reasoning_precedes_answer_and_tool_rows,

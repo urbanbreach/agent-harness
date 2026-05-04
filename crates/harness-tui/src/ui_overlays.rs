@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use harness_core::proj::RunStatus;
+
 use super::*;
 
 pub(super) fn render_overlays(
@@ -16,6 +18,9 @@ pub(super) fn render_overlays(
                 render_slash_commands_overlay(frame, app, theme, plan.slash_overlay)
             }
             OverlayKind::CommandPalette => {
+                render_command_palette_overlay(frame, app, theme, plan.root, plan.palette_overlay)
+            }
+            OverlayKind::LineageBrowser | OverlayKind::ForkSelector => {
                 render_command_palette_overlay(frame, app, theme, plan.root, plan.palette_overlay)
             }
             OverlayKind::StatusDialog => render_status_dialog_overlay(frame, app, theme, plan.root),
@@ -288,7 +293,7 @@ fn status_dialog_mcp_rows_from_config(
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_status_dialog_mcp_rows_match_opencode_states() {
+pub(crate) fn exact_test_status_dialog_mcp_rows_match_harness_states() {
     let mut integrations = harness_core::config::IntegrationsConfig::default();
     integrations.mcp.servers.insert(
         "connected".to_string(),
@@ -348,7 +353,7 @@ pub(crate) fn exact_test_status_dialog_mcp_rows_match_opencode_states() {
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_status_dialog_render_snapshot_covers_opencode_sections() {
+pub(crate) fn exact_test_status_dialog_render_snapshot_covers_harness_sections() {
     let theme = Theme::default();
     let mcp_rows = vec![
         StatusDialogRow {
@@ -401,7 +406,7 @@ pub(crate) fn exact_test_status_dialog_render_snapshot_covers_opencode_sections(
         .expect("draw status dialog");
 
     insta::assert_snapshot!(
-        "status_dialog_render_snapshot_covers_opencode_sections",
+        "status_dialog_render_snapshot_covers_harness_sections",
         format!("{:#?}", terminal.backend().buffer())
     );
 }
@@ -592,6 +597,10 @@ fn render_command_palette_overlay(
         session_history_overlay_title(app)
     } else if app.model_switcher_visible {
         model_switcher_overlay_title(app)
+    } else if app.lineage_browser_visible {
+        "Harness session tree".to_string()
+    } else if app.fork_selector_visible {
+        "Select stable fork point".to_string()
     } else {
         "Commands".to_string()
     };
@@ -606,6 +615,16 @@ fn render_command_palette_overlay(
             return;
         }
         render_model_switcher_overlay(frame, app, theme, overlay, &title);
+    } else if app.lineage_browser_visible {
+        let Some(inner) = render_command_palette_surface(frame, theme, overlay) else {
+            return;
+        };
+        render_lineage_browser_overlay(frame, app, theme, inner, &title);
+    } else if app.fork_selector_visible {
+        let Some(inner) = render_command_palette_surface(frame, theme, overlay) else {
+            return;
+        };
+        render_fork_selector_overlay(frame, app, theme, inner, &title);
     } else {
         if !paint_command_palette_panel(frame, theme, overlay) {
             return;
@@ -885,6 +904,273 @@ fn render_session_history_overlay(
     render_session_history_list(frame, app, theme, sections[4]);
 }
 
+fn render_lineage_browser_overlay(
+    frame: &mut Frame,
+    app: &AppState,
+    theme: &Theme,
+    area: Rect,
+    title: &str,
+) {
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+        ])
+        .split(area);
+    let surface = ui_chrome::command_palette_surface(theme);
+
+    render_command_palette_header(frame, theme, sections[0], title);
+    render_command_palette_input(frame, app, theme, sections[1]);
+    frame.render_widget(
+        Paragraph::new("Read-only · type to filter · Space folds · Enter keeps selection")
+            .style(Style::default().fg(theme.text.secondary).bg(surface)),
+        sections[2],
+    );
+    render_lineage_browser_list(frame, app, theme, sections[3]);
+}
+
+fn render_fork_selector_overlay(
+    frame: &mut Frame,
+    app: &AppState,
+    theme: &Theme,
+    area: Rect,
+    title: &str,
+) {
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+        ])
+        .split(area);
+    let surface = ui_chrome::command_palette_surface(theme);
+
+    render_command_palette_header(frame, theme, sections[0], title);
+    render_command_palette_input(frame, app, theme, sections[1]);
+    frame.render_widget(
+        Paragraph::new("Enter creates child · Esc cancels · only stable checkpoints are listed")
+            .style(Style::default().fg(theme.text.secondary).bg(surface)),
+        sections[2],
+    );
+    render_fork_selector_list(frame, app, theme, sections[3]);
+}
+
+fn render_lineage_browser_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
+    let list_area = inset_rect(area, 1.min(area.width.saturating_sub(1)), 0);
+    if list_area.width == 0 || list_area.height == 0 {
+        return;
+    }
+    let surface = ui_chrome::command_palette_surface(theme);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(surface)),
+        list_area,
+    );
+
+    let vm = app.lineage_browser_view_model();
+    if let Some(message) = vm.empty_message {
+        render_palette_empty_message(frame, theme, list_area, &message);
+        return;
+    }
+
+    let selected = vm.rows.iter().position(|row| row.selected).unwrap_or(0);
+    let visible_rows = usize::from(list_area.height);
+    let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
+    for (row_index, row) in vm.rows.iter().enumerate().skip(scroll).take(visible_rows) {
+        let row_area = Rect::new(
+            list_area.x,
+            list_area
+                .y
+                .saturating_add(u16::try_from(row_index - scroll).unwrap_or(u16::MAX)),
+            list_area.width,
+            1,
+        );
+        frame.render_widget(
+            Block::default().style(lineage_row_style(theme, row.selected)),
+            row_area,
+        );
+        frame.render_widget(
+            Paragraph::new(lineage_browser_row(row, theme, row_area.width)),
+            row_area,
+        );
+    }
+}
+
+fn render_fork_selector_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
+    let list_area = inset_rect(area, 1.min(area.width.saturating_sub(1)), 0);
+    if list_area.width == 0 || list_area.height == 0 {
+        return;
+    }
+    let surface = ui_chrome::command_palette_surface(theme);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(surface)),
+        list_area,
+    );
+
+    let vm = app.fork_selector_view_model();
+    if let Some(message) = vm.empty_message {
+        render_palette_empty_message(frame, theme, list_area, &message);
+        return;
+    }
+
+    let selected = vm.rows.iter().position(|row| row.selected).unwrap_or(0);
+    let visible_rows = usize::from(list_area.height);
+    let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
+    for (row_index, row) in vm.rows.iter().enumerate().skip(scroll).take(visible_rows) {
+        let row_area = Rect::new(
+            list_area.x,
+            list_area
+                .y
+                .saturating_add(u16::try_from(row_index - scroll).unwrap_or(u16::MAX)),
+            list_area.width,
+            1,
+        );
+        frame.render_widget(
+            Block::default().style(lineage_row_style(theme, row.selected)),
+            row_area,
+        );
+        frame.render_widget(
+            Paragraph::new(fork_selector_row(row, theme, row_area.width)),
+            row_area,
+        );
+    }
+}
+
+fn render_palette_empty_message(frame: &mut Frame, theme: &Theme, area: Rect, message: &str) {
+    let empty_area = Rect::new(
+        area.x.saturating_add(3),
+        area.y,
+        area.width.saturating_sub(3),
+        1,
+    );
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            truncate_plain_text(message, usize::from(empty_area.width)),
+            Style::default()
+                .fg(ui_chrome::command_palette_muted(theme))
+                .bg(ui_chrome::command_palette_surface(theme)),
+        ))),
+        empty_area,
+    );
+}
+
+fn lineage_browser_row(
+    row: &crate::view_model::LineageBrowserRowViewModel,
+    theme: &Theme,
+    width: u16,
+) -> Line<'static> {
+    let row_style = lineage_row_style(theme, row.selected);
+    let selected_fg = ui_chrome::slash_command_selection_fg(theme);
+    let title_style = if row.selected {
+        row_style.fg(selected_fg).add_modifier(Modifier::BOLD)
+    } else if row.current {
+        row_style.fg(theme.status.info).add_modifier(Modifier::BOLD)
+    } else {
+        row_style.fg(ui_chrome::command_palette_title(theme))
+    };
+    let meta_style = if row.selected {
+        row_style.fg(selected_fg)
+    } else {
+        row_style.fg(ui_chrome::command_palette_muted(theme))
+    };
+    let fold = if row.child_count == 0 {
+        "•"
+    } else if row.expanded {
+        "▾"
+    } else {
+        "▸"
+    };
+    let indent = "  ".repeat(row.depth.min(8));
+    let status = row.status.map(run_status_label).unwrap_or("unknown");
+    let current = if row.current { " · current" } else { "" };
+    let meta = format!(
+        "{status}{current} · {} child{}",
+        row.child_count,
+        plural_s(row.child_count)
+    );
+    split_title_meta_row(
+        format!(" {indent}{fold} {}", row.title),
+        meta,
+        title_style,
+        meta_style,
+        row_style,
+        width,
+    )
+}
+
+fn fork_selector_row(
+    row: &crate::view_model::ForkSelectorRowViewModel,
+    theme: &Theme,
+    width: u16,
+) -> Line<'static> {
+    let row_style = lineage_row_style(theme, row.selected);
+    let selected_fg = ui_chrome::slash_command_selection_fg(theme);
+    let title_style = if row.selected {
+        row_style.fg(selected_fg).add_modifier(Modifier::BOLD)
+    } else {
+        row_style.fg(ui_chrome::command_palette_title(theme))
+    };
+    let meta_style = if row.selected {
+        row_style.fg(selected_fg)
+    } else {
+        row_style.fg(ui_chrome::command_palette_muted(theme))
+    };
+    let status = row.status.map(run_status_label).unwrap_or("stable");
+    let title = format!(" seq {} · {} events", row.cutoff_seq, row.event_count);
+    let meta = format!("{} · {status}", row.event_kind);
+    split_title_meta_row(title, meta, title_style, meta_style, row_style, width)
+}
+
+fn split_title_meta_row(
+    title: String,
+    meta: String,
+    title_style: Style,
+    meta_style: Style,
+    row_style: Style,
+    width: u16,
+) -> Line<'static> {
+    let row_width = usize::from(width);
+    let meta_width = meta.chars().count().min(row_width / 2);
+    let title_width = row_width.saturating_sub(meta_width).saturating_sub(1);
+    let title = truncate_plain_text(&title, title_width);
+    let used = title.chars().count();
+    let gap = row_width.saturating_sub(used).saturating_sub(meta_width);
+    let meta = truncate_plain_text(&meta, meta_width);
+    Line::from(vec![
+        Span::styled(title, title_style),
+        Span::styled(" ".repeat(gap), row_style),
+        Span::styled(meta, meta_style),
+    ])
+}
+
+fn lineage_row_style(theme: &Theme, selected: bool) -> Style {
+    if selected {
+        ui_chrome::overlay_focus_row_style(theme)
+    } else {
+        Style::default().bg(ui_chrome::command_palette_surface(theme))
+    }
+}
+
+const fn run_status_label(status: RunStatus) -> &'static str {
+    match status {
+        RunStatus::Running => "running",
+        RunStatus::Finished => "finished",
+        RunStatus::Failed => "failed",
+    }
+}
+
+const fn plural_s(count: usize) -> &'static str {
+    if count == 1 {
+        ""
+    } else {
+        "ren"
+    }
+}
+
 fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
     if area.width == 0 || area.height == 0 {
         return;
@@ -898,6 +1184,10 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
             "Filter saved runs"
         } else if app.model_switcher_visible {
             "Filter models, providers"
+        } else if app.lineage_browser_visible {
+            "Filter Harness session tree"
+        } else if app.fork_selector_visible {
+            "Filter stable fork points"
         } else {
             "Search"
         };

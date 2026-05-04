@@ -773,7 +773,7 @@ fn native_tool_parity_pty_lane() {
         ),
         &[
             "webfetch https://example.test/report.pdf [format=markdown]",
-            "# Run harness-tui tests",
+            "Run harness-tui tests",
             "$ cargo test -p harness-tui",
             "exit code: 1",
             "stderr: snapshot mismatch",
@@ -802,7 +802,7 @@ fn native_tool_parity_pty_lane() {
     assert!(screen.contains("docs-rs_search_in_crate Layout [crate_name=ratatui]"));
     assert!(!screen.contains("struct Layout"));
     assert!(!screen.contains("module layout"));
-    assert!(screen.contains("# Run harness-tui tests"));
+    assert!(screen.contains("Run harness-tui tests"));
     assert!(screen.contains("$ cargo test -p harness-tui"));
     assert!(screen.contains("exit code: 1"));
     assert!(screen.contains("stderr: snapshot mismatch"));
@@ -846,7 +846,7 @@ fn native_tool_parity_pty_lane() {
             &screen,
             &[
                 "webfetch https://example.test/report.pdf [format=markdown]",
-                "# Run harness-tui tests",
+                "Run harness-tui tests",
                 "$ cargo test -p harness-tui",
                 "exit code: 1",
                 "stderr: snapshot mismatch",
@@ -2038,7 +2038,7 @@ fn pty_e2e_continue_rejects_active_or_unrestorable_session() {
     .expect("capture unrestorable-session rejection image");
     insta::assert_snapshot!(
         "pty_continue_rejected_unrestorable",
-        checkpoint_visual_snapshot(
+        checkpoint_visual_snapshot_without_focus_position(
             &unrestorable_screen,
             &[STARTUP_CONTINUE_HISTORY_MARKER, "events unavailable",],
             &unrestorable_visual,

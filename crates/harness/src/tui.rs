@@ -27,6 +27,10 @@ use harness_core::proj::{
     inspect_resume_plan, RecordedRuntimeContext, ResumePlan, RunMetadata, SessionModeSource,
 };
 use harness_core::redact::DefaultRedactor;
+use harness_core::session_lineage::{
+    materialize_child_session, ChildSessionMaterializationRequest,
+    ChildSessionMaterializationResult, ChildSessionMaterializationSourceKind, StableSessionPrefix,
+};
 use harness_core::store::{EventStore, EventStoreError};
 use harness_tools::coordinator_registry;
 use harness_tui::app::{
@@ -932,6 +936,7 @@ fn load_startup_session_history_entries(
     inspect_session_catalog(session_dir).map(|entries| {
         entries
             .into_iter()
+            .map(normalize_lineage_entry)
             .filter(startup_session_history_entry_visible)
             .map(|entry| SessionHistoryEntry {
                 run_dir: entry.run_dir,
@@ -939,6 +944,36 @@ fn load_startup_session_history_entries(
             })
             .collect()
     })
+}
+
+fn load_live_session_history_entries(
+    run_dir: &Path,
+    fallback_session_dir: &Path,
+) -> Result<Vec<SessionHistoryEntry>, String> {
+    let session_dir = run_dir.parent().unwrap_or(fallback_session_dir);
+    load_startup_session_history_entries(session_dir)
+}
+
+fn normalize_lineage_entry(
+    mut entry: crate::replay::SessionInspectionEntry,
+) -> crate::replay::SessionInspectionEntry {
+    if let Some(parent_run_id) = harness_lineage_parent_run_id(&entry.run_dir) {
+        entry.catalog.parent_session_id = Some(parent_run_id);
+    }
+    entry
+}
+
+fn harness_lineage_parent_run_id(run_dir: &Path) -> Option<String> {
+    let body = fs::read_to_string(run_dir.join("meta.json")).ok()?;
+    let value = serde_json::from_str::<serde_json::Value>(&body).ok()?;
+    let lineage = value.get("harness_lineage")?;
+    lineage
+        .get("harness_source_run_id")
+        .or_else(|| lineage.get("parent_run_id"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 fn startup_session_history_entry_visible(entry: &crate::replay::SessionInspectionEntry) -> bool {
@@ -1022,6 +1057,8 @@ fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> InteractiveWorkfl
         | None
         | Some(UiIntent::ResolvePermission { .. })
         | Some(UiIntent::CompactSession)
+        | Some(UiIntent::ForkSession { .. })
+        | Some(UiIntent::CloneSession { .. })
         | Some(UiIntent::SwitchModel { .. }) => InteractiveWorkflow::Quit,
     }
 }
@@ -1152,11 +1189,14 @@ async fn run_continue_session_bootstrap(
 
     let exit_on_finish = cmd.exit_on_finish;
     set_pending_live_launch_metadata(continue_metadata);
+    let session_history_entries =
+        load_live_session_history_entries(&run.run_dir, &settings.session_dir)?;
 
     let tui_result = tokio::task::spawn_blocking(move || {
         run_tui_with_options(continue_live_tui_options(
             run.run_dir,
             historical_events,
+            session_history_entries,
             live_update_rx,
             exit_on_finish,
             ui_intent_sender,
@@ -1187,6 +1227,7 @@ async fn run_continue_session_bootstrap(
 fn continue_live_tui_options(
     run_dir: PathBuf,
     historical_events: Vec<EventEnvelopeV1>,
+    session_history_entries: Vec<SessionHistoryEntry>,
     update_rx: std_mpsc::Receiver<LiveUpdate>,
     exit_on_finish: bool,
     ui_intent_sender: UiIntentSink,
@@ -1196,6 +1237,7 @@ fn continue_live_tui_options(
         mode: TuiMode::Live {
             run_dir,
             historical_events,
+            session_history_entries,
             update_rx,
             compact_session_supported,
         },
@@ -1208,6 +1250,7 @@ fn continue_live_tui_options(
 
 fn new_live_tui_options(
     run_dir: PathBuf,
+    session_history_entries: Vec<SessionHistoryEntry>,
     update_rx: std_mpsc::Receiver<LiveUpdate>,
     exit_on_finish: bool,
     ui_intent_sender: UiIntentSink,
@@ -1217,6 +1260,7 @@ fn new_live_tui_options(
         mode: TuiMode::Live {
             run_dir,
             historical_events: Vec::new(),
+            session_history_entries,
             update_rx,
             compact_session_supported,
         },
@@ -1347,6 +1391,8 @@ fn live_workflow_from_intent(intent: &UiIntent) -> Option<InteractiveWorkflow> {
         UiIntent::ResolvePermission { .. }
         | UiIntent::SubmitPrompt { .. }
         | UiIntent::CompactSession
+        | UiIntent::ForkSession { .. }
+        | UiIntent::CloneSession { .. }
         | UiIntent::SwitchModel { .. } => None,
     }
 }
@@ -1357,6 +1403,8 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
         UiIntent::ResolvePermission { .. }
             | UiIntent::SubmitPrompt { .. }
             | UiIntent::CompactSession
+            | UiIntent::ForkSession { .. }
+            | UiIntent::CloneSession { .. }
             | UiIntent::SwitchModel { .. }
             | UiIntent::QuitRequested
     )
@@ -1624,11 +1672,14 @@ async fn run_new_live_session(
 
     let exit_on_finish = cmd.exit_on_finish;
     set_pending_live_launch_metadata(launch_metadata);
+    let session_history_entries =
+        load_live_session_history_entries(&run.run_dir, &settings.session_dir)?;
 
     let tui_result = tokio::task::spawn_blocking(move || {
         profile_handoff("new_live.live_tui_begin");
         run_tui_with_options(new_live_tui_options(
             run.run_dir,
+            session_history_entries,
             live_update_rx,
             exit_on_finish,
             ui_intent_sender,
@@ -1750,11 +1801,14 @@ async fn run_live_mode(
 
     let exit_on_finish = cmd.exit_on_finish;
     set_pending_live_launch_metadata(scenario_launch_metadata());
+    let session_history_entries =
+        load_live_session_history_entries(&run_dir, &settings.session_dir)?;
 
     let tui_result = tokio::task::spawn_blocking(move || {
         profile_handoff("new_live.live_tui_begin");
         run_tui_with_options(new_live_tui_options(
             run_dir,
+            session_history_entries,
             live_update_rx,
             exit_on_finish,
             ui_intent_sender,
@@ -2071,6 +2125,24 @@ async fn handle_ui_intents(
                 };
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
+            UiIntent::ForkSession {
+                source_run_dir,
+                events,
+                stable_prefix,
+            } => {
+                let notice =
+                    materialize_tui_lineage_child("fork", source_run_dir, events, stable_prefix);
+                let _ = live_update_tx.send(notice);
+            }
+            UiIntent::CloneSession {
+                source_run_dir,
+                events,
+                stable_prefix,
+            } => {
+                let notice =
+                    materialize_tui_lineage_child("clone", source_run_dir, events, stable_prefix);
+                let _ = live_update_tx.send(notice);
+            }
             UiIntent::SwitchModel { profile, .. } => {
                 let Some(live_agent_target) = live_agent_target.as_ref() else {
                     continue;
@@ -2111,6 +2183,41 @@ async fn handle_ui_intents(
         }
     }
     Ok(())
+}
+
+fn materialize_tui_lineage_child(
+    operation: &'static str,
+    source_run_dir: PathBuf,
+    events: Vec<EventEnvelopeV1>,
+    stable_prefix: StableSessionPrefix,
+) -> LiveUpdate {
+    let result = materialize_child_session(ChildSessionMaterializationRequest {
+        source_run_dir: &source_run_dir,
+        events: &events,
+        stable_prefix: &stable_prefix,
+        source_kind: ChildSessionMaterializationSourceKind::TuiStableInMemorySnapshot,
+    });
+
+    match result {
+        Ok(result) => LiveUpdate::OperatorNotice {
+            message: tui_lineage_success_message(operation, &result),
+            level: OperatorNoticeLevel::Info,
+        },
+        Err(err) => LiveUpdate::OperatorNotice {
+            message: format!("Harness session {operation} blocked: {err}"),
+            level: OperatorNoticeLevel::Error,
+        },
+    }
+}
+
+fn tui_lineage_success_message(
+    operation: &str,
+    result: &ChildSessionMaterializationResult,
+) -> String {
+    format!(
+        "Harness session {operation} created {} from seq {} ({} events, {} artifacts)",
+        result.child_run_id, result.source_cutoff_seq, result.event_count, result.artifact_count
+    )
 }
 
 fn user_actor() -> EventActor {
@@ -2308,13 +2415,97 @@ pub(crate) fn replay_launch_metadata_for_test(
 mod tests {
     use super::*;
     use harness_core::config::load_config_from_str;
-    use harness_core::event::{AgentSpawnedEvent, ProviderRequestStartedEvent};
+    use harness_core::event::{
+        AgentSpawnedEvent, ProviderRequestStartedEvent, RunFinishedEvent, RunStartedEvent,
+        SCHEMA_VERSION,
+    };
     use harness_tui::app::{set_pending_live_prompt_draft, AppState};
     use std::sync::{Mutex, OnceLock};
 
     fn mock_mode_cwd_test_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn lineage_test_event(seq: u64, payload: EventV1) -> EventEnvelopeV1 {
+        EventEnvelopeV1 {
+            schema_version: SCHEMA_VERSION,
+            event_id: format!("evt_tui_lineage_{seq:04}"),
+            seq,
+            run_id: "run_tui_lineage_source".to_string(),
+            mono_ms: seq,
+            ts: Some(format!("2026-05-03T00:00:{seq:02}Z")),
+            actor: EventActor::new(ActorKind::System, Some("tui-lineage-test".to_string())),
+            correlation_id: None,
+            causation_id: None,
+            stream_key: Some("run:run_tui_lineage_source".to_string()),
+            payload,
+        }
+    }
+
+    fn stable_lineage_test_events() -> Vec<EventEnvelopeV1> {
+        vec![
+            lineage_test_event(
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "tui lineage source".to_string(),
+                    workspace_root: "/workspace".to_string(),
+                }),
+            ),
+            lineage_test_event(
+                2,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "stable".to_string(),
+                }),
+            ),
+        ]
+    }
+
+    fn catalog_event(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
+        EventEnvelopeV1 {
+            schema_version: SCHEMA_VERSION,
+            event_id: format!("evt_{run_id}_{seq:04}"),
+            seq,
+            run_id: run_id.to_string(),
+            mono_ms: seq,
+            ts: Some(format!("2026-05-03T00:01:{seq:02}Z")),
+            actor: EventActor::new(ActorKind::System, Some("tui-catalog-test".to_string())),
+            correlation_id: None,
+            causation_id: None,
+            stream_key: Some(format!("run:{run_id}")),
+            payload,
+        }
+    }
+
+    fn catalog_events(run_id: &str) -> Vec<EventEnvelopeV1> {
+        vec![
+            catalog_event(
+                run_id,
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: run_id.replace('_', " "),
+                    workspace_root: "/workspace".to_string(),
+                }),
+            ),
+            catalog_event(
+                run_id,
+                2,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "stable".to_string(),
+                }),
+            ),
+        ]
+    }
+
+    fn write_catalog_run(run_dir: &Path, events: &[EventEnvelopeV1]) {
+        std::fs::create_dir_all(run_dir).expect("create catalog run dir");
+        let body = events
+            .iter()
+            .map(|event| serde_json::to_string(event).expect("serialize event"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(run_dir.join("events.jsonl"), format!("{body}\n"))
+            .expect("write catalog events");
     }
 
     #[test]
@@ -2352,6 +2543,7 @@ mod tests {
 
         let fresh = new_live_tui_options(
             PathBuf::from("/tmp/run-new"),
+            Vec::new(),
             rx,
             false,
             Arc::clone(&sink),
@@ -2370,6 +2562,7 @@ mod tests {
         let resumed = continue_live_tui_options(
             PathBuf::from("/tmp/run-continue"),
             Vec::new(),
+            Vec::new(),
             rx,
             false,
             sink,
@@ -2383,6 +2576,49 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn resumed_live_tui_options_carry_normalized_lineage_history() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root_dir = temp_dir.path().join("root_session");
+        let child_dir = temp_dir.path().join("child_session");
+        write_catalog_run(&root_dir, &catalog_events("root_session"));
+        write_catalog_run(&child_dir, &catalog_events("child_session"));
+        std::fs::write(
+            child_dir.join("meta.json"),
+            r#"{"harness_lineage":{"harness_source_run_id":"root_session"}}"#,
+        )
+        .expect("write child lineage metadata");
+
+        let entries = load_live_session_history_entries(&child_dir, temp_dir.path())
+            .expect("load live lineage entries");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(
+            entries
+                .iter()
+                .find(|entry| entry.catalog.run_id == "child_session")
+                .and_then(|entry| entry.catalog.parent_session_id.as_deref()),
+            Some("root_session")
+        );
+
+        let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
+        let sink: UiIntentSink = Arc::new(|_| {});
+        let options =
+            continue_live_tui_options(child_dir, Vec::new(), entries, rx, false, sink, true);
+
+        let TuiMode::Live {
+            session_history_entries,
+            ..
+        } = options.mode
+        else {
+            panic!("expected live TUI mode");
+        };
+        assert_eq!(session_history_entries.len(), 2);
+        assert!(session_history_entries.iter().any(|entry| {
+            entry.catalog.run_id == "child_session"
+                && entry.catalog.parent_session_id.as_deref() == Some("root_session")
+        }));
     }
 
     #[tokio::test]
@@ -2452,6 +2688,41 @@ mod tests {
         assert_eq!(
             manual_compaction_success_message("checkpoint_000124", Some(4_100), Some(4_100)),
             "manual compaction checkpoint written: checkpoint_000124 · active ctx estimate unchanged"
+        );
+    }
+
+    #[test]
+    fn tui_lineage_clone_materializes_child_from_memory_snapshot() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let source_run_dir = temp_dir.path().join("run_tui_lineage_source");
+        std::fs::create_dir(&source_run_dir).expect("create source run dir");
+        std::fs::write(source_run_dir.join(".writer.lock"), "locked").expect("write source lock");
+        let events = stable_lineage_test_events();
+        let stable_prefix = harness_core::session_lineage::latest_clone_stable_prefix(&events)
+            .expect("stable clone prefix");
+
+        let notice =
+            materialize_tui_lineage_child("clone", source_run_dir.clone(), events, stable_prefix);
+
+        let LiveUpdate::OperatorNotice { message, level } = notice else {
+            panic!("expected lineage operator notice");
+        };
+        assert_eq!(level, OperatorNoticeLevel::Info);
+        assert!(
+            message.starts_with("Harness session clone created run_harness_child"),
+            "unexpected success message: {message}"
+        );
+        assert!(
+            temp_dir
+                .path()
+                .read_dir()
+                .expect("read session dir")
+                .filter_map(Result::ok)
+                .any(|entry| entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("run_harness_child")),
+            "expected published child run beside source"
         );
     }
 

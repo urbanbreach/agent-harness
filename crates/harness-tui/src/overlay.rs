@@ -3,6 +3,8 @@ pub enum OverlayKind {
     DetailsDrawer,
     SlashCommands,
     CommandPalette,
+    LineageBrowser,
+    ForkSelector,
     StatusDialog,
     PermissionModal,
 }
@@ -15,12 +17,18 @@ pub struct OverlayState {
     pub status_dialog_visible: bool,
     pub session_history_visible: bool,
     pub model_switcher_visible: bool,
+    pub lineage_browser_visible: bool,
+    pub fork_selector_visible: bool,
     pub permission_pending: bool,
 }
 
 impl OverlayState {
     pub fn command_palette_channel_visible(self) -> bool {
-        self.palette_visible || self.session_history_visible || self.model_switcher_visible
+        self.palette_visible
+            || self.session_history_visible
+            || self.model_switcher_visible
+            || self.lineage_browser_visible
+            || self.fork_selector_visible
     }
 }
 
@@ -39,7 +47,13 @@ impl OverlayStack {
             overlays.push(OverlayKind::SlashCommands);
         }
         if state.command_palette_channel_visible() && !state.permission_pending {
-            overlays.push(OverlayKind::CommandPalette);
+            if state.lineage_browser_visible {
+                overlays.push(OverlayKind::LineageBrowser);
+            } else if state.fork_selector_visible {
+                overlays.push(OverlayKind::ForkSelector);
+            } else {
+                overlays.push(OverlayKind::CommandPalette);
+            }
         }
         if state.status_dialog_visible && !state.permission_pending {
             overlays.push(OverlayKind::StatusDialog);
@@ -64,6 +78,8 @@ impl OverlayStack {
             Some(
                 OverlayKind::SlashCommands
                     | OverlayKind::CommandPalette
+                    | OverlayKind::LineageBrowser
+                    | OverlayKind::ForkSelector
                     | OverlayKind::StatusDialog
                     | OverlayKind::PermissionModal
             )

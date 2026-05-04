@@ -1,5 +1,6 @@
 ---
 source: crates/harness-tui/src/ui_overlays.rs
+assertion_line: 403
 expression: "format!(\"{:#?}\", terminal.backend().buffer())"
 ---
 Buffer {

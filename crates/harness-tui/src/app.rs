@@ -29,6 +29,7 @@ use crate::ui::{
 use crate::view_model;
 use crate::{clipboard, ui};
 
+mod lineage;
 mod pending_live;
 pub(crate) mod permissions;
 pub(crate) mod session_navigation;
@@ -44,6 +45,8 @@ use self::session_navigation::SessionNavigationSnapshot;
 use self::session_projection::SessionProjection;
 use self::terminal_panel::terminal_panel_event_is_shell;
 pub use self::terminal_panel::{TerminalPanelEntry, TerminalPanelStatus};
+pub use crate::view_model::{ForkSelectorViewModel, LineageBrowserViewModel};
+pub use lineage::{ForkSelectorState, LineageBrowserState};
 pub use pending_live::{
     set_pending_live_launch_metadata, set_pending_live_prompt_auto_submit,
     set_pending_live_prompt_draft,
@@ -61,10 +64,13 @@ pub use session_navigation::{LaunchMetadata, ModelOption, SessionHistoryEntry};
 const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS: usize = 72;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS: usize = 3;
-pub(crate) const SLASH_COMMANDS: [(&str, &str); 10] = [
+pub(crate) const SLASH_COMMANDS: [(&str, &str); 13] = [
     ("new", "Return to the home shell"),
     ("resume", "Continue a saved session"),
     ("replay", "Replay a saved session"),
+    ("fork", "Prepare a Harness session fork"),
+    ("tree", "View the Harness session tree"),
+    ("clone", "Prepare a Harness session clone"),
     ("model", "Switch model"),
     ("status", "View status"),
     ("events", "Open the event log review"),
@@ -1002,6 +1008,16 @@ pub enum UiIntent {
         launch_metadata: LaunchMetadata,
     },
     CompactSession,
+    ForkSession {
+        source_run_dir: PathBuf,
+        events: Vec<EventEnvelopeV1>,
+        stable_prefix: harness_core::session_lineage::StableSessionPrefix,
+    },
+    CloneSession {
+        source_run_dir: PathBuf,
+        events: Vec<EventEnvelopeV1>,
+        stable_prefix: harness_core::session_lineage::StableSessionPrefix,
+    },
     QuitRequested,
 }
 
@@ -1140,6 +1156,10 @@ pub struct AppState {
     pub model_options: Vec<ModelOption>,
     pub model_filtered: Vec<usize>,
     pub model_selected: usize,
+    pub lineage_browser: LineageBrowserState,
+    pub lineage_browser_visible: bool,
+    pub fork_selector: ForkSelectorState,
+    pub fork_selector_visible: bool,
     pub slash_visible: bool,
     pub slash_filtered: Vec<String>,
     pub slash_selected: usize,
@@ -1237,6 +1257,10 @@ impl Default for AppState {
             model_options: Vec::new(),
             model_filtered: Vec::new(),
             model_selected: 0,
+            lineage_browser: LineageBrowserState::default(),
+            lineage_browser_visible: false,
+            fork_selector: ForkSelectorState::default(),
+            fork_selector_visible: false,
             slash_visible: false,
             slash_filtered: Vec::new(),
             slash_selected: 0,
@@ -1310,12 +1334,27 @@ impl AppState {
         auto_exit_on_finish: bool,
         on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
     ) -> Self {
+        Self::new_live_with_session_history(
+            session_path,
+            auto_exit_on_finish,
+            on_ui_intent,
+            Vec::new(),
+        )
+    }
+
+    pub fn new_live_with_session_history(
+        session_path: Option<PathBuf>,
+        auto_exit_on_finish: bool,
+        on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
+        session_history_entries: Vec<SessionHistoryEntry>,
+    ) -> Self {
         let mut state = Self::new();
         state.focus = Focus::Prompt;
         state.live_details_drawer_open = false;
         state.session_path = session_path;
         state.auto_exit_on_finish = auto_exit_on_finish;
         state.on_ui_intent = on_ui_intent;
+        state.set_session_history_entries(session_history_entries);
         if let Some(launch_metadata) = take_pending_live_launch_metadata() {
             state.set_launch_metadata(launch_metadata);
         }
@@ -1507,7 +1546,7 @@ impl AppState {
             status_banner: self.status_banner.as_deref(),
             event_count: self.events.len(),
             last_event: self.events.last().map(|event| &event.payload),
-            latest_activity: self.activities.back(),
+            latest_activity: self.runtime_state_activity(),
             activity_count: self.activities.len(),
             active_permission,
         });
@@ -2075,6 +2114,8 @@ impl AppState {
             status_dialog_visible: self.status_dialog_visible,
             session_history_visible: self.session_history_visible,
             model_switcher_visible: self.model_switcher_visible,
+            lineage_browser_visible: self.lineage_browser_visible,
+            fork_selector_visible: self.fork_selector_visible,
             permission_pending: self.active_permission().is_some(),
         })
     }
@@ -2257,8 +2298,16 @@ impl AppState {
 
     fn active_turn_in_progress(&self) -> bool {
         self.activities
-            .back()
-            .is_some_and(|activity| activity.status == ActivityStatus::Streaming)
+            .iter()
+            .any(|activity| activity.status == ActivityStatus::Streaming)
+    }
+
+    fn runtime_state_activity(&self) -> Option<&ActivityEntry> {
+        self.activities
+            .iter()
+            .rev()
+            .find(|activity| activity.status == ActivityStatus::Streaming)
+            .or_else(|| self.activities.back())
     }
 
     fn echo_submitted_prompt(&mut self, text: String) {
@@ -3372,11 +3421,7 @@ impl AppState {
             }
         }
 
-        if self.prompt_buffer.trim().is_empty()
-            || self.active_turn_in_progress()
-            || self.composer_disabled()
-            || self.replay_mode
-        {
+        if self.prompt_buffer.trim().is_empty() || self.composer_disabled() || self.replay_mode {
             return;
         }
 
@@ -3762,6 +3807,160 @@ pub(crate) fn exact_test_live_without_compact_support_hides_slash_compact() {
         .slash_filtered
         .iter()
         .any(|command| command == "compact"));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_slash_menu_lists_lineage_commands() {
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    for query in ["fork", "tree", "clone"] {
+        app.replace_prompt_input(format!("/{query}"));
+        app.sync_slash_overlay();
+
+        assert_eq!(app.slash_filtered, vec![query.to_string()]);
+        assert_eq!(app.typed_slash_command(), Some(query));
+    }
+
+    assert_eq!(
+        slash_command_description("fork"),
+        "Prepare a Harness session fork"
+    );
+    assert_eq!(
+        slash_command_description("tree"),
+        "View the Harness session tree"
+    );
+    assert_eq!(
+        slash_command_description("clone"),
+        "Prepare a Harness session clone"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_slash_lineage_write_commands_blocked_in_replay() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+    let mut app = AppState::new_replay(PathBuf::from("/tmp/replay"), Vec::new());
+    app.on_ui_intent = Some(sink);
+
+    app.prompt_buffer = "/fork".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
+    assert!(app.typed_slash_command().is_none());
+    app.execute_slash_command("fork", Some("replay draft".to_string()));
+    assert_eq!(app.prompt_buffer, "replay draft");
+    assert_eq!(
+        app.status_banner.as_deref(),
+        Some("session fork blocked: replay mode is read-only")
+    );
+
+    app.prompt_buffer = "/clone".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
+    assert!(app.typed_slash_command().is_none());
+    app.execute_slash_command("clone", Some("clone draft".to_string()));
+    assert_eq!(app.prompt_buffer, "clone draft");
+    assert_eq!(
+        app.status_banner.as_deref(),
+        Some("session clone blocked: replay mode is read-only")
+    );
+
+    app.prompt_buffer = "/tree".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
+    assert_eq!(app.typed_slash_command(), Some("tree"));
+    app.execute_slash_command("tree", Some("tree draft".to_string()));
+    assert_eq!(app.prompt_buffer, "tree draft");
+    assert!(app.lineage_browser_visible);
+
+    assert!(intents.lock().expect("lock intents").is_empty());
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_slash_lineage_write_commands_blocked_when_live_unstable() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
+    app.ingest_event(EventEnvelopeV1 {
+        schema_version: 1,
+        event_id: "evt_live_lineage_unstable".to_string(),
+        seq: 1,
+        run_id: "run_live_lineage_unstable".to_string(),
+        mono_ms: 1,
+        ts: None,
+        actor: harness_core::event::EventActor::new(ActorKind::Worker, Some("build".to_string())),
+        correlation_id: Some("req_live_lineage_unstable".to_string()),
+        causation_id: None,
+        stream_key: Some("req_live_lineage_unstable".to_string()),
+        payload: EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_live_lineage_unstable".to_string(),
+            provider_id: "default".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
+            prompt_summary: "Inspect active work".to_string(),
+            request_digest: "digest-live-lineage-unstable".to_string(),
+            metadata: None,
+        }),
+    });
+    assert!(app.active_turn_in_progress());
+
+    for command in ["fork", "clone"] {
+        app.replace_prompt_input(format!("/{command}"));
+        app.sync_slash_overlay();
+
+        assert!(
+            app.typed_slash_command().is_none(),
+            "/{command} should not type-dispatch while live work is active"
+        );
+        assert!(
+            !app.slash_filtered.iter().any(|entry| entry == command),
+            "/{command} should be hidden while live work is active"
+        );
+
+        app.execute_slash_command(command, Some(format!("{command} draft")));
+        assert_eq!(app.prompt_buffer, format!("{command} draft"));
+        assert_eq!(
+            app.status_banner.as_deref(),
+            Some(match command {
+                "fork" => "Harness session fork blocked: live session has active work",
+                "clone" => "Harness session clone blocked: live session has active work",
+                _ => unreachable!("tested lineage write command"),
+            })
+        );
+    }
+
+    app.replace_prompt_input("/tree".to_string());
+    app.sync_slash_overlay();
+    assert_eq!(app.typed_slash_command(), Some("tree"));
+    assert_eq!(app.slash_filtered, vec!["tree".to_string()]);
+    assert!(intents.lock().expect("lock intents").is_empty());
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_slash_lineage_descriptions_use_harness_branding() {
+    for command in ["fork", "tree", "clone"] {
+        let description = slash_command_description(command);
+        assert!(
+            description.contains("Harness"),
+            "{command} should use Harness branding: {description}"
+        );
+
+        let lower = description.to_lowercase();
+        for forbidden in [
+            ["open", "code"].concat(),
+            ["open", "code"].join(" "),
+            "codex".to_string(),
+        ] {
+            assert!(
+                !lower.contains(&forbidden),
+                "{command} description contains forbidden source brand: {description}"
+            );
+        }
+    }
 }
 
 #[cfg(test)]

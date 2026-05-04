@@ -5,6 +5,7 @@ use crate::app::{
     ToolCallDisplayStatus,
 };
 use crate::Action;
+use harness_core::proj::RunStatus;
 
 const POST_RUN_COMPOSER_HINT: &str =
     "Session shell preserved — use commands for replay, new, or quit after review.";
@@ -54,6 +55,51 @@ pub(crate) struct FooterHintsInput {
     pub composer_disabled: bool,
     pub completed_session_shell_active: bool,
     pub continued_live_run: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineageBrowserViewModel {
+    pub filter_input: String,
+    pub rows: Vec<LineageBrowserRowViewModel>,
+    pub empty_message: Option<String>,
+    pub selected_run_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineageBrowserRowViewModel {
+    pub run_id: String,
+    pub title: String,
+    pub depth: usize,
+    pub parent_run_id: Option<String>,
+    pub status: Option<RunStatus>,
+    pub updated_at: Option<String>,
+    pub profile: Option<String>,
+    pub provider_model: Option<String>,
+    pub child_count: usize,
+    pub expanded: bool,
+    pub selected: bool,
+    pub current: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForkSelectorViewModel {
+    pub filter_input: String,
+    pub rows: Vec<ForkSelectorRowViewModel>,
+    pub empty_message: Option<String>,
+    pub selected_cutoff_seq: Option<u64>,
+    pub confirmed_cutoff_seq: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForkSelectorRowViewModel {
+    pub cutoff_seq: u64,
+    pub event_count: usize,
+    pub run_id: Option<String>,
+    pub status: Option<RunStatus>,
+    pub event_id: Option<String>,
+    pub event_kind: &'static str,
+    pub timestamp: Option<String>,
+    pub selected: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

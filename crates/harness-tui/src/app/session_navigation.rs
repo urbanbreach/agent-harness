@@ -9,6 +9,7 @@ use harness_core::event::{EventEnvelopeV1, EventV1};
 use harness_core::proj::{
     inspect_resume_plan, RunMetadata, SessionCatalogEntry, SessionModeSource,
 };
+use harness_core::session_lineage::{latest_clone_stable_prefix, StableSessionPrefix};
 
 use super::{
     json_string_field, set_pending_live_launch_metadata, set_pending_live_prompt_draft, AppState,
@@ -18,6 +19,31 @@ use super::{
 use crate::keybindings::Action;
 
 const SLASH_COMMAND_RESULT_LIMIT: usize = 10;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LineageSlashCommand {
+    Fork,
+    Tree,
+    Clone,
+}
+
+impl LineageSlashCommand {
+    fn status_banner(self, blocked_reason: Option<&'static str>) -> &'static str {
+        match (self, blocked_reason) {
+            (Self::Fork, Some("replay")) => "session fork blocked: replay mode is read-only",
+            (Self::Clone, Some("replay")) => "session clone blocked: replay mode is read-only",
+            (Self::Fork, Some("active")) => {
+                "Harness session fork blocked: live session has active work"
+            }
+            (Self::Clone, Some("active")) => {
+                "Harness session clone blocked: live session has active work"
+            }
+            (Self::Fork, _) => "session fork is prepared; creation is not available yet",
+            (Self::Tree, _) => "session tree is prepared; browser is not available yet",
+            (Self::Clone, _) => "Harness session clone blocked: no stable prefix is available",
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub(super) struct SessionNavigationSnapshot {
@@ -1120,6 +1146,14 @@ impl AppState {
     }
 
     pub(in crate::app) fn handle_navigation_overlay_key(&mut self, key: &KeyEvent) -> bool {
+        if self.lineage_browser_visible {
+            return self.handle_lineage_browser_key(key);
+        }
+
+        if self.fork_selector_visible {
+            return self.handle_fork_selector_key(key);
+        }
+
         if self.session_history_visible {
             return self.handle_session_history_key(key);
         }
@@ -1218,6 +1252,8 @@ impl AppState {
         match command {
             "new" | "status" | "exit" => true,
             "resume" | "replay" => !self.replay_mode,
+            "fork" | "clone" => !self.startup_mode && self.lineage_write_blocked_reason().is_none(),
+            "tree" => !self.startup_mode,
             "model" => self.model_switcher_supported(),
             "events" => !self.startup_mode,
             "shell" => self.active_review_surface.is_some(),
@@ -1267,6 +1303,8 @@ impl AppState {
         self.model_switcher_visible = false;
         self.model_filtered.clear();
         self.model_selected = 0;
+        self.lineage_browser_visible = false;
+        self.fork_selector_visible = false;
         self.continued_post_run_handoff_active = false;
         self.continued_live_reopen_surface_active = false;
         self.continue_disabled_banner = None;
@@ -1287,11 +1325,7 @@ impl AppState {
         self.replace_prompt_input(draft);
     }
 
-    pub(in crate::app) fn execute_slash_command(
-        &mut self,
-        command: &str,
-        preserved_draft: Option<String>,
-    ) {
+    pub fn execute_slash_command(&mut self, command: &str, preserved_draft: Option<String>) {
         self.clear_slash_menu();
         match command {
             "new" => self.navigate_to_home_shell(preserved_draft.unwrap_or_default()),
@@ -1327,8 +1361,101 @@ impl AppState {
                 self.restore_slash_draft(preserved_draft);
                 self.emit_ui_intent(UiIntent::CompactSession);
             }
+            "fork" => self
+                .execute_passive_lineage_slash_command(preserved_draft, LineageSlashCommand::Fork),
+            "tree" => self
+                .execute_passive_lineage_slash_command(preserved_draft, LineageSlashCommand::Tree),
+            "clone" => self
+                .execute_passive_lineage_slash_command(preserved_draft, LineageSlashCommand::Clone),
             "exit" => self.execute_action(Action::Quit),
             _ => {}
+        }
+    }
+
+    fn execute_passive_lineage_slash_command(
+        &mut self,
+        preserved_draft: Option<String>,
+        command: LineageSlashCommand,
+    ) {
+        self.restore_slash_draft(preserved_draft);
+        let blocked_reason = match command {
+            LineageSlashCommand::Fork | LineageSlashCommand::Clone => {
+                self.lineage_write_blocked_reason()
+            }
+            LineageSlashCommand::Tree => None,
+        };
+        if blocked_reason.is_none() {
+            match command {
+                LineageSlashCommand::Fork => {
+                    self.open_fork_selector();
+                    return;
+                }
+                LineageSlashCommand::Tree => {
+                    self.open_lineage_browser();
+                    return;
+                }
+                LineageSlashCommand::Clone => {
+                    self.execute_clone_from_latest_stable_prefix();
+                    return;
+                }
+            }
+        }
+        self.set_status_banner(Some(command.status_banner(blocked_reason).to_string()));
+    }
+
+    pub(in crate::app) fn source_run_dir_for_lineage_write(&self) -> Result<PathBuf, String> {
+        self.session_path
+            .clone()
+            .ok_or_else(|| "Harness session write blocked: no live session path".to_string())
+    }
+
+    pub(in crate::app) fn emit_fork_session_intent(
+        &mut self,
+        stable_prefix: StableSessionPrefix,
+    ) -> Result<(), String> {
+        let source_run_dir = self.source_run_dir_for_lineage_write()?;
+        self.emit_ui_intent(UiIntent::ForkSession {
+            source_run_dir,
+            events: self.events.clone(),
+            stable_prefix,
+        });
+        Ok(())
+    }
+
+    fn execute_clone_from_latest_stable_prefix(&mut self) {
+        let stable_prefix = match latest_clone_stable_prefix(&self.events) {
+            Ok(prefix) if prefix.event_count > 0 => prefix,
+            Ok(_) => {
+                self.set_status_banner(Some(
+                    "Harness session clone blocked: no stable events are available".to_string(),
+                ));
+                return;
+            }
+            Err(err) => {
+                self.set_status_banner(Some(format!("Harness session clone blocked: {err}")));
+                return;
+            }
+        };
+
+        match self.source_run_dir_for_lineage_write() {
+            Ok(source_run_dir) => {
+                self.emit_ui_intent(UiIntent::CloneSession {
+                    source_run_dir,
+                    events: self.events.clone(),
+                    stable_prefix,
+                });
+            }
+            Err(err) => self.set_status_banner(Some(err)),
+        }
+    }
+
+    fn lineage_write_blocked_reason(&self) -> Option<&'static str> {
+        if self.replay_mode {
+            Some("replay")
+        } else if self.active_turn_in_progress() {
+            Some("active")
+        } else {
+            None
         }
     }
 
@@ -1665,6 +1792,8 @@ impl AppState {
         self.palette_visible = false;
         self.session_history_visible = false;
         self.model_switcher_visible = false;
+        self.lineage_browser_visible = false;
+        self.fork_selector_visible = false;
         self.palette_input.clear();
         self.palette_cursor = 0;
         self.palette_filtered.clear();
@@ -1942,7 +2071,7 @@ impl AppState {
         }
     }
 
-    fn current_session_id(&self) -> Option<&str> {
+    pub(in crate::app) fn current_session_id(&self) -> Option<&str> {
         self.session_path
             .as_deref()
             .and_then(Path::file_name)
@@ -2485,6 +2614,16 @@ impl AppState {
         self.session_history_entries = entries;
         self.update_session_history_filter();
         self.rebuild_model_options();
+        if self.lineage_browser_visible {
+            let current_run_id = self.current_session_id().map(str::to_string);
+            let entries = self
+                .session_history_entries
+                .iter()
+                .map(|entry| entry.catalog.clone())
+                .collect::<Vec<_>>();
+            self.lineage_browser
+                .rebuild(entries, current_run_id, &self.palette_input);
+        }
         self.session_history_selected = self
             .session_history_selected
             .min(self.session_history_filtered.len().saturating_sub(1));
