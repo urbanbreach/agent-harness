@@ -51,12 +51,12 @@ Ok(())
 ```
 
 ## Practical workflow
-
 Run `cargo fmt` to keep formatting consistent
 Use `cargo check` for fast feedback while iterating
 Run `cargo clippy` to catch common mistakes early
 Run `cargo test` often to protect behavior
 Read compiler errors carefully; they are usually specific and actionable
+
 
 ## Learning path
 
