@@ -39,6 +39,7 @@ Primary agents are discovered from `.agent-harness/agents/*.md` and use the
 runtime config's `model` default:
 
 - `build` — default implementation lane
+- `plan` — read-only planning lane with runtime-enforced edits limited to `.agent-harness/plans/`, plus `plan_exit` to hand off to Build
 
 Validate the shipped example config:
 
@@ -57,7 +58,8 @@ The older broad runtime shape plus `$XDG_CONFIG_HOME/harness/config.jsonc` still
 load for compatibility, but `harness.json{,c}` and the matching XDG runtime paths
 are the canonical public contract.
 
-Launch the interactive harness with the Build-only surface:
+Launch the interactive harness with Build selected by default and Plan available
+through the agent/model switcher:
 
 ```bash
 cargo run -p harness -- --config configs/harness.example.jsonc

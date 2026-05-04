@@ -13,7 +13,7 @@ The generated JSON schemas are the source of truth:
 
 Start with `configs/harness.example.jsonc`. It keeps the happy path small: one
 OpenAI-compatible provider, one default model, scalar permission mode, and
-optional MCP. The runtime fills in the standard `build` agent and
+optional MCP. The runtime fills in the standard `build` and `plan` agents plus
 provider-context compaction defaults unless you override them explicitly.
 
 ```jsonc
@@ -76,7 +76,7 @@ for those settings instead of mixing them into runtime config.
 | --- | --- |
 | `$schema` | Optional schema URI for editor integration. |
 | `agent` | Optional agent overrides or custom agent definitions. |
-| `default_agent` | Default interactive agent selected at startup. |
+| `default_agent` | Default interactive agent selected at startup; the shipped example keeps `build` as the default while `plan` remains selectable. |
 | `instructions` | Optional inline instructions or instruction file paths prepended before agent prompts. |
 | `mcp` | MCP server definitions keyed by server name. |
 | `model` | Default full-capability model reference. |
@@ -133,6 +133,11 @@ and repository instructions still come from files:
 Project instructions are still auto-discovered from `AGENTS.md`. If
 `instructions` is set in the runtime config, those entries are prepended ahead
 of the discovered `AGENTS.md` content.
+
+The shipped `plan` agent provides a two-phase planning mode: it can read/search,
+ask questions, write only under `.agent-harness/plans/`, and call `plan_exit` to
+ask whether to switch to `build`. The edit boundary is enforced by per-agent
+permission rules, not just prompt text.
 
 ## Permission policy
 

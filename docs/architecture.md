@@ -309,7 +309,8 @@ terminal event before reporting completion. The `task` and `batch` tools also pr
 re-entry: child turns are requested or resumed through coordinator scheduling, never through a direct
 agent/provider loop bypass.
 
-Guardrails bound the loop by profile iteration count and total tool calls per turn. Overflow-style
+Guardrails bound tool-heavy turns by total tool calls per turn, while provider phases continue until
+the assistant completes, fails, is cancelled, or hits that explicit tool-call cap. Overflow-style
 provider failures may trigger one coordinator compaction retry; the retry recomputes provider context
 from the checkpoint without rewriting `events.jsonl`. Pre-prompt compaction uses the same coordinator
 checkpoint path before provider request construction, with deterministic token estimates and a no-loop
@@ -319,7 +320,9 @@ guard when a checkpoint cannot reduce active context.
 
 Provider and tool exposure is selected per agent by its configured `tools` list. The harness ships
 a single native tool surface, so profiles opt in by naming canonical tool ids such as `read`,
-`edit`, `bash`, and `task` directly. By default, `read` emits
+`edit`, `bash`, `task`, and `plan_exit` directly. The shipped `plan` profile includes `edit`
+only for `.agent-harness/plans/**` through runtime permission rules and uses `plan_exit` to ask
+before the coordinator schedules a `build` continuation. By default, `read` emits
 `LINE#HASH|text` anchors and `edit` consumes hashline operations on that anchored view.
 
 ## Hashline Spec
