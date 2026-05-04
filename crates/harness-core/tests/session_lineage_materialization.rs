@@ -5,13 +5,17 @@ use std::sync::Arc;
 use std::thread;
 
 use harness_core::event::{
-    ActorKind, ArtifactWrittenEvent, EventActor, EventArtifactRef, EventEnvelopeV1, EventV1,
-    RunFinishedEvent, RunStartedEvent, ToolCallFinishedEvent, ToolCallMetadata,
-    ToolCallRequestedEvent, ToolCallStatus, SCHEMA_VERSION,
+    ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, EventActor, EventArtifactRef,
+    EventEnvelopeV1, EventV1, PermissionDecision, PermissionRequestedEvent,
+    ProviderRequestStartedEvent, RunFinishedEvent, RunStartedEvent, TaskScheduleState,
+    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallRequestedEvent,
+    ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
+use harness_core::proj::inspect_resume_plan;
 use harness_core::session_lineage::{
-    materialize_child_session, validate_fork_stable_prefix, ChildSessionMaterializationError,
-    ChildSessionMaterializationRequest, ChildSessionMaterializationSourceKind,
+    materialize_child_session, validate_fork_stable_prefix, validate_tui_fork_stable_prefix,
+    ChildSessionMaterializationError, ChildSessionMaterializationRequest,
+    ChildSessionMaterializationSourceKind,
 };
 
 #[test]
@@ -158,6 +162,66 @@ fn session_lineage_materializes_child_atomically() {
         .contains("clears correlation_id and causation_id"));
 
     assert_no_unpublished_temp_dirs(session_dir);
+}
+
+#[test]
+fn session_lineage_tui_live_snapshot_terminalizes_open_state_for_resume() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let session_dir = temp_dir.path();
+    let source_run_id = "run_parent_live_snapshot";
+    let source_run_dir = session_dir.join(source_run_id);
+    fs::create_dir_all(&source_run_dir).expect("create source run dir");
+    fs::write(
+        source_run_dir.join("meta.json"),
+        serde_json::json!({
+            "run_id": source_run_id,
+            "run_name": "Parent live run",
+            "workspace_root": "/workspace/source",
+            "config_digest": "cfg-parent",
+            "harness_version": "test-version"
+        })
+        .to_string(),
+    )
+    .expect("write source meta");
+
+    let events = live_snapshot_with_open_state(source_run_id);
+    let prefix = validate_tui_fork_stable_prefix(&events, events.len() as u64)
+        .expect("TUI live snapshot prefix accepts reference-style snapshots");
+
+    let result = materialize_child_session(ChildSessionMaterializationRequest {
+        source_run_dir: &source_run_dir,
+        events: &events,
+        stable_prefix: &prefix,
+        source_kind: ChildSessionMaterializationSourceKind::TuiStableInMemorySnapshot,
+    })
+    .expect("TUI live snapshot materializes");
+
+    let child_events = read_events(&result.child_run_dir);
+    assert!(child_events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::TaskCancelled(payload)
+            if payload.task_id == "task_000001"
+                && payload.reason.contains("terminalized copied live task state")
+    )));
+    assert!(child_events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::PermissionResolved(payload)
+            if payload.permission_id == "perm_000001"
+                && payload.decision == PermissionDecision::Deny
+    )));
+    assert!(matches!(
+        child_events.last().map(|event| &event.payload),
+        Some(EventV1::RunFinished(_))
+    ));
+
+    let resume_plan = inspect_resume_plan(&result.child_run_dir);
+    assert!(
+        resume_plan.is_resumable,
+        "child fork should resume after live-state terminalization: {:?}",
+        resume_plan.resume_disabled_reason
+    );
+    assert!(resume_plan.tasks_in_flight.is_empty());
+    assert!(resume_plan.pending_permissions.is_empty());
 }
 
 #[test]
@@ -487,6 +551,70 @@ fn stable_events(
             5,
             EventV1::RunFinished(RunFinishedEvent {
                 summary: "finished".to_string(),
+            }),
+        ),
+    ]
+}
+
+fn live_snapshot_with_open_state(run_id: &str) -> Vec<EventEnvelopeV1> {
+    vec![
+        envelope(
+            run_id,
+            1,
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "interactive".to_string(),
+                workspace_root: "/workspace/source".to_string(),
+            }),
+        ),
+        envelope(
+            run_id,
+            2,
+            EventV1::AgentSpawned(AgentSpawnedEvent {
+                agent_id: "agent_000001".to_string(),
+                profile: "default".to_string(),
+                parent_agent_id: None,
+            }),
+        ),
+        envelope(
+            run_id,
+            3,
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_000001".to_string(),
+                text: "edit file".to_string(),
+            }),
+        ),
+        envelope(
+            run_id,
+            4,
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_000001".to_string(),
+                provider_id: "default".to_string(),
+                model_id: "gpt-5".to_string(),
+                prompt_summary: "edit file".to_string(),
+                request_digest: "digest-req".to_string(),
+                metadata: None,
+            }),
+        ),
+        envelope(
+            run_id,
+            5,
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: "task_000001".to_string(),
+                state: TaskScheduleState::Started,
+                queue_key: Some("tool:edit".to_string()),
+            }),
+        ),
+        envelope(
+            run_id,
+            6,
+            EventV1::PermissionRequested(PermissionRequestedEvent {
+                permission_id: "perm_000001".to_string(),
+                kind: "edit".to_string(),
+                tool_call_id: Some("toolcall_000001".to_string()),
+                summary: "allow edit".to_string(),
+                request_digest: "digest-perm".to_string(),
+                timeout_ms: 60_000,
+                default_decision: PermissionDecision::Deny,
             }),
         ),
     ]

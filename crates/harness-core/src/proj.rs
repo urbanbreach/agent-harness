@@ -18,6 +18,7 @@ use crate::event::{
 use crate::perm::PermissionGrantSet;
 
 const EVENTS_FILE_NAME: &str = "events.jsonl";
+const META_FILE_NAME: &str = "meta.json";
 const REQUEST_ID_PREFIX: &str = "req_";
 const TASK_ID_PREFIX: &str = "task_";
 const TOOL_CALL_ID_PREFIX: &str = "toolcall_";
@@ -526,14 +527,44 @@ pub fn inspect_resume_plan(run_dir: &Path) -> ResumePlan {
         Ok(events) => events,
         Err(reason) => return ResumePlan::blocked(fallback_run_id, reason),
     };
+    let metadata = read_run_metadata_for_resume_inspection(run_dir);
 
     match project_resume_plan(events.iter(), &fallback_run_id) {
-        Ok(plan) => plan,
+        Ok(mut plan) => {
+            apply_resume_metadata_fallback(&mut plan, metadata.as_ref());
+            plan
+        }
         Err(err) => ResumePlan::blocked(
             fallback_run_id,
             format!("event log is corrupt or non-monotonic: {err}"),
         ),
     }
+}
+
+fn read_run_metadata_for_resume_inspection(run_dir: &Path) -> Option<RunMetadata> {
+    let body = fs::read_to_string(run_dir.join(META_FILE_NAME)).ok()?;
+    serde_json::from_str(&body).ok()
+}
+
+fn apply_resume_metadata_fallback(plan: &mut ResumePlan, metadata: Option<&RunMetadata>) {
+    if plan.provider_model.is_none() {
+        if let Some(context) =
+            metadata.and_then(|metadata| metadata.recorded_runtime_context.as_ref())
+        {
+            plan.provider_model = Some(format!("{}/{}", context.provider, context.model));
+        }
+    }
+
+    plan.resume_disabled_reason = resume_plan_disabled_reason(
+        plan.max_seq,
+        plan.latest_lifecycle_status,
+        &plan.pending_permissions,
+        &plan.tasks_in_flight,
+        plan.workspace_root.as_deref(),
+        &plan.known_profiles,
+        plan.provider_model.as_deref(),
+    );
+    plan.is_resumable = plan.resume_disabled_reason.is_none();
 }
 
 pub fn project_resume_plan<'a>(

@@ -16,7 +16,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::event::{EventEnvelopeV1, EventV1, SCHEMA_VERSION};
+use crate::event::{
+    ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionDecision, PermissionResolvedEvent,
+    RunFinishedEvent, TaskCancelledEvent, SCHEMA_VERSION,
+};
 use crate::proj::{RunStatus, SessionCatalogEntry};
 
 const EVENTS_FILE_NAME: &str = "events.jsonl";
@@ -225,7 +228,13 @@ where
     BeforePublish: FnOnce(),
     Publish: FnOnce(&Path, &Path) -> std::io::Result<()>,
 {
-    let validated = validate_stable_prefix(request.events, request.stable_prefix.cutoff_seq)?;
+    let validated = if request.source_kind
+        == ChildSessionMaterializationSourceKind::TuiStableInMemorySnapshot
+    {
+        validate_tui_fork_stable_prefix(request.events, request.stable_prefix.cutoff_seq)?
+    } else {
+        validate_stable_prefix(request.events, request.stable_prefix.cutoff_seq)?
+    };
     if &validated != request.stable_prefix {
         return Err(ChildSessionMaterializationError::StablePrefixMismatch {
             cutoff_seq: request.stable_prefix.cutoff_seq,
@@ -280,11 +289,17 @@ where
         .last()
         .map(|event| event.event_id.clone());
     let source_digest = source_prefix_digest(source_prefix_events)?;
-    let copied_events = rewrite_child_event_prefix(
+    let mut copied_events = rewrite_child_event_prefix(
         source_prefix_events,
         source_run_id.as_deref(),
         &child_run_id,
     );
+    if request.source_kind == ChildSessionMaterializationSourceKind::TuiStableInMemorySnapshot
+        && validated.status.is_none()
+        && !copied_events.is_empty()
+    {
+        append_materialized_terminal_event(&mut copied_events, &child_run_id);
+    }
     let artifact_specs = collect_referenced_artifacts(&copied_events)?;
 
     write_child_events(pending.path(), &copied_events)?;
@@ -356,6 +371,20 @@ pub fn validate_fork_stable_prefix(
     validate_stable_prefix(events, cutoff_seq)
 }
 
+/// Validate an in-memory live prefix used by TUI fork operations.
+///
+/// Disk-backed forks require a terminal run lifecycle. TUI `/fork` mirrors the reference
+/// message-selector behavior: selecting a user message copies the live transcript before that
+/// message and restores the selected prompt for editing. Low-level harness task/tool/edit state may
+/// still be open in the source prefix, so live materialization terminalizes the copied snapshot
+/// before the child is resumed.
+pub fn validate_tui_fork_stable_prefix(
+    events: &[EventEnvelopeV1],
+    cutoff_seq: u64,
+) -> Result<StableSessionPrefix, SessionLineageError> {
+    validate_stable_prefix_with_options(events, cutoff_seq, true)
+}
+
 /// Select the latest stable prefix used by clone operations.
 pub fn latest_clone_stable_prefix(
     events: &[EventEnvelopeV1],
@@ -364,7 +393,7 @@ pub fn latest_clone_stable_prefix(
 
     for cutoff_seq in (1..=max_seq).rev() {
         let state = project_prefix_state(events, cutoff_seq);
-        if state.unstable_reason().is_none() {
+        if state.unstable_reason(false).is_none() {
             return Ok(stable_prefix_from_state(cutoff_seq, &state));
         }
     }
@@ -389,6 +418,14 @@ pub fn validate_stable_prefix(
     events: &[EventEnvelopeV1],
     cutoff_seq: u64,
 ) -> Result<StableSessionPrefix, SessionLineageError> {
+    validate_stable_prefix_with_options(events, cutoff_seq, false)
+}
+
+fn validate_stable_prefix_with_options(
+    events: &[EventEnvelopeV1],
+    cutoff_seq: u64,
+    allow_active_lifecycle: bool,
+) -> Result<StableSessionPrefix, SessionLineageError> {
     let max_seq = validate_event_log(events)?;
     if cutoff_seq > max_seq {
         return Err(SessionLineageError::CutoffOutOfRange {
@@ -398,7 +435,7 @@ pub fn validate_stable_prefix(
     }
 
     let state = project_prefix_state(events, cutoff_seq);
-    if let Some(reason) = state.unstable_reason() {
+    if let Some(reason) = state.unstable_reason(allow_active_lifecycle) {
         return Err(SessionLineageError::UnstablePrefix { cutoff_seq, reason });
     }
 
@@ -417,6 +454,101 @@ fn rewrite_child_event_prefix(
             rewrite_child_event_envelope(event, source_run_id, child_run_id, index as u64 + 1)
         })
         .collect()
+}
+
+fn append_materialized_terminal_event(events: &mut Vec<EventEnvelopeV1>, child_run_id: &str) {
+    let open_state = project_materialized_live_open_state(events);
+    for task_id in open_state.tasks_in_flight {
+        append_materialized_system_event(
+            events,
+            child_run_id,
+            EventV1::TaskCancelled(TaskCancelledEvent {
+                task_id,
+                reason: "fork snapshot terminalized copied live task state".to_string(),
+                task_scope: None,
+            }),
+        );
+    }
+    for permission_id in open_state.pending_permissions {
+        append_materialized_system_event(
+            events,
+            child_run_id,
+            EventV1::PermissionResolved(PermissionResolvedEvent {
+                permission_id,
+                decision: PermissionDecision::Deny,
+                reason: Some("fork snapshot terminalized copied live permission state".to_string()),
+            }),
+        );
+    }
+    append_materialized_system_event(
+        events,
+        child_run_id,
+        EventV1::RunFinished(RunFinishedEvent {
+            summary: "Harness child session materialized from stable live snapshot".to_string(),
+        }),
+    );
+}
+
+fn append_materialized_system_event(
+    events: &mut Vec<EventEnvelopeV1>,
+    child_run_id: &str,
+    payload: EventV1,
+) {
+    let child_seq = events.len() as u64 + 1;
+    let mono_ms = events
+        .last()
+        .map(|event| event.mono_ms.saturating_add(1))
+        .unwrap_or_default();
+    let ts = events.last().and_then(|event| event.ts.clone());
+    events.push(EventEnvelopeV1 {
+        schema_version: SCHEMA_VERSION,
+        event_id: child_event_id(child_run_id, child_seq),
+        seq: child_seq,
+        run_id: child_run_id.to_string(),
+        mono_ms,
+        ts,
+        actor: EventActor::new(ActorKind::System, Some("session-lineage".to_string())),
+        correlation_id: None,
+        causation_id: None,
+        stream_key: Some(format!("run:{child_run_id}")),
+        payload,
+    });
+}
+
+#[derive(Debug, Clone, Default)]
+struct MaterializedLiveOpenState {
+    tasks_in_flight: BTreeSet<String>,
+    pending_permissions: BTreeSet<String>,
+}
+
+fn project_materialized_live_open_state(events: &[EventEnvelopeV1]) -> MaterializedLiveOpenState {
+    let mut state = MaterializedLiveOpenState::default();
+    for event in events {
+        match &event.payload {
+            EventV1::TaskScheduled(payload) => {
+                state.tasks_in_flight.insert(payload.task_id.clone());
+            }
+            EventV1::TaskCancelled(payload) => {
+                state.tasks_in_flight.remove(&payload.task_id);
+            }
+            EventV1::TaskCompleted(payload) => {
+                state.tasks_in_flight.remove(&payload.task_id);
+            }
+            EventV1::TaskResultLate(payload) => {
+                state.tasks_in_flight.remove(&payload.task_id);
+            }
+            EventV1::PermissionRequested(payload) => {
+                state
+                    .pending_permissions
+                    .insert(payload.permission_id.clone());
+            }
+            EventV1::PermissionResolved(payload) => {
+                state.pending_permissions.remove(&payload.permission_id);
+            }
+            _ => {}
+        }
+    }
+    state
 }
 
 fn collect_referenced_artifacts(
@@ -705,6 +837,11 @@ fn write_child_metadata(
     let harness_version = source_metadata
         .string_field("harness_version")
         .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
+    let recorded_runtime_context = source_metadata
+        .0
+        .get("recorded_runtime_context")
+        .filter(|value| !value.is_null())
+        .cloned();
     let created_at = materialization_created_at();
     let metadata = ChildRunMetadata {
         run_id: child_run_id.to_string(),
@@ -713,6 +850,7 @@ fn write_child_metadata(
         created_at: Some(created_at.clone()),
         config_digest,
         harness_version,
+        recorded_runtime_context,
         harness_lineage: HarnessLineageMetadata {
             harness_operation: "child_session_materialization".to_string(),
             harness_source_run_id: source_run_id.clone(),
@@ -729,7 +867,7 @@ fn write_child_metadata(
             source_event_count: stable_prefix.event_count,
             materialized_event_count: events.len(),
             materialized_artifact_count: artifact_count,
-            event_rewrite_policy: "Harness child materialization regenerates event_id/run_id/seq, clears correlation_id and causation_id, rewrites only run-scoped stream keys, and preserves payloads.".to_string(),
+            event_rewrite_policy: "Harness child materialization regenerates event_id/run_id/seq, clears correlation_id and causation_id, rewrites only run-scoped stream keys, preserves copied payloads, and terminalizes stable live snapshots with a RunFinished marker.".to_string(),
             artifact_policy: "Harness child materialization copies only artifacts referenced by copied events after byte and digest validation.".to_string(),
         },
     };
@@ -919,6 +1057,8 @@ struct ChildRunMetadata {
     created_at: Option<String>,
     config_digest: String,
     harness_version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    recorded_runtime_context: Option<serde_json::Value>,
     harness_lineage: HarnessLineageMetadata,
 }
 
@@ -1166,9 +1306,10 @@ struct PrefixState {
     tasks_in_flight: BTreeSet<String>,
     tool_calls_in_flight: BTreeSet<String>,
     provider_requests_in_flight: BTreeSet<String>,
+    user_requests_awaiting_provider: BTreeSet<String>,
     pending_permissions: BTreeSet<String>,
     compactions_in_flight: BTreeSet<String>,
-    edits_in_flight: BTreeSet<String>,
+    edits_in_flight: BTreeMap<String, String>,
 }
 
 impl PrefixState {
@@ -1181,6 +1322,7 @@ impl PrefixState {
                 self.tasks_in_flight.clear();
                 self.tool_calls_in_flight.clear();
                 self.provider_requests_in_flight.clear();
+                self.user_requests_awaiting_provider.clear();
                 self.pending_permissions.clear();
                 self.compactions_in_flight.clear();
                 self.edits_in_flight.clear();
@@ -1200,6 +1342,8 @@ impl PrefixState {
                 self.tasks_in_flight.remove(&payload.task_id);
             }
             EventV1::ProviderRequestStarted(payload) => {
+                self.user_requests_awaiting_provider
+                    .remove(&payload.request_id);
                 self.provider_requests_in_flight
                     .insert(payload.request_id.clone());
             }
@@ -1240,18 +1384,22 @@ impl PrefixState {
                 }
             }
             EventV1::EditProposed(payload) => {
-                self.edits_in_flight.insert(payload.edit_id.clone());
+                self.edits_in_flight
+                    .insert(payload.edit_id.clone(), payload.path.clone());
             }
             EventV1::EditApplied(payload) => {
-                self.edits_in_flight.remove(&payload.edit_id);
+                self.complete_edit(&payload.edit_id, &payload.path);
             }
             EventV1::EditRejected(payload) => {
-                self.edits_in_flight.remove(&payload.edit_id);
+                self.complete_edit(&payload.edit_id, &payload.path);
+            }
+            EventV1::UserMessageSubmitted(payload) => {
+                self.user_requests_awaiting_provider
+                    .insert(payload.request_id.clone());
             }
             EventV1::AgentSpawned(_)
             | EventV1::AgentStopped(_)
             | EventV1::StaleDetected(_)
-            | EventV1::UserMessageSubmitted(_)
             | EventV1::ProviderStreamDelta(_)
             | EventV1::ProviderReasoningDelta(_)
             | EventV1::AssistantMessageFinished(_)
@@ -1262,43 +1410,52 @@ impl PrefixState {
         }
     }
 
-    fn unstable_reason(&self) -> Option<String> {
-        if let Some(reason) =
-            first_non_empty_reason("tasks are still in flight", &self.tasks_in_flight)
-        {
-            return Some(reason);
-        }
-        if let Some(reason) =
-            first_non_empty_reason("tool calls are still in flight", &self.tool_calls_in_flight)
-        {
-            return Some(reason);
-        }
-        if let Some(reason) = first_non_empty_reason(
-            "provider requests are still in flight",
-            &self.provider_requests_in_flight,
-        ) {
-            return Some(reason);
-        }
-        if let Some(reason) = first_non_empty_reason(
-            "pending permissions must be resolved",
-            &self.pending_permissions,
-        ) {
-            return Some(reason);
-        }
-        if let Some(reason) = first_non_empty_reason(
-            "compactions are still in flight",
-            &self.compactions_in_flight,
-        ) {
-            return Some(reason);
-        }
-        if let Some(reason) =
-            first_non_empty_reason("edits are still in flight", &self.edits_in_flight)
-        {
-            return Some(reason);
+    fn unstable_reason(&self, allow_active_lifecycle: bool) -> Option<String> {
+        if !allow_active_lifecycle {
+            if let Some(reason) =
+                first_non_empty_reason("tasks are still in flight", &self.tasks_in_flight)
+            {
+                return Some(reason);
+            }
+            if let Some(reason) =
+                first_non_empty_reason("tool calls are still in flight", &self.tool_calls_in_flight)
+            {
+                return Some(reason);
+            }
+            if let Some(reason) = first_non_empty_reason(
+                "provider requests are still in flight",
+                &self.provider_requests_in_flight,
+            ) {
+                return Some(reason);
+            }
+            if let Some(reason) = first_non_empty_reason(
+                "user messages are awaiting a provider turn",
+                &self.user_requests_awaiting_provider,
+            ) {
+                return Some(reason);
+            }
+            if let Some(reason) = first_non_empty_reason(
+                "pending permissions must be resolved",
+                &self.pending_permissions,
+            ) {
+                return Some(reason);
+            }
+            if let Some(reason) = first_non_empty_reason(
+                "compactions are still in flight",
+                &self.compactions_in_flight,
+            ) {
+                return Some(reason);
+            }
+            if let Some(reason) =
+                first_non_empty_map_key_reason("edits are still in flight", &self.edits_in_flight)
+            {
+                return Some(reason);
+            }
         }
 
         match self.lifecycle {
             PrefixLifecycle::Empty => None,
+            PrefixLifecycle::Active if allow_active_lifecycle => None,
             PrefixLifecycle::Active => Some(
                 "run is still active; include run_finished or run_failed before cutting"
                     .to_string(),
@@ -1306,10 +1463,37 @@ impl PrefixState {
             PrefixLifecycle::Finished | PrefixLifecycle::Failed => None,
         }
     }
+
+    fn complete_edit(&mut self, edit_id: &str, path: &str) {
+        if self.edits_in_flight.remove(edit_id).is_some() {
+            return;
+        }
+
+        // Older native-edit events could propose the coordinator fallback id but apply the
+        // caller-provided editId. Treat a terminal event for the same path as closing that
+        // proposal so historical sessions regain stable fork points after completed edits.
+        let Some(matching_id) =
+            self.edits_in_flight
+                .iter()
+                .find_map(|(candidate_id, candidate_path)| {
+                    (candidate_path == path).then(|| candidate_id.clone())
+                })
+        else {
+            return;
+        };
+        self.edits_in_flight.remove(&matching_id);
+    }
 }
 
 fn first_non_empty_reason(label: &str, values: &BTreeSet<String>) -> Option<String> {
     values.iter().next().map(|id| format!("{label}: {id}"))
+}
+
+fn first_non_empty_map_key_reason(
+    label: &str,
+    values: &BTreeMap<String, String>,
+) -> Option<String> {
+    values.keys().next().map(|id| format!("{label}: {id}"))
 }
 
 fn normalized_parent_id(value: Option<&str>) -> Option<String> {
@@ -1382,15 +1566,16 @@ mod tests {
 
     use super::{
         latest_clone_stable_prefix, materialize_child_session_inner, project_lineage_tree,
-        validate_fork_stable_prefix, validate_stable_prefix, ChildSessionMaterializationError,
-        ChildSessionMaterializationRequest, ChildSessionMaterializationSourceKind,
-        SessionLineageError,
+        validate_fork_stable_prefix, validate_stable_prefix, validate_tui_fork_stable_prefix,
+        ChildSessionMaterializationError, ChildSessionMaterializationRequest,
+        ChildSessionMaterializationSourceKind, SessionLineageError,
     };
     use crate::event::{
-        ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1, PermissionDecision,
-        PermissionRequestedEvent, PermissionResolvedEvent, ProviderRequestFinishedEvent,
-        ProviderRequestStartedEvent, RunFinishedEvent, RunStartedEvent, TaskScheduleState,
-        TaskScheduledEvent, ToolCallFinishedEvent, ToolCallRequestedEvent, ToolCallStatus,
+        ActorKind, AgentSpawnedEvent, EditAppliedEvent, EditProposedEvent, EventActor,
+        EventEnvelopeV1, EventV1, PermissionDecision, PermissionRequestedEvent,
+        PermissionResolvedEvent, ProviderRequestFinishedEvent, ProviderRequestStartedEvent,
+        RunFinishedEvent, RunStartedEvent, TaskScheduleState, TaskScheduledEvent,
+        ToolCallFinishedEvent, ToolCallRequestedEvent, ToolCallStatus, UserMessageSubmittedEvent,
         SCHEMA_VERSION,
     };
     use crate::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
@@ -1534,6 +1719,118 @@ mod tests {
             } if reason.contains("tasks are still in flight")
                 && reason.contains("task_000001")
         ));
+    }
+
+    #[test]
+    fn session_lineage_tui_accepts_live_message_snapshot_with_unanswered_prompt() {
+        let events = vec![
+            envelope(
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_000001".to_string(),
+                    profile: "default".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                3,
+                EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                    request_id: "req_unanswered".to_string(),
+                    text: "Unanswered prompt".to_string(),
+                }),
+            ),
+        ];
+
+        let live_prefix = validate_tui_fork_stable_prefix(&events, 3)
+            .expect("TUI fork accepts reference-style live message snapshots");
+        assert_eq!(live_prefix.cutoff_seq, 3);
+        assert_eq!(live_prefix.event_count, 3);
+
+        let prompt_row_prefix = validate_tui_fork_stable_prefix(&events, 2)
+            .expect("fork-before-prompt prefix remains stable");
+        assert_eq!(prompt_row_prefix.cutoff_seq, 2);
+        assert_eq!(prompt_row_prefix.event_count, 2);
+    }
+
+    #[test]
+    fn session_lineage_tui_closes_historical_native_edit_id_mismatch_by_path() {
+        let events = vec![
+            envelope(
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_000001".to_string(),
+                    profile: "default".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                3,
+                EventV1::EditProposed(EditProposedEvent {
+                    edit_id: "edit-tool_1".to_string(),
+                    path: "demo.txt".to_string(),
+                    summary: "rewrite file through native edit tool".to_string(),
+                    patch_digest: "digest-native-edit".to_string(),
+                }),
+            ),
+            envelope(
+                4,
+                EventV1::EditApplied(EditAppliedEvent {
+                    edit_id: "create-demo".to_string(),
+                    path: "demo.txt".to_string(),
+                    new_file_digest: "digest-demo".to_string(),
+                    diff_rel_path: Some("artifacts/toolcalls/edit-create-demo.diff".to_string()),
+                    diff_digest: Some("digest-demo-diff".to_string()),
+                }),
+            ),
+        ];
+
+        let prefix = validate_tui_fork_stable_prefix(&events, 4)
+            .expect("historical native edit id mismatch closes by matching path");
+
+        assert_eq!(prefix.cutoff_seq, 4);
+        assert_eq!(prefix.event_count, 4);
+    }
+
+    #[test]
+    fn session_lineage_tui_accepts_live_snapshot_with_unfinished_native_edit() {
+        let events = vec![
+            envelope(
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                EventV1::EditProposed(EditProposedEvent {
+                    edit_id: "edit-tool_1".to_string(),
+                    path: "demo.txt".to_string(),
+                    summary: "rewrite file through native edit tool".to_string(),
+                    patch_digest: "digest-native-edit".to_string(),
+                }),
+            ),
+        ];
+
+        let prefix = validate_tui_fork_stable_prefix(&events, 2)
+            .expect("TUI fork terminalizes live snapshots with unfinished edit state");
+
+        assert_eq!(prefix.cutoff_seq, 2);
+        assert_eq!(prefix.event_count, 2);
     }
 
     #[test]
