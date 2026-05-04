@@ -949,6 +949,232 @@ async fn queued_agent_turn_emits_started_when_dequeued() {
 }
 
 #[tokio::test]
+async fn same_agent_turn_queues_even_when_provider_model_has_free_slots() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let coordinator = test_agent_coordinator_with_provider(
+        temp_dir.path(),
+        Arc::new(SlowMockProvider {
+            inner: test_mock_provider(),
+            delay: Duration::from_millis(150),
+        }),
+        2,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_same_agent_turn_queues",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+
+    let first_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first prompt")
+        .await
+        .expect("request first turn");
+    let queued_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "queued prompt")
+        .await
+        .expect("request queued turn");
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let events = load_events(&run.events_path);
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskScheduled(data)
+                if event.correlation_id.as_deref() == Some(queued_request_id.as_str())
+                    && data.state == TaskScheduleState::Queued
+        )
+    }));
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ProviderRequestStarted(_)
+                if event.correlation_id.as_deref() == Some(queued_request_id.as_str())
+        )
+    }));
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskScheduled(data)
+                if event.correlation_id.as_deref() == Some(first_request_id.as_str())
+                    && data.state == TaskScheduleState::Started
+        )
+    }));
+
+    tokio::time::sleep(Duration::from_millis(350)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    let queued_schedule_states = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::TaskScheduled(data)
+                if event.correlation_id.as_deref() == Some(queued_request_id.as_str()) =>
+            {
+                Some(data.state)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        queued_schedule_states,
+        vec![TaskScheduleState::Queued, TaskScheduleState::Started]
+    );
+}
+
+#[tokio::test]
+async fn same_agent_blocked_turns_start_fifo() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let coordinator = test_agent_coordinator_with_provider(
+        temp_dir.path(),
+        Arc::new(SlowMockProvider {
+            inner: test_mock_provider(),
+            delay: Duration::from_millis(40),
+        }),
+        2,
+    );
+
+    let run = coordinator
+        .start_run("coord_same_agent_fifo", PathBuf::from("/workspace/project"))
+        .await
+        .expect("start run");
+
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+
+    let first_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first prompt")
+        .await
+        .expect("request first turn");
+    let second_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id.clone(), "second prompt")
+        .await
+        .expect("request second turn");
+    let third_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "third prompt")
+        .await
+        .expect("request third turn");
+
+    let events = wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
+        provider_started_request_ids(events).len() >= 3
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let started_request_ids = provider_started_request_ids(&events);
+    let expected = vec![first_request_id, second_request_id, third_request_id];
+    assert_eq!(started_request_ids, expected);
+}
+
+#[tokio::test]
+async fn cancelling_promoted_same_agent_queued_turn_promotes_next_blocked_turn() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let coordinator = test_agent_coordinator_with_provider(
+        temp_dir.path(),
+        Arc::new(SlowMockProvider {
+            inner: test_mock_provider(),
+            delay: Duration::from_millis(250),
+        }),
+        1,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_same_agent_cancel_promoted",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+
+    let alpha = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let beta = coordinator
+        .spawn_agent_idle(supervisor_actor(), "beta", None)
+        .await
+        .expect("spawn idle beta");
+
+    let _alpha_first = coordinator
+        .request_agent_turn(supervisor_actor(), alpha.clone(), "alpha first")
+        .await
+        .expect("request alpha first");
+    let beta_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), beta, "beta first")
+        .await
+        .expect("request beta");
+    let alpha_second = coordinator
+        .request_agent_turn(supervisor_actor(), alpha.clone(), "alpha second")
+        .await
+        .expect("request alpha second");
+    let alpha_third = coordinator
+        .request_agent_turn(supervisor_actor(), alpha, "alpha third")
+        .await
+        .expect("request alpha third");
+
+    let events = wait_for_events(&run.events_path, Duration::from_secs(5), |events| {
+        task_schedule_states_for_request(events, &alpha_second) == vec![TaskScheduleState::Queued]
+            && events.iter().any(|event| {
+                matches!(
+                    &event.payload,
+                    EventV1::TaskScheduled(data)
+                        if event.correlation_id.as_deref() == Some(beta_request_id.as_str())
+                            && data.state == TaskScheduleState::Started
+                )
+            })
+    })
+    .await;
+    let alpha_second_task_id = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::TaskScheduled(data)
+                if event.correlation_id.as_deref() == Some(alpha_second.as_str()) =>
+            {
+                Some(data.task_id.clone())
+            }
+            _ => None,
+        })
+        .expect("alpha second queued task id");
+
+    coordinator
+        .cancel_task(alpha_second_task_id, "skip promoted same-agent prompt")
+        .await
+        .expect("cancel promoted alpha turn");
+
+    let events = wait_for_events(&run.events_path, Duration::from_secs(5), |events| {
+        task_schedule_states_for_request(events, &alpha_third)
+            == vec![TaskScheduleState::Queued, TaskScheduleState::Started]
+            && events.iter().any(|event| {
+                matches!(
+                    &event.payload,
+                    EventV1::ProviderRequestStarted(_)
+                        if event.correlation_id.as_deref() == Some(alpha_third.as_str())
+                )
+            })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ProviderRequestStarted(_)
+                if event.correlation_id.as_deref() == Some(alpha_second.as_str())
+        )
+    }));
+}
+
+#[tokio::test]
 async fn queued_agent_turn_cancellation_preserves_owner_context() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(25));
@@ -8847,6 +9073,31 @@ fn assert_task_event_context(
         "unexpected correlation for event seq {}",
         event.seq
     );
+}
+
+fn provider_started_request_ids(events: &[EventEnvelopeV1]) -> Vec<String> {
+    events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::ProviderRequestStarted(_) => event.correlation_id.clone(),
+            _ => None,
+        })
+        .collect()
+}
+
+fn task_schedule_states_for_request(
+    events: &[EventEnvelopeV1],
+    request_id: &str,
+) -> Vec<TaskScheduleState> {
+    events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::TaskScheduled(data) if event.correlation_id.as_deref() == Some(request_id) => {
+                Some(data.state)
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 async fn wait_for_events<F>(

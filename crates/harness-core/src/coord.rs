@@ -1063,7 +1063,7 @@ impl Coordinator {
                 reason,
                 respond_to,
             } => {
-                let result = self.cancel_task_internal(task_id, reason);
+                let result = self.cancel_task_internal(task_id, reason).await;
                 warn_oneshot_send_failure(respond_to.send(result), "cancel_task");
             }
             Command::JobFinished { task_id, outcome } => {
@@ -2812,7 +2812,7 @@ impl Coordinator {
         task.last_progress_kind = kind;
     }
 
-    fn cancel_task_internal(
+    async fn cancel_task_internal(
         &mut self,
         task_id: String,
         reason: String,
@@ -2822,7 +2822,14 @@ impl Coordinator {
         };
 
         if let Some(queued) = run_state.queued_agent_turns.remove(&task_id) {
-            let _ = run_state.scheduler.cancel_queued(&task_id);
+            if queued.scheduler_queued {
+                let _ = run_state.scheduler.cancel_queued(&task_id);
+            }
+            let agent_id = queued.agent_id.clone();
+            let should_promote_next = !run_state
+                .running_agent_turns
+                .values()
+                .any(|running| running.agent_id == agent_id);
             append_payload_event_with_correlation(
                 self.clock.as_ref(),
                 self.redactor.as_ref(),
@@ -2836,6 +2843,9 @@ impl Coordinator {
                     task_scope: Some(TaskTerminalScope::AgentTurn),
                 }),
             )?;
+            if should_promote_next {
+                self.promote_next_agent_blocked_turn(&agent_id).await?;
+            }
             return Ok(());
         }
 
@@ -3941,6 +3951,72 @@ impl Coordinator {
         .await
     }
 
+    async fn promote_next_agent_blocked_turn(
+        &mut self,
+        agent_id: &str,
+    ) -> Result<(), CoordinatorError> {
+        let Some(run_state) = self.run_state.as_mut() else {
+            return Ok(());
+        };
+        if run_state
+            .running_agent_turns
+            .values()
+            .any(|running| running.agent_id == agent_id)
+        {
+            return Ok(());
+        }
+
+        let Some(blocked_task_id) = next_agent_blocked_turn_id(run_state, agent_id) else {
+            return Ok(());
+        };
+        let Some(queued) = run_state.queued_agent_turns.get(&blocked_task_id).cloned() else {
+            return Ok(());
+        };
+
+        match run_state
+            .scheduler
+            .schedule(blocked_task_id.clone(), queued.queue_key.clone())
+        {
+            ScheduleDecision::Started(_) => {
+                append_agent_turn_task_scheduled_event(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    AgentTurnTaskScheduledEventArgs {
+                        task_id: &queued.task_id,
+                        agent_id: &queued.agent_id,
+                        request_id: &queued.request_id,
+                        queue_key: &queued.queue_key,
+                        state: TaskScheduleState::Started,
+                    },
+                )?;
+
+                let Some(queued) = run_state.queued_agent_turns.remove(&blocked_task_id) else {
+                    return Ok(());
+                };
+                start_agent_turn_execution(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    self.job_tx.clone(),
+                    run_state,
+                    self.config.hook_runtime_config.clone(),
+                    self.config.compaction.clone(),
+                    self.config.provider.clone(),
+                    self.config.tool_registry.clone(),
+                    queued,
+                )
+                .await?;
+            }
+            ScheduleDecision::Queued(_) => {
+                if let Some(queued) = run_state.queued_agent_turns.get_mut(&blocked_task_id) {
+                    queued.scheduler_queued = true;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     async fn agent_turn_finished_internal(
         &mut self,
         task_id: String,
@@ -3948,7 +4024,7 @@ impl Coordinator {
         request_id: String,
         outcome: AgentTurnTaskOutcome,
     ) -> Result<(), CoordinatorError> {
-        let (dequeued, terminal_compaction) = {
+        let (dequeued, terminal_compaction, finished_agent_id) = {
             let Some(run_state) = self.run_state.as_mut() else {
                 return Ok(());
             };
@@ -3957,6 +4033,7 @@ impl Coordinator {
                 return Ok(());
             };
 
+            let finished_agent_id = running.agent_id.clone();
             let was_cancelled = run_state.cancelled_running_tasks.remove(&task_id);
             let dequeued = run_state.scheduler.complete(&running.queue_key);
             let finished_mono_ms = self.clock.mono_ms();
@@ -4253,7 +4330,7 @@ impl Coordinator {
                 }
             }
 
-            (dequeued, terminal_compaction)
+            (dequeued, terminal_compaction, finished_agent_id)
         };
 
         if let Some(request) = terminal_compaction {
@@ -4297,6 +4374,9 @@ impl Coordinator {
             }
         }
 
+        self.promote_next_agent_blocked_turn(&finished_agent_id)
+            .await?;
+
         Ok(())
     }
 }
@@ -4337,6 +4417,7 @@ struct QueuedAgentTurn {
     profile: AgentProfile,
     request: AgentRequest,
     queue_key: ConcurrencyKey,
+    scheduler_queued: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -4518,6 +4599,26 @@ fn mark_failed_terminal_compaction_attempt(
     }
 
     true
+}
+
+fn agent_has_active_or_queued_turn(run_state: &RunState, agent_id: &str) -> bool {
+    run_state
+        .running_agent_turns
+        .values()
+        .any(|running| running.agent_id == agent_id)
+        || run_state
+            .queued_agent_turns
+            .values()
+            .any(|queued| queued.agent_id == agent_id)
+}
+
+fn next_agent_blocked_turn_id(run_state: &RunState, agent_id: &str) -> Option<String> {
+    run_state
+        .queued_agent_turns
+        .values()
+        .filter(|queued| queued.agent_id == agent_id && !queued.scheduler_queued)
+        .min_by(|left, right| left.task_id.cmp(&right.task_id))
+        .map(|queued| queued.task_id.clone())
 }
 
 #[derive(Debug, Clone)]
@@ -5413,6 +5514,36 @@ where
         model_id: model.model_id,
     };
 
+    if agent_has_active_or_queued_turn(run_state, &agent_id) {
+        append_agent_turn_task_scheduled_event(
+            clock,
+            redactor,
+            run_state,
+            AgentTurnTaskScheduledEventArgs {
+                task_id: &task_id,
+                agent_id: &agent_id,
+                request_id: &request_id,
+                queue_key: &queue_key,
+                state: TaskScheduleState::Queued,
+            },
+        )?;
+
+        run_state.queued_agent_turns.insert(
+            task_id.clone(),
+            QueuedAgentTurn {
+                task_id,
+                agent_id,
+                request_id,
+                profile,
+                request,
+                queue_key,
+                scheduler_queued: false,
+            },
+        );
+
+        return Ok(());
+    }
+
     match run_state
         .scheduler
         .schedule(task_id.clone(), queue_key.clone())
@@ -5447,6 +5578,7 @@ where
                     profile,
                     request,
                     queue_key,
+                    scheduler_queued: false,
                 },
             )
             .await?;
@@ -5474,6 +5606,7 @@ where
                     profile,
                     request,
                     queue_key,
+                    scheduler_queued: true,
                 },
             );
         }
