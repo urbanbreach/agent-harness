@@ -7,11 +7,11 @@ use std::time::SystemTime;
 use harness_core::event::{
     ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, EventActor, EventArtifactRef,
     EventEnvelopeV1, EventV1, ExecutionTimingMetadata, PermissionDecision,
-    PermissionRequestedEvent, ProviderRequestStartedEvent, RunFailedEvent, RunFinishedEvent,
-    RunStartedEvent, TaskCompletedEvent, TaskCompletionMetadata, TaskLineageMetadata,
-    TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata,
-    ToolCallRequestedEvent, ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent,
-    SCHEMA_VERSION,
+    PermissionRequestedEvent, ProviderRequestFinishedEvent, ProviderRequestStartedEvent,
+    RunFailedEvent, RunFinishedEvent, RunStartedEvent, TaskCompletedEvent, TaskCompletionMetadata,
+    TaskLineageMetadata, TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent,
+    ToolCallMetadata, ToolCallRequestedEvent, ToolCallStatus, ToolIdentityMetadata,
+    UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use tempfile::tempdir;
 
@@ -2066,6 +2066,379 @@ fn sessions_list_cli_supports_run_id_sorting() {
 }
 
 #[test]
+fn sessions_tree() {
+    let session_dir = tempdir().expect("tempdir");
+    let root_dir = session_dir.path().join("root_session_dir");
+    let child_dir = session_dir.path().join("child_session_dir");
+    std::fs::create_dir_all(&root_dir).expect("create root run dir");
+    std::fs::create_dir_all(&child_dir).expect("create child run dir");
+
+    write_events_jsonl(&root_dir, &resumable_finished_events("run_tree_root"));
+    write_events_jsonl(&child_dir, &resumable_finished_events("run_tree_child"));
+    write_harness_lineage_meta(&child_dir, "run_tree_child", "run_tree_root");
+
+    let json_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "tree",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions tree json");
+
+    assert!(
+        json_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&json_output.stderr)
+    );
+    let tree: serde_json::Value =
+        serde_json::from_slice(&json_output.stdout).expect("tree json should parse");
+    assert_eq!(tree["session_count"], 2);
+    assert_eq!(tree["harness_lineage"][0]["run_id"], "run_tree_root");
+    assert_eq!(tree["harness_lineage"][0]["depth"], 0);
+    assert_eq!(tree["harness_lineage"][1]["run_id"], "run_tree_child");
+    assert_eq!(tree["harness_lineage"][1]["depth"], 1);
+    assert_eq!(
+        tree["harness_lineage"][1]["parent_session_id"],
+        "run_tree_root"
+    );
+
+    let rooted_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "tree",
+            "--root",
+            root_dir.to_str().expect("root dir utf-8"),
+            "--filter",
+            "child",
+        ])
+        .output()
+        .expect("run harness sessions tree human");
+
+    assert!(
+        rooted_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&rooted_output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&rooted_output.stdout);
+    assert!(stdout.contains("Harness session lineage"));
+    assert!(stdout.contains("root: run_tree_root"));
+    assert!(stdout.contains("filter: child"));
+    assert!(stdout.contains("run_tree_child"));
+    assert!(!stdout.contains("run_tree_root status="));
+}
+
+#[test]
+fn sessions_fork_clone() {
+    let session_dir = tempdir().expect("tempdir");
+    let source_dir = session_dir.path().join("source_session");
+    std::fs::create_dir_all(&source_dir).expect("create source run dir");
+    write_events_jsonl(
+        &source_dir,
+        &resumable_finished_events("run_fork_clone_source"),
+    );
+
+    let fork_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "fork",
+            "--source",
+            "run_fork_clone_source",
+            "--cutoff",
+            "5",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions fork json");
+
+    assert!(
+        fork_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&fork_output.stderr)
+    );
+    let forked: serde_json::Value =
+        serde_json::from_slice(&fork_output.stdout).expect("fork json should parse");
+    assert_eq!(forked["harness_operation"], "fork");
+    assert_eq!(forked["source_run_id"], "run_fork_clone_source");
+    assert_eq!(forked["source_cutoff_seq"], 5);
+    assert_eq!(forked["event_count"], 5);
+    assert_eq!(forked["warnings"], serde_json::json!([]));
+    assert_eq!(forked["errors"], serde_json::json!([]));
+    let fork_child_dir =
+        std::path::PathBuf::from(forked["child_run_dir"].as_str().expect("fork child dir"));
+    assert!(fork_child_dir.join("events.jsonl").exists());
+
+    let clone_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "clone",
+            "--source",
+            source_dir.to_str().expect("source dir utf-8"),
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions clone json");
+
+    assert!(
+        clone_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&clone_output.stderr)
+    );
+    let cloned: serde_json::Value =
+        serde_json::from_slice(&clone_output.stdout).expect("clone json should parse");
+    assert_eq!(cloned["harness_operation"], "clone");
+    assert_eq!(cloned["source_run_id"], "run_fork_clone_source");
+    assert_eq!(cloned["source_cutoff_seq"], 5);
+    assert_eq!(cloned["warnings"], serde_json::json!([]));
+    assert_eq!(cloned["errors"], serde_json::json!([]));
+    assert_ne!(forked["child_run_id"], cloned["child_run_id"]);
+
+    let human_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "clone",
+            "--source",
+            "run_fork_clone_source",
+        ])
+        .output()
+        .expect("run harness sessions clone human");
+    assert!(
+        human_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&human_output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&human_output.stdout);
+    assert!(stdout.contains("Harness session clone created"));
+    assert!(stdout.contains("child_run_id:"));
+    assert!(stdout.contains("child_run_dir:"));
+}
+
+#[test]
+fn sessions_fork_clone_child_replays() {
+    let session_dir = tempdir().expect("tempdir");
+    let source_dir = session_dir.path().join("replay_source");
+    std::fs::create_dir_all(&source_dir).expect("create source run dir");
+    write_events_jsonl(
+        &source_dir,
+        &resumable_finished_events("run_child_replay_source"),
+    );
+
+    let fork_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "fork",
+            "--source",
+            "run_child_replay_source",
+            "--cutoff",
+            "5",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions fork json");
+    assert!(
+        fork_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&fork_output.stderr)
+    );
+    let forked: serde_json::Value =
+        serde_json::from_slice(&fork_output.stdout).expect("fork json should parse");
+    let child_run_id = forked["child_run_id"].as_str().expect("child run id");
+
+    let inspect_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "inspect",
+            child_run_id,
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions inspect child");
+    assert!(
+        inspect_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&inspect_output.stderr)
+    );
+    let inspected: serde_json::Value =
+        serde_json::from_slice(&inspect_output.stdout).expect("inspect json should parse");
+    assert_eq!(inspected["catalog"]["run_id"], child_run_id);
+    assert_eq!(inspected["replay"]["is_resumable"], true);
+
+    let replay_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "replay",
+            child_run_id,
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions replay child");
+    assert!(
+        replay_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&replay_output.stderr)
+    );
+    let replay: serde_json::Value =
+        serde_json::from_slice(&replay_output.stdout).expect("replay json should parse");
+    assert_eq!(replay["run_id"], child_run_id);
+    assert_eq!(replay["total_events"], 5);
+    assert_eq!(replay["is_resumable"], true);
+
+    let export_path = session_dir.path().join("child-export.json");
+    let export_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "export",
+            child_run_id,
+            "--output",
+            export_path.to_str().expect("export path utf-8"),
+        ])
+        .output()
+        .expect("run harness sessions export child");
+    assert!(
+        export_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&export_output.stderr)
+    );
+    let exported: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&export_path).expect("read child export"))
+            .expect("export json should parse");
+    assert_eq!(exported["catalog"]["run_id"], child_run_id);
+    assert_eq!(exported["events"].as_array().map(Vec::len), Some(5));
+
+    let tree_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "tree",
+            "--root",
+            "run_child_replay_source",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions tree child");
+    assert!(
+        tree_output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&tree_output.stderr)
+    );
+    let tree: serde_json::Value =
+        serde_json::from_slice(&tree_output.stdout).expect("tree json should parse");
+    assert_eq!(
+        tree["harness_lineage"][0]["run_id"],
+        "run_child_replay_source"
+    );
+    assert_eq!(tree["harness_lineage"][1]["run_id"], child_run_id);
+    assert_eq!(tree["harness_lineage"][1]["depth"], 1);
+}
+
+#[test]
+fn sessions_fork_rejects_invalid_cutoff() {
+    let session_dir = tempdir().expect("tempdir");
+    let source_dir = session_dir.path().join("unstable_source");
+    std::fs::create_dir_all(&source_dir).expect("create source run dir");
+    write_events_jsonl(
+        &source_dir,
+        &[
+            envelope(
+                "run_unstable_source",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                "run_unstable_source",
+                2,
+                EventV1::TaskScheduled(TaskScheduledEvent {
+                    task_id: "task_in_flight".to_string(),
+                    state: TaskScheduleState::Started,
+                    queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
+                }),
+            ),
+            envelope(
+                "run_unstable_source",
+                3,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "fork",
+            "--source",
+            "run_unstable_source",
+            "--cutoff",
+            "2",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions fork invalid cutoff");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Harness session fork failed"));
+    assert!(stderr.contains("prefix ending at seq 2 is unstable"));
+    assert!(stderr.contains("tasks are still in flight: task_in_flight"));
+}
+
+#[test]
+fn sessions_fork_rejects_cutoff_beyond_log() {
+    let session_dir = tempdir().expect("tempdir");
+    let source_dir = session_dir.path().join("short_source");
+    std::fs::create_dir_all(&source_dir).expect("create source run dir");
+    write_events_jsonl(
+        &source_dir,
+        &resumable_finished_events("run_short_lineage_source"),
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "--session-dir",
+            session_dir.path().to_str().expect("session dir utf-8"),
+            "sessions",
+            "fork",
+            "--source",
+            "run_short_lineage_source",
+            "--cutoff",
+            "99",
+            "--json",
+        ])
+        .output()
+        .expect("run harness sessions fork cutoff beyond log");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Harness session fork failed"));
+    assert!(stderr.contains("stable prefix cutoff seq 99 is outside event log range 0..=5"));
+}
+
+#[test]
 fn replay_cli_fails_when_events_are_missing() {
     let run_dir = tempdir().expect("tempdir");
     let output = Command::new(env!("CARGO_BIN_EXE_harness"))
@@ -2081,6 +2454,85 @@ fn replay_cli_fails_when_events_are_missing() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("replay failed:"));
     assert!(stderr.contains("events.jsonl"));
+}
+
+fn resumable_finished_events(run_id: &str) -> Vec<EventEnvelopeV1> {
+    vec![
+        envelope(
+            run_id,
+            1,
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "interactive".to_string(),
+                workspace_root: "/tmp/workspace".to_string(),
+            }),
+        ),
+        envelope(
+            run_id,
+            2,
+            EventV1::AgentSpawned(AgentSpawnedEvent {
+                agent_id: "agent_1".to_string(),
+                profile: "worker".to_string(),
+                parent_agent_id: None,
+            }),
+        ),
+        agent_envelope(
+            run_id,
+            3,
+            "agent_1",
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_1".to_string(),
+                provider_id: "default".to_string(),
+                model_id: "gpt-5.4-mini".to_string(),
+                prompt_summary: "continue safely".to_string(),
+                request_digest: "digest-request".to_string(),
+                metadata: None,
+            }),
+        ),
+        agent_envelope(
+            run_id,
+            4,
+            "agent_1",
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: "req_1".to_string(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some("digest-output".to_string()),
+                usage: None,
+                metadata: None,
+            }),
+        ),
+        envelope(
+            run_id,
+            5,
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: "done".to_string(),
+            }),
+        ),
+    ]
+}
+
+fn write_harness_lineage_meta(run_dir: &std::path::Path, run_id: &str, parent_run_id: &str) {
+    std::fs::write(
+        run_dir.join("meta.json"),
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "run_id": run_id,
+                "run_name": format!("Harness child of {parent_run_id}"),
+                "workspace_root": "/tmp/workspace",
+                "created_at": "1710000000000",
+                "config_digest": "test-digest",
+                "harness_version": "test",
+                "harness_lineage": {
+                    "harness_operation": "child_session_materialization",
+                    "harness_source_run_id": parent_run_id,
+                    "harness_source_cutoff_seq": 5,
+                    "harness_source_digest": "test-source-digest"
+                }
+            }))
+            .expect("serialize harness lineage metadata")
+        ),
+    )
+    .expect("write harness lineage metadata");
 }
 
 fn delegated_recovery_events(run_id: &str) -> Vec<EventEnvelopeV1> {

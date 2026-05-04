@@ -6,6 +6,11 @@ use std::process::ExitCode;
 
 use clap::{Args, Subcommand, ValueEnum};
 use harness_core::proj::{RunMetadata, RunStatus, SessionCatalogEntry, SessionModeSource};
+use harness_core::session_lineage::{
+    latest_clone_stable_prefix, materialize_child_session, project_lineage_tree,
+    validate_fork_stable_prefix, ChildSessionMaterializationRequest,
+    ChildSessionMaterializationSourceKind, SessionLineageNode, StableSessionPrefix,
+};
 use harness_tui::load_events_from_run_dir;
 use serde::Serialize;
 use serde_json::json;
@@ -30,6 +35,12 @@ pub enum SessionsCommand {
     Continue(ContinueSessionCommand),
     /// Export one session as a JSON bundle for automation or archival.
     Export(ExportSessionCommand),
+    /// Print the Harness session lineage tree.
+    Tree(TreeSessionCommand),
+    /// Create a Harness child session from an explicit stable cutoff.
+    Fork(ForkSessionCommand),
+    /// Create a Harness child session from the latest stable prefix.
+    Clone(CloneSessionCommand),
 }
 
 #[derive(Debug, Args, Clone, Default)]
@@ -187,6 +198,42 @@ pub struct ExportSessionCommand {
     pub output: Option<PathBuf>,
 }
 
+#[derive(Debug, Args, Clone)]
+pub struct TreeSessionCommand {
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+
+    #[arg(long, value_name = "RUN_ID_OR_PATH")]
+    pub root: Option<String>,
+
+    #[arg(long, value_name = "TEXT")]
+    pub filter: Option<String>,
+}
+
+#[derive(Debug, Args, Clone)]
+pub struct ForkSessionCommand {
+    /// Run id or session directory path to fork from.
+    #[arg(long, value_name = "RUN_ID_OR_PATH")]
+    pub source: String,
+
+    /// Stable event sequence cutoff to copy into the child session.
+    #[arg(long, value_name = "SEQ")]
+    pub cutoff: u64,
+
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args, Clone)]
+pub struct CloneSessionCommand {
+    /// Run id or session directory path to clone from.
+    #[arg(long, value_name = "RUN_ID_OR_PATH")]
+    pub source: String,
+
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
+
 #[derive(Debug, Clone)]
 struct ResolvedSession {
     run_dir: PathBuf,
@@ -200,6 +247,45 @@ struct SessionExportBundle {
     metadata: Option<RunMetadata>,
     replay: ReplaySummary,
     events: Vec<harness_core::event::EventEnvelopeV1>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct SessionTreeJson {
+    harness_lineage: Vec<SessionTreeJsonRow>,
+    session_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    root: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    filter: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct SessionTreeJsonRow {
+    depth: usize,
+    run_dir: PathBuf,
+    #[serde(flatten)]
+    catalog: SessionCatalogEntry,
+}
+
+#[derive(Debug, Clone)]
+struct SessionTreeRow {
+    depth: usize,
+    run_dir: PathBuf,
+    catalog: SessionCatalogEntry,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ChildSessionWriteReport {
+    harness_operation: &'static str,
+    child_run_id: String,
+    child_run_dir: PathBuf,
+    source_run_id: Option<String>,
+    source_run_dir: PathBuf,
+    source_cutoff_seq: u64,
+    event_count: usize,
+    artifact_count: usize,
+    warnings: Vec<String>,
+    errors: Vec<String>,
 }
 
 pub fn execute(
@@ -216,6 +302,9 @@ pub fn execute(
             continue_session(command, config_path, global_session_dir)
         }
         SessionsCommand::Export(command) => export_session(command, global_session_dir),
+        SessionsCommand::Tree(command) => tree_sessions(command, global_session_dir),
+        SessionsCommand::Fork(command) => fork_session(command, global_session_dir),
+        SessionsCommand::Clone(command) => clone_session(command, global_session_dir),
     }
 }
 
@@ -523,6 +612,164 @@ fn export_session(command: ExportSessionCommand, global_session_dir: Option<Path
     write_json_output(&export, command.output)
 }
 
+fn tree_sessions(command: TreeSessionCommand, global_session_dir: Option<PathBuf>) -> ExitCode {
+    let default_session_dir = session_dir(global_session_dir);
+    let (session_dir, root_run_id) = match command.root.as_deref() {
+        Some(root) => match resolve_session_for_write_or_tree(&default_session_dir, root) {
+            Ok(session) => {
+                let session_dir = session
+                    .run_dir
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_else(|| default_session_dir.clone());
+                (session_dir, Some(session.catalog.run_id))
+            }
+            Err(err) => {
+                eprintln!("Harness session tree failed: {err}");
+                return ExitCode::from(1);
+            }
+        },
+        None => {
+            if let Err(code) = ensure_session_dir_exists(&default_session_dir) {
+                return code;
+            }
+            (default_session_dir, None)
+        }
+    };
+
+    let entries = match inspect_session_catalog(&session_dir) {
+        Ok(entries) => entries,
+        Err(err) => {
+            eprintln!("Harness session tree failed: {err}");
+            return ExitCode::from(1);
+        }
+    };
+    let rows = collect_tree_rows(entries, root_run_id.as_deref(), command.filter.as_deref());
+
+    if command.json {
+        let report = SessionTreeJson {
+            session_count: rows.len(),
+            harness_lineage: rows
+                .iter()
+                .map(|row| SessionTreeJsonRow {
+                    depth: row.depth,
+                    run_dir: row.run_dir.clone(),
+                    catalog: row.catalog.clone(),
+                })
+                .collect(),
+            root: root_run_id,
+            filter: command.filter,
+        };
+        write_json_output(&report, None)
+    } else {
+        print!(
+            "{}",
+            render_human_session_tree(&rows, root_run_id.as_deref(), command.filter.as_deref())
+        );
+        ExitCode::SUCCESS
+    }
+}
+
+fn fork_session(command: ForkSessionCommand, global_session_dir: Option<PathBuf>) -> ExitCode {
+    write_child_session(
+        "fork",
+        &command.source,
+        global_session_dir,
+        command.json,
+        |events| validate_fork_stable_prefix(events, command.cutoff),
+    )
+}
+
+fn clone_session(command: CloneSessionCommand, global_session_dir: Option<PathBuf>) -> ExitCode {
+    write_child_session(
+        "clone",
+        &command.source,
+        global_session_dir,
+        command.json,
+        latest_clone_stable_prefix,
+    )
+}
+
+fn write_child_session(
+    operation: &'static str,
+    source: &str,
+    global_session_dir: Option<PathBuf>,
+    json: bool,
+    stable_prefix: impl FnOnce(
+        &[harness_core::event::EventEnvelopeV1],
+    ) -> Result<
+        StableSessionPrefix,
+        harness_core::session_lineage::SessionLineageError,
+    >,
+) -> ExitCode {
+    let session_dir = session_dir(global_session_dir);
+    let source = match resolve_session_for_write_or_tree(&session_dir, source) {
+        Ok(session) => session,
+        Err(err) => {
+            eprintln!("Harness session {operation} failed: {err}");
+            return ExitCode::from(1);
+        }
+    };
+    let events = match load_events_from_run_dir(&source.run_dir) {
+        Ok(events) => events,
+        Err(err) => {
+            eprintln!(
+                "Harness session {operation} failed: failed to read source session {}: {err}",
+                source.catalog.run_id
+            );
+            return ExitCode::from(1);
+        }
+    };
+    let stable_prefix = match stable_prefix(&events) {
+        Ok(prefix) => prefix,
+        Err(err) => {
+            eprintln!("Harness session {operation} failed: {err}");
+            return ExitCode::from(1);
+        }
+    };
+    let result = match materialize_child_session(ChildSessionMaterializationRequest {
+        source_run_dir: &source.run_dir,
+        events: &events,
+        stable_prefix: &stable_prefix,
+        source_kind: ChildSessionMaterializationSourceKind::DiskRunDirectory,
+    }) {
+        Ok(result) => result,
+        Err(err) => {
+            eprintln!("Harness session {operation} failed: {err}");
+            return ExitCode::from(1);
+        }
+    };
+
+    let report = ChildSessionWriteReport {
+        harness_operation: operation,
+        child_run_id: result.child_run_id,
+        child_run_dir: result.child_run_dir,
+        source_run_id: result.source_run_id,
+        source_run_dir: source.run_dir,
+        source_cutoff_seq: result.source_cutoff_seq,
+        event_count: result.event_count,
+        artifact_count: result.artifact_count,
+        warnings: Vec::new(),
+        errors: Vec::new(),
+    };
+
+    if json {
+        write_json_output(&report, None)
+    } else {
+        println!("Harness session {operation} created");
+        println!("child_run_id: {}", report.child_run_id);
+        println!("child_run_dir: {}", report.child_run_dir.display());
+        if let Some(source_run_id) = report.source_run_id.as_deref() {
+            println!("source_run_id: {source_run_id}");
+        }
+        println!("source_run_dir: {}", report.source_run_dir.display());
+        println!("source_cutoff_seq: {}", report.source_cutoff_seq);
+        println!("events: {}", report.event_count);
+        println!("artifacts: {}", report.artifact_count);
+        ExitCode::SUCCESS
+    }
+}
+
 fn session_dir(global_session_dir: Option<PathBuf>) -> PathBuf {
     global_session_dir.unwrap_or_else(|| PathBuf::from(DEFAULT_SESSION_DIR))
 }
@@ -589,6 +836,171 @@ fn resolve_session_by_run_id(session_dir: &Path, run_id: &str) -> Result<Resolve
             session_dir.display()
         )),
     }
+}
+
+fn resolve_session_for_write_or_tree(
+    session_dir: &Path,
+    selector: &str,
+) -> Result<ResolvedSession, String> {
+    let run_dir = resolve_session_run_dir(selector, session_dir)?;
+    let catalog_dir = run_dir.parent().unwrap_or(session_dir);
+    inspect_session_catalog(catalog_dir)?
+        .into_iter()
+        .find(|entry| entry.run_dir == run_dir)
+        .map(|entry| ResolvedSession {
+            run_dir: entry.run_dir,
+            catalog: entry.catalog,
+        })
+        .ok_or_else(|| {
+            format!(
+                "failed to inspect session catalog entry for {}",
+                run_dir.display()
+            )
+        })
+}
+
+fn collect_tree_rows(
+    entries: Vec<SessionInspectionEntry>,
+    root_run_id: Option<&str>,
+    filter: Option<&str>,
+) -> Vec<SessionTreeRow> {
+    let entries = entries
+        .into_iter()
+        .map(normalize_lineage_entry)
+        .collect::<Vec<_>>();
+    let run_dirs = entries
+        .iter()
+        .map(|entry| (entry.catalog.run_id.clone(), entry.run_dir.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let tree = project_lineage_tree(entries.into_iter().map(|entry| entry.catalog));
+    let rows = match root_run_id {
+        Some(root_run_id) => tree
+            .roots
+            .iter()
+            .find_map(|node| flatten_from_node(node, root_run_id)),
+        None => Some(
+            tree.flatten()
+                .into_iter()
+                .map(|row| (row.depth, row.entry.clone()))
+                .collect(),
+        ),
+    }
+    .unwrap_or_default();
+
+    let filter = filter.map(|text| text.to_ascii_lowercase());
+    rows.into_iter()
+        .filter_map(|(depth, catalog)| {
+            let run_dir = run_dirs.get(&catalog.run_id).cloned().unwrap_or_default();
+            let row = SessionTreeRow {
+                depth,
+                run_dir,
+                catalog,
+            };
+            filter
+                .as_deref()
+                .is_none_or(|filter| tree_row_matches_filter(&row, filter))
+                .then_some(row)
+        })
+        .collect()
+}
+
+fn normalize_lineage_entry(mut entry: SessionInspectionEntry) -> SessionInspectionEntry {
+    if let Some(parent_run_id) = harness_lineage_parent_run_id(&entry.run_dir) {
+        entry.catalog.parent_session_id = Some(parent_run_id);
+    }
+    entry
+}
+
+fn harness_lineage_parent_run_id(run_dir: &Path) -> Option<String> {
+    let body = fs::read_to_string(run_dir.join("meta.json")).ok()?;
+    let value = serde_json::from_str::<serde_json::Value>(&body).ok()?;
+    let lineage = value.get("harness_lineage")?;
+    lineage
+        .get("harness_source_run_id")
+        .or_else(|| lineage.get("parent_run_id"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn flatten_from_node(
+    node: &SessionLineageNode,
+    root_run_id: &str,
+) -> Option<Vec<(usize, SessionCatalogEntry)>> {
+    if node.entry.run_id == root_run_id {
+        let mut rows = Vec::new();
+        flatten_node_into(node, 0, &mut rows);
+        return Some(rows);
+    }
+    node.children
+        .iter()
+        .find_map(|child| flatten_from_node(child, root_run_id))
+}
+
+fn flatten_node_into(
+    node: &SessionLineageNode,
+    depth: usize,
+    rows: &mut Vec<(usize, SessionCatalogEntry)>,
+) {
+    rows.push((depth, node.entry.clone()));
+    for child in &node.children {
+        flatten_node_into(child, depth + 1, rows);
+    }
+}
+
+fn tree_row_matches_filter(row: &SessionTreeRow, filter: &str) -> bool {
+    row.catalog.run_id.to_ascii_lowercase().contains(filter)
+        || row
+            .catalog
+            .run_name
+            .as_deref()
+            .is_some_and(|value| value.to_ascii_lowercase().contains(filter))
+        || row
+            .catalog
+            .parent_session_id
+            .as_deref()
+            .is_some_and(|value| value.to_ascii_lowercase().contains(filter))
+        || row
+            .run_dir
+            .display()
+            .to_string()
+            .to_ascii_lowercase()
+            .contains(filter)
+}
+
+fn render_human_session_tree(
+    rows: &[SessionTreeRow],
+    root_run_id: Option<&str>,
+    filter: Option<&str>,
+) -> String {
+    let mut output = String::new();
+    writeln!(output, "Harness session lineage").expect("write tree title");
+    if let Some(root_run_id) = root_run_id {
+        writeln!(output, "root: {root_run_id}").expect("write tree root");
+    }
+    if let Some(filter) = filter {
+        writeln!(output, "filter: {filter}").expect("write tree filter");
+    }
+    if rows.is_empty() {
+        writeln!(output, "  <no sessions>").expect("write empty tree");
+        return output;
+    }
+
+    for row in rows {
+        let indent = "  ".repeat(row.depth);
+        writeln!(
+            output,
+            "{indent}- {} status={} resume={} parent={} path={}",
+            row.catalog.run_id,
+            status_label(row.catalog.status),
+            resumable_label(row.catalog.is_resumable),
+            row.catalog.parent_session_id.as_deref().unwrap_or("-"),
+            row.run_dir.display()
+        )
+        .expect("write tree row");
+    }
+    output
 }
 
 fn run_dir_name(path: &Path) -> Option<&str> {
