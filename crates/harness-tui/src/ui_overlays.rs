@@ -600,7 +600,7 @@ fn render_command_palette_overlay(
     } else if app.lineage_browser_visible {
         "Harness session tree".to_string()
     } else if app.fork_selector_visible {
-        "Select stable fork point".to_string()
+        "Fork session".to_string()
     } else {
         "Commands".to_string()
     };
@@ -621,10 +621,15 @@ fn render_command_palette_overlay(
         };
         render_lineage_browser_overlay(frame, app, theme, inner, &title);
     } else if app.fork_selector_visible {
-        let Some(inner) = render_command_palette_surface(frame, theme, overlay) else {
+        if !paint_command_palette_panel(frame, theme, overlay) {
+            return;
+        }
+        let Some((header, input, list)) = command_palette_dialog_layout(overlay) else {
             return;
         };
-        render_fork_selector_overlay(frame, app, theme, inner, &title);
+        render_command_palette_header(frame, theme, header, &title);
+        render_fork_selector_input(frame, app, theme, input);
+        render_fork_selector_list(frame, app, theme, list);
     } else {
         if !paint_command_palette_panel(frame, theme, overlay) {
             return;
@@ -932,34 +937,6 @@ fn render_lineage_browser_overlay(
     render_lineage_browser_list(frame, app, theme, sections[3]);
 }
 
-fn render_fork_selector_overlay(
-    frame: &mut Frame,
-    app: &AppState,
-    theme: &Theme,
-    area: Rect,
-    title: &str,
-) {
-    let sections = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Min(0),
-        ])
-        .split(area);
-    let surface = ui_chrome::command_palette_surface(theme);
-
-    render_command_palette_header(frame, theme, sections[0], title);
-    render_command_palette_input(frame, app, theme, sections[1]);
-    frame.render_widget(
-        Paragraph::new("Enter creates child · Esc cancels · only stable checkpoints are listed")
-            .style(Style::default().fg(theme.text.secondary).bg(surface)),
-        sections[2],
-    );
-    render_fork_selector_list(frame, app, theme, sections[3]);
-}
-
 fn render_lineage_browser_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
     let list_area = inset_rect(area, 1.min(area.width.saturating_sub(1)), 0);
     if list_area.width == 0 || list_area.height == 0 {
@@ -1012,8 +989,8 @@ fn render_fork_selector_list(frame: &mut Frame, app: &AppState, theme: &Theme, a
     );
 
     let vm = app.fork_selector_view_model();
-    if let Some(message) = vm.empty_message {
-        render_palette_empty_message(frame, theme, list_area, &message);
+    if vm.empty_message.is_some() {
+        render_fork_selector_empty_message(frame, theme, area);
         return;
     }
 
@@ -1038,6 +1015,29 @@ fn render_fork_selector_list(frame: &mut Frame, app: &AppState, theme: &Theme, a
             row_area,
         );
     }
+}
+
+fn render_fork_selector_empty_message(frame: &mut Frame, theme: &Theme, area: Rect) {
+    if area.width <= 8 || area.height <= 1 {
+        return;
+    }
+
+    let surface = ui_chrome::command_palette_surface(theme);
+    let empty_area = Rect::new(
+        area.x.saturating_add(4),
+        area.y.saturating_add(1),
+        area.width.saturating_sub(8),
+        1,
+    );
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            truncate_plain_text("No results found", usize::from(empty_area.width)),
+            Style::default()
+                .fg(ui_chrome::command_palette_muted(theme))
+                .bg(surface),
+        ))),
+        empty_area,
+    );
 }
 
 fn render_palette_empty_message(frame: &mut Frame, theme: &Theme, area: Rect, message: &str) {
@@ -1107,8 +1107,12 @@ fn fork_selector_row(
     theme: &Theme,
     width: u16,
 ) -> Line<'static> {
-    let row_style = lineage_row_style(theme, row.selected);
-    let selected_fg = ui_chrome::slash_command_selection_fg(theme);
+    const TITLE_PADDING: usize = 6;
+    const RIGHT_PADDING: usize = 3;
+    const MAX_TITLE_WIDTH: usize = 61;
+
+    let row_style = fork_selector_row_style(theme, row.selected);
+    let selected_fg = ui_chrome::fork_selector_selection_fg(theme);
     let title_style = if row.selected {
         row_style.fg(selected_fg).add_modifier(Modifier::BOLD)
     } else {
@@ -1120,9 +1124,49 @@ fn fork_selector_row(
         row_style.fg(ui_chrome::command_palette_muted(theme))
     };
     let status = row.status.map(run_status_label).unwrap_or("stable");
-    let title = format!(" seq {} · {} events", row.cutoff_seq, row.event_count);
-    let meta = format!("{} · {status}", row.event_kind);
-    split_title_meta_row(title, meta, title_style, meta_style, row_style, width)
+    let meta = if row.event_id.is_none() {
+        String::new()
+    } else {
+        row.timestamp
+            .as_deref()
+            .map(format_overlay_timestamp)
+            .unwrap_or_else(|| status.to_string())
+    };
+
+    let row_width = usize::from(width);
+    let content_width = row_width.saturating_sub(RIGHT_PADDING);
+    let meta_width = meta.chars().count().min(content_width / 2);
+    let title_width = content_width
+        .saturating_sub(TITLE_PADDING)
+        .saturating_sub(meta_width)
+        .saturating_sub(usize::from(meta_width > 0));
+    let title = truncate_plain_text(
+        &row.prompt_text.replace('\n', " "),
+        title_width.min(MAX_TITLE_WIDTH),
+    );
+    let title_used = title.chars().count();
+    let gap = content_width
+        .saturating_sub(TITLE_PADDING)
+        .saturating_sub(title_used)
+        .saturating_sub(meta_width);
+    let meta = truncate_plain_text(&meta, meta_width);
+
+    Line::from(vec![
+        Span::styled(" ".repeat(TITLE_PADDING), row_style),
+        Span::styled(title, title_style),
+        Span::styled(" ".repeat(gap), row_style),
+        Span::styled(meta, meta_style),
+        Span::styled(" ".repeat(RIGHT_PADDING), row_style),
+    ])
+}
+
+fn format_overlay_timestamp(timestamp: &str) -> String {
+    let trimmed = timestamp.trim();
+    if trimmed.len() >= 16 && trimmed.as_bytes().get(10) == Some(&b'T') {
+        trimmed[11..16].to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 fn split_title_meta_row(
@@ -1152,6 +1196,15 @@ fn lineage_row_style(theme: &Theme, selected: bool) -> Style {
         ui_chrome::overlay_focus_row_style(theme)
     } else {
         Style::default().bg(ui_chrome::command_palette_surface(theme))
+    }
+}
+
+fn fork_selector_row_style(theme: &Theme, selected: bool) -> Style {
+    let surface = ui_chrome::command_palette_surface(theme);
+    if selected {
+        Style::default().bg(ui_chrome::fork_selector_selection_bg())
+    } else {
+        Style::default().bg(surface)
     }
 }
 
@@ -1186,8 +1239,6 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
             "Filter models, providers"
         } else if app.lineage_browser_visible {
             "Filter Harness session tree"
-        } else if app.fork_selector_visible {
-            "Filter stable fork points"
         } else {
             "Search"
         };
@@ -1233,6 +1284,43 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
                     .fg(ui_chrome::command_palette_muted(theme))
                     .bg(surface),
             ),
+        ])
+    };
+    frame.render_widget(Paragraph::new(line), area);
+}
+
+fn render_fork_selector_input(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let surface = ui_chrome::command_palette_surface(theme);
+    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
+
+    let input_style = Style::default()
+        .fg(ui_chrome::command_palette_muted(theme))
+        .bg(surface);
+    let cursor_style = Style::default()
+        .fg(ui_chrome::fork_selector_cursor())
+        .bg(surface);
+    let line = if app.palette_input.is_empty() {
+        Line::from(vec![
+            Span::styled("█", cursor_style),
+            Span::styled(" Search", input_style),
+        ])
+    } else {
+        let cursor_byte = app
+            .palette_input
+            .char_indices()
+            .nth(app.palette_cursor)
+            .map(|(index, _)| index)
+            .unwrap_or(app.palette_input.len());
+        let before = &app.palette_input[..cursor_byte];
+        let after = &app.palette_input[cursor_byte..];
+        Line::from(vec![
+            Span::styled(before.to_string(), input_style),
+            Span::styled("█", cursor_style),
+            Span::styled(after.to_string(), input_style),
         ])
     };
     frame.render_widget(Paragraph::new(line), area);
@@ -2502,6 +2590,39 @@ fn color_rgb(color: Color) -> Option<(u8, u8, u8)> {
         Color::Rgb(red, green, blue) => Some((red, green, blue)),
         Color::Indexed(index) => Some((index, index, index)),
         Color::Reset => None,
+    }
+}
+
+#[cfg(test)]
+mod fork_selector_tests {
+    use super::*;
+    use crate::view_model::ForkSelectorRowViewModel;
+
+    #[test]
+    fn fork_selector_row_matches_opencode_dialog_select_padding_and_colors() {
+        let theme = Theme::default();
+        let row = ForkSelectorRowViewModel {
+            cutoff_seq: 2,
+            event_count: 2,
+            run_id: Some("run".to_string()),
+            status: None,
+            event_id: Some("event".to_string()),
+            event_kind: "UserMessageSubmitted",
+            prompt_text: "Fork this prompt".to_string(),
+            timestamp: Some("2026-05-04T12:34:56Z".to_string()),
+            selected: true,
+        };
+
+        let line = fork_selector_row(&row, &theme, 86);
+
+        assert_eq!(line.spans[0].content.as_ref(), "      ");
+        assert_eq!(line.spans[0].style.bg, Some(Color::Rgb(0xFA, 0xB2, 0x83)));
+        assert_eq!(line.spans[1].content.as_ref(), "Fork this prompt");
+        assert_eq!(line.spans[1].style.fg, Some(theme.text.inverse));
+        assert!(line.spans[1].style.add_modifier.contains(Modifier::BOLD));
+        assert_eq!(line.spans[3].content.as_ref(), "12:34");
+        assert_eq!(line.spans[3].style.fg, Some(theme.text.inverse));
+        assert_eq!(line.spans[4].content.as_ref(), "   ");
     }
 }
 

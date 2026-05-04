@@ -40,6 +40,10 @@ const fn command_palette_accent() -> Color {
     Color::Rgb(0x9D, 0x7C, 0xD8)
 }
 
+const fn opencode_primary() -> Color {
+    Color::Rgb(0xFA, 0xB2, 0x83)
+}
+
 pub(super) const fn composer_input_surface(theme: &Theme) -> Color {
     theme.surface.panel_elevated
 }
@@ -98,6 +102,18 @@ pub(super) const fn command_palette_selection_fg(theme: &Theme) -> Color {
 
 pub(super) const fn command_palette_cursor(theme: &Theme) -> Color {
     theme.text.accent
+}
+
+pub(super) const fn fork_selector_selection_bg() -> Color {
+    opencode_primary()
+}
+
+pub(super) const fn fork_selector_selection_fg(theme: &Theme) -> Color {
+    theme.text.inverse
+}
+
+pub(super) const fn fork_selector_cursor() -> Color {
+    opencode_primary()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -30,6 +30,7 @@ const COMPACT_SESSION_MAX_WIDTH: u16 = 80;
 const COMPACT_SESSION_MAX_HEIGHT: u16 = 24;
 const DENSE_SESSION_PALETTE_MAX_WIDTH: u16 = 46;
 const COMMAND_PALETTE_WIDTH: u16 = 60;
+const FORK_SELECTOR_WIDTH: u16 = 88;
 const PERSISTENT_SIDEBAR_MIN_WIDTH: u16 = 121;
 const STARTUP_COMPOSER_MAX_WIDTH: u16 = 75;
 const RUNTIME_STATE_SURFACE_HORIZONTAL_INSET: u16 = 6;
@@ -1064,6 +1065,20 @@ fn command_palette_overlay_area(
     contract: SessionGeometryContract,
     app: &AppState,
 ) -> Option<Rect> {
+    if app.fork_selector_visible {
+        let popup_width = FORK_SELECTOR_WIDTH.min(area.width.saturating_sub(2));
+        let popup_height = fork_selector_overlay_height(app, area.height);
+        if popup_width == 0 || popup_height == 0 {
+            return None;
+        }
+
+        let popup_x = area
+            .x
+            .saturating_add((area.width.saturating_sub(popup_width)) / 2);
+        let popup_y = area.y.saturating_add(area.height / 4);
+        return Some(Rect::new(popup_x, popup_y, popup_width, popup_height));
+    }
+
     if !app.session_history_visible && !app.model_switcher_visible {
         let popup_width = COMMAND_PALETTE_WIDTH.min(area.width.saturating_sub(2));
         let popup_height = command_palette_overlay_height(app, area.height)
@@ -1135,6 +1150,15 @@ fn command_palette_overlay_height(app: &AppState, terminal_height: u16) -> u16 {
         let command_rows = u16::try_from(command_rows).unwrap_or(u16::MAX);
         COMMAND_OVERLAY_ROWS.saturating_add(command_rows)
     }
+}
+
+fn fork_selector_overlay_height(app: &AppState, terminal_height: u16) -> u16 {
+    const DIALOG_SELECT_CHROME_ROWS: u16 = 6;
+
+    let max_rows = usize::from(terminal_height.saturating_div(2).saturating_sub(6)).max(1);
+    let rows = app.fork_selector_view_model().rows.len().clamp(1, max_rows);
+    let rows = u16::try_from(rows).unwrap_or(u16::MAX);
+    DIALOG_SELECT_CHROME_ROWS.saturating_add(rows)
 }
 
 fn slash_command_overlay_area(
@@ -1309,5 +1333,27 @@ mod tests {
         let overlay = plan.palette_overlay.expect("startup palette overlay");
 
         assert_eq!(overlay, Rect::new(20, 8, 60, 14));
+    }
+
+    #[test]
+    fn fork_selector_overlay_uses_opencode_large_dialog_geometry() {
+        let mut app = AppState::new_live(None, false, None);
+        app.open_fork_selector();
+
+        assert!(app.fork_selector_visible);
+        assert_eq!(app.overlay_stack().top(), Some(OverlayKind::ForkSelector));
+
+        let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 100, 40));
+        let overlay = plan.palette_overlay.expect("fork selector overlay");
+
+        assert_eq!(overlay, Rect::new(6, 10, 88, 7));
+        assert_eq!(
+            overlay.height,
+            fork_selector_overlay_height(&app, plan.content.height)
+        );
+        assert_eq!(
+            overlay.y,
+            plan.content.y.saturating_add(plan.content.height / 4)
+        );
     }
 }
